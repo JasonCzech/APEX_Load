@@ -13,6 +13,8 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 )
 
 // AppDynamicsCredentials is the encrypted wire representation. The provider's
@@ -37,6 +39,12 @@ func (c *AppDynamicsCredentials) Runtime() appdynamics.Credentials {
 
 // InspectionJob grants only administrative read access. It has no test/run ID.
 type InspectionJob struct {
+	Provider           string                 `json:"provider,omitempty"`
+	Prometheus         *prometheus.JobConfig  `json:"prometheus,omitempty"`
+	Selector           string                 `json:"selector,omitempty"`
+	Label              string                 `json:"label,omitempty"`
+	FromUTC            time.Time              `json:"from_utc,omitempty"`
+	ToUTC              time.Time              `json:"to_utc,omitempty"`
 	ID                 string                 `json:"id"`
 	ProjectID          string                 `json:"project_id"`
 	ConnectionID       string                 `json:"connection_id"`
@@ -57,11 +65,14 @@ type SignedInspectionJob struct {
 	Signature string `json:"signature"`
 }
 type InspectionResult struct {
-	Job          SignedInspectionJob      `json:"job"`
-	Capabilities appdynamics.Capabilities `json:"capabilities"`
-	Entities     []appdynamics.Entity     `json:"entities,omitempty"`
-	Message      string                   `json:"message,omitempty"`
-	Truncated    bool                     `json:"truncated,omitempty"`
+	PrometheusCapabilities *prometheus.Capabilities            `json:"prometheus_capabilities,omitempty"`
+	Points                 []analysis.MetricPoint              `json:"points,omitempty"`
+	Coverage               map[string]monitorprovider.Coverage `json:"coverage,omitempty"`
+	Job                    SignedInspectionJob                 `json:"job"`
+	Capabilities           appdynamics.Capabilities            `json:"capabilities"`
+	Entities               []appdynamics.Entity                `json:"entities,omitempty"`
+	Message                string                              `json:"message,omitempty"`
+	Truncated              bool                                `json:"truncated,omitempty"`
 }
 
 func SignInspectionJob(job InspectionJob, key ed25519.PrivateKey) (SignedInspectionJob, error) {
@@ -80,8 +91,17 @@ func VerifyInspectionJob(envelope SignedInspectionJob, key ed25519.PublicKey, co
 	if err != nil || len(key) != ed25519.PublicKeySize || len(envelope.Payload) > 96<<10 || !ed25519.Verify(key, []byte(envelope.Payload), sig) {
 		return job, errors.New("inspection signature rejected")
 	}
-	if json.Unmarshal([]byte(envelope.Payload), &job) != nil || job.ID == "" || job.ProjectID == "" || job.ConnectionID == "" || job.ConnectionRevision < 1 || job.CollectorID != collector || job.OwnerToken == "" || !job.LeaseExpiresAt.After(now) || job.LeaseExpiresAt.After(now.Add(2*time.Minute)) || (job.Kind != "test" && job.Kind != "discover") || job.Config.Validate() != nil {
+	if json.Unmarshal([]byte(envelope.Payload), &job) != nil || job.ID == "" || job.ProjectID == "" || job.ConnectionID == "" || job.ConnectionRevision < 1 || job.CollectorID != collector || job.OwnerToken == "" || !job.LeaseExpiresAt.After(now) || job.LeaseExpiresAt.After(now.Add(2*time.Minute)) || (job.Kind != "test" && job.Kind != "discover" && job.Kind != "preview") || (job.Prometheus == nil && job.Config.Validate() != nil) || (job.Prometheus != nil && (job.Provider != "prometheus" || job.Prometheus.Config.Validate() != nil)) {
 		return InspectionJob{}, errors.New("inspection identity or lease rejected")
+	}
+	if job.Prometheus == nil && job.Kind == "preview" {
+		return InspectionJob{}, errors.New("preview requires Prometheus assignment")
+	}
+	if job.Prometheus != nil && job.Kind == "preview" && (len(job.Prometheus.Selection.Queries) == 0 || !job.ToUTC.After(job.FromUTC) || job.ToUTC.Sub(job.FromUTC) > 10*time.Minute || job.ToUTC.After(now.Add(30*time.Second))) {
+		return InspectionJob{}, errors.New("invalid preview window")
+	}
+	if job.Prometheus != nil && len(job.Prometheus.Selection.Queries) > 0 && (job.Prometheus.Selection.ProjectID != job.ProjectID || job.Prometheus.Selection.Validate() != nil) {
+		return InspectionJob{}, errors.New("Prometheus inspection selection rejected")
 	}
 	if job.Selection != nil && (job.Kind != "test" || job.Selection.ProjectID != job.ProjectID || job.Selection.Validate() != nil) {
 		return InspectionJob{}, errors.New("inspection selection rejected")
@@ -89,6 +109,9 @@ func VerifyInspectionJob(envelope SignedInspectionJob, key ed25519.PublicKey, co
 	return job, nil
 }
 func inspectionCredentialJob(job InspectionJob) RunJob {
+	if job.Prometheus != nil {
+		return RunJob{ID: "inspection:" + job.ID, ProjectID: job.ProjectID, CollectorID: job.CollectorID, SourceID: job.ConnectionID, SourceRevision: job.ConnectionRevision, Pack: "prometheus-inspection", Destination: job.Prometheus.Config.Endpoint, LeaseExpiresAt: job.LeaseExpiresAt, Credentials: job.Credentials}
+	}
 	return RunJob{ID: "inspection:" + job.ID, ProjectID: job.ProjectID, CollectorID: job.CollectorID, SourceID: job.ConnectionID, SourceRevision: job.ConnectionRevision, Pack: "appdynamics-inspection", Destination: job.Config.Endpoint, LeaseExpiresAt: job.LeaseExpiresAt, Credentials: job.Credentials}
 }
 func SealInspectionCredentials(job InspectionJob, key []byte, c Credentials) (*SealedCredentials, error) {
@@ -117,7 +140,11 @@ func (a *Agent) dispatchAppDynamicsJob(ctx context.Context, job RunJob, envelope
 	go func() {
 		defer a.providerWorkers.Done()
 		defer func() { <-a.providerSlots; a.stateMu.Lock(); delete(a.providerBusy, job.ID); a.stateMu.Unlock() }()
-		_ = a.collectAppDynamicsJob(ctx, job, envelope)
+		if job.Prometheus != nil {
+			_ = a.collectPrometheusJob(ctx, job, envelope)
+		} else {
+			_ = a.collectAppDynamicsJob(ctx, job, envelope)
+		}
 	}()
 }
 func (a *Agent) collectAppDynamicsJob(ctx context.Context, job RunJob, envelope SignedRunJob) error {
@@ -142,6 +169,20 @@ func (a *Agent) collectAppDynamicsJob(ctx context.Context, job RunJob, envelope 
 			}
 		}
 	}
+	return a.collectProviderJob(ctx, job, envelope, func(collectCtx context.Context, from, to time.Time) (providerResult, error) {
+		credentials, err := OpenCredentials(job, a.cfg.CredentialPrivateKey, time.Now().UTC())
+		if err != nil || credentials.AppDynamics == nil {
+			return providerResult{}, errors.New("AppDynamics credential lease unavailable")
+		}
+		client, err := appdynamics.NewClient(cfg, credentials.AppDynamics.Runtime())
+		if err != nil {
+			return providerResult{}, err
+		}
+		result, err := client.Collect(collectCtx, job.AppDynamics.Selection, from, to, job.RunID)
+		return providerResult{Points: result.Points, Evidence: result.Evidence, Topology: result.Topology, Coverage: result.Coverage, Progress: result.Progress, Capabilities: result.Capabilities}, err
+	})
+}
+func (a *Agent) collectProviderJob(ctx context.Context, job RunJob, envelope SignedRunJob, collect func(context.Context, time.Time, time.Time) (providerResult, error)) error {
 	now := time.Now().UTC()
 	a.stateMu.Lock()
 	pending := a.pendingBatches[job.ID]
@@ -149,10 +190,38 @@ func (a *Agent) collectAppDynamicsJob(ctx context.Context, job RunJob, envelope 
 		delete(a.pendingBatches, job.ID)
 		pending = nil
 	}
-	// A terminal load transition starts a new fixed reconciliation window.
-	// Already accepted chunks remain canonical; uncommitted old-window chunks
-	// are replaced by the full final query rather than advancing its watermark.
-	if pending != nil && job.Reconciling && (!pending.QueryFromUTC.Equal(job.QueryFromUTC) || !pending.QueryUntilUTC.Equal(job.QueryUntilUTC)) {
+	// Prometheus current-state diagnostics cannot be recovered by historical
+	// queries. Preserve captured pre-end observations across the new final window,
+	// while the fresh query plan alone owns continuation and watermark progress.
+	if job.Reconciling && job.Prometheus != nil {
+		changed := false
+		if pending != nil {
+			keep, rebound := rebindPrometheusCapturedBatch(pending, job)
+			changed = rebound
+			if !keep {
+				delete(a.pendingBatches, job.ID)
+				pending = nil
+			}
+		}
+		backlog := a.providerBacklog[job.ID]
+		retained := backlog[:0]
+		for _, batch := range backlog {
+			keep, rebound := rebindPrometheusCapturedBatch(batch, job)
+			changed = changed || rebound
+			if keep {
+				retained = append(retained, batch)
+			}
+		}
+		a.providerBacklog[job.ID] = retained
+		if changed {
+			a.nextCollection[job.ID] = now
+			if err := a.saveSpool(); err != nil {
+				a.stateMu.Unlock()
+				return err
+			}
+		}
+	} else if pending != nil && job.Reconciling && (!pending.QueryFromUTC.Equal(job.QueryFromUTC) || !pending.QueryUntilUTC.Equal(job.QueryUntilUTC)) {
+		// AppDynamics evidence is recovered through its final historical window.
 		delete(a.pendingBatches, job.ID)
 		delete(a.providerBacklog, job.ID)
 		pending = nil
@@ -176,14 +245,6 @@ func (a *Agent) collectAppDynamicsJob(ctx context.Context, job RunJob, envelope 
 		if now.Before(until) {
 			return nil
 		}
-		credentials, err := OpenCredentials(job, a.cfg.CredentialPrivateKey, now)
-		if err != nil || credentials.AppDynamics == nil {
-			return errors.New("AppDynamics credential lease unavailable")
-		}
-		client, err := appdynamics.NewClient(cfg, credentials.AppDynamics.Runtime())
-		if err != nil {
-			return err
-		}
 		from, to := job.QueryFromUTC, job.QueryUntilUTC
 		if from.IsZero() {
 			from = job.StartedAt
@@ -198,14 +259,34 @@ func (a *Agent) collectAppDynamicsJob(ctx context.Context, job RunJob, envelope 
 			return nil
 		}
 		leaseCtx, cancel := context.WithDeadline(ctx, job.LeaseExpiresAt)
-		result, collectErr := client.Collect(leaseCtx, job.AppDynamics.Selection, from, to, job.RunID)
+		result, collectErr := collect(leaseCtx, from, to)
 		cancel()
 		// Failed provider reads may still produce capability/coverage evidence. Keep
 		// them visible without inventing zero-valued measurements.
 		if collectErr != nil && len(result.Coverage) == 0 {
-			result.Coverage = map[string]appdynamics.Coverage{"controller": {Status: "unavailable", From: from, To: to, Message: "AppDynamics collection failed"}}
+			key := "collection"
+			if job.Prometheus != nil {
+				// Prometheus ingestion accepts this bounded failure capability even
+				// when no approved query could execute. Keep the failed read durable
+				// so its receipt can clear the spool and a later poll can recover.
+				key = "query"
+			}
+			result.Coverage = map[string]monitorprovider.Coverage{key: {Status: "unavailable", From: from, To: to, Message: "provider collection failed"}}
 		}
-		chunks, err := appDynamicsBatches(job, envelope, result, to)
+		if job.Prometheus != nil && result.Progress.TotalQueries == 0 {
+			total := len(job.Prometheus.Selection.Queries)
+			if job.Prometheus.Selection.Targets {
+				total++
+			}
+			if job.Prometheus.Selection.Alerts {
+				total++
+			}
+			if job.Reconciling {
+				total += len(job.TerminalWindows)
+			}
+			result.Progress = monitorprovider.QueryProgress{TotalQueries: total, NextQuery: job.Prometheus.Selection.QueryOffset, NextTime: job.Prometheus.Selection.QueryTime}
+		}
+		chunks, err := providerBatches(job, envelope, result, to)
 		if err != nil {
 			return err
 		}
@@ -259,6 +340,9 @@ func (a *Agent) collectAppDynamicsJob(ctx context.Context, job RunJob, envelope 
 			if acknowledged.Progress != nil && !acknowledged.Progress.Complete {
 				a.nextCollection[job.ID] = now
 			}
+			if job.Prometheus != nil && job.Reconciling && acknowledged.Progress == nil {
+				a.nextCollection[job.ID] = now
+			}
 		}
 		err = a.saveSpool()
 		a.stateMu.Unlock()
@@ -271,7 +355,21 @@ func (a *Agent) collectAppDynamicsJob(ctx context.Context, job RunJob, envelope 
 	}
 	return nil
 }
+
+type providerResult struct {
+	Points                 []analysis.MetricPoint
+	Evidence               []monitorprovider.Diagnostic
+	Topology               []monitorprovider.Entity
+	Coverage               map[string]monitorprovider.Coverage
+	Progress               monitorprovider.QueryProgress
+	Capabilities           appdynamics.Capabilities
+	PrometheusCapabilities *prometheus.Capabilities
+}
+
 func appDynamicsBatches(job RunJob, envelope SignedRunJob, result appdynamics.Result, end time.Time) ([]*RunSampleBatch, error) {
+	return providerBatches(job, envelope, providerResult{Points: result.Points, Evidence: result.Evidence, Topology: result.Topology, Coverage: result.Coverage, Progress: result.Progress, Capabilities: result.Capabilities}, end)
+}
+func providerBatches(job RunJob, envelope SignedRunJob, result providerResult, end time.Time) ([]*RunSampleBatch, error) {
 	out := []*RunSampleBatch{}
 	points, evidence := result.Points, result.Evidence
 	topologyCount := len(result.Topology)
@@ -281,9 +379,9 @@ func appDynamicsBatches(job RunJob, envelope SignedRunJob, result appdynamics.Re
 		var batch *RunSampleBatch
 		for {
 			last := n == len(points) && m == len(evidence) || len(out) == 31
-			batch = &RunSampleBatch{Job: envelope, Sequence: job.NextSequence + int64(len(out)), Capabilities: result.Capabilities, QueryFromUTC: job.QueryFromUTC, QueryUntilUTC: job.QueryUntilUTC}
+			batch = &RunSampleBatch{Job: envelope, Sequence: job.NextSequence + int64(len(out)), Capabilities: result.Capabilities, PrometheusCapabilities: result.PrometheusCapabilities, QueryFromUTC: job.QueryFromUTC, QueryUntilUTC: job.QueryUntilUTC}
 			batch.Points = append([]analysis.MetricPoint(nil), points[:n]...)
-			batch.Evidence = append([]appdynamics.Diagnostic(nil), evidence[:m]...)
+			batch.Evidence = append([]monitorprovider.Diagnostic(nil), evidence[:m]...)
 			for i := range batch.Points {
 				p := &batch.Points[i]
 				p.ProjectID = job.ProjectID
@@ -302,7 +400,7 @@ func appDynamicsBatches(job RunJob, envelope SignedRunJob, result appdynamics.Re
 				*p = normalized
 			}
 			if last {
-				batch.Coverage = make(map[string]appdynamics.Coverage, len(result.Coverage)+2)
+				batch.Coverage = make(map[string]monitorprovider.Coverage, len(result.Coverage)+2)
 				for key, coverage := range result.Coverage {
 					batch.Coverage[key] = coverage
 				}
@@ -310,15 +408,27 @@ func appDynamicsBatches(job RunJob, envelope SignedRunJob, result appdynamics.Re
 				truncated := n < len(points) || m < len(evidence) || topologyCount < len(result.Topology)
 				if truncated {
 					for key, coverage := range batch.Coverage {
-						if coverage.Status == "complete" {
+						if job.Prometheus != nil {
+							// Preserve the approved query/diagnostic capability identity.
+							// Generic retention capabilities are outside the signed
+							// Prometheus ingestion scope and would strand this chunk.
+							coverage.Truncated = true
+							if coverage.Status == "complete" || coverage.Status == "no_data" {
+								coverage.Status = "partial"
+							}
+							coverage.Message = "collector transport retention budget reached; bounded prefix retained"
+							batch.Coverage[key] = coverage
+						} else if coverage.Status == "complete" {
 							coverage.Status, coverage.Truncated = "partial", true
 							coverage.Message = "collector transport retention budget reached"
 							batch.Coverage[key] = coverage
 						}
 					}
-					batch.Coverage["retention"] = appdynamics.Coverage{Status: "partial", From: job.QueryFromUTC, To: job.QueryUntilUTC, Points: retainedPoints + n, Evidence: retainedEvidence + m, Truncated: true, Message: "collector transport retention budget reached; bounded prefix retained"}
+					if job.Prometheus == nil {
+						batch.Coverage["retention"] = monitorprovider.Coverage{Status: "partial", From: job.QueryFromUTC, To: job.QueryUntilUTC, Points: retainedPoints + n, Evidence: retainedEvidence + m, Truncated: true, Message: "collector transport retention budget reached; bounded prefix retained"}
+					}
 					if topologyCount < len(result.Topology) {
-						batch.Coverage["topology"] = appdynamics.Coverage{Status: "partial", From: job.QueryFromUTC, To: job.QueryUntilUTC, Truncated: true, Message: "topology exceeds collector batch byte budget"}
+						batch.Coverage["topology"] = monitorprovider.Coverage{Status: "partial", From: job.QueryFromUTC, To: job.QueryUntilUTC, Truncated: true, Message: "topology exceeds collector batch byte budget"}
 					}
 				}
 				if result.Progress.TotalQueries > 0 {
@@ -349,7 +459,7 @@ func appDynamicsBatches(job RunJob, envelope SignedRunJob, result appdynamics.Re
 			} else if n > 0 && m > 0 {
 				m = 0
 			} else {
-				return nil, errors.New("AppDynamics record exceeds transport budget")
+				return nil, errors.New("provider record exceeds transport budget")
 			}
 		}
 		out = append(out, batch)
@@ -406,6 +516,9 @@ func (a *Agent) inspectionTick(ctx context.Context) error {
 	return nil
 }
 func (a *Agent) executeInspection(ctx context.Context, job InspectionJob, envelope SignedInspectionJob) error {
+	if job.Prometheus != nil {
+		return a.executePrometheusInspection(ctx, job, envelope)
+	}
 	target, approved := a.adapterTarget(RunJob{Pack: "appdynamics", Destination: job.Config.Endpoint})
 	if !approved {
 		return errors.New("inspection destination is not locally approved")

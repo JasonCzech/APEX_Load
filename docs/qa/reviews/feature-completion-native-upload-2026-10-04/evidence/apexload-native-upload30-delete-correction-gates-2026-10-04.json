@@ -1,0 +1,18 @@
+[
+  {
+    "gate": "delete-api-normal",
+    "command": [
+      "go",
+      "test",
+      "-parallel=1",
+      "-count=1",
+      "-timeout=20m",
+      "-ldflags=-s -w",
+      "-run=Test(Analysis|NativeEvidence|NativePipeline|SavedAnalysis)",
+      "./pkg/api"
+    ],
+    "exit_code": 1,
+    "seconds": 104.455,
+    "log": "/private/tmp/apexload-native-upload30-delete-api-normal-2026-10-04.log"
+  }
+]

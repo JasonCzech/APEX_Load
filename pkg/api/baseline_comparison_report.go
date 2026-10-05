@@ -19,6 +19,9 @@ var baselineComparisonTemplate = template.Must(template.New("baseline-comparison
 		if m == nil {
 			return "Unavailable"
 		}
+		if m.MeanStatistic == "evaluation_grid_mean" {
+			return fmt.Sprintf("evaluation-grid mean %.3g · range %.3g–%.3g · n=%d · grid coverage %.1f%% · %d instances", m.Mean, m.Min, m.Max, m.Samples, m.CoveragePct, m.Instances)
+		}
 		return fmt.Sprintf("mean %.3g · P95 %.3g · range %.3g–%.3g · n=%d · coverage %.1f%% · %d instances", m.Mean, m.P95, m.Min, m.Max, m.Samples, m.CoveragePct, m.Instances)
 	},
 	"delta": func(c BaselineComparisonCell) string {
@@ -58,7 +61,7 @@ var baselineComparisonTemplate = template.Must(template.New("baseline-comparison
 {{range $c.Baselines}}{{$id := .ID}}<div style="break-before:page"><h3 class="baseline-reference">Reference: {{.Name}} · {{.ReleaseName}}</h3><p>{{.ID}} · {{.Status}}</p>
 <h4>Transactions — successful latency in milliseconds</h4><table><thead><tr><th>Transaction / group / load window</th><th>Current</th><th>Baseline</th><th>Evidence</th></tr></thead><tbody>
 {{range $c.Transactions}}{{$b := cell . $id}}<tr><td>{{.Name}} / {{.Group}}{{with .Window}} / {{printf "%.0f" .Load}} VUsers, {{printf "%.0f–%.0f s" .StartSeconds .EndSeconds}}{{end}}</td><td>{{transaction .Current}}</td><td>{{transaction $b.Measurement}} · {{delta $b}}</td><td>{{join $b.Qualification "; "}}</td></tr>{{end}}</tbody></table>
-<h4>Resources — time-weighted means</h4><table><thead><tr><th>Resource</th><th>Current</th><th>Baseline</th><th>Evidence</th></tr></thead><tbody>{{range $c.Resources}}{{$b := cell . $id}}<tr><td>{{.Name}} ({{.Source}}), {{.Unit}}</td><td>{{measurement .Current}}</td><td>{{measurement $b.Measurement}} · {{delta $b}}</td><td>{{join $b.Qualification "; "}}</td></tr>{{end}}</tbody></table>
+<h4>Resources — recorded means</h4><p>Prometheus means describe settled evaluations on the saved grid. Missing cells reduce coverage; evaluation levels do not reconstruct rates, totals or request percentiles.</p><table><thead><tr><th>Resource</th><th>Current</th><th>Baseline</th><th>Evidence</th></tr></thead><tbody>{{range $c.Resources}}{{$b := cell . $id}}<tr><td>{{.Name}} ({{.Source}}), {{.Unit}}{{with .Provider}} · query {{.QueryID}} · {{.BackendProfile}} · {{.Statistic}} · {{.EvaluationStepSeconds}}s grid · {{.Dimensions}}{{end}}</td><td>{{measurement .Current}}</td><td>{{measurement $b.Measurement}} · {{delta $b}}</td><td>{{join $b.Qualification "; "}}</td></tr>{{end}}</tbody></table>
 <h4>Setup differences</h4>{{range $c.Setup}}{{if eq .BaselineID $id}}<p><strong>{{.Field}}: {{.Status}}</strong> · current {{.Current}} · baseline {{.Baseline}}</p>{{end}}{{end}}</div>{{end}}
 {{end}}{{else}}<p>No saved baseline comparison selected.</p>{{end}}`))
 

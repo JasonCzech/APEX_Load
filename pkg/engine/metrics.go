@@ -13,6 +13,7 @@ import (
 )
 
 type MetricsCollector struct {
+	messagingProgress                    engineMessagingProgress
 	timingObserver                       func(ResultTiming)
 	initializationObserver               func(int)
 	ch                                   chan *protocol.Result
@@ -103,6 +104,7 @@ type MetricsSnapshot struct {
 	ByGroup                    map[string]*GroupMetrics
 	Browser                    *BrowserMetricsSummary                 `json:"browser,omitempty"`
 	BrowserByDevice            map[string]*BrowserDeviceMetrics       `json:"browser_by_device,omitempty"`
+	MessagingProgress          *protocol.MessagingProgressSnapshot    `json:"messaging_progress,omitempty"`
 	Telemetry                  *TelemetryMetrics                      `json:"telemetry,omitempty"`
 	Resources                  *SystemResources                       `json:"resources,omitempty"`
 	TransactionResponseTimeSLA []TransactionResponseTimeSLACompliance `json:"transaction_response_time_sla,omitempty"`
@@ -427,6 +429,9 @@ func (mc *MetricsCollector) Stop() {
 			close(mc.aggregateDone)
 		})
 		if notStarted {
+			if mc.messagingProgress.sample(true) {
+				mc.publishSnapshot(nil, time.Nanosecond)
+			}
 			return
 		}
 		close(mc.done)
@@ -440,7 +445,9 @@ func (mc *MetricsCollector) LatestSnapshot() (MetricsSnapshot, bool) {
 	if len(mc.snapshots) == 0 {
 		return MetricsSnapshot{}, false
 	}
-	return mc.snapshots[len(mc.snapshots)-1], true
+	snapshot := mc.snapshots[len(mc.snapshots)-1]
+	snapshot.MessagingProgress = snapshot.MessagingProgress.Clone()
+	return snapshot, true
 }
 
 func (mc *MetricsCollector) TotalTransactions() int64 {
@@ -550,7 +557,8 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 						publishBatch(time.Now(), false)
 					}
 				default:
-					publishBatch(time.Now(), mc.activeGaugeDirty.Swap(false))
+					progressChanged := mc.messagingProgress.sample(true)
+					publishBatch(time.Now(), mc.activeGaugeDirty.Swap(false) || progressChanged)
 					return
 				}
 			}
@@ -566,6 +574,7 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 				}
 			}
 		process:
+			progressChanged := mc.messagingProgress.sample(false)
 			activeGaugeChanged := mc.activeGaugeDirty.Swap(false)
 			// An empty window still gets a zero-valued, correctly-timestamped
 			// snapshot while the run is live (active VUsers) or during a
@@ -576,7 +585,7 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 			// consumers must not keep projecting the previous nonzero gauge. Only
 			// a truly idle, unchanged window is skipped, avoiding leading/trailing
 			// zero noise before ramp-up starts or after ramp-down completes.
-			if len(batch) == 0 && !activeGaugeChanged && !mc.emitIdleSnapshots.Load() && mc.current.activeVUsers.Load() == 0 {
+			if len(batch) == 0 && !activeGaugeChanged && !progressChanged && !mc.emitIdleSnapshots.Load() && mc.current.activeVUsers.Load() == 0 {
 				windowStart = windowEnd
 				continue
 			}
@@ -600,6 +609,7 @@ func (mc *MetricsCollector) publishSnapshot(batch []*protocol.Result, window tim
 		}
 	}
 	snap := mc.computeSnapshot(batch, window)
+	snap.MessagingProgress = mc.messagingProgress.snapshot()
 	if mc.resCollector != nil {
 		snap.Resources = mc.resCollector.Collect()
 		if snap.Resources != nil {

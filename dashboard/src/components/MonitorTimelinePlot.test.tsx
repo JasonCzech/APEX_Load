@@ -10,6 +10,7 @@ interface ExportProps {
   rows: ExportRow[]
   axes: { key: string; value: (row: ExportRow) => unknown }[]
   series: { key: string }[]
+  context: Record<string, unknown>
   children: ReactNode
 }
 const capture = vi.hoisted(() => ({ value: undefined as ExportProps | undefined }))
@@ -26,13 +27,15 @@ afterEach(() => act(() => root.unmount()))
 
 it('retains displayed zero and provenance in the chart export', async () => {
   const point: AnalysisPoint = { timestamp_utc: '2026-10-03T12:00:00Z', source: 'source', metric_name: 'calls', unit: 'count', value: 0, quality: 'valid', host: 'node', dimensions: { application: '1' } }
-  await act(async () => root.render(<MonitorTimelinePlot points={[point]} history={[]} />))
+  const selection = { source_id: 'source', metric: 'calls', dimensions: { application: '1' }, window: { from: '2026-10-03T12:00:00Z', to: '2026-10-03T12:01:00Z' } }
+  await act(async () => root.render(<MonitorTimelinePlot runId="run" selection={selection} points={[point]} history={[]} />))
   const exported = capture.value!
   expect(exported.rows).toHaveLength(1)
   expect(exported.rows[0].monitor).toBe(0)
   expect(exported.axes.find(axis => axis.key === 'quality')?.value(exported.rows[0])).toBe('valid')
   expect(exported.axes.find(axis => axis.key === 'dimensions')?.value(exported.rows[0])).toEqual({ application: '1' })
   expect(exported.series.map(series => series.key)).toEqual(['monitor', 'load'])
+  expect(exported.context).toMatchObject({ run_id: 'run', source: 'source', metric: 'calls', dimensions: { application: '1' }, selection, valid_monitor_samples: 1, observed_monitor_samples: 1 })
 })
 
 it('exports only the displayed latest whole-query aggregate', async () => {
@@ -43,4 +46,14 @@ it('exports only the displayed latest whole-query aggregate', async () => {
   expect(capture.value!.rows).toHaveLength(1)
   expect(capture.value!.rows[0].monitor).toBe(0)
   expect(capture.value!.series.map(series => series.key)).toEqual(['monitor'])
+  expect(capture.value!.context).toMatchObject({ valid_monitor_samples: 1, observed_monitor_samples: 1 })
+})
+
+
+it('retains missing evidence in exported population counts and infers the archived run identity', async () => {
+  const valid: AnalysisPoint = { run_id: 'archived-run', source: 'source', timestamp_utc: '2026-10-03T12:00:00Z', metric_name: 'calls', unit: 'count', value: 0, quality: 'valid', dimensions: { node: '1' } }
+  const missing: AnalysisPoint = { ...valid, timestamp_utc: '2026-10-03T12:01:00Z', value: undefined, quality: 'missing' }
+  await act(async () => root.render(<MonitorTimelinePlot points={[valid, missing]} history={[]} />))
+  expect(capture.value!.context).toMatchObject({ run_id: 'archived-run', dimensions: { node: '1' }, valid_monitor_samples: 1, observed_monitor_samples: 2 })
+  expect(capture.value!.rows.find(row => row.point?.quality === 'missing')?.monitor).toBeNull()
 })

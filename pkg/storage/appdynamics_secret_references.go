@@ -7,6 +7,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/appdynamics"
 	"github.com/jasonczech/apexload/pkg/credential"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 )
 
 // AppDynamicsSecretConsumer exposes resource identity and a reference count,
@@ -51,6 +52,15 @@ func (s *SQLiteStore) ListAppDynamicsSecretConsumers(project, name string) ([]Ap
 			consumers = append(consumers, AppDynamicsSecretConsumer{"appdynamics_connection", connection.ID, connection.Name, count})
 		}
 	}
+	promConnections, err := s.ListPrometheusConnections(project)
+	if err != nil {
+		return nil, err
+	}
+	for _, connection := range promConnections {
+		if count := prometheusSecretReferenceCount(connection.Snapshot(), name); count > 0 {
+			consumers = append(consumers, AppDynamicsSecretConsumer{"prometheus_connection", connection.ID, connection.Name, count})
+		}
+	}
 	// Read both sides of the preparation-to-job handoff in one statement. Separate
 	// queries could observe no jobs before the handoff, then exclude the consumed
 	// preparation after jobs were inserted. The SQL statement's snapshot avoids
@@ -73,13 +83,16 @@ func (s *SQLiteStore) ListAppDynamicsSecretConsumers(project, name string) ([]Ap
 			if count := appDynamicsSecretReferenceCount(job.ConnectionSnapshot, name); count > 0 {
 				consumers = append(consumers, AppDynamicsSecretConsumer{kind, job.ID, job.Source.Name, count})
 			}
+			if count := prometheusSecretReferenceCount(job.PrometheusConnectionSnapshot, name); count > 0 {
+				consumers = append(consumers, AppDynamicsSecretConsumer{kind, job.ID, job.Source.Name, count})
+			}
 			continue
 		}
 		var preparation Preparation
 		if err = json.Unmarshal([]byte(body), &preparation); err != nil {
 			return nil, err
 		}
-		if count := preparationAppDynamicsSecretReferences(&preparation, name); count > 0 {
+		if count := preparationAppDynamicsSecretReferences(&preparation, name) + preparationPrometheusSecretReferences(&preparation, name); count > 0 {
 			consumers = append(consumers, AppDynamicsSecretConsumer{kind, preparation.ID, "Preparation for test " + preparation.TestID, count})
 		}
 	}
@@ -154,6 +167,48 @@ func (s *SQLiteStore) InvalidateAppDynamicsSecretPreparations(project, name stri
 			return nil, err
 		}
 	}
+	rows, err = tx.Query(`SELECT payload_json,revision FROM prometheus_connections WHERE project_id=?`, project)
+	if err != nil {
+		return nil, err
+	}
+	var promConnections []*PrometheusConnection
+	for rows.Next() {
+		var body string
+		var revision int64
+		if err = rows.Scan(&body, &revision); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		connection, e := UnmarshalPrometheusConnectionPrivate([]byte(body))
+		if e != nil {
+			rows.Close()
+			return nil, e
+		}
+		if prometheusSecretReferenceCount(connection.Snapshot(), name) > 0 {
+			connection.Revision = revision + 1
+			connection.VerifiedRevision = 0
+			connection.UpdatedAt = now.UTC()
+			connection.LastCheckedAt = nil
+			connection.LastCheckStatus = "credential_changed"
+			connection.LastCheckMessage = "Connection credentials changed; verify before the next run"
+			connection.Capabilities = prometheus.Capabilities{}
+			promConnections = append(promConnections, connection)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	for _, connection := range promConnections {
+		body, e := MarshalPrometheusConnectionPrivate(connection)
+		if e != nil {
+			return nil, e
+		}
+		if _, err = tx.Exec(`UPDATE prometheus_connections SET revision=?,verified_revision=0,payload_json=?,updated_at=? WHERE id=? AND project_id=?`, connection.Revision, string(body), now.UTC(), connection.ID, project); err != nil {
+			return nil, err
+		}
+	}
 	rows, err = tx.Query(`SELECT payload,owner_fence FROM preparations WHERE project_id=? AND state IN ('preparing','ready')`, project)
 	if err != nil {
 		return nil, err
@@ -170,7 +225,7 @@ func (s *SQLiteStore) InvalidateAppDynamicsSecretPreparations(project, name stri
 			rows.Close()
 			return nil, err
 		}
-		if preparationAppDynamicsSecretReferences(&preparation, name) == 0 {
+		if preparationAppDynamicsSecretReferences(&preparation, name)+preparationPrometheusSecretReferences(&preparation, name) == 0 {
 			continue
 		}
 		preparation.OwnerFence = owner

@@ -4,6 +4,7 @@ import (
 	"context"
 	cryptorand "crypto/rand"
 	"errors"
+	pb "github.com/jasonczech/apexload/api/proto"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -182,10 +183,15 @@ type runtimeSecretRecoveryState struct {
 	generation uint64
 	stopped    bool
 	active     map[string]struct{}
+	// running/drained account for admitted recovery scans and timer callbacks.
+	// Admission and shutdown share mu; a stopped timer alone cannot join work.
+	running int
+	drained chan struct{}
 }
 
 type TestRunner struct {
 	appDynamicsPrepare    func(context.Context, storage.MonitorSource, *storage.AppDynamicsConnectionSnapshot) error
+	prometheusPrepare     func(context.Context, storage.MonitorSource, *storage.PrometheusConnectionSnapshot, []analysis.MonitorRule) error
 	thresholdJournal      *thresholdJournalWriter
 	tests                 map[string]*ManagedTest
 	scripts               map[string]*StoredScript
@@ -793,6 +799,10 @@ type TestGroup struct {
 	// instead of retaining the full parsed script graph.
 	javaVuserCapacityPlan      engine.JavaVuserCapacityPlan
 	javaVuserCapacityPlanKnown bool
+	runtimeResourcePlan        engine.RuntimeResourcePlan
+	runtimeResourcePlanKnown   bool
+	runtimeResourcePlanError   string
+	messagingRuntimeFeatures   []string
 	// baseScript is the immutable executable input before test/group runtime
 	// overrides. It lets a revised queued copy apply intentional runtime edits
 	// without recompiling mutable script or data-pool resources. Older rows may
@@ -810,14 +820,16 @@ type TestGroup struct {
 }
 
 type GeneratorShardSummary struct {
-	JavaHost      *JavaHostPlacementSummary `json:"java_host,omitempty"`
-	Group         string                    `json:"group"`
-	Target        string                    `json:"target"`
-	VUsers        int                       `json:"vusers"`
-	ShardStrategy string                    `json:"shard_strategy,omitempty"`
-	ShardOrdinal  uint32                    `json:"shard_ordinal,omitempty"`
-	ShardCount    uint32                    `json:"shard_count,omitempty"`
-	VUserIDOffset uint64                    `json:"vuser_id_offset,omitempty"`
+	RuntimeResourceClaim     *pb.RuntimeResourceClaim     `json:"runtime_resource_claim,omitempty"`
+	RuntimeResourceAdmission *pb.RuntimeResourceAdmission `json:"runtime_resource_admission,omitempty"`
+	JavaHost                 *JavaHostPlacementSummary    `json:"java_host,omitempty"`
+	Group                    string                       `json:"group"`
+	Target                   string                       `json:"target"`
+	VUsers                   int                          `json:"vusers"`
+	ShardStrategy            string                       `json:"shard_strategy,omitempty"`
+	ShardOrdinal             uint32                       `json:"shard_ordinal,omitempty"`
+	ShardCount               uint32                       `json:"shard_count,omitempty"`
+	VUserIDOffset            uint64                       `json:"vuser_id_offset,omitempty"`
 }
 
 type RunLogicGoalSnapshot struct {
@@ -826,6 +838,7 @@ type RunLogicGoalSnapshot struct {
 }
 
 type LiveMetrics struct {
+	MessagingProgress   *protocol.MessagingProgressSnapshot   `json:"messaging_progress,omitempty"`
 	Messaging           map[string]*protocol.MessagingSummary `json:"messaging,omitempty"`
 	NativeEvidence      *storage.NativeIntervalEvidence       `json:"native_evidence,omitempty"`
 	StatisticalFindings []StatisticalFinding                  `json:"statistical_findings,omitempty"`

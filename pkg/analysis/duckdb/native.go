@@ -65,7 +65,11 @@ func (e *Engine) withDB(ctx context.Context, operation func(context.Context, *sq
 		return err
 	}
 	defer os.RemoveAll(spill)
-	db, err := sql.Open("duckdb", ":memory:?threads=2&autoload_known_extensions=false&autoinstall_known_extensions=false&allow_unsigned_extensions=false&allow_community_extensions=false")
+	threads := e.workerThreads
+	if threads < 1 || threads > 2 {
+		return errWorkerProtocol
+	}
+	db, err := sql.Open("duckdb", ":memory:?threads="+strconv.Itoa(threads)+"&autoload_known_extensions=false&autoinstall_known_extensions=false&allow_unsigned_extensions=false&allow_community_extensions=false")
 	if err != nil {
 		return err
 	}
@@ -134,7 +138,7 @@ func analyticsHeadroom(root string) error {
 	return nil
 }
 
-func (e *Engine) Preview(ctx context.Context, path string) (Preview, error) {
+func (e *Engine) childNativePreview(ctx context.Context, path string) (Preview, error) {
 	path, err := e.authorizedPath(path)
 	if err != nil {
 		return Preview{}, err
@@ -226,7 +230,7 @@ func timestampExpression(mapping Mapping) string {
 	return "TRY(to_timestamp(try_cast(" + c + " AS DOUBLE)/" + scale + "))"
 }
 
-func (e *Engine) Normalize(ctx context.Context, request NormalizeRequest) (result NormalizeResult, err error) {
+func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequest) (result NormalizeResult, err error) {
 	if request.ProjectID == "" || len(request.ProjectID) > 256 || request.DatasetID == "" || len(request.DatasetID) > 256 || len(request.Files) == 0 || len(request.Files) > 1024 || len(request.Files)*len(request.Mapping.Measures) > 1024 {
 		return result, errors.New("invalid normalization identity or file count")
 	}
@@ -330,7 +334,7 @@ func (e *Engine) Normalize(ctx context.Context, request NormalizeRequest) (resul
 	return result, err
 }
 
-func (e *Engine) Series(ctx context.Context, files []string, q SeriesQuery) (points []analysis.MetricPoint, err error) {
+func (e *Engine) childNativeSeries(ctx context.Context, files []string, q SeriesQuery) (points []analysis.MetricPoint, err error) {
 	if err = q.Validate(); err != nil {
 		return nil, err
 	}
@@ -373,14 +377,12 @@ func (e *Engine) Series(ctx context.Context, files []string, q SeriesQuery) (poi
 		if count != 1 {
 			return errors.New("incompatible metric kinds or units prevent overlay")
 		}
-		if kind == analysis.KindSummary {
-			return errors.New("preaggregated summary inputs require an explicit statistic selector; reaggregation is unavailable")
+		if err := analysis.ValidateScalarAggregation(kind, q.Aggregation); err != nil {
+			return err
 		}
-		if strings.HasPrefix(q.Aggregation, "p") && kind != analysis.KindObservation {
-			return errors.New("transaction percentiles require raw observations")
-		}
-		if kind == analysis.KindCounter && q.Aggregation != "rate" || kind != analysis.KindCounter && q.Aggregation == "rate" {
-			return errors.New("counters require rate conversion; rates require counters")
+		lineage, err := analysis.ScalarBucketDerivation(analysis.MetricPoint{Kind: kind}, q.BucketSeconds, q.Aggregation)
+		if err != nil {
+			return err
 		}
 		origin := "TIMESTAMPTZ " + literal(q.From.UTC().Format(time.RFC3339Nano))
 		bucket := "(" + origin + " + floor(epoch(timestamp_utc-" + origin + ")/" + strconv.Itoa(q.BucketSeconds) + ")*" + strconv.Itoa(q.BucketSeconds) + "*INTERVAL '1 second')"
@@ -415,7 +417,7 @@ func (e *Engine) Series(ctx context.Context, files []string, q SeriesQuery) (poi
 			if len(points) >= analysis.MaxSeriesPoints {
 				return errors.New("analytical result exceeds point limit")
 			}
-			p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: q.DatasetID, TimestampUTC: at.UTC(), MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Unit: unit, Quality: analysis.QualityMissing}
+			p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: q.DatasetID, TimestampUTC: at.UTC(), MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Derivation: append([]analysis.DerivationStep(nil), lineage...), Unit: unit, Quality: analysis.QualityMissing}
 			if value.Valid {
 				v := value.Float64
 				p.Value = &v
@@ -438,7 +440,7 @@ func (e *Engine) Series(ctx context.Context, files []string, q SeriesQuery) (poi
 		for at := q.From.UTC(); at.Before(q.To); at = at.Add(time.Duration(q.BucketSeconds) * time.Second) {
 			p, ok := byTime[at]
 			if !ok {
-				p = analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: q.DatasetID, TimestampUTC: at, MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Unit: unit, Quality: analysis.QualityMissing}
+				p = analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: q.DatasetID, TimestampUTC: at, MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Derivation: append([]analysis.DerivationStep(nil), lineage...), Unit: unit, Quality: analysis.QualityMissing}
 			}
 			points = append(points, p)
 		}

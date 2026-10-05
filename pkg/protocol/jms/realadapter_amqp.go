@@ -124,8 +124,9 @@ func (a *solaceAMQPAdapter) RequestReply(ctx context.Context, requestDestination
 	request.Headers["reply_to"] = replyDestination
 	sent, err := a.Publish(ctx, requestDestination, request)
 	if err != nil {
-		return message{}, message{}, err
+		return message{sendAttempted: true}, message{}, err
 	}
+	sent.sent = true
 
 	receiver, err := a.receiver(ctx, replyDestination)
 	if err != nil {
@@ -701,6 +702,7 @@ func toAMQPMessage(destination string, msg message) *amqp.Message {
 
 func fromAMQPMessage(destination string, msg *amqp.Message) message {
 	out := message{
+		received:    true,
 		Destination: destination,
 		Properties:  make(map[string]string),
 		Headers:     make(map[string]string),

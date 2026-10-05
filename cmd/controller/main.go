@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/analysis/duckdb"
 	"github.com/jasonczech/apexload/pkg/api"
 	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/config"
@@ -27,6 +28,9 @@ import (
 )
 
 func main() {
+	if handled, code := duckdb.DispatchNativeWorker(); handled {
+		os.Exit(code)
+	}
 	loadLocalDotEnv()
 	logLevel, logLevelErr := config.ResolveLogLevel(os.Getenv)
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})))

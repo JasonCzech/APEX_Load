@@ -37,6 +37,7 @@ func (s *Server) startAppDynamicsMonitoring() {
 				continue
 			}
 			s.resumeAppDynamicsInspections(ctx)
+			s.resumePrometheusInspections(ctx)
 			jobs, err := store.PollDirectRunMonitorJobs(time.Now().UTC())
 			if err != nil {
 				continue
@@ -49,7 +50,7 @@ func (s *Server) startAppDynamicsMonitoring() {
 			}
 			mu.Unlock()
 			for _, job := range jobs {
-				if !runMonitoringEnabled(job.ProjectID) || job.Source.Pack != "appdynamics" {
+				if !runMonitoringEnabled(job.ProjectID) || !job.Source.CanonicalProvider() {
 					continue
 				}
 				if job.State == "reconciling" && !job.ExpiresAt.After(time.Now()) {
@@ -77,16 +78,24 @@ func (s *Server) startAppDynamicsMonitoring() {
 						mu.Lock()
 						delete(busy, work.ID)
 						current, _ := store.GetRunMonitorJob(work.ProjectID, work.ID)
-						if current != nil && current.QueryOffset > 0 {
+						if current != nil && (current.QueryOffset > 0 || current.QueryTime != nil) {
 							next[work.ID] = time.Now()
 						} else if current != nil && current.State == "reconciling" {
 							next[work.ID] = time.Now().Add(15 * time.Second)
 						} else {
-							next[work.ID] = time.Now().Add(time.Duration(max(60, work.Source.IntervalSeconds)) * time.Second)
+							minimum := 60
+							if work.Source.Pack == "prometheus-query" {
+								minimum = 15
+							}
+							next[work.ID] = time.Now().Add(time.Duration(max(minimum, work.Source.IntervalSeconds)) * time.Second)
 						}
 						mu.Unlock()
 					}()
-					s.collectDirectAppDynamics(ctx, work)
+					if work.Source.Pack == "prometheus-query" {
+						s.collectDirectPrometheus(ctx, work)
+					} else {
+						s.collectDirectAppDynamics(ctx, work)
+					}
 				}) {
 					<-slots
 					mu.Lock()

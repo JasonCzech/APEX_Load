@@ -1395,7 +1395,7 @@ export default function CommandCenterPrototype({
         <button type="button" className="btn btn-secondary" onClick={onOpenOverview}>All active runs</button>
         <label>Current run<select aria-label="Current run" value={testId || ''} onChange={event => onSelectRun(event.target.value)}>
           {!liveRunOptions.some(run => run.id === testId) && <option value={testId || ''}>{displayTest.name} · {displayTest.ref_key || testId}</option>}
-          {liveRunOptions.map(run => <option key={run.id} value={run.id}>{run.name} · {run.ref_key || run.id} · {run.status}</option>)}
+          {liveRunOptions.map(run => <option key={run.id} value={run.id}>{run.name} · {run.ref_key || run.id} · {liveMode && run.id === testId ? runStatus : run.status}</option>)}
         </select></label>
         {discoveryError && <span role="alert">Run list is stale. <button type="button" className="btn btn-secondary" onClick={() => setDiscoveryRetry(value => value + 1)}>Retry active runs</button></span>}
       </nav>}

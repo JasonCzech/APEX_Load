@@ -10,11 +10,14 @@ import (
 )
 
 func ensureAnalysisBackend(store any) error {
+	return ensureAnalysisBackendFor(store, currentArchiveBackend())
+}
+
+func ensureAnalysisBackendFor(store any, backend archiveBackendRuntime) error {
 	binding, ok := store.(interface{ EnsureAnalysisStorageIdentity(string) error })
 	if !ok {
 		return errors.New("analytical storage identity persistence unavailable")
 	}
-	backend := currentArchiveBackend()
 	if err := backend.validate(); err != nil {
 		return err
 	}

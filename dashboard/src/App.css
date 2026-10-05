@@ -682,12 +682,10 @@
     flex: 0 1 auto;
   }
 
-  .topbar-contribution-controls:has(.settings-topbar-section-toggle) {
-    flex: 0 1 auto;
-    width: 100%;
-  }
-
-  .topbar-contribution-controls:has(.topbar-page-section-toggle) {
+  /* The header is a column here, so the wider layout's 220px flex basis
+     would reserve height instead of width and cover the page while scrolling. */
+  .topbar-meta-strip,
+  .topbar-contribution-controls {
     flex: 0 1 auto;
     width: 100%;
   }

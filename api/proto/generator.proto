@@ -71,6 +71,8 @@ message PreparationCheckRequest {
   map<string, int32> expected_groups = 3;
   bytes run_supervision_token = 4;
   bool renew_staging = 5;
+  // Exact immutable claims for every resource-backed prepared group.
+  map<string, RuntimeResourceClaim> expected_runtime_resources = 6;
 }
 
 message CapacityVector {
@@ -216,12 +218,50 @@ message WorkAssignment {
   // Controller-approved HTTP/SOAP origins for the opt-in X-Apex-Test-Run marker.
   // Omission keeps run correlation disabled.
   repeated string run_correlation_origins = 43;
+  // Immutable, capability-negotiated lifetime peak and resource intent.
+  // The generator recomputes demand; this wire claim never grants a lease.
+  RuntimeResourceClaim runtime_resource_claim = 44;
   // What the run may add at run_correlation_origins: run_marker, traceparent,
   // transaction_marker. Omission keeps the run marker only. Send carriers
   // other than run_marker only to correlation_policy_v2 peers.
-  repeated string correlation_carriers = 44;
+  repeated string correlation_carriers = 45;
   // Test name used in transaction markers; the run ID is used when empty.
-  string correlation_test_name = 45;
+  string correlation_test_name = 46;
+}
+
+// Additive process resources, plus a nonadditive per-processor partition ceiling.
+message RuntimeResourceDemand {
+  int64 processors = 1;
+  int64 workers = 2;
+  int64 max_partitions_per_processor = 3;
+}
+message RuntimeResourceClaim {
+  string contract = 1;
+  string protocol = 2;
+  // Planned shard lifetime concurrency; independent of the initial count.
+  int32 peak_vusers = 3;
+  RuntimeResourceDemand requested = 4;
+}
+message RuntimeResourceAdmission {
+  RuntimeResourceClaim claim = 1;
+  RuntimeResourceDemand admitted = 2;
+  bool current = 3;
+}
+// Reserved is the total charge, including active and draining children.
+// Active and draining are breakdowns, never additional charges to subtract.
+message RuntimeResourceCapacity {
+  bool available = 1;
+  int64 max_processors = 2;
+  int64 available_processors = 3;
+  int64 reserved_processors = 4;
+  int64 active_processors = 5;
+  int64 draining_processors = 6;
+  int64 max_workers = 7;
+  int64 available_workers = 8;
+  int64 reserved_workers = 9;
+  int64 active_workers = 10;
+  int64 draining_workers = 11;
+  int64 max_partitions_per_processor = 12;
 }
 
 // Operator approval binds immutable source and the complete placement profile.
@@ -280,6 +320,7 @@ message WorkCommitAck {
   string error_message = 2;
   bool run_supervision_armed = 3;
   int64 run_supervision_ttl_milliseconds = 4;
+  map<string, RuntimeResourceAdmission> runtime_resource_admissions = 5;
 }
 
 enum RunSupervisionState {
@@ -398,6 +439,7 @@ message AssignmentAck {
   string error_message = 2;
   int32 available_capacity = 3;
   JavaHostPlacement java_host = 4;
+  RuntimeResourceAdmission runtime_resource_admission = 5;
 }
 
 message VUserAdjustment {
@@ -476,6 +518,9 @@ message MetricsBatch {
   // Version 3 measured action/network/hierarchy/lifecycle intersections.
   repeated MetricAggregate action_dimension_metrics = 26;
   repeated TransactionResponseTimeSLACompliance transaction_response_time_sla = 21;
+  // Standalone cumulative processor evidence: present even without actions.
+  string messaging_progress_json = 27;
+  uint32 messaging_progress_version = 28;
 }
 
 message MetricsBatchTelemetry {
@@ -541,7 +586,7 @@ message MetricAggregate {
   int64 bytes_received = 16;
   double tps = 17;
   TDigestSnapshot duration_digest = 18;
-  string messaging_summary_json = 19; // bounded, validated protocol.MessagingSummary v1
+  string messaging_summary_json = 19; // bounded, validated protocol.MessagingSummary v1/v2
   uint32 messaging_version = 20;
 }
 
@@ -605,6 +650,9 @@ message ServerTelemetry {
   bool consumer_offset_lag_observed = 33;
   optional double acknowledgement_ms = 34;
   string subscription_id = 35;
+  // Optional bounded typed per-operation evidence; unknown/invalid versions are incomplete.
+  string messaging_diagnostics_json = 36;
+  uint32 messaging_diagnostics_version = 37;
 }
 
 message WebSocketDiagnostics {
@@ -729,6 +777,9 @@ message PauseRequest {
   string operation_id = 4;
   uint64 operation_sequence = 5;
   bytes run_supervision_token = 6;
+  // Explicit strict pause: acknowledge only after runtime work is quiescent.
+  // False preserves the ordinary pause contract used by older controllers.
+  bool require_quiescence = 7;
 }
 
 message PauseAck {
@@ -737,6 +788,9 @@ message PauseAck {
   string applied_operation_id = 3;
   string error_message = 4;
   uint64 applied_operation_sequence = 5;
+  // Presence distinguishes old peers from an explicit failed/confirmed proof.
+  // True is valid only for an accepted, committed strict pause operation.
+  optional bool quiescence_confirmed = 6;
 }
 
 message HeartbeatPing {
@@ -759,6 +813,8 @@ message ProtocolRuntimeCapacity {
   // generator reports idle, persistent, or legacy so the controller never
   // co-locates incompatible Java lifecycle modes in shared JVM process slots.
   string occupancy_mode = 6;
+  string resource_contract = 7;
+  RuntimeResourceCapacity resources = 8;
 }
 
 // GeneratorSafetyExitEvidence is the token-free durable explanation for the

@@ -13,7 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 )
 
 // ErrMonitorRevision means a configuration changed after the caller read it.
@@ -36,6 +38,9 @@ func (s *SQLiteStore) SaveTestWithRunMonitors(test *TestRecord, leaseName, lease
 		if err != nil || !held {
 			return false, err
 		}
+	}
+	if _, err = lockProjectForOwnedMutation(tx, test.ProjectID); err != nil {
+		return false, err
 	}
 	if err = s.saveTestWithExecutor(tx, test); err != nil {
 		return false, err
@@ -63,6 +68,11 @@ func (s *SQLiteStore) SaveTestWithRunMonitors(test *TestRecord, leaseName, lease
 
 const MaxRunMonitorSources = 32
 
+// Messaging-management capacity includes immutable jobs committed before
+// execution starts. Other collector packs retain their concurrent-run paging
+// contract and do not consume the management scheduler's 32 assignment slots.
+const MaxCollectorAssignedMonitorJobs = 32
+
 type RunMonitorStore interface {
 	SaveCollectorRunReadiness(string, string, []string, []string, time.Time) error
 	SaveMonitorSource(MonitorSource, int64) (*MonitorSource, error)
@@ -82,21 +92,24 @@ type RunMonitorStore interface {
 // MonitorSource contains only public collection configuration. Credentials are
 // resolved on the assigned collector; bearer tokens must never enter this row.
 type MonitorSource struct {
-	ExecutorMode       string                 `json:"executor_mode,omitempty"`
-	ConnectionID       string                 `json:"connection_id,omitempty"`
-	AppDynamics        *appdynamics.Selection `json:"appdynamics,omitempty"`
-	CredentialRef      string                 `json:"credential_ref,omitempty"`
-	CollectorPublicKey string                 `json:"collector_public_key,omitempty"`
-	Service            string                 `json:"service,omitempty"`
-	ID                 string                 `json:"id"`
-	ProjectID          string                 `json:"project_id"`
-	Name               string                 `json:"name"`
-	Revision           int64                  `json:"revision"`
-	CollectorID        string                 `json:"collector_id"`
-	Pack               string                 `json:"pack"`
-	Destination        string                 `json:"destination,omitempty"`
-	IntervalSeconds    int                    `json:"interval_seconds"`
-	Enabled            bool                   `json:"enabled"`
+	ManagementScope    *analysis.ManagementScope    `json:"management_scope,omitempty"`
+	ManagementIdentity *analysis.ManagementIdentity `json:"management_identity,omitempty"`
+	Prometheus         *prometheus.Selection        `json:"prometheus,omitempty"`
+	ExecutorMode       string                       `json:"executor_mode,omitempty"`
+	ConnectionID       string                       `json:"connection_id,omitempty"`
+	AppDynamics        *appdynamics.Selection       `json:"appdynamics,omitempty"`
+	CredentialRef      string                       `json:"credential_ref,omitempty"`
+	CollectorPublicKey string                       `json:"collector_public_key,omitempty"`
+	Service            string                       `json:"service,omitempty"`
+	ID                 string                       `json:"id"`
+	ProjectID          string                       `json:"project_id"`
+	Name               string                       `json:"name"`
+	Revision           int64                        `json:"revision"`
+	CollectorID        string                       `json:"collector_id"`
+	Pack               string                       `json:"pack"`
+	Destination        string                       `json:"destination,omitempty"`
+	IntervalSeconds    int                          `json:"interval_seconds"`
+	Enabled            bool                         `json:"enabled"`
 }
 
 type MonitorBinding struct {
@@ -114,41 +127,52 @@ type MonitorBindings struct {
 // RunMonitorJob is an immutable source snapshot. State and sequence are the
 // only mutable fields; changes to a source cannot redirect an existing job.
 type RunMonitorJob struct {
-	Topology           []appdynamics.Entity            `json:"topology,omitempty"`
-	ConnectionSnapshot *AppDynamicsConnectionSnapshot  `json:"-"`
-	LoadEndedAt        *time.Time                      `json:"load_ended_at,omitempty"`
-	DrainDeadline      *time.Time                      `json:"drain_deadline,omitempty"`
-	LastSuccessAt      *time.Time                      `json:"last_success_at,omitempty"`
-	QueryCoverage      map[string]appdynamics.Coverage `json:"-"`
-	QueryOffset        int                             `json:"query_offset,omitempty"`
-	QueryFromUTC       time.Time                       `json:"query_from_utc,omitempty"`
-	QueryUntilUTC      time.Time                       `json:"query_until_utc,omitempty"`
-	QueryWatermark     time.Time                       `json:"query_watermark,omitempty,omitzero"`
-	Coverage           map[string]appdynamics.Coverage `json:"coverage,omitempty"`
-	StablePasses       int                             `json:"stable_passes,omitempty"`
-	StableSinceAt      *time.Time                      `json:"-"`
-	FinalDigest        string                          `json:"final_digest,omitempty"`
-	ID                 string                          `json:"id"`
-	ProjectID          string                          `json:"project_id"`
-	RunID              string                          `json:"run_id"`
-	ScenarioID         string                          `json:"scenario_id,omitempty"`
-	BindingRevision    int64                           `json:"binding_revision"`
-	Source             MonitorSource                   `json:"source"`
-	Required           bool                            `json:"required"`
-	StartedAt          time.Time                       `json:"started_at"`
-	ExpiresAt          time.Time                       `json:"expires_at"`
-	State              string                          `json:"state"`
-	NextSequence       int64                           `json:"next_sequence"`
-	CoverageReason     string                          `json:"coverage_reason,omitempty"`
+	FlushOnly                    bool                                            `json:"flush_only,omitempty"`
+	FrozenMonitorRules           []analysis.MonitorRule                          `json:"frozen_monitor_rules,omitempty"`
+	RulesFrozen                  bool                                            `json:"rules_frozen,omitempty"`
+	QueryTime                    *time.Time                                      `json:"query_time,omitempty"`
+	PrometheusConnectionSnapshot *PrometheusConnectionSnapshot                   `json:"-"`
+	Topology                     []appdynamics.Entity                            `json:"topology,omitempty"`
+	ConnectionSnapshot           *AppDynamicsConnectionSnapshot                  `json:"-"`
+	LoadEndedAt                  *time.Time                                      `json:"load_ended_at,omitempty"`
+	DrainDeadline                *time.Time                                      `json:"drain_deadline,omitempty"`
+	LastSuccessAt                *time.Time                                      `json:"last_success_at,omitempty"`
+	QueryCoverage                map[string]appdynamics.Coverage                 `json:"-"`
+	PrometheusDiagnosticTimes    map[string]PrometheusDiagnosticObservationTimes `json:"-"`
+	QueryOffset                  int                                             `json:"query_offset,omitempty"`
+	QueryFromUTC                 time.Time                                       `json:"query_from_utc,omitempty"`
+	QueryUntilUTC                time.Time                                       `json:"query_until_utc,omitempty"`
+	QueryWatermark               time.Time                                       `json:"query_watermark,omitempty,omitzero"`
+	Coverage                     map[string]appdynamics.Coverage                 `json:"coverage,omitempty"`
+	StablePasses                 int                                             `json:"stable_passes,omitempty"`
+	StableSinceAt                *time.Time                                      `json:"-"`
+	FinalDigest                  string                                          `json:"final_digest,omitempty"`
+	ID                           string                                          `json:"id"`
+	ProjectID                    string                                          `json:"project_id"`
+	RunID                        string                                          `json:"run_id"`
+	ScenarioID                   string                                          `json:"scenario_id,omitempty"`
+	BindingRevision              int64                                           `json:"binding_revision"`
+	Source                       MonitorSource                                   `json:"source"`
+	Required                     bool                                            `json:"required"`
+	StartedAt                    time.Time                                       `json:"started_at"`
+	ExpiresAt                    time.Time                                       `json:"expires_at"`
+	State                        string                                          `json:"state"`
+	NextSequence                 int64                                           `json:"next_sequence"`
+	CoverageReason               string                                          `json:"coverage_reason,omitempty"`
 }
 
 type MonitorBatchReceipt struct {
-	JobID       string    `json:"job_id"`
-	Sequence    int64     `json:"sequence"`
-	Digest      string    `json:"digest"`
-	ArtifactKey string    `json:"artifact_key"`
-	SampleCount int       `json:"sample_count"`
-	ReceivedAt  time.Time `json:"received_at"`
+	EvidenceVersion         *int64    `json:"evidence_version,omitempty"`
+	ManagementSnapshotCount *int64    `json:"management_snapshot_count,omitempty"`
+	ManagementRowCount      *int64    `json:"management_row_count,omitempty"`
+	CollectionGeneration    *int64    `json:"collection_generation,omitempty,string"`
+	ManagementPollID        *string   `json:"management_poll_id,omitempty"`
+	JobID                   string    `json:"job_id"`
+	Sequence                int64     `json:"sequence"`
+	Digest                  string    `json:"digest"`
+	ArtifactKey             string    `json:"artifact_key"`
+	SampleCount             int       `json:"sample_count"`
+	ReceivedAt              time.Time `json:"received_at"`
 }
 
 // StartRunMonitors snapshots every binding exactly once, including an empty
@@ -215,8 +239,32 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 		b = *resolved
 	}
 	jobs := make([]RunMonitorJob, 0, len(b.Sources))
+	var frozenRules []analysis.MonitorRule
+	if prepared != nil && prepared.RulesFrozen {
+		frozenRules = prepared.MonitorRules
+	} else {
+		var goalsRaw string
+		if err = tx.QueryRow(`SELECT COALESCE(goal_config_json,'') FROM tests WHERE id=? AND project_id=?`, run, project).Scan(&goalsRaw); err != nil {
+			return nil, err
+		}
+		if goalsRaw != "" {
+			var goals struct {
+				MonitorRules []analysis.MonitorRule `json:"monitor_rules"`
+			}
+			if err = json.Unmarshal([]byte(goalsRaw), &goals); err != nil {
+				return nil, err
+			}
+			frozenRules = goals.MonitorRules
+		}
+	}
 	for _, binding := range b.Sources {
 		job := RunMonitorJob{ID: run + ":" + binding.SourceID, ProjectID: project, RunID: run, ScenarioID: scenario, BindingRevision: b.Revision, Required: binding.Required, StartedAt: started.UTC(), ExpiresAt: expires.UTC(), State: "collecting", Source: MonitorSource{ID: binding.SourceID, ProjectID: project}}
+		job.RulesFrozen = true
+		for _, rule := range frozenRules {
+			if rule.SourceID == binding.SourceID {
+				job.FrozenMonitorRules = append(job.FrozenMonitorRules, rule)
+			}
+		}
 		var body string
 		if prepared != nil {
 			source, ok := prepared.Sources[binding.SourceID]
@@ -243,8 +291,11 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 		if job.CoverageReason == "" && job.Source.Pack == "appdynamics" {
 			if prepared != nil {
 				job.ConnectionSnapshot = prepared.Connections[binding.SourceID]
+				if job.ConnectionSnapshot == nil {
+					job.CoverageReason = "connection_not_ready"
+				}
 			}
-			if job.ConnectionSnapshot == nil {
+			if job.CoverageReason == "" && job.ConnectionSnapshot == nil {
 				var connBody string
 				err = tx.QueryRow(`SELECT payload_json FROM appdynamics_connections WHERE id=? AND project_id=?`, job.Source.ConnectionID, project).Scan(&connBody)
 				if errors.Is(err, sql.ErrNoRows) {
@@ -264,6 +315,36 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 				}
 			}
 			if job.CoverageReason == "" && ValidateAppDynamicsSourceConnection(job.Source, job.ConnectionSnapshot) != nil {
+				job.CoverageReason = "connection_source_mismatch"
+			}
+		}
+		if job.CoverageReason == "" && job.Source.Pack == "prometheus-query" {
+			if prepared != nil {
+				job.PrometheusConnectionSnapshot = prepared.PrometheusConnections[binding.SourceID]
+				if job.PrometheusConnectionSnapshot == nil {
+					job.CoverageReason = "connection_not_ready"
+				}
+			}
+			if job.CoverageReason == "" && job.PrometheusConnectionSnapshot == nil {
+				var connBody string
+				err = tx.QueryRow(`SELECT payload_json FROM prometheus_connections WHERE id=? AND project_id=?`, job.Source.ConnectionID, project).Scan(&connBody)
+				if errors.Is(err, sql.ErrNoRows) {
+					job.CoverageReason = "connection_deleted"
+				} else if err != nil {
+					return nil, err
+				} else {
+					conn, e := UnmarshalPrometheusConnectionPrivate([]byte(connBody))
+					if e != nil {
+						return nil, e
+					}
+					if conn.ConfigurationStatus() != "ready" {
+						job.CoverageReason = "connection_not_ready"
+					} else {
+						job.PrometheusConnectionSnapshot = conn.Snapshot()
+					}
+				}
+			}
+			if job.CoverageReason == "" && ValidatePrometheusSourceConnection(job.Source, job.PrometheusConnectionSnapshot) != nil {
 				job.CoverageReason = "connection_source_mismatch"
 			}
 		}
@@ -306,6 +387,14 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 				if job.Source.Pack == "appdynamics" && !slices.Contains(packs, "appdynamics.v1") {
 					job.CoverageReason = "collector_appdynamics_contract_unavailable"
 				}
+				if job.Source.Pack == "prometheus-query" && !slices.Contains(packs, "prometheus-query.v1") {
+					job.CoverageReason = "collector_prometheus_contract_unavailable"
+				}
+			}
+		}
+		if job.CoverageReason == "" && job.Source.ManagementScope != nil {
+			if err = managementReadinessTx(tx, job.Source, "", started); err != nil {
+				job.CoverageReason = "collector_management_configuration_unavailable"
 			}
 		}
 		if job.CoverageReason != "" {
@@ -316,6 +405,39 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 		}
 		jobs = append(jobs, job)
 	}
+	// Required management sources take the finite management assignment capacity
+	// before optional sources, independent of authoring order. The project fence
+	// serializes concurrent starts and includes jobs committed by prelaunch work.
+	// Admission reserves slots immediately, including before a future
+	// execution barrier. Historical recovery remains conservative as well.
+	assignmentTime := started.UTC()
+	if now := time.Now().UTC(); now.Before(assignmentTime) {
+		assignmentTime = now
+	}
+	assigned := map[string]int{}
+	for _, required := range []bool{true, false} {
+		for i := range jobs {
+			job := &jobs[i]
+			if job.Required != required || job.State != "collecting" || job.Source.ManagementScope == nil {
+				continue
+			}
+			count, known := assigned[job.Source.CollectorID]
+			if !known {
+				if err = tx.QueryRow(`SELECT COUNT(*) FROM run_monitor_jobs j JOIN tests t ON t.id=j.test_id WHERE j.project_id=? AND j.collector_id=? AND j.management_config_key IS NOT NULL AND j.state='collecting' AND j.expires_at>? AND t.status NOT IN ('COMPLETE','FAILED','ABORTED')`, project, job.Source.CollectorID, assignmentTime).Scan(&count); err != nil {
+					return nil, err
+				}
+			}
+			if count >= MaxCollectorAssignedMonitorJobs {
+				if required {
+					return nil, fmt.Errorf("required monitor %s: collector_capacity", job.Source.ID)
+				}
+				job.State, job.CoverageReason = "incomplete", "collector_capacity"
+			} else {
+				count++
+			}
+			assigned[job.Source.CollectorID] = count
+		}
+	}
 	if _, err = tx.Exec(`INSERT INTO run_monitor_sessions (test_id, project_id, started_at, binding_revision) VALUES (?, ?, ?, ?)`, run, project, started.UTC(), b.Revision); err != nil {
 		return nil, err
 	}
@@ -324,7 +446,15 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 		if err != nil {
 			return nil, err
 		}
-		if _, err = tx.Exec(`INSERT INTO run_monitor_jobs (id, project_id, test_id, collector_id, state, next_sequence, expires_at, payload) VALUES (?, ?, ?, ?, ?, 0, ?, ?)`, job.ID, project, run, job.Source.CollectorID, job.State, job.ExpiresAt, string(body)); err != nil {
+		configuration := ""
+		if job.Source.ManagementScope != nil {
+			scope, identity, configErr := managementSourceHashes(job.Source)
+			if configErr != nil {
+				return nil, configErr
+			}
+			configuration = managementConfigurationKey(job.Source, scope, identity)
+		}
+		if _, err = tx.Exec(`INSERT INTO run_monitor_jobs (id, project_id, test_id, collector_id, state, next_sequence, expires_at, payload, source_id, management_config_key) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`, job.ID, project, run, job.Source.CollectorID, job.State, job.ExpiresAt, string(body), job.Source.ID, nullableString(configuration)); err != nil {
 			return nil, err
 		}
 	}
@@ -381,6 +511,12 @@ func (s *SQLiteStore) GetRunMonitorJob(project, id string) (*RunMonitorJob, erro
 // identical batches are acknowledged even after collection stops; conflicts
 // or gaps are rejected without advancing the collector cursor.
 func (s *SQLiteStore) AcceptMonitorBatch(project, collector string, b MonitorBatchReceipt) error {
+	if b.EvidenceVersion != nil || b.ManagementSnapshotCount != nil || b.ManagementRowCount != nil || b.CollectionGeneration != nil || b.ManagementPollID != nil {
+		return errors.New("management receipts require cohort publication")
+	}
+	return s.acceptMonitorBatch(project, collector, b, nil)
+}
+func (s *SQLiteStore) acceptMonitorBatch(project, collector string, b MonitorBatchReceipt, points []analysis.MetricPoint) error {
 	digest, err := hex.DecodeString(b.Digest)
 	if err != nil || len(digest) != 32 || b.Sequence < 0 || b.Sequence >= 1<<62 || b.SampleCount < 1 || b.SampleCount > 512 || b.ReceivedAt.IsZero() || len(b.ArtifactKey) == 0 || len(b.ArtifactKey) > 2048 {
 		return errors.New("invalid monitor batch receipt")
@@ -393,11 +529,18 @@ func (s *SQLiteStore) AcceptMonitorBatch(project, collector string, b MonitorBat
 	if _, err = lockProjectForOwnedMutation(tx, project); err != nil {
 		return err
 	}
-	var state, runStatus string
+	var state, runStatus, jobPayload string
 	var next int64
 	var expires time.Time
-	if err = tx.QueryRow(`SELECT j.state, j.next_sequence, j.expires_at,t.status FROM run_monitor_jobs j JOIN tests t ON t.id=j.test_id WHERE j.id=? AND j.project_id=? AND j.collector_id=?`, b.JobID, project, collector).Scan(&state, &next, &expires, &runStatus); err != nil {
+	if err = tx.QueryRow(`SELECT j.state, j.next_sequence, j.expires_at,t.status,j.payload FROM run_monitor_jobs j JOIN tests t ON t.id=j.test_id WHERE j.id=? AND j.project_id=? AND j.collector_id=?`, b.JobID, project, collector).Scan(&state, &next, &expires, &runStatus, &jobPayload); err != nil {
 		return err
+	}
+	var job RunMonitorJob
+	if err = json.Unmarshal([]byte(jobPayload), &job); err != nil {
+		return err
+	}
+	if job.Source.ManagementScope != nil {
+		return errors.New("management jobs require cohort publication")
 	}
 	var priorDigest, priorKey string
 	var priorCount int
@@ -411,11 +554,20 @@ func (s *SQLiteStore) AcceptMonitorBatch(project, collector string, b MonitorBat
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	if state != "collecting" || (runStatus != "RUNNING" && runStatus != "PAUSED") || !expires.After(b.ReceivedAt) || next != b.Sequence {
+	flushing := job.Source.Pack == "prometheus" && job.FlushOnly && state == "flushing"
+	if (state != "collecting" && !flushing) || (!flushing && runStatus != "RUNNING" && runStatus != "PAUSED") || !expires.After(b.ReceivedAt) || next != b.Sequence {
 		return errors.New("monitor job stopped, expired, or sequence out of order")
 	}
 	if _, err = tx.Exec(`INSERT INTO run_monitor_batches (job_id, sequence, digest, artifact_key, sample_count, received_at) VALUES (?, ?, ?, ?, ?, ?)`, b.JobID, b.Sequence, b.Digest, b.ArtifactKey, b.SampleCount, b.ReceivedAt.UTC()); err != nil {
 		return err
+	}
+	if points != nil {
+		if job.Source.Pack != "prometheus" || len(points) != b.SampleCount {
+			return errors.New("legacy scrape payload does not match receipt")
+		}
+		if err = recordPrometheusScrapeSlotTx(tx, job, b, points); err != nil {
+			return err
+		}
 	}
 	if _, err = tx.Exec(`UPDATE run_monitor_jobs SET next_sequence=next_sequence+1 WHERE id=?`, b.JobID); err != nil {
 		return err
@@ -427,7 +579,7 @@ func (s *SQLiteStore) ListMonitorBatchReceipts(project, run string, afterJob str
 	if limit < 1 || limit > 1000 {
 		return nil, errors.New("monitor receipt page must contain 1-1000 records")
 	}
-	rows, err := s.db.Query(`SELECT b.job_id, b.sequence, b.digest, b.artifact_key, b.sample_count, b.received_at FROM run_monitor_batches b JOIN run_monitor_jobs j ON j.id=b.job_id WHERE j.project_id=? AND j.test_id=? AND (b.job_id>? OR (b.job_id=? AND b.sequence>?)) ORDER BY b.job_id, b.sequence LIMIT ?`, project, run, afterJob, afterJob, afterSequence, limit)
+	rows, err := s.db.Query(`SELECT b.job_id, b.sequence, b.digest, b.artifact_key, b.sample_count, b.received_at, b.evidence_version,b.management_snapshot_count,b.management_row_count,b.collection_generation,b.management_poll_id FROM run_monitor_batches b JOIN run_monitor_jobs j ON j.id=b.job_id WHERE j.project_id=? AND j.test_id=? AND (b.job_id>? OR (b.job_id=? AND b.sequence>?)) ORDER BY b.job_id, b.sequence LIMIT ?`, project, run, afterJob, afterJob, afterSequence, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -435,7 +587,7 @@ func (s *SQLiteStore) ListMonitorBatchReceipts(project, run string, afterJob str
 	result := []MonitorBatchReceipt{}
 	for rows.Next() {
 		var b MonitorBatchReceipt
-		if err := rows.Scan(&b.JobID, &b.Sequence, &b.Digest, &b.ArtifactKey, &b.SampleCount, &b.ReceivedAt); err != nil {
+		if err := rows.Scan(&b.JobID, &b.Sequence, &b.Digest, &b.ArtifactKey, &b.SampleCount, &b.ReceivedAt, &b.EvidenceVersion, &b.ManagementSnapshotCount, &b.ManagementRowCount, &b.CollectionGeneration, &b.ManagementPollID); err != nil {
 			return nil, err
 		}
 		result = append(result, b)
@@ -462,6 +614,12 @@ func (s *SQLiteStore) StopRunMonitors(project, run string, at time.Time) error {
 }
 
 func (m MonitorSource) Validate() error {
+	if m.ManagementScope != nil || m.ManagementIdentity != nil {
+		if m.Prometheus != nil || m.AppDynamics != nil || m.ExecutorMode != "" || m.ConnectionID != "" {
+			return errors.New("management source cannot include provider query configuration")
+		}
+		return validateManagementMonitorSource(m)
+	}
 	for _, v := range []string{m.ID, m.ProjectID, m.Name} {
 		if strings.TrimSpace(v) == "" || len(v) > 256 {
 			return errors.New("monitor source identity must contain 1-256 bytes")
@@ -474,6 +632,9 @@ func (m MonitorSource) Validate() error {
 		return errors.New("collector ID is required")
 	}
 	if m.Pack == "appdynamics" {
+		if m.Prometheus != nil {
+			return errors.New("Prometheus selection requires its own query pack")
+		}
 		if m.ConnectionID == "" || m.AppDynamics == nil || m.AppDynamics.ProjectID != m.ProjectID || m.AppDynamics.Validate() != nil || m.IntervalSeconds < 60 || m.IntervalSeconds > 3600 || m.CredentialRef != "" {
 			return errors.New("invalid AppDynamics monitor source")
 		}
@@ -482,8 +643,14 @@ func (m MonitorSource) Validate() error {
 		}
 		return nil
 	}
-	if m.ExecutorMode == "direct" || m.ConnectionID != "" || m.AppDynamics != nil {
-		return errors.New("provider fields require AppDynamics pack")
+	if m.Pack == "prometheus-query" {
+		if m.ConnectionID == "" || m.Prometheus == nil || m.Prometheus.ProjectID != m.ProjectID || m.Prometheus.Validate() != nil || m.IntervalSeconds < 15 || m.IntervalSeconds > 3600 || m.CredentialRef != "" || m.AppDynamics != nil {
+			return errors.New("invalid Prometheus query source")
+		}
+		return nil
+	}
+	if m.ExecutorMode == "direct" || m.ConnectionID != "" || m.AppDynamics != nil || m.Prometheus != nil {
+		return errors.New("provider fields require a governed provider pack")
 	}
 	if m.IntervalSeconds < 1 || m.IntervalSeconds > 3600 {
 		return errors.New("monitor interval must be 1-3600 seconds")
@@ -534,6 +701,9 @@ func (m MonitorSource) Validate() error {
 // SaveMonitorSource uses revision zero for creation and CAS for updates. The
 // collector's project and approved packs are rechecked inside the transaction.
 func (s *SQLiteStore) SaveMonitorSource(m MonitorSource, expected int64) (*MonitorSource, error) {
+	if m.Pack == "prometheus-query" && m.IntervalSeconds == 0 {
+		m.IntervalSeconds = 30
+	}
 	if m.Pack == "appdynamics" && m.IntervalSeconds == 0 {
 		m.IntervalSeconds = 60
 	}
@@ -556,6 +726,11 @@ func (s *SQLiteStore) SaveMonitorSource(m MonitorSource, expected int64) (*Monit
 			return nil, err
 		}
 	}
+	if m.Pack == "prometheus-query" {
+		if err = validatePrometheusSourceTx(tx, &m); err != nil {
+			return nil, err
+		}
+	}
 	var packsJSON string
 	if m.ExecutorMode != "direct" {
 		if err = tx.QueryRow(`SELECT COALESCE(allowed_metric_packs_json, '[]') FROM monitoring_collectors WHERE id=? AND project_id=?`, m.CollectorID, m.ProjectID).Scan(&packsJSON); err != nil {
@@ -574,6 +749,10 @@ func (s *SQLiteStore) SaveMonitorSource(m MonitorSource, expected int64) (*Monit
 	if err != nil {
 		return nil, err
 	}
+	if m.ManagementScope != nil && len(payload) > 16<<10 {
+		return nil, errors.New("management source exceeds 16 KiB")
+	}
+
 	var result sql.Result
 	if expected == 0 {
 		var count int
@@ -740,8 +919,14 @@ func validateRemoteMonitorDestination(pack, destination string) error {
 }
 
 func (m MonitorSource) ReadinessDestination() string {
-	if m.CredentialRef != "" || m.Pack == "appdynamics" && m.ExecutorMode == "collector" {
+	if m.CredentialRef != "" || m.ManagementIdentity != nil && m.ManagementIdentity.CredentialRef != "" || m.CanonicalProvider() && m.ExecutorMode == "collector" && m.CollectorPublicKey != "" {
 		return m.Destination + "#" + m.CollectorPublicKey
 	}
 	return m.Destination
+}
+
+// CanonicalProvider identifies jobs whose query progress and revisions are
+// durably reconciled; legacy point-only packs retain their wire contract.
+func (m MonitorSource) CanonicalProvider() bool {
+	return m.Pack == "appdynamics" || m.Pack == "prometheus-query"
 }

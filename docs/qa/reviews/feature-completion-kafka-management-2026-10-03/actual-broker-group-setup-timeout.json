@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "kafka_version": "3.9.2",
+  "image_index": "sha256:05b4616e0702ef2729327705d54ad6b50ea70b271c4b730fabd2320789fb7b02",
+  "platform": "linux/arm64",
+  "platform_manifest": "sha256:ddc235acd57d0fec5b21eedd46dcaf4e89a7569ff1c9890c5597c6d9561c59b0",
+  "profile": "single-kraft-broker",
+  "memory_bytes": 1610612736,
+  "cpus": 1,
+  "data_guard_bytes": 2147483648,
+  "created_resources": [
+    "apexload-kafka-management-091838f3f310",
+    "apexload-kafka-management-091838f3f310-config",
+    "apexload-kafka-management-091838f3f310-data",
+    "apexload-kafka-management-091838f3f310:container"
+  ],
+  "status": "failed",
+  "free_before_bytes": 9518305280,
+  "failure": "Command '['docker', 'exec', 'apexload-kafka-management-091838f3f310', '/opt/kafka/bin/kafka-consumer-groups.sh', '--bootstrap-server', 'localhost:9094', '--group', 'workers', '--topic', 'orders:0', '--reset-offsets', '--to-offset', '1', '--execute']' timed out after 60 seconds",
+  "duration_seconds": 76.044,
+  "cleanup": [
+    {
+      "resource": "apexload-kafka-management-091838f3f310",
+      "exit": 0
+    },
+    {
+      "resource": "apexload-kafka-management-091838f3f310-config",
+      "exit": 0
+    },
+    {
+      "resource": "apexload-kafka-management-091838f3f310-data",
+      "exit": 0
+    },
+    {
+      "resource": "apexload-kafka-management-091838f3f310",
+      "exit": 0
+    }
+  ],
+  "cleanup_verified": true,
+  "scratch_removed": true,
+  "free_after_bytes": 9454387200
+}

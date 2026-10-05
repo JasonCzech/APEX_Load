@@ -227,3 +227,34 @@ func TestMessagingPartitionGoalKeepsSourceScopesSeparate(t *testing.T) {
 		})
 	}
 }
+
+func TestDistributedMessagingWithoutBusinessTransactions(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		fleet        *generatorrpc.MetricAggregate
+		transactions int64
+	}{
+		{"no fleet", nil, 0},
+		{"empty fleet", &generatorrpc.MetricAggregate{Name: "fleet"}, 0},
+		{"business fleet", &generatorrpc.MetricAggregate{Name: "fleet", Count: 2}, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var summary *protocol.MessagingSummary
+			protocol.MergeMessagingTelemetry(&summary, &protocol.ServerTelemetry{MessagesSent: 3, PartitionID: "0"}, "topic", "kafka_topic", "load")
+			batch := generatorrpc.MetricsBatch{FleetMetrics: tc.fleet, ActionMetricsVersion: 3,
+				ActionMetrics: []generatorrpc.MetricAggregate{{Name: "produce", Count: 3, Messaging: summary, MessagingVersion: 1}}}
+			test := &ManagedTest{Groups: []TestGroup{{Name: "load", VUsers: 1}}}
+			live := buildLiveMetricsFromDistributedBatch(test, batch, 0, nil)
+			if live.Messaging["produce"] == nil || live.Messaging["produce"].Dimensions[0].Sent != 3 {
+				t.Fatalf("lost standalone messaging: %+v", live.Messaging)
+			}
+			if live.TotalTx != tc.transactions || live.TotalErrors != 0 || live.TPS != 0 {
+				t.Fatalf("action manufactured transaction totals: tx=%d errors=%d tps=%g", live.TotalTx, live.TotalErrors, live.TPS)
+			}
+			live.Messaging["produce"].Dimensions[0].Sent = 99
+			if summary.Dimensions[0].Sent != 3 {
+				t.Fatal("retained aggregate aliases live evidence")
+			}
+		})
+	}
+}

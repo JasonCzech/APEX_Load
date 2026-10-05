@@ -1,0 +1,66 @@
+{
+  "basis": "Only own-cache API test archives whose actual nm definitions lack the unconditional current upload Goexit regression, so their hashes cannot be input to this changed current API test build. No production archives, current test archives, other packages, module downloads, build outputs or shared caches are touched.",
+  "candidates": [
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/59/59835b78bd411650f72539dbc4e1fb818ec2c64038c77d78360ba11463022d7b-d",
+      "bytes": 477100818,
+      "inode": 234678963,
+      "mtime_ns": 1791115298732723000,
+      "native_api_test_marker": true,
+      "current_upload_goexit_marker": false,
+      "sha256": "59835b78bd411650f72539dbc4e1fb818ec2c64038c77d78360ba11463022d7b",
+      "api_test_definitions": 9699,
+      "current_upload_test_defined": false
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/f3/f35b710b7787dc2dc64e295c90acfa2c7097e3cc68b61edffba6068795cfe6c0-d",
+      "bytes": 477106298,
+      "inode": 234688309,
+      "mtime_ns": 1791116477715373000,
+      "native_api_test_marker": true,
+      "current_upload_goexit_marker": false,
+      "sha256": "f35b710b7787dc2dc64e295c90acfa2c7097e3cc68b61edffba6068795cfe6c0",
+      "api_test_definitions": 9699,
+      "current_upload_test_defined": false
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/7d/7d768f436bc31a2aebc3fa5a0743e0dafad5907dff0fb06a80fa834451f8fa9f-d",
+      "bytes": 532994694,
+      "inode": 234691295,
+      "mtime_ns": 1791116819218368000,
+      "native_api_test_marker": true,
+      "current_upload_goexit_marker": false,
+      "sha256": "7d768f436bc31a2aebc3fa5a0743e0dafad5907dff0fb06a80fa834451f8fa9f",
+      "api_test_definitions": 9692,
+      "current_upload_test_defined": false
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/a0/a072dffd981d009155f6e37824c1814790a91e0a723176e5a472083e3c707641-d",
+      "bytes": 477098582,
+      "inode": 234674677,
+      "mtime_ns": 1791113840475188000,
+      "native_api_test_marker": true,
+      "current_upload_goexit_marker": false,
+      "sha256": "a072dffd981d009155f6e37824c1814790a91e0a723176e5a472083e3c707641",
+      "api_test_definitions": 9699,
+      "current_upload_test_defined": false
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/13/13666e92b0cc71945ea61a8df9b4eb18a8b22dd95471ef91d7be45ab0627de4f-d",
+      "bytes": 532994694,
+      "inode": 234914809,
+      "mtime_ns": 1791120352641790000,
+      "native_api_test_marker": true,
+      "current_upload_goexit_marker": false,
+      "sha256": "13666e92b0cc71945ea61a8df9b4eb18a8b22dd95471ef91d7be45ab0627de4f",
+      "api_test_definitions": 9692,
+      "current_upload_test_defined": false
+    }
+  ],
+  "reclaimed_bytes": 2497295086,
+  "free_bytes_before": 2650112000,
+  "deleted": 5,
+  "free_bytes_after": 5160960000,
+  "completed_utc": "2026-10-04T14:40:58Z",
+  "shared_cache_mutated": false
+}

@@ -36,6 +36,18 @@ func (s *Service) CheckPreparation(ctx context.Context, req *pb.PreparationCheck
 			return nil, err
 		}
 	}
+	if len(req.ExpectedRuntimeResources) > len(req.ExpectedGroups) {
+		return nil, status.Error(codes.InvalidArgument, "unexpected runtime resource groups")
+	}
+	for name, claim := range req.ExpectedRuntimeResources {
+		count, ok := req.ExpectedGroups[name]
+		if !ok || claim == nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid expected runtime resource group")
+		}
+		if err := validateRuntimeResourceClaim(claim, count); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -71,11 +83,24 @@ func (s *Service) CheckPreparation(ctx context.Context, req *pb.PreparationCheck
 	if len(assignment.groups) != len(req.ExpectedGroups) || len(s.executions[req.TestId]) != len(req.ExpectedGroups) {
 		return nil, status.Error(codes.FailedPrecondition, "prepared group membership changed")
 	}
+	if len(req.ExpectedRuntimeResources) != len(assignment.groupRuntimeResourceClaims) {
+		return nil, status.Error(codes.FailedPrecondition, "prepared runtime resource membership changed")
+	}
+	for name, expected := range req.ExpectedRuntimeResources {
+		actual := assignment.groupRuntimeResourceClaims[name]
+		admission := runtimeResourceAdmission(actual, assignment.groupRuntimeResources[name])
+		if !ValidRuntimeResourceAdmission(expected, admission) {
+			return nil, status.Error(codes.FailedPrecondition, "prepared runtime resource reservation changed")
+		}
+	}
 	for name, count := range req.ExpectedGroups {
 		actual, ok := assignment.groups[name]
 		execution := s.executions[req.TestId][name]
 		if !ok || actual != count || execution == nil || execution.started.Load() || execution.executionGeneration != req.ExecutionGeneration {
 			return nil, status.Error(codes.FailedPrecondition, "prepared group reservation changed")
+		}
+		if execution.engine == nil || !execution.engine.RuntimeResourceReservationsCurrent() {
+			return nil, status.Error(codes.FailedPrecondition, "prepared engine resource reservation changed")
 		}
 		select {
 		case <-execution.done:
@@ -91,17 +116,33 @@ func (s *Service) CheckPreparation(ctx context.Context, req *pb.PreparationCheck
 	if req.RenewStaging {
 		s.lifecycleCoordinator.scheduleStageExpiryLocked(s, req.TestId)
 	}
-	return &pb.WorkCommitAck{Accepted: true}, nil
+	return &pb.WorkCommitAck{Accepted: true, RuntimeResourceAdmissions: s.runtimeResourceAdmissionsLocked(assignment)}, nil
 }
 
 func (c *Client) CheckPreparation(ctx context.Context, testID string, generation uint64, groups map[string]int32, token []byte) error {
-	request := &pb.PreparationCheckRequest{TestId: testID, ExecutionGeneration: generation, ExpectedGroups: cloneStringInt32Map(groups), RunSupervisionToken: append([]byte(nil), token...), RenewStaging: true}
+	_, err := c.CheckPreparationResources(ctx, testID, generation, groups, token, nil)
+	return err
+}
+
+// CheckPreparationResources retains the old state-only RPC and verifies every
+// expected resource admission. An old peer's empty acknowledgement fails closed.
+func (c *Client) CheckPreparationResources(ctx context.Context, testID string, generation uint64, groups map[string]int32, token []byte, claims map[string]*pb.RuntimeResourceClaim) (map[string]*pb.RuntimeResourceAdmission, error) {
+	request := &pb.PreparationCheckRequest{TestId: testID, ExecutionGeneration: generation, ExpectedGroups: cloneStringInt32Map(groups), RunSupervisionToken: append([]byte(nil), token...), RenewStaging: true, ExpectedRuntimeResources: CloneRuntimeResourceClaims(claims)}
 	ack, err := c.rpc.CheckPreparation(ctx, request)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !ack.GetAccepted() {
-		return fmt.Errorf("generator rejected preparation readiness: %s", ack.GetErrorMessage())
+		return nil, fmt.Errorf("generator rejected preparation readiness: %s", ack.GetErrorMessage())
 	}
-	return nil
+	admissions := ack.GetRuntimeResourceAdmissions()
+	if len(admissions) != len(claims) {
+		return nil, fmt.Errorf("runtime resource readiness membership mismatch")
+	}
+	for name, claim := range claims {
+		if !ValidRuntimeResourceAdmission(claim, admissions[name]) {
+			return nil, fmt.Errorf("runtime resource readiness admission mismatch")
+		}
+	}
+	return CloneRuntimeResourceAdmissions(admissions), nil
 }

@@ -10,6 +10,9 @@ import (
 
 // MonitorRule is a terminal guardrail. It deliberately has no runtime stop flag.
 type MonitorRule struct {
+	QueryID            string            `json:"query_id,omitempty"`
+	EvaluationMode     string            `json:"evaluation_mode,omitempty"`
+	RequireFreshness   bool              `json:"require_freshness,omitempty"`
 	SourceID           string            `json:"source_id"`
 	Metric             string            `json:"metric"`
 	Dimensions         map[string]string `json:"dimensions,omitempty"`
@@ -32,6 +35,9 @@ type MonitorRuleResult struct {
 }
 
 func (r MonitorRule) Validate() error {
+	if len(r.QueryID) > 128 || r.EvaluationMode != "" && r.EvaluationMode != "series_points" && r.EvaluationMode != "exact_window" {
+		return errors.New("invalid monitoring evaluation mode")
+	}
 	if r.SourceID == "" || r.Metric == "" || r.Unit == "" || len(r.SourceID) > 256 || len(r.Metric) > 256 || len(r.Unit) > 64 || math.IsNaN(r.Threshold) || math.IsInf(r.Threshold, 0) || math.IsNaN(r.MinCoveragePct) || r.MinCoveragePct < 0 || r.MinCoveragePct > 100 || len(r.Dimensions) > 16 || r.StartOffsetSeconds < 0 || r.EndOffsetSeconds != nil && *r.EndOffsetSeconds <= r.StartOffsetSeconds {
 		return errors.New("invalid monitoring rule identity, threshold or window")
 	}
@@ -56,6 +62,11 @@ func (r MonitorRule) Validate() error {
 	return nil
 }
 func EvaluateMonitorRule(rule MonitorRule, points []MetricPoint, start, end time.Time) MonitorRuleResult {
+	for _, p := range points {
+		if p.Source == rule.SourceID && p.Provider != nil && p.Provider.Name == "prometheus" {
+			return evaluatePrometheusRule(rule, points, start, end)
+		}
+	}
 	result := MonitorRuleResult{Rule: rule, Status: "not_evaluated", Message: "insufficient settled monitoring evidence"}
 	if rule.Validate() != nil {
 		return result

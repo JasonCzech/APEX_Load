@@ -13,8 +13,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 	"io"
 	"log/slog"
 	"math"
@@ -58,19 +60,24 @@ type Config struct {
 
 // Agent pushes heartbeats to the controller on an interval.
 type Agent struct {
-	stateMu         sync.Mutex
-	providerBusy    map[string]bool
-	providerSlots   chan struct{}
-	providerWorkers sync.WaitGroup
-	providerBacklog map[string][]*RunSampleBatch
-	cfg             Config
-	client          *http.Client
-	pendingBatches  map[string]*RunSampleBatch
-	nextCollection  map[string]time.Time
-	otlpAccepted    map[string]map[string]time.Time
-	jobPollAfterKey string
-	jobScanUnseen   map[string]bool
-	jobScanOffset   int
+	management                *managementScheduler
+	spoolBudget               *collectorSpoolBudget
+	prometheusClient          func(prometheus.Config, prometheus.Credentials) (*prometheus.Client, error)
+	stateMu                   sync.Mutex
+	providerBusy              map[string]bool
+	providerSlots             chan struct{}
+	providerWorkers           sync.WaitGroup
+	providerBacklog           map[string][]*RunSampleBatch
+	cfg                       Config
+	client                    *http.Client
+	pendingBatches            map[string]*RunSampleBatch
+	nextCollection            map[string]time.Time
+	otlpAccepted              map[string]map[string]time.Time
+	jobPollAfterKey           string
+	jobScanUnseen             map[string]bool
+	jobScanOffset             int
+	jobScanManagement         map[string]SignedRunJob
+	jobScanManagementOverflow bool
 }
 
 type metricPack struct {
@@ -124,6 +131,20 @@ func New(cfg Config) (*Agent, error) {
 	cfg.CredentialPrivateKey = append([]byte(nil), cfg.CredentialPrivateKey...)
 	cfg.AdapterTargets = append([]AdapterTarget(nil), cfg.AdapterTargets...)
 	for i := range cfg.AdapterTargets {
+		if cfg.AdapterTargets[i].Management != nil {
+			cloned := cfg.AdapterTargets[i].Management.clone()
+			// Construction reloads local trust instead of accepting another agent's
+			// compiled transport approval. Dormant targets acquire no approval.
+			cloned.kafkaApproval = nil
+			cloned.serviceBusApproval = nil
+			cloned.solaceApproval = nil
+			cfg.AdapterTargets[i].Management = &cloned
+		}
+		if cfg.AdapterTargets[i].Prometheus != nil {
+			cloned := *cfg.AdapterTargets[i].Prometheus
+			cloned.ApprovedCIDRs = append([]string(nil), cloned.ApprovedCIDRs...)
+			cfg.AdapterTargets[i].Prometheus = &cloned
+		}
 		if cfg.AdapterTargets[i].Cloud != nil {
 			body, _ := json.Marshal(cfg.AdapterTargets[i].Cloud)
 			var cloned CloudQuery
@@ -141,7 +162,7 @@ func New(cfg Config) (*Agent, error) {
 		}
 		seenPacks[pack] = true
 		switch pack {
-		case "ssh-linux", "jmx", "jdbc", "otel-metrics", "appdynamics", "cloudwatch", "azure-monitor":
+		case "ssh-linux", "jmx", "jdbc", "otel-metrics", "appdynamics", "cloudwatch", "azure-monitor", "prometheus-query":
 			if len(cfg.ControllerPublicKey) == 0 {
 				return nil, fmt.Errorf("remote adapters require signed run jobs")
 			}
@@ -163,9 +184,28 @@ func New(cfg Config) (*Agent, error) {
 		case "linux-hosts", "go-runtime":
 		case "prometheus":
 			if strings.TrimSpace(cfg.PrometheusURL) == "" {
-				return nil, fmt.Errorf("prometheus pack requires prometheus URL")
+				return nil, fmt.Errorf("prometheus pack requires a scrape URL")
 			}
 		default:
+			if observer := registeredManagementObservers()[pack]; isManagementPack(pack) && observer != nil {
+				approved := false
+				for i := range cfg.AdapterTargets {
+					target := &cfg.AdapterTargets[i]
+					if target.Pack != pack || target.Management == nil {
+						continue
+					}
+					if err := observer.prepareTarget(target.Management); err != nil {
+						return nil, err
+					}
+					if err := observer.validateTarget(target.Management); err != nil {
+						return nil, err
+					}
+					approved = true
+				}
+				if approved {
+					continue
+				}
+			}
 			return nil, fmt.Errorf("unsupported metric pack %q", pack)
 		}
 	}
@@ -192,8 +232,19 @@ func New(cfg Config) (*Agent, error) {
 		}
 		cfg.OTLP.requireJournal = true
 	}
+	if err := validateSolaceManagementSpool(cfg); err != nil {
+		return nil, err
+	}
 	cfg.ControllerPublicKey = append(ed25519.PublicKey(nil), cfg.ControllerPublicKey...)
-	return &Agent{cfg: cfg, client: client, providerSlots: make(chan struct{}, 4), providerBacklog: map[string][]*RunSampleBatch{}, pendingBatches: map[string]*RunSampleBatch{}, nextCollection: map[string]time.Time{}}, nil
+	agent := &Agent{cfg: cfg, client: client, providerSlots: make(chan struct{}, 4), providerBacklog: map[string][]*RunSampleBatch{}, pendingBatches: map[string]*RunSampleBatch{}, nextCollection: map[string]time.Time{}, spoolBudget: newCollectorSpoolBudget()}
+	if len(cfg.ControllerPublicKey) > 0 {
+		instance, err := newCollectorInstanceID()
+		if err != nil {
+			return nil, err
+		}
+		agent.management = newManagementScheduler(agent, instance)
+	}
+	return agent, nil
 }
 
 // validateControllerURL rejects a controller URL that would leak the collector
@@ -236,14 +287,32 @@ func isLoopbackHost(host string) bool {
 
 // Run pushes a heartbeat immediately, then on every tick until ctx is cancelled.
 func (a *Agent) Run(ctx context.Context) error {
+	return a.runWithSolaceStartup(ctx, a.lockSolaceManagementQuarantine)
+}
+
+// The owned startup callback keeps exact cleanup attached to this Run lifetime.
+func (a *Agent) runWithSolaceStartup(ctx context.Context, startup func(context.Context) (func() error, error)) (retErr error) {
 	unlock, err := a.lockSpool(ctx)
 	if err != nil {
 		return err
 	}
 	defer unlock()
+	unlockSolace, err := startup(ctx)
+	if err != nil {
+		return err
+	}
+	// Registered before management.close: LIFO cleanup first joins every
+	// provider task, then observes the sole exact startup lock cleanup result.
+	defer func() { retErr = errors.Join(retErr, unlockSolace()) }()
 	defer a.providerWorkers.Wait()
 	if err = a.loadSpool(); err != nil {
 		return err
+	}
+	if a.management != nil {
+		if err = a.management.loadSpool(); err != nil {
+			return err
+		}
+		defer a.management.close()
 	}
 	if a.cfg.OTLP != nil {
 		if err := a.cfg.OTLP.openJournal(a.spoolPath() + ".otlp"); err != nil {
@@ -274,9 +343,9 @@ func (a *Agent) tick(ctx context.Context) {
 			slog.Warn("collector heartbeat failed", "err", err)
 			return
 		}
-		if slicesContainsAppDynamics(a.cfg.Packs) {
+		if slicesContainsAppDynamics(a.cfg.Packs) || a.hasPrometheusQueryTarget() {
 			if err := a.inspectionTick(ctx); err != nil {
-				slog.Debug("AppDynamics inspection poll unavailable")
+				slog.Debug("provider inspection poll unavailable")
 			}
 		}
 		if err := a.runJobTick(ctx); err != nil {

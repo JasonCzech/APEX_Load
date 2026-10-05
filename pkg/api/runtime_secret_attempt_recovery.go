@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -45,9 +46,10 @@ func (tr *TestRunner) runtimeOverrideSecretAttemptActive(id string) bool {
 // attempts whose lease has already expired and schedules a one-shot recovery
 // for attempts created shortly before a controller restart.
 func (tr *TestRunner) scheduleRuntimeOverrideSecretAttemptReconciliation() {
-	if tr == nil || tr.secretAttemptStore == nil {
+	if tr == nil || tr.secretAttemptStore == nil || !tr.beginRuntimeOverrideSecretRecovery() {
 		return
 	}
+	defer tr.endRuntimeOverrideSecretRecovery()
 	attempts, err := tr.secretAttemptStore.ListRuntimeSecretProvisioningAttempts()
 	if err != nil {
 		slog.Warn("runtime credential provisioning recovery scan failed", "error", err)
@@ -103,7 +105,11 @@ func (tr *TestRunner) scheduleRuntimeOverrideSecretAttempt(_ string, expiresAt t
 		}
 		tr.secretRecovery.timer = nil
 		tr.secretRecovery.at = time.Time{}
+		// Register before releasing the admission guard. Shutdown can now stop
+		// new callbacks and still wait for this already-owned callback.
+		tr.beginRuntimeOverrideSecretRecoveryLocked()
 		tr.secretRecovery.mu.Unlock()
+		defer tr.endRuntimeOverrideSecretRecovery()
 		if !tr.holdsExecutionLeadership() {
 			return
 		}
@@ -138,6 +144,10 @@ func (tr *TestRunner) reconcileExpiredRuntimeOverrideSecretAttempts(now time.Tim
 	if tr == nil || tr.secretAttemptStore == nil {
 		return nil
 	}
+	if !tr.beginRuntimeOverrideSecretRecovery() {
+		return errRunnerShuttingDown
+	}
+	defer tr.endRuntimeOverrideSecretRecovery()
 	if !tr.holdsExecutionLeadership() {
 		return errNotExecutionLeader
 	}
@@ -236,4 +246,58 @@ func (tr *TestRunner) reconcileRuntimeOverrideSecretAttempt(record *storage.Runt
 		return fmt.Errorf("check durable test for runtime credential recovery: %w", err)
 	}
 	return tr.rollbackRuntimeOverrideSecretAttempt(record.ProjectID, record.TestID, attempt, "expired_provisioning_attempt")
+}
+
+// beginRuntimeOverrideSecretRecovery is shared by synchronous scans and timer
+// callbacks. No recovery store/provider work may escape this shutdown fence.
+func (tr *TestRunner) beginRuntimeOverrideSecretRecovery() bool {
+	if tr == nil {
+		return false
+	}
+	tr.secretRecovery.mu.Lock()
+	defer tr.secretRecovery.mu.Unlock()
+	if tr.secretRecovery.stopped {
+		return false
+	}
+	tr.beginRuntimeOverrideSecretRecoveryLocked()
+	return true
+}
+func (tr *TestRunner) beginRuntimeOverrideSecretRecoveryLocked() {
+	if tr.secretRecovery.running == 0 {
+		tr.secretRecovery.drained = make(chan struct{})
+	}
+	tr.secretRecovery.running++
+}
+func (tr *TestRunner) endRuntimeOverrideSecretRecovery() {
+	tr.secretRecovery.mu.Lock()
+	tr.secretRecovery.running--
+	if tr.secretRecovery.running == 0 {
+		close(tr.secretRecovery.drained)
+	}
+	tr.secretRecovery.mu.Unlock()
+}
+
+// waitRuntimeOverrideSecretAttemptReconciliation never fabricates cancellation
+// of a store/provider call which ignores context. A successful drain proves all
+// admitted recovery work has returned; a deadline reports the retained work.
+func (tr *TestRunner) waitRuntimeOverrideSecretAttemptReconciliation(ctx context.Context) error {
+	if tr == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	tr.stopRuntimeOverrideSecretAttemptReconciliation()
+	tr.secretRecovery.mu.Lock()
+	running, drained := tr.secretRecovery.running, tr.secretRecovery.drained
+	tr.secretRecovery.mu.Unlock()
+	if running == 0 {
+		return nil
+	}
+	select {
+	case <-drained:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

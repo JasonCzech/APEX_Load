@@ -1162,8 +1162,7 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 	// map. Lower-confidence candidates still participate in collision ownership:
 	// otherwise a shorter automatic literal could rewrite part of a longer value
 	// that the review intentionally left untouched.
-	vars := make(map[string]string, len(namedCorrelations))
-	varSourceSequences := make(map[string]int, len(namedCorrelations))
+	vars := make(map[string][]nativeLiteralProducer, len(namedCorrelations))
 	applications := make(map[string]correlationApplicationStatus, len(namedCorrelations))
 	plans := make([]nativeCorrelationPlan, 0, len(namedCorrelations))
 	sourceValidator := correlate.NewExactQueryEncodingValidator()
@@ -1197,7 +1196,7 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 		applications[corr.Name] = status
 	}
 
-	ambiguousLiterals, ambiguousPlans := nativeCorrelationReplacementCollisions(plans, joinedActionCorrelationSurfaces(cloneRefs))
+	ambiguousLiterals, ambiguousPlans, containment := nativeCorrelationReplacementCollisions(plans, joinedActionCorrelationSurfaces(cloneRefs))
 	for planIndex := range ambiguousPlans {
 		corr := plans[planIndex].correlation
 		status := applications[corr.Name]
@@ -1242,21 +1241,50 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 		sourceExtractorCounts[plan.foundRef.Action] += requiredExtractors
 
 		if plan.rawMapped {
-			vars[plan.value] = "{{var." + corr.Name + "}}"
-			varSourceSequences[plan.value] = plan.foundRef.Sequence
+			vars[plan.value] = append(vars[plan.value], nativeLiteralProducer{sequence: plan.foundRef.Sequence, template: "{{var." + corr.Name + "}}"})
 		}
 		if plan.encodedMapped {
 			plan.encodedName = corr.Name
 			if plan.rawMapped {
 				plan.encodedName = correlationNames.claim(corr.Name + "_encoded")
 			}
-			vars[plan.queryEncoded] = "{{var." + plan.encodedName + "}}"
-			varSourceSequences[plan.queryEncoded] = plan.foundRef.Sequence
+			vars[plan.queryEncoded] = append(vars[plan.queryEncoded], nativeLiteralProducer{sequence: plan.foundRef.Sequence, template: "{{var." + plan.encodedName + "}}"})
 		}
 		applications[corr.Name] = status
 	}
 
-	for _, plan := range plans {
+	// Rewrite before attaching extractors: a contained literal can lose every
+	// occurrence to its longer container, and an extractor whose variable is
+	// never substituted must not be reported as applied.
+	landed := make(map[string]bool, len(vars))
+	for index := range cloneRefs {
+		action := cloneRefs[index].Action
+		actionVars := correlationVarsAvailableAfterSequence(vars, cloneRefs[index].Sequence)
+		actionVars = withoutInnerVarsOfLiteralOuters(actionVars, containment, actionCorrelationSurfaces(action))
+		action.Target = correlate.ApplyVars(action.Target, actionVars)
+		action.Body = correlate.ApplyVars(action.Body, actionVars)
+		action.Headers = correlate.ApplyVarsToHeaders(action.Headers, actionVars)
+		action.HeaderList = applyCorrelationVarsToHeaderList(action.HeaderList, actionVars)
+		if len(actionVars) == 0 {
+			continue
+		}
+		rewritten := actionCorrelationSurfaces(action)
+		for _, template := range actionVars {
+			if landed[template] {
+				continue
+			}
+			for _, surface := range rewritten {
+				if strings.Contains(surface, template) {
+					landed[template] = true
+					break
+				}
+			}
+		}
+	}
+	remaining := joinedActionCorrelationSurfaces(cloneRefs)
+
+	for index := range plans {
+		plan := &plans[index]
 		corr := plan.correlation
 		foundRef := plan.foundRef
 		base := dsl.Extractor{
@@ -1270,20 +1298,24 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 			OnMiss:     "fail",
 		}
 		status := applications[corr.Name]
+		rawLanded := plan.rawMapped && landed["{{var."+corr.Name+"}}"]
+		encodedLanded := plan.encodedMapped && landed["{{var."+plan.encodedName+"}}"]
+		if rawLanded {
+			// Raw reuse remains executable even when another consumer uses an
+			// encoding that requires manual replacement.
+			addExtractorIfMissing(foundRef.Action, base)
+		}
 		switch {
-		case plan.encodedMapped && !plan.rawMapped:
+		case encodedLanded && plan.encodedName == corr.Name:
 			// Value is only ever reused percent-encoded (e.g. aura.token inside a
 			// form-urlencoded /aura body): extract it pre-encoded and substitute the
 			// encoded occurrences with the variable.
 			base.Convert = plan.encodedConvert
 			addExtractorIfMissing(foundRef.Action, base)
-			status.preApplied = true
-		case plan.encodedMapped && plan.rawMapped:
+		case encodedLanded:
 			// Value is reused BOTH raw (e.g. a JSON body/header) AND percent-encoded
-			// (a form body). A single variable can only resolve one way, so emit a raw
-			// extractor for the raw occurrences plus a url_encode sibling, and route
-			// the percent-encoded literals to the sibling variable.
-			addExtractorIfMissing(foundRef.Action, base)
+			// (a form body). A single variable can only resolve one way, so the
+			// percent-encoded literals use a url_encode sibling variable.
 			addExtractorIfMissing(foundRef.Action, dsl.Extractor{
 				Name:       plan.encodedName,
 				Source:     corr.Source,
@@ -1294,28 +1326,13 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 				Convert:    plan.encodedConvert,
 				OnMiss:     "fail",
 			})
-			status.preApplied = true
-		case plan.rawMapped:
-			// Raw reuse remains executable even when another consumer uses an
-			// encoding that requires manual replacement.
-			addExtractorIfMissing(foundRef.Action, base)
-			status.preApplied = true
-		default:
-			if status.reviewAction == "" {
-				status.reviewAction = "manual_value_replacement_required"
-			}
+		}
+		status.preApplied = rawLanded || encodedLanded
+		if !status.preApplied && status.reviewAction == "" && nativePlanLiteralRemains(*plan, remaining) {
+			status.reviewAction = "manual_value_replacement_required"
 		}
 		applications[corr.Name] = status
 	}
-	for index := range cloneRefs {
-		action := cloneRefs[index].Action
-		actionVars := correlationVarsAvailableAfterSequence(vars, varSourceSequences, cloneRefs[index].Sequence)
-		action.Target = correlate.ApplyVars(action.Target, actionVars)
-		action.Body = correlate.ApplyVars(action.Body, actionVars)
-		action.Headers = correlate.ApplyVarsToHeaders(action.Headers, actionVars)
-		action.HeaderList = applyCorrelationVarsToHeaderList(action.HeaderList, actionVars)
-	}
-
 	originalCorrelationRefs := make(map[int]*actionRef, len(harIDToRef))
 	for id, ref := range harIDToRef {
 		copied := *ref
@@ -1716,9 +1733,19 @@ type correlationApplicationStatus struct {
 	reviewAction string
 }
 
-func nativeCorrelationReplacementCollisions(plans []nativeCorrelationPlan, requestSurfaces string) (map[string]bool, map[int]bool) {
-	const comparisonLimit = 4_000_000
+// nativeLiteralContainment records an automatic literal that occurs inside a
+// longer claimed literal. Longest-first single-pass replacement keeps the inner
+// value intact wherever the outer literal is rewritten too, so containment is
+// not ambiguous globally; it only forbids rewriting the inner value in an
+// action where the outer literal stays literal.
+type nativeLiteralContainment struct {
+	inner, outer string
+}
 
+// nativeCollisionComparisonLimit bounds pairwise collision comparisons.
+var nativeCollisionComparisonLimit = 4_000_000
+
+func nativeCorrelationReplacementCollisions(plans []nativeCorrelationPlan, requestSurfaces string) (map[string]bool, map[int]bool, []nativeLiteralContainment) {
 	type literalClaim struct {
 		planIndex int
 		literal   string
@@ -1748,10 +1775,20 @@ func nativeCorrelationReplacementCollisions(plans []nativeCorrelationPlan, reque
 
 	ambiguousLiterals := make(map[string]bool)
 	ambiguousPlans := make(map[int]bool)
+	var containment []nativeLiteralContainment
 	overlapBudget := paramize.NewLiteralOverlapSearchBudget()
-	markAutomaticClaimsAmbiguous := func() {
+	occurrences := overlapBudget.NewLiteralOccurrenceIndex(requestSurfaces)
+	// Collision analysis is safety-critical. When a bound is exhausted at
+	// claims[firstUnchecked], every pair involving an earlier claim has already
+	// been compared, so those claims keep their checked outcome. Plans owning
+	// any unchecked claim are suppressed whole rather than trusted partially.
+	markUncheckedClaimsAmbiguous := func(firstUnchecked int) {
+		unchecked := make(map[int]bool)
+		for _, claim := range claims[firstUnchecked:] {
+			unchecked[claim.planIndex] = true
+		}
 		for _, claim := range claims {
-			if !plans[claim.planIndex].automatic {
+			if !unchecked[claim.planIndex] || !plans[claim.planIndex].automatic {
 				continue
 			}
 			ambiguousLiterals[claim.literal] = true
@@ -1770,40 +1807,42 @@ func nativeCorrelationReplacementCollisions(plans []nativeCorrelationPlan, reque
 			if nativeSalesforceIDVariantPlans(plans[left.planIndex], plans[right.planIndex]) {
 				continue
 			}
-			if !plans[left.planIndex].automatic && !plans[right.planIndex].automatic {
+			leftAutomatic, rightAutomatic := plans[left.planIndex].automatic, plans[right.planIndex].automatic
+			if !leftAutomatic && !rightAutomatic {
 				continue
 			}
 			comparisons++
-			if comparisons > comparisonLimit {
-				// Collision analysis is safety-critical: when the bounded comparison
-				// budget is exhausted, suppress every automatic claim rather than
-				// returning a partially checked replacement map.
-				markAutomaticClaimsAmbiguous()
-				return ambiguousLiterals, ambiguousPlans
+			if comparisons > nativeCollisionComparisonLimit {
+				markUncheckedClaimsAmbiguous(leftIndex)
+				return ambiguousLiterals, ambiguousPlans, containment
+			}
+			leftInRight := overlapBudget.Contains(right.literal, left.literal)
+			rightInLeft := overlapBudget.Contains(left.literal, right.literal)
+			if overlapBudget.Exhausted() {
+				markUncheckedClaimsAmbiguous(leftIndex)
+				return ambiguousLiterals, ambiguousPlans, containment
 			}
 			overlaps := false
-			automaticPair := plans[left.planIndex].automatic || plans[right.planIndex].automatic
 			switch {
-			case plans[left.planIndex].automatic && plans[right.planIndex].automatic:
-				overlaps = overlapBudget.Contains(left.literal, right.literal) || overlapBudget.Contains(right.literal, left.literal)
-			case plans[left.planIndex].automatic:
-				overlaps = overlapBudget.Contains(right.literal, left.literal)
-			case plans[right.planIndex].automatic:
-				overlaps = overlapBudget.Contains(left.literal, right.literal)
-			}
-			if overlapBudget.Exhausted() {
-				markAutomaticClaimsAmbiguous()
-				return ambiguousLiterals, ambiguousPlans
+			case leftInRight && rightInLeft:
+				// Two automatic producers of one spelling share it: each consumer
+				// uses its closest preceding producer. A review-only owner must
+				// keep its literal, so it still blocks the automatic one.
+				overlaps = !leftAutomatic || !rightAutomatic
+			case leftInRight && leftAutomatic:
+				containment = append(containment, nativeLiteralContainment{inner: left.literal, outer: right.literal})
+			case rightInLeft && rightAutomatic:
+				containment = append(containment, nativeLiteralContainment{inner: right.literal, outer: left.literal})
 			}
 			// Containment is not the only unsafe shape: two literals whose
 			// suffix/prefix merge really occurs on a rewrite-target surface would
 			// be corrupted by single-pass replacement. Occurrence confirmation
 			// keeps disjoint usage automatic.
-			if !overlaps && automaticPair {
-				overlaps = overlapBudget.LiteralsPartiallyOverlapInSurface(requestSurfaces, left.literal, right.literal)
+			if !overlaps {
+				overlaps = occurrences.PartiallyOverlap(left.literal, right.literal)
 				if overlapBudget.Exhausted() {
-					markAutomaticClaimsAmbiguous()
-					return ambiguousLiterals, ambiguousPlans
+					markUncheckedClaimsAmbiguous(leftIndex)
+					return ambiguousLiterals, ambiguousPlans, containment
 				}
 			}
 			if !overlaps {
@@ -1815,7 +1854,48 @@ func nativeCorrelationReplacementCollisions(plans []nativeCorrelationPlan, reque
 			ambiguousPlans[right.planIndex] = true
 		}
 	}
-	return ambiguousLiterals, ambiguousPlans
+	return ambiguousLiterals, ambiguousPlans, containment
+}
+
+// nativePlanLiteralRemains reports whether any spelling of the plan's value is
+// still literal after rewriting. A value whose only occurrences were inside a
+// rewritten longer correlation needs no further replacement.
+func nativePlanLiteralRemains(plan nativeCorrelationPlan, surfaces string) bool {
+	for _, literal := range []string{plan.value, plan.queryEncoded} {
+		if literal != "" && strings.Contains(surfaces, literal) {
+			return true
+		}
+	}
+	return false
+}
+
+// withoutInnerVarsOfLiteralOuters drops a contained variable from one action's
+// replacement map when its outer literal occurs in that action but is not being
+// rewritten there (manual, unmapped, or produced later). Rewriting the inner
+// value would otherwise corrupt the surviving outer literal.
+func withoutInnerVarsOfLiteralOuters(actionVars map[string]string, containment []nativeLiteralContainment, surfaces []string) map[string]string {
+	if len(actionVars) == 0 || len(containment) == 0 {
+		return actionVars
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, contained := range containment {
+			if _, inner := actionVars[contained.inner]; !inner {
+				continue
+			}
+			if _, outer := actionVars[contained.outer]; outer {
+				continue
+			}
+			for _, surface := range surfaces {
+				if strings.Contains(surface, contained.outer) {
+					delete(actionVars, contained.inner)
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	return actionVars
 }
 
 func nativeSalesforceIDVariantPlans(left, right nativeCorrelationPlan) bool {
@@ -1972,18 +2052,34 @@ func applyCorrelationVarsToHeaderList(headers dsl.HeaderList, vars map[string]st
 	return headers
 }
 
+// nativeLiteralProducer is one automatic correlation able to supply a literal.
+// Salesforce often issues the same value twice (the OAuth access token is also
+// the sid cookie), so a literal can have several producers.
+type nativeLiteralProducer struct {
+	sequence int
+	template string
+}
+
 // correlationVarsAvailableAfterSequence prevents an earlier native action from
 // referencing a variable whose extractor is attached to a later response. HAR
 // and native-script orders can diverge, and the same literal may also occur
-// incidentally before its actual response source.
-func correlationVarsAvailableAfterSequence(vars map[string]string, sourceSequences map[string]int, sequence int) map[string]string {
+// incidentally before its actual response source. When several producers
+// supply the same literal, the closest preceding one wins (the first planned
+// on a tie), matching a fresh value reissued later in the flow.
+func correlationVarsAvailableAfterSequence(vars map[string][]nativeLiteralProducer, sequence int) map[string]string {
 	if len(vars) == 0 {
 		return nil
 	}
 	available := make(map[string]string, len(vars))
-	for literal, replacement := range vars {
-		if sourceSequence, ok := sourceSequences[literal]; ok && sourceSequence < sequence {
-			available[literal] = replacement
+	for literal, producers := range vars {
+		best := -1
+		for index, producer := range producers {
+			if producer.sequence < sequence && (best < 0 || producer.sequence > producers[best].sequence) {
+				best = index
+			}
+		}
+		if best >= 0 {
+			available[literal] = producers[best].template
 		}
 	}
 	return available
@@ -2029,7 +2125,11 @@ func ensureMetadata(script *dsl.Script) map[string]any {
 const (
 	maxSalesforceShapeCandidates   = 4096
 	maxSalesforceShapeCorrelations = 4096
-	maxSalesforceShapeSearchBytes  = int64(64 << 20)
+	// Matches the shared detector's ceiling. Request surfaces are decoded once
+	// per analysis (correlate.RequestSearch), so complete analysis of real
+	// Lightning captures charges 1-3 GiB and scans in about a second; the old
+	// 64 MiB ceiling stopped after a few dozen candidates.
+	maxSalesforceShapeSearchBytes  = int64(8 << 30)
 	maxSalesforceConstructionBytes = int64(16 << 20)
 	maxSalesforceJSONTokens        = 8192
 	maxSalesforceJSONDepth         = 128
@@ -2048,6 +2148,18 @@ type salesforceCorrelationBudget struct {
 	maxCorrelations      int
 	maxSearchBytes       int64
 	maxConstructionBytes int64
+	// requests caches each observation's searchable request surfaces for the
+	// one analysis this budget belongs to.
+	requests     *correlate.RequestSearch
+	requestsSize int
+}
+
+func (budget *salesforceCorrelationBudget) requestSearch(observations []correlate.Observation) *correlate.RequestSearch {
+	if budget.requests == nil || budget.requestsSize != len(observations) {
+		budget.requests = correlate.NewRequestSearch(observations)
+		budget.requestsSize = len(observations)
+	}
+	return budget.requests
 }
 
 func newSalesforceCorrelationBudget() *salesforceCorrelationBudget {
@@ -2099,14 +2211,22 @@ func (budget *salesforceCorrelationBudget) chargeCorrelation() error {
 }
 
 func (budget *salesforceCorrelationBudget) chargeSearch(observation correlate.Observation) error {
-	// ObservationContains scans raw URL/body/headers, their query-decoded forms,
-	// and parsed form values. Decoding cannot expand the bytes, and parsed form
+	// A reuse query scans raw URL/body/headers, their query-decoded forms, and
+	// parsed form values. Decoding cannot expand the bytes, and parsed form
 	// keys/values are bounded by the body, so this is a conservative upper bound
-	// for one reconstruction and search.
+	// for one search.
 	cost := int64(2*len(observation.RequestURL) + 3*len(observation.RequestBody))
 	for _, value := range observation.RequestHeaders {
 		cost += int64(2 * len(value))
 	}
+	if cost < 0 || cost > budget.maxSearchBytes-budget.searchBytes {
+		return fmt.Errorf("%w: Salesforce request-surface search exceeds %d bytes", correlate.ErrCorrelationWorkLimit, maxSalesforceShapeSearchBytes)
+	}
+	budget.searchBytes += cost
+	return nil
+}
+
+func (budget *salesforceCorrelationBudget) chargeSearchBytes(cost int64) error {
 	if cost < 0 || cost > budget.maxSearchBytes-budget.searchBytes {
 		return fmt.Errorf("%w: Salesforce request-surface search exceeds %d bytes", correlate.ErrCorrelationWorkLimit, maxSalesforceShapeSearchBytes)
 	}
@@ -2215,6 +2335,22 @@ func detectCorrelationsChecked(entries []harEntry) ([]correlate.Correlation, []s
 			break
 		}
 	}
+	// Shape extractors pre-empt the generic candidate for the same value only
+	// when they read it from the same or an earlier response. An earlier
+	// generic producer (for example Set-Cookie sid before an Aura response
+	// echoing sfdcSessionKey) must keep the value, or every request between
+	// the two producers loses its variable.
+	firstGeneric := make(map[string]correlate.Correlation, len(genericCorrelations))
+	for _, corr := range genericCorrelations {
+		if _, found := firstGeneric[corr.Value]; !found {
+			firstGeneric[corr.Value] = corr
+		}
+	}
+	for index, corr := range correlations {
+		if generic, found := firstGeneric[corr.Value]; found && generic.FoundInID < corr.FoundInID {
+			correlations[index] = generic
+		}
+	}
 	for _, corr := range genericCorrelations {
 		if seenValues[corr.Value] {
 			continue
@@ -2255,7 +2391,7 @@ func detectCometdCorrelations(observations []correlate.Observation, seenValues m
 			if candidate.Value == "" {
 				continue
 			}
-			reuses, err := salesforceCandidateReuses(observations, index, candidate.Value, budget)
+			reuses, err := salesforceCorrelatableReuses(observations, index, candidate, budget)
 			if err != nil {
 				return correlations, err
 			}
@@ -2339,7 +2475,7 @@ func detectCompositeCorrelations(observations []correlate.Observation, seenValue
 			if candidate.Value == "" {
 				continue
 			}
-			reuses, err := salesforceCandidateReuses(observations, index, candidate.Value, budget)
+			reuses, err := salesforceCorrelatableReuses(observations, index, candidate, budget)
 			if err != nil {
 				return correlations, err
 			}
@@ -2608,7 +2744,7 @@ func salesforceCandidateReuses(observations []correlate.Observation, startIndex 
 		if err := budget.chargeSearch(observations[later]); err != nil {
 			return nil, err
 		}
-		if correlate.ObservationContains(observations[later], value) {
+		if budget.requestSearch(observations).Contains(later, value) {
 			exactUsed = append(exactUsed, observations[later].ID)
 		}
 	}
@@ -2648,6 +2784,30 @@ func salesforceCandidateReuses(observations []correlate.Observation, startIndex 
 		})
 	}
 	return out, nil
+}
+
+// salesforceCorrelatableReuses applies the shared precision rules to a shape
+// candidate: values that are not server state are never correlated, and weak
+// heuristic values the client already sent before the producer are dropped.
+func salesforceCorrelatableReuses(observations []correlate.Observation, index int, candidate correlate.Candidate, budget *salesforceCorrelationBudget) ([]salesforceCandidateReuse, error) {
+	if !correlate.CandidateCanCorrelate(candidate) {
+		return nil, nil
+	}
+	reuses, err := salesforceCandidateReuses(observations, index, candidate.Value, budget)
+	if err != nil || len(reuses) == 0 || !correlate.ClientOriginCheckApplies(candidate.RuleID) {
+		return reuses, err
+	}
+	kept := reuses[:0]
+	for _, reuse := range reuses {
+		sent, err := budget.requestSearch(observations).ClientSentThrough(index, reuse.value, budget.chargeSearchBytes)
+		if err != nil {
+			return nil, err
+		}
+		if !sent {
+			kept = append(kept, reuse)
+		}
+	}
+	return kept, nil
 }
 
 func observationContainsSalesforceID15(observation correlate.Observation, id15 string) bool {
@@ -2732,7 +2892,7 @@ func detectBulkQueryLocatorCorrelations(observations []correlate.Observation, se
 			if err := budget.chargeSearch(observations[later]); err != nil {
 				return correlations, err
 			}
-			if correlate.ObservationContains(observations[later], locator) {
+			if budget.requestSearch(observations).Contains(later, locator) {
 				usedIn = append(usedIn, observations[later].ID)
 			}
 		}
@@ -2796,7 +2956,7 @@ func detectNestedJSONCorrelations(observations []correlate.Observation, seenValu
 			if candidate.Value == "" {
 				continue
 			}
-			reuses, err := salesforceCandidateReuses(observations, index, candidate.Value, budget)
+			reuses, err := salesforceCorrelatableReuses(observations, index, candidate, budget)
 			if err != nil {
 				return correlations, err
 			}

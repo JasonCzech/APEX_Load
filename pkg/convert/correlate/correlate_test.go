@@ -1983,3 +1983,42 @@ func TestCorrelationExtractionValueFitsRuntimeValueBoundary(t *testing.T) {
 		t.Fatalf("CorrelationExtractionEntryBytes() = %d, %t", got, ok)
 	}
 }
+
+// A percent-encoded frontdoor sid must be captured whole, not truncated to the
+// org prefix that also prefixes every later session value.
+func TestFrontdoorSIDCapturesPercentEncodedSession(t *testing.T) {
+	const sid = "00Dxx0000000001%21AQ0AQHabcdefSyntheticSession"
+	location := "https://acme.my.salesforce.com/secur/frontdoor.jsp?sid=" + sid + "&retURL=%2Fhome"
+	correlations := Detect([]Observation{
+		{ID: 1, ResponseHeaders: map[string]string{"Location": location}},
+		{ID: 2, RequestURL: location},
+	})
+	for _, correlation := range correlations {
+		if correlation.RuleID == RuleSalesforceFrontdoorSID {
+			if correlation.Value != sid {
+				t.Fatalf("frontdoor sid value = %q, want %q", correlation.Value, sid)
+			}
+			return
+		}
+	}
+	t.Fatalf("frontdoor SID correlation not found: %#v", correlations)
+}
+
+// Lightning returns aura.token as the __Host-ERIC_* cookie; later /aura bodies
+// echo it percent-encoded. It must be a high-confidence Salesforce producer.
+func TestSalesforceAuraTokenCookieIsHighConfidenceProducer(t *testing.T) {
+	const token = "eyJub25jZSI6InN5bnRoZXRpYyJ9.c3ludGhldGljLXNpZ25hdHVyZQ=="
+	correlations := Detect([]Observation{
+		{ID: 1, ResponseHeaders: map[string]string{"Set-Cookie": "__Host-ERIC_PROD-3360561830751937475=" + token + "; Path=/; Max-Age=86400; Secure; SameSite=Lax"}},
+		{ID: 2, RequestBody: "message=%7B%7D&aura.token=" + url.QueryEscape(token)},
+	})
+	for _, correlation := range correlations {
+		if correlation.Value == token {
+			if correlation.RuleID != RuleSalesforceAuraTokenCookie || !HighConfidence(correlation) || correlation.Source != "header" {
+				t.Fatalf("ERIC cookie correlation = %#v, want high-confidence Salesforce aura.token cookie from the header", correlation)
+			}
+			return
+		}
+	}
+	t.Fatalf("ERIC cookie aura.token producer not detected: %#v", correlations)
+}

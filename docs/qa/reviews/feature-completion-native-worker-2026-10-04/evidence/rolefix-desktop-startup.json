@@ -1,0 +1,63 @@
+{
+  "binary": "/Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/desktop/build/bin/apexload.app/Contents/MacOS/apexload",
+  "platform": "posix",
+  "cases": [
+    {
+      "case": "missing-inherited-handles",
+      "exit_code": 78,
+      "seconds": 1.675558,
+      "filesystem_unchanged": true,
+      "silent": true,
+      "passed": true,
+      "stdout_bytes": 0,
+      "stderr_bytes": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_prefix": "",
+      "stderr_prefix": ""
+    },
+    {
+      "case": "unsupported-version",
+      "exit_code": 78,
+      "seconds": 0.048318,
+      "filesystem_unchanged": true,
+      "silent": true,
+      "passed": true,
+      "stdout_bytes": 0,
+      "stderr_bytes": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_prefix": "",
+      "stderr_prefix": ""
+    },
+    {
+      "case": "extra-argument",
+      "exit_code": 78,
+      "seconds": 0.041199,
+      "filesystem_unchanged": true,
+      "silent": true,
+      "passed": true,
+      "stdout_bytes": 0,
+      "stderr_bytes": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_prefix": "",
+      "stderr_prefix": ""
+    },
+    {
+      "case": "duplicate-marker",
+      "exit_code": 78,
+      "seconds": 0.054685,
+      "filesystem_unchanged": true,
+      "silent": true,
+      "passed": true,
+      "stdout_bytes": 0,
+      "stderr_bytes": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_prefix": "",
+      "stderr_prefix": ""
+    }
+  ],
+  "qualification": "invalid-mode-early-dispatch-only"
+}

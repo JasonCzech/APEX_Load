@@ -32,6 +32,8 @@ kept for planning or audit context only.
 | [ENTERPRISE_PLATFORM_RUNBOOK.md](ENTERPRISE_PLATFORM_RUNBOOK.md) | Enterprise platform architecture, data platform operations, and database migration |
 | [OBSERVABILITY_INTEGRATIONS.md](OBSERVABILITY_INTEGRATIONS.md) | Prometheus, OpenTelemetry, Power BI, Dynatrace, and Elastic integrations |
 | [APPDYNAMICS.md](APPDYNAMICS.md) | Classic Controller connection setup, governed collection, run evidence, and troubleshooting |
+| [PROMETHEUS_MONITORING.md](PROMETHEUS_MONITORING.md) | Project target-system Prometheus connections, typed queries, collection, evidence, archives, acceptance and operating guidance |
+| [PROMETHEUS_MONITORING_SPEC.md](PROMETHEUS_MONITORING_SPEC.md) | Target-system monitoring baseline audit, contracts, implementation sequence, limits and qualification matrix |
 | [ENTERPRISE_FLEET_AND_CAPACITY.md](ENTERPRISE_FLEET_AND_CAPACITY.md) | Generator fleet inventory, autoscaling, capacity reservations, and run supervision |
 
 ## Engineering and product references
@@ -84,6 +86,7 @@ not the source of truth for current API or DSL contracts.
 | [ARCHIVE_SOURCE_RETENTION.md](ARCHIVE_SOURCE_RETENTION.md) | Opt-in confirmed-source retention, publication fences and recoverability limits |
 | [ANALYSIS_WORKFLOWS.md](ANALYSIS_WORKFLOWS.md) | Project-gated run monitoring, traffic-free preparation, native Parquet imports, saved mappings and correlation; validation limits |
 | [ROADMAP.md](ROADMAP.md) | Roadmap: runtime telemetry SLA, protocol telemetry parity, script authoring consolidation, PT Analysis Parquet import, messaging open work and design record, browser/mobile roadmap, CloudTest outcome-parity ledger and phases |
+| [FEATURE_COMPLETION_SPEC.md](FEATURE_COMPLETION_SPEC.md) | Approved implementation and acceptance specification for Event Hubs/messaging, browser evidence/intelligence, telemetry reporting, native analytics and authoring cleanup |
 | [qa/TEST_PROGRAM.md](qa/TEST_PROGRAM.md) | Nine-month progressive test and infrastructure-readiness program; scope of record, live risk register, and release test checklist |
 | [qa/DASHBOARD.md](qa/DASHBOARD.md) | Generated current QA status, headline metrics, Tier-0/API coverage, and gate tiers |
 | [qa/STATUS.md](qa/STATUS.md) | Milestone state and current program narrative (tracker-enforced) |

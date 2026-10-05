@@ -1,6 +1,7 @@
 import AccessNavigation from './AccessNavigation'
 import ELKConnectionsCard from './ELKConnectionsCard'
 import DynatraceConnectionsCard from './DynatraceConnectionsCard'
+import PrometheusConnectionsCard from './PrometheusConnectionsCard'
 import AppDynamicsConnectionsCard from './AppDynamicsConnectionsCard'
 import TabList from './ux/TabList'
 import FormField from './ux/FormField'
@@ -1153,6 +1154,7 @@ export default function SettingsPage({
     'elk-capture': activeProject?.name || 'Project scoped',
     'dynatrace-capture': activeProject?.name || 'Project scoped',
     'appdynamics-capture': activeProject?.name || 'Project scoped',
+    'prometheus-capture': activeProject?.name || 'Project scoped',
     library: activeProject?.name || 'Project scoped',
     github: settings.github.enabled ? 'Enabled' : 'Disabled',
     prometheus: settings.prometheus.enabled ? 'Enabled' : 'Disabled',
@@ -6254,6 +6256,7 @@ export default function SettingsPage({
             )}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'elk-capture' && <section aria-label="Elastic test capture settings"><ELKConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'dynatrace-capture' && <section aria-label="Dynatrace test capture settings"><DynatraceConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
+            {activeSection === 'integrations' && activeIntegrationSubsection === 'prometheus-capture' && <section aria-label="Prometheus test monitoring settings"><PrometheusConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} canApprovePrivateNetworks={canManageSystem} /></section>}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'appdynamics-capture' && <section aria-label="AppDynamics test capture settings"><AppDynamicsConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} canApprovePrivateNetworks={canManageSystem} /></section>}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'confluence' && <section aria-label="Confluence publishing settings"><ConfluenceConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
             <fieldset className="settings-fieldset settings-integration-panels" disabled={formDisabled}>
@@ -6310,18 +6313,18 @@ export default function SettingsPage({
                 <div className="settings-subsection">
                   <div className="settings-manager-summary">
                     <div>
-                      <span className="setting-label">Prometheus Graphs</span>
-                      <span className="setting-desc">Proxy the configured Prometheus server through the backend for the curated APEX runtime graph pack.</span>
+                      <span className="setting-label">APEX platform graphs</span>
+                      <span className="setting-desc">Query the deployment Prometheus server for APEX controller and generator graphs. Configure project Prometheus test monitoring separately to retain target-system evidence.</span>
                     </div>
                     <strong>{settings.prometheus.enabled ? 'Enabled' : 'Disabled'}</strong>
                   </div>
                   <div className="setting-row">
                     <div className="setting-info">
-                      <span className="setting-label">Enable Prometheus Graphs</span>
+                      <span className="setting-label">Enable APEX platform graphs</span>
                       <span className="setting-desc">Shows the Prometheus graph category when the server URL is configured.</span>
                     </div>
                     <label className="settings-checkbox-label">
-                      <input aria-label="Enable Prometheus Graphs"
+                      <input aria-label="Enable APEX platform graphs"
                         type="checkbox"
                         checked={settings.prometheus.enabled}
                         onChange={event => updatePrometheus({ enabled: event.target.checked })}

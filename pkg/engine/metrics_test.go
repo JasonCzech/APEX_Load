@@ -137,7 +137,7 @@ func TestMetricsCollectorStopFlushesTrailingPartialWindow(t *testing.T) {
 // scheduling and resource sampling always finish within a fixed short sleep.
 func waitForMetricsSnapshot(t *testing.T, mc *MetricsCollector, accept func(MetricsSnapshot) bool) MetricsSnapshot {
 	t.Helper()
-	deadline := time.NewTimer(2 * time.Second)
+	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 	poll := time.NewTicker(5 * time.Millisecond)
 	defer poll.Stop()

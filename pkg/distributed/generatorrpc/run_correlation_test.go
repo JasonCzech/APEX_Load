@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	pb "github.com/jasonczech/apexload/api/proto"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestAssignmentRunCorrelationOriginsRetryIdentityAndBounds(t *testing.T) {
@@ -70,6 +72,53 @@ func TestAssignmentCorrelationCarriersIdentityAndValidation(t *testing.T) {
 	}
 }
 
-// legacyRunCorrelationFingerprint was computed by the fingerprint algorithm
-// that predates correlation carriers, for the carrier-free assignment above.
-const legacyRunCorrelationFingerprint = "33b4241c11a54283c915b687c75696ed22c89579b8e4e3542cddf130cd462445"
+// legacyRunCorrelationFingerprint was computed by main's fingerprint algorithm
+// before correlation carriers were added, for the carrier-free assignment above.
+const legacyRunCorrelationFingerprint = "09c85e339e40e266085d2d969f56cbbaaf22b11e234062a5205fbd0f32745991"
+
+// Field 43 was published for origins before resource claims were released.
+// Raw historical wire bytes must keep their meaning after the combined merge.
+func TestAssignmentPublishedRunCorrelationWireAndResourceClaimsRemainDistinct(t *testing.T) {
+	fields := (&pb.WorkAssignment{}).ProtoReflect().Descriptor().Fields()
+	if field := fields.ByName("run_correlation_origins"); field == nil || field.Number() != 43 {
+		t.Fatal("published run correlation field changed wire identity")
+	}
+	if field := fields.ByName("runtime_resource_claim"); field == nil || field.Number() != 44 {
+		t.Fatal("runtime resource claim overlaps a published wire field")
+	}
+	wire := protowire.AppendTag(nil, 43, protowire.BytesType)
+	wire = protowire.AppendString(wire, "https://app.example")
+	var historical pb.WorkAssignment
+	if err := proto.Unmarshal(wire, &historical); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(historical.GetRunCorrelationOrigins(), []string{"https://app.example"}) || historical.GetRuntimeResourceClaim() != nil {
+		t.Fatal("published origins became a resource claim")
+	}
+	base := Assignment{TestID: "run", RunCorrelationOrigins: []string{"https://app.example"}, RuntimeResourceClaim: &pb.RuntimeResourceClaim{
+		Contract: "runtime-resource-v1", Protocol: "eventhubs", PeakVusers: 2,
+		Requested: &pb.RuntimeResourceDemand{Processors: 2, Workers: 4, MaxPartitionsPerProcessor: 2},
+	}}
+	combined := toProtoAssignment(base)
+	encoded, err := proto.Marshal(combined)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded pb.WorkAssignment
+	if err := proto.Unmarshal(encoded, &decoded); err != nil || !proto.Equal(combined, &decoded) {
+		t.Fatalf("combined assignment round trip: %v", err)
+	}
+	originalFingerprint := workAssignmentFingerprint(combined)
+	changedOrigins := proto.Clone(combined).(*pb.WorkAssignment)
+	changedOrigins.RunCorrelationOrigins[0] = "https://another.example"
+	changedClaim := proto.Clone(combined).(*pb.WorkAssignment)
+	changedClaim.RuntimeResourceClaim.Requested.Workers++
+	if originalFingerprint == workAssignmentFingerprint(changedOrigins) || originalFingerprint == workAssignmentFingerprint(changedClaim) {
+		t.Fatal("combined retry identity omitted an origin or resource demand")
+	}
+	base.RuntimeResourceClaim.Requested.Workers++
+	base.RunCorrelationOrigins[0] = "https://mutated.example"
+	if combined.RuntimeResourceClaim.Requested.Workers != 4 || combined.RunCorrelationOrigins[0] != "https://app.example" {
+		t.Fatal("combined assignment aliases caller-owned claims or origins")
+	}
+}

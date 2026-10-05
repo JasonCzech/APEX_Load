@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -21,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/analysis"
 	analytics "github.com/jasonczech/apexload/pkg/analysis/duckdb"
+	"github.com/jasonczech/apexload/pkg/collectoragent"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -31,6 +31,10 @@ const analysisImportMaxBytes = int64(20 << 30)
 var analysisPipelineJobs = make(chan struct{}, 1)
 
 func admitAnalysisPipeline(w http.ResponseWriter) bool {
+	if analytics.NativeBusy() {
+		writeError(w, 503, "native analytical ownership is retained; retry after completion")
+		return false
+	}
 	select {
 	case analysisPipelineJobs <- struct{}{}:
 		return true
@@ -118,9 +122,37 @@ func (s *Server) loadAnalysisImportMetadata(w http.ResponseWriter, r *http.Reque
 	return store, in
 }
 
+// AnalysisCapabilitiesResponse exposes measurement definitions independently
+// of runtime capture and query availability. A catalog entry alone does not
+// advertise a generator, dataset or provider capability.
+type AnalysisCapabilitiesResponse struct {
+	DiagnosticsEnabled            bool                   `json:"diagnostics_enabled"`
+	MessagingManagementEnabled    bool                   `json:"messaging_management_enabled"`
+	MessagingManagementVersion    uint32                 `json:"messaging_management_version"`
+	MessagingManagementPacks      []string               `json:"messaging_management_packs"`
+	MonitoringEnabled             bool                   `json:"monitoring_enabled"`
+	PreparationEnabled            bool                   `json:"preparation_enabled"`
+	NativeParquet                 bool                   `json:"native_parquet"`
+	Enabled                       bool                   `json:"enabled"`
+	ChunkBytes                    int64                  `json:"chunk_bytes"`
+	MaxImportBytes                int64                  `json:"max_import_bytes"`
+	HeavyJobs                     int                    `json:"heavy_jobs"`
+	Threads                       int                    `json:"threads"`
+	MemoryLimit                   string                 `json:"memory_limit"`
+	SpillLimit                    string                 `json:"spill_limit"`
+	ResourceConfigurationAccepted bool                   `json:"resource_configuration_accepted"`
+	MetricCatalog                 analysis.MetricCatalog `json:"metric_catalog"`
+}
+
 func (s *Server) handleAnalysisCapabilities(w http.ResponseWriter, r *http.Request) {
 	project := r.URL.Query().Get("project_id")
-	writeJSON(w, 200, map[string]any{"diagnostics_enabled": diagnosticsProjectEnabled(project), "monitoring_enabled": runMonitoringEnabled(project), "preparation_enabled": preparationProjectEnabled(project), "native_parquet": analytics.Available(), "enabled": analysisProjectEnabled(project), "chunk_bytes": analysisUploadChunk, "max_import_bytes": analysisImportMaxBytes, "heavy_jobs": 1, "threads": 2, "memory_limit": "2GiB"})
+	memory, spill, accepted := nativeAnalysisResourceCapability()
+	writeJSON(w, 200, AnalysisCapabilitiesResponse{
+		MessagingManagementEnabled: messagingManagementEnabled(project), MessagingManagementVersion: analysis.MessagingManagementVersion, MessagingManagementPacks: collectoragent.ManagementPacks(),
+		DiagnosticsEnabled: diagnosticsProjectEnabled(project), MonitoringEnabled: runMonitoringEnabled(project), PreparationEnabled: preparationProjectEnabled(project),
+		NativeParquet: analytics.Available(), Enabled: analysisProjectEnabled(project), ChunkBytes: analysisUploadChunk, MaxImportBytes: analysisImportMaxBytes,
+		HeavyJobs: 1, Threads: 2, MemoryLimit: memory, SpillLimit: spill, ResourceConfigurationAccepted: accepted, MetricCatalog: analysis.Catalog(),
+	})
 }
 
 func (s *Server) handleAnalysisImports(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +194,7 @@ func (s *Server) handleAnalysisImports(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "import requires 1-1024 files")
 		return
 	}
-	in := storage.AnalysisImport{ID: uuid.NewString(), ProjectID: project, Name: req.Name, State: "uploading"}
+	in := storage.AnalysisImport{ID: uuid.NewString(), ProjectID: project, Name: req.Name, State: "uploading", UploadWriterVersion: storage.AnalysisUploadWriterVersion}
 	var total int64
 	seen := map[string]bool{}
 	for _, file := range req.Files {
@@ -201,9 +233,19 @@ func (s *Server) handleAnalysisImport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, in)
 		return
 	}
-	if !s.requireAnalysisBackend(w) {
+	// Capture the approved immutable namespace before the first metadata
+	// mutation. A later environment edit must refuse cleanup rather than
+	// substitute another backend after durable ownership was checked.
+	backend, err := nativeAnalysisArtifactBackend(r.Context())
+	if err != nil || backend.validate() != nil {
+		writeError(w, 503, "dataset cleanup storage authority unavailable")
 		return
 	}
+	if err = ensureAnalysisBackendFor(s.store, backend); err != nil {
+		writeError(w, 503, "dataset cleanup storage authority unavailable")
+		return
+	}
+	r = r.WithContext(context.WithValue(r.Context(), nativeAnalysisArtifactBackendKey{}, backend))
 	if in.State == "deleted" {
 		w.WriteHeader(204)
 		return
@@ -220,6 +262,18 @@ func (s *Server) handleAnalysisImport(w http.ResponseWriter, r *http.Request) {
 	}
 	// Cancellation invalidates the worker's revision immediately. Repeating
 	// DELETE retries any physical cleanup interrupted by a storage outage.
+	cleanup, ok := s.store.(interface {
+		AnalysisDatasetCleanupReady(context.Context, string, string) (bool, error)
+	})
+	if !ok {
+		writeError(w, 503, "dataset cleanup ownership unavailable")
+		return
+	}
+	ready, readyErr := cleanup.AnalysisDatasetCleanupReady(r.Context(), saved.ProjectID, saved.ID)
+	if readyErr != nil || !ready {
+		writeError(w, 503, "dataset cleanup pending physical writer completion")
+		return
+	}
 	if err = deleteAnalysisObjects(r.Context(), saved); err != nil {
 		writeError(w, 503, "dataset cleanup pending; retry DELETE")
 		return
@@ -240,8 +294,42 @@ func analysisChunkName(file storage.AnalysisImportFile, offset int64, digest str
 }
 
 func (s *Server) handleAnalysisUpload(w http.ResponseWriter, r *http.Request) {
-	store, in := s.loadAnalysisImport(w, r)
-	if store == nil {
+	// Pin SQL and immutable artifact namespace before body allocation/admission.
+	// A request-side Store replacement requires a newly configured Server.
+	if s == nil || !nativeSameStore(s.store, s.nativeReconciliationStore) {
+		writeError(w, 503, "upload storage authority unavailable")
+		return
+	}
+	writers, writerOK := s.nativeReconciliationStore.(storage.AnalysisUploadWriterStore)
+	store, storeOK := s.nativeReconciliationStore.(storage.AnalysisImportStore)
+	if !writerOK || !storeOK {
+		writeError(w, 503, "upload writer ownership unavailable")
+		return
+	}
+	bound, _, err := s.bindAnalysisUploadContext(r.Context(), writers)
+	if err != nil {
+		writeError(w, 503, "upload storage authority unavailable")
+		return
+	}
+	r = r.WithContext(bound)
+	in, err := store.GetAnalysisImport(r.PathValue("id"))
+	if err != nil || in == nil || !analysisQueryContextLive(r.Context()) {
+		writeError(w, 404, "analysis import not found")
+		return
+	}
+	if !requireAuthorizedProjectMatch(w, r, in.ProjectID) {
+		return
+	}
+	if !analysisProjectEnabled(in.ProjectID) {
+		writeError(w, 409, "Parquet analysis is not enabled for this project")
+		return
+	}
+	if !analytics.Available() {
+		writeError(w, 501, analytics.ErrUnavailable.Error())
+		return
+	}
+	if in.UploadWriterVersion != storage.AnalysisUploadWriterVersion {
+		writeError(w, 503, "upload writer ownership unavailable for this session")
 		return
 	}
 	if in.State != "uploading" {
@@ -265,9 +353,26 @@ func (s *Server) handleAnalysisUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "upload offset does not match durable cursor")
 		return
 	}
+	if !analysisQueryContextLive(r.Context()) {
+		writeError(w, 503, "upload request authority expired")
+		return
+	}
+	uploadOwner, admitted := acquireAnalysisUploadOwner()
+	if !admitted {
+		writeError(w, 429, "upload writer capacity unavailable")
+		return
+	}
+	defer uploadOwner.endRequest()
+	uploadCtx, cancelUpload := context.WithTimeout(r.Context(), analysisUploadOperationTimeout)
+	defer cancelUpload()
+	r = r.WithContext(context.WithValue(uploadCtx, analysisUploadOwnerKey{}, uploadOwner))
 	r.Body = http.MaxBytesReader(w, r.Body, analysisUploadChunk)
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
+	data, err := readAnalysisUploadBody(r.Context(), uploadOwner, r.Body)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, errAnalysisUploadPhysical) {
+		writeError(w, 503, "upload body ownership remains pending")
+		return
+	}
+	if err != nil || len(data) > analysisUploadChunk {
 		writeError(w, 413, "upload chunk exceeds 4 MiB")
 		return
 	}
@@ -280,7 +385,9 @@ func (s *Server) handleAnalysisUpload(w http.ResponseWriter, r *http.Request) {
 	if offset < file.Uploaded {
 		for _, chunk := range file.Chunks {
 			if chunk.Offset == offset && chunk.Size == int64(len(data)) && chunk.SHA256 == digest {
-				writeJSON(w, 200, map[string]any{"uploaded": file.Uploaded, "revision": in.Revision})
+				if err := s.writeAnalysisUploadCursor(w, r, *in, file.ID, file.Uploaded, in.Revision); err != nil {
+					writeAnalysisUploadCursorError(w, err)
+				}
 				return
 			}
 		}
@@ -291,47 +398,26 @@ func (s *Server) handleAnalysisUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "nonfinal chunks must contain exactly 4 MiB")
 		return
 	}
-	key := analysisObjectKey(in.ProjectID, in.ID, analysisChunkName(*file, offset, digest))
-	if _, err = analysisObjectWrite(r.Context(), key, bytes.NewReader(data)); err != nil {
-		writeError(w, 503, "chunk persistence failed")
-		return
-	}
-	file.Chunks = append(file.Chunks, storage.AnalysisChunk{Offset: offset, Size: int64(len(data)), SHA256: digest})
-	file.Uploaded += int64(len(data))
-	saved, err := store.SaveAnalysisImport(*in, in.Revision)
-	if err != nil {
-		// The content-addressed key cannot overwrite another upload. Remove an
-		// unreferenced losing write, retaining identical concurrently accepted retries.
-		current, readErr := store.GetAnalysisImport(in.ID)
-		if readErr == nil {
-			referenced := false
-			for _, f := range current.Files {
-				for _, c := range f.Chunks {
-					if analysisObjectKey(current.ProjectID, current.ID, analysisChunkName(f, c.Offset, c.SHA256)) == key {
-						referenced = true
-					}
-				}
-			}
-			if !referenced || current.State == "cancelled" || current.State == "deleting" || current.State == "deleted" {
-				_ = analysisObjectDelete(context.Background(), key)
-			}
-		}
-		writeError(w, 409, "upload changed concurrently; reload durable cursor")
-		return
-	}
-	writeJSON(w, 200, map[string]any{"uploaded": file.Uploaded, "revision": saved.Revision})
+	s.writeAnalysisUploadChunk(w, r, writers, *in, *file, offset, data, digest)
+
 }
 
-func materializeAnalysisOriginal(ctx context.Context, in *storage.AnalysisImport, file storage.AnalysisImportFile, dir string) (string, string, error) {
+func materializeAnalysisOriginal(ctx context.Context, in *storage.AnalysisImport, file storage.AnalysisImportFile, dir string) (retPath string, retDigest string, retErr error) {
 	if file.Uploaded != file.Size {
 		return "", "", errors.New("file upload incomplete")
 	}
+	lease, err := analytics.NativePipelineIO(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	defer lease.Joined()
 	local := filepath.Join(dir, file.ID+".parquet")
 	out, err := os.OpenFile(local, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return "", "", err
 	}
-	defer out.Close()
+	lease.TrackOwner(out)
+	defer func() { retErr = errors.Join(retErr, analysisCloseNativeOwner(lease, out)) }()
 	hash := sha256.New()
 	remaining := file.Size
 	staging := &analysisStagingWriter{out: out, dir: dir, remaining: &remaining}
@@ -340,7 +426,11 @@ func materializeAnalysisOriginal(ctx context.Context, in *storage.AnalysisImport
 		if chunk.Offset != offset || chunk.Size < 1 {
 			return "", "", errors.New("invalid durable upload sequence")
 		}
-		digest, err := analysisObjectRead(ctx, analysisObjectKey(in.ProjectID, in.ID, analysisChunkName(file, chunk.Offset, chunk.SHA256)), io.MultiWriter(staging, hash), chunk.Size)
+		key, keyErr := storage.AnalysisUploadChunkObjectKey(in.ProjectID, in.ID, file, chunk)
+		if keyErr != nil {
+			return "", "", keyErr
+		}
+		digest, err := analysisObjectRead(ctx, key, io.MultiWriter(staging, hash), chunk.Size)
 		if err != nil {
 			return "", "", err
 		}
@@ -363,9 +453,6 @@ func analysisScratch() (string, error) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return "", err
 	}
-	if err := reclaimAnalysisScratch(root, time.Now().UTC()); err != nil {
-		return "", err
-	}
 	return os.MkdirTemp(root, "job-")
 }
 
@@ -378,7 +465,7 @@ func (s *Server) handleAnalysisPreview(w http.ResponseWriter, r *http.Request) {
 	if in == nil {
 		return
 	}
-	if in.State == "cancelled" || in.State == "deleted" || in.State == "deleting" {
+	if !nativePreviewStateAvailable(in.State) {
 		writeError(w, 409, "import is not available")
 		return
 	}
@@ -393,28 +480,28 @@ func (s *Server) handleAnalysisPreview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "import file not found")
 		return
 	}
-	dir, err := analysisScratch()
+	ctx, pipeline, dir, err := beginNativeAnalysisPipeline(r.Context(), selected.Size, 12)
 	if err != nil {
 		writeError(w, 503, "analysis staging unavailable")
 		return
 	}
-	defer os.RemoveAll(dir)
-	file, _, err := materializeAnalysisOriginal(r.Context(), in, *selected, dir)
+	defer closeNativeAnalysisPipeline(pipeline, dir)
+	file, _, err := materializeAnalysisOriginal(ctx, in, *selected, dir)
 	if err != nil {
 		writeError(w, 409, err.Error())
 		return
 	}
-	engine, err := analytics.New(dir)
+	engine, err := analytics.NewForNativePipeline(ctx, dir)
 	if err != nil {
 		writeError(w, 503, err.Error())
 		return
 	}
-	preview, err := engine.Preview(r.Context(), file)
+	preview, err := engine.Preview(ctx, file)
 	if err != nil {
 		writeError(w, 422, "Cannot inspect Parquet: invalid file, unsupported schema, or analytical resource limit.")
 		return
 	}
-	writeJSON(w, 200, preview)
+	s.writeNativeAnalysisPreview(w, r, in, preview)
 }
 
 func (s *Server) handleAnalysisMapping(w http.ResponseWriter, r *http.Request) {
@@ -503,198 +590,145 @@ func (s *Server) handleAnalysisCommit(w http.ResponseWriter, r *http.Request) {
 			<-analysisPipelineJobs
 		}
 	}()
-	// Claim ownership before reclaiming an earlier attempt. A stale request
-	// must never delete artifacts that another worker has just published.
-	in.ObsoleteObjects = append(in.ObsoleteObjects, in.Normalized...)
-	in.ObsoleteObjects = append(in.ObsoleteObjects, in.RejectionArtifacts...)
-	if len(in.ObsoleteObjects) > 4096 {
-		writeError(w, 409, "reclaim prior analytical outputs before another retry")
+	attempts, ok := s.store.(storage.AnalysisAttemptStore)
+	if !ok {
+		writeError(w, 503, "native attempt authority unavailable")
 		return
 	}
-	in.State = "normalizing"
-	in.Owner = uuid.NewString()
-	in.Normalized = nil
-	in.NormalizedSHA256 = nil
-	in.Rejections = nil
-	in.RejectionArtifacts = nil
-	in.RejectionSHA256 = nil
-	for i := range in.Files {
-		for j := range in.Mapping.Measures {
-			in.Normalized = append(in.Normalized, analysisObjectKey(in.ProjectID, in.ID, fmt.Sprintf("normalized-%s-part-%04d-%02d.parquet", in.Owner, i, j)))
-			if in.AllowRejected {
-				in.RejectionArtifacts = append(in.RejectionArtifacts, analysisObjectKey(in.ProjectID, in.ID, fmt.Sprintf("normalized-%s-reject-%04d-%02d.parquet", in.Owner, i, j)))
-			}
+	var inputBytes int64
+	for _, file := range in.Files {
+		if file.Size < 12 || file.Size > analysisImportMaxBytes-inputBytes {
+			writeError(w, 422, "invalid analytical resource geometry")
+			return
 		}
+		inputBytes += file.Size
 	}
-	in.LeaseExpiresAt = time.Now().UTC().Add(16 * time.Minute)
-	in.Error = ""
-	saved, err := store.SaveAnalysisImport(*in, in.Revision)
+	slots := int64(len(in.Files) * len(in.Mapping.Measures))
+	if in.AllowRejected {
+		slots *= 2
+	}
+	outputBytes, err := nativeNormalizationGeometry(slots, inputBytes)
 	if err != nil {
-		writeError(w, 409, err.Error())
+		writeError(w, 422, err.Error())
+		return
+	}
+	parent, stop := s.runner.archiveOperationContext(s.startupContext)
+	ctx, pipeline, dir, err := beginNativeAnalysisPipeline(parent, inputBytes, outputBytes)
+	if err != nil {
+		stop()
+		writeError(w, 503, "analytical admission unavailable")
+		return
+	}
+	claimed, _, err := attempts.ClaimAnalysisImportAttempt(r.Context(), in.ID, in.ProjectID, in.Revision, time.Minute)
+	if err != nil {
+		stop()
+		_ = closeNativeAnalysisPipeline(pipeline, dir)
+		writeError(w, 409, "analytical claim changed or requires reconciliation")
 		return
 	}
 	launched = s.launchBackground(func() {
 		defer func() { <-analysisPipelineJobs }()
-		ctx, cancel := s.runner.archiveOperationContext(s.startupContext)
-		defer cancel()
-		normalizeAnalysisImport(ctx, store, *saved)
+		defer stop()
+		s.normalizeAnalysisImportOwned(ctx, store, attempts, *claimed, pipeline, dir)
 	})
 	if !launched {
-		saved.State, saved.Owner, saved.Error = "failed", "", "Controller is shutting down; retry commit."
-		saved.LeaseExpiresAt = time.Time{}
-		_, _ = store.SaveAnalysisImport(*saved, saved.Revision)
+		s.failUnlaunchedAnalysisImport(ctx, r.Context(), attempts, *claimed, pipeline, dir, stop)
 		writeError(w, 503, "controller is shutting down")
 		return
 	}
 	s.recordAuditEvent(r, "analysis.import.commit", "started", "analysis_import", in.ID, in.ProjectID, nil)
-	writeJSON(w, 202, saved)
+	writeJSON(w, 202, claimed)
 }
 
-func normalizeAnalysisImport(parent context.Context, store storage.AnalysisImportStore, in storage.AnalysisImport) {
-	ctx, cancel := context.WithTimeout(parent, 15*time.Minute)
-	defer cancel()
-	planned := append([]string(nil), in.Normalized...)
-	planned = append(planned, in.RejectionArtifacts...)
-	published := false
-	defer func() {
-		if !published {
-			cleanupCtx, stop := context.WithTimeout(context.Background(), time.Minute)
-			defer stop()
-			for _, key := range planned {
-				_ = analysisObjectDelete(cleanupCtx, key)
+// Resolve the complete exact plan before physical I/O. New upload writers use
+// opaque durable chunk keys; historical chunks retain their validated content
+// key. A malformed/foreign later key cannot cause a partially deleted dataset.
+func analysisDatasetDeletionKeys(in *storage.AnalysisImport) ([]string, error) {
+	const maxKeys = 131072
+	if in == nil || len(in.ID) != 36 || len(in.ProjectID) > 128 || len(in.Files) < 1 || len(in.Files) > 1024 || len(in.Normalized) > 65536 || len(in.RejectionArtifacts) > 65536 || len(in.ObsoleteObjects) > 4096 {
+		return nil, storage.ErrAnalysisAuthority
+	}
+	total := len(in.Files) + len(in.Normalized) + len(in.RejectionArtifacts) + len(in.ObsoleteObjects)
+	for _, file := range in.Files {
+		if len(file.ID) != 36 || len(file.Chunks) > 16384 || len(file.Chunks) > maxKeys-total {
+			return nil, storage.ErrAnalysisAuthority
+		}
+		total += len(file.Chunks)
+	}
+	if total > maxKeys || strings.TrimSpace(in.ProjectID) == "" {
+		return nil, storage.ErrAnalysisAuthority
+	}
+	parsed, err := uuid.Parse(in.ID)
+	if err != nil || parsed.String() != in.ID {
+		return nil, storage.ErrAnalysisAuthority
+	}
+	for _, file := range in.Files {
+		parsed, err := uuid.Parse(file.ID)
+		if err != nil || parsed.String() != file.ID {
+			return nil, storage.ErrAnalysisAuthority
+		}
+	}
+	prefix := analysisObjectKey(in.ProjectID, in.ID, "")
+	keys := []string{}
+	seen := map[string]bool{}
+	add := func(key string) error {
+		if len(key) > 274 || !analysisObjectPattern.MatchString(key) || !strings.HasPrefix(key, prefix) {
+			return storage.ErrAnalysisAuthority
+		}
+		if !seen[key] {
+			if len(keys) == maxKeys {
+				return storage.ErrAnalysisAuthority
 			}
-			if current, err := store.GetAnalysisImport(in.ID); err == nil && (current.State == "cancelled" || current.State == "deleted" || current.State == "deleting") {
-				_ = deleteAnalysisObjects(cleanupCtx, &in)
-			}
-
+			seen[key] = true
+			keys = append(keys, key)
 		}
-	}()
-	watchID, watchRevision, watchOwner := in.ID, in.Revision, in.Owner
-	watchDone := make(chan struct{})
-	defer func() { cancel(); <-watchDone }()
-	go func() {
-		defer close(watchDone)
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				current, err := store.GetAnalysisImport(watchID)
-				if err != nil || current.Revision != watchRevision || current.Owner != watchOwner {
-					cancel()
-					return
-				}
-			}
+		return nil
+	}
+	for _, file := range in.Files {
+		if len(file.Chunks) > 16384 {
+			return nil, storage.ErrAnalysisAuthority
 		}
-	}()
-	run := func() error {
-		for _, key := range in.ObsoleteObjects {
-			if err := analysisObjectDelete(ctx, key); err != nil {
-				return errors.New("previous attempt cleanup pending")
-			}
-		}
-		in.ObsoleteObjects = nil
-		dir, err := analysisScratch()
-		if err != nil {
-			return err
-		}
-		defer os.RemoveAll(dir)
-		engine, err := analytics.New(dir)
-		if err != nil {
-			return err
-		}
-		paths := []string{}
-		seen := map[string]bool{}
-		for i, file := range in.Files {
-			local, digest, err := materializeAnalysisOriginal(ctx, &in, file, dir)
+		for _, chunk := range file.Chunks {
+			key, err := storage.AnalysisUploadChunkObjectKey(in.ProjectID, in.ID, file, chunk)
 			if err != nil {
-				return err
+				return nil, err
 			}
-			if seen[digest] {
-				return errors.New("duplicate original files in import")
-			}
-			seen[digest] = true
-			in.Files[i].SHA256 = digest
-			reader, err := os.Open(local)
-			if err != nil {
-				return err
-			}
-			_, writeErr := analysisObjectWrite(ctx, analysisObjectKey(in.ProjectID, in.ID, "original-"+file.ID+".parquet"), reader)
-			closeErr := reader.Close()
-			if err = errors.Join(writeErr, closeErr); err != nil {
-				return err
-			}
-			paths = append(paths, local)
-		}
-		result, err := engine.Normalize(ctx, analytics.NormalizeRequest{ProjectID: in.ProjectID, DatasetID: in.ID, Files: paths, Mapping: *in.Mapping, AllowRejected: in.AllowRejected})
-		in.Accepted, in.Rejected = result.Accepted, result.Rejected
-		in.Rejections = result.Rejections
-		if err != nil {
-			return err
-		}
-		in.NormalizedSHA256 = make(map[string]string)
-		in.RejectionSHA256 = make(map[string]string)
-		in.RejectionArtifacts = nil
-		for _, file := range append(result.Files, result.RejectionFiles...) {
-			key := analysisObjectKey(in.ProjectID, in.ID, "normalized-"+in.Owner+"-"+filepath.Base(file))
-			reader, err := os.Open(file)
-			if err != nil {
-				return err
-			}
-			digest, writeErr := analysisObjectWrite(ctx, key, reader)
-			closeErr := reader.Close()
-			if err = errors.Join(writeErr, closeErr); err != nil {
-				return err
-			}
-			if strings.HasPrefix(filepath.Base(file), "reject-") {
-				in.RejectionArtifacts = append(in.RejectionArtifacts, key)
-				in.RejectionSHA256[key] = digest
-			} else {
-				in.NormalizedSHA256[key] = digest
+			if err = add(key); err != nil {
+				return nil, err
 			}
 		}
-		in.State = "ready"
-		in.Owner = ""
-		in.LeaseExpiresAt = time.Time{}
-		_, err = store.SaveAnalysisImport(in, in.Revision)
-		published = err == nil
+		if err := add(analysisObjectKey(in.ProjectID, in.ID, "original-"+file.ID+".parquet")); err != nil {
+			return nil, err
+		}
+	}
+	for _, group := range [][]string{in.Normalized, in.ObsoleteObjects, in.RejectionArtifacts} {
+		for _, key := range group {
+			if err := add(key); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return keys, nil
+}
+func deleteAnalysisObjects(ctx context.Context, in *storage.AnalysisImport) error {
+	keys, err := analysisDatasetDeletionKeys(in)
+	if err != nil {
 		return err
 	}
-	if err := run(); err != nil {
-		in.State = "failed"
-		in.Error = "Normalization failed. Check mapping, schema compatibility, rejected measurement counts, and controller resource limits."
-		if len(in.Error) > 1024 {
-			in.Error = in.Error[:1024]
-		}
-		in.Owner = ""
-		in.LeaseExpiresAt = time.Time{}
-		_, _ = store.SaveAnalysisImport(in, in.Revision)
+	backend, err := nativeAnalysisArtifactBackend(ctx)
+	if err != nil || backend.validate() != nil {
+		return errNativeReconciliationRetained
 	}
-}
-
-func deleteAnalysisObjects(ctx context.Context, in *storage.AnalysisImport) error {
-	for _, file := range in.Files {
-		for _, chunk := range file.Chunks {
-			if err := analysisObjectDelete(ctx, analysisObjectKey(in.ProjectID, in.ID, analysisChunkName(file, chunk.Offset, chunk.SHA256))); err != nil {
-				return err
-			}
-		}
-		{
-			if err := analysisObjectDelete(ctx, analysisObjectKey(in.ProjectID, in.ID, "original-"+file.ID+".parquet")); err != nil {
-				return err
-			}
-		}
-	}
-	keys := append(append([]string(nil), in.Normalized...), in.ObsoleteObjects...)
-	keys = append(keys, in.RejectionArtifacts...)
 	for _, key := range keys {
-		if err := analysisObjectDelete(ctx, key); err != nil {
+		if err = deleteAnalysisObjectPhysical(ctx, backend, key); err != nil {
 			return err
 		}
 	}
-	return nil
+	// The caller has already revoked the live state and obtained the durable
+	// all-writers-quiesced namespace proof. Closed abandoned upload intents and
+	// temporary files may not appear in the accepted metadata cursor; they must
+	// also be physically removed before a successful terminal DELETE response.
+	return deleteAnalysisNamespacePhysical(ctx, backend, filepath.Dir(analysisObjectKey(in.ProjectID, in.ID, "validation")))
 }
 
 func (s *Server) handleAnalysisDatasetSeries(w http.ResponseWriter, r *http.Request) {
@@ -721,5 +755,5 @@ func (s *Server) handleAnalysisDatasetSeries(w http.ResponseWriter, r *http.Requ
 		writeError(w, 422, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"points": points, "dataset_id": in.ID, "rejected_rows": in.Rejected})
+	s.writeNativeDatasetSeries(w, r, in, points)
 }

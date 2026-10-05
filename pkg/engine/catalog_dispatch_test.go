@@ -52,10 +52,23 @@ func TestEngineDispatchCoversCatalogEngineActions(t *testing.T) {
 		if !handled {
 			t.Errorf("%s: catalog engine action not handled by handleEngineAction", spec.Type)
 		}
+		if _, unsupported := unsupportedEngineActions[spec.Type]; unsupported {
+			if err == nil {
+				t.Errorf("%s: unsupported LoadRunner document helper reported success", spec.Type)
+			}
+			continue
+		}
 		if err != nil {
 			t.Errorf("%s: handleEngineAction returned error: %v", spec.Type, err)
 		}
 	}
+}
+
+// unsupportedEngineActions are dispatched so saved drafts fail with an explicit
+// message instead of an unknown-type error, but they must never report success.
+var unsupportedEngineActions = map[string]string{
+	"source_json": "LoadRunner JSON helpers are not evaluated yet",
+	"source_xml":  "LoadRunner XML helpers are not evaluated yet",
 }
 
 // TestEngineDispatchTypesAreInCatalog is the reverse direction: every type

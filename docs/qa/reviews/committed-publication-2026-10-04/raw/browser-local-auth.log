@@ -1,0 +1,44 @@
+Building controller...
+Starting controller on http://127.0.0.1:18492 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.B6Bmo63dXa)...
+Controller healthy.
+Starting controller on http://127.0.0.1:18492 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.B6Bmo63dXa)...
+Controller healthy.
+Auth profile verified: local-auth.
+
+Running 30 tests using 1 worker
+
+
+(node:18206) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1/30] e2e/workflow-monitoring.spec.ts:10:1 › AppDynamics connection drafts, saved checks, and discovery preserve credential privacy
+[2/30] e2e/workflow-monitoring.spec.ts:56:1 › AppDynamics source editing preserves typed selections for direct and collector collection
+[3/30] e2e/workflow-monitoring.spec.ts:106:1 › AppDynamics live and archived evidence preserve delayed state, units and correlation
+[4/30] e2e/workflow-monitoring.spec.ts:161:1 › Confluence connection setup follows saved project connection workflow
+[5/30] e2e/workflow-monitoring.spec.ts:191:1 › archived run report publishes to a selected Confluence connection
+[6/30] e2e/workflow-monitoring.spec.ts:219:1 › Monitoring preserves repeated keyboard navigation and calendar context
+[7/30] e2e/workflow-monitoring.spec.ts:254:1 › Collectors receive a heartbeat while Monitoring remains open
+[8/30] e2e/workflow-monitoring.spec.ts:278:1 › ELK connection plumbing is manageable without exposing secret references
+[9/30] e2e/workflow-monitoring.spec.ts:336:1 › Dynatrace SaaS connection plumbing is manageable without exposing secret references
+[10/30] e2e/workflow-monitoring.spec.ts:376:1 › Kafka management authoring retains scope, sealed-secret policy and revision conflicts through reload
+[11/30] e2e/workflow-monitoring.spec.ts:455:1 › Service Bus authoring preserves explicit queue and subscription approval, revisions and narrow layout
+[12/30] e2e/workflow-monitoring.spec.ts:562:1 › Solace authoring preserves explicit VPN queue and topic-endpoint approval, revisions and narrow layout
+[13/30] e2e/workflow-prometheus-monitoring.spec.ts:10:1 › Prometheus target connection drafts keep credentials write-only and expose bounded discovery
+[14/30] e2e/workflow-prometheus-monitoring.spec.ts:59:1 › Prometheus target sources preserve labelled typed queries and assigned collection locations
+[15/30] e2e/workflow-prometheus-monitoring.spec.ts:127:1 › Prometheus live and archived evidence preserve delayed collection, freshness and gaps
+[16/30] e2e/workflow-prometheus-monitoring.spec.ts:178:1 › Grafana adoption resolves variables explicitly and saves a disabled reviewed source
+[17/30] e2e/workflow-script-editor.spec.ts:7:1 › operator edits the failed nested browser assertion and reruns without losing source fields
+[18/30] e2e/workflow-script-sidebars.spec.ts:4:1 › script sidebars preserve selection, source scope, body editing and Debug options across narrow layouts
+[19/30] e2e/workflow-script-sidebars.spec.ts:75:3 › Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 1800px
+[20/30] e2e/workflow-script-sidebars.spec.ts:75:3 › Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 1100px
+[21/30] e2e/workflow-script-sidebars.spec.ts:75:3 › Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 900px
+[22/30] e2e/workflow-script-sidebars.spec.ts:75:3 › Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 700px
+[23/30] e2e/workflow-script-sidebars.spec.ts:165:1 › source mapping review decisions survive saving and moved or edited destinations require verified identity
+[24/30] e2e/workflow-settings-monitoring.spec.ts:9:3 › Settings navigation and canonical editors at 1024px
+[25/30] e2e/workflow-settings-monitoring.spec.ts:9:3 › Settings navigation and canonical editors at 1280px
+[26/30] e2e/workflow-settings-monitoring.spec.ts:9:3 › Settings navigation and canonical editors at 1440px
+[27/30] e2e/workflow-settings-monitoring.spec.ts:51:1 › settings destination navigation preserves unsaved edits until explicitly discarded
+[28/30] e2e/workflow-settings-monitoring.spec.ts:67:1 › infrastructure guide, saved commitments and independent cancel work with keyboard navigation
+[29/30] e2e/workflow-settings-monitoring.spec.ts:89:1 › project catalog edits, cancels and confirms deletion against persisted workspace data
+[30/30] e2e/workflow-settings-monitoring.spec.ts:123:1 › Settings search reveals and focuses each matching personal control
+  30 passed (4.7m)

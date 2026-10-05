@@ -201,6 +201,19 @@ func (s *Server) discoverProjectSecretMetadata(ctx context.Context, projectID st
 			}
 		}
 	}
+	if connections, ok := s.store.(storage.PrometheusConnectionStore); ok {
+		profiles, err := connections.ListPrometheusConnections(projectID)
+		if err != nil {
+			return false, err
+		}
+		for _, profile := range profiles {
+			for _, reference := range []string{profile.TokenSecretName, profile.UsernameSecretName, profile.PasswordSecretName, profile.ClientSecretSecretName, profile.ClientCertificateSecretName, profile.ClientKeySecretName} {
+				if name, err := normalizeProjectSecretName(reference); err == nil {
+					byName[name] = struct{}{}
+				}
+			}
+		}
+	}
 	names := make([]string, 0, len(byName))
 	for name := range byName {
 		names = append(names, name)

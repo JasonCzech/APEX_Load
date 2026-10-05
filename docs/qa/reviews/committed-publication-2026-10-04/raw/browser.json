@@ -1,0 +1,29 @@
+{
+  "specs": [
+    "e2e/workflow-monitoring.spec.ts",
+    "e2e/workflow-prometheus-monitoring.spec.ts",
+    "e2e/workflow-settings-monitoring.spec.ts",
+    "e2e/workflow-script-sidebars.spec.ts",
+    "e2e/workflow-script-editor.spec.ts"
+  ],
+  "profile": {
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false -ldflags=-w",
+    "NODE_OPTIONS": "--max-old-space-size=2048"
+  },
+  "gates": [
+    {
+      "name": "dev-admin",
+      "exit_code": 0,
+      "elapsed_seconds": 313.1143481731415,
+      "log": "/private/tmp/apexload-committed-publish-browser-2026-10-04-dev-admin.log"
+    },
+    {
+      "name": "local-auth",
+      "exit_code": 0,
+      "elapsed_seconds": 303.22095370292664,
+      "log": "/private/tmp/apexload-committed-publish-browser-2026-10-04-local-auth.log"
+    }
+  ]
+}

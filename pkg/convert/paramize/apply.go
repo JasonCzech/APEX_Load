@@ -303,7 +303,11 @@ func locationStringValues(script *dsl.Script, location Location) []string {
 	return values
 }
 
-const maxLiteralOverlapSearchWork int64 = 64 << 20
+// maxLiteralOverlapSearchWork bounds bytes compared or scanned in one
+// collision-analysis pass. The work is linear byte scanning (strings.Index
+// runs at GB/s), so this is well under a second; 64 MiB could not index the
+// ~100 claim literals of an ordinary 1 MB Salesforce capture once each.
+const maxLiteralOverlapSearchWork int64 = 512 << 20
 
 // LiteralOverlapSearchBudget bounds aggregate suffix comparisons and request
 // surface searches across a collision-analysis pass. Exhaustion is fail-closed:
@@ -347,29 +351,75 @@ func (budget *LiteralOverlapSearchBudget) Contains(haystack, needle string) bool
 // inside the other and both occupy one real merged region in surface. It does
 // not materialize the potentially quadratic set of merged spellings.
 func (budget *LiteralOverlapSearchBudget) LiteralsPartiallyOverlapInSurface(surface, left, right string) bool {
-	if left == "" || right == "" || surface == "" {
+	if surface == "" {
 		return false
 	}
-	return budget.mergedLiteralOccurs(surface, left, right) || budget.mergedLiteralOccurs(surface, right, left)
+	return budget.LiteralsPartiallyOverlapInSurfaces([]string{surface}, left, right)
 }
 
-func (budget *LiteralOverlapSearchBudget) mergedLiteralOccurs(surface, first, second string) bool {
-	limit := len(first)
-	if len(second) < limit {
-		limit = len(second)
+// LiteralsPartiallyOverlapInSurfaces applies LiteralsPartiallyOverlapInSurface
+// to separate editable fields, computing the pair's overlap lengths once.
+func (budget *LiteralOverlapSearchBudget) LiteralsPartiallyOverlapInSurfaces(surfaces []string, left, right string) bool {
+	if left == "" || right == "" {
+		return false
 	}
-	for overlap := 1; overlap < limit; overlap++ {
-		if !budget.charge(overlap) {
+	for _, pair := range [2][2]string{{left, right}, {right, left}} {
+		first, second := pair[0], pair[1]
+		failure, matched, ok := budget.suffixPrefixBorders(first, second)
+		if !ok {
 			return true
 		}
-		if first[len(first)-overlap:] != second[:overlap] {
-			continue
-		}
-		if budget.surfaceContainsConcatenation(surface, first, second[overlap:]) {
-			return true
+		limit := min(len(first), len(second))
+		for overlap := matched; overlap > 0; overlap = failure[overlap-1] {
+			if overlap >= limit {
+				continue
+			}
+			for _, surface := range surfaces {
+				if surface != "" && budget.surfaceContainsConcatenation(surface, first, second[overlap:]) {
+					return true
+				}
+			}
 		}
 	}
 	return false
+}
+
+// suffixPrefixBorders computes the prefix function of second and the longest
+// prefix of second that is a suffix of first. Following failure from matched
+// visits every overlap length k where first's k-byte suffix equals second's
+// k-byte prefix, in linear work; trying each candidate length separately is
+// quadratic and exhausted the budget on ordinary Salesforce captures holding a
+// few long tokens.
+func (budget *LiteralOverlapSearchBudget) suffixPrefixBorders(first, second string) ([]int, int, bool) {
+	if min(len(first), len(second)) <= 1 {
+		return nil, 0, true
+	}
+	if !budget.charge(len(first) + 2*len(second)) {
+		return nil, 0, false
+	}
+	failure := make([]int, len(second))
+	for index, matched := 1, 0; index < len(second); index++ {
+		for matched > 0 && second[index] != second[matched] {
+			matched = failure[matched-1]
+		}
+		if second[index] == second[matched] {
+			matched++
+		}
+		failure[index] = matched
+	}
+	matched := 0
+	for index := 0; index < len(first); index++ {
+		if matched == len(second) {
+			matched = failure[matched-1]
+		}
+		for matched > 0 && first[index] != second[matched] {
+			matched = failure[matched-1]
+		}
+		if first[index] == second[matched] {
+			matched++
+		}
+	}
+	return failure, matched, true
 }
 
 func (budget *LiteralOverlapSearchBudget) surfaceContainsConcatenation(surface, first, tail string) bool {
@@ -381,10 +431,17 @@ func (budget *LiteralOverlapSearchBudget) surfaceContainsConcatenation(surface, 
 	searchEnd := maxStart + len(first)
 	for searchOffset <= maxStart {
 		window := surface[searchOffset:searchEnd]
-		if !budget.charge(len(window)) {
+		relative := strings.Index(window, first)
+		// Charge only the bytes the search consumed. Charging the whole
+		// remaining window for every occurrence made a literal repeated in
+		// each Aura request quadratic in the surface size.
+		scanned := len(window)
+		if relative >= 0 {
+			scanned = relative + len(first)
+		}
+		if !budget.charge(scanned) {
 			return true
 		}
-		relative := strings.Index(window, first)
 		if relative < 0 {
 			return false
 		}

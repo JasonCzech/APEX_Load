@@ -796,6 +796,15 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 
 func appendEventHubsConfig(cfg map[string]any, script *dsl.Script) {
 	ehCfg := script.Config.EventHubs
+	if ehCfg.ObservePartitionTail {
+		cfg["eventhubs_observe_partition_tail"] = true
+	}
+	if ehCfg.TailPollIntervalMs > 0 {
+		cfg["eventhubs_tail_poll_interval_ms"] = ehCfg.TailPollIntervalMs
+	}
+	if ehCfg.ProcessorMaxPartitions > 0 {
+		cfg["eventhubs_processor_max_partitions"] = ehCfg.ProcessorMaxPartitions
+	}
 	if ehCfg.OwnerLevel != nil {
 		cfg["eventhubs_owner_level"] = *ehCfg.OwnerLevel
 	}

@@ -105,8 +105,16 @@ func finalizeTelemetry(result *protocol.Result, sent event, hasSent bool, receiv
 		return nil
 	}
 	t := &protocol.ServerTelemetry{TransferMs: durationToMs(result.Duration)}
+	if hasSent || hasReceived {
+		t.Messaging = &protocol.MessagingDiagnostics{Version: protocol.MessagingEvidenceVersion}
+	}
 	if hasSent {
 		t.AcknowledgementMs = sent.AcknowledgementMs
+		observation := protocol.MessagingDurationObservation{Metric: "producer_ack", ValueMs: sent.AcknowledgementMs}
+		if observation.ValueMs == nil {
+			observation.UnavailableReason = "not_observed"
+		}
+		t.Messaging.Durations = append(t.Messaging.Durations, observation)
 		t.MessagesSent = max(1, sent.MessageCount)
 		t.RequestPayloadKB = bytesToKB(len(sent.Body))
 		t.RequestSizeClass = protocol.ClassifyPayloadSize(int64(len(sent.Body)))
@@ -129,6 +137,11 @@ func finalizeTelemetry(result *protocol.Result, sent event, hasSent bool, receiv
 			// For the observer probe, enqueue->observe IS the end-to-end latency.
 			t.EndToEndLatencyMs = lagMs
 		}
+		ageReason := "not_observed"
+		if t.ConsumerLagObserved {
+			ageReason = "clock_unqualified"
+		}
+		t.Messaging.Durations = append(t.Messaging.Durations, protocol.MessagingDurationObservation{Metric: "enqueue_age", UnavailableReason: ageReason})
 		if lag, err := strconv.ParseInt(result.Extractions["eventhubs_consumer_lag"], 10, 64); err == nil && lag >= 0 {
 			t.ConsumerOffsetLag = lag
 			t.ConsumerOffsetLagObserved = true

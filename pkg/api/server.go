@@ -25,6 +25,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/importsession"
 	"github.com/jasonczech/apexload/pkg/keywrap"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -76,6 +77,8 @@ type desktopBrowserBootstrap struct {
 const maxDesktopBrowserCapabilities = 32
 
 type Server struct {
+	prometheusClient func(prometheus.Config, prometheus.Credentials) (*prometheus.Client, error)
+
 	httpServer *http.Server
 	hub        *Hub
 	runner     *TestRunner
@@ -108,6 +111,10 @@ type Server struct {
 	browserInstall            *browserInstallState
 	recorder                  *recorder.Recorder
 	store                     storage.Store
+	// nativeReconciliationStore is the immutable startup SQL authority. Recovery
+	// never reads the request/fixture store field; changing this authority requires
+	// a new Server, whose configured namespace must match retained receipts.
+	nativeReconciliationStore storage.Store
 	importAssets              storage.ImportAssetStore
 	cache                     CacheBackend
 	controllerID              string
@@ -561,6 +568,7 @@ func NewServer(cfg ServerConfig) *Server {
 		browserInstall:              newBrowserInstallState(),
 		recorder:                    rec,
 		store:                       cfg.Store,
+		nativeReconciliationStore:   cfg.Store,
 		cache:                       cache,
 		controllerID:                controllerID,
 		haExecution:                 cfg.HAExecutionLeadership,
@@ -619,6 +627,7 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 	s.configureReplaySessionReservations()
 	runner.appDynamicsPrepare = s.verifyPreparedAppDynamics
+	runner.prometheusPrepare = s.verifyPreparedPrometheus
 	hub.SetOriginAuthProvider(s.authSettingsForRequest)
 	if leadership != nil {
 		leadership.setOnLoss(func() {
@@ -778,6 +787,7 @@ func NewServer(cfg ServerConfig) *Server {
 		MaxHeaderBytes: 1 << 20, // 1 MiB
 	}
 
+	s.startNativeAnalysisReconciliation()
 	return s
 }
 
@@ -1100,6 +1110,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.registerAPIRouteCatalog(baselineComparisonAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(runMonitoringAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(appDynamicsAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(prometheusAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(analysisAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(objectActivityAPIRouteCatalog, standardRouteMiddleware)
 	s.mux.Handle("GET /api/v1/scenarios/{id}/results", cors(log(auth(http.HandlerFunc(s.handleScenarioResults)))))
@@ -2237,6 +2248,9 @@ func (s *Server) shutdown(ctx context.Context) error {
 	}
 	if err := s.ShutdownScheduler(ctx); err != nil {
 		shutdownErr = errors.Join(shutdownErr, err)
+	}
+	if s.runner != nil {
+		shutdownErr = errors.Join(shutdownErr, s.runner.waitRuntimeOverrideSecretAttemptReconciliation(ctx))
 	}
 
 	if s.runner != nil && s.runner.thresholdJournal != nil {

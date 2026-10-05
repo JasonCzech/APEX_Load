@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	eh "github.com/Azure/azure-sdk-for-go/sdk/messaging/azeventhubs/v2"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"strings"
 	"sync"
 	"testing"
@@ -258,5 +259,630 @@ func TestProcessorInitKeepsPreparationTrafficFree(t *testing.T) {
 	}
 	if err := e.Teardown(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type processorCleanupFixture struct {
+	processorPartFixture
+	entered  chan struct{}
+	resume   chan struct{}
+	closeErr error
+}
+
+func (p *processorCleanupFixture) Close(context.Context) error {
+	if p.entered != nil {
+		close(p.entered)
+	}
+	if p.resume != nil {
+		<-p.resume
+	}
+	return p.closeErr
+}
+func TestProcessorCleanupDeadlineRetainsChargeUntilActualClose(t *testing.T) {
+	p := testProcessorPool(t, processorLimits{4, 32, 32})
+	r := reserveProcessorTest(t, p, 1, 8)
+	_ = r.Adopt(context.Background())
+	child, _ := r.acquireProcessor(context.Background())
+	worker, _ := child.acquireWorker("0")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	session := &eventHubsProcessor{ctx: ctx, cancel: cancel, done: make(chan struct{}), failure: make(chan error, 1)}
+	partition := &processorCleanupFixture{entered: make(chan struct{}), resume: make(chan struct{})}
+	go func() { defer session.finishProcessor(child, false); session.closePartition(partition, worker, nil) }()
+	<-partition.entered
+	c := &realClient{processor: session, closeTimeout: 10 * time.Millisecond}
+	if err := c.Teardown(context.Background()); err == nil || !strings.Contains(err.Error(), "cleanup deadline") {
+		t.Fatal(err)
+	}
+	r.Release()
+	if capacity := p.snapshot(); !capacity.Valid() || capacity.ReservedProcessors != 1 || capacity.ReservedWorkers != 8 || capacity.DrainingProcessors != 1 {
+		t.Fatal("timeout freed live processor", capacity)
+	}
+	if err := c.Teardown(context.Background()); err == nil {
+		t.Fatal("repeated teardown hid pending cleanup")
+	}
+	close(partition.resume)
+	select {
+	case <-session.done:
+	case <-time.After(time.Second):
+		t.Fatal("close never completed")
+	}
+	if err := c.Teardown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if capacity := p.snapshot(); capacity.ReservedProcessors != 0 || capacity.ReservedWorkers != 0 {
+		t.Fatal(capacity)
+	}
+}
+func TestProcessorUnprovenCloseRemainsDrainingAndVisible(t *testing.T) {
+	for _, kind := range []string{"worker", "rejected SDK partition"} {
+		t.Run(kind, func(t *testing.T) {
+			p := testProcessorPool(t, processorLimits{4, 32, 32})
+			r := reserveProcessorTest(t, p, 1, 8)
+			_ = r.Adopt(context.Background())
+			child, _ := r.acquireProcessor(context.Background())
+			var worker *processorWorkerLease
+			var rejected *processorLease
+			if kind == "worker" {
+				worker, _ = child.acquireWorker("0")
+			} else {
+				rejected = child
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			session := &eventHubsProcessor{ctx: ctx, cancel: cancel, done: make(chan struct{}), failure: make(chan error, 1)}
+			session.closePartition(&processorCleanupFixture{closeErr: errors.New("secret-provider-token")}, worker, rejected)
+			session.finishProcessor(child, true)
+			c := &realClient{processor: session}
+			if err := c.Teardown(context.Background()); err == nil || !strings.Contains(err.Error(), "cleanup incomplete") || strings.Contains(err.Error(), "secret") {
+				t.Fatal(err)
+			}
+			if err := c.Teardown(context.Background()); err == nil {
+				t.Fatal("repeat teardown hid unproven cleanup")
+			}
+			if capacity := p.snapshot(); !capacity.Valid() || capacity.ReservedProcessors != 1 || capacity.DrainingProcessors != 1 || capacity.ReservedWorkers != 8 {
+				t.Fatal(capacity)
+			}
+		})
+	}
+}
+func TestProcessorActualPartitionInventoryCannotExceedClaim(t *testing.T) {
+	for _, ids := range [][]string{nil, {"0", "1", "2"}, {"0", "0"}, {""}, {strings.Repeat("a", 65)}} {
+		if _, err := validateProcessorPartitionInventory(ids, 2); err == nil {
+			t.Fatal("inventory accepted", ids)
+		}
+	}
+	if ids, err := validateProcessorPartitionInventory([]string{"0", "1"}, 2); err != nil || len(ids) != 2 {
+		t.Fatal(ids, err)
+	}
+}
+func processorInitConfigForReservationTest() map[string]any {
+	return map[string]any{
+		"eventhubs_consumer_mode": "processor", "eventhubs_checkpoint_container_url": "https://account.blob.core.windows.net/checkpoints", "eventhubs_auth_type": "aad", "eventhubs_namespace": "approved.servicebus.windows.net", "eventhubs_event_hub": "events", "eventhubs_consumer_group": "workers", "eventhubs_mock": false, "eventhubs_processor_max_partitions": 2,
+	}
+}
+func TestProcessorBoundInitRemainsLazyAndFailsClosed(t *testing.T) {
+	t.Setenv("APEXLOAD_EVENTHUBS_CHECKPOINT_CONTAINERS", "https://account.blob.core.windows.net/checkpoints")
+	pool, err := defaultProcessorPool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := reserveProcessorTest(t, pool, 1, 2)
+	ctx := protocol.WithRuntimeResourceReservation(context.Background(), eventHubsProtocolName, r)
+	e := &EventHubs{}
+	if err = e.Init(ctx, processorInitConfigForReservationTest()); err != nil {
+		t.Fatal(err)
+	}
+	c := e.client.(*realClient)
+	if c.cfg.processorReservation != r || c.cred != nil || len(c.consumers) != 0 || c.processor != nil {
+		t.Fatal("Init consumed/initialized stage")
+	}
+	if copied := e.clientFactory().(*realClient); copied.cfg.processorReservation != r {
+		t.Fatal("fresh client lost parent")
+	}
+	if _, err = c.startProcessor(ctx); err == nil {
+		t.Fatal("unadopted stage started")
+	}
+	if c.cred != nil || len(c.consumers) != 0 {
+		t.Fatal("stage rejection contacted target/credentials")
+	}
+	if err = e.Teardown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	foreign := reserveProcessorTest(t, testProcessorPool(t, processorLimits{4, 32, 32}), 1, 2)
+	for _, bad := range []context.Context{
+		protocol.WithRuntimeResourceReservation(context.Background(), eventHubsProtocolName, nil),
+		protocol.WithRuntimeResourceReservation(context.Background(), "other", r),
+		protocol.WithRuntimeResourceReservation(context.Background(), eventHubsProtocolName, foreign),
+	} {
+		if err := (&EventHubs{}).Init(bad, processorInitConfigForReservationTest()); err == nil {
+			t.Fatal("invalid binding fell back to unmanaged pool")
+		}
+	}
+	wrong := reserveProcessorTest(t, pool, 1, 1)
+	if err := (&EventHubs{}).Init(protocol.WithRuntimeResourceReservation(context.Background(), eventHubsProtocolName, wrong), processorInitConfigForReservationTest()); err == nil {
+		t.Fatal("ceiling mismatch accepted")
+	}
+	r.Release()
+	if err := (&EventHubs{}).Init(ctx, processorInitConfigForReservationTest()); err == nil {
+		t.Fatal("released binding accepted")
+	}
+}
+func TestProcessorDirectRuntimeReservesBeforeTargetRequests(t *testing.T) {
+	pool, err := defaultProcessorPool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config{ProcessorMaxPartitions: 2}
+	child, owned, err := acquireProcessorResources(context.Background(), cfg)
+	if err != nil || !owned || child == nil {
+		t.Fatal(child, owned, err)
+	}
+	if capacity := pool.snapshot(); capacity.ReservedProcessors < 1 || capacity.ReservedWorkers < 2 {
+		t.Fatal(capacity)
+	}
+	child.release()
+	child.parent.Release()
+	r := reserveProcessorTest(t, pool, 1, 2)
+	_ = r.Adopt(context.Background())
+	cfg.processorReservationBound = true
+	cfg.processorReservation = r
+	before := pool.snapshot()
+	child, owned, err = acquireProcessorResources(context.Background(), cfg)
+	if err != nil || owned {
+		t.Fatal(err, owned)
+	}
+	after := pool.snapshot()
+	if after.ReservedProcessors != before.ReservedProcessors || after.ReservedWorkers != before.ReservedWorkers {
+		t.Fatal("child activation double charged", before, after)
+	}
+	child.release()
+	for _, ctx := range []context.Context{protocol.WithRuntimeResourceReservation(context.Background(), eventHubsProtocolName, nil), protocol.WithRuntimeResourceReservation(context.Background(), "other", r)} {
+		c := &realClient{cfg: config{Lifetime: ctx, ProcessorMaxPartitions: 2}}
+		if _, err := c.startProcessor(ctx); err == nil {
+			t.Fatal("invalid action context silently reserved")
+		}
+		if c.cred != nil || len(c.consumers) != 0 {
+			t.Fatal("rejected reservation touched target")
+		}
+	}
+}
+
+func TestProcessorDispatcherDrainsCancelledButQueuedSDKPartitions(t *testing.T) {
+	for _, failClose := range []bool{false, true} {
+		t.Run(fmt.Sprint(failClose), func(t *testing.T) {
+			p := testProcessorPool(t, processorLimits{4, 32, 32})
+			r := reserveProcessorTest(t, p, 1, 2)
+			_ = r.Adopt(context.Background())
+			child, _ := r.acquireProcessor(context.Background())
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			session := &eventHubsProcessor{ctx: ctx, cancel: cancel, done: make(chan struct{}), failure: make(chan error, 1)}
+			first := &processorCleanupFixture{entered: make(chan struct{})}
+			second := &processorCleanupFixture{entered: make(chan struct{})}
+			if failClose {
+				first.closeErr = context.DeadlineExceeded
+			}
+			queued := []processorPartition{first, second}
+			calls := 0
+			var workers sync.WaitGroup
+			session.dispatchPartitions(child, &workers, func(nextCtx context.Context) processorPartition {
+				if nextCtx.Err() != nil {
+					t.Fatal("cancelled dispatcher would drop SDK queue")
+				}
+				calls++
+				if len(queued) == 0 {
+					return nil
+				}
+				v := queued[0]
+				queued = queued[1:]
+				return v
+			})
+			workers.Wait()
+			session.finishProcessor(child, true)
+			if calls != 3 {
+				t.Fatal("queue not drained", calls)
+			}
+			for _, part := range []*processorCleanupFixture{first, second} {
+				select {
+				case <-part.entered:
+				default:
+					t.Fatal("queued partition was not closed")
+				}
+				if part.received {
+					t.Fatal("cancelled drain polled target")
+				}
+			}
+			c := p.snapshot()
+			if failClose {
+				if c.ReservedProcessors != 1 || c.DrainingProcessors != 1 || session.cleanupError() == nil {
+					t.Fatal("unproven queued close was freed", c)
+				}
+			} else if c.ReservedProcessors != 0 || c.ReservedWorkers != 0 {
+				t.Fatal(c)
+			}
+		})
+	}
+}
+
+func TestProcessorDonePublishesFreedChildBeforePhaseHandoff(t *testing.T) {
+	p := testProcessorPool(t, processorLimits{4, 32, 32})
+	r := reserveProcessorTest(t, p, 1, 2)
+	_ = r.Adopt(context.Background())
+	for i := 0; i < 100; i++ {
+		child, err := r.acquireProcessor(context.Background())
+		if err != nil {
+			t.Fatal("phase could not acquire entitlement", err)
+		}
+		session := &eventHubsProcessor{done: make(chan struct{})}
+		go session.finishProcessor(child, false)
+		<-session.done
+		if c := p.snapshot(); c.ActiveProcessors != 0 || c.ReservedProcessors != 1 || c.ReservedWorkers != 2 {
+			t.Fatal("done preceded child accounting", c)
+		}
+	}
+}
+
+func TestProcessorOwnedTransportCloseKeepsChargeUntilProvenExit(t *testing.T) {
+	p := testProcessorPool(t, processorLimits{4, 32, 32})
+	r := reserveProcessorTest(t, p, 1, 2)
+	_ = r.Adopt(context.Background())
+	child, _ := r.acquireProcessor(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	entered, resume := make(chan struct{}), make(chan struct{})
+	session := &eventHubsProcessor{ctx: ctx, cancel: cancel, done: make(chan struct{}), failure: make(chan error, 1), closeTransport: func(context.Context) error { close(entered); <-resume; return nil }}
+	go session.finishProcessor(child, true)
+	<-entered
+	c := &realClient{processor: session, closeTimeout: 10 * time.Millisecond}
+	if err := c.Teardown(context.Background()); err == nil || !strings.Contains(err.Error(), "cleanup deadline") {
+		t.Fatal(err)
+	}
+	select {
+	case <-session.done:
+		t.Fatal("done published before transport goroutines exited")
+	default:
+	}
+	if capacity := p.snapshot(); capacity.ReservedProcessors != 1 || capacity.DrainingProcessors != 1 || capacity.ReservedWorkers != 2 {
+		t.Fatal("blocked connection close was not charged/draining before parent release", capacity)
+	}
+	r.Release()
+	close(resume)
+	select {
+	case <-session.done:
+	case <-time.After(time.Second):
+		t.Fatal("transport close never finished")
+	}
+	if capacity := p.snapshot(); capacity.ReservedProcessors != 0 || capacity.ReservedWorkers != 0 {
+		t.Fatal("done preceded transport accounting", capacity)
+	}
+	if err := c.Teardown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+func TestProcessorFailedOwnedTransportCloseQuarantinesChild(t *testing.T) {
+	p := testProcessorPool(t, processorLimits{4, 32, 32})
+	r := reserveProcessorTest(t, p, 1, 2)
+	_ = r.Adopt(context.Background())
+	child, _ := r.acquireProcessor(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	session := &eventHubsProcessor{ctx: ctx, cancel: cancel, done: make(chan struct{}), failure: make(chan error, 1), closeTransport: func(context.Context) error { return errors.New("secret-provider-token") }}
+	session.finishProcessor(child, true)
+	if capacity := p.snapshot(); !capacity.Valid() || capacity.ReservedProcessors != 1 || capacity.DrainingProcessors != 1 || capacity.ReservedWorkers != 2 {
+		t.Fatal("failed transport close freed entitlement", capacity)
+	}
+	c := &realClient{processor: session}
+	if err := c.Teardown(context.Background()); err == nil || !strings.Contains(err.Error(), "transport cleanup incomplete") || strings.Contains(err.Error(), "secret") {
+		t.Fatal(err)
+	}
+}
+
+func TestProcessorFailedStartupRetainsOwnedTransportUntilCleanup(t *testing.T) {
+	for _, failClose := range []bool{false, true} {
+		t.Run(fmt.Sprint(failClose), func(t *testing.T) {
+			p := testProcessorPool(t, processorLimits{4, 32, 32})
+			r := reserveProcessorTest(t, p, 1, 2)
+			_ = r.Adopt(context.Background())
+			child, _ := r.acquireProcessor(context.Background())
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			entered, resume := make(chan struct{}), make(chan struct{})
+			consumer := &eh.ConsumerClient{} // Close would panic; only the session callback owns it.
+			session := &eventHubsProcessor{ctx: ctx, cancel: cancel, done: make(chan struct{}), failure: make(chan error, 1), consumer: consumer, closeTransport: func(context.Context) error {
+				close(entered)
+				<-resume
+				if failClose {
+					return context.DeadlineExceeded
+				}
+				return nil
+			}}
+			c := &realClient{closeTimeout: 10 * time.Millisecond, consumers: map[string]*eh.ConsumerClient{"owned": consumer}}
+			c.abortProcessorStart(session, child, true)
+			<-entered
+			if c.processor != session {
+				t.Fatal("failed startup hid pending cleanup")
+			}
+			if err := c.Teardown(context.Background()); err == nil || !strings.Contains(err.Error(), "cleanup deadline") {
+				t.Fatal("duplicate owned close escaped deadline", err)
+			}
+			if capacity := p.snapshot(); capacity.ReservedProcessors != 1 || capacity.DrainingProcessors != 1 || capacity.ReservedWorkers != 2 {
+				t.Fatal("failed startup freed active transport or hid its drain", capacity)
+			}
+			close(resume)
+			select {
+			case <-session.done:
+			case <-time.After(time.Second):
+				t.Fatal("startup close never finished")
+			}
+			capacity := p.snapshot()
+			if failClose {
+				if capacity.ReservedProcessors != 1 || capacity.DrainingProcessors != 1 || session.cleanupError() == nil {
+					t.Fatal("failed startup close freed charge", capacity)
+				}
+			} else if capacity.ReservedProcessors != 0 || capacity.ReservedWorkers != 0 {
+				t.Fatal(capacity)
+			}
+		})
+	}
+}
+func TestProcessorConsumerTransfersBeforeAnyStartupRequests(t *testing.T) {
+	cc := &eh.ConsumerClient{}
+	c := &realClient{cfg: config{Lifetime: context.Background(), EventHub: "events", ConsumerGroup: "workers"}, consumers: map[string]*eh.ConsumerClient{"events\x00workers": cc}}
+	session := c.ownProcessorConsumer(cc)
+	defer session.cancel()
+	if session.consumer != cc || session.closeTransport == nil || len(c.consumers) != 0 {
+		t.Fatal("exclusive transport stayed in ordinary teardown map")
+	}
+	// Do not call SDK Close on this constructor-free fixture: no target has been initialized.
+}
+
+func TestProcessorLifecycleGateWaitUsesCallerBudget(t *testing.T) {
+	var gate processorLifecycleGate
+	if err := gate.Lock(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	if err := gate.Lock(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("blocked gate ignored caller deadline", err)
+	}
+	if time.Since(started) > time.Second {
+		t.Fatal("gate exceeded caller budget")
+	}
+	gate.Unlock()
+	cancelled, stop := context.WithCancel(context.Background())
+	stop()
+	if err := gate.Lock(cancelled); !errors.Is(err, context.Canceled) {
+		t.Fatal("cancelled caller consumed gate", err)
+	}
+	if err := gate.Lock(context.Background()); err != nil {
+		t.Fatal("gate did not remain reusable", err)
+	}
+	gate.Unlock()
+}
+
+// Use the real lazy SDK constructor, but isolate its external properties call.
+// It creates no connection or target request; native Close is safe on this client.
+func processorStartupClientForTest(t *testing.T) *realClient {
+	t.Helper()
+	cc, err := eh.NewConsumerClientFromConnectionString("Endpoint=sb://offline.servicebus.windows.net/;SharedAccessKeyName=test;SharedAccessKey=YQ==", "events", "workers", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &realClient{
+		cfg:          config{Lifetime: context.Background(), ConsumerMode: "processor", ProcessorMaxPartitions: 2, EventHub: "events", ConsumerGroup: "workers"},
+		consumers:    map[string]*eh.ConsumerClient{"events\x00workers": cc},
+		closeTimeout: 10 * time.Millisecond,
+	}
+}
+func awaitFailedProcessorCleanupForTest(t *testing.T, c *realClient) *eventHubsProcessor {
+	t.Helper()
+	if err := c.processorMu.Lock(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	session := c.processor
+	c.processorMu.Unlock()
+	if session == nil {
+		t.Fatal("failed startup did not publish its cleanup session")
+	}
+	select {
+	case <-session.done:
+	case <-time.After(time.Second):
+		t.Fatal("failed startup did not finish its owned transport cleanup")
+	}
+	return session
+}
+func TestProcessorReceiveBudgetIncludesStartupProperties(t *testing.T) {
+	for _, callerCancellation := range []bool{false, true} {
+		t.Run(fmt.Sprint(callerCancellation), func(t *testing.T) {
+			pool, err := defaultProcessorPool()
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := pool.snapshot()
+			c := processorStartupClientForTest(t)
+			entered := make(chan struct{})
+			c.processorProperties = func(ctx context.Context, _ *eh.ConsumerClient) (eh.EventHubProperties, error) {
+				close(entered)
+				<-ctx.Done()
+				return eh.EventHubProperties{}, ctx.Err()
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			result := make(chan error, 1)
+			started := time.Now()
+			go func() { _, _, err := c.Receive(ctx, "events", "workers", 30*time.Millisecond); result <- err }()
+			select {
+			case <-entered:
+			case <-time.After(time.Second):
+				t.Fatal("startup did not query properties")
+			}
+			if callerCancellation {
+				cancel()
+			}
+			select {
+			case err := <-result:
+				want := errNoEvent
+				if callerCancellation {
+					want = context.Canceled
+				}
+				if !errors.Is(err, want) {
+					t.Fatal("startup did not observe receive/caller budget", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("startup exceeded receive budget")
+			}
+			if time.Since(started) > time.Second {
+				t.Fatal("startup exceeded receive budget")
+			}
+			session := awaitFailedProcessorCleanupForTest(t, c)
+			if session.store != nil || c.cred != nil {
+				t.Fatal("expired startup initialized execution or credentials")
+			}
+			after := pool.snapshot()
+			if after.ReservedProcessors != before.ReservedProcessors || after.ReservedWorkers != before.ReservedWorkers {
+				t.Fatal("failed startup leaked capacity", before, after)
+			}
+			if err := c.Teardown(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+func TestProcessorTeardownCancelsBlockedStartupAndRejectsLateCompletion(t *testing.T) {
+	pool, err := defaultProcessorPool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := pool.snapshot()
+	c := processorStartupClientForTest(t)
+	entered, resume := make(chan struct{}), make(chan struct{})
+	var requestContext context.Context
+	c.processorProperties = func(ctx context.Context, _ *eh.ConsumerClient) (eh.EventHubProperties, error) {
+		requestContext = ctx
+		close(entered)
+		<-resume // Simulate a provider call that returns a successful result late.
+		return eh.EventHubProperties{PartitionIDs: []string{"0"}}, nil
+	}
+	first := make(chan error, 1)
+	go func() { _, _, err := c.Receive(context.Background(), "events", "workers", time.Second); first <- err }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("startup did not enter properties")
+	}
+	started := time.Now()
+	_, _, err = c.Receive(context.Background(), "events", "workers", 10*time.Millisecond)
+	if !errors.Is(err, errNoEvent) || time.Since(started) > time.Second {
+		t.Fatal("second receive exceeded gate budget", err)
+	}
+	started = time.Now()
+	if err := c.Teardown(context.Background()); err == nil || !strings.Contains(err.Error(), "cleanup deadline") {
+		t.Fatal("teardown did not bound the startup gate", err)
+	}
+	if time.Since(started) > time.Second {
+		t.Fatal("teardown exceeded its cleanup budget")
+	}
+	select {
+	case <-requestContext.Done():
+	default:
+		t.Fatal("teardown did not publish startup cancellation before waiting for the gate")
+	}
+	if current := pool.snapshot(); current.ReservedProcessors != before.ReservedProcessors+1 || current.ReservedWorkers != before.ReservedWorkers+2 {
+		t.Fatal("pending startup was freed before transport proof", before, current)
+	}
+	close(resume)
+	select {
+	case err := <-first:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("late inventory succeeded after teardown", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("late startup did not terminate")
+	}
+	session := awaitFailedProcessorCleanupForTest(t, c)
+	if session.store != nil || c.cred != nil {
+		t.Fatal("late startup constructed an execution runtime after teardown")
+	}
+	if after := pool.snapshot(); after.ReservedProcessors != before.ReservedProcessors || after.ReservedWorkers != before.ReservedWorkers {
+		t.Fatal("late startup retained its closed transport", before, after)
+	}
+	if err := c.Teardown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProcessorTeardownSnapshotCannotCloseLateTransferredConsumer(t *testing.T) {
+	for _, transferAfterDeadline := range []bool{false, true} {
+		t.Run(fmt.Sprint(transferAfterDeadline), func(t *testing.T) {
+			p := testProcessorPool(t, processorLimits{4, 32, 32})
+			r := reserveProcessorTest(t, p, 1, 2)
+			_ = r.Adopt(context.Background())
+			child, _ := r.acquireProcessor(context.Background())
+			cc := &eh.ConsumerClient{} // Ordinary Close would panic; only the session callback owns it.
+			c := &realClient{cfg: config{Lifetime: context.Background(), ConsumerMode: "processor", EventHub: "events", ConsumerGroup: "workers"}, consumers: map[string]*eh.ConsumerClient{"events\x00workers": cc}, closeTimeout: 30 * time.Millisecond}
+			if err := c.processorMu.Lock(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			result := make(chan error, 1)
+			go func() { result <- c.Teardown(context.Background()) }()
+			deadline := time.After(time.Second)
+			for {
+				c.mu.Lock()
+				closed := c.closed
+				c.mu.Unlock()
+				if closed {
+					break
+				}
+				select {
+				case <-deadline:
+					t.Fatal("teardown did not close startup admission")
+				case <-time.After(time.Millisecond):
+				}
+			}
+			awaitTeardown := func() {
+				t.Helper()
+				select {
+				case err := <-result:
+					if err == nil || !strings.Contains(err.Error(), "cleanup deadline") {
+						t.Fatal(err)
+					}
+				case <-time.After(time.Second):
+					t.Fatal("ordinary consumer close defeated teardown budget")
+				}
+			}
+			if transferAfterDeadline {
+				awaitTeardown()
+			}
+			session := c.ownProcessorConsumer(cc)
+			if session.ctx.Err() == nil {
+				t.Fatal("late startup escaped closed lifetime")
+			}
+			entered, resume := make(chan struct{}), make(chan struct{})
+			session.closeTransport = func(context.Context) error { close(entered); <-resume; return nil }
+			c.abortProcessorStart(session, child, true)
+			<-entered
+			if !transferAfterDeadline {
+				awaitTeardown()
+			}
+			if capacity := p.snapshot(); capacity.ReservedProcessors != 1 || capacity.DrainingProcessors != 1 {
+				t.Fatal("late transport close was freed/hidden", capacity)
+			}
+			c.processorMu.Unlock()
+			close(resume)
+			select {
+			case <-session.done:
+			case <-time.After(time.Second):
+				t.Fatal("late owned close did not finish")
+			}
+			if capacity := p.snapshot(); capacity.ReservedProcessors != 0 || capacity.ReservedWorkers != 0 {
+				t.Fatal("late transport retained charge after proof", capacity)
+			}
+			if err := c.Teardown(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

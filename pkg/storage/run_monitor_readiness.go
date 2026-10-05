@@ -25,46 +25,8 @@ func (s *SQLiteStore) ValidateRunMonitorReadiness(project, run, scenario string,
 // This advertisement is authenticated by the collector token and accepted only
 // after the API checks the collector's pinned controller signing key.
 func (s *SQLiteStore) SaveCollectorRunReadiness(project, collector string, packs, destinations []string, seen time.Time) error {
-	if len(packs) > 16 || len(destinations) > 16 || seen.IsZero() {
-		return errors.New("invalid collector readiness")
-	}
-	for _, pack := range packs {
-		if pack != "go-runtime" && pack != "linux-hosts" && pack != "prometheus" && pack != "ssh-linux" && pack != "otel-metrics" && pack != "jmx" && pack != "jdbc" && pack != "cloudwatch" && pack != "azure-monitor" && pack != "appdynamics" && pack != "appdynamics.v1" {
-			return errors.New("unsupported collector pack")
-		}
-	}
-	if containsReadinessPack(packs, "appdynamics.v1") && !containsReadinessPack(packs, "appdynamics") {
-		return errors.New("AppDynamics contract requires pack approval")
-	}
-	for _, destination := range destinations {
-		valid := false
-		raw, key, hasKey := strings.Cut(destination, "#")
-		if hasKey {
-			decoded, err := base64.StdEncoding.DecodeString(key)
-			if err != nil {
-				return errors.New("invalid readiness encryption key")
-			}
-			if _, err = ecdh.X25519().NewPublicKey(decoded); err != nil {
-				return err
-			}
-		}
-		for _, pack := range packs {
-			if pack == "appdynamics" {
-				u, e := url.Parse(raw)
-				valid = valid || (hasKey && e == nil && u.Scheme == "https" && u.Host != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "")
-			}
-			if pack == "prometheus" {
-				source := MonitorSource{ID: "validation", ProjectID: project, Name: "validation", CollectorID: collector, Pack: pack, Destination: destination, IntervalSeconds: 1}
-				valid = valid || source.Validate() == nil
-			} else if pack == "cloudwatch" || pack == "azure-monitor" {
-				valid = valid || !hasKey && validateRemoteMonitorDestination(pack, raw) == nil
-			} else if pack == "ssh-linux" || pack == "jmx" || pack == "jdbc" || pack == "otel-metrics" {
-				valid = valid || (pack == "otel-metrics" && !hasKey || pack != "otel-metrics" && hasKey) && validateRemoteMonitorDestination(pack, raw) == nil
-			}
-		}
-		if !valid {
-			return errors.New("unapproved readiness destination")
-		}
+	if err := validateCollectorRunReadiness(project, collector, packs, destinations, seen); err != nil {
+		return err
 	}
 
 	p, _ := json.Marshal(packs)
@@ -84,11 +46,67 @@ func (s *SQLiteStore) SaveCollectorRunReadiness(project, collector string, packs
 	if owner != project {
 		return errors.New("collector belongs to another project")
 	}
-	_, err = tx.Exec(`INSERT INTO run_monitor_collector_readiness(collector_id,project_id,seen_at,packs,destinations) VALUES(?,?,?,?,?) ON CONFLICT(collector_id) DO UPDATE SET seen_at=excluded.seen_at,packs=excluded.packs,destinations=excluded.destinations`, collector, project, seen, string(p), string(d))
+	_, err = tx.Exec(`INSERT INTO run_monitor_collector_readiness(collector_id,project_id,seen_at,packs,destinations) VALUES(?,?,?,?,?) ON CONFLICT(collector_id) DO UPDATE SET seen_at=excluded.seen_at,packs=excluded.packs,destinations=excluded.destinations,instance_id=NULL,capabilities_json=NULL,management_scopes_json=NULL`, collector, project, seen, string(p), string(d))
 	if err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+func validateCollectorRunReadiness(project, collector string, packs, destinations []string, seen time.Time) error {
+	if len(packs) > 16 || len(destinations) > 16 || seen.IsZero() {
+		return errors.New("invalid collector readiness")
+	}
+	for _, pack := range packs {
+		if pack != "go-runtime" && pack != "linux-hosts" && pack != "prometheus" && pack != "ssh-linux" && pack != "otel-metrics" && pack != "jmx" && pack != "jdbc" && pack != "cloudwatch" && pack != "azure-monitor" && pack != "appdynamics" && pack != "appdynamics.v1" && pack != "prometheus-query" && pack != "prometheus-query.v1" && pack != "prometheus-scrape.v2" {
+			return errors.New("unsupported collector pack")
+		}
+	}
+	if containsReadinessPack(packs, "appdynamics.v1") && !containsReadinessPack(packs, "appdynamics") {
+		return errors.New("AppDynamics contract requires pack approval")
+	}
+	if containsReadinessPack(packs, "prometheus-query.v1") && !containsReadinessPack(packs, "prometheus-query") {
+		return errors.New("Prometheus query contract requires pack approval")
+	}
+	if containsReadinessPack(packs, "prometheus-scrape.v2") && !containsReadinessPack(packs, "prometheus") {
+		return errors.New("Prometheus scrape contract requires pack approval")
+	}
+	for _, destination := range destinations {
+		valid := false
+		raw, key, hasKey := strings.Cut(destination, "#")
+		if hasKey {
+			decoded, err := base64.StdEncoding.DecodeString(key)
+			if err != nil {
+				return errors.New("invalid readiness encryption key")
+			}
+			if _, err = ecdh.X25519().NewPublicKey(decoded); err != nil {
+				return err
+			}
+		}
+		for _, pack := range packs {
+			if pack == "appdynamics" {
+				u, e := url.Parse(raw)
+				valid = valid || (hasKey && e == nil && u.Scheme == "https" && u.Host != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "")
+			}
+			if pack == "prometheus-query" {
+				u, e := url.Parse(raw)
+				valid = valid || (e == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "")
+			}
+			if pack == "prometheus" {
+				source := MonitorSource{ID: "validation", ProjectID: project, Name: "validation", CollectorID: collector, Pack: pack, Destination: destination, IntervalSeconds: 1}
+				valid = valid || source.Validate() == nil
+			} else if pack == "cloudwatch" || pack == "azure-monitor" {
+				valid = valid || !hasKey && validateRemoteMonitorDestination(pack, raw) == nil
+			} else if pack == "ssh-linux" || pack == "jmx" || pack == "jdbc" || pack == "otel-metrics" {
+				valid = valid || (pack == "otel-metrics" && !hasKey || pack != "otel-metrics" && hasKey) && validateRemoteMonitorDestination(pack, raw) == nil
+			}
+		}
+		if !valid {
+			return errors.New("unapproved readiness destination")
+		}
+	}
+
+	return nil
 }
 
 func containsReadinessPack(packs []string, pack string) bool {

@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "kafka_version": "3.9.2",
+  "image_index": "sha256:05b4616e0702ef2729327705d54ad6b50ea70b271c4b730fabd2320789fb7b02",
+  "platform": "linux/arm64",
+  "platform_manifest": "sha256:ddc235acd57d0fec5b21eedd46dcaf4e89a7569ff1c9890c5597c6d9561c59b0",
+  "profile": "single-kraft-broker",
+  "memory_bytes": 1610612736,
+  "cpus": 1,
+  "data_guard_bytes": 2147483648,
+  "created_resources": [
+    "apexload-kafka-management-0c14c6061f2c",
+    "apexload-kafka-management-0c14c6061f2c-config",
+    "apexload-kafka-management-0c14c6061f2c-data",
+    "apexload-kafka-management-0c14c6061f2c:container"
+  ],
+  "status": "failed",
+  "free_before_bytes": 9607979008,
+  "broker_diagnostics": [
+    "[0.000s][error][logging] Error opening log file '/opt/kafka/bin/../logs/kafkaServer-gc.log': No such file or directory",
+    "[0.000s][error][logging] Initialization of output 'file=/opt/kafka/bin/../logs/kafkaServer-gc.log' using options 'filecount=10,filesize=100M' failed.",
+    "mkdir: cannot create directory \u2018/opt/kafka/bin/../logs\u2019: Permission denied",
+    "Invalid -Xlog option '-Xlog:gc*:file=/opt/kafka/bin/../logs/kafkaServer-gc.log:time,tags:filecount=10,filesize=100M', see error log for details.",
+    "Error: Could not create the Java Virtual Machine.",
+    "Error: A fatal exception has occurred. Program will exit."
+  ],
+  "failure": "broker exited during bounded readiness",
+  "duration_seconds": 7.493,
+  "cleanup": [
+    {
+      "resource": "apexload-kafka-management-0c14c6061f2c",
+      "exit": 0
+    },
+    {
+      "resource": "apexload-kafka-management-0c14c6061f2c-config",
+      "exit": 0
+    },
+    {
+      "resource": "apexload-kafka-management-0c14c6061f2c-data",
+      "exit": 0
+    },
+    {
+      "resource": "apexload-kafka-management-0c14c6061f2c",
+      "exit": 0
+    }
+  ],
+  "cleanup_verified": true,
+  "scratch_removed": true,
+  "free_after_bytes": 9602416640
+}

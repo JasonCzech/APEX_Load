@@ -136,6 +136,10 @@ type jmsTLSConfig struct {
 }
 
 type message struct {
+	// sent is internal adapter outcome evidence for a request whose reply later fails.
+	sent          bool
+	sendAttempted bool
+	received      bool
 	ID            string            `json:"id,omitempty"`
 	CorrelationID string            `json:"correlation_id,omitempty"`
 	Destination   string            `json:"destination,omitempty"`
@@ -305,19 +309,16 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 	var responseMsg message
 	hasRequestMsg := false
 	hasResponseMsg := false
+	sendAttempted := false
 	switch strings.ToLower(action.Type) {
 	case "jms_publish":
-		requestMsg, err = j.publish(ctx, action, result)
-		hasRequestMsg = err == nil
+		requestMsg, err = j.publish(ctx, action, result, &hasRequestMsg, &sendAttempted)
 	case "jms_consume":
-		responseMsg, err = j.consume(ctx, action, result)
-		hasResponseMsg = err == nil
+		responseMsg, err = j.consume(ctx, action, result, &hasResponseMsg)
 	case "jms_browse":
 		responseMsg, hasResponseMsg, err = j.browse(ctx, action, result)
 	case "jms_request_reply":
-		requestMsg, responseMsg, err = j.requestReply(ctx, action, result)
-		hasRequestMsg = err == nil
-		hasResponseMsg = err == nil
+		requestMsg, responseMsg, err = j.requestReply(ctx, action, result, &hasRequestMsg, &hasResponseMsg, &sendAttempted)
 	case "jms_ack", "jms_commit", "jms_rollback":
 		if !j.cfg.Mock {
 			err = fmt.Errorf("%s is supported only in mock mode; real adapters do not implement generic JMS settlement", action.Type)
@@ -342,7 +343,7 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 			result.StatusCode = 500
 		}
 		result.ErrorMessage = err.Error()
-		if isJMSSendAction(action.Type) {
+		if isJMSSendAction(action.Type) && !hasRequestMsg {
 			// Count a failed publish/send attempt so the messaging reliability
 			// telemetry reflects send failures instead of always reading zero.
 			if result.ServerTelemetry == nil {
@@ -356,6 +357,12 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 		if result.ServerTelemetry.SubscriptionID == "" {
 			result.ServerTelemetry.SubscriptionID = j.subscriptionName(action)
 		}
+	}
+	if isJMSSendAction(action.Type) {
+		if result.ServerTelemetry == nil {
+			result.ServerTelemetry = &protocol.ServerTelemetry{}
+		}
+		protocol.AnnotateMessagingSendOutcome(result.ServerTelemetry, sendAttempted, hasRequestMsg, false)
 	}
 	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 	return result, nil
@@ -622,7 +629,13 @@ func validateJMSMessageBounds(msg message) error {
 	return nil
 }
 
-func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, error) {
+func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *protocol.Result, accepted, attempted *bool) (observed message, operationErr error) {
+	var sent message
+	defer func() {
+		if *accepted {
+			observed = sent
+		}
+	}()
 	destination := j.destination(action)
 	if destination == "" {
 		return message{}, fmt.Errorf("JMS destination is required")
@@ -633,6 +646,7 @@ func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *prot
 	}
 	var published message
 	var err error
+	*attempted = true
 	if topic, ok := j.adapter.(serviceBusMockTopicAdapter); ok && j.usesMockServiceBusTopic(action) {
 		// Service Bus subscriptions are durable broker entities. Retain a bounded
 		// topic history so an action-level subscription declared by a later
@@ -649,6 +663,7 @@ func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *prot
 	if err != nil {
 		return message{}, err
 	}
+	sent, *accepted = published, true
 	result.BytesSent = int64(len(published.Body))
 	if err := addMessageExtractions(result, published); err != nil {
 		return message{}, err
@@ -662,7 +677,13 @@ func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *prot
 	return published, evaluateAssertions(action.Assertions, result, published)
 }
 
-func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, error) {
+func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *protocol.Result, received *bool) (observed message, operationErr error) {
+	var delivery message
+	defer func() {
+		if *received {
+			observed = delivery
+		}
+	}()
 	destination := j.consumeDestination(action)
 	if destination == "" {
 		return message{}, fmt.Errorf("JMS destination is required")
@@ -750,10 +771,15 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 	default:
 		msg, err = j.adapter.Consume(ctx, destination, j.timeout(action))
 	}
+	if err == nil || msg.received {
+		delivery, *received = msg, true
+		result.BytesReceived = int64(len(msg.Body))
+	}
 	if err != nil {
 		result.StatusCode = 204
 		return message{}, err
 	}
+	delivery, *received = msg, true
 	result.BytesReceived = int64(len(msg.Body))
 	if msg.Destination == "" || j.usesMockServiceBusTopic(action) {
 		msg.Destination = destination
@@ -945,7 +971,7 @@ func (j *JMS) settleAdvanced(ctx context.Context, action *protocol.Action, resul
 			return err
 		}
 		elapsed := float64(time.Since(started)) / float64(time.Millisecond)
-		result.ServerTelemetry = &protocol.ServerTelemetry{AcknowledgementMs: &elapsed}
+		result.ServerTelemetry = &protocol.ServerTelemetry{AcknowledgementMs: &elapsed, Messaging: &protocol.MessagingDiagnostics{Version: protocol.MessagingEvidenceVersion, Durations: []protocol.MessagingDurationObservation{{Metric: "settlement", ValueMs: &elapsed}}}}
 		result.Extractions["jms_operation"] = "settle"
 		result.Extractions["jms_disposition"] = disposition
 		// Dead-lettering is a reliability event; carry the counter (control-op style).
@@ -1237,7 +1263,16 @@ func (j *JMS) requeueForRedelivery(msgs []message) error {
 	return nil
 }
 
-func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, message, error) {
+func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result *protocol.Result, sentOK, receivedOK, attempted *bool) (observedRequest, observedResponse message, operationErr error) {
+	var sentObservation, delivery message
+	defer func() {
+		if *sentOK {
+			observedRequest = sentObservation
+		}
+		if *receivedOK {
+			observedResponse = delivery
+		}
+	}()
 	requestDestination := j.destination(action)
 	if requestDestination == "" {
 		return message{}, message{}, fmt.Errorf("JMS request destination is required")
@@ -1273,6 +1308,15 @@ func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result 
 		)
 	} else {
 		sent, response, err = j.adapter.RequestReply(ctx, requestDestination, replyDestination, request, j.timeout(action))
+	}
+	*attempted = err == nil || sent.sent || sent.sendAttempted
+	if err == nil || sent.sent {
+		sentObservation, *sentOK = sent, true
+		result.BytesSent = int64(len(sent.Body))
+	}
+	if err == nil || response.received {
+		delivery, *receivedOK = response, true
+		result.BytesReceived = int64(len(response.Body))
 	}
 	if err != nil {
 		result.StatusCode = 204
@@ -1538,9 +1582,11 @@ func finalizeJMSServerTelemetry(result *protocol.Result, request message, hasReq
 	}
 	telemetry := &protocol.ServerTelemetry{
 		TransferMs: durationToNonNegativeMilliseconds(result.Duration),
+		Messaging:  &protocol.MessagingDiagnostics{Version: protocol.MessagingEvidenceVersion},
 	}
 	if hasRequest {
 		telemetry.MessagesSent = 1
+		telemetry.Messaging.Durations = append(telemetry.Messaging.Durations, protocol.MessagingDurationObservation{Metric: "producer_ack", UnavailableReason: "not_observed"})
 	}
 	if hasResponse {
 		telemetry.MessagesReceived = 1
@@ -1549,6 +1595,11 @@ func finalizeJMSServerTelemetry(result *protocol.Result, request message, hasReq
 			telemetry.ConsumerLagMs = durationToNonNegativeMilliseconds(observedAt.Sub(response.CreatedAt))
 			telemetry.ConsumerLagObserved = true
 		}
+		ageReason := "not_observed"
+		if telemetry.ConsumerLagObserved {
+			ageReason = "clock_unqualified"
+		}
+		telemetry.Messaging.Durations = append(telemetry.Messaging.Durations, protocol.MessagingDurationObservation{Metric: "enqueue_age", UnavailableReason: ageReason})
 		if response.Properties[redeliveredProperty] == "true" {
 			telemetry.RedeliveryCount = 1
 		}

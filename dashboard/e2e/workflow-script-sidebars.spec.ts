@@ -71,57 +71,62 @@ test('script sidebars preserve selection, source scope, body editing and Debug o
   await expect(outline).toBeHidden()
 })
 
-test('Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore', async ({ page }) => {
-  test.setTimeout(120_000)
-  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
-  const request = page.context().request
-  const workspace = await createWorkspace(request)
-  const id = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script: {
-    name: 'Source_mapping_split', version: '1.0', protocol: 'http', config: { base_url: 'http://127.0.0.1:1' },
-    parameters: [{ name: 'customer', type: 'list', values: ['example'] }],
-    actions: [{ name: 'Short request', type: 'request', method: 'GET', target: '/short' }, { name: 'Long request', type: 'request', method: 'POST', target: '/long', body: 'a'.repeat(2000) }],
-    metadata: { import: { source: 'loadrunner', preserved: { source_review: {
-      source_files: [{ path: 'Action.c', language: 'c', content: 'web_url("Short", LAST);\nweb_custom_request("' + 'long'.repeat(500) + '", LAST);' }],
-      mappings: [
-        { id: 'short', source_file: 'Action.c', start_line: 1, end_line: 1, function: 'short_request', target_path: 'actions[0]', status: 'converted' },
-        { id: 'long', source_file: 'Action.c', start_line: 2, end_line: 2, function: 'long_request', target_path: 'actions[1].body', status: 'converted' },
-      ],
-    } } } },
-  } } })))
-  await page.setViewportSize({ width: 1800, height: 1000 })
-  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
-  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
-  await page.getByRole('button', { name: 'Source Mapping', exact: true }).click()
-  const mapping = page.getByRole('region', { name: 'Source Mapping', exact: true })
-  await mapping.getByRole('button', { name: /^Show mappings/ }).click()
-  await expect(mapping.locator('.source-map-review')).toHaveCSS('overflow-y', 'auto')
-  const panels = mapping.locator('.source-map-panel')
-  const equalSplit = async () => {
-    await expect(panels.nth(0)).toBeVisible()
-    await expect(panels.nth(1)).toBeVisible()
-    // Read both panes in the same layout frame while the responsive sidebar animates.
-    const [source, destination] = await panels.evaluateAll(elements => elements.map(element => {
-      const { x, y, width, height } = element.getBoundingClientRect()
-      return { x, y, width, height }
-    }))
-    expect(Math.abs(source.width - destination.width)).toBeLessThanOrEqual(1)
-    const stacked = await mapping.locator('.source-map-panels').evaluate(element => getComputedStyle(element).flexDirection === 'column')
-    if (stacked) {
-      expect(Math.abs(source.x - destination.x)).toBeLessThanOrEqual(1)
-      expect(destination.y).toBeGreaterThanOrEqual(source.y + source.height)
-    } else {
-      expect(Math.abs(source.y - destination.y)).toBeLessThanOrEqual(1)
-      expect(destination.x).toBeGreaterThan(source.x + source.width)
+for (const width of [1800, 1100, 900, 700]) {
+  test(`Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at ${width}px`, async ({ page }) => {
+    test.setTimeout(120_000)
+    if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+    const request = page.context().request
+    const workspace = await createWorkspace(request)
+    const id = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script: {
+      name: 'Source_mapping_split', version: '1.0', protocol: 'http', config: { base_url: 'http://127.0.0.1:1' },
+      parameters: [{ name: 'customer', type: 'list', values: ['example'] }],
+      actions: [{ name: 'Short request', type: 'request', method: 'GET', target: '/short' }, { name: 'Long request', type: 'request', method: 'POST', target: '/long', body: 'a'.repeat(2000) }],
+      metadata: { import: { source: 'loadrunner', preserved: { source_review: {
+        source_files: [{ path: 'Action.c', language: 'c', content: 'web_url("Short", LAST);\nweb_custom_request("' + 'long'.repeat(500) + '", LAST);' }],
+        mappings: [
+          { id: 'short', source_file: 'Action.c', start_line: 1, end_line: 1, function: 'short_request', target_path: 'actions[0]', status: 'converted' },
+          { id: 'long', source_file: 'Action.c', start_line: 2, end_line: 2, function: 'long_request', target_path: 'actions[1].body', status: 'converted' },
+        ],
+      } } } },
+    } } })))
+    await page.setViewportSize({ width: 1800, height: 1000 })
+    await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+    if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+    await page.getByRole('button', { name: 'Source Mapping', exact: true }).click()
+    const mapping = page.getByRole('region', { name: 'Source Mapping', exact: true })
+    await mapping.getByRole('button', { name: /^Show mappings/ }).click()
+    await expect(mapping.locator('.source-map-review')).toHaveCSS('overflow-y', 'auto')
+    const panels = mapping.locator('.source-map-panel')
+    const equalSplit = async () => {
+      await expect(panels.nth(0)).toBeVisible()
+      await expect(panels.nth(1)).toBeVisible()
+      // Read both panes in the same layout frame while the responsive sidebar animates.
+      const [source, destination] = await panels.evaluateAll(elements => elements.map(element => {
+        const { x, y, width, height } = element.getBoundingClientRect()
+        return { x, y, width, height }
+      }))
+      expect(Math.abs(source.width - destination.width)).toBeLessThanOrEqual(1)
+      const stacked = await mapping.locator('.source-map-panels').evaluate(element => getComputedStyle(element).flexDirection === 'column')
+      if (stacked) {
+        expect(Math.abs(source.x - destination.x)).toBeLessThanOrEqual(1)
+        expect(destination.y).toBeGreaterThanOrEqual(source.y + source.height)
+      } else {
+        expect(Math.abs(source.y - destination.y)).toBeLessThanOrEqual(1)
+        expect(destination.x).toBeGreaterThan(source.x + source.width)
+      }
+      const headers = panels.locator('.source-map-panel-header')
+      expect(Math.abs((await headers.nth(0).boundingBox())!.height - (await headers.nth(1).boundingBox())!.height)).toBeLessThanOrEqual(1)
+      expect(source.height).toBeGreaterThan(100)
+      expect(source.height).toBeLessThanOrEqual(1000)
+      expect(destination.height).toBeLessThanOrEqual(1000)
+      await expect(panels.nth(0)).toHaveCSS('resize', 'none')
     }
-    const headers = panels.locator('.source-map-panel-header')
-    expect(Math.abs((await headers.nth(0).boundingBox())!.height - (await headers.nth(1).boundingBox())!.height)).toBeLessThanOrEqual(1)
-    expect(source.height).toBeGreaterThan(100)
-    expect(source.height).toBeLessThanOrEqual(1000)
-    expect(destination.height).toBeLessThanOrEqual(1000)
-    await expect(panels.nth(0)).toHaveCSS('resize', 'none')
-  }
-  for (const width of [1800, 1100, 900, 700]) {
+    const longMapping = mapping.getByRole('row').filter({ hasText: 'long_request' })
+    await longMapping.click()
+    await expect(longMapping.locator('[data-mapping-select]')).toHaveAttribute('aria-current', 'true')
     await page.setViewportSize({ width, height: 1000 })
+    await expect(longMapping.locator('[data-mapping-select]')).toHaveAttribute('aria-current', 'true')
+    await equalSplit()
     for (const functionName of ['short_request', 'long_request']) {
       await mapping.getByRole('row').filter({ hasText: functionName }).click()
       await equalSplit()
@@ -141,19 +146,21 @@ test('Source Mapping keeps equal source and destination widths through selection
     await mapping.getByRole('button', { name: 'Hide mappings', exact: true }).click()
     await equalSplit()
     await mapping.getByRole('button', { name: /^Show mappings/ }).click()
-  }
-  // A document tab selected from the full-width parameter workspace must reveal
-  // the document even if the previous narrow pane was the inspector.
-  const panes = page.getByRole('group', { name: 'Author panes' })
-  await panes.getByRole('button', { name: 'Outline', exact: true }).click()
-  await page.getByText('Parameters & data (1)', { exact: true }).click()
-  await page.locator('.parameter-outline-item').filter({ hasText: 'customer' }).click()
-  await page.getByRole('region', { name: 'Parameter customer', exact: true }).getByRole('button', { name: /^Edit in Parameter Data/ }).click()
-  await page.getByRole('tab', { name: 'Source Mapping', exact: true }).click()
-  await expect(mapping).toBeVisible()
-  await expect(panes.getByRole('button', { name: 'Editor', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await equalSplit()
-})
+    if (width === 700) {
+      // A document tab selected from the full-width parameter workspace must reveal
+      // the document even if the previous narrow pane was the inspector.
+      const panes = page.getByRole('group', { name: 'Author panes' })
+      await panes.getByRole('button', { name: 'Outline', exact: true }).click()
+      await page.getByText('Parameters & data (1)', { exact: true }).click()
+      await page.locator('.parameter-outline-item').filter({ hasText: 'customer' }).click()
+      await page.getByRole('region', { name: 'Parameter customer', exact: true }).getByRole('button', { name: /^Edit in Parameter Data/ }).click()
+      await page.getByRole('tab', { name: 'Source Mapping', exact: true }).click()
+      await expect(mapping).toBeVisible()
+      await expect(panes.getByRole('button', { name: 'Editor', exact: true })).toHaveAttribute('aria-pressed', 'true')
+      await equalSplit()
+    }
+  })
+}
 
 test('source mapping review decisions survive saving and moved or edited destinations require verified identity', async ({ page }) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)

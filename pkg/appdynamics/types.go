@@ -9,9 +9,9 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 const AuthOAuth = "oauth"
@@ -299,35 +299,11 @@ func validAnalyticsQuery(q string) bool {
 	return !regexp.MustCompile(`(?i)(^|,)\s*(?:(?:DISTINCT|ALL)\s+)?(?:[A-Za-z_][A-Za-z0-9_]*\.)?\*(?:\s|,|$)`).MatchString(projection)
 }
 
-type Entity struct {
-	ID        string            `json:"id,omitempty"`
-	Name      string            `json:"name"`
-	Type      string            `json:"type"`
-	ParentID  string            `json:"parent_id,omitempty"`
-	Path      string            `json:"path,omitempty"`
-	EntityIDs map[string]string `json:"entity_ids,omitempty"`
-}
-type Diagnostic struct {
-	ID            string            `json:"id"`
-	Kind          string            `json:"kind"`
-	ApplicationID string            `json:"application_id"`
-	Severity      string            `json:"severity,omitempty"`
-	Summary       string            `json:"summary,omitempty"`
-	Status        string            `json:"status,omitempty"`
-	DeepLink      string            `json:"deep_link,omitempty"`
-	TimestampUTC  time.Time         `json:"timestamp_utc"`
-	EntityIDs     map[string]string `json:"entity_ids,omitempty"`
-	Properties    map[string]string `json:"properties,omitempty"`
-}
-type Coverage struct {
-	Status    string    `json:"status"`
-	From      time.Time `json:"from"`
-	To        time.Time `json:"to"`
-	Points    int       `json:"points"`
-	Evidence  int       `json:"evidence"`
-	Truncated bool      `json:"truncated"`
-	Message   string    `json:"message,omitempty"`
-}
+// Aliases preserve the AppDynamics public and JSON contracts while allowing
+// other providers to use the same durable evidence pipeline.
+type Entity = monitorprovider.Entity
+type Diagnostic = monitorprovider.Diagnostic
+type Coverage = monitorprovider.Coverage
 type Capabilities struct {
 	MetricAPI  string            `json:"metric_api,omitempty"`
 	Metrics    bool              `json:"metrics"`
@@ -346,8 +322,4 @@ type Result struct {
 	Topology     []Entity               `json:"topology,omitempty"`
 }
 
-type QueryProgress struct {
-	NextQuery    int  `json:"next_query"`
-	TotalQueries int  `json:"total_queries"`
-	Complete     bool `json:"complete"`
-}
+type QueryProgress = monitorprovider.QueryProgress

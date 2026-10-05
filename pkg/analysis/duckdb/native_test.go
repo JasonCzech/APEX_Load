@@ -5,6 +5,8 @@ package duckdb
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,6 +21,17 @@ func nativeFixture(t *testing.T, query string) (*Engine, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Fixture-only SQL uses an explicit approved single-thread configuration.
+	// Production operations obtain the thread count from the owned bootstrap.
+	e.workerThreads = 1
+	e.MemoryLimit = nativeFixtureMemoryLimit
+	e.SpillLimit = "256MiB"
+	e.Timeout = 30 * time.Second
+	t.Cleanup(func() {
+		if err := e.ReleaseOutputs(); err != nil {
+			t.Errorf("native physical output drain: %v", err)
+		}
+	})
 	path := filepath.Join(e.root, "input.parquet")
 	if err = e.withDB(context.Background(), func(ctx context.Context, db *sql.DB) error {
 		_, err := db.ExecContext(ctx, "COPY ("+query+") TO "+literal(path)+" (FORMAT PARQUET)")
@@ -43,6 +56,7 @@ func TestNativeNormalizePreviewQueryAndIsolation(t *testing.T) {
 	if err != nil || normalized.Accepted != 10 || normalized.Rejected != 0 {
 		t.Fatalf("normalize %+v %v", normalized, err)
 	}
+	normalized = retainNativeFixtureOutputs(t, e, normalized)
 	query := SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: "latency", From: time.UnixMilli(1700000000000), To: time.UnixMilli(1700000010000), BucketSeconds: 10, Aggregation: "p95"}
 	points, err := e.Series(context.Background(), normalized.Files, query)
 	if err != nil || len(points) != 1 || points[0].Value == nil || *points[0].Value < 9 || *points[0].Value > 10 || points[0].Unit != "ms" {
@@ -73,6 +87,7 @@ func TestNativeRejectsInvalidRowsAndSummaryPercentiles(t *testing.T) {
 	if err != nil || result.Accepted != 1 || result.Rejected != 1 {
 		t.Fatalf("explicit rejections %+v %v", result, err)
 	}
+	result = retainNativeFixtureOutputs(t, e, result)
 	q := SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: "p95", From: time.UnixMilli(1700000000000), To: time.UnixMilli(1700000010000), BucketSeconds: 10, Aggregation: "p95"}
 	if _, err := e.Series(context.Background(), result.Files, q); err == nil {
 		t.Fatal("percentile derived from summary")
@@ -112,6 +127,7 @@ func TestNativeTimestampOffsetsAndMissingCounterIntervals(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		r = retainNativeFixtureOutputs(t, e, r)
 		at := time.Date(2026, 1, 1, 17, 0, 0, 0, time.UTC)
 		points, err := e.Series(context.Background(), r.Files, SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: "v", From: at, To: at.Add(time.Minute), BucketSeconds: 1, Aggregation: "avg"})
 		if err != nil || len(points) != 60 || !points[0].TimestampUTC.Equal(at) {
@@ -125,6 +141,7 @@ func TestNativeTimestampOffsetsAndMissingCounterIntervals(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		r = retainNativeFixtureOutputs(t, e, r)
 		points, err := e.Series(context.Background(), r.Files, SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: "v", From: time.Unix(1700000000, 0), To: time.Unix(1700000006, 0), BucketSeconds: 1, Aggregation: "rate"})
 		if err != nil || len(points) != 6 {
 			t.Fatalf("rates: %+v %v", points, err)
@@ -149,6 +166,7 @@ func TestNativeRejectionProvenanceAndNullBuckets(t *testing.T) {
 	if err != nil || len(r.Rejections) != 1 || len(r.RejectionFiles) != 1 || r.Rejections[0].Count != 1 || len(r.Rejections[0].Rows) != 1 || r.Rejections[0].Rows[0] != 0 {
 		t.Fatalf("provenance: %+v %v", r, err)
 	}
+	r = retainNativeFixtureOutputs(t, e, r)
 	err = e.withDB(context.Background(), func(ctx context.Context, db *sql.DB) error {
 		var row int64
 		if err := db.QueryRowContext(ctx, "SELECT source_row FROM read_parquet("+literal(r.RejectionFiles[0])+")").Scan(&row); err != nil {
@@ -173,5 +191,189 @@ func TestNativeRejectionProvenanceAndNullBuckets(t *testing.T) {
 				t.Errorf("%s bucket %d: %+v", aggregation, i, v)
 			}
 		}
+	}
+}
+
+func TestNativeSeriesPreservesBucketStatisticIdentity(t *testing.T) {
+	e, path := nativeFixture(t, "SELECT 1700000000000 AS ts, 1::DOUBLE AS value UNION ALL SELECT 1700000000100, 101::DOUBLE")
+	mapping := Mapping{Version: 1, Timestamp: Column{"ts"}, TimestampEncoding: "unix_ms", Timezone: "UTC", Measures: []Measure{{Value: Column{"value"}, Name: "latency", Kind: analysis.KindObservation, Unit: "ms"}}}
+	normalized, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping})
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized = retainNativeFixtureOutputs(t, e, normalized)
+	for _, aggregate := range []string{"avg", "p95"} {
+		q := SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: "latency", From: time.UnixMilli(1700000000000), To: time.UnixMilli(1700000002000), BucketSeconds: 1, Aggregation: aggregate}
+		points, err := e.Series(context.Background(), normalized.Files, q)
+		if err != nil || len(points) != 2 {
+			t.Fatalf("series=%+v err=%v", points, err)
+		}
+		for _, point := range points {
+			if len(point.Derivation) != 1 || point.Derivation[0].Operation != aggregate || point.Derivation[0].BucketSeconds != 1 {
+				t.Fatalf("statistic identity lost: %+v", point)
+			}
+		}
+		points[0].Derivation[0].Operation = "mutated"
+		if points[1].Derivation[0].Operation != aggregate {
+			t.Fatal("missing bucket lineage aliases observed bucket")
+		}
+	}
+}
+
+func TestNativeCounterRatesRemainEpochUnqualified(t *testing.T) {
+	e, path := nativeFixture(t, "SELECT 1700000000000 AS ts, 10::DOUBLE AS value UNION ALL SELECT 1700000001000, 100::DOUBLE UNION ALL SELECT 1700000002000, 105::DOUBLE")
+	mapping := Mapping{Version: 1, Timestamp: Column{"ts"}, TimestampEncoding: "unix_ms", Timezone: "UTC", Measures: []Measure{{Value: Column{"value"}, Name: "requests", Kind: analysis.KindCounter, Unit: "count"}}}
+	normalized, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping})
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized = retainNativeFixtureOutputs(t, e, normalized)
+	q := SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: "requests", From: time.UnixMilli(1700000000000), To: time.UnixMilli(1700000003000), BucketSeconds: 1, Aggregation: "rate"}
+	points, err := e.Series(context.Background(), normalized.Files, q)
+	if err != nil || len(points) != 3 || points[1].Value == nil || *points[1].Value != 90 {
+		t.Fatalf("legacy native rate=%+v error=%v", points, err)
+	}
+	for _, point := range points {
+		if len(point.Derivation) != 2 || point.Derivation[0].Operation != "legacy_derived" || point.Derivation[0].Algorithm != "unknown_counter_epoch" {
+			t.Fatalf("native counter epoch silently qualified: %+v", point)
+		}
+		point.Population, point.MetricVersion = analysis.PopulationInfrastructure, "requests.v1"
+		got, err := analysis.EvaluateBaselineDelta(point, point, false)
+		if err != nil || got.Value != nil || got.Reason != "unknown_measurement_semantics" {
+			t.Fatalf("native raw counter rate qualified: %+v error=%v", got, err)
+		}
+	}
+}
+
+// Tests retain immutable fixture copies through verified reader descriptors,
+// then physically release the producer before entering a later Series worker.
+func retainNativeFixtureOutputs(t *testing.T, e *Engine, result NormalizeResult) NormalizeResult {
+	t.Helper()
+	copySet := func(paths []string) []string {
+		out := make([]string, 0, len(paths))
+		for _, path := range paths {
+			reader, err := e.OpenOutput(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			destination := filepath.Join(e.root, "fixture-"+filepath.Base(path))
+			file, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+			if err != nil {
+				reader.Close()
+				t.Fatal(err)
+			}
+			_, copyErr := io.Copy(file, reader)
+			syncErr := file.Sync()
+			fileCloseErr, readerCloseErr := file.Close(), reader.Close()
+			if copyErr != nil || syncErr != nil || fileCloseErr != nil || readerCloseErr != nil {
+				t.Fatal("fixture output physical copy", copyErr, syncErr, fileCloseErr, readerCloseErr)
+			}
+			out = append(out, destination)
+		}
+		return out
+	}
+	result.Files = copySet(result.Files)
+	result.RejectionFiles = copySet(result.RejectionFiles)
+	if err := e.ReleaseOutputs(); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+// This mirrors API geometry: the authorized source is copied into a registered
+// staging directory, and a real worker's immutable executable/input/output lives
+// below it. The parent watchdog must observe the full admitted geometry.
+func TestNativeRegisteredStagingAndActualWorkerSnapshotShareApprovedDiskGeometry(t *testing.T) {
+	fixture, original := nativeFixture(t, "SELECT 1700000000000 AS ts, 1::DOUBLE AS value")
+	info, err := os.Stat(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memory, err := workerParseBudget(nativeFixtureMemoryLimit, 2<<30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, pipeline, err := ReserveNativePipeline(t.Context(), fixture.root, PipelinePlan{InputBytes: info.Size(), OutputBytes: 12, StagingBytes: info.Size(), MemoryBytes: memory, SpillBytes: 64 << 20, Runtime: 30 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = pipeline.Release()
+		select {
+		case <-pipeline.Done():
+		case <-time.After(5 * time.Second):
+			t.Error("registered parent did not join actual worker/staging cleanup")
+		}
+	})
+	dir, err := pipeline.CreateStagingDirectory(fixture.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := pipeline.AcquireIO()
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.Open(original)
+	if err != nil {
+		lease.Joined()
+		t.Fatal(err)
+	}
+	lease.TrackOwner(source)
+	staged := filepath.Join(dir, "input.parquet")
+	out, err := os.OpenFile(staged, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		_ = lease.CloseOwner(source)
+		lease.Joined()
+		t.Fatal(err)
+	}
+	lease.TrackOwner(out)
+	_, copyErr := io.Copy(out, source)
+	closeErr := errors.Join(out.Sync(), lease.CloseOwner(out), lease.CloseOwner(source))
+	lease.Joined()
+	if err = errors.Join(copyErr, closeErr); err != nil {
+		t.Fatal(err)
+	}
+	engine, err := NewForNativePipeline(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, request, err := engine.prepareWorkerBounded(ctx, []string{staged}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = workerFinishAttempt(attempt) })
+	// Produce the actual verified private executable once, then pass that exact
+	// launch to the controlled supervisor fixture rather than copying it twice.
+	launch, err := workerProductionLaunch(attempt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := attempt.root.Stat(workerExecutableSnapshotName())
+	if err != nil || snapshot.Size() <= info.Size() {
+		t.Fatal("real executable did not reproduce nested staging geometry", err)
+	}
+	probe, err := pipeline.AcquireIO()
+	if err != nil {
+		t.Fatal(err)
+	}
+	quota, err := probe.pipelineDiskBytes()
+	if err == nil {
+		err = workerObservePipelineResources(probe, fixture.root, []string{dir}, quota, true)
+	}
+	probe.Joined()
+	if err != nil || pipeline.Err() != nil {
+		t.Fatal("real approved nested worker bytes exceeded staging-only cap", err, pipeline.Err())
+	}
+	options := engine.workerOptions()
+	options.testLaunch = &launch
+	result, err := runWorkerParent(attempt, request, options)
+	if err != nil {
+		t.Fatal("actual child failed combined parent geometry", err)
+	}
+	if result.result.Preview == nil || result.result.Preview.Schema.Rows != 1 {
+		t.Fatal("real child preview did not reconcile", result.result)
+	}
+	if err = result.release(); err != nil {
+		t.Fatal("actual child output/reap did not join", err)
 	}
 }

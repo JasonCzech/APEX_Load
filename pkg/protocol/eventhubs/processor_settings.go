@@ -8,12 +8,17 @@ import (
 	"sync"
 )
 
+const FeatureProcessorPauseV1 = protocol.FeatureEventHubsProcessorPauseV1
+
 const FeatureProcessorCheckpointsV1 = "eventhubs_processor_checkpoints_v1"
 
 func (*EventHubs) RuntimeCapabilities() protocol.RuntimeCapabilities {
 	out := protocol.RuntimeCapabilities{Available: true}
 	if realEventHubsAvailable {
-		out.Features = []string{FeatureProcessorCheckpointsV1, FeatureExclusiveConsumerV1}
+		out.Features = []string{FeatureProcessorCheckpointsV1, FeatureExclusiveConsumerV1, FeatureProcessorProgressV1, FeaturePartitionTailV1, FeatureProcessorPauseV1}
+		if capacity := (&EventHubs{}).RuntimeResourceCapacity(); capacity.Available {
+			out.Features = append(out.Features, FeatureProcessorReservationsV1)
+		}
 	}
 	return out
 }

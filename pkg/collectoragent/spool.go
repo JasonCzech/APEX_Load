@@ -1,6 +1,7 @@
 package collectoragent
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/internal/filelock"
@@ -55,6 +55,9 @@ func (a *Agent) loadSpool() error {
 	var document collectorSpool
 	var fields map[string]json.RawMessage
 	if err = json.Unmarshal(data, &fields); err == nil && fields["version"] != nil {
+		if fields["pending"] == nil || bytes.Equal(bytes.TrimSpace(fields["pending"]), []byte("null")) {
+			return errors.New("versioned collector spool pending map is required")
+		}
 		err = json.Unmarshal(data, &document)
 		if err == nil && document.Version != 2 && document.Version != 3 {
 			err = errors.New("unsupported spool version")
@@ -70,7 +73,7 @@ func (a *Agent) loadSpool() error {
 		return errors.New("collector spool job limit exceeded")
 	}
 	for id, b := range batches {
-		if id == "" || len(id) > maxRunMonitorJobIDBytes || b == nil || b.Sequence < 0 || len(b.Points) > 512 || len(b.Evidence) > 100 || len(b.Points)+len(b.Evidence) == 0 && len(b.Coverage) == 0 {
+		if id == "" || len(id) > maxRunMonitorJobIDBytes || b == nil || b.Sequence < 0 || len(b.Points) > 512 || len(b.Evidence) > 100 || len(b.Points)+len(b.Evidence) == 0 && len(b.Coverage) == 0 || b.MessagingManagement != nil || b.ManagementGrant != nil {
 			return errors.New("invalid collector spool batch")
 		}
 		for _, p := range b.Points {
@@ -116,10 +119,11 @@ func (a *Agent) loadSpool() error {
 		batches = map[string]*RunSampleBatch{}
 	}
 	a.pendingBatches = batches
-	return nil
+	return a.spoolBudget.restore("legacy", data, a.legacySpoolJobIDs())
 }
 
 func (a *Agent) saveSpool() error {
+	ids := a.legacySpoolJobIDs()
 	for id, queue := range a.providerBacklog {
 		if len(queue) == 0 {
 			delete(a.providerBacklog, id)
@@ -132,40 +136,21 @@ func (a *Agent) saveSpool() error {
 	if err != nil {
 		return err
 	}
-	if len(data) > 33<<20 {
-		return errors.New("collector spool exceeds limit")
+	path := ""
+	if a.cfg.SpoolDirectory != "" {
+		path = a.spoolPath()
 	}
-	if a.cfg.SpoolDirectory == "" {
-		return nil
-	}
-	if err = os.MkdirAll(a.cfg.SpoolDirectory, 0700); err != nil {
+	if err := a.spoolBudget.persist("legacy", path, data, ids, func() []string {
+		names := []string{}
+		for id := range a.pendingBatches {
+			names = append(names, "legacy-active:"+id)
+		}
+		return names
+	}()...); err != nil {
 		return err
 	}
-	file, err := os.CreateTemp(a.cfg.SpoolDirectory, "pending-*.tmp")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(file.Name())
-	_, writeErr := file.Write(data)
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if err = errors.Join(writeErr, syncErr, closeErr); err != nil {
-		return err
-	}
-	if err = os.Rename(file.Name(), a.spoolPath()); err != nil {
-		return err
-	}
-	dir, err := os.Open(a.cfg.SpoolDirectory)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	err = dir.Sync()
-	// Windows directory handles do not implement FlushFileBuffers.
-	if err != nil && strings.Contains(strings.ToLower(err.Error()), "incorrect function") {
-		return nil
-	}
-	return err
+	a.spoolBudget.clearLegacyReservations()
+	return nil
 }
 
 // Caller holds stateMu. Admission is bounded even without disk persistence;
@@ -256,4 +241,26 @@ func (a *Agent) lockSpool(ctx context.Context) (func(), error) {
 		return nil, err
 	}
 	return func() { _ = release(); _ = file.Close() }, nil
+}
+
+// Provider queues and OTLP acknowledgements share the same process-wide
+// byte/job authority as pending point batches and messaging management polls.
+func (a *Agent) legacySpoolJobIDs() []string {
+	seen := map[string]bool{}
+	for id := range a.pendingBatches {
+		seen[id] = true
+	}
+	for id, queue := range a.providerBacklog {
+		if len(queue) > 0 {
+			seen[id] = true
+		}
+	}
+	for id := range a.otlpAccepted {
+		seen[id] = true
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	return ids
 }

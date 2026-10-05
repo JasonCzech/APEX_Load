@@ -1584,6 +1584,10 @@ func (s *SQLiteStore) DeleteTest(id string) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := lockMonitorTestProjectTx(tx, id); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+
 	if s.db.dialect == storeDialectPostgres {
 		var timeslotID *string
 		if err := tx.QueryRow(`SELECT timeslot_id FROM tests WHERE id = ?`, id).Scan(&timeslotID); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -1629,6 +1633,12 @@ func (s *SQLiteStore) DeleteTestIfLeaseHeld(id, leaseName, leaseOwnerID string) 
 	}
 	if !held {
 		return LeaseFencedDeleteFenced, nil
+	}
+	if err := lockMonitorTestProjectTx(tx, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return LeaseFencedDeleteMissing, nil
+		}
+		return LeaseFencedDeleteFenced, err
 	}
 	if s.db.dialect == storeDialectPostgres {
 		var timeslotID *string
@@ -1845,11 +1855,11 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 		_, err = s.db.Exec(`INSERT INTO test_interval_summaries (
 			test_id, schema_version, timestamp, active_vusers, tps, avg_response_ms, error_pct,
 			total_transactions, total_errors, p50_ms, p90_ms, p95_ms, p99_ms,
-			native_evidence_json, transactions_json, by_region_json, browser_json, browser_by_device_json, latency_json,
+			native_evidence_json, messaging_json, messaging_progress_json, transactions_json, by_region_json, browser_json, browser_by_device_json, latency_json,
 			dropped_results_available, dropped_results, websocket_clients, websocket_dropped_messages, websocket_dropped_events,
 			generator_published_at, controller_received_at, collected_at, published_at,
 			generator_processing_lag_ms, transport_lag_ms, controller_fanout_lag_ms, sample_age_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			testID,
 			record.SchemaVersion,
 			record.Timestamp,
@@ -1864,6 +1874,8 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 			record.P95Ms,
 			record.P99Ms,
 			nativeJSON,
+			nullableMessagingJSON(record.Messaging),
+			nullableMessagingProgressJSON(record.MessagingProgress),
 			transactionsJSON,
 			byRegionJSON,
 			browserJSON,
@@ -2009,6 +2021,8 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 		p95_ms,
 		p99_ms,
 		native_evidence_json,
+		messaging_json,
+		messaging_progress_json,
 		transactions_json,
 		by_region_json,
 		browser_json,
@@ -2046,6 +2060,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 	history := make([]any, 0)
 	for rows.Next() {
 		var record IntervalSummaryRecord
+		var messagingJSON, messagingProgressJSON sql.NullString
 		var transactionsJSON sql.NullString
 		var byRegionJSON sql.NullString
 		var browserJSON sql.NullString
@@ -2080,6 +2095,8 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 			&record.P95Ms,
 			&record.P99Ms,
 			&nativeJSON,
+			&messagingJSON,
+			&messagingProgressJSON,
 			&transactionsJSON,
 			&byRegionJSON,
 			&browserJSON,
@@ -2106,6 +2123,8 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 				return nil, err
 			}
 		}
+		record.Messaging = decodeMessagingHistoryJSON(messagingJSON.String)
+		record.MessagingProgress = decodeMessagingProgressHistoryJSON(messagingProgressJSON.String)
 		record.SchemaVersion = normalizeTelemetrySchemaVersion(schemaVersion.String, intervalSummarySchemaVersionV1)
 		if transactionsJSON.Valid && strings.TrimSpace(transactionsJSON.String) != "" {
 			if err := json.Unmarshal([]byte(transactionsJSON.String), &record.Transactions); err != nil {
@@ -2221,6 +2240,8 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
 	}
 	type summaryEnvelope struct {
+		Messaging           json.RawMessage                       `json:"messaging,omitempty"`
+		MessagingProgress   json.RawMessage                       `json:"messaging_progress,omitempty"`
 		NativeEvidence      *NativeIntervalEvidence               `json:"native_evidence,omitempty"`
 		CompletedIterations int64                                 `json:"completed_iterations,omitempty"`
 		Timestamp           time.Time                             `json:"timestamp"`
@@ -2251,6 +2272,8 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		return IntervalSummaryRecord{}, err
 	}
 	record := IntervalSummaryRecord{
+		Messaging:           decodeMessagingHistoryJSON(string(summary.Messaging)),
+		MessagingProgress:   decodeMessagingProgressHistoryJSON(string(summary.MessagingProgress)),
 		NativeEvidence:      CloneNativeIntervalEvidence(summary.NativeEvidence),
 		CompletedIterations: summary.CompletedIterations,
 		SchemaVersion:       intervalSummarySchemaVersion,
@@ -2430,4 +2453,15 @@ func marshalNullableJSON(value any) (any, error) {
 		return nil, nil
 	}
 	return string(encoded), nil
+}
+
+// Monitor publication and deletion share the project fence before locking the
+// test/reservation rows, so a deleted run cannot regain a fresh receipt.
+func lockMonitorTestProjectTx(tx *storeTx, id string) error {
+	var project string
+	if err := tx.QueryRow(`SELECT COALESCE(project_id,'') FROM tests WHERE id=?`, id).Scan(&project); err != nil {
+		return err
+	}
+	_, err := lockProjectForOwnedMutation(tx, project)
+	return err
 }

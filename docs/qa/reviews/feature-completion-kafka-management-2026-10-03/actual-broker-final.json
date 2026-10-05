@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "kafka_version": "3.9.2",
+  "image_index": "sha256:05b4616e0702ef2729327705d54ad6b50ea70b271c4b730fabd2320789fb7b02",
+  "platform": "linux/arm64",
+  "platform_manifest": "sha256:ddc235acd57d0fec5b21eedd46dcaf4e89a7569ff1c9890c5597c6d9561c59b0",
+  "profile": "single-kraft-broker",
+  "memory_bytes": 1610612736,
+  "cpus": 1,
+  "data_guard_bytes": 2147483648,
+  "created_resources": [
+    "apexload-kafka-management-743cab9a2afb",
+    "apexload-kafka-management-743cab9a2afb-config",
+    "apexload-kafka-management-743cab9a2afb-data",
+    "apexload-kafka-management-743cab9a2afb:container"
+  ],
+  "status": "passed",
+  "free_before_bytes": 12155142144,
+  "peak_data_bytes": 196608,
+  "test_exit": 0,
+  "test_group_reaped": true,
+  "duration_seconds": 28.692,
+  "cleanup": [
+    {
+      "resource": "apexload-kafka-management-743cab9a2afb",
+      "exit": 0
+    },
+    {
+      "resource": "apexload-kafka-management-743cab9a2afb-config",
+      "exit": 0
+    },
+    {
+      "resource": "apexload-kafka-management-743cab9a2afb-data",
+      "exit": 0
+    },
+    {
+      "resource": "apexload-kafka-management-743cab9a2afb",
+      "exit": 0
+    }
+  ],
+  "cleanup_verified": true,
+  "scratch_removed": true,
+  "free_after_bytes": 12121284608
+}

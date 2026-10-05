@@ -112,3 +112,44 @@ test('messaging diagnostics preserves observed zero, missing acknowledgement and
   await page.setViewportSize({ width: 760, height: 900 })
   await expect(evidence).toBeVisible()
 })
+
+
+test('Event Hubs progress preserves exact cursors and unavailable lag during idle windows', async ({ page, trackRun }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace)
+  const id = idOf(await json(await request.post('/api/v1/tests', { data: {
+    project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId,
+    name: 'Event Hubs progress evidence', duration: '2m', groups: [{ name: 'workers', script_id: scriptId, vusers: 1 }],
+  } })))
+  trackRun(id)
+  const now = '2026-10-03T00:00:00Z'
+  const position = { state: 'observed', sequence: '9007199254740993', provider_offset: '2:-1:-1', observed_at: now, received_at: now, observation_age_ms: 10 }
+  let incomplete = false
+  await page.route(`**/api/v1/tests/${id}`, async route => {
+    const response = await route.fetch(); const record = await response.json()
+    await route.fulfill({ response, json: { ...record, status: 'RUNNING', live_metrics: {
+      total_transactions: 0, total_errors: 0, active_vusers: 1, transactions: {},
+      messaging_progress: { version: 1, lifecycle: 'running', captured_at: now, incomplete, rows: [{
+        origin: 'generator', group: 'workers', protocol: 'eventhubs', mode: 'processor', source_id: 'source', source: 'orders', subscription: 'checkout', session_id: 'session', partition: '0', generation: 'ownership-1', revision: '1', capture_revision: '1', captured_at: now, updated_at: now, expected_partitions: 1, inventory_complete: true, ownership: 'owned', ownership_verified_at: now, ownership_verified_age_ms: 10, acquired: 1, lost: 0, delivered: 1, rejected: 0, redelivered: 0,
+        delivered_position: position, checkpoint_position: { state: 'missing', observed_at: now, received_at: now }, tail_position: { ...position, sequence: '9007199254740995' },
+        checkpoint: { attempts: 0, committed: 0, failed: 0, fenced: 0, cancelled_before_write: 0, unconfirmed: 0, retry_attempts: 0, in_flight: 0, duration: { metric: 'checkpoint', population: 'checkpoint_operation', eligible: 0, distribution_ms: { count: 0, sum: 0, min: 0, max: 0, buckets: [] } }, last_completed_at: now },
+      }] },
+    } } })
+  })
+  await page.goto(`/#/test/${id}?tab=diagnostics&${scopeQuery(workspace)}`); await page.reload()
+  const summary = page.getByText('Event Hubs processor progress', { exact: true })
+  await expect(summary).toBeVisible(); await summary.click()
+  const panel = summary.locator('..')
+  await expect(panel).toContainText('9007199254740993')
+  await expect(panel).toContainText('9007199254740995')
+  await expect(panel.getByRole('cell', { name: '2', exact: true })).toHaveCount(1)
+  await expect(panel.getByRole('cell', { name: 'Unavailable', exact: true })).toHaveCount(1)
+  await expect(panel).toContainText('0 attempts; 0 committed')
+  incomplete = true
+  await expect(panel).toContainText('Processor coverage incomplete; lag is unscored.')
+  await expect(panel.getByRole('cell', { name: 'Unavailable', exact: true })).toHaveCount(2)
+  await page.setViewportSize({ width: 760, height: 900 })
+  await panel.screenshot({ path: test.info().outputPath('eventhubs-progress.png') })
+})

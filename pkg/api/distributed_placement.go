@@ -307,6 +307,7 @@ func capacityWeightedShardsForGroup(group TestGroup, targets []string, loadByTar
 			}
 			maximum = min(maximum, runtimeMaximum)
 		}
+		maximum = min(maximum, maximumVUsersWithinRuntimeResources(group, snapshot, maximum))
 		if snapshot.AvailableCapacity > int32(maximum) {
 			snapshot.AvailableCapacity = int32(maximum)
 		}
@@ -405,6 +406,9 @@ func capacityWeightedShardsForGroupIncludingZero(group TestGroup, targets []stri
 	}
 	shards := make([]GeneratorShardSummary, 0, len(targets))
 	for _, target := range targets {
+		if !runtimeResourcesAllowGroup(group, loadByTarget[target], allocated[target]) {
+			return nil
+		}
 		shards = append(shards, GeneratorShardSummary{
 			Group:         group.Name,
 			Target:        target,
@@ -436,6 +440,9 @@ func protocolRuntimeAvailableVUsers(snapshot generatorLoadSnapshot, protocolName
 	var available int64
 	for _, capacity := range snapshot.RuntimeCapacities {
 		if !strings.EqualFold(strings.TrimSpace(capacity.Protocol), protocolName) {
+			continue
+		}
+		if capacity.Available && capacity.MaxVUsers == 0 && capacity.Resources != nil {
 			continue
 		}
 		candidate := int64(0)
@@ -540,6 +547,9 @@ func targetsAllowingGroupRuntimeOccupancy(group TestGroup, targets []string, loa
 }
 
 func runtimeCapacityAllowsGroup(group TestGroup, snapshot generatorLoadSnapshot, vusers int) bool {
+	if !runtimeResourcesAllowGroup(group, snapshot, vusers) {
+		return false
+	}
 	if !runtimeOccupancyAllowsGroup(group, snapshot) {
 		return false
 	}
@@ -552,6 +562,7 @@ func runtimeCapacityAllowsGroup(group TestGroup, snapshot generatorLoadSnapshot,
 }
 
 func consumeGroupRuntimeCapacity(snapshot *generatorLoadSnapshot, group TestGroup, vusers int) {
+	consumeGroupRuntimeResources(snapshot, group, vusers)
 	if javaHostSettings(group) != nil {
 		consumeJavaHostCapacity(snapshot, group, vusers)
 		return
@@ -691,7 +702,7 @@ func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]gene
 
 func groupRequiredRuntimeFeature(group TestGroup) string {
 	base := groupBaseRuntimeFeature(group)
-	for _, feature := range append(dsl.RequiredMessagingRuntimeFeatures(group.script), dsl.RequiredCompositionRuntimeFeatures(group.script)...) {
+	for _, feature := range append(requiredMessagingFeaturesForGroup(group), dsl.RequiredCompositionRuntimeFeatures(group.script)...) {
 		if base != "" {
 			base += "+"
 		}

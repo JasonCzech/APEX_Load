@@ -137,8 +137,24 @@ func (s *SQLiteStore) ListMonitoringCollectors(projectID string, limit int, offs
 }
 
 func (s *SQLiteStore) DeleteMonitoringCollector(id string) error {
-	_, err := s.db.Exec(`DELETE FROM monitoring_collectors WHERE id = ?`, id)
-	return err
+	tx, e := s.db.Begin()
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback()
+	var project string
+	if e = tx.QueryRow(`SELECT project_id FROM monitoring_collectors WHERE id=?`, id).Scan(&project); errors.Is(e, sql.ErrNoRows) {
+		return nil
+	} else if e != nil {
+		return e
+	}
+	if _, e = lockProjectForOwnedMutation(tx, project); e != nil {
+		return e
+	}
+	if _, e = tx.Exec(`DELETE FROM monitoring_collectors WHERE id=? AND project_id=?`, id, project); e != nil {
+		return e
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) UpdateMonitoringCollectorHealth(id string, health string, lastSeenAt time.Time) error {
@@ -164,6 +180,24 @@ func (s *SQLiteStore) UpdateMonitoringCollectorHealth(id string, health string, 
 // it never rewrites token_hash or last_seen_at from a stale read, which could
 // otherwise undo a concurrent token rotation or heartbeat.
 func (s *SQLiteStore) PatchMonitoringCollector(id, projectID string, name, description, health *string, allowedMetricPacks *[]string) (bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var owner string
+	if err = tx.QueryRow(`SELECT project_id FROM monitoring_collectors WHERE id=?`, id).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	if owner != normalizeProjectID(projectID) {
+		return false, nil
+	}
+	if _, err = lockProjectForOwnedMutation(tx, projectID); err != nil {
+		return false, err
+	}
+
 	sets := make([]string, 0, 5)
 	args := make([]any, 0, 7)
 	if name != nil {
@@ -192,20 +226,26 @@ func (s *SQLiteStore) PatchMonitoringCollector(id, projectID string, name, descr
 	}
 	if len(sets) == 0 {
 		var exists int
-		err := s.db.QueryRow(`SELECT 1 FROM monitoring_collectors WHERE id = ? AND project_id = ?`, id, normalizeProjectID(projectID)).Scan(&exists)
+		err := tx.QueryRow(`SELECT 1 FROM monitoring_collectors WHERE id = ? AND project_id = ?`, id, normalizeProjectID(projectID)).Scan(&exists)
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
-		return err == nil, err
+		if err != nil {
+			return false, err
+		}
+		return true, tx.Commit()
 	}
 	sets = append(sets, "updated_at = ?")
 	args = append(args, time.Now(), id, normalizeProjectID(projectID))
-	result, err := s.db.Exec(`UPDATE monitoring_collectors SET `+strings.Join(sets, ", ")+` WHERE id = ? AND project_id = ?`, args...)
+	result, err := tx.Exec(`UPDATE monitoring_collectors SET `+strings.Join(sets, ", ")+` WHERE id = ? AND project_id = ?`, args...)
 	if err != nil {
 		return false, err
 	}
 	affected, err := result.RowsAffected()
-	return affected > 0, err
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, tx.Commit()
 }
 
 // UpdateMonitoringCollectorTokenHashIfUnchanged rotates only the credential
@@ -224,10 +264,30 @@ func (s *SQLiteStore) UpdateMonitoringCollectorTokenHashIfUnchanged(id, projectI
 }
 
 func (s *SQLiteStore) DeleteMonitoringCollectorFromProject(id, projectID string) (bool, error) {
-	result, err := s.db.Exec(`DELETE FROM monitoring_collectors WHERE id = ? AND project_id = ?`, id, normalizeProjectID(projectID))
-	if err != nil {
-		return false, err
+	tx, e := s.db.Begin()
+	if e != nil {
+		return false, e
 	}
-	affected, err := result.RowsAffected()
-	return affected > 0, err
+	defer tx.Rollback()
+	var owner string
+	if e = tx.QueryRow(`SELECT project_id FROM monitoring_collectors WHERE id=?`, id).Scan(&owner); errors.Is(e, sql.ErrNoRows) {
+		return false, nil
+	} else if e != nil {
+		return false, e
+	}
+	if owner != normalizeProjectID(projectID) {
+		return false, nil
+	}
+	if _, e = lockProjectForOwnedMutation(tx, projectID); e != nil {
+		return false, e
+	}
+	r, e := tx.Exec(`DELETE FROM monitoring_collectors WHERE id=? AND project_id=?`, id, normalizeProjectID(projectID))
+	if e != nil {
+		return false, e
+	}
+	n, e := r.RowsAffected()
+	if e != nil {
+		return false, e
+	}
+	return n > 0, tx.Commit()
 }

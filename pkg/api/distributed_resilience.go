@@ -54,6 +54,13 @@ func assignmentToleratesGeneratorLoss(assignment *GeneratorAssignmentSettings) b
 }
 
 func groupAllowsGeneratorLossReshard(group TestGroup) (bool, string) {
+	resourcePlan, resourceErr := runtimeResourcePlanForGroup(group)
+	if resourceErr != nil {
+		return false, "runtime resource plan is unavailable for live generator-loss resharding"
+	}
+	if resourcePlan.RequiresReservation() {
+		return false, "Event Hubs processor ownership and checkpoint progress cannot be live-evacuated without a qualified recovery contract"
+	}
 	if dsl.RequiresJMeterMessaging(group.script) || (group.Assignment != nil && group.Assignment.SourceAffinity == "single_generator") {
 		return false, "JMeter source state cannot be restarted or replayed after generator loss"
 	}

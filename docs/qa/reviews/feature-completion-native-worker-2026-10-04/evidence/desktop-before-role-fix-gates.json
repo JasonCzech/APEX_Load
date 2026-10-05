@@ -1,0 +1,14 @@
+[
+  {
+    "gate": "desktop-native-build",
+    "exit_code": 0,
+    "seconds": 244.677,
+    "log": "/private/tmp/apexload-native-schema29-desktop-native-build-2026-10-04.log"
+  },
+  {
+    "gate": "desktop-native-startup",
+    "exit_code": 1,
+    "seconds": 1.577,
+    "log": "/private/tmp/apexload-native-schema29-desktop-native-startup-2026-10-04.log"
+  }
+]

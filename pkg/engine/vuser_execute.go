@@ -688,6 +688,12 @@ func (vu *VUser) executeWithRetryStream(
 }
 
 func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Action, errCfg dsl.ErrorHandlingConfig, emit func(*protocol.Result) error, classification *httpRetryClassificationHistory) (finalResult *protocol.Result, finalErr error) {
+	var releasePause func()
+	ctx, releasePause, finalErr = vu.admitRuntimePauseAction(ctx)
+	if finalErr != nil {
+		return nil, finalErr
+	}
+	defer releasePause()
 	prepared := classification != nil
 	ctx, endTransactionRoot := vu.correlationContext(ctx, action)
 	defer endTransactionRoot()

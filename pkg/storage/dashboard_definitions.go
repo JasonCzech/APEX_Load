@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/analysis"
 )
 
 const (
@@ -360,24 +362,8 @@ func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
 	if q.StartSeconds < 0 || q.EndSeconds <= q.StartSeconds || q.EndSeconds > 86400 || q.BucketSeconds < 1 || q.BucketSeconds > 3600 || (q.EndSeconds-q.StartSeconds+q.BucketSeconds-1)/q.BucketSeconds > 1000 {
 		return errors.New("select a window within 24 hours and at most 1000 buckets")
 	}
-	switch q.Metric {
-	case "observation_rate", "error_observation_rate", "success_observation_rate":
-		if q.Aggregation == "rate" {
-			return nil
-		}
-	case "observation_count":
-		if q.Aggregation == "count" {
-			return nil
-		}
-	case "error_rate":
-		if q.Aggregation == "avg" {
-			return nil
-		}
-	case "response_time":
-		switch q.Aggregation {
-		case "avg", "min", "max", "p50", "p90", "p95", "p99":
-			return nil
-		}
+	if analysis.ValidateMetricAggregation(q.Metric, q.Population, q.Aggregation) == nil {
+		return nil
 	}
 	return errors.New("unsupported archive measurement or aggregation")
 }

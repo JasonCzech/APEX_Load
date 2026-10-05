@@ -691,7 +691,11 @@ func (tr *TestRunner) evaluateGeneratorPlacementConflictsLocked(test *ManagedTes
 	defaultLoad := loadSnapshotsForTargets(projected, defaultTargets)
 	compatibility := newGeneratorCompatibilityIndex(specs, projected)
 	conflicts := make([]groupPlacementConflict, 0)
-	for _, group := range test.Groups {
+	resourceGroups, err := runtimeReservationGroups(test, false)
+	if err != nil {
+		return []groupPlacementConflict{{Message: "runtime resource peak plan invalid"}}
+	}
+	for _, group := range resourceGroups {
 		shards := chooseGeneratorShardsForGroup(
 			group,
 			projected,

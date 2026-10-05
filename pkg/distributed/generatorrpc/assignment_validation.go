@@ -131,6 +131,10 @@ func validateWorkAssignment(assignment *pb.WorkAssignment, scriptCacheLimit int6
 		return validatedWorkAssignment{}, status.Error(codes.InvalidArgument, "vuser_id_offset namespace overflows runtime int")
 	}
 
+	if err := validateRuntimeResourceClaim(assignment.GetRuntimeResourceClaim(), assignment.GetVuserCount()); err != nil {
+		return validatedWorkAssignment{}, status.Error(codes.InvalidArgument, err.Error())
+	}
+
 	ancillaryBytes := int64(proto.Size(assignment) - len(assignment.GetScriptContent()))
 	ancillaryLimit := generatorRPCAssignmentAncillaryLimit(scriptCacheLimit)
 	secretEnvelopeBytes := int64(proto.Size(&pb.WorkAssignment{

@@ -1,0 +1,4 @@
+Retained exact error reference from disposable controller.
+Raw controller log SHA-256: 1d4232ae70a53ddc1bfb3c129879c8ec52aa882a6262e38358789f60d213638d
+
+{"time":"2026-10-03T17:57:27.814376-04:00","level":"ERROR","msg":"internal server error","ref":"4f7e9c17fdcc8a46","status":500,"detail":"failed to prepare safe archive artifact: encode sanitized transaction 1: archive download free space would fall below reserve 1073741824"}

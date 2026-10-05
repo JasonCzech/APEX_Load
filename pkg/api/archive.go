@@ -65,6 +65,9 @@ type RunArchiveManifest struct {
 	// never refreshed by runtime controls. Provenance remains the final enriched
 	// execution snapshot for generator inventory, actors, and governance.
 	InitialProvenance *RunArchiveProvenance `json:"initial_provenance,omitempty"`
+	// This process-local copy excludes the legacy remote-provenance fallback.
+	// It is authoritative only while constructing a controller-owned archive.
+	controllerInitialProvenance *RunArchiveProvenance
 	// Continuity records the HA controller failovers the run survived
 	// (docs/HA_RUN_CONTINUITY_PLAN.md); absent when the run never failed over.
 	Continuity                        *RunContinuityStatus               `json:"continuity,omitempty"`
@@ -80,8 +83,14 @@ type RunArchiveManifest struct {
 	DynatraceEvidenceFile             string                             `json:"dynatrace_evidence_file,omitempty"`
 	MonitorEvidenceFile               string                             `json:"monitor_evidence_file,omitempty"`
 	MonitorEvidenceCount              int64                              `json:"monitor_evidence_count,omitempty"`
+	MonitorManagementFile             string                             `json:"monitor_management_file,omitempty"`
+	MonitorManagementVersion          uint32                             `json:"monitor_management_version,omitempty"`
+	MonitorManagementSnapshotCount    int64                              `json:"monitor_management_snapshot_count,omitempty"`
+	MonitorManagementRowCount         int64                              `json:"monitor_management_row_count,omitempty"`
 	MonitorDiagnosticsFile            string                             `json:"monitor_diagnostics_file,omitempty"`
 	MonitorDiagnosticsCount           int64                              `json:"monitor_diagnostics_count,omitempty"`
+	FrozenMonitorRules                []analysis.MonitorRule             `json:"frozen_monitor_rules,omitempty"`
+	MonitorRulesFrozen                bool                               `json:"monitor_rules_frozen,omitempty"`
 	MonitoringStatus                  string                             `json:"monitoring_status,omitempty"`
 	MonitorRuleResults                []analysis.MonitorRuleResult       `json:"monitor_rule_results,omitempty"`
 	MonitorCoverage                   []RunMonitorCoverage               `json:"monitor_coverage,omitempty"`
@@ -330,6 +339,7 @@ type ResourceSample struct {
 }
 
 type IntervalSummaryRecord struct {
+	MessagingProgress        *protocol.MessagingProgressSnapshot   `json:"messaging_progress,omitempty"`
 	Messaging                map[string]*protocol.MessagingSummary `json:"messaging,omitempty"`
 	ObservationState         string                                `json:"observation_state,omitempty"`
 	CompletedIterations      int64                                 `json:"completed_iterations,omitempty"`
@@ -437,6 +447,7 @@ type RunArchiveIdentityNames struct {
 }
 
 type RunArchiveReport struct {
+	MessagingProgress                 *protocol.MessagingProgressSnapshot    `json:"messaging_progress,omitempty"`
 	MonitorDiagnostics                []RunMonitorDiagnostic                 `json:"monitor_diagnostics,omitempty"`
 	MonitorRuleResults                []analysis.MonitorRuleResult           `json:"monitor_rule_results,omitempty"`
 	StatisticalFindings               []StatisticalFinding                   `json:"statistical_findings,omitempty"`

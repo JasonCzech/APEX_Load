@@ -115,22 +115,27 @@ func TestHARUnknownVersionIsUnavailableMetadata(t *testing.T) {
 			if (version == "HTTP/1.0" || version == "HTTP/3") && action.Metadata["har.request.http_version"] != nil {
 				t.Fatal("unsupported source value copied instead of bounded capture state")
 			}
-			blocked := false
+			// Unknown and non-selectable versions are capture-quality warnings:
+			// the leaf inherits the script policy and is not blocked.
+			blocked, warned := false, false
 			for _, d := range result.Unsupported {
 				if d.Element == "HTTP version" && d.Severity == diag.Blocker {
 					blocked = true
 				}
-			}
-			wantBlocked := version == "HTTP/1.0" || version == "HTTP/3" || strings.EqualFold(strings.TrimSpace(version), "unknown")
-			if blocked != wantBlocked {
-				t.Fatalf("HTTP version blocker=%v, want %v", blocked, wantBlocked)
-			}
-			if strings.EqualFold(strings.TrimSpace(version), "unknown") {
-				if result.Script.Config.HTTP.Version != "" {
-					t.Fatalf("unspecified version forced to %q", result.Script.Config.HTTP.Version)
+				if d.Element == "HTTP version" && d.Severity == diag.Warning {
+					warned = true
 				}
-				if _, ok := action.Metadata["import_http_version_fidelity"]; !ok {
-					t.Fatal("unavailable capture lost durable execution gate")
+			}
+			wantWarned := version == "HTTP/1.0" || version == "HTTP/3" || strings.EqualFold(strings.TrimSpace(version), "unknown")
+			if blocked || warned != wantWarned {
+				t.Fatalf("HTTP version blocker=%v warning=%v, want warning=%v and no blocker", blocked, warned, wantWarned)
+			}
+			if wantWarned {
+				if result.Script.Config.HTTP.Version != "" || action.HTTPVersion.IsPresent() {
+					t.Fatalf("unspecified version forced to %q / %v", result.Script.Config.HTTP.Version, action.HTTPVersion)
+				}
+				if _, ok := action.Metadata["import_http_version_fidelity"]; ok || action.Metadata["execution_blocker"] != nil {
+					t.Fatal("capture-quality gap gated execution")
 				}
 			}
 		})

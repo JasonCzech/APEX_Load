@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -141,17 +142,38 @@ func finishRunMonitorLoadTx(tx *storeTx, project, run string, at time.Time) erro
 		return err
 	}
 	for _, j := range jobs {
-		if j.Source.Pack == "appdynamics" {
+		if j.Source.CanonicalProvider() {
 			end := at.UTC()
+			if err = finalizePrometheusDiagnosticCoverageTx(tx, &j, end); err != nil {
+				return err
+			}
 			deadline := end.Add(5 * time.Minute)
 			j.LoadEndedAt = &end
 			j.DrainDeadline = &deadline
 			j.ExpiresAt = deadline
 			j.State = "reconciling"
 			j.QueryOffset = 0
+			j.QueryTime = nil
 			j.QueryFromUTC = time.Time{}
 			j.QueryUntilUTC = time.Time{}
 			j.QueryCoverage = nil
+		} else if j.Source.Pack == "prometheus" {
+			end := at.UTC()
+			j.LoadEndedAt = &end
+			if err = finalizePrometheusScrapeJobTx(tx, &j, end, true); err != nil {
+				return err
+			}
+			var readinessJSON string
+			_ = tx.QueryRow(`SELECT packs FROM run_monitor_collector_readiness WHERE collector_id=? AND project_id=?`, j.Source.CollectorID, project).Scan(&readinessJSON)
+			var packs []string
+			_ = json.Unmarshal([]byte(readinessJSON), &packs)
+			if slices.Contains(packs, "prometheus-scrape.v2") {
+				deadline := end.Add(30 * time.Second)
+				j.DrainDeadline = &deadline
+				j.ExpiresAt = deadline
+				j.FlushOnly = true
+				j.State = "flushing"
+			}
 		} else {
 			j.State = "stopped"
 			if j.NextSequence == 0 {
@@ -180,6 +202,7 @@ type ObservationHead struct {
 	Kind     string
 }
 type ProviderMonitorBatch struct {
+	Provider       string                          `json:"provider,omitempty"`
 	Topology       []appdynamics.Entity            `json:"topology,omitempty"`
 	Points         []analysis.MetricPoint          `json:"points"`
 	Evidence       []appdynamics.Diagnostic        `json:"evidence,omitempty"`
@@ -194,6 +217,15 @@ type ProviderMonitorBatch struct {
 func ObservationKey(p analysis.MetricPoint) string {
 	if p.Provider == nil {
 		return ""
+	}
+	if p.Provider.Name == "prometheus" {
+		// Empty dimensions are omitted from durable JSON, so hash their decoded form.
+		if len(p.Dimensions) == 0 {
+			p.Dimensions = nil
+		}
+		raw, _ := json.Marshal([]any{p.Source, p.MetricName, p.Unit, p.Provider.QueryID, p.Provider.DefinitionHash, p.Provider.BackendProfile, p.Provider.EntityIDs, p.Dimensions, p.TimestampUTC, p.Provider.Mode, p.Provider.BucketStart, p.Provider.BucketEnd, p.Provider.Statistic})
+		sum := sha256.Sum256(raw)
+		return hex.EncodeToString(sum[:])
 	}
 	raw, _ := json.Marshal([]any{p.Source, p.MetricName, p.Unit, p.Provider.MetricID, p.Provider.EntityIDs, p.Dimensions, p.Provider.BucketStart, p.Provider.ResolutionSeconds, p.Provider.Statistic})
 	sum := sha256.Sum256(raw)
@@ -264,8 +296,13 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	if err = json.Unmarshal([]byte(raw), &job); err != nil {
 		return err
 	}
-	if job.Source.Pack != "appdynamics" {
-		return errors.New("provider payload requires AppDynamics job")
+	if !job.Source.CanonicalProvider() {
+		return errors.New("provider payload requires a governed provider job")
+	}
+	if job.Source.Prometheus != nil {
+		if err = validatePrometheusCoverage(job, payload.Coverage, b.ReceivedAt); err != nil {
+			return err
+		}
 	}
 	var prior string
 	err = tx.QueryRow(`SELECT digest FROM run_monitor_batches WHERE job_id=? AND sequence=?`, b.JobID, b.Sequence).Scan(&prior)
@@ -284,6 +321,9 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	if !payload.QueryUntilUTC.IsZero() {
 		if payload.QueryFromUTC.Before(job.StartedAt) || !payload.QueryUntilUTC.After(payload.QueryFromUTC) || payload.QueryUntilUTC.After(b.ReceivedAt.Add(30*time.Second)) || job.LoadEndedAt != nil && payload.QueryUntilUTC.After(*job.LoadEndedAt) || (!job.QueryUntilUTC.IsZero() && (!job.QueryFromUTC.Equal(payload.QueryFromUTC) || !job.QueryUntilUTC.Equal(payload.QueryUntilUTC))) {
 			return errors.New("invalid provider query window")
+		}
+		if job.Source.Prometheus != nil && job.QueryUntilUTC.IsZero() {
+			job.QueryCoverage = nil
 		}
 		job.QueryFromUTC = payload.QueryFromUTC
 		job.QueryUntilUTC = payload.QueryUntilUTC
@@ -320,6 +360,27 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 			limited = true
 			continue
 		}
+		if job.Source.Prometheus != nil {
+			first, latest, e := retainPrometheusDiagnosticTimes(&job, DiagnosticKeyForJob(b.JobID, d), d)
+			if e != nil {
+				return e
+			}
+			if first {
+				body, e := json.Marshal(d)
+				if e != nil {
+					return e
+				}
+				sum := sha256.Sum256(body)
+				// The reference follows earliest source observation chronology;
+				// its referenced batch remains immutable and outside identity quotas.
+				if _, e = tx.Exec(`INSERT INTO run_monitor_observation_heads(job_id,record_key,sequence,record_index,record_kind,content_digest) VALUES(?,?,?,?,'diagnostic_first',?) ON CONFLICT(job_id,record_key) DO UPDATE SET sequence=excluded.sequence,record_index=excluded.record_index,content_digest=excluded.content_digest`, b.JobID, "first:"+DiagnosticKeyForJob(b.JobID, d), b.Sequence, i, hex.EncodeToString(sum[:])); e != nil {
+					return e
+				}
+			}
+			if !latest {
+				continue
+			}
+		}
 		if err = upsertProviderHeadTx(tx, b.JobID, DiagnosticKeyForJob(b.JobID, d), b.Sequence, i, "diagnostic", d); err != nil {
 			return err
 		}
@@ -342,6 +403,9 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 			job.Topology = append(job.Topology, entity)
 		}
 	}
+	if err = recordPrometheusDiagnosticPollsTx(tx, &job, b, payload.Coverage); err != nil {
+		return err
+	}
 	job.NextSequence = next + 1
 	job.State = state
 	if limited {
@@ -357,33 +421,55 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 		job.QueryCoverage = map[string]appdynamics.Coverage{}
 	}
 	for k, c := range payload.Coverage {
+		if job.Source.Prometheus != nil && job.QueryTime != nil && job.QueryOffset < len(job.Source.Prometheus.Queries) && k == job.Source.Prometheus.Queries[job.QueryOffset].ID {
+			if prior, exists := job.QueryCoverage[k]; exists && prior.From.Equal(c.From) && prior.To.Equal(c.To) {
+				c = mergePrometheusChunkCoverage(prior, c)
+				if c.Points > maxPrometheusCoveragePoints || c.ExpectedPoints > maxPrometheusCoveragePoints || c.MissingPoints > maxPrometheusCoveragePoints {
+					return errors.New("Prometheus accumulated coverage exceeds bound")
+				}
+			}
+		}
 		job.Coverage[k] = c
 		job.QueryCoverage[k] = c
 	}
 	if payload.Progress != nil && payload.Progress.TotalQueries > 0 {
 		progress := payload.Progress
-		if progress.TotalQueries > 128 || progress.NextQuery < job.QueryOffset || progress.NextQuery > progress.TotalQueries || progress.Complete != (progress.NextQuery == progress.TotalQueries) || payload.QueryFromUTC.IsZero() || !payload.QueryUntilUTC.After(payload.QueryFromUTC) || (!job.QueryUntilUTC.IsZero() && (!job.QueryFromUTC.Equal(payload.QueryFromUTC) || !job.QueryUntilUTC.Equal(payload.QueryUntilUTC))) {
+		if progress.TotalQueries > 256 || progress.NextQuery < job.QueryOffset || progress.NextQuery > progress.TotalQueries || progress.Complete != (progress.NextQuery == progress.TotalQueries) || payload.QueryFromUTC.IsZero() || !payload.QueryUntilUTC.After(payload.QueryFromUTC) || (!job.QueryUntilUTC.IsZero() && (!job.QueryFromUTC.Equal(payload.QueryFromUTC) || !job.QueryUntilUTC.Equal(payload.QueryUntilUTC))) {
 			return errors.New("invalid provider query continuation")
 		}
+		if progress.NextTime != nil && (progress.Complete || progress.NextQuery >= progress.TotalQueries || progress.NextTime.Before(payload.QueryFromUTC) || progress.NextTime.After(payload.QueryUntilUTC) || job.QueryTime != nil && progress.NextQuery == job.QueryOffset && (progress.NextTime.Before(*job.QueryTime) || !progress.NextTime.After(*job.QueryTime) && len(payload.Points) > 0)) {
+			return errors.New("invalid provider time continuation")
+		}
 		job.QueryOffset = progress.NextQuery
+		job.QueryTime = progress.NextTime
 		job.QueryFromUTC = payload.QueryFromUTC
 		job.QueryUntilUTC = payload.QueryUntilUTC
 		if progress.Complete {
+			job.QueryTime = nil
 			job.QueryOffset = 0
 			job.QueryFromUTC = time.Time{}
 			job.QueryUntilUTC = time.Time{}
 		}
 	}
 	complete := len(job.QueryCoverage) > 0
-	for _, c := range job.QueryCoverage {
-		complete = complete && c.Status == "complete" && !c.Truncated
+	queried := len(job.QueryCoverage) > 0
+	for key, c := range job.QueryCoverage {
+		if job.Source.Prometheus != nil && (key == "targets" || key == "alerts") && c.ObservedAt != nil && (c.Status == "complete" || c.Status == "no_data") && !c.Truncated && len(c.Warnings) == 0 {
+			// Successfully observed empty current state is valid sampled evidence.
+			// Poll-slot completeness remains a separate archive coverage contract.
+			continue
+		}
+		complete = complete && c.Status == "complete" && !c.Truncated && (job.Source.Prometheus == nil || len(c.Warnings) == 0)
+		queried = queried && (c.Status == "complete" || c.Status == "no_data" || c.Status == "partial")
 	}
 	if payload.QueryWindowEnd != nil {
 		if payload.Progress != nil && !payload.Progress.Complete {
 			return errors.New("incomplete query cannot advance watermark")
 		}
-		if complete {
+		if complete || job.Source.Prometheus != nil && queried && payload.Progress != nil && payload.Progress.Complete {
 			job.QueryWatermark = payload.QueryWindowEnd.UTC()
+		}
+		if complete {
 			at := b.ReceivedAt.UTC()
 			job.LastSuccessAt = &at
 		}
@@ -392,7 +478,21 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	if job.Source.AppDynamics != nil && job.Source.AppDynamics.SettleSeconds > 0 {
 		settle = job.Source.AppDynamics.SettleSeconds
 	}
-	if state == "reconciling" && payload.Final && complete && job.LoadEndedAt != nil && b.ReceivedAt.After(job.LoadEndedAt.Truncate(time.Minute).Add(time.Duration(settle+60)*time.Second)) && payload.QueryWindowEnd != nil && payload.QueryWindowEnd.Equal(*job.LoadEndedAt) {
+	stableDelay := 50 * time.Second
+	settledAt := time.Time{}
+	if job.LoadEndedAt != nil {
+		settledAt = job.LoadEndedAt.Truncate(time.Minute).Add(time.Duration(settle+60) * time.Second)
+	}
+	if job.Source.Prometheus != nil {
+		if job.Source.Prometheus.SettleSeconds > 0 {
+			settle = job.Source.Prometheus.SettleSeconds
+		}
+		if job.LoadEndedAt != nil {
+			settledAt = job.LoadEndedAt.Add(time.Duration(settle) * time.Second)
+		}
+		stableDelay = 15 * time.Second
+	}
+	if state == "reconciling" && payload.Final && complete && job.LoadEndedAt != nil && !b.ReceivedAt.Before(settledAt) && payload.QueryWindowEnd != nil && payload.QueryWindowEnd.Equal(*job.LoadEndedAt) {
 		rows, e := tx.Query(`SELECT content_digest FROM run_monitor_observation_heads WHERE job_id=? ORDER BY record_key`, b.JobID)
 		if e != nil {
 			return e
@@ -413,7 +513,7 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 		rows.Close()
 		current := hex.EncodeToString(hash.Sum(nil))
 		if job.FinalDigest == current && job.StableSinceAt != nil {
-			if b.ReceivedAt.Sub(*job.StableSinceAt) >= 50*time.Second {
+			if b.ReceivedAt.Sub(*job.StableSinceAt) >= stableDelay {
 				job.StablePasses++
 			}
 		} else {
@@ -445,7 +545,16 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	return tx.Commit()
 }
 func upsertProviderHeadTx(tx *storeTx, job, key string, seq int64, index int, kind string, value any) error {
-	body, err := json.Marshal(value)
+	hashValue := value
+	if point, ok := value.(analysis.MetricPoint); ok && point.Provider != nil && point.Provider.Name == "prometheus" && point.Provider.BackendProfile == "azure_managed" {
+		// Azure label casing affects display only. Preserve the latest receipt and
+		// head for presentation without treating casing as late numeric revision.
+		provider := *point.Provider
+		provider.DisplayLabels = nil
+		point.Provider = &provider
+		hashValue = point
+	}
+	body, err := json.Marshal(hashValue)
 	if err != nil {
 		return err
 	}
@@ -470,6 +579,29 @@ func (s *SQLiteStore) CloseExpiredProviderMonitors(project, run string, now time
 	if _, err = lockProjectForOwnedMutation(tx, project); err != nil {
 		return err
 	}
+	rows, err := tx.Query(`SELECT payload,state,next_sequence FROM run_monitor_jobs WHERE project_id=? AND test_id=? AND state='flushing' AND expires_at<=?`, project, run, now.UTC())
+	if err != nil {
+		return err
+	}
+	jobs, err := readRunMonitorJobs(rows)
+	if err != nil {
+		return err
+	}
+	for _, job := range jobs {
+		if job.Source.Pack != "prometheus" || job.LoadEndedAt == nil {
+			return errors.New("invalid expired exporter flush")
+		}
+		if err = finalizePrometheusScrapeJobTx(tx, &job, *job.LoadEndedAt, true); err != nil {
+			return err
+		}
+		body, e := json.Marshal(job)
+		if e != nil {
+			return e
+		}
+		if _, err = tx.Exec(`UPDATE run_monitor_jobs SET state=?,payload=? WHERE id=? AND project_id=?`, job.State, string(body), job.ID, project); err != nil {
+			return err
+		}
+	}
 	_, err = tx.Exec(`UPDATE run_monitor_jobs SET state='incomplete' WHERE project_id=? AND test_id=? AND state='reconciling' AND expires_at<=?`, project, run, now.UTC())
 	if err != nil {
 		return err
@@ -478,6 +610,14 @@ func (s *SQLiteStore) CloseExpiredProviderMonitors(project, run string, now time
 }
 
 func providerSeriesKey(p analysis.MetricPoint) string {
+	if p.Provider.Name == "prometheus" {
+		if len(p.Dimensions) == 0 {
+			p.Dimensions = nil
+		}
+		body, _ := json.Marshal([]any{p.Source, p.MetricName, p.Unit, p.Provider.QueryID, p.Provider.DefinitionHash, p.Provider.BackendProfile, p.Provider.EntityIDs, p.Dimensions})
+		sum := sha256.Sum256(body)
+		return hex.EncodeToString(sum[:])
+	}
 	body, _ := json.Marshal([]any{p.Source, p.MetricName, p.Unit, p.Provider.MetricID, p.Provider.EntityIDs, p.Dimensions, p.Unit, p.Provider.Statistic})
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:])
@@ -492,7 +632,7 @@ func providerHeadWithinLimits(tx *storeTx, job RunMonitorJob, p analysis.MetricP
 		if count > 0 {
 			return true, nil
 		}
-		limits := map[string]int{"event": 1000, "violation": 200, "snapshot": 200, "log": 100, "transaction": 100}
+		limits := map[string]int{"event": 1000, "violation": 200, "snapshot": 200, "log": 100, "transaction": 100, "target": 500, "alert": 500}
 		limit, ok := limits[d.Kind]
 		if !ok {
 			return false, errors.New("invalid evidence kind")

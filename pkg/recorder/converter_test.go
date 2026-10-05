@@ -1192,8 +1192,11 @@ func TestConvertSession_TransactionMetadata(t *testing.T) {
 	if result.Script.Actions[1].Metadata["source_transaction"] != nil {
 		t.Fatalf("unexpected transaction on action without transaction, got %v", result.Script.Actions[1].Metadata)
 	}
-	if result.Script.Actions[1].Metadata["execution_blocker"] != "import_review_required" {
-		t.Fatal("legacy recording without observed versions lost its source review gate")
+	// A legacy recording without observed versions inherits the script policy;
+	// the missing observation is recorded but does not block execution.
+	capture, _ := result.Script.Actions[1].Metadata["http_version_capture"].(map[string]any)
+	if result.Script.Actions[1].Metadata["execution_blocker"] != nil || capture["reason_code"] != "http_version_unavailable" {
+		t.Fatalf("legacy recording without observed versions: blocker=%v capture=%v", result.Script.Actions[1].Metadata["execution_blocker"], capture)
 	}
 }
 

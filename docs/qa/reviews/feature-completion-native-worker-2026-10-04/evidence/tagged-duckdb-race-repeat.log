@@ -1,0 +1,7 @@
+--- FAIL: TestNativeRejectionProvenanceAndNullBuckets (1.66s)
+    native_test.go:161: numeric credential: {Schema:{Rows:0 Columns:[] FileSize:0} Samples:[]} native analytics resource limit
+--- FAIL: TestNativeNormalizeSnapshotsMutableInputsBeforeHashAndStage (1.64s)
+    worker_engine_boundary_test.go:48: caller mutation changed approved operation {[] [] [] 0 0 0} native analytics resource limit
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/analysis/duckdb	84.292s
+FAIL

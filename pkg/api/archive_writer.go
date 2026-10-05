@@ -554,6 +554,7 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 	}
 	activeRuntimeSeconds := live.ActiveRuntimeSeconds
 	record := IntervalSummaryRecord{
+		MessagingProgress:        live.MessagingProgress.Clone(),
 		Messaging:                protocol.CloneMessagingSummaries(live.Messaging),
 		ObservationState:         live.ObservationState,
 		CompletedIterations:      live.CompletedIterations,
@@ -987,6 +988,7 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		{Name: manifest.ELKEvidenceFile, Kind: "evidence", Format: "jsonl", RecordType: "elk_log_samples", Count: manifest.ELKEvidenceCount},
 		{Name: manifest.DynatraceEvidenceFile, Kind: "evidence", Format: "jsonl", RecordType: "dynatrace_evidence", Count: manifest.DynatraceEvidenceCount},
 		{Name: manifest.MonitorEvidenceFile, Kind: "evidence", Format: "jsonl", RecordType: "monitor_points_v1", Count: manifest.MonitorEvidenceCount},
+		{Name: manifest.MonitorManagementFile, Kind: "evidence", Format: "jsonl", RecordType: "monitor_management_v1", Count: manifest.MonitorManagementSnapshotCount},
 		{Name: manifest.MonitorDiagnosticsFile, Kind: "evidence", Format: "jsonl", RecordType: "monitor_diagnostics_v1", Count: manifest.MonitorDiagnosticsCount},
 	}
 	for _, export := range manifest.CSVExports {

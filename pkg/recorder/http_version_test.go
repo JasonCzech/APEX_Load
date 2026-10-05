@@ -49,7 +49,13 @@ func TestRecorderHTTPVersionObservationAndRoundTrip(t *testing.T) {
 					t.Fatalf("leaf version=%q", script.version)
 				}
 				marker, _ := script.metadata[requestimport.ImportHTTPVersionFidelityMetadataKey].(map[string]any)
-				if tc.reason != "" && marker["reason_code"] != tc.reason {
+				capture, _ := script.metadata["http_version_capture"].(map[string]any)
+				switch {
+				case tc.reason != "" && requestimport.HTTPVersionCaptureQualityOnly(tc.reason):
+					if marker != nil || script.metadata["execution_blocker"] != nil || capture["reason_code"] != tc.reason {
+						t.Fatalf("capture gap gated or unrecorded: marker=%v capture=%v", marker, capture)
+					}
+				case tc.reason != "" && marker["reason_code"] != tc.reason:
 					t.Fatalf("marker=%v", marker)
 				}
 				if tc.reason == "" && script.metadata["execution_blocker"] != nil {

@@ -1,0 +1,58 @@
+{
+  "status": "passed",
+  "started_unix": 1791154235.052871,
+  "package": "./pkg/storage",
+  "lane": "default",
+  "selected_tests": [
+    "TestRunMonitorJobPagesAcrossConcurrentRuns",
+    "TestRunMonitorJobPagesRetainPublished256JobContract",
+    "TestRunMonitorJobPagesKeepManagementCapacitySeparate",
+    "TestRunMonitorJobPageAllowsCombinedIdentityBoundary",
+    "TestManagementCollectorAssignedCapacityStartAndPrepare",
+    "TestManagementCollectorAssignedCapacityOptionalAndRequiredPriority",
+    "TestManagementCollectorAssignedCapacityTerminalStatusReleasesSlot",
+    "TestManagementCollectorAssignedCapacityCountsBeforeFutureBarrier",
+    "TestManagementTerminalCohortCompactsWithoutChangingReplay",
+    "TestManagementPollAtomicCohortAndAcceptedReplay"
+  ],
+  "source_sha256": {
+    "pkg/storage/run_monitors.go": "1c73e0535f748fb6df6b6e7d6386e9d60c71d9687692a85353191ae03538d113",
+    "pkg/storage/run_monitor_job_pages_test.go": "edcf57251c997c2d8bdc0102a9f893c66dfa80ff19f5376b78d04bc1bbba2f79"
+  },
+  "go": "/Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/bin/go",
+  "command": [
+    "/Users/jasonczech/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.5.darwin-arm64/bin/go",
+    "test",
+    "-p=1",
+    "-ldflags=-w",
+    "-count=1",
+    "-timeout=10m",
+    "-json",
+    "-run=^(TestRunMonitorJobPagesAcrossConcurrentRuns|TestRunMonitorJobPagesRetainPublished256JobContract|TestRunMonitorJobPagesKeepManagementCapacitySeparate|TestRunMonitorJobPageAllowsCombinedIdentityBoundary|TestManagementCollectorAssignedCapacityStartAndPrepare|TestManagementCollectorAssignedCapacityOptionalAndRequiredPriority|TestManagementCollectorAssignedCapacityTerminalStatusReleasesSlot|TestManagementCollectorAssignedCapacityCountsBeforeFutureBarrier|TestManagementTerminalCohortCompactsWithoutChangingReplay|TestManagementPollAtomicCohortAndAcceptedReplay)$",
+    "./pkg/storage"
+  ],
+  "log": "/private/tmp/apexload-committed-publish-paging-2026-10-04.default.log",
+  "finished_unix": 1791154248.6657212,
+  "duration_seconds": 13.613,
+  "exit_code": 0,
+  "test_actions": {
+    "TestManagementPollAtomicCohortAndAcceptedReplay": "pass",
+    "TestManagementCollectorAssignedCapacityStartAndPrepare": "pass",
+    "TestManagementCollectorAssignedCapacityOptionalAndRequiredPriority/occupied-31": "pass",
+    "TestManagementCollectorAssignedCapacityOptionalAndRequiredPriority/occupied-32": "pass",
+    "TestManagementCollectorAssignedCapacityOptionalAndRequiredPriority": "pass",
+    "TestManagementTerminalCohortCompactsWithoutChangingReplay": "pass",
+    "TestManagementCollectorAssignedCapacityTerminalStatusReleasesSlot": "pass",
+    "TestManagementCollectorAssignedCapacityCountsBeforeFutureBarrier": "pass",
+    "TestRunMonitorJobPagesAcrossConcurrentRuns": "pass",
+    "TestRunMonitorJobPagesRetainPublished256JobContract": "pass",
+    "TestRunMonitorJobPagesKeepManagementCapacitySeparate": "pass",
+    "TestRunMonitorJobPageAllowsCombinedIdentityBoundary": "pass"
+  },
+  "missing_selected_tests": [],
+  "skipped_selected_tests": [],
+  "source_sha256_after": {
+    "pkg/storage/run_monitors.go": "1c73e0535f748fb6df6b6e7d6386e9d60c71d9687692a85353191ae03538d113",
+    "pkg/storage/run_monitor_job_pages_test.go": "edcf57251c997c2d8bdc0102a9f893c66dfa80ff19f5376b78d04bc1bbba2f79"
+  }
+}

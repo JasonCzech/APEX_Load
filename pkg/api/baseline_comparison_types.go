@@ -88,6 +88,8 @@ type BaselineComparisonSnapshot struct {
 }
 
 type BaselineMeasurement struct {
+	MeanStatistic        string                             `json:"mean_statistic,omitempty"`
+	AvailableStatistics  []string                           `json:"available_statistics,omitempty"`
 	Messaging            *protocol.MessagingSummary         `json:"messaging,omitempty"`
 	GRPC                 *protocol.GRPCSummary              `json:"grpc,omitempty"`
 	WebSocket            *protocol.WebSocketSummary         `json:"websocket,omitempty"`
@@ -135,6 +137,7 @@ type BaselineComparisonCell struct {
 }
 
 type BaselineComparisonRow struct {
+	Provider  *BaselinePrometheusIdentity       `json:"provider,omitempty"`
 	ID        string                            `json:"id"`
 	Name      string                            `json:"name"`
 	Group     string                            `json:"group"`

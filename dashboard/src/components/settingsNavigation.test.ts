@@ -43,3 +43,8 @@ describe('operational workspace handoffs', () => {
     expect(workspaceHref('fleet', '#/settings')).toBe('#/fleet')
   })
 })
+
+ it('distinguishes project target-system connections from platform graph configuration', () => {
+   expect(settingsDestination('prometheus-capture')).toMatchObject({ scope: 'project', title: 'Prometheus test monitoring' })
+   expect(settingsDestination('prometheus')).toMatchObject({ scope: 'deployment', title: 'APEX platform graphs' })
+ })

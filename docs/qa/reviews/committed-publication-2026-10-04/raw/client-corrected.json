@@ -1,0 +1,51 @@
+{
+  "profile": {
+    "node_options": "--max-old-space-size=2048",
+    "vitest_workers": 1
+  },
+  "corrected_inputs": {
+    "src/components/dslEditorAssist.ts": "38c850f1aaeded14cebe7a372053a0efc503fb5f03a7fdc86b0e97c435981588",
+    "src/components/dslEditorAssist.test.ts": "79cfa8a615d91319bed78f1236b16297c069aa714be80e2ff35a587f79d942e6"
+  },
+  "gates": [
+    {
+      "name": "typecheck",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 51.118951082229614
+    },
+    {
+      "name": "lint",
+      "command": [
+        "npm",
+        "run",
+        "lint"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 25.053039073944092
+    },
+    {
+      "name": "units",
+      "command": [
+        "npm",
+        "test"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 341.52802991867065
+    },
+    {
+      "name": "build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 46.20232915878296
+    }
+  ]
+}

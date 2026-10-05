@@ -692,6 +692,13 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		contentBasis = "decoded"
 	}
 	addResponseContentReceipt(result, contentState, contentBasis)
+	if decoder != nil {
+		if wait := decoder.AdmissionWait(); wait > 0 {
+			// Queueing for decoder workspace on the generator is inside the
+			// measured duration; record it so saturation is not read as latency.
+			result.ProtocolEvidence["response_decoder_wait_ms"] = wait.Milliseconds()
+		}
+	}
 	if cacheHit {
 		result.ProtocolEvidence["response_content_source"] = "cache"
 	} else {

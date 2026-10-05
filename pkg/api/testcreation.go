@@ -238,6 +238,11 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 	groups := make([]TestGroup, len(test.Groups))
 	for index, group := range test.Groups {
 		javaCapacityPlan := javaVuserCapacityPlanForGroup(group)
+		resourcePlan, resourceErr := runtimeResourcePlanForGroup(group)
+		resourceError := ""
+		if resourceErr != nil {
+			resourceError = "eventhubs processor resource plan invalid"
+		}
 		groups[index] = TestGroup{
 			Name:                         group.Name,
 			ScriptID:                     group.ScriptID,
@@ -265,6 +270,10 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 			IterationOverride:            cloneIntPtr(group.IterationOverride),
 			javaVuserCapacityPlan:        javaCapacityPlan,
 			javaVuserCapacityPlanKnown:   true,
+			runtimeResourcePlan:          resourcePlan,
+			runtimeResourcePlanKnown:     true,
+			runtimeResourcePlanError:     resourceError,
+			messagingRuntimeFeatures:     append([]string(nil), requiredMessagingFeaturesForGroup(group)...),
 		}
 	}
 	return &ManagedTest{
@@ -302,6 +311,7 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 		EndedAt:                      cloneTimePtr(test.EndedAt),
 		StartAuthorization:           cloneQueuedStartAuthorization(test.StartAuthorization),
 		ExecutionPlanApproval:        cloneRunArchiveExecutionPlanApprovalSnapshot(test.ExecutionPlanApproval),
+		ScenarioMode:                 test.ScenarioMode,
 	}
 }
 

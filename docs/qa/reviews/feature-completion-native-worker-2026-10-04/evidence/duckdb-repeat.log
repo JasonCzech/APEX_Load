@@ -1,0 +1,4 @@
+# github.com/jasonczech/apexload/pkg/analysis/duckdb [github.com/jasonczech/apexload/pkg/analysis/duckdb.test]
+pkg/analysis/duckdb/worker_comparison_runtime_test.go:32:33: undefined: workerRandomHex
+FAIL	github.com/jasonczech/apexload/pkg/analysis/duckdb [build failed]
+FAIL

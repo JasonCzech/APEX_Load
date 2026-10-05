@@ -425,21 +425,19 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 	var responseRec kafkaRecord
 	hasRequest := false
 	hasResponse := false
+	sendAttempted := false
+	transactionAttempt := false
 
 	if k.txPoisoned {
 		err = fmt.Errorf("kafka client transaction state is unresolved; recreate the VUser")
 	} else {
 		switch strings.ToLower(action.Type) {
 		case "kafka_produce":
-			requestRec, err = k.produce(ctx, action, result)
-			hasRequest = err == nil
+			requestRec, err = k.produce(ctx, action, result, &hasRequest, &sendAttempted)
 		case "kafka_consume":
-			responseRec, err = k.consume(ctx, action, result)
-			hasResponse = err == nil
+			responseRec, err = k.consume(ctx, action, result, &hasResponse)
 		case "kafka_request_reply":
-			requestRec, responseRec, err = k.requestReply(ctx, action, result)
-			hasRequest = err == nil
-			hasResponse = err == nil
+			requestRec, responseRec, err = k.requestReply(ctx, action, result, &hasRequest, &hasResponse, &sendAttempted)
 		case "kafka_commit":
 			// Synchronously commit consumer offsets on the broker, then record the
 			// commit on the shared session for unified accounting. The mock Commit is a
@@ -472,6 +470,7 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 		case "kafka_begin_transaction":
 			err = k.beginTransaction(ctx, result)
 		case "kafka_commit_transaction":
+			transactionAttempt = k.txOpen
 			err = k.commitTransaction(ctx, result)
 		case "kafka_abort_transaction":
 			err = k.abortTransaction(ctx, result)
@@ -496,7 +495,7 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 			result.StatusCode = 500
 		}
 		result.ErrorMessage = err.Error()
-		if isKafkaSendAction(action.Type) {
+		if isKafkaSendAction(action.Type) && !hasRequest {
 			// Count a failed produce/publish attempt so the messaging reliability
 			// telemetry reflects send failures instead of always reading zero.
 			if result.ServerTelemetry == nil {
@@ -504,6 +503,13 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 			}
 			result.ServerTelemetry.SendFailureCount++
 		}
+	}
+	if isKafkaSendAction(action.Type) {
+		if result.ServerTelemetry == nil {
+			result.ServerTelemetry = &protocol.ServerTelemetry{}
+		}
+		isTransaction := strings.EqualFold(action.Type, "kafka_commit_transaction")
+		protocol.AnnotateMessagingSendOutcome(result.ServerTelemetry, sendAttempted || transactionAttempt, hasRequest || isTransaction && err == nil, isTransaction)
 	}
 	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 	return result, nil
@@ -674,7 +680,13 @@ func (k *Kafka) validateActionBounds(action *protocol.Action) error {
 	return nil
 }
 
-func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *protocol.Result) (kafkaRecord, error) {
+func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *protocol.Result, accepted, attempted *bool) (observed kafkaRecord, operationErr error) {
+	var sent kafkaRecord
+	defer func() {
+		if *accepted {
+			observed = sent
+		}
+	}()
 	topic := k.topic(action)
 	if topic == "" {
 		return kafkaRecord{}, fmt.Errorf("kafka topic is required")
@@ -714,6 +726,7 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 		}
 		k.txBuffer = append(k.txBuffer, pendingProduce{topic: topic, rec: rec})
 		k.txBytes += recordBytes
+		sent, *accepted = rec, true
 		result.BytesSent = int64(len(rec.Value))
 		result.CorrelationID = rec.CorrelationID
 		if err := addRecordExtractions(result, rec); err != nil {
@@ -726,6 +739,7 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 	if k.sharedProducer {
 		result.StartTime = time.Now()
 	}
+	*attempted = true
 	meta, err := k.client.Produce(ctx, topic, rec)
 	if err != nil {
 		return kafkaRecord{}, err
@@ -734,6 +748,7 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 	rec.Offset = meta.Offset
 	rec.Timestamp = meta.Timestamp
 	rec.AcknowledgementMs = meta.AcknowledgementMs
+	sent, *accepted = rec, true
 	result.BytesSent = int64(len(rec.Value))
 	result.CorrelationID = rec.CorrelationID
 	if err := addRecordExtractions(result, rec); err != nil {
@@ -845,7 +860,13 @@ func (k *Kafka) consumerGroup(action *protocol.Action) string {
 	return paramString(action.Params, "consumer_group", k.cfg.ConsumerGroup)
 }
 
-func (k *Kafka) consume(ctx context.Context, action *protocol.Action, result *protocol.Result) (kafkaRecord, error) {
+func (k *Kafka) consume(ctx context.Context, action *protocol.Action, result *protocol.Result, received *bool) (observed kafkaRecord, operationErr error) {
+	var delivery kafkaRecord
+	defer func() {
+		if *received {
+			observed = delivery
+		}
+	}()
 	topic := k.topic(action)
 	if topic == "" {
 		return kafkaRecord{}, fmt.Errorf("kafka topic is required")
@@ -855,12 +876,15 @@ func (k *Kafka) consume(ctx context.Context, action *protocol.Action, result *pr
 		result.StatusCode = 204
 		return kafkaRecord{}, err
 	}
+	delivery, *received = rec, true
+	result.BytesReceived = int64(len(rec.Value))
 	payload, derr := k.valueSerde.Deserialize(ctx, rec.Value)
 	if derr != nil {
 		result.StatusCode = 422
 		return kafkaRecord{}, derr
 	}
 	rec.Value = payload
+	delivery = rec
 	result.BytesReceived = int64(len(rec.Value))
 	if err := addRecordExtractions(result, rec); err != nil {
 		return kafkaRecord{}, err
@@ -889,7 +913,16 @@ func (k *Kafka) consume(ctx context.Context, action *protocol.Action, result *pr
 	return rec, evaluateAssertions(action.Assertions, result, rec)
 }
 
-func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, result *protocol.Result) (kafkaRecord, kafkaRecord, error) {
+func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, result *protocol.Result, sentOK, receivedOK, attempted *bool) (observedRequest, observedResponse kafkaRecord, operationErr error) {
+	var sent, delivery kafkaRecord
+	defer func() {
+		if *sentOK {
+			observedRequest = sent
+		}
+		if *receivedOK {
+			observedResponse = delivery
+		}
+	}()
 	if k.txOpen {
 		// request_reply produces + consumes inline, which cannot honor the
 		// transaction buffer's read_committed semantics; disallow it inside a tx.
@@ -924,6 +957,16 @@ func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, resul
 	}
 
 	meta, response, err := k.client.RequestReply(ctx, reqTopic, replyTopic, request, k.timeout(action))
+	*attempted = err == nil || meta.sent || meta.sendAttempted
+	if err == nil || meta.sent {
+		request.Partition, request.Offset, request.AcknowledgementMs = meta.Partition, meta.Offset, meta.AcknowledgementMs
+		sent, *sentOK = request, true
+		result.BytesSent = int64(len(request.Value))
+	}
+	if err == nil {
+		delivery, *receivedOK = response, true
+		result.BytesReceived = int64(len(response.Value))
+	}
 	if err != nil {
 		result.StatusCode = 204
 		return kafkaRecord{}, kafkaRecord{}, err
@@ -936,6 +979,7 @@ func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, resul
 		return kafkaRecord{}, kafkaRecord{}, derr
 	}
 	response.Value = payload
+	delivery = response
 	request.Partition = meta.Partition
 	request.Offset = meta.Offset
 	request.AcknowledgementMs = meta.AcknowledgementMs
@@ -1097,12 +1141,18 @@ func finalizeKafkaServerTelemetry(result *protocol.Result, request kafkaRecord, 
 	}
 	telemetry := &protocol.ServerTelemetry{
 		TransferMs: durationToNonNegativeMilliseconds(result.Duration),
+		Messaging:  &protocol.MessagingDiagnostics{Version: protocol.MessagingEvidenceVersion},
 	}
 	if hasRequest {
 		if request.Partition >= 0 && result.Extractions["kafka_transactional"] != "true" {
 			telemetry.PartitionID = strconv.Itoa(int(request.Partition))
 		}
 		telemetry.AcknowledgementMs = request.AcknowledgementMs
+		observation := protocol.MessagingDurationObservation{Metric: "producer_ack", ValueMs: request.AcknowledgementMs}
+		if observation.ValueMs == nil {
+			observation.UnavailableReason = "not_observed"
+		}
+		telemetry.Messaging.Durations = append(telemetry.Messaging.Durations, observation)
 		telemetry.MessagesSent = 1
 		telemetry.RequestPayloadKB = bytesToKilobytes(int64(len(request.Value)))
 		telemetry.RequestSizeClass = protocol.ClassifyPayloadSize(int64(len(request.Value)))
@@ -1123,6 +1173,11 @@ func finalizeKafkaServerTelemetry(result *protocol.Result, request kafkaRecord, 
 			telemetry.ConsumerLagMs = durationToNonNegativeMilliseconds(observedAt.Sub(response.Timestamp))
 			telemetry.ConsumerLagObserved = true
 		}
+		ageReason := "not_observed"
+		if telemetry.ConsumerLagObserved {
+			ageReason = "clock_unqualified"
+		}
+		telemetry.Messaging.Durations = append(telemetry.Messaging.Durations, protocol.MessagingDurationObservation{Metric: "enqueue_age", UnavailableReason: ageReason})
 		// Surface the broker offset backlog (highWatermark - offset - 1) that the
 		// consume path records, instead of discarding it to a string extraction.
 		if lag, err := strconv.ParseInt(result.Extractions["kafka_consumer_lag"], 10, 64); err == nil && lag >= 0 {

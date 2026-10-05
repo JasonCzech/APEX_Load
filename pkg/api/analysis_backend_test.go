@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -44,7 +45,7 @@ func TestAnalysisBackendMismatchDoesNotDeleteEvidence(t *testing.T) {
 	}
 }
 
-func TestAnalysisMetadataAndCancellationWithoutNativeCapability(t *testing.T) {
+func TestAnalysisMetadataAndCancellationWithoutNativeCapabilityRetainsUnknownLegacyWriter(t *testing.T) {
 	s, _ := newTimeslotServer(t)
 	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "")
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
@@ -64,11 +65,19 @@ func TestAnalysisMetadataAndCancellationWithoutNativeCapability(t *testing.T) {
 		}
 	}
 	r := timeslotRequest(t, s, "DELETE", "/api/v1/analysis/imports/"+in.ID, nil)
-	if r.Code != 204 {
-		t.Fatalf("cancel: %d %s", r.Code, r.Body.String())
+	if r.Code != 503 {
+		t.Fatalf("unknown legacy writer cleanup did not remain pending: %d %s", r.Code, r.Body.String())
+	}
+	persisted, err := store.GetAnalysisImport(in.ID)
+	if err != nil || persisted.State != "cancelled" {
+		t.Fatalf("cancellation was not durable: %+v %v", persisted, err)
+	}
+	jobs, err := s.store.(storage.AnalysisCleanupStore).ListAnalysisCleanupJobs(time.Now().Add(time.Hour), 50)
+	if err != nil || len(jobs) == 0 {
+		t.Fatalf("unknown writer cleanup was lost: %+v %v", jobs, err)
 	}
 	var out bytes.Buffer
-	if _, err = analysisObjectRead(context.Background(), key, &out, 100); err == nil {
-		t.Fatal("cancel retained original")
+	if _, err = analysisObjectRead(context.Background(), key, &out, 100); err != nil || out.String() != "fixture" {
+		t.Fatalf("cancellation deleted evidence without physical writer proof: %q %v", out.String(), err)
 	}
 }

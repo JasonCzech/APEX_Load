@@ -43,6 +43,8 @@ var manuallyDeletedProjectTables = stringSet(
 // evidence. A declaration here is therefore a reviewed retention decision, not
 // an omission from deleteProjectGraphTx.
 var retainedAfterProjectDeletionTables = stringSet(
+	"analysis_upload_writers",   // Exact upload owners survive project deletion.
+	"analysis_attempt_journal",  // Exact writer/publication proof survives project deletion.
 	"object_activity_events",    // Safe activity history follows audit retention independently of project deletion.
 	"analysis_cleanup_jobs",     // Physical analytics cleanup must outlive project metadata.
 	"pod_capacity_reservations", // Only generator-confirmed drainage or incarnation fencing releases capacity.

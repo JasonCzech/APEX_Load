@@ -1,0 +1,46 @@
+=== RUN   TestMessagingHistorySQLiteMigrationRestartAndRoundtrip
+--- PASS: TestMessagingHistorySQLiteMigrationRestartAndRoundtrip (1.83s)
+=== RUN   TestMessagingHistoryMalformedAndBoundedEvidence
+=== RUN   TestMessagingHistoryMalformedAndBoundedEvidence/legacy
+=== RUN   TestMessagingHistoryMalformedAndBoundedEvidence/null
+=== RUN   TestMessagingHistoryMalformedAndBoundedEvidence/malformed
+=== RUN   TestMessagingHistoryMalformedAndBoundedEvidence/invalid
+=== RUN   TestMessagingHistoryMalformedAndBoundedEvidence/oversized
+--- PASS: TestMessagingHistoryMalformedAndBoundedEvidence (0.87s)
+    --- PASS: TestMessagingHistoryMalformedAndBoundedEvidence/legacy (0.01s)
+    --- PASS: TestMessagingHistoryMalformedAndBoundedEvidence/null (0.01s)
+    --- PASS: TestMessagingHistoryMalformedAndBoundedEvidence/malformed (0.01s)
+    --- PASS: TestMessagingHistoryMalformedAndBoundedEvidence/invalid (0.01s)
+    --- PASS: TestMessagingHistoryMalformedAndBoundedEvidence/oversized (0.01s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/storage	4.419s
+=== RUN   TestMessagingProgressStandaloneWireAndArchiveRoundtrip
+--- PASS: TestMessagingProgressStandaloneWireAndArchiveRoundtrip (0.01s)
+=== RUN   TestMessagingProgressWireRejectsMalformedAndOldPeers
+=== RUN   TestMessagingProgressWireRejectsMalformedAndOldPeers/legacy
+=== RUN   TestMessagingProgressWireRejectsMalformedAndOldPeers/empty_versioned
+=== RUN   TestMessagingProgressWireRejectsMalformedAndOldPeers/unsupported
+=== RUN   TestMessagingProgressWireRejectsMalformedAndOldPeers/oversized
+=== RUN   TestMessagingProgressWireRejectsMalformedAndOldPeers/null
+=== RUN   TestMessagingProgressWireRejectsMalformedAndOldPeers/missing_rows
+--- PASS: TestMessagingProgressWireRejectsMalformedAndOldPeers (0.00s)
+    --- PASS: TestMessagingProgressWireRejectsMalformedAndOldPeers/legacy (0.00s)
+    --- PASS: TestMessagingProgressWireRejectsMalformedAndOldPeers/empty_versioned (0.00s)
+    --- PASS: TestMessagingProgressWireRejectsMalformedAndOldPeers/unsupported (0.00s)
+    --- PASS: TestMessagingProgressWireRejectsMalformedAndOldPeers/oversized (0.00s)
+    --- PASS: TestMessagingProgressWireRejectsMalformedAndOldPeers/null (0.00s)
+    --- PASS: TestMessagingProgressWireRejectsMalformedAndOldPeers/missing_rows (0.00s)
+=== RUN   TestMessagingProgressMergeFiltersAndRetainsCumulativeGauge
+--- PASS: TestMessagingProgressMergeFiltersAndRetainsCumulativeGauge (0.00s)
+=== RUN   TestMessagingProgressSameSnapshotTransactionWindowRetainsGauge
+--- PASS: TestMessagingProgressSameSnapshotTransactionWindowRetainsGauge (0.00s)
+=== RUN   TestMessagingProgressGeneratorRecorderPersistsIdleEvidence
+--- PASS: TestMessagingProgressGeneratorRecorderPersistsIdleEvidence (0.12s)
+=== RUN   TestMessagingProgressWireCapabilityAdvertised
+--- PASS: TestMessagingProgressWireCapabilityAdvertised (0.00s)
+=== RUN   TestMessagingProgressSourcePlanUsesImmutableConsumerExpectation
+--- PASS: TestMessagingProgressSourcePlanUsesImmutableConsumerExpectation (0.00s)
+=== RUN   TestSourcePlanGroupSnapshotDoesNotMultiplySharedEvidence
+--- PASS: TestSourcePlanGroupSnapshotDoesNotMultiplySharedEvidence (0.00s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/distributed/generatorrpc	1.743s

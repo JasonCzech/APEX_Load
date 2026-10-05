@@ -262,6 +262,9 @@ func (vu *VUser) Run(ctx context.Context) {
 		}
 		teardownComplete = true
 		tctx, tcancel := teardownContext()
+		if gate, present := protocol.RuntimePauseGateFromContext(iterCtx, vu.Script.Protocol); present {
+			tctx = bindRuntimePauseTeardown(tctx, vu.Script.Protocol, gate)
+		}
 		pauseControl := vu.PauseControl
 		// Cleanup runs on its own bounded wall-clock context. A load that is
 		// paused while stopping must neither hold teardown at the pause gate nor
@@ -927,6 +930,11 @@ func (vu *VUser) Run(ctx context.Context) {
 				recordIterationTransaction(false)
 				return flowTeardown
 			}
+			leasedCtx, releasePause, pauseErr := vu.admitRuntimePauseAction(iterCtx)
+			if pauseErr != nil {
+				return flowTeardown
+			}
+			defer releasePause()
 			resolved := vu.resolveAction(action)
 			var actionTxStart time.Time
 			if actionTxMode && !claimActionTransaction() {
@@ -952,7 +960,7 @@ func (vu *VUser) Run(ctx context.Context) {
 			}
 
 			vu.markUserWorkStarted()
-			result, err := vu.executeWithRetryStream(iterCtx, resolved, cfg.ErrorHandling, func(child *protocol.Result) error {
+			result, err := vu.executeWithRetryStream(leasedCtx, resolved, cfg.ErrorHandling, func(child *protocol.Result) error {
 				if child != nil && child.BusinessTransaction && !claimActionTransaction() {
 					return errTransactionGoalReached
 				}
@@ -965,6 +973,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				}
 				return nil
 			})
+			releasePause()
 			vu.acceptWebSocketCallback(action, result, err)
 			if err != nil {
 				if knownBusinessTransactionEmitter {
@@ -1534,6 +1543,11 @@ func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.
 			return flowTeardown
 		}
 
+		leasedCtx, releasePause, pauseErr := vu.admitRuntimePauseAction(actionCtx)
+		if pauseErr != nil {
+			return flowTeardown
+		}
+		defer releasePause()
 		resolved := vu.resolveAction(action)
 		knownBusinessTransactionEmitter := actionEmitsBusinessTransactions(action)
 		emitterTransactionReserved := false
@@ -1567,7 +1581,7 @@ func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.
 			}
 		}
 		vu.markUserWorkStarted()
-		result, err := vu.executeWithRetryStream(actionCtx, resolved, errCfg, func(child *protocol.Result) error {
+		result, err := vu.executeWithRetryStream(leasedCtx, resolved, errCfg, func(child *protocol.Result) error {
 			if child != nil && child.BusinessTransaction && !claimEmittedTransaction() {
 				return errTransactionGoalReached
 			}
@@ -1577,6 +1591,7 @@ func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.
 			}
 			return nil
 		})
+		releasePause()
 		vu.acceptWebSocketCallback(action, result, err)
 		if err != nil {
 			releaseEmitterReservation()

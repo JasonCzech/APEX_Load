@@ -251,6 +251,10 @@ func cloneProtocolRuntimeCapacities(values []generatorrpc.ProtocolRuntimeCapacit
 	copy(out, values)
 	for index := range out {
 		out[index].Features = append([]string(nil), values[index].Features...)
+		if values[index].Resources != nil {
+			resources := *values[index].Resources
+			out[index].Resources = &resources
+		}
 	}
 	return out
 }
@@ -1197,14 +1201,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	}
 	configurePodLoads(podSettings, loadByTarget)
 	defaultLoadByTarget := loadSnapshotsForTargets(loadByTarget, allowedTargets)
-	reservationGroups := test.Groups
-	if podSettings.CapacityPlanning.PodReservationsEnabled {
-		reservationGroups, err = podReservationGroups(test)
-		if err != nil {
-			cleanup(false)
-			tr.failTestBeforeRunAndLog(test, err.Error())
-			return
-		}
+	reservationGroups, err := runtimeReservationGroups(test, podSettings.CapacityPlanning.PodReservationsEnabled)
+	if err != nil {
+		cleanup(false)
+		tr.failTestBeforeRunAndLog(test, err.Error())
+		return
 	}
 	peakGroupShards := planDistributedGroupShardsForCandidates(reservationGroups, loadByTarget, defaultLoadByTarget, allTargets, allowedTargets, assignment, targetSpecs)
 	// Validate the complete discovered placement before staging any group. A
@@ -1322,6 +1323,16 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			return
 		}
 		shardNamespaceBase += uint64(len(peakShards))
+		_, _, resourceInitStrategy := distributedGroupRuntimeConfig(test, group)
+		for i := range shards {
+			peak := shardVUsersForTarget(peakShards, shards[i].Target)
+			claim, claimErr := generatorrpc.NewRuntimeResourceClaim(group.script, resourceInitStrategy, peak)
+			if claimErr != nil {
+				failStartup("invalid Event Hubs processor resource plan")
+				return
+			}
+			shards[i].RuntimeResourceClaim = claim
+		}
 		activeGroupShards[group.Name] = cloneGeneratorShardSummaries(shards)
 
 		secretProjectID := group.script.ProjectID
@@ -1466,6 +1477,13 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			}
 			snapshot := loadByTarget[plan.target]
 			for shardIndex, shard := range plan.shards {
+				if admission := outcomes[index].results[shardIndex].RuntimeResourceAdmission; admission != nil {
+					for i := range activeGroupShards[group.Name] {
+						if activeGroupShards[group.Name][i].ShardOrdinal == shard.ShardOrdinal {
+							activeGroupShards[group.Name][i].RuntimeResourceAdmission = generatorrpc.CloneRuntimeResourceAdmission(admission)
+						}
+					}
+				}
 				if placement := outcomes[index].results[shardIndex].JavaHost; placement != nil {
 					for i := range activeGroupShards[group.Name] {
 						if activeGroupShards[group.Name][i].ShardOrdinal == shard.ShardOrdinal && activeGroupShards[group.Name][i].JavaHost != nil {
@@ -1707,6 +1725,7 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 			assignment := template
 			assignment.ArchiveSourceTarget = plan.archiveSourceTarget
 			assignment.JavaHost = shard.JavaHost.selection()
+			assignment.RuntimeResourceClaim = shardRuntimeResourceClaim(shard)
 			assignment.Region = b.regionForTarget(plan.target)
 			assignment.VUserCount = int32(shard.VUsers)
 			assignment.ShardOrdinal = shard.ShardOrdinal
@@ -1744,6 +1763,10 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 			}
 			if shard.JavaHost != nil && !javaHostPlacementAcknowledged(shard.JavaHost, result.JavaHost) {
 				outcome.err = fmt.Errorf("java_host_reservation_acknowledgement_invalid on %q", plan.target)
+				return
+			}
+			if assignment.RuntimeResourceClaim != nil && !generatorrpc.ValidRuntimeResourceAdmission(assignment.RuntimeResourceClaim, result.RuntimeResourceAdmission) {
+				outcome.err = fmt.Errorf("eventhubs resource admission acknowledgement invalid on %q", plan.target)
 				return
 			}
 			outcome.results[shardIndex] = result
@@ -2308,6 +2331,14 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 			currentShardVUsers := shardVUsersForTarget(shards, target)
 			snapshot.AvailableCapacity += int32(currentShardVUsers)
 			restoreGroupRuntimeCapacity(&snapshot, scaleGroup, currentShardVUsers)
+			for _, shard := range shards {
+				if shard.Target == target {
+					if err := boundRuntimeResourceScaleLoad(&snapshot, shard, scaleGroup); err != nil {
+						loadCh <- loadProbeResult{target: target, err: err}
+						return
+					}
+				}
+			}
 			loadCh <- loadProbeResult{target: target, snapshot: snapshot}
 		}()
 	}
@@ -2442,6 +2473,8 @@ func preserveShardCoordinatesByTarget(next []GeneratorShardSummary, previous []G
 		out[index].ShardOrdinal = prior.ShardOrdinal
 		out[index].ShardCount = prior.ShardCount
 		out[index].VUserIDOffset = prior.VUserIDOffset
+		out[index].RuntimeResourceClaim = shardRuntimeResourceClaim(prior)
+		out[index].RuntimeResourceAdmission = generatorrpc.CloneRuntimeResourceAdmission(prior.RuntimeResourceAdmission)
 	}
 	return out, nil
 }
@@ -2569,11 +2602,22 @@ func (b *distributedExecutionBackend) PauseTest(tr *TestRunner, test *ManagedTes
 	}
 	targets := orderedMetricsTargets(streams, b.configuredTargets())
 	tr.mu.RLock()
+	targets = activePauseTargetsLocked(test, targets)
 	executionGeneration := test.executionGeneration
 	runSupervisionToken := cloneRunSupervisionToken(test.remoteRunSupervisionToken)
 	tr.mu.RUnlock()
+	if len(targets) == 0 {
+		return fmt.Errorf("no active generator pause participants")
+	}
 	return applyPauseControlFanout(test.ID, true, targets, func(target string, pause bool) error {
-		return streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, ExecutionGeneration: executionGeneration, Pause: pause, RunSupervisionToken: runSupervisionToken})
+		if !tr.pauseTargetActive(test, target) {
+			return nil
+		}
+		err := streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, ExecutionGeneration: executionGeneration, Pause: pause, RunSupervisionToken: runSupervisionToken})
+		if err != nil && !tr.pauseTargetActive(test, target) {
+			return nil
+		}
+		return err
 	})
 }
 
@@ -2587,11 +2631,22 @@ func (b *distributedExecutionBackend) ResumeTest(tr *TestRunner, test *ManagedTe
 	}
 	targets := orderedMetricsTargets(streams, b.configuredTargets())
 	tr.mu.RLock()
+	targets = activePauseTargetsLocked(test, targets)
 	executionGeneration := test.executionGeneration
 	runSupervisionToken := cloneRunSupervisionToken(test.remoteRunSupervisionToken)
 	tr.mu.RUnlock()
+	if len(targets) == 0 {
+		return fmt.Errorf("no active generator pause participants")
+	}
 	return applyPauseControlFanout(test.ID, false, targets, func(target string, pause bool) error {
-		return streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, ExecutionGeneration: executionGeneration, Pause: pause, RunSupervisionToken: runSupervisionToken})
+		if !tr.pauseTargetActive(test, target) {
+			return nil
+		}
+		err := streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, ExecutionGeneration: executionGeneration, Pause: pause, RunSupervisionToken: runSupervisionToken})
+		if err != nil && !tr.pauseTargetActive(test, target) {
+			return nil
+		}
+		return err
 	})
 }
 
@@ -2604,16 +2659,37 @@ func (b *distributedExecutionBackend) applyAcknowledgedPauseControl(tr *TestRunn
 	if len(targets) == 0 {
 		return true, fmt.Errorf("distributed generator clients are not initialized")
 	}
+	tr.mu.RLock()
+	targets = activePauseTargetsLocked(test, targets)
+	required, scopeErr := processorPauseTargetsLocked(test)
+	executionCtx := test.executionCtx
+	tr.mu.RUnlock()
+	if len(targets) == 0 {
+		return true, fmt.Errorf("no active generator pause participants")
+	}
+	if scopeErr != nil {
+		return true, scopeErr
+	}
+	if executionCtx == nil {
+		executionCtx = context.Background()
+	}
 	for _, target := range targets {
 		if _, ok := clients[target].(acknowledgedPauseClient); !ok {
-			// Legacy/unit-test adapters predate the acknowledged unary method.
+			if len(required) > 0 {
+				return true, fmt.Errorf("processor pause requires acknowledged generator controls")
+			}
+			// Legacy/unit-test adapters remain compatible for nonprocessor work.
 			return false, nil
+		}
+	}
+	if pause && len(required) > 0 {
+		if err := b.checkProcessorPauseCapabilities(executionCtx, tr, test, clients, targets, required); err != nil {
+			return true, err
 		}
 	}
 
 	tr.mu.Lock()
 	executionGeneration := test.executionGeneration
-	executionCtx := test.executionCtx
 	runSupervisionToken := cloneRunSupervisionToken(test.remoteRunSupervisionToken)
 	test.remotePauseOperationSequence++
 	if test.remotePauseOperationSequence == 0 {
@@ -2621,22 +2697,26 @@ func (b *distributedExecutionBackend) applyAcknowledgedPauseControl(tr *TestRunn
 	}
 	operationSequence := test.remotePauseOperationSequence
 	tr.mu.Unlock()
-	if executionCtx == nil {
-		executionCtx = context.Background()
-	}
 	operationID := uuid.NewString()
 	attempted := make([]string, 0, len(targets))
 	for _, target := range targets {
+		if !tr.pauseTargetActive(test, target) {
+			continue
+		}
 		attempted = append(attempted, target)
 		client := clients[target].(acknowledgedPauseClient)
 		if err := b.applyPauseControlWithRetry(executionCtx, client, generatorrpc.PauseControl{
 			TestID:              test.ID,
 			ExecutionGeneration: executionGeneration,
 			Pause:               pause,
+			RequireQuiescence:   pause && required[target],
 			OperationID:         operationID,
 			OperationSequence:   operationSequence,
 			RunSupervisionToken: runSupervisionToken,
-		}); err != nil {
+		}, func() bool { return tr.pauseTargetActive(test, target) }); err != nil {
+			if !tr.pauseTargetActive(test, target) {
+				continue
+			}
 			forwardErr := fmt.Errorf("apply acknowledged remote %s on %s: %w", pauseOperationName(pause), target, err)
 			compensationID := uuid.NewString()
 			tr.mu.Lock()
@@ -2650,16 +2730,20 @@ func (b *distributedExecutionBackend) applyAcknowledgedPauseControl(tr *TestRunn
 			compensationErrs := []error{forwardErr}
 			for i := len(attempted) - 1; i >= 0; i-- {
 				rollbackTarget := attempted[i]
+				if !tr.pauseTargetActive(test, rollbackTarget) {
+					continue
+				}
 				rollbackClient := clients[rollbackTarget].(acknowledgedPauseClient)
 				rollbackErr := b.applyPauseControlWithRetry(context.Background(), rollbackClient, generatorrpc.PauseControl{
 					TestID:              test.ID,
 					ExecutionGeneration: executionGeneration,
 					Pause:               !pause,
+					RequireQuiescence:   !pause && required[rollbackTarget],
 					OperationID:         compensationID,
 					OperationSequence:   compensationSequence,
 					RunSupervisionToken: runSupervisionToken,
-				})
-				if rollbackErr != nil {
+				}, func() bool { return tr.pauseTargetActive(test, rollbackTarget) })
+				if rollbackErr != nil && tr.pauseTargetActive(test, rollbackTarget) {
 					unresolved = append(unresolved, rollbackTarget)
 					compensationErrs = append(compensationErrs, fmt.Errorf("compensate remote %s on %s: %w", pauseOperationName(!pause), rollbackTarget, rollbackErr))
 				}
@@ -2682,19 +2766,28 @@ func pauseOperationName(pause bool) string {
 	return "resume"
 }
 
-func (b *distributedExecutionBackend) applyPauseControlWithRetry(parent context.Context, client acknowledgedPauseClient, control generatorrpc.PauseControl) error {
+func (b *distributedExecutionBackend) applyPauseControlWithRetry(parent context.Context, client acknowledgedPauseClient, control generatorrpc.PauseControl, stillActive func() bool) error {
 	var lastErr error
 	for attempt := 0; attempt < durableTransitionAttempts; attempt++ {
+		if !stillActive() {
+			return nil
+		}
 		ctx, cancel := context.WithTimeout(parent, b.timeout)
 		result, err := client.SetPaused(ctx, control)
 		cancel()
-		if err == nil && result.Accepted && result.CurrentPaused == control.Pause && result.AppliedOperationID == control.OperationID && result.AppliedOperationSequence == control.OperationSequence {
+		if !stillActive() {
+			return nil
+		}
+		if err == nil {
+			err = generatorrpc.ValidatePauseAcknowledgement(control, result)
+		}
+		if err == nil && result.Accepted && result.ErrorMessage == "" && result.CurrentPaused == control.Pause && result.AppliedOperationID == control.OperationID && result.AppliedOperationSequence == control.OperationSequence {
 			return nil
 		}
 		switch {
 		case err != nil:
 			lastErr = err
-		case !result.Accepted:
+		case !result.Accepted || result.ErrorMessage != "":
 			lastErr = fmt.Errorf("generator rejected operation %s: %s", control.OperationID, result.ErrorMessage)
 		case result.AppliedOperationID != control.OperationID:
 			lastErr = fmt.Errorf("generator acknowledged operation %q, want %q", result.AppliedOperationID, control.OperationID)

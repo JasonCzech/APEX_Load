@@ -1,11 +1,12 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { CompletionContext } from '@codemirror/autocomplete'
 import { json } from '@codemirror/lang-json'
-import { ensureSyntaxTree } from '@codemirror/language'
+import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
 
 import { setCachedDslActionCatalog, type DslActionCatalog } from './dslActionCatalog'
+import { APEX_DSL_SEMANTIC_MAX_DOC_CHARS } from './apexDslSemanticHighlighting'
 import {
   describeTemplateReference,
   diagnosticsFromIssues,
@@ -122,6 +123,43 @@ describe('locateJsonPath', () => {
     const action1 = locateJsonPath(state, 'actions[1]')
     expect(action1).not.toBeNull()
     expect(state.sliceDoc(action1!.from, action1!.to)).toContain('"browser_click"')
+  })
+
+  it.each([false, true])('uses a completed owned parse context when the immutable snapshot remains partial (envelope=%s)', wrapped => {
+    const script = { protocol: 'browser', actions: Array.from({ length: 1200 }, (_, index) => ({ name: `action-${index}`, type: 'browser_click', selector: '#go' })) }
+    const doc = JSON.stringify(wrapped ? { script } : script)
+    expect(doc.length).toBeLessThan(APEX_DSL_SEMANTIC_MAX_DOC_CHARS)
+    let tick = 0
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => { tick += 1000; return tick })
+    let state: EditorState
+    try {
+      // Force the real initial 20ms parser admission to stop after a slice.
+      state = EditorState.create({ doc, extensions: [json()] })
+    } finally {
+      clock.mockRestore()
+    }
+    const initial = syntaxTree(state)
+    expect(initial.length).toBeLessThan(doc.length)
+    const completed = ensureSyntaxTree(state, doc.length, 10_000)
+    expect(completed?.length).toBe(doc.length)
+    expect(syntaxTree(state)).toBe(initial)
+    const range = locateJsonPath(state, 'actions[1199]')
+    expect(range).not.toBeNull()
+    expect(state.sliceDoc(range!.from, range!.to)).toContain('"action-1199"')
+    expect(range!.to).toBeGreaterThan(range!.from)
+    expect(documentProtocol(state)).toBe('browser')
+  })
+
+  it('refuses optional whole-document path assist above its existing semantic document bound', () => {
+    const doc = browserScript + ' '.repeat(APEX_DSL_SEMANTIC_MAX_DOC_CHARS)
+    const state = stateFor(doc)
+    expect(locateJsonPath(state, 'actions[1]')).toBeNull()
+    expect(documentProtocol(state)).toBe('')
+  })
+
+  it('refuses array recovery nodes instead of exposing an empty or erroneous action range', () => {
+    const state = stateFor('{"script":{"actions":[{},,{}]}}')
+    expect(locateJsonPath(state, 'actions[1]')).toBeNull()
   })
 })
 

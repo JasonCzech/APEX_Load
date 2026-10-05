@@ -1,0 +1,4 @@
+=== RUN   TestMonitorSourceRevisionedCRUD
+--- PASS: TestMonitorSourceRevisionedCRUD (0.00s)
+PASS
+ok      github.com/jasonczech/apexload/cmd/apexctl  2.813s

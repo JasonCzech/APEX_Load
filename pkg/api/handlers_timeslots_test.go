@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +24,14 @@ func newTimeslotServer(t *testing.T) (*Server, storage.Store) {
 		t.Fatalf("SaveProject(proj-a): %v", err)
 	}
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	// Registered after Store.Close so LIFO cleanup drains the server first.
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			t.Errorf("timeslot server shutdown: %v", err)
+		}
+	})
 	return server, store
 }
 
@@ -777,7 +786,9 @@ func TestTerminalStatusReleasesCapacityReservationBinding(t *testing.T) {
 		t.Fatalf("seed test: %v", err)
 	}
 	server.runner.mu.Lock()
-	server.runner.tests[testID] = &ManagedTest{ID: testID, Status: status, TimeslotID: reservedStr("ts-terminal")}
+	// Runtime has completed before its terminal state is persisted. Keep the
+	// same project ownership as the durable record during fixture shutdown.
+	server.runner.tests[testID] = &ManagedTest{ID: testID, ProjectID: "proj-a", Status: "COMPLETE", TimeslotID: reservedStr("ts-terminal")}
 	server.runner.mu.Unlock()
 	end := start.Add(30 * time.Minute)
 	server.runner.updateStoredTestStatus(testID, "COMPLETE", &end, "")

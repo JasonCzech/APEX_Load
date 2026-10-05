@@ -74,6 +74,7 @@ type oasComponents struct {
 }
 
 type oasSecurityScheme struct {
+	Description  string `yaml:"description,omitempty"`
 	Type         string `yaml:"type"`
 	Scheme       string `yaml:"scheme,omitempty"`
 	BearerFormat string `yaml:"bearerFormat,omitempty"`
@@ -101,6 +102,7 @@ type oasOperation struct {
 // routes; it renders as `security: []`, overriding the document-level bearerAuth.
 var noSecurity = []map[string][]string{}
 var optionalMetricsSecurity = []map[string][]string{{}, {"bearerAuth": {}}}
+var collectorTokenSecurity = []map[string][]string{{"collectorBearerAuth": {}}, {"collectorApiKeyAuth": {}}}
 
 const publicRoleText = "Public (no authentication required)"
 
@@ -241,11 +243,13 @@ func GenerateOpenAPIYAML(serverGoPath string) ([]byte, error) {
 		Servers: []oasServer{{URL: "http://localhost:8080", Description: "Local development server"}},
 		Components: oasComponents{
 			SecuritySchemes: map[string]oasSecurityScheme{
-				"bearerAuth":    {Type: "http", Scheme: "bearer", BearerFormat: "JWT or service-account key"},
-				"apiKeyAuth":    {Type: "apiKey", Name: "X-APEXLoad-API-Key", In: "header"},
-				"oidcSession":   {Type: "apiKey", Name: "apexload_auth_session", In: "cookie"},
-				"bridgeToken":   {Type: "apiKey", Name: bridgeTokenHeader, In: "header"},
-				"bridgeSession": {Type: "apiKey", Name: bridgeSessionHeader, In: "header"},
+				"bearerAuth":          {Type: "http", Scheme: "bearer", BearerFormat: "JWT or service-account key"},
+				"apiKeyAuth":          {Type: "apiKey", Name: "X-APEXLoad-API-Key", In: "header"},
+				"oidcSession":         {Type: "apiKey", Name: "apexload_auth_session", In: "cookie"},
+				"bridgeToken":         {Type: "apiKey", Name: bridgeTokenHeader, In: "header"},
+				"bridgeSession":       {Type: "apiKey", Name: bridgeSessionHeader, In: "header"},
+				"collectorBearerAuth": {Type: "http", Scheme: "bearer", BearerFormat: "Collector capability token", Description: "Collector-scoped token issued by collector enrollment; browser sessions and user/service-account bearer credentials do not authorize this channel."},
+				"collectorApiKeyAuth": {Type: "apiKey", Name: "X-APEXLoad-API-Key", In: "header", Description: "The same collector-scoped capability token in the API-key header; a project API key does not authorize this channel."},
 			},
 			Schemas: openAPIComponentSchemas(),
 		},
@@ -545,6 +549,11 @@ func buildPaths(routes []discoveredRoute, contracts map[string]inferredRouteCont
 		}
 		if !doc.Authenticated {
 			op.Security = &noSecurity
+		}
+		if expected := collectorTokenRouteHandler(doc.Method, doc.Path); doc.Authenticated && expected != "" && doc.HandlerLabel == expected {
+			// Collector credentials are separate from document-level browser and
+			// service-account identity. Either token header is sufficient.
+			op.Security = &collectorTokenSecurity
 		}
 		if doc.Path == "/metrics" {
 			op.Security = &optionalMetricsSecurity
@@ -1668,7 +1677,7 @@ func routeRolesText(method, path, authMiddleware string) string {
 	if method == http.MethodGet && path == bridgeStatusPath {
 		return "Recording-agent bridge token and session via " + bridgeTokenHeader + " and " + bridgeSessionHeader
 	}
-	if method == http.MethodPost && strings.HasSuffix(path, "/monitoring/collectors/{id}/heartbeat") {
+	if collectorTokenRouteHandler(method, path) != "" {
 		return "Collector token via Bearer or X-APEXLoad-API-Key"
 	}
 	if method == http.MethodGet && path == "/metrics" {
@@ -1722,7 +1731,8 @@ func inHandlerAuthenticatedRoute(method, path, handler string) bool {
 	if method == http.MethodGet && path == "/api/v1/auth/diagnostics" {
 		return true
 	}
-	return method == http.MethodPost && path == "/api/v1/monitoring/collectors/{id}/heartbeat" && handler == "handleCollectorHeartbeat"
+	expected := collectorTokenRouteHandler(method, path)
+	return expected != "" && handler == expected
 }
 
 func renderAccessRoles(req accessRequirement) string {
@@ -2014,4 +2024,21 @@ func synthOperationID(method, path string) string {
 		b.WriteString(titleWord(word))
 	}
 	return b.String()
+}
+
+// Collector endpoints authenticate inside their exact handlers. Keep the
+// documentation allowlist narrow so a similarly named future route cannot
+// silently inherit a claim of authentication.
+func collectorTokenRouteHandler(method, path string) string {
+	switch method + " " + path {
+	case "POST /api/v1/monitoring/collectors/{id}/heartbeat":
+		return "handleCollectorHeartbeat"
+	case "GET /api/v1/monitoring/collectors/{id}/jobs":
+		return "handlePollRunMonitorJobs"
+	case "POST /api/v1/monitoring/collectors/{id}/jobs/{job_id}/samples":
+		return "handleRunMonitorSamples"
+	case "POST /api/v1/monitoring/collectors/{id}/jobs/{job_id}/management-polls":
+		return "handleManagementPoll"
+	}
+	return ""
 }

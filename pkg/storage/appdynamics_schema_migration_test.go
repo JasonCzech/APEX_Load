@@ -41,8 +41,7 @@ func TestAppDynamicsSchemaUpgradesPublishedMainWithoutLosingEvidence(t *testing.
 		t.Fatal(err)
 	}
 	status, err := store.SchemaStatus()
-	current := currentSchemaRelease().Version
-	if err != nil || status.AppliedVersion != current || len(status.Applied) != current {
+	if err != nil || status.AppliedVersion != currentSchemaRelease().Version || len(status.Applied) != currentSchemaRelease().Version {
 		t.Fatalf("upgraded schema: %+v %v", status, err)
 	}
 	if status.Applied[27].Name != "archive-restoration-schedule-boundary" || status.Applied[27].Fingerprint != "ba1ac64df70d019c92b5aaae2e4d6ed14f927d8fa4b30d9083a1f533e71981ed" {

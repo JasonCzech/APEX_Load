@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/analysis"
 	"os"
 	"strings"
 	"sync"
@@ -117,17 +118,17 @@ func TestPostgresAnalysisWorkflows(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	dataset, err := s.SaveAnalysisImport(AnalysisImport{ID: "dataset-pg", ProjectID: m.ProjectID, Name: "data", State: "uploading", Files: []AnalysisImportFile{{ID: "file", RelativePath: "p/file.parquet", Size: 12}}}, 0)
+	dataset, err := s.SaveAnalysisImport(AnalysisImport{ID: "00000000-0000-0000-0000-000000000021", ProjectID: m.ProjectID, Name: "data", State: "uploading", Files: []AnalysisImportFile{{ID: "file", RelativePath: "p/file.parquet", Size: 12, Uploaded: 12}}}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, state := range []string{"mapped", "normalizing", "ready"} {
-		dataset.State = state
-		dataset, err = s.SaveAnalysisImport(*dataset, dataset.Revision)
-		if err != nil {
-			t.Fatal(err)
-		}
+	dataset.State = "mapped"
+	dataset.Mapping = &analysis.ParquetMapping{Version: 1, Timestamp: analysis.ParquetColumnPath{"time"}, TimestampEncoding: "unix_s", Timezone: "UTC", Measures: []analysis.ParquetMeasure{{Value: analysis.ParquetColumnPath{"value"}, Name: "value", Kind: analysis.KindGauge, Unit: "ms"}}}
+	dataset, err = s.SaveAnalysisImport(*dataset, dataset.Revision)
+	if err != nil {
+		t.Fatal(err)
 	}
+	dataset = publishAnalysisImportTestFixture(t, s, dataset)
 	definition, err := s.SaveAnalysisDefinition(AnalysisDefinition{ID: "mapping-pg", ProjectID: m.ProjectID, Kind: "mapping", Name: "first", Definition: json.RawMessage(`{"version":1}`)}, 0)
 	if err != nil {
 		t.Fatal(err)

@@ -1,11 +1,16 @@
-import { test, expect } from './support/workflow'
+import { test, expect, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
+test.beforeEach(async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+})
+
 for (const width of [1024, 1280, 1440]) {
-  test(`Settings navigation and canonical editors at ${width}px`, async ({ page, request }) => {
-    const workspace = await createWorkspace(request)
+  test(`Settings navigation and canonical editors at ${width}px`, async ({ page }) => {
+    const workspace = await createWorkspace(page.context().request)
     await page.setViewportSize({ width, height: 1000 })
     await page.goto(`/#/settings?setting=grafana&${scopeQuery(workspace)}`)
+    await page.reload()
     await expect(page.getByRole('heading', { name: 'Grafana', exact: true })).toBeVisible()
     await expect(page.getByText('Applies to: Entire deployment', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: /Reset.*Defaults/ })).toBeHidden()
@@ -43,24 +48,26 @@ for (const width of [1024, 1280, 1440]) {
   })
 }
 
-test('settings destination navigation preserves unsaved edits until explicitly discarded', async ({ page, request }) => {
-  const workspace = await createWorkspace(request)
+test('settings destination navigation preserves unsaved edits until explicitly discarded', async ({ page }) => {
+  const workspace = await createWorkspace(page.context().request)
   await page.goto(`/#/settings?setting=grafana&${scopeQuery(workspace)}`)
+  await page.reload()
   await page.getByRole('textbox', { name: 'Grafana server URL' }).fill('https://draft.example.test')
-  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Prometheus', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'APEX platform graphs', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
   await page.getByRole('button', { name: 'Keep editing', exact: true }).click()
   await expect(page.getByRole('textbox', { name: 'Grafana server URL' })).toHaveValue('https://draft.example.test')
-  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Prometheus', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'APEX platform graphs', exact: true }).click()
   await page.getByRole('button', { name: 'Discard changes', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Prometheus', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'APEX platform graphs', exact: true })).toBeVisible()
   await page.goBack()
   await expect(page.getByRole('textbox', { name: 'Grafana server URL' })).not.toHaveValue('https://draft.example.test')
 })
 
-test('infrastructure guide, saved commitments and independent cancel work with keyboard navigation', async ({ page, request }) => {
-  const workspace = await createWorkspace(request)
+test('infrastructure guide, saved commitments and independent cancel work with keyboard navigation', async ({ page }) => {
+  const workspace = await createWorkspace(page.context().request)
   await page.goto(`/#/settings?setting=allocations&${scopeQuery(workspace)}`)
+  await page.reload()
   await page.getByText('Infrastructure setup guide', { exact: true }).focus()
   await page.keyboard.press('Enter')
   await expect(page.getByLabel('Execution environment')).toBeVisible()
@@ -79,9 +86,10 @@ test('infrastructure guide, saved commitments and independent cancel work with k
 })
 
 
-test('project catalog edits, cancels and confirms deletion against persisted workspace data', async ({ page, request }) => {
-  const workspace = await createWorkspace(request)
+test('project catalog edits, cancels and confirms deletion against persisted workspace data', async ({ page }) => {
+  const workspace = await createWorkspace(page.context().request)
   await page.goto(`/#/settings?setting=projects&${scopeQuery(workspace)}`)
+  await page.reload()
   const editor = page.getByRole('region', { name: 'Edit selected project' })
   const name = editor.getByRole('textbox', { name: 'Edit project name' })
   const original = await name.inputValue()
@@ -107,15 +115,16 @@ test('project catalog edits, cancels and confirms deletion against persisted wor
   await dialog.getByRole('button', { name: 'Delete Project', exact: true }).click()
   expect((await deleted).ok()).toBe(true)
   await expect(dialog).toBeHidden()
-  const response = await request.get(`/api/v1/projects?domain_id=${workspace.domainId}`)
+  const response = await page.context().request.get(`/api/v1/projects?domain_id=${workspace.domainId}`)
   expect(response.ok()).toBe(true)
   expect((await response.json()).projects.map((project: { id: string }) => project.id)).not.toContain(workspace.projectId)
 })
 
-test('Settings search reveals and focuses each matching personal control', async ({ page, request }) => {
-  const workspace = await createWorkspace(request)
+test('Settings search reveals and focuses each matching personal control', async ({ page }) => {
+  const workspace = await createWorkspace(page.context().request)
   await page.setViewportSize({ width: 923, height: 1000 })
   await page.goto(`/#/settings?setting=projects&${scopeQuery(workspace)}`)
+  await page.reload()
   await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible()
   for (const [query, label] of [['dark', 'Dashboard Theme'], ['word wrap', 'Editor word wrap'], ['rows', 'Default rows per table'], ['motion', 'Motion']]) {
     const expand = page.getByRole('button', { name: 'Expand Settings navigation' })

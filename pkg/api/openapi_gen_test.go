@@ -608,7 +608,6 @@ func TestGeneratedSwaggerDocumentsConditionalAndInHandlerAuthentication(t *testi
 		path   string
 	}{
 		{method: "get", path: "/api/v1/auth/diagnostics"},
-		{method: "post", path: "/api/v1/monitoring/collectors/{id}/heartbeat"},
 	} {
 		operation := spec.Paths[endpoint.path][endpoint.method]
 		if operation.Security != nil {

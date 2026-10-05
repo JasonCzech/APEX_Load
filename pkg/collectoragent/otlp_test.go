@@ -2,6 +2,8 @@ package collectoragent
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"github.com/jasonczech/apexload/pkg/analysis"
@@ -53,7 +55,14 @@ func TestOTLPLateArrivalAcknowledgementSurvivesRestart(t *testing.T) {
 	at := time.Now().UTC().Add(-time.Minute)
 	receiver.points["otlp://app"] = []analysis.MetricPoint{{MetricName: "late", TimestampUTC: at, Value: &value}}
 	job := RunJob{ID: "job", Pack: "otel-metrics", Destination: "otlp://app", StartedAt: at.Add(-time.Minute), IntervalSeconds: 1}
-	a := &Agent{cfg: Config{OTLP: receiver, SpoolDirectory: t.TempDir(), AdapterTargets: []AdapterTarget{{Pack: job.Pack, Destination: job.Destination}}}, pendingBatches: map[string]*RunSampleBatch{}}
+	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := New(Config{ControllerURL: "http://localhost:8080", CollectorID: "c", Token: "token", ControllerPublicKey: publicKey, Packs: []string{job.Pack}, OTLP: receiver, SpoolDirectory: t.TempDir(), AdapterTargets: []AdapterTarget{{Pack: job.Pack, Destination: job.Destination}}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	points, err := a.collectAdapter(context.Background(), job)
 	if err != nil || len(points) != 1 {
 		t.Fatalf("late arrival omitted: %v %v", points, err)
@@ -62,7 +71,10 @@ func TestOTLPLateArrivalAcknowledgementSurvivesRestart(t *testing.T) {
 	if err := a.saveSpool(); err != nil {
 		t.Fatal(err)
 	}
-	restarted := &Agent{cfg: a.cfg}
+	restarted, err := New(a.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := restarted.loadSpool(); err != nil {
 		t.Fatal(err)
 	}

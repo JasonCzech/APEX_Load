@@ -155,6 +155,10 @@ func (b *javaBrokerGroup) close() error {
 // generator owner. Distributed staging must call it on rollback/expiry. A nil
 // error acknowledges cleanup requests, not positive termination or free capacity.
 func (mge *MultiGroupEngine) ClosePreparedRuntime() error {
+	if mge == nil {
+		return nil
+	}
+	mge.runtimeResources.release()
 	mge.mu.Lock()
 	groups := append([]GroupConfig(nil), mge.groups...)
 	mge.mu.Unlock()

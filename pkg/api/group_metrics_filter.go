@@ -144,6 +144,7 @@ func filterLiveMetricsForGroups(live *LiveMetrics, filter groupFilterQuery) *Liv
 		selected = append(selected, groupMetrics)
 	}
 	applySelectedGroupAggregate(&out, selected)
+	out.MessagingProgress = messagingProgressForGroups(live.MessagingProgress, filter.Names)
 	return &out
 }
 
@@ -367,6 +368,7 @@ func cloneGroupLiveMetrics(metrics *GroupLiveMetrics) *GroupLiveMetrics {
 }
 
 func clearLivePerformanceMetrics(live *LiveMetrics) {
+	live.MessagingProgress = nil
 	live.Messaging = nil
 	live.NativeEvidence = nil
 	live.Transactions = nil

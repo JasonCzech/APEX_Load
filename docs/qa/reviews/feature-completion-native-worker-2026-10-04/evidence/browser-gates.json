@@ -1,0 +1,14 @@
+[
+  {
+    "gate": "browser-dev-admin",
+    "exit_code": 0,
+    "seconds": 53.024,
+    "log": "/private/tmp/apexload-native-schema29-browser-dev-admin-2026-10-04.log"
+  },
+  {
+    "gate": "browser-local-auth",
+    "exit_code": 0,
+    "seconds": 120.098,
+    "log": "/private/tmp/apexload-native-schema29-browser-local-auth-2026-10-04.log"
+  }
+]

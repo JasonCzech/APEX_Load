@@ -48,7 +48,13 @@ func MessageBodies(value any) ([]string, error) {
 	return bodies, nil
 }
 
-func (e *EventHubs) produceBatch(ctx context.Context, action *protocol.Action, result *protocol.Result, bodies []string) (event, error) {
+func (e *EventHubs) produceBatch(ctx context.Context, action *protocol.Action, result *protocol.Result, bodies []string, accepted, attempted *bool) (observed event, operationErr error) {
+	var acknowledged event
+	defer func() {
+		if *accepted {
+			observed = acknowledged
+		}
+	}()
 	client, ok := e.client.(eventHubsBatchClient)
 	if !ok {
 		return event{}, fmt.Errorf("Event Hubs adapter does not support sampled message lists")
@@ -69,6 +75,7 @@ func (e *EventHubs) produceBatch(ctx context.Context, action *protocol.Action, r
 		}
 		size += n
 	}
+	*attempted = true
 	meta, err := client.SendBatch(ctx, hub, events)
 	if err != nil {
 		return event{}, err
@@ -85,6 +92,7 @@ func (e *EventHubs) produceBatch(ctx context.Context, action *protocol.Action, r
 	if base.PartitionID == "" || (meta.PartitionID != "" && meta.PartitionID != base.PartitionID) {
 		sent.PartitionID = ""
 	}
+	acknowledged, *accepted = sent, true
 	for _, body := range bodies {
 		result.BytesSent += int64(len(body))
 	}

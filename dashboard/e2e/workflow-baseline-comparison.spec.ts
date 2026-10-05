@@ -16,6 +16,7 @@ test('baseline workspace selects pins, investigates resources, shares and preser
   const baselines: RunIdentity[] = Array.from({ length: 6 }, (_, i) => ({ id: `baseline-${i}`, name: `Checkout baseline ${i + 1}`, release_id: `release-${i}`, release_name: `Release ${i + 1}`, scenario_id: 'scenario', status: 'COMPLETE', vusers: 100, peak_vusers: 100, completed_at: '2026-09-01T12:00:00Z', pinned: true, archive_available: true }))
   const current: RunIdentity = { ...baselines[0], id: currentId, name: 'Release 3 checkout', release_name: 'Current release' }
   const measurement = (value: number): Measurement => ({ samples: 1200, successes: 1200, errors: 0, mean: value, min: value / 2, max: value * 2, p50: value, p90: value, p95: value, p99: value, throughput: 20, successful_throughput: 20, error_pct: 0, coverage_pct: 100, instances: 1, points: [{ seconds: 30, load: 100, value }, { seconds: 60, load: 100, value: value * 1.1 }, { seconds: 120, load: 100, value }] })
+  const gridMeasurement = (value: number): Measurement => ({ ...measurement(value), samples: 16, successes: 0, coverage_pct: 100 * 16 / 18, mean_statistic: 'evaluation_grid_mean', available_statistics: ['mean', 'min', 'max', 'samples', 'coverage_pct', 'instances'] })
   const window = { start_seconds: 30, end_seconds: 120, load: 100, total_load: 100, group: 'checkout', direction: 'steady', mix: { checkout: 1 } }
   let saved: ComparisonSnapshot | undefined
   const snapshots = new Map<string, ComparisonSnapshot>()
@@ -33,7 +34,7 @@ test('baseline workspace selects pins, investigates resources, shares and preser
         verdict: { status: 'not_evaluated', evaluated: 0, unavailable: 1, metrics: body.regression_metrics || ['successful_p95'], evidence: [{row_id:'tx/0',baseline_id:refs[0].id,metric:'successful_p95',status:'not_evaluated',reason:'Workload differs'}] },
         telemetry: [{ run_id: currentId, metric_intervals: 2, retained_intervals: 2, health_intervals: 2, health_coverage_pct: 100, breached_interval_pct: 0, dropped_results: 0, max_sample_age_ms: 0, warnings: ['Whole-run advisory evidence'] }, {run_id: refs[0].id, metric_intervals: 0, retained_intervals: 2, health_intervals: 0, warnings: ['Missing health evidence'] }],
         transactions: Array.from({ length: 300 }, (_, i) => ({ id: `tx/${i}`, name: i === 0 ? 'Purchase' : `Transaction ${String(i).padStart(3, '0')}`, group: 'checkout', protocol: 'http', source: 'transaction', unit: 'ms', window, current: measurement(150), baselines: cells })),
-        resources: [{ id: 'resource/0', name: 'external/java_heap', group: '', source: 'application', unit: 'bytes', window, current: measurement(150), baselines: cells }],
+        resources: [{ id: 'resource/0', name: 'external/java_heap', group: '', source: 'application', unit: 'bytes', window, current: measurement(150), baselines: cells }, {id:'resource/1',name:'prometheus/target/cpu',group:'',source:'prometheus',unit:'percent',window,current:gridMeasurement(0),provider:{name:'prometheus',backend_profile:'azure_managed',query_id:'cpu',definition_hash:'a'.repeat(64),statistic:'gauge',evaluation_step_seconds:5,dimensions:{job:'checkoutapi'},entity_ids:{series:'b'.repeat(64)},display_labels:{Job:'CheckoutAPI'}},baselines:Object.fromEntries(refs.map(run=>[run.id,{measurement:gridMeasurement(10),window,qualification:['Recorded query definition differs'],approximate:false}]))}],
         setup: [{ baseline_id: refs[0].id, field: 'Think time', current: '1 second', baseline: '2 seconds', status: 'differs' }],
         findings: [{ baseline_id: refs[0].id, row_id: 'resource/0', category: 'resource', metric: 'mean', message: 'Java heap +50% at 100 VUsers', status: 'changed' }], warnings: ['Advisory findings do not change acceptance verdicts.'] }
       snapshots.set(saved.id, saved)
@@ -112,6 +113,24 @@ test('baseline workspace selects pins, investigates resources, shares and preser
   await page.getByRole('button', { name: 'Resources', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Filter resources' }).fill('java_heap')
   await expect(page.getByRole('button', { name: 'external/java_heap', exact: true })).toBeVisible()
+  await page.getByRole('searchbox', { name: 'Filter resources' }).fill('CheckoutAPI')
+  await page.getByRole('button', {name:'prometheus/target/cpu',exact:true}).click()
+  const prometheusDrawer=page.getByRole('dialog',{name:'prometheus/target/cpu',exact:true})
+  await expect(prometheusDrawer.getByRole('region',{name:'Prometheus comparison identity'})).toContainText('Job: CheckoutAPI')
+  await expect(prometheusDrawer).toContainText('5s grid')
+  await expect(prometheusDrawer).toContainText('Mean of evaluation grid')
+  await expect(prometheusDrawer.getByRole('rowheader',{name:'P95',exact:true})).toHaveCount(0)
+  await expect(prometheusDrawer.getByRole('rowheader',{name:'Mean of evaluation grid',exact:true}).locator('..').getByRole('cell').first()).toHaveText('0')
+  await expect(prometheusDrawer).toContainText('Change unavailable')
+  await prometheusDrawer.getByLabel('Chart alignment').selectOption('elapsed')
+  const prometheusCSV=page.waitForEvent('download')
+  await prometheusDrawer.getByRole('button',{name:'Export prometheus/target/cpu comparison data as CSV',exact:true}).click()
+  const prometheusExport=await readFile((await (await prometheusCSV).path())!,'utf8')
+  expect(prometheusExport).toContain('definition_hash')
+  expect(prometheusExport).toContain('a'.repeat(64))
+  expect(prometheusExport).toContain('Prometheus expression evaluation')
+  await page.keyboard.press('Escape')
+  await page.getByRole('searchbox', { name: 'Filter resources' }).fill('java_heap')
   await page.getByRole('button', { name: 'Setup differences', exact: true }).click()
   await expect(page.getByRole('cell', { name: '1 second', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Resources', exact: true }).click()

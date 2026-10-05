@@ -45,8 +45,9 @@ func (a memoryAdapter) Consume(ctx context.Context, destination string, timeout 
 
 func (a memoryAdapter) RequestReply(ctx context.Context, requestDestination string, replyDestination string, request message, timeout time.Duration) (message, message, error) {
 	if err := a.broker.publish(a.destination(requestDestination), request); err != nil {
-		return message{}, message{}, err
+		return message{sendAttempted: true}, message{}, err
 	}
+	request.sent = true
 
 	matchesRequest := func(reply message) bool {
 		return reply.ID != request.ID && (request.CorrelationID == "" ||
@@ -99,8 +100,9 @@ func (a memoryAdapter) RequestReplyTopic(ctx context.Context, requestTopic, repl
 		return message{}, message{}, err
 	}
 	if err := a.broker.publishTopic(requestKey, request); err != nil {
-		return message{}, message{}, err
+		return message{sendAttempted: true}, message{}, err
 	}
+	request.sent = true
 
 	matchesRequest := func(reply message) bool {
 		return reply.ID != request.ID && (request.CorrelationID == "" ||
