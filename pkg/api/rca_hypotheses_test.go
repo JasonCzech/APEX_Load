@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,8 +57,11 @@ func TestRCAHypothesisFromConnectedProviderEvidence(t *testing.T) {
 	}
 	second := completedRCAAssessment(t, server, "rca-run", map[string]any{})
 	pressure = rcaHypothesis(second, "resource_pressure")
-	if second.Outcome != rca.OutcomeSupported || pressure == nil || pressure.Rank != 1 || pressure.Confidence != rca.ConfidenceHigh ||
-		len(pressure.Chain) != 1 || pressure.Chain[0].Relation != rca.RelationPrecedes || len(pressure.Supporting) != 1 {
+	// Connected and preceding, it would be high; the fixture archives no
+	// generator statistics, so validity is unknown and caps it at medium.
+	if second.Outcome != rca.OutcomeSupported || pressure == nil || pressure.Rank != 1 || pressure.Confidence != rca.ConfidenceMedium ||
+		len(pressure.Chain) != 1 || pressure.Chain[0].Relation != rca.RelationPrecedes || len(pressure.Supporting) != 1 ||
+		!strings.Contains(strings.Join(pressure.ConfidenceReasons, " "), "connected to the symptom") || !rcaLimitation(second, rca.LimitationValidityCapsConfidence) {
 		t.Fatalf("mapped: %s %+v", second.Outcome, second.Hypotheses)
 	}
 }

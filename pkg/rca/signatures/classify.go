@@ -1,6 +1,9 @@
 package signatures
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"strings"
 	"unicode"
 )
@@ -58,4 +61,36 @@ func Classify(name string) string {
 		}
 	}
 	return ""
+}
+
+// Fingerprint identifies the signature set and the classifier exactly, so a
+// change to either changes every analysis's frozen inputs even when Version
+// is not bumped.
+func Fingerprint() string {
+	type described struct {
+		Name, Falsification string
+		Required, Competing []string
+		Indicators          []Indicator
+		Symptoms            []string
+	}
+	var set []described
+	for _, s := range All() {
+		set = append(set, described{s.Name, s.Falsification, s.Required, s.Competing, s.Indicators, s.Symptoms})
+	}
+	// The classifier table's fields are unexported, which JSON would skip.
+	type keywords struct {
+		Kind            string
+		Tokens, Phrases []string
+	}
+	var table []keywords
+	for _, c := range classifiers {
+		table = append(table, keywords{c.kind, c.tokens, c.phrases})
+	}
+	body, _ := json.Marshal(struct {
+		Version     string
+		Signatures  []described
+		Classifiers []keywords
+	}{Version, set, table})
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:6])
 }

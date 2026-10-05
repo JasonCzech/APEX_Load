@@ -323,3 +323,51 @@ func TestRCABundleKeepsTheStrongestAnomalies(t *testing.T) {
 		}
 	}
 }
+
+func TestRCAStoredAssessmentIsTrimmedNotFailed(t *testing.T) {
+	assessment := &rca.Assessment{SchemaVersion: rca.AssessmentSchemaVersion}
+	for i := 0; i < 4000; i++ {
+		assessment.Anomalies = append(assessment.Anomalies, rca.Anomaly{ID: fmt.Sprintf("a-%04d", i), Series: strings.Repeat("s", 600), Onset: exemplarFixtureStart.Add(time.Duration(i) * time.Second), PeakZ: float64(i % 50)})
+	}
+	// The top hypothesis cites two weak anomalies; they must survive.
+	assessment.Hypotheses = []rca.Hypothesis{{ID: "h", Rank: 1, Symptoms: []string{"a-0000"}, Chain: []rca.ChainStep{{From: "a-0001", To: "a-0000"}}}}
+	payload := rcaAnalysisPayload{Assessment: assessment}
+	body, err := boundStoredRCAPayload(&payload)
+	if err != nil || len(body) > storage.MaxRCAPayloadBytes || !rcaLimitation(payload.Assessment, limitationAssessmentTrimmed) {
+		t.Fatalf("%v: %d bytes, limitations %+v", err, len(body), payload.Assessment.Limitations)
+	}
+	ids := map[string]bool{}
+	for _, a := range payload.Assessment.Anomalies {
+		ids[a.ID] = true
+	}
+	if !ids["a-0000"] || !ids["a-0001"] || len(payload.Assessment.Hypotheses) != 1 {
+		t.Fatalf("cited anomalies cut: %d kept", len(ids))
+	}
+}
+
+func TestRCABaselineComparesNetworkPhases(t *testing.T) {
+	server, _ := baselineTestServer(t)
+	_, store := server, server.store.(*storage.SQLiteStore)
+	for id, tls := range map[string]float64{"rca-run": 120, "rca-baseline": 20} {
+		exemplarArchiveFixture(t, server, store, id, func(i int, tx *TransactionEvent) {
+			tx.DependencyTarget, tx.DurationMs, tx.TLSMs = "api.shop.local", 100+float64(i%7), tls+float64(i%5)
+		})
+	}
+	t.Setenv("APEXLOAD_RCA_V2_PROJECTS", storage.DefaultProjectID)
+	assessment := completedRCAAssessment(t, server, "rca-run", map[string]any{"baseline_test_id": "rca-baseline"})
+	found := false
+	for _, a := range assessment.Anomalies {
+		if a.Series == "dependency/http:api.shop.local/tls_ms" && a.Scope == rca.ScopeLoad && a.Direction == rca.DirectionIncrease {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no load-scope TLS anomaly: %+v", assessment.Anomalies)
+	}
+	for _, c := range assessment.Coverage {
+		// Only TLS time was spent, so it is the one timing series.
+		if c.Evidence == "detection_series" && !strings.Contains(c.Detail, "1 dependency timing series") {
+			t.Fatalf("coverage %+v", c)
+		}
+	}
+}

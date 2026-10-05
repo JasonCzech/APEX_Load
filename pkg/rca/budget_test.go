@@ -87,6 +87,16 @@ func TestExhaustedBudgetSkipsValidity(t *testing.T) {
 	if got.Validity.Verdict != ValidityUnknown || !contains(got.Validity.Limitations, LimitationBudgetTruncated) || len(truncationDetails(got)) != 1 {
 		t.Fatalf("%+v", got)
 	}
+	// Every later stage says it was skipped.
+	skipped := 0
+	for _, l := range got.Limitations {
+		if l.Code == LimitationStageSkipped {
+			skipped++
+		}
+	}
+	if skipped != 3 || got.Detection.Status != DetectionSkipped || got.Outcome != OutcomeInsufficientEvidence {
+		t.Fatalf("%d skipped stages, %+v", skipped, got.Limitations)
+	}
 }
 
 func TestPhase3aAssessment(t *testing.T) {

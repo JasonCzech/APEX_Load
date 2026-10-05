@@ -1,8 +1,13 @@
 package rca
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"sort"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/rca/signatures"
 )
 
 // AssessmentSchemaVersion is the v2 root-cause assessment contract.
@@ -25,6 +30,26 @@ const (
 
 // LimitationStageSkipped: the analysis budget ran out before a stage began.
 const LimitationStageSkipped = "stage_skipped"
+
+// EngineVersionBase names the engine's generation; EngineVersion appends the
+// versions and a fingerprint of every value that shapes an assessment.
+const EngineVersionBase = "apexload.rca.engine.v2"
+
+// EngineVersion identifies everything that decides an assessment from frozen
+// inputs: the rules' and parameters' versions and a fingerprint of their
+// values, the budget, and the signature set. Changing any of them changes
+// it, so identical requests are not answered with an analysis computed
+// under different behaviour.
+func EngineVersion() string {
+	body, _ := json.Marshal(struct {
+		Budget   Budget
+		Detect   DetectParams
+		Validity ValidityRules
+	}{DefaultBudget, DefaultDetectParams, DefaultValidityRules})
+	sum := sha256.Sum256(body)
+	return EngineVersionBase + "+" + ValidityRulesVersion + "+" + DetectParamsVersion + "+" + GraphSchemaVersion + "+" + signatures.Version +
+		"+" + hex.EncodeToString(sum[:6]) + "." + signatures.Fingerprint()
+}
 
 // Coverage statuses.
 const (
@@ -103,7 +128,7 @@ type BaselineRef struct {
 	Qualification string `json:"qualification,omitempty"`
 }
 
-// Hypothesis is one ranked explanation (Phase 3b).
+// Hypothesis is one ranked explanation of one or more symptoms.
 type Hypothesis struct {
 	ID        string `json:"id"`
 	Signature string `json:"signature"`
@@ -189,6 +214,7 @@ func Analyze(input AnalysisInput, budgeter *Budgeter) Assessment {
 	if budgeter.Exhausted() {
 		out.Detection = Detection{Status: DetectionSkipped, ParamsVersion: DetectParamsVersion, Params: DefaultDetectParams, Levels: []LoadLevel{}, Spikes: []Spike{}}
 		out.Limitations = append(out.Limitations, input.Detection.Limitations...)
+		out.Limitations = append(out.Limitations, Limitation{Code: LimitationStageSkipped, Detail: "detection: the analysis budget ran out first"})
 	} else {
 		var limitations []Limitation
 		out.Anomalies, out.Detection, limitations = Detect(input.Detection, DefaultDetectParams, budgeter)
@@ -197,6 +223,7 @@ func Analyze(input AnalysisInput, budgeter *Budgeter) Assessment {
 	if budgeter.Exhausted() {
 		out.Graph = Graph{Schema: GraphSchemaVersion, Nodes: []GraphNode{}, Edges: []GraphEdge{}, Cycles: [][]string{}}
 		out.Limitations = append(out.Limitations, input.Graph.Limitations...)
+		out.Limitations = append(out.Limitations, Limitation{Code: LimitationStageSkipped, Detail: "graph: the analysis budget ran out first"})
 	} else {
 		var limitations []Limitation
 		out.Graph, limitations = BuildGraph(input.Graph, budgeter)
@@ -213,6 +240,9 @@ func Analyze(input AnalysisInput, budgeter *Budgeter) Assessment {
 		var limitations []Limitation
 		out.Hypotheses, out.Outcome, limitations = Hypothesize(out.Anomalies, input.Detection.Series, out.Detection.Judged, out.Graph, out.Detection.Levels, DefaultDetectParams)
 		out.Limitations = append(out.Limitations, limitations...)
+		if limitation, capped := capConfidenceByValidity(out.Hypotheses, out.Validity); capped {
+			out.Limitations = append(out.Limitations, limitation)
+		}
 	}
 	out.Capacity, out.LittlesLaw = []Capacity{}, []LittlesLaw{}
 	if budgeter.Exhausted() {

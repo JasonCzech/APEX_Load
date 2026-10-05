@@ -22,9 +22,10 @@ const (
 	RCAStateCancelled = "cancelled"
 )
 
-// Bounds on a run's analytical history.
+// Bounds on a run's analytical history: 50 analyses of at most 2 MiB each
+// keep a run's stored assessments near 100 MiB at worst.
 const (
-	MaxRCARevisionsPerRun = 200
+	MaxRCARevisionsPerRun = 50
 	MaxRCAPayloadBytes    = 2 << 20
 )
 

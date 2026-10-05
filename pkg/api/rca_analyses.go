@@ -1,7 +1,6 @@
 package api
 
 import (
-	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"net/http"
 	"os"
 	"slices"
@@ -28,9 +26,6 @@ import (
 const (
 	rcaEvidenceSchema = "apexload.rca_evidence.v1"
 	rcaBundleSchema   = "apexload.rca_bundle.v1"
-	// rcaEngineVersion changes whenever the engine's output for the same
-	// frozen inputs could change, so it is part of every input digest.
-	rcaEngineVersion  = "apexload.rca.engine.v2+" + rca.ValidityRulesVersion + "+" + rca.DetectParamsVersion + "+" + rca.GraphSchemaVersion + "+" + signatures.Version
 	rcaMaxBundleBytes = 256 << 10
 	// An analysis lease outlives the engine's 120 s wall-time budget plus
 	// archive reading, so a live owner is not overtaken.
@@ -38,6 +33,10 @@ const (
 	// At most two analyses run at once on one controller.
 	rcaMaxConcurrentAnalyses = 2
 )
+
+// rcaEngineVersion changes whenever the engine's output for the same frozen
+// inputs could change, so it is part of every input digest.
+var rcaEngineVersion = rca.EngineVersion()
 
 var errRCAArchiveChanged = errors.New("the run archive changed after the analysis was requested")
 
@@ -441,68 +440,21 @@ func (s *Server) handleGetRCABundle(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, boundRCABundle(bundle))
 }
 
-// boundRCABundle trims the validity windows, the spikes, the capacity
-// results, the weakest anomalies, the graph's unused and then
-// lowest-confidence edges and its nodes, the lowest-ranked hypotheses, the
-// evidence and then the SLA details until the bundle fits 256 KiB, and
+// boundRCABundle cuts the bundle until it fits 256 KiB, as the stored
+// assessment is cut, then drops the evidence and last the SLA details, and
 // marks what it cut.
 func boundRCABundle(bundle RCABundle) RCABundle {
 	fits := func() bool {
 		body, err := json.Marshal(bundle)
 		return err == nil && len(body) <= rcaMaxBundleBytes
 	}
-	for !fits() && len(bundle.Assessment.Validity.Windows) > 0 {
-		bundle.Assessment.Validity.Windows = bundle.Assessment.Validity.Windows[:len(bundle.Assessment.Validity.Windows)/2]
-		bundle.Truncated = true
-	}
-	for !fits() && len(bundle.Assessment.Detection.Spikes) > 0 {
-		bundle.Assessment.Detection.Spikes = bundle.Assessment.Detection.Spikes[:len(bundle.Assessment.Detection.Spikes)/2]
-		bundle.Truncated = true
-	}
-	for !fits() && len(bundle.Assessment.LittlesLaw)+len(bundle.Assessment.Capacity) > 0 {
-		bundle.Assessment.LittlesLaw = bundle.Assessment.LittlesLaw[:len(bundle.Assessment.LittlesLaw)/2]
-		bundle.Assessment.Capacity = bundle.Assessment.Capacity[:len(bundle.Assessment.Capacity)/2]
-		bundle.Truncated = true
-	}
-	if !fits() && len(bundle.Assessment.Anomalies) > 0 {
-		// Keep the strongest anomalies, still in onset order.
-		anomalies := slices.Clone(bundle.Assessment.Anomalies)
-		slices.SortStableFunc(anomalies, func(a, b rca.Anomaly) int { return cmp.Compare(math.Abs(b.PeakZ), math.Abs(a.PeakZ)) })
-		for !fits() && len(anomalies) > 0 {
-			anomalies = anomalies[:len(anomalies)/2]
-			kept := slices.Clone(anomalies)
-			slices.SortStableFunc(kept, func(a, b rca.Anomaly) int { return a.Onset.Compare(b.Onset) })
-			bundle.Assessment.Anomalies = kept
-			bundle.Truncated = true
-		}
-	}
-	if graph := &bundle.Assessment.Graph; !fits() && len(graph.Edges) > 0 {
-		used := graph.Edges[:0:0]
-		for _, e := range graph.Edges {
-			if e.Used {
-				used = append(used, e)
-			}
-		}
-		graph.Edges, bundle.Truncated = used, true
-		// Edges are stored strongest first.
-		for !fits() && len(graph.Edges) > 0 {
-			graph.Edges = graph.Edges[:len(graph.Edges)/2]
-		}
-		for !fits() && len(graph.Nodes) > 0 {
-			graph.Nodes = graph.Nodes[:len(graph.Nodes)/2]
-		}
-	}
-	// Hypotheses are stored best first.
-	for !fits() && len(bundle.Assessment.Hypotheses) > 0 {
-		bundle.Assessment.Hypotheses = bundle.Assessment.Hypotheses[:len(bundle.Assessment.Hypotheses)/2]
+	if trimRCAAssessment(&bundle.Assessment, fits) {
 		bundle.Truncated = true
 	}
 	if !fits() && bundle.Evidence != nil {
-		bundle.Evidence = nil
-		bundle.Truncated = true
+		bundle.Evidence, bundle.Truncated = nil, true
 	}
-	for !fits() && len(bundle.Assessment.Acceptance.Details) > 0 {
-		bundle.Assessment.Acceptance.Details = bundle.Assessment.Acceptance.Details[:len(bundle.Assessment.Acceptance.Details)/2]
+	if trimRCADetails(&bundle.Assessment, fits) {
 		bundle.Truncated = true
 	}
 	return bundle
@@ -681,8 +633,8 @@ func (s *Server) runNextRCAAnalysis(ctx context.Context, claimed func()) (bool, 
 	} else {
 		payload.Assessment = assessment
 	}
-	body, err := json.Marshal(payload)
-	if err != nil || len(body) > storage.MaxRCAPayloadBytes {
+	body, err := boundStoredRCAPayload(&payload)
+	if err != nil {
 		state, payload.Assessment, payload.Error = storage.RCAStateFailed, nil, "assessment exceeds the stored size limit"
 		body, _ = json.Marshal(payload)
 	}
@@ -833,11 +785,14 @@ func (s *Server) rcaCoverage(ctx context.Context, payload rcaAnalysisPayload, ma
 		intervalStatus = rca.CoverageMissing
 	}
 	coverage = append(coverage, rca.Coverage{Evidence: "intervals", Status: intervalStatus, Detail: fmt.Sprintf("%d intervals", len(validity.Intervals))})
-	transactions, providers := 0, 0
+	transactions, timing, providers := 0, 0, 0
 	for _, series := range detection.Series {
-		if series.Kind == rca.SeriesProvider {
+		switch {
+		case series.Kind == rca.SeriesProvider:
 			providers++
-		} else {
+		case strings.HasPrefix(series.ID, rca.NodeDependency+"/"):
+			timing++
+		default:
 			transactions++
 		}
 	}
@@ -848,7 +803,7 @@ func (s *Server) rcaCoverage(ctx context.Context, payload rcaAnalysisPayload, ma
 	case len(detection.Limitations) > 0:
 		seriesStatus = rca.CoveragePartial
 	}
-	coverage = append(coverage, rca.Coverage{Evidence: "detection_series", Status: seriesStatus, Detail: fmt.Sprintf("%d transaction series, %d provider series, %d load levels", transactions, providers, len(detection.Levels))})
+	coverage = append(coverage, rca.Coverage{Evidence: "detection_series", Status: seriesStatus, Detail: fmt.Sprintf("%d transaction series, %d dependency timing series, %d provider series, %d load levels", transactions, timing, providers, len(detection.Levels))})
 	topology := rca.CoverageComplete
 	switch {
 	case len(graph.Entities)+len(graph.Relations) == 0:
@@ -930,6 +885,17 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveMa
 	if err == nil {
 		var evidence rca.DetectionInput
 		if evidence, err = archiveDetectionInput(ctx, record, baselineManifest, summaries, archiveArrivalModel(&baselineKey), budgeter, budget, nil); err == nil {
+			// The baseline's own connection timing, so network phases can be
+			// compared at the same level too.
+			phases := newNetworkPhaseCollector(summaries, baselineManifest.TransactionsFile)
+			if scanErr := forEachArchiveTransaction(record, func(tx *TransactionEvent) error {
+				phases.add(tx)
+				return ctx.Err()
+			}); scanErr == nil {
+				evidence.Series = append(evidence.Series, phases.series()...)
+			} else {
+				evidence.Limitations = append(evidence.Limitations, rca.Limitation{Code: limitationPhaseEvidence, Detail: "the baseline's rows could not be read: " + scanErr.Error()})
+			}
 			// What limited the baseline's own evidence limits every
 			// comparison with it.
 			if len(evidence.Limitations) > 0 {

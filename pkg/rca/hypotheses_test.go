@@ -252,3 +252,47 @@ func TestNoDetectionIsInsufficientEvidence(t *testing.T) {
 		t.Fatalf("%s %s %+v", got.Detection.Status, got.Outcome, got.Limitations)
 	}
 }
+
+func TestValidityCapsHypothesisConfidence(t *testing.T) {
+	anomalies, series, graph := hypothesisFixture(7*time.Minute, 10*time.Second, true)
+	for verdict, want := range map[string]string{ValidityValid: ConfidenceHigh, ValiditySuspect: ConfidenceMedium, ValidityUnknown: ConfidenceMedium, ValidityInvalid: ConfidenceLow} {
+		hypotheses, _, _ := Hypothesize(anomalies, series, allJudged(series), graph, oneLevel(200), DefaultDetectParams)
+		limitation, capped := capConfidenceByValidity(hypotheses, Validity{Verdict: verdict, Reasons: []string{"generator_cpu"}})
+		h := hypothesisFor(hypotheses, "resource_pressure")
+		if h.Confidence != want || capped != (verdict != ValidityValid) || capped && limitation.Code != LimitationValidityCapsConfidence {
+			t.Errorf("%s: %s capped %v", verdict, h.Confidence, capped)
+		}
+	}
+}
+
+func TestOneCauseAtBothScopesIsOneHypothesis(t *testing.T) {
+	anomalies, series, graph := hypothesisFixture(7*time.Minute, 10*time.Second, true)
+	// The same CPU series also differs from the baseline, and so does the
+	// symptom's series.
+	for _, a := range anomalies[:2] {
+		load := a
+		load.ID, load.Scope = a.ID+"-load", ScopeLoad
+		anomalies = append(anomalies, load)
+	}
+	hypotheses, _, _ := Hypothesize(anomalies, series, allJudged(series), graph, oneLevel(200), DefaultDetectParams)
+	var pressure []Hypothesis
+	for _, h := range hypotheses {
+		if h.Signature == "resource_pressure" {
+			pressure = append(pressure, h)
+		}
+	}
+	if len(pressure) != 1 || len(pressure[0].Symptoms) != 2 || len(pressure[0].Supporting) != 1 {
+		t.Fatalf("%+v", pressure)
+	}
+}
+
+func TestEngineVersionFollowsItsParameters(t *testing.T) {
+	before := EngineVersion()
+	previous := DefaultDetectParams
+	DefaultDetectParams.MaxBaselineBuckets++
+	after := EngineVersion()
+	DefaultDetectParams = previous
+	if before == after || EngineVersion() != before || !strings.HasPrefix(before, EngineVersionBase+"+") {
+		t.Fatalf("%s -> %s", before, after)
+	}
+}

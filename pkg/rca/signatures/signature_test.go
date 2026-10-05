@@ -124,3 +124,13 @@ func TestClassify(t *testing.T) {
 		}
 	}
 }
+
+func TestFingerprintFollowsTheClassifier(t *testing.T) {
+	before := Fingerprint()
+	classifiers[0].tokens = append(classifiers[0].tokens, "extra")
+	after := Fingerprint()
+	classifiers[0].tokens = classifiers[0].tokens[:len(classifiers[0].tokens)-1]
+	if before == after || Fingerprint() != before {
+		t.Fatalf("fingerprint %s -> %s", before, after)
+	}
+}

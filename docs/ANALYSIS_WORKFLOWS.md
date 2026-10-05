@@ -483,7 +483,8 @@ errors, or falling throughput, on a transaction or action series.
   residence time Little's law reads. The run's own DNS, connect and TLS time
   per dependency, averaged per interval over the requests that spent any,
   become `dependency/<label>/dns_ms`, `connect_ms` and `tls_ms` series and are
-  detected like any other.
+  detected like any other; the baseline run's are built the same way, so
+  they are compared at the same level too.
 - **Window and path.** For each symptom, the anomalies of the same scope that
   began within five minutes before its onset and before its end are
   candidates. The graph is walked from the symptom's transaction or action
@@ -510,12 +511,18 @@ errors, or falling throughput, on a transaction or action series.
   support and a positive score. A cold start scores higher when the symptom
   began at a load step.
 - **Hypotheses** carry the symptoms they explain (one cause behind several
-  symptoms is one hypothesis), score, rank, chain of onsets, the supporting
+  symptoms, or seen both over time and against the baseline, is one
+  hypothesis: the same signature on the same evidence series), score, rank,
+  chain of onsets, the supporting
   and contradicting evidence, the other supported signatures for the same
   symptoms, the falsification check, limitations naming competitors that
-  could not be judged, and the graph nodes the supporting evidence measured. Confidence is `high` when connected,
-  preceding and uncontradicted; `medium` when connected; `low` otherwise,
-  with the reasons. The 100 strongest are kept, best first.
+  could not be judged, and the graph nodes the supporting evidence measured.
+  Confidence is `high` when connected, preceding and uncontradicted;
+  `medium` when connected; `low` otherwise, with the reasons. Validity caps
+  it: an invalid run's hypotheses are all `low`, and a suspect or unknown
+  run's at most `medium`, because its symptoms may come from the load
+  generators (`validity_caps_confidence`). The 100 strongest are kept, best
+  first.
 - **Outcome.** `supported` with any hypothesis; `insufficient_evidence` when
   detection could not run (no steady level, or no budget left) or no
   signature's evidence was measured (`signatures_unmeasured`);
@@ -575,13 +582,23 @@ MCP tools keep returning v1.
 | `GET /api/v1/tests/{id}/archive/root-cause/v2` | Viewer | The latest completed analysis, or `{"state":"none"}` |
 | `GET /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle` | Viewer | `apexload.rca_bundle.v1`: the assessment and its evidence revision, at most 256 KiB (`truncated` when windows or evidence were cut) |
 
+- **Stored size.** An assessment larger than the 2 MiB stored limit is cut,
+  not failed. The least load-bearing parts go first: validity windows,
+  spikes, capacity results, the graph's unused and weakest edges and uncited
+  nodes, anomalies no hypothesis cites, and then the lowest-ranked
+  hypotheses. A kept hypothesis's anomalies and nodes stay. The cut is
+  listed as `assessment_trimmed`. The 256 KiB bundle is cut the same way
+  before its evidence and SLA details.
 - **Frozen inputs.** An analysis's `input_digest` hashes the archive's
   manifest digest, the evidence revision, the baseline archive's digest, the
   digest of the mapping decisions frozen into the evidence revision, the
-  policy revision (none yet), the signature set and the engine version. A POST
+  policy revision (none yet), the signature set and the engine version. The
+  engine version (`rca.EngineVersion`) carries the rules', parameters' and
+  signatures' versions and a fingerprint of their values, the budget and
+  the classifier, so changing any of them makes a new analysis. A POST
   whose digest matches a queued, running or completed analysis returns it;
-  a failed or cancelled one can be retried. A run keeps at most 200
-  analyses and 200 evidence revisions.
+  a failed or cancelled one can be retried. A run keeps at most 50
+  analyses and 50 evidence revisions.
 - **Evidence revisions** freeze the archive's evidence sidecars, the run's
   monitor sources with their outcomes and the project's mapping decisions. A
   POST captures one when the run has none, when the archive or the mapping

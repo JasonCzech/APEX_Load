@@ -36,9 +36,10 @@ const (
 
 // Hypothesis limitations.
 const (
-	LimitationNoSymptoms           = "no_symptoms"
-	LimitationHypothesesTruncated  = "hypotheses_truncated"
-	LimitationSignaturesUnmeasured = "signatures_unmeasured"
+	LimitationValidityCapsConfidence = "validity_caps_confidence"
+	LimitationNoSymptoms             = "no_symptoms"
+	LimitationHypothesesTruncated    = "hypotheses_truncated"
+	LimitationSignaturesUnmeasured   = "signatures_unmeasured"
 )
 
 // measures is the evidence kind a series measures.
@@ -375,14 +376,15 @@ func confidenceOrder(c string) int {
 }
 
 // mergeHypothesis folds a symptom's hypothesis into the one with the same
-// signature and supporting anomalies: one cause behind several symptoms is
-// one hypothesis, as strong as its strongest instance.
+// signature and supporting series: one cause behind several symptoms, or
+// seen both over time and against the baseline, is one hypothesis, as
+// strong as its strongest instance.
 func mergeHypothesis(merged map[string]*Hypothesis, h Hypothesis, r signatures.Result) {
 	support := make([]string, 0, len(r.Supporting))
 	for _, o := range r.Supporting {
-		support = append(support, o.AnomalyID)
+		support = append(support, o.Series)
 	}
-	sort.Strings(support)
+	support = uniqueSorted(support)
 	key := h.Signature + "\x00" + strings.Join(support, "\x00")
 	existing := merged[key]
 	if existing == nil {
@@ -426,6 +428,29 @@ func finishHypothesis(h *Hypothesis) {
 	if len(h.Competing) > 0 {
 		h.ConfidenceReasons = append(h.ConfidenceReasons, fmt.Sprintf("%d other hypotheses are also supported for these symptoms", len(h.Competing)))
 	}
+}
+
+// capConfidenceByValidity lowers what a run's validity verdict allows: an
+// invalid run's load did not reach the system as reported, so every
+// hypothesis is low; a suspect or unknown run allows at most medium. It
+// reports the limitation when it capped anything.
+func capConfidenceByValidity(hypotheses []Hypothesis, v Validity) (Limitation, bool) {
+	ceiling, reason := ConfidenceHigh, ""
+	switch v.Verdict {
+	case ValidityInvalid:
+		ceiling, reason = ConfidenceLow, "the run is invalid ("+strings.Join(v.Reasons, ", ")+"), so its symptoms may come from the load generators rather than the system"
+	case ValiditySuspect, ValidityUnknown:
+		ceiling, reason = ConfidenceMedium, "the run's validity is "+v.Verdict+", so its symptoms may partly come from the load generators"
+	}
+	capped := false
+	for i := range hypotheses {
+		if confidenceOrder(hypotheses[i].Confidence) < confidenceOrder(ceiling) {
+			hypotheses[i].Confidence = ceiling
+			hypotheses[i].ConfidenceReasons = append(hypotheses[i].ConfidenceReasons, reason)
+			capped = true
+		}
+	}
+	return Limitation{Code: LimitationValidityCapsConfidence, Detail: reason}, capped
 }
 
 // uniqueBy keeps the first of each key, in order.
