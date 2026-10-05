@@ -72815,6 +72815,7 @@ export interface operations {
         "project_id"?: string;
         "redact_sensitive"?: boolean;
         "retention_days"?: number;
+        "salvage_truncated"?: boolean;
       };
     };
     requestBody: {
@@ -72827,6 +72828,7 @@ export interface operations {
           "name"?: string;
           "redact_sensitive"?: string;
           "retention_days"?: string;
+          "salvage_truncated"?: string;
           [key: string]: unknown;
         };
       };
@@ -73183,6 +73185,7 @@ export interface operations {
         "project_id"?: string;
         "redact_sensitive"?: boolean;
         "retention_days"?: number;
+        "salvage_truncated"?: boolean;
       };
     };
     requestBody: {
@@ -73195,6 +73198,7 @@ export interface operations {
           "name"?: string;
           "redact_sensitive"?: string;
           "retention_days"?: string;
+          "salvage_truncated"?: string;
           [key: string]: unknown;
         };
       };

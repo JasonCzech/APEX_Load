@@ -29,6 +29,7 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
+	importReq.noteSalvage(result)
 	protectedRequirements := result.ProtectedRequirements.Take()
 	defer clearCredentialRequirementValues(protectedRequirements)
 	if result.Script != nil {

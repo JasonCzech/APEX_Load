@@ -1898,6 +1898,12 @@ describe('ProtocolAssetImport', () => {
     await act(async () => {
       includeStatic.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    const salvageTruncated = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('Recover the complete entries of a truncated HAR')) as HTMLInputElement | undefined
+    expect(salvageTruncated?.checked).toBe(false)
+    if (!salvageTruncated) return
+    await act(async () => {
+      salvageTruncated.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
@@ -1911,6 +1917,7 @@ describe('ProtocolAssetImport', () => {
     expect(apiMock.importHAR).toHaveBeenCalledWith(file, expect.objectContaining({
       project_id: 'project-1',
       include_static_assets: true,
+      salvage_truncated: true,
       secondary_file: comparisonFile,
       artifact_mode: 'design_har_pair',
       retention_days: 7,

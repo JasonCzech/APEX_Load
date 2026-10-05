@@ -1128,7 +1128,7 @@ func queryParameterSchema(route discoveredRoute, name string, repeated bool) oas
 		"include_archived": true, "include_deleted": true, "include_inactive": true,
 		"include_steps": true, "include_evidence": true, "force": true, "download": true,
 		"success": true, "raw": true, "scrub": true, "requests": true, "include_requests": true,
-		"include_excluded": true, "redact_sensitive": true, "include_static_assets": true,
+		"include_excluded": true, "redact_sensitive": true, "include_static_assets": true, "salvage_truncated": true,
 		"salesforce_native": true, "agentforce_transform": true, "sandbox": true, "capacity": true,
 	}
 	dateTimeNames := map[string]bool{

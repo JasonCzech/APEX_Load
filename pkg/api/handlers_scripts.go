@@ -10,6 +10,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/agentforce"
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
@@ -62,6 +63,19 @@ type harImportRequest struct {
 	SecondaryData []byte
 	ProjectID     string
 	Opts          har.ConvertOptions
+	// Salvage describes the truncated capture whose complete entries Data
+	// holds, when the import opted in to salvage_truncated.
+	Salvage *har.TruncationSalvage
+}
+
+// noteSalvage records on a converted import that its HAR was truncated.
+func (req *harImportRequest) noteSalvage(result *har.ConvertResult) {
+	if req.Salvage == nil || result == nil {
+		return
+	}
+	warning := req.Salvage.Warning()
+	result.Warnings = append([]string{warning}, result.Warnings...)
+	result.Unsupported = append(result.Unsupported, diag.Diagnostic{Code: "har_truncated_salvaged", Element: "HAR truncation", Location: "HAR file", Detail: warning, Severity: diag.Warning})
 }
 
 type k6ImportRequest struct {

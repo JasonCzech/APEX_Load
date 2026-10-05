@@ -225422,6 +225422,8 @@ paths:
                   type: string
                 retention_days:
                   type: string
+                salvage_truncated:
+                  type: string
               additionalProperties: true
       responses:
         2XX:
@@ -225507,6 +225509,12 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: salvage_truncated
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
       tags:
         - Scripts
       x-handler: handleImportHAR
@@ -248278,6 +248286,8 @@ paths:
                   type: string
                 retention_days:
                   type: string
+                salvage_truncated:
+                  type: string
               additionalProperties: true
       responses:
         2XX:
@@ -248363,6 +248373,12 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: salvage_truncated
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
       tags:
         - Scripts
       x-handler: handleImportSalesforce

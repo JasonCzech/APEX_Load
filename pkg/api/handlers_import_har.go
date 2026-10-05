@@ -24,6 +24,7 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
+	importReq.noteSalvage(result)
 	protectedRequirements := result.ProtectedRequirements.Take()
 	defer clearCredentialRequirementValues(protectedRequirements)
 	if len(importReq.SecondaryData) > 0 {
@@ -178,6 +179,24 @@ func harImportReviewSections(result *har.ConvertResult) []scriptImportReviewSect
 }
 
 func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportRequest, bool) {
+	req, ok := decodeHARImportRequest(w, r)
+	if !ok {
+		return nil, false
+	}
+	// A truncated capture is imported only on explicit request; otherwise the
+	// error says how many complete entries it holds and how to keep them.
+	if salvaged, report, truncated := har.SalvageTruncated(req.Data); truncated {
+		if req.Opts.SalvageTruncated == nil || !*req.Opts.SalvageTruncated {
+			writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+report.Hint())
+			return nil, false
+		}
+		req.Data = salvaged
+		req.Salvage = &report
+	}
+	return req, true
+}
+
+func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportRequest, bool) {
 	upload, ok := decodeImportUpload(w, r, harImportMaxBodyBytes)
 	if !ok {
 		return nil, false
@@ -227,6 +246,7 @@ func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportReq
 			RetentionDays:       parseOptionalIntDefault(upload.Value("retention_days"), 0),
 			RedactSensitive:     parseOptionalBool(upload.Value("redact_sensitive")),
 			IncludeStaticAssets: parseOptionalBool(upload.Value("include_static_assets")),
+			SalvageTruncated:    parseOptionalBool(upload.Value("salvage_truncated")),
 		},
 	}, true
 }

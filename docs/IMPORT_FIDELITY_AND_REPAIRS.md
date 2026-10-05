@@ -239,6 +239,8 @@ Correlation detection rejects values that are not server state before generating
 
 When Aura requests in the native script still send the recorded `aura.token`, the Salesforce review warns. It says whether the capture has no producer, as with Chrome DevTools HAR exports that drop the `__Host-ERIC_*` Set-Cookie, or has a producer that was not applied.
 
+A HAR file cut off partway through its entries (for example, a device capture that stopped writing) is rejected with HTTP 422. The message says how many complete entries the file holds. With the import option `salvage_truncated=true` (the "Recover the complete entries of a truncated HAR" checkbox), the HAR and Salesforce importers keep the log fields before the entries and every complete entry, and discard the incomplete entry and everything after it. The import then warns how many entries were recovered and how many bytes were dropped, and that the script ends where the capture was cut. Only a file that ends early is salvaged: a file that is malformed in the middle, or has no complete entry, is still rejected.
+
 ## Native archive compatibility
 
 Re-import an archive into a new review draft to use these mappings. Stored scripts and approved runtime overrides are not rewritten. The original source values and their selected-file provenance remain in import metadata.
