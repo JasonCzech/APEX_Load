@@ -36,16 +36,26 @@ const LimitationStageSkipped = "stage_skipped"
 const EngineVersionBase = "apexload.rca.engine.v2"
 
 // EngineVersion identifies everything that decides an assessment from frozen
-// inputs: the rules' and parameters' versions and a fingerprint of their
-// values, the budget, and the signature set. Changing any of them changes
-// it, so identical requests are not answered with an analysis computed
-// under different behaviour.
+// inputs: the rules' and parameters' versions, a fingerprint of every value
+// the stages use (budget, detection parameters, validity rules, hypothesis,
+// graph and capacity bounds) and the signature set's. Changing a value
+// changes it, so identical requests are not answered with an analysis
+// computed under different behaviour; a change to a stage's logic bumps
+// EngineVersionBase.
 func EngineVersion() string {
 	body, _ := json.Marshal(struct {
-		Budget   Budget
-		Detect   DetectParams
-		Validity ValidityRules
-	}{DefaultBudget, DefaultDetectParams, DefaultValidityRules})
+		Budget     Budget
+		Detect     DetectParams
+		Validity   ValidityRules
+		Hypotheses []any
+		Capacity   []any
+		Graph      []any
+	}{
+		DefaultBudget, DefaultDetectParams, DefaultValidityRules,
+		[]any{LeadMargin, MaxGraphHops, MaxHypotheses},
+		[]any{KneeSlopeRatio, MinKneeLevels, LittlesFlatFraction, LittlesMinPoints, MaxCapacityResults},
+		[]any{MaxGraphBytes, MaxValidityWindows},
+	})
 	sum := sha256.Sum256(body)
 	return EngineVersionBase + "+" + ValidityRulesVersion + "+" + DetectParamsVersion + "+" + GraphSchemaVersion + "+" + signatures.Version +
 		"+" + hex.EncodeToString(sum[:6]) + "." + signatures.Fingerprint()

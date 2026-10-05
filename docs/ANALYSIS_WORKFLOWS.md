@@ -594,8 +594,11 @@ MCP tools keep returning v1.
   digest of the mapping decisions frozen into the evidence revision, the
   policy revision (none yet), the signature set and the engine version. The
   engine version (`rca.EngineVersion`) carries the rules', parameters' and
-  signatures' versions and a fingerprint of their values, the budget and
-  the classifier, so changing any of them makes a new analysis. A POST
+  signatures' versions and a fingerprint of every value the stages use: the
+  budget, detection parameters, validity rules, hypothesis, graph and
+  capacity bounds, signature weights and the classifier. Changing a value
+  makes a new analysis; a change to a stage's logic bumps the engine's base
+  version. A POST
   whose digest matches a queued, running or completed analysis returns it;
   a failed or cancelled one can be retried. A run keeps at most 50
   analyses and 50 evidence revisions.

@@ -63,9 +63,10 @@ func Classify(name string) string {
 	return ""
 }
 
-// Fingerprint identifies the signature set and the classifier exactly, so a
-// change to either changes every analysis's frozen inputs even when Version
-// is not bumped.
+// Fingerprint identifies the signature set, its scoring weights and the
+// classifier exactly, so a change to any value changes every analysis's
+// frozen inputs even when Version is not bumped. A change to the judging
+// logic itself still bumps Version.
 func Fingerprint() string {
 	type described struct {
 		Name, Falsification string
@@ -86,11 +87,13 @@ func Fingerprint() string {
 	for _, c := range classifiers {
 		table = append(table, keywords{c.kind, c.tokens, c.phrases})
 	}
+	weights := []float64{weightUnconnected, weightUnordered, penaltyFollows, penaltyFlat, penaltyFlatLoose, bonusLoadStep}
 	body, _ := json.Marshal(struct {
 		Version     string
 		Signatures  []described
 		Classifiers []keywords
-	}{Version, set, table})
+		Weights     []float64
+	}{Version, set, table, weights})
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:6])
 }

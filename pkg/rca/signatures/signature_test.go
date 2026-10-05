@@ -134,3 +134,14 @@ func TestFingerprintFollowsTheClassifier(t *testing.T) {
 		t.Fatalf("fingerprint %s -> %s", before, after)
 	}
 }
+
+func TestFingerprintFollowsTheWeightsAndSignatures(t *testing.T) {
+	before := Fingerprint()
+	previous := ColdStart.Falsification
+	ColdStart.Falsification += "."
+	changed := Fingerprint()
+	ColdStart.Falsification = previous
+	if before == changed || Fingerprint() != before {
+		t.Fatal("a signature's declaration does not change the fingerprint")
+	}
+}
