@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -59,7 +60,7 @@ func (s *Server) readBaselinePrometheusResources(ctx context.Context, record *st
 	}
 	seen := map[string]map[int64]bool{}
 	return forEachArchiveRecordContext(ctx, record, func(m *RunArchiveManifest) string { return m.MonitorEvidenceFile }, func(point *analysis.MetricPoint) error {
-		if point.Provider == nil || point.Provider.Name != "prometheus" {
+		if point.Provider == nil || point.Provider.Name != monitorprovider.ProviderPrometheus {
 			return nil
 		}
 		if err := point.Validate(); err != nil {

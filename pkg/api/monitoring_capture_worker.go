@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -42,7 +43,7 @@ func (a *runArtifacts) startMonitoring(test *ManagedTest) {
 					return
 				}
 				for _, job := range jobs {
-					if job.Source.Pack == "dynatrace" && (job.State == "collecting" || job.State == "reconciling") {
+					if job.Source.Pack == monitorprovider.PackDynatrace && (job.State == "collecting" || job.State == "reconciling") {
 						a.nativeDynatrace.Store(true)
 						break
 					}

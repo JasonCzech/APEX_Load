@@ -15,6 +15,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 // ResolveRunMonitorBindings preserves the distinction between inheritance and
@@ -111,7 +112,7 @@ func ValidateAppDynamicsSourceConnection(source MonitorSource, connection *AppDy
 	if mode == "" {
 		mode = "collector"
 	}
-	if source.Pack != "appdynamics" || connection == nil || source.ProjectID != connection.ProjectID || source.ConnectionID != connection.ConnectionID || mode != connection.CollectionMode || source.Destination != connection.Config.Endpoint {
+	if source.Pack != monitorprovider.PackAppDynamics || connection == nil || source.ProjectID != connection.ProjectID || source.ConnectionID != connection.ConnectionID || mode != connection.CollectionMode || source.Destination != connection.Config.Endpoint {
 		return errors.New("AppDynamics source must match its connection execution location and destination")
 	}
 	if mode == "direct" {
@@ -154,7 +155,7 @@ func finishRunMonitorLoadTx(tx *storeTx, project, run string, at time.Time) erro
 			j.State = "reconciling"
 			// Dynatrace may have an async request or a partially committed chunk
 			// sequence. Finish its frozen window before querying the terminal one.
-			if j.Source.Pack != "dynatrace" || j.QueryUntilUTC.IsZero() {
+			if j.Source.Pack != monitorprovider.PackDynatrace || j.QueryUntilUTC.IsZero() {
 				j.QueryOffset = 0
 				j.QueryTime = nil
 				j.QueryFromUTC = time.Time{}
@@ -223,7 +224,7 @@ func ObservationKey(p analysis.MetricPoint) string {
 	if p.Provider == nil {
 		return ""
 	}
-	if p.Provider.Name == "prometheus" {
+	if p.Provider.Name == monitorprovider.ProviderPrometheus {
 		// Empty dimensions are omitted from durable JSON, so hash their decoded form.
 		if len(p.Dimensions) == 0 {
 			p.Dimensions = nil
@@ -233,7 +234,7 @@ func ObservationKey(p analysis.MetricPoint) string {
 		return hex.EncodeToString(sum[:])
 	}
 	identity := []any{p.Source, p.MetricName, p.Unit, p.Provider.MetricID, p.Provider.EntityIDs, p.Dimensions, p.Provider.BucketStart, p.Provider.ResolutionSeconds, p.Provider.Statistic}
-	if p.Provider.Name == "dynatrace" {
+	if p.Provider.Name == monitorprovider.ProviderDynatrace {
 		identity = append(identity, p.Provider.Name, p.Provider.Backend, p.Provider.Synthetic, p.Provider.BucketEnd)
 	}
 	raw, _ := json.Marshal(identity)
@@ -242,7 +243,7 @@ func ObservationKey(p analysis.MetricPoint) string {
 }
 func DiagnosticKeyForJob(job string, d appdynamics.Diagnostic) string {
 	identity := []string{job, d.Kind, d.ApplicationID, d.ID}
-	if d.Provider == "dynatrace" {
+	if d.Provider == monitorprovider.ProviderDynatrace {
 		identity = append(identity, d.Provider, d.Backend)
 	}
 	raw, _ := json.Marshal(identity)
@@ -331,7 +332,7 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	if (state != "collecting" && state != "reconciling") || next != b.Sequence || !expires.After(b.ReceivedAt) || (state == "collecting" && status != "RUNNING" && status != "PAUSED") {
 		return errors.New("provider job stopped, expired or sequence changed")
 	}
-	if job.Source.Pack == "dynatrace" {
+	if job.Source.Pack == monitorprovider.PackDynatrace {
 		if err = commitDynatraceScanProgressTx(tx, &job, payload.Progress); err != nil {
 			return err
 		}
@@ -354,7 +355,7 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 	}
 	limited := false
 	expectedProvider := job.Source.Pack
-	if expectedProvider == "prometheus-query" {
+	if expectedProvider == monitorprovider.PackPrometheusQuery {
 		expectedProvider = "prometheus"
 	}
 	for i, p := range payload.Points {
@@ -374,7 +375,7 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 		}
 	}
 	for i, d := range payload.Evidence {
-		if d.Provider != "" && d.Provider != expectedProvider || job.Source.Pack == "dynatrace" && d.Provider != "dynatrace" {
+		if d.Provider != "" && d.Provider != expectedProvider || job.Source.Pack == monitorprovider.PackDynatrace && d.Provider != monitorprovider.ProviderDynatrace {
 			return errors.New("diagnostic provider does not match the assigned job")
 		}
 		allowed, e := providerHeadWithinLimits(tx, job, analysis.MetricPoint{}, &d)
@@ -495,11 +496,11 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 		complete = complete && c.Status == "complete" && !c.Truncated && (job.Source.Prometheus == nil || len(c.Warnings) == 0)
 		queried = queried && (c.Status == "complete" || c.Status == "no_data" || c.Status == "partial")
 	}
-	if job.Source.Pack == "dynatrace" {
+	if job.Source.Pack == monitorprovider.PackDynatrace {
 		complete = complete && dynatraceSelectedCoverageComplete(job.Source.Dynatrace, job.QueryCoverage, payload.QueryFromUTC, payload.QueryUntilUTC)
 	}
 	if payload.QueryWindowEnd != nil {
-		if job.Source.Pack == "dynatrace" && (payload.Progress == nil || payload.Progress.TotalQueries < 1 || !payload.Progress.Complete) {
+		if job.Source.Pack == monitorprovider.PackDynatrace && (payload.Progress == nil || payload.Progress.TotalQueries < 1 || !payload.Progress.Complete) {
 			return errors.New("Dynatrace watermark requires committed terminal query progress")
 		}
 		if payload.Progress != nil && !payload.Progress.Complete {
@@ -521,7 +522,7 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 		settle = job.Source.Dynatrace.SettleSeconds
 	}
 	stableDelay := 50 * time.Second
-	if job.Source.Pack == "dynatrace" {
+	if job.Source.Pack == monitorprovider.PackDynatrace {
 		stableDelay = time.Duration(max(60, job.Source.IntervalSeconds)) * time.Second
 	}
 	settledAt := time.Time{}
@@ -538,7 +539,7 @@ func (s *SQLiteStore) AcceptProviderMonitorBatch(project, collector string, b Mo
 		stableDelay = 15 * time.Second
 	}
 	settled := !b.ReceivedAt.Before(settledAt)
-	if job.Source.Pack == "dynatrace" {
+	if job.Source.Pack == monitorprovider.PackDynatrace {
 		settled = b.ReceivedAt.After(settledAt)
 	}
 	if state == "reconciling" && payload.Final && complete && job.LoadEndedAt != nil && settled && payload.QueryWindowEnd != nil && payload.QueryWindowEnd.Equal(*job.LoadEndedAt) {
@@ -611,7 +612,7 @@ func upsertProviderHeadTx(tx *storeTx, job, key string, seq int64, index int, ki
 
 func providerRecordDigest(value any) (string, error) {
 	hashValue := value
-	if point, ok := value.(analysis.MetricPoint); ok && point.Provider != nil && point.Provider.Name == "prometheus" && point.Provider.BackendProfile == "azure_managed" {
+	if point, ok := value.(analysis.MetricPoint); ok && point.Provider != nil && point.Provider.Name == monitorprovider.ProviderPrometheus && point.Provider.BackendProfile == "azure_managed" {
 		// Display casing does not revise an Azure numeric observation.
 		provider := *point.Provider
 		provider.DisplayLabels = nil
@@ -679,7 +680,7 @@ func (s *SQLiteStore) CloseExpiredProviderMonitors(project, run string, now time
 }
 
 func providerSeriesKey(p analysis.MetricPoint) string {
-	if p.Provider.Name == "prometheus" {
+	if p.Provider.Name == monitorprovider.ProviderPrometheus {
 		if len(p.Dimensions) == 0 {
 			p.Dimensions = nil
 		}
@@ -688,7 +689,7 @@ func providerSeriesKey(p analysis.MetricPoint) string {
 		return hex.EncodeToString(sum[:])
 	}
 	identity := []any{p.Source, p.MetricName, p.Unit, p.Provider.MetricID, p.Provider.EntityIDs, p.Dimensions, p.Unit, p.Provider.Statistic}
-	if p.Provider.Name == "dynatrace" {
+	if p.Provider.Name == monitorprovider.ProviderDynatrace {
 		identity = append(identity, p.Provider.Name, p.Provider.Backend, p.Provider.Synthetic)
 	}
 	body, _ := json.Marshal(identity)

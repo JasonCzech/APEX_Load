@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"golang.org/x/crypto/ssh"
 	"io"
 	"net/url"
 	"os"
@@ -16,9 +15,12 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 )
 
@@ -131,13 +133,13 @@ func (a *Agent) approvedDestinations() []string {
 			}
 		}
 		destination := target.Destination
-		if target.Prometheus != nil || target.Pack == "ssh-linux" || target.Pack == "jmx" || target.Pack == "jdbc" || target.Pack == "appdynamics" || target.Pack == "dynatrace" || target.Management != nil && target.Management.Identity.CredentialRef != "" {
+		if target.Prometheus != nil || target.Pack == "ssh-linux" || target.Pack == "jmx" || target.Pack == "jdbc" || providerCredentialKey(target.Pack) || target.Management != nil && target.Management.Identity.CredentialRef != "" {
 			if key, err := ecdh.X25519().NewPrivateKey(a.cfg.CredentialPrivateKey); err == nil {
 				destination += "#" + base64.StdEncoding.EncodeToString(key.PublicKey().Bytes())
 			}
 		}
 		destinations = append(destinations, destination)
-		if target.Pack == "dynatrace" {
+		if target.Pack == monitorprovider.PackDynatrace {
 			for _, origin := range target.DynatraceOrigins {
 				if origin == target.Destination {
 					continue
@@ -181,7 +183,7 @@ func validateAdapterTargets(cfg Config) error {
 			}
 			continue
 		}
-		if target.Pack == "prometheus-query" {
+		if target.Pack == monitorprovider.PackPrometheusQuery {
 			if target.Prometheus == nil || target.Prometheus.Endpoint != target.Destination || target.Prometheus.Validate() != nil || len(cfg.ControllerPublicKey) != ed25519.PublicKeySize {
 				return errors.New("Prometheus query target requires valid local configuration and signing key")
 			}
@@ -198,7 +200,7 @@ func validateAdapterTargets(cfg Config) error {
 		}
 		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "appdynamics": "https", "dynatrace": "https", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[target.Pack]
 		endpoint, err := url.Parse(target.Destination)
-		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && endpoint.Path != "" && !((target.Pack == "appdynamics" || target.Pack == "dynatrace") && endpoint.Path == "/") {
+		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && endpoint.Path != "" && !((target.Pack == monitorprovider.PackAppDynamics || target.Pack == monitorprovider.PackDynatrace) && endpoint.Path == "/") {
 			return errors.New("invalid approved monitor destination")
 		}
 		if seen[target.Pack+"\x00"+target.Destination] {
@@ -206,7 +208,7 @@ func validateAdapterTargets(cfg Config) error {
 		}
 		seen[target.Pack+"\x00"+target.Destination] = true
 		switch target.Pack {
-		case "dynatrace":
+		case monitorprovider.PackDynatrace:
 			if len(target.DynatraceOrigins) > 3 || len(target.DynatraceOrigins) == 0 {
 				return errors.New("Dynatrace requires locally approved origins")
 			}
@@ -222,7 +224,7 @@ func validateAdapterTargets(cfg Config) error {
 					return err
 				}
 			}
-		case "appdynamics":
+		case monitorprovider.PackAppDynamics:
 			cfg := appdynamics.Config{Endpoint: target.Destination, AccountName: "validation", ApprovedCIDRs: target.ApprovedCIDRs, CAPEM: target.CAPEM, EventsEndpoint: target.EventsEndpoint}
 			if err := cfg.Validate(); err != nil {
 				return err

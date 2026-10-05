@@ -12,6 +12,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/credential"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -71,7 +72,7 @@ func (s *Server) ingestPrometheusBatch(ctx context.Context, job storage.RunMonit
 	}
 	for i, p := range batch.Points {
 		m := p.Provider
-		if p.Validate() != nil || m == nil || m.Name != "prometheus" || p.ProjectID != job.ProjectID || p.RunID != job.RunID || p.Source != job.Source.ID || p.ScenarioID != job.ScenarioID || p.Host != job.Source.CollectorID || p.DatasetID != "" || !p.ReceivedAt.IsZero() || p.ActiveRuntimeMS != nil || m.Mode != "evaluation_point" && m.Mode != "query_window" || m.BackendProfile != job.PrometheusConnectionSnapshot.Config.Defaults().BackendProfile || m.EvaluationStepSeconds != step {
+		if p.Validate() != nil || m == nil || m.Name != monitorprovider.ProviderPrometheus || p.ProjectID != job.ProjectID || p.RunID != job.RunID || p.Source != job.Source.ID || p.ScenarioID != job.ScenarioID || p.Host != job.Source.CollectorID || p.DatasetID != "" || !p.ReceivedAt.IsZero() || p.ActiveRuntimeMS != nil || m.Mode != "evaluation_point" && m.Mode != "query_window" || m.BackendProfile != job.PrometheusConnectionSnapshot.Config.Defaults().BackendProfile || m.EvaluationStepSeconds != step {
 			return errors.New("invalid or misattributed Prometheus point")
 		}
 		var query *prometheus.Query

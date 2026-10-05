@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/collectoragent"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -51,7 +52,7 @@ func (s *Server) populateDynatraceGrant(ctx context.Context, grant *collectorage
 	return err
 }
 func dynatraceGrantMatchesJob(grant collectoragent.RunJob, job storage.RunMonitorJob, collector string) bool {
-	if job.DynatraceSnapshot == nil || job.Source.Dynatrace == nil || grant.Dynatrace == nil || grant.Pack != "dynatrace" || grant.ID != job.ID || grant.ProjectID != job.ProjectID || grant.RunID != job.RunID || grant.ScenarioID != job.ScenarioID || grant.CollectorID != collector || job.Source.CollectorID != collector || grant.SourceID != job.Source.ID || grant.SourceRevision != job.Source.Revision || grant.Destination != job.Source.Destination {
+	if job.DynatraceSnapshot == nil || job.Source.Dynatrace == nil || grant.Dynatrace == nil || grant.Pack != monitorprovider.PackDynatrace || grant.ID != job.ID || grant.ProjectID != job.ProjectID || grant.RunID != job.RunID || grant.ScenarioID != job.ScenarioID || grant.CollectorID != collector || job.Source.CollectorID != collector || grant.SourceID != job.Source.ID || grant.SourceRevision != job.Source.Revision || grant.Destination != job.Source.Destination {
 		return false
 	}
 	expected := job.DynatraceSnapshot.Config.Defaults()

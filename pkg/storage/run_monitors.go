@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 )
 
@@ -296,7 +297,7 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 		if job.CoverageReason == "" && !job.Source.Enabled {
 			job.CoverageReason = "source_disabled"
 		}
-		if job.CoverageReason == "" && job.Source.Pack == "appdynamics" {
+		if job.CoverageReason == "" && job.Source.Pack == monitorprovider.PackAppDynamics {
 			if prepared != nil {
 				job.ConnectionSnapshot = prepared.Connections[binding.SourceID]
 				if job.ConnectionSnapshot == nil {
@@ -326,7 +327,7 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 				job.CoverageReason = "connection_source_mismatch"
 			}
 		}
-		if job.CoverageReason == "" && job.Source.Pack == "prometheus-query" {
+		if job.CoverageReason == "" && job.Source.Pack == monitorprovider.PackPrometheusQuery {
 			if prepared != nil {
 				job.PrometheusConnectionSnapshot = prepared.PrometheusConnections[binding.SourceID]
 				if job.PrometheusConnectionSnapshot == nil {
@@ -356,7 +357,7 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 				job.CoverageReason = "connection_source_mismatch"
 			}
 		}
-		if job.CoverageReason == "" && job.Source.Pack == "dynatrace" {
+		if job.CoverageReason == "" && job.Source.Pack == monitorprovider.PackDynatrace {
 			if prepared != nil {
 				job.DynatraceSnapshot = prepared.DynatraceConnections[binding.SourceID]
 			}
@@ -415,14 +416,8 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 				if started.Sub(seen) > 90*time.Second || seen.After(started.Add(30*time.Second)) || !slices.Contains(packs, job.Source.Pack) || job.Source.Destination != "" && !slices.Contains(destinations, job.Source.ReadinessDestination()) {
 					job.CoverageReason = "collector_run_configuration_unavailable"
 				}
-				if job.Source.Pack == "appdynamics" && !slices.Contains(packs, "appdynamics.v1") {
-					job.CoverageReason = "collector_appdynamics_contract_unavailable"
-				}
-				if job.Source.Pack == "prometheus-query" && !slices.Contains(packs, "prometheus-query.v1") {
-					job.CoverageReason = "collector_prometheus_contract_unavailable"
-				}
-				if job.Source.Pack == "dynatrace" && !slices.Contains(packs, "dynatrace.v1") {
-					job.CoverageReason = "collector_dynatrace_contract_unavailable"
+				if provider, governed := monitorprovider.Lookup(job.Source.Pack); governed && !slices.Contains(packs, provider.CapabilityPack) {
+					job.CoverageReason = provider.ContractUnavailableReason
 				}
 			}
 		}
@@ -648,7 +643,7 @@ func (s *SQLiteStore) StopRunMonitors(project, run string, at time.Time) error {
 }
 
 func (m MonitorSource) Validate() error {
-	if m.LegacyConnectionRevision < 0 || m.LegacyConnectionRevision > 0 && m.Pack != "dynatrace" {
+	if m.LegacyConnectionRevision < 0 || m.LegacyConnectionRevision > 0 && m.Pack != monitorprovider.PackDynatrace {
 		return errors.New("invalid legacy connection revision")
 	}
 	if m.ManagementScope != nil || m.ManagementIdentity != nil {
@@ -668,26 +663,8 @@ func (m MonitorSource) Validate() error {
 	if m.ExecutorMode != "direct" && strings.TrimSpace(m.CollectorID) == "" {
 		return errors.New("collector ID is required")
 	}
-	if m.Pack == "appdynamics" {
-		if m.ConnectionID == "" || m.AppDynamics == nil || m.Dynatrace != nil || m.Prometheus != nil || m.AppDynamics.ProjectID != m.ProjectID || m.AppDynamics.Validate() != nil || m.IntervalSeconds < 60 || m.IntervalSeconds > 3600 || m.CredentialRef != "" {
-			return errors.New("invalid AppDynamics monitor source")
-		}
-		if len(m.AppDynamics.Metrics) == 0 && len(m.AppDynamics.Analytics) == 0 && !m.AppDynamics.Events && !m.AppDynamics.Violations && !m.AppDynamics.Snapshots {
-			return errors.New("AppDynamics monitor source must select a collection capability")
-		}
-		return nil
-	}
-	if m.Pack == "prometheus-query" {
-		if m.ConnectionID == "" || m.Prometheus == nil || m.Prometheus.ProjectID != m.ProjectID || m.Prometheus.Validate() != nil || m.IntervalSeconds < 15 || m.IntervalSeconds > 3600 || m.CredentialRef != "" || m.AppDynamics != nil || m.Dynatrace != nil {
-			return errors.New("invalid Prometheus query source")
-		}
-		return nil
-	}
-	if m.Pack == "dynatrace" {
-		if m.ConnectionID == "" || m.Dynatrace == nil || m.Dynatrace.ProjectID != m.ProjectID || m.Dynatrace.Validate() != nil || m.IntervalSeconds < 60 || m.IntervalSeconds > 3600 || m.CredentialRef != "" || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace.Cursor != "" || m.Dynatrace.QueryOffset != 0 {
-			return errors.New("invalid Dynatrace monitor source")
-		}
-		return nil
+	if provider, governed := monitorprovider.Lookup(m.Pack); governed {
+		return monitorSourceValidators[provider.Pack](m, provider)
 	}
 	if m.ExecutorMode == "direct" || m.ConnectionID != "" || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace != nil {
 		return errors.New("provider fields require a governed provider pack")
@@ -741,14 +718,13 @@ func (m MonitorSource) Validate() error {
 // SaveMonitorSource uses revision zero for creation and CAS for updates. The
 // collector's project and approved packs are rechecked inside the transaction.
 func (s *SQLiteStore) SaveMonitorSource(m MonitorSource, expected int64) (*MonitorSource, error) {
-	if m.Pack == "prometheus-query" && m.IntervalSeconds == 0 {
-		m.IntervalSeconds = 30
-	}
-	if m.Pack == "dynatrace" && m.ExecutorMode == "" {
-		m.ExecutorMode = "direct"
-	}
-	if (m.Pack == "appdynamics" || m.Pack == "dynatrace") && m.IntervalSeconds == 0 {
-		m.IntervalSeconds = 60
+	if provider, governed := monitorprovider.Lookup(m.Pack); governed {
+		if m.IntervalSeconds == 0 {
+			m.IntervalSeconds = provider.DefaultIntervalSeconds
+		}
+		if m.ExecutorMode == "" {
+			m.ExecutorMode = provider.DefaultExecutorMode
+		}
 	}
 	if err := m.Validate(); err != nil {
 		return nil, err
@@ -764,18 +740,8 @@ func (s *SQLiteStore) SaveMonitorSource(m MonitorSource, expected int64) (*Monit
 	if _, err = lockProjectForOwnedMutation(tx, m.ProjectID); err != nil {
 		return nil, err
 	}
-	if m.Pack == "appdynamics" {
-		if err = validateAppDynamicsSourceTx(tx, &m); err != nil {
-			return nil, err
-		}
-	}
-	if m.Pack == "prometheus-query" {
-		if err = validatePrometheusSourceTx(tx, &m); err != nil {
-			return nil, err
-		}
-	}
-	if m.Pack == "dynatrace" {
-		if err = validateDynatraceSourceTx(tx, &m); err != nil {
+	if validate := monitorSourceTxValidators[m.Pack]; validate != nil {
+		if err = validate(tx, &m); err != nil {
 			return nil, err
 		}
 	}
@@ -996,5 +962,49 @@ func (m MonitorSource) ReadinessDestination() string {
 // CanonicalProvider identifies jobs whose query progress and revisions are
 // durably reconciled; legacy point-only packs retain their wire contract.
 func (m MonitorSource) CanonicalProvider() bool {
-	return m.Pack == "appdynamics" || m.Pack == "prometheus-query" || m.Pack == "dynatrace"
+	return monitorprovider.Canonical(m.Pack)
+}
+
+// monitorSourceValidators holds each governed provider's own source rules;
+// interval bounds come from its registry descriptor.
+var monitorSourceValidators = map[string]func(MonitorSource, monitorprovider.Descriptor) error{
+	monitorprovider.PackAppDynamics:     validateAppDynamicsMonitorSource,
+	monitorprovider.PackPrometheusQuery: validatePrometheusMonitorSource,
+	monitorprovider.PackDynatrace:       validateDynatraceMonitorSource,
+}
+
+// monitorSourceTxValidators recheck each governed provider's connection
+// binding inside the save transaction.
+var monitorSourceTxValidators = map[string]func(*storeTx, *MonitorSource) error{
+	monitorprovider.PackAppDynamics:     validateAppDynamicsSourceTx,
+	monitorprovider.PackPrometheusQuery: validatePrometheusSourceTx,
+	monitorprovider.PackDynatrace:       validateDynatraceSourceTx,
+}
+
+func intervalOutside(m MonitorSource, d monitorprovider.Descriptor) bool {
+	return m.IntervalSeconds < d.MinIntervalSeconds || m.IntervalSeconds > d.MaxIntervalSeconds
+}
+
+func validateAppDynamicsMonitorSource(m MonitorSource, d monitorprovider.Descriptor) error {
+	if m.ConnectionID == "" || m.AppDynamics == nil || m.Dynatrace != nil || m.Prometheus != nil || m.AppDynamics.ProjectID != m.ProjectID || m.AppDynamics.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" {
+		return errors.New("invalid AppDynamics monitor source")
+	}
+	if len(m.AppDynamics.Metrics) == 0 && len(m.AppDynamics.Analytics) == 0 && !m.AppDynamics.Events && !m.AppDynamics.Violations && !m.AppDynamics.Snapshots {
+		return errors.New("AppDynamics monitor source must select a collection capability")
+	}
+	return nil
+}
+
+func validatePrometheusMonitorSource(m MonitorSource, d monitorprovider.Descriptor) error {
+	if m.ConnectionID == "" || m.Prometheus == nil || m.Prometheus.ProjectID != m.ProjectID || m.Prometheus.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" || m.AppDynamics != nil || m.Dynatrace != nil {
+		return errors.New("invalid Prometheus query source")
+	}
+	return nil
+}
+
+func validateDynatraceMonitorSource(m MonitorSource, d monitorprovider.Descriptor) error {
+	if m.ConnectionID == "" || m.Dynatrace == nil || m.Dynatrace.ProjectID != m.ProjectID || m.Dynatrace.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace.Cursor != "" || m.Dynatrace.QueryOffset != 0 {
+		return errors.New("invalid Dynatrace monitor source")
+	}
+	return nil
 }

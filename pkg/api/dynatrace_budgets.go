@@ -6,6 +6,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -20,7 +21,7 @@ func validateDynatraceCollectionBudgets(ctx context.Context, connections storage
 	groups := map[string]*budget{}
 	for _, binding := range bindings.Sources {
 		for _, source := range sources {
-			if source.ID != binding.SourceID || source.Pack != "dynatrace" || !source.Enabled || source.Dynatrace == nil {
+			if source.ID != binding.SourceID || source.Pack != monitorprovider.PackDynatrace || !source.Enabled || source.Dynatrace == nil {
 				continue
 			}
 			c, err := connections.GetDynatraceConnection(source.ConnectionID)

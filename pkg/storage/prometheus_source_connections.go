@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 func validatePrometheusSourceTx(tx *storeTx, m *MonitorSource) error {
@@ -61,7 +63,7 @@ func ValidatePrometheusSourceConnection(source MonitorSource, connection *Promet
 	if mode == "" {
 		mode = "collector"
 	}
-	if source.Pack != "prometheus-query" || connection == nil || source.ProjectID != connection.ProjectID || source.ConnectionID != connection.ConnectionID || mode != connection.CollectionMode || source.Destination != connection.Config.Endpoint {
+	if source.Pack != monitorprovider.PackPrometheusQuery || connection == nil || source.ProjectID != connection.ProjectID || source.ConnectionID != connection.ConnectionID || mode != connection.CollectionMode || source.Destination != connection.Config.Endpoint {
 		return errors.New("Prometheus source must match its connection execution location and destination")
 	}
 	if mode == "direct" {

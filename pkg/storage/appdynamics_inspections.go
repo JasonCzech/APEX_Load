@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 // AppDynamicsInspection is an expiring administrative operation, independent of
@@ -50,7 +52,7 @@ func (s *SQLiteStore) EnsureAppDynamicsInspectionSchema() error {
 	return err
 }
 func (s *SQLiteStore) createProviderInspection(op *AppDynamicsInspection, provider string) error {
-	if op == nil || strings.TrimSpace(op.ID) == "" || op.ProjectID == "" || op.ConnectionID == "" || op.ConnectionRevision < 1 || len(op.PayloadJSON) > 96<<10 || !op.ExpiresAt.After(op.CreatedAt) || op.ExpiresAt.Sub(op.CreatedAt) > time.Minute || (op.Kind != "test" && op.Kind != "discover" && (provider != "prometheus" || op.Kind != "preview")) || (provider != "appdynamics" && provider != "prometheus") {
+	if op == nil || strings.TrimSpace(op.ID) == "" || op.ProjectID == "" || op.ConnectionID == "" || op.ConnectionRevision < 1 || len(op.PayloadJSON) > 96<<10 || !op.ExpiresAt.After(op.CreatedAt) || op.ExpiresAt.Sub(op.CreatedAt) > time.Minute || (op.Kind != "test" && op.Kind != "discover" && (provider != "prometheus" || op.Kind != "preview")) || (provider != monitorprovider.ProviderAppDynamics && provider != "prometheus") {
 		return errors.New("invalid AppDynamics inspection")
 	}
 	if err := s.EnsureAppDynamicsInspectionSchema(); err != nil {

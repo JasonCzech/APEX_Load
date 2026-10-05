@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/jasonczech/apexload/pkg/analysis"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 // ReserveDynatraceScan admits a new upstream execution attempt. Reservations
@@ -47,7 +49,7 @@ func (s *SQLiteStore) ReserveDynatraceScanFenced(project, jobID, attempt string,
 	if err = json.Unmarshal([]byte(raw), &job); err != nil {
 		return false, err
 	}
-	if job.Source.Pack != "dynatrace" || job.DynatraceSnapshot == nil || state != "collecting" && state != "reconciling" || !expiry.After(now) {
+	if job.Source.Pack != monitorprovider.PackDynatrace || job.DynatraceSnapshot == nil || state != "collecting" && state != "reconciling" || !expiry.After(now) {
 		return false, errors.New("Dynatrace job is unavailable")
 	}
 	var prior int64

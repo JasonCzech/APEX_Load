@@ -6,6 +6,8 @@ import (
 	"slices"
 	"sort"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 // BucketSeries aggregates raw scalar evidence without treating gaps as zero.
@@ -22,7 +24,7 @@ func BucketSeries(points []MetricPoint, from, to time.Time, seconds int, aggrega
 		return []MetricPoint{}, nil
 	}
 	if points[0].Provider != nil {
-		if points[0].Provider.Name == "prometheus" {
+		if points[0].Provider.Name == monitorprovider.ProviderPrometheus {
 			return bucketPrometheusSeries(points, from, to, seconds, aggregation)
 		}
 		return bucketProviderSeries(points, from, to, seconds, aggregation)

@@ -5,10 +5,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 func (m MonitorSource) IsProvider() bool { return m.CanonicalProvider() }
@@ -78,7 +80,7 @@ func validateDynatraceSourceTx(tx *storeTx, m *MonitorSource) error {
 	return ValidateDynatraceSourceConnection(*m, c.Snapshot())
 }
 func ValidateDynatraceSourceConnection(m MonitorSource, c *DynatraceConnectionSnapshot) error {
-	if c == nil || m.Pack != "dynatrace" || m.ProjectID != c.ProjectID || m.ConnectionID != c.ConnectionID || m.ExecutorMode != c.CollectionMode || m.Destination != DynatraceDestination(c) {
+	if c == nil || m.Pack != monitorprovider.PackDynatrace || m.ProjectID != c.ProjectID || m.ConnectionID != c.ConnectionID || m.ExecutorMode != c.CollectionMode || m.Destination != DynatraceDestination(c) {
 		return errors.New("Dynatrace source must match its connection execution location and destination")
 	}
 	if err := validateDynatraceSelectedCapabilities(m.Dynatrace, c.AllowedCapabilities); err != nil {

@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 // evaluatePrometheusRule keeps evaluation-grid statistics separate from source
@@ -35,7 +37,7 @@ func evaluatePrometheusRule(rule MonitorRule, points []MetricPoint, start, end t
 	azureDimensions, azureDimensionsValid := foldAzureRuleDimensions(rule.Dimensions)
 	for _, p := range points {
 		m := p.Provider
-		if p.Source != rule.SourceID || p.MetricName != rule.Metric || p.Unit != rule.Unit || m == nil || m.Name != "prometheus" || rule.QueryID != "" && m.QueryID != rule.QueryID {
+		if p.Source != rule.SourceID || p.MetricName != rule.Metric || p.Unit != rule.Unit || m == nil || m.Name != monitorprovider.ProviderPrometheus || rule.QueryID != "" && m.QueryID != rule.QueryID {
 			continue
 		}
 		if len(rule.Dimensions) > 0 {

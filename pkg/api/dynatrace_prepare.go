@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/storage"
-	"time"
 )
 
 func validatePreparedDynatraceCapabilities(selection dynatrace.Selection, caps dynatrace.Capabilities) error {
@@ -153,7 +155,7 @@ func (tr *TestRunner) validateDynatraceReadiness(ctx context.Context, project st
 	}
 	for _, binding := range bindings.Sources {
 		for _, source := range sources {
-			if source.ID != binding.SourceID || source.Pack != "dynatrace" {
+			if source.ID != binding.SourceID || source.Pack != monitorprovider.PackDynatrace {
 				continue
 			}
 			verify := func() error {

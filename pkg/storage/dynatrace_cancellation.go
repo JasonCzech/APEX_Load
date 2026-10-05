@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 // PollDynatraceCancellationJobs discovers bounded direct cleanup work after
@@ -23,7 +25,7 @@ func (s *SQLiteStore) PollDynatraceCancellationJobs(now time.Time, limit int) ([
 	}
 	out := make([]RunMonitorJob, 0, len(jobs))
 	for _, job := range jobs {
-		if job.Source.Pack == "dynatrace" && job.Source.ExecutorMode == "direct" && job.DynatraceSnapshot != nil && job.ProviderCursor != "" {
+		if job.Source.Pack == monitorprovider.PackDynatrace && job.Source.ExecutorMode == "direct" && job.DynatraceSnapshot != nil && job.ProviderCursor != "" {
 			out = append(out, job)
 		}
 	}
@@ -60,7 +62,7 @@ func (s *SQLiteStore) ClearDynatraceCancellationCursorFenced(project, jobID, cur
 	if err = json.Unmarshal([]byte(body), &job); err != nil {
 		return false, err
 	}
-	if job.Source.Pack != "dynatrace" || job.Source.ExecutorMode != "direct" || job.ProviderCursor != cursor || state != "stopped" && state != "incomplete" && expires.After(time.Now().UTC()) {
+	if job.Source.Pack != monitorprovider.PackDynatrace || job.Source.ExecutorMode != "direct" || job.ProviderCursor != cursor || state != "stopped" && state != "incomplete" && expires.After(time.Now().UTC()) {
 		return false, nil
 	}
 	job.ProviderCursor = ""

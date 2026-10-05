@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/telemetry"
 )
 
@@ -103,7 +104,7 @@ func buildAPMIntegrationProfiles(settings SystemSettings, tracing telemetry.Stat
 			}
 			return "available"
 		}
-		if id == "dynatrace" && dynatraceConfigured {
+		if id == monitorprovider.ProviderDynatrace && dynatraceConfigured {
 			return "configured"
 		}
 		return "available"

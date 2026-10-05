@@ -18,6 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/appdynamics"
 	"github.com/jasonczech/apexload/pkg/collectoragent"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -329,7 +330,7 @@ func resolveAppDynamicsCredentials(ctx context.Context, resolver engine.SecretRe
 // populateAppDynamicsGrant resolves only the immutable job snapshot; profile
 // updates cannot redirect an already running collector's credentials.
 func (s *Server) populateAppDynamicsGrant(ctx context.Context, grant *collectoragent.RunJob, job storage.RunMonitorJob) error {
-	if job.Source.Pack != "appdynamics" {
+	if job.Source.Pack != monitorprovider.PackAppDynamics {
 		return nil
 	}
 	if job.ConnectionSnapshot == nil || job.Source.AppDynamics == nil {

@@ -15,6 +15,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/analysis"
 	analytics "github.com/jasonczech/apexload/pkg/analysis/duckdb"
 	"github.com/jasonczech/apexload/pkg/internal/diskspace"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -248,7 +249,7 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 	points := []analysis.MetricPoint{}
 	exactPrometheusWindow := false
 	appendPoint := func(p analysis.MetricPoint) error {
-		if p.Provider != nil && p.Provider.Name == "prometheus" && p.Provider.Mode == "query_window" {
+		if p.Provider != nil && p.Provider.Name == monitorprovider.ProviderPrometheus && p.Provider.Mode == "query_window" {
 			exactPrometheusWindow = true
 			return nil
 		}

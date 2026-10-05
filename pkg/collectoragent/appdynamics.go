@@ -91,7 +91,7 @@ func VerifyInspectionJob(envelope SignedInspectionJob, key ed25519.PublicKey, co
 	if err != nil || len(key) != ed25519.PublicKeySize || len(envelope.Payload) > 96<<10 || !ed25519.Verify(key, []byte(envelope.Payload), sig) {
 		return job, errors.New("inspection signature rejected")
 	}
-	if json.Unmarshal([]byte(envelope.Payload), &job) != nil || job.ID == "" || job.ProjectID == "" || job.ConnectionID == "" || job.ConnectionRevision < 1 || job.CollectorID != collector || job.OwnerToken == "" || !job.LeaseExpiresAt.After(now) || job.LeaseExpiresAt.After(now.Add(2*time.Minute)) || (job.Kind != "test" && job.Kind != "discover" && job.Kind != "preview") || (job.Prometheus == nil && job.Config.Validate() != nil) || (job.Prometheus != nil && (job.Provider != "prometheus" || job.Prometheus.Config.Validate() != nil)) {
+	if json.Unmarshal([]byte(envelope.Payload), &job) != nil || job.ID == "" || job.ProjectID == "" || job.ConnectionID == "" || job.ConnectionRevision < 1 || job.CollectorID != collector || job.OwnerToken == "" || !job.LeaseExpiresAt.After(now) || job.LeaseExpiresAt.After(now.Add(2*time.Minute)) || (job.Kind != "test" && job.Kind != "discover" && job.Kind != "preview") || (job.Prometheus == nil && job.Config.Validate() != nil) || (job.Prometheus != nil && (job.Provider != monitorprovider.ProviderPrometheus || job.Prometheus.Config.Validate() != nil)) {
 		return InspectionJob{}, errors.New("inspection identity or lease rejected")
 	}
 	if job.Prometheus == nil && job.Kind == "preview" {
@@ -142,7 +142,7 @@ func (a *Agent) dispatchAppDynamicsJob(ctx context.Context, job RunJob, envelope
 		defer func() { <-a.providerSlots; a.stateMu.Lock(); delete(a.providerBusy, job.ID); a.stateMu.Unlock() }()
 		if job.Prometheus != nil {
 			_ = a.collectPrometheusJob(ctx, job, envelope)
-		} else if job.Pack == "dynatrace" {
+		} else if job.Pack == monitorprovider.PackDynatrace {
 			_ = a.collectDynatraceJob(ctx, job, envelope)
 		} else {
 			_ = a.collectAppDynamicsJob(ctx, job, envelope)
@@ -267,7 +267,7 @@ func (a *Agent) collectProviderJob(ctx context.Context, job RunJob, envelope Sig
 		// them visible without inventing zero-valued measurements.
 		if collectErr != nil && len(result.Coverage) == 0 {
 			key := "collection"
-			if job.Pack == "dynatrace" {
+			if job.Pack == monitorprovider.PackDynatrace {
 				key = "controller"
 			}
 			if job.Prometheus != nil {

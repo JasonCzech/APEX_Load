@@ -19,6 +19,18 @@ Live timelines, five-minute maximum delayed-data reconciliation, canonical archi
 
 See [setup and operation](PROMETHEUS_MONITORING.md) and [specification/qualification matrix](PROMETHEUS_MONITORING_SPEC.md). Real backend qualification follows fixture verification; no server version or Azure identity mode is certified solely by fixtures.
 
+## Governed provider registry
+
+AppDynamics, Dynatrace and Prometheus query sources share the durable provider pipeline. Each one's contract is a descriptor in `pkg/monitorprovider/registry.go`, and the controller adds its ingestion, direct-collection, grant and submission hooks in `pkg/api/provider_monitoring.go`. Code dispatches through the registry; a test fails if any other Go source compares a provider name.
+
+| Provider | Source pack | Scheduling | Observation | Default / minimum interval | Collector key |
+| --- | --- | --- | --- | --- | --- |
+| AppDynamics | `appdynamics` | Windowed: closed windows behind the clock | Interval buckets | 60 s / 60 s | Required |
+| Dynatrace | `dynatrace` | Cursor: resumable queries under scan budgets | Interval buckets | 60 s / 60 s | Required |
+| Prometheus query | `prometheus-query` | Polled at a fixed interval | Snapshot evaluations | 30 s / 15 s | Not used |
+
+Intervals may go up to 3,600 seconds. Dynatrace defaults to direct execution and is the provider that supports trace lookups. Collectors must advertise the provider's capability (`appdynamics.v1`, `dynatrace.v1` or `prometheus-query.v1`); a job whose collector lacks it records that provider's `collector_*_contract_unavailable` coverage reason.
+
 ## Confluence Cloud result publishing
 
 Project administrators configure **Settings → Connections → Confluence** with an HTTPS Cloud site URL, Atlassian account email, numeric space and parent page IDs, and the name of an API token held in the project's secret provider. The token value is never saved in the connection or returned by the API. Save the connection, then use **Test saved connection** to check that the account can read the parent page in the selected space. The account also needs permission to create and update pages there. Confluence Cloud's REST API supports page creation beneath a parent using `spaceId` and `parentId` ([Atlassian API reference](https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-page/)); API-token authentication uses the account email and token ([Atlassian authentication guide](https://developer.atlassian.com/cloud/confluence/basic-auth-for-rest-apis/)).

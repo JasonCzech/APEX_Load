@@ -15,9 +15,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/dynatrace"
-	"github.com/jasonczech/apexload/pkg/prometheus"
 	"io"
 	"log/slog"
 	"math"
@@ -31,6 +28,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 )
 
 // Config configures a collector agent.
@@ -170,14 +172,14 @@ func New(cfg Config) (*Agent, error) {
 		}
 		seenPacks[pack] = true
 		switch pack {
-		case "ssh-linux", "jmx", "jdbc", "otel-metrics", "appdynamics", "dynatrace", "cloudwatch", "azure-monitor", "prometheus-query":
+		case "ssh-linux", "jmx", "jdbc", "otel-metrics", monitorprovider.PackAppDynamics, monitorprovider.PackDynatrace, "cloudwatch", "azure-monitor", monitorprovider.PackPrometheusQuery:
 			if len(cfg.ControllerPublicKey) == 0 {
 				return nil, fmt.Errorf("remote adapters require signed run jobs")
 			}
 			if pack == "otel-metrics" && cfg.OTLP == nil {
 				return nil, fmt.Errorf("OTLP receiver not configured")
 			}
-			if (pack == "ssh-linux" || pack == "jmx" || pack == "jdbc" || pack == "appdynamics" || pack == "dynatrace") && len(cfg.CredentialPrivateKey) != 32 {
+			if (pack == "ssh-linux" || pack == "jmx" || pack == "jdbc" || providerCredentialKey(pack)) && len(cfg.CredentialPrivateKey) != 32 {
 				return nil, fmt.Errorf("collector encryption private key required")
 			}
 			approved := false
@@ -702,4 +704,11 @@ func readMemInfo() (totalMB, availableMB float64, ok bool) {
 		return 0, 0, false
 	}
 	return total, available, true
+}
+
+// providerCredentialKey reports whether a governed provider's grants are
+// sealed to the collector's credential key.
+func providerCredentialKey(pack string) bool {
+	d, ok := monitorprovider.Lookup(pack)
+	return ok && d.CollectorCredentialKey
 }

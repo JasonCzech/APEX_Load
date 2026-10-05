@@ -34,7 +34,7 @@ func (c *PrometheusCredentials) Runtime() prometheus.Credentials {
 }
 func hasPrometheusQueryTarget(c Config) bool {
 	for _, t := range c.AdapterTargets {
-		if t.Pack == "prometheus-query" && t.Prometheus != nil {
+		if t.Pack == monitorprovider.PackPrometheusQuery && t.Prometheus != nil {
 			return true
 		}
 	}

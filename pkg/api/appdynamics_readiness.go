@@ -8,6 +8,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/appdynamics"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -34,7 +35,7 @@ func (tr *TestRunner) validateSelectedMonitorRules(bindings *storage.MonitorBind
 		if !ok {
 			return errors.New("monitoring rule must select an enabled approved source attached to this test")
 		}
-		if source.Pack == "prometheus-query" {
+		if source.Pack == monitorprovider.PackPrometheusQuery {
 			connections, available := tr.testStore.(storage.PrometheusConnectionStore)
 			if !available {
 				return errors.New("Prometheus connection storage unavailable")
@@ -67,7 +68,7 @@ func (tr *TestRunner) validateSelectedMonitorRules(bindings *storage.MonitorBind
 			for _, query := range source.Dynatrace.Grail {
 				windowAggregate = windowAggregate || query.Kind == "metric" && query.BucketSeconds == 0 && query.Name == rule.Metric && rule.MetricID == dynatrace.GrailMetricID(query)
 			}
-			if rule.Provider != "dynatrace" || rule.MetricID == "" || rule.SourceStatistic == "" || rule.ResolutionSeconds <= 0 && !windowAggregate || rule.Backend != "classic" && rule.Backend != "grail" {
+			if rule.Provider != monitorprovider.ProviderDynatrace || rule.MetricID == "" || rule.SourceStatistic == "" || rule.ResolutionSeconds <= 0 && !windowAggregate || rule.Backend != "classic" && rule.Backend != "grail" {
 				return errors.New("Dynatrace rules require an exact provider, backend, metric identity, source statistic and resolution")
 			}
 			for _, metric := range source.Dynatrace.Metrics {
@@ -100,7 +101,7 @@ func (tr *TestRunner) validateAppDynamicsCollectionBudgets(bindings *storage.Mon
 	budgets := map[string]*accountBudget{}
 	for _, binding := range bindings.Sources {
 		for _, source := range sources {
-			if source.ID != binding.SourceID || !source.Enabled || source.Pack != "appdynamics" || source.AppDynamics == nil {
+			if source.ID != binding.SourceID || !source.Enabled || source.Pack != monitorprovider.PackAppDynamics || source.AppDynamics == nil {
 				continue
 			}
 			connection, err := connections.GetAppDynamicsConnection(source.ConnectionID)

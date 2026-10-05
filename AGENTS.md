@@ -68,7 +68,7 @@ pkg/
   analysis/      — Shared validated metric-point model and time-series correlation primitives
   rca/           — Pure root-cause analysis engine (workload qualification); no storage, provider or HTTP imports
   prometheus/    — Governed PromQL target monitoring and Azure managed Prometheus query adapter
-  monitorprovider/ — Provider-neutral monitoring topology, diagnostics, coverage and cursors
+  monitorprovider/ — Provider-neutral monitoring topology, diagnostics, coverage, cursors, and the governed provider registry (dispatch through it; never compare provider names)
   appdynamics/   — Classic AppDynamics Controller and Events Service client, governed discovery and typed test monitoring
   dynatrace/     — Dynatrace SaaS Classic and Grail client, governed discovery, bounded queries and typed test monitoring
   Java execution stack:

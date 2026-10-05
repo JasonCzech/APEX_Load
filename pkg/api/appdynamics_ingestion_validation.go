@@ -13,6 +13,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -60,7 +61,7 @@ func validateAppDynamicsProviderBatchCursor(job storage.RunMonitorJob, payload *
 		settle = 120
 	}
 	for i, p := range payload.Points {
-		if p.Provider == nil || p.Validate() != nil || p.Kind != analysis.KindGauge || p.Provider.Name != "appdynamics" {
+		if p.Provider == nil || p.Validate() != nil || p.Kind != analysis.KindGauge || p.Provider.Name != monitorprovider.ProviderAppDynamics {
 			return errors.New("invalid AppDynamics metric measurement")
 		}
 		m := *p.Provider

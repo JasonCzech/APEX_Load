@@ -6,6 +6,8 @@ import (
 	"math"
 	"sort"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 // MonitorRule is a terminal guardrail. It deliberately has no runtime stop flag.
@@ -45,7 +47,7 @@ func (r MonitorRule) Validate() error {
 	if len(r.QueryID) > 128 || r.EvaluationMode != "" && r.EvaluationMode != "series_points" && r.EvaluationMode != "exact_window" {
 		return errors.New("invalid monitoring evaluation mode")
 	}
-	if r.Provider != "" && r.Provider != "appdynamics" && r.Provider != "dynatrace" && r.Provider != "prometheus" || len(r.Backend) > 64 || len(r.MetricID) > 256 || len(r.SourceStatistic) > 64 || r.ResolutionSeconds < 0 || r.ResolutionSeconds > 86400 || len(r.EntityIDs) > 16 {
+	if r.Provider != "" && !monitorprovider.KnownProviderName(r.Provider) || len(r.Backend) > 64 || len(r.MetricID) > 256 || len(r.SourceStatistic) > 64 || r.ResolutionSeconds < 0 || r.ResolutionSeconds > 86400 || len(r.EntityIDs) > 16 {
 		return errors.New("invalid provider monitoring series selection")
 	}
 	for k, v := range r.EntityIDs {
@@ -86,7 +88,7 @@ func (r MonitorRule) operation() string {
 }
 func EvaluateMonitorRule(rule MonitorRule, points []MetricPoint, start, end time.Time) MonitorRuleResult {
 	for _, p := range points {
-		if p.Source == rule.SourceID && p.Provider != nil && p.Provider.Name == "prometheus" && (rule.Provider == "" || rule.Provider == "prometheus") {
+		if p.Source == rule.SourceID && p.Provider != nil && p.Provider.Name == monitorprovider.ProviderPrometheus && (rule.Provider == "" || rule.Provider == monitorprovider.ProviderPrometheus) {
 			return evaluatePrometheusRule(rule, points, start, end)
 		}
 	}

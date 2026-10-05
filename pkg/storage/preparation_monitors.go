@@ -4,11 +4,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"maps"
 	"reflect"
 	"slices"
+
+	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 // PreparationMonitorSnapshot is immutable execution evidence. Definitions may
@@ -103,7 +105,7 @@ func preparationMonitorSnapshotTx(tx *storeTx, project, run string) (*Preparatio
 			return nil, err
 		}
 		snapshot.Sources[source.ID] = source
-		if source.Pack == "prometheus-query" {
+		if source.Pack == monitorprovider.PackPrometheusQuery {
 			var raw string
 			if err = tx.QueryRow(`SELECT payload_json FROM prometheus_connections WHERE id=? AND project_id=?`, source.ConnectionID, project).Scan(&raw); err != nil {
 				if errors.Is(err, sql.ErrNoRows) {
@@ -123,7 +125,7 @@ func preparationMonitorSnapshotTx(tx *storeTx, project, run string) (*Preparatio
 			}
 			snapshot.PrometheusConnections[source.ID] = c.Snapshot()
 		}
-		if source.Pack == "dynatrace" {
+		if source.Pack == monitorprovider.PackDynatrace {
 			c, e := scanDynatraceConnection(tx.QueryRow(`SELECT `+dynatraceConnectionColumns+` FROM dynatrace_connections WHERE id=? AND project_id=?`, source.ConnectionID, project))
 			if errors.Is(e, sql.ErrNoRows) {
 				continue
@@ -136,7 +138,7 @@ func preparationMonitorSnapshotTx(tx *storeTx, project, run string) (*Preparatio
 			}
 			snapshot.DynatraceConnections[source.ID] = c.Snapshot()
 		}
-		if source.Pack == "appdynamics" {
+		if source.Pack == monitorprovider.PackAppDynamics {
 			var raw string
 			if err = tx.QueryRow(`SELECT payload_json FROM appdynamics_connections WHERE id=? AND project_id=?`, source.ConnectionID, project).Scan(&raw); err != nil {
 				if errors.Is(err, sql.ErrNoRows) {

@@ -6,6 +6,8 @@ import (
 	"math"
 	"sort"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 // bucketPrometheusSeries resamples the declared evaluation grid for display.
@@ -124,8 +126,8 @@ func CompatibleOverlay(left, right MetricPoint) bool {
 	if left.Unit == "" || right.Unit == "" || left.Unit != right.Unit || left.Kind != right.Kind || left.InputKind != right.InputKind {
 		return false
 	}
-	leftPrometheus := left.Provider != nil && left.Provider.Name == "prometheus"
-	rightPrometheus := right.Provider != nil && right.Provider.Name == "prometheus"
+	leftPrometheus := left.Provider != nil && left.Provider.Name == monitorprovider.ProviderPrometheus
+	rightPrometheus := right.Provider != nil && right.Provider.Name == monitorprovider.ProviderPrometheus
 	if leftPrometheus || rightPrometheus {
 		return leftPrometheus && rightPrometheus && samePrometheusIdentity(left, right)
 	}

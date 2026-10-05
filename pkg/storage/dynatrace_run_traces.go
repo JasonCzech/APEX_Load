@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 const MaxDynatraceRunTraceIDs = 64
@@ -113,7 +115,7 @@ func (s *SQLiteStore) RecordDynatraceRunTraceIDsFencedContext(ctx context.Contex
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
-		if job.Source.Pack != "dynatrace" {
+		if job.Source.Pack != monitorprovider.PackDynatrace {
 			continue
 		}
 		if job.ProjectID != project || job.RunID != run || job.DynatraceSnapshot == nil || job.DynatraceSnapshot.ProjectID != project || job.Source.ProjectID != project || job.Source.Dynatrace == nil || job.Source.Dynatrace.ProjectID != project {

@@ -2,6 +2,8 @@ package api
 
 import (
 	"errors"
+
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -42,7 +44,7 @@ func (tr *TestRunner) translateLegacyDynatraceBindings(project, scenario string,
 	}
 	for _, binding := range bindings {
 		for _, source := range sources {
-			if source.ID == binding.SourceID && source.Pack == "dynatrace" {
+			if source.ID == binding.SourceID && source.Pack == monitorprovider.PackDynatrace {
 				return nil, errors.New("legacy Dynatrace capture cannot be combined with native Dynatrace bindings")
 			}
 		}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/compute"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -72,7 +73,7 @@ func (tr *TestRunner) preparationRevision(id string) (string, error) {
 			for _, binding := range snapshot.Bindings.Sources {
 				if binding.SourceID == source.ID {
 					snapshot.Sources = append(snapshot.Sources, source)
-					if source.Pack == "appdynamics" {
+					if source.Pack == monitorprovider.PackAppDynamics {
 						if connections, ok := tr.testStore.(storage.AppDynamicsConnectionStore); ok {
 							c, e := connections.GetAppDynamicsConnection(source.ConnectionID)
 							if e != nil {
@@ -81,7 +82,7 @@ func (tr *TestRunner) preparationRevision(id string) (string, error) {
 							snapshot.Connections = append(snapshot.Connections, c.Revision)
 						}
 					}
-					if source.Pack == "prometheus-query" {
+					if source.Pack == monitorprovider.PackPrometheusQuery {
 						if connections, ok := tr.testStore.(storage.PrometheusConnectionStore); ok {
 							c, e := connections.GetPrometheusConnection(source.ConnectionID)
 							if e != nil {
@@ -90,7 +91,7 @@ func (tr *TestRunner) preparationRevision(id string) (string, error) {
 							snapshot.Connections = append(snapshot.Connections, c.Revision)
 						}
 					}
-					if source.Pack == "dynatrace" {
+					if source.Pack == monitorprovider.PackDynatrace {
 						if connections, ok := tr.testStore.(storage.DynatraceConnectionStore); ok {
 							c, e := connections.GetDynatraceConnection(source.ConnectionID)
 							if e != nil {
@@ -527,7 +528,7 @@ func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
 			if source.ID != binding.SourceID {
 				continue
 			}
-			if source.Pack == "appdynamics" {
+			if source.Pack == monitorprovider.PackAppDynamics {
 				connections, ok := tr.testStore.(storage.AppDynamicsConnectionStore)
 				if !ok {
 					return errors.New("AppDynamics connection storage unavailable")
@@ -563,7 +564,7 @@ func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
 						return err
 					}
 				}
-			} else if source.Pack == "prometheus-query" {
+			} else if source.Pack == monitorprovider.PackPrometheusQuery {
 				if err := tr.validatePreparedPrometheus(readinessContext, source, record.ProjectID, goals); err != nil {
 					return err
 				}

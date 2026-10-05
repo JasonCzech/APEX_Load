@@ -89,7 +89,7 @@ func SignRunJob(job RunJob, key ed25519.PrivateKey) (SignedRunJob, error) {
 	if err != nil {
 		return SignedRunJob{}, err
 	}
-	if len(body) > 96<<10 || job.Pack != "appdynamics" && job.Pack != "dynatrace" && job.Prometheus == nil && len(body) > 32768 {
+	if len(body) > 96<<10 || job.Pack != monitorprovider.PackAppDynamics && job.Pack != monitorprovider.PackDynatrace && job.Prometheus == nil && len(body) > 32768 {
 		return SignedRunJob{}, errors.New("monitor job exceeds payload limit")
 	}
 	return SignedRunJob{Payload: string(body), Signature: base64.RawStdEncoding.EncodeToString(ed25519.Sign(key, body))}, nil
@@ -107,10 +107,10 @@ func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, 
 	if err = json.Unmarshal([]byte(signed.Payload), &job); err != nil {
 		return job, err
 	}
-	if job.Pack != "appdynamics" && job.Pack != "dynatrace" && job.Prometheus == nil && len(signed.Payload) > 32768 {
+	if job.Pack != monitorprovider.PackAppDynamics && job.Pack != monitorprovider.PackDynatrace && job.Prometheus == nil && len(signed.Payload) > 32768 {
 		return RunJob{}, errors.New("monitor job exceeds payload limit")
 	}
-	if job.MaxBatches < 0 || job.MaxBatches > 32 || job.Pack != "appdynamics" && job.Pack != "dynatrace" && job.Prometheus == nil && job.MaxBatches > 1 {
+	if job.MaxBatches < 0 || job.MaxBatches > 32 || job.Pack != monitorprovider.PackAppDynamics && job.Pack != monitorprovider.PackDynatrace && job.Prometheus == nil && job.MaxBatches > 1 {
 		return RunJob{}, errors.New("monitor grant batch budget rejected")
 	}
 	if job.CollectorID != collector || job.ID == "" || job.ProjectID == "" || job.RunID == "" || job.SourceID == "" || job.SourceRevision < 1 || job.NextSequence < 0 || job.IntervalSeconds < 1 || job.IntervalSeconds > 3600 || job.StartedAt.IsZero() || job.StartedAt.After(now.Add(30*time.Second)) || !job.ExpiresAt.After(now) || !job.LeaseExpiresAt.After(now) || job.LeaseExpiresAt.After(now.Add(2*time.Minute)) || job.LeaseExpiresAt.After(job.ExpiresAt) {
@@ -124,7 +124,7 @@ func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, 
 		if job.Prometheus.Selection.Alerts {
 			total++
 		}
-		if job.Pack != "prometheus-query" || job.Prometheus.Validate() != nil || job.Prometheus.Selection.ProjectID != job.ProjectID || job.Prometheus.Selection.CollectionID != "" && job.Prometheus.Selection.CollectionID != job.ID || total > 256 || !job.Reconciling && len(job.TerminalWindows) > 0 {
+		if job.Pack != monitorprovider.PackPrometheusQuery || job.Prometheus.Validate() != nil || job.Prometheus.Selection.ProjectID != job.ProjectID || job.Prometheus.Selection.CollectionID != "" && job.Prometheus.Selection.CollectionID != job.ID || total > 256 || !job.Reconciling && len(job.TerminalWindows) > 0 {
 			return RunJob{}, errors.New("Prometheus grant selection rejected")
 		}
 	}
@@ -149,7 +149,7 @@ func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, 
 	} else if isManagementPack(job.Pack) {
 		return RunJob{}, errors.New("management job requires explicit versioned approval")
 	}
-	if job.Pack == "dynatrace" && (job.Dynatrace == nil || job.Dynatrace.Validate() != nil || job.Dynatrace.Selection.ProjectID != job.ProjectID || job.IntervalSeconds < 60 || job.AppDynamics != nil || job.Prometheus != nil || job.Management != nil) {
+	if job.Pack == monitorprovider.PackDynatrace && (job.Dynatrace == nil || job.Dynatrace.Validate() != nil || job.Dynatrace.Selection.ProjectID != job.ProjectID || job.IntervalSeconds < 60 || job.AppDynamics != nil || job.Prometheus != nil || job.Management != nil) {
 		return RunJob{}, errors.New("Dynatrace configuration or interval rejected")
 	}
 	return job, nil
@@ -221,11 +221,11 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 				a.jobScanManagement[job.ID] = envelope
 				return nil
 			}
-			if job.Pack == "appdynamics" || job.Pack == "dynatrace" || job.Prometheus != nil {
+			if job.Pack == monitorprovider.PackAppDynamics || job.Pack == monitorprovider.PackDynatrace || job.Prometheus != nil {
 				if !slices.Contains(a.cfg.Packs, job.Pack) || job.UnavailableReason != "" {
 					return errors.New("provider pack is disabled or temporarily unavailable")
 				}
-				if job.Pack == "dynatrace" {
+				if job.Pack == monitorprovider.PackDynatrace {
 					if _, exists := a.dynatraceJobs[job.ID]; exists || len(a.dynatraceJobs) < maxCollectorSpoolJobs {
 						a.rememberDynatraceJob(job)
 					}

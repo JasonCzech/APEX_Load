@@ -10,6 +10,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -159,7 +160,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			}
 			eligibleMetrics[p.Source][p.Provider.EntityIDs["application"]+":"+p.MetricName] = true
 		}
-		if p.Provider != nil && p.Provider.Name == "prometheus" && p.Provider.Mode == "evaluation_point" {
+		if p.Provider != nil && p.Provider.Name == monitorprovider.ProviderPrometheus && p.Provider.Mode == "evaluation_point" {
 			key := p.Source + ":" + p.Provider.QueryID
 			counts := freshnessCounts[key]
 			counts[0]++
@@ -171,7 +172,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			}
 			freshnessCounts[key] = counts
 		}
-		if p.Provider != nil && p.Provider.Name == "prometheus" && p.Provider.Mode == "evaluation_point" && p.Value != nil && p.Quality == analysis.QualityValid && p.Provider.Settled {
+		if p.Provider != nil && p.Provider.Name == monitorprovider.ProviderPrometheus && p.Provider.Mode == "evaluation_point" && p.Value != nil && p.Quality == analysis.QualityValid && p.Provider.Settled {
 			key := p.Source + ":" + p.Provider.QueryID
 			if prometheusEvaluations[key] == nil {
 				prometheusEvaluations[key] = map[int64]map[string]bool{}
@@ -211,7 +212,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			}
 			for _, receipt := range page {
 				afterJob, afterSequence = receipt.JobID, receipt.Sequence
-				if packs[receipt.JobID] == "appdynamics" || packs[receipt.JobID] == "prometheus-query" || packs[receipt.JobID] == "dynatrace" {
+				if monitorprovider.Canonical(packs[receipt.JobID]) {
 					continue
 				}
 				evidence, err := readMonitorEvidence(ctx, project, run, receipt)
@@ -442,7 +443,7 @@ func persistRunMonitorManagementArchive(ctx context.Context, project, run string
 				break
 			}
 			for _, receipt := range page {
-				if packs[receipt.JobID] == "appdynamics" || packs[receipt.JobID] == "prometheus-query" || packs[receipt.JobID] == "dynatrace" {
+				if monitorprovider.Canonical(packs[receipt.JobID]) {
 					afterJob, afterSequence = receipt.JobID, receipt.Sequence
 					continue
 				}
@@ -534,7 +535,7 @@ func manifestLoadStart(manifest *RunArchiveManifest) time.Time {
 // A captured percentile or unweighted average is still evidence even when it
 // cannot support a whole-run acceptance statistic.
 func monitorPointSatisfiesCapture(point analysis.MetricPoint, start, end time.Time) bool {
-	if point.Provider != nil && point.Provider.Name == "prometheus" {
+	if point.Provider != nil && point.Provider.Name == monitorprovider.ProviderPrometheus {
 		return point.Value != nil && point.Quality == analysis.QualityValid && point.Validate() == nil && point.Provider.Settled && !point.TimestampUTC.Before(start) && !point.TimestampUTC.After(end)
 	}
 	return point.Provider != nil && !point.Provider.Synthetic && point.Value != nil && point.Quality == analysis.QualityValid && point.Validate() == nil && point.Provider.Settled && !point.Provider.BucketStart.Before(start) && !point.Provider.BucketEnd.After(end)

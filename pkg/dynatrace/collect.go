@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 type operation struct {
@@ -588,7 +589,7 @@ func ValidateResult(s Selection, cfg Config, from, to time.Time, runID string, r
 		}
 	}
 	for _, p := range result.Points {
-		if p.Validate() != nil || p.ProjectID != s.ProjectID || p.RunID != "" && p.RunID != runID || p.Provider == nil || p.Provider.Name != "dynatrace" || p.Provider.Backend != backends[p.MetricName] || metrics[p.MetricName] != p.Provider.MetricID || units[p.MetricName] != "" && units[p.MetricName] != p.Unit || stats[p.MetricName] != p.Provider.Statistic || !p.Provider.BucketEnd.After(from) || !p.Provider.BucketStart.Before(to) || p.Provider.BucketEnd.After(to.Add(24*time.Hour)) {
+		if p.Validate() != nil || p.ProjectID != s.ProjectID || p.RunID != "" && p.RunID != runID || p.Provider == nil || p.Provider.Name != monitorprovider.ProviderDynatrace || p.Provider.Backend != backends[p.MetricName] || metrics[p.MetricName] != p.Provider.MetricID || units[p.MetricName] != "" && units[p.MetricName] != p.Unit || stats[p.MetricName] != p.Provider.Statistic || !p.Provider.BucketEnd.After(from) || !p.Provider.BucketStart.Before(to) || p.Provider.BucketEnd.After(to.Add(24*time.Hour)) {
 			return errors.New("invalid selected Dynatrace observation")
 		}
 		if !validDimensions(p.Dimensions) || !validDimensions(p.Provider.EntityIDs) {
@@ -637,7 +638,7 @@ func ValidateResult(s Selection, cfg Config, from, to time.Time, runID string, r
 	}
 	allowedProperties := map[string]bool{"duration_ms": true, "correlation": true, "run_id": true, "trace_id": true, "span_id": true, "parent_span_id": true, "query_name": true, "event_type": true, "display_id": true, "start_time": true, "end_time": true, "status": true, "evidence_scope": true}
 	for _, d := range result.Evidence {
-		if d.Provider != "dynatrace" || d.ApplicationID != "" || d.ID == "" || len(d.ID) > 256 || len(d.Summary) > 4096 || len(d.Properties) > 16 || !validDimensions(d.EntityIDs) || d.TimestampUTC.IsZero() || d.TimestampUTC.Location() != time.UTC || len(d.Status) > 128 || len(d.Severity) > 128 {
+		if d.Provider != monitorprovider.ProviderDynatrace || d.ApplicationID != "" || d.ID == "" || len(d.ID) > 256 || len(d.Summary) > 4096 || len(d.Properties) > 16 || !validDimensions(d.EntityIDs) || d.TimestampUTC.IsZero() || d.TimestampUTC.Location() != time.UTC || len(d.Status) > 128 || len(d.Severity) > 128 {
 			return errors.New("invalid Dynatrace diagnostic")
 		}
 		switch d.Kind {

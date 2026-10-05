@@ -13,6 +13,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -70,7 +71,7 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 		for _, job := range jobs {
 			sources[job.ID] = job.Source.ID
 			jobsByID[job.ID] = job
-			if job.Source.Pack == "dynatrace" {
+			if job.Source.Pack == monitorprovider.PackDynatrace {
 				traceProofs[job.ID] = map[string]bool{}
 				for _, id := range job.RunTraceIDs {
 					traceProofs[job.ID][id] = true
@@ -82,7 +83,7 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 		}); ok {
 			keys := make([]string, 0, len(heads))
 			for _, h := range heads {
-				if jobsByID[h.JobID].Source.Pack == "prometheus-query" {
+				if jobsByID[h.JobID].Source.Pack == monitorprovider.PackPrometheusQuery {
 					keys = append(keys, h.Key)
 				}
 			}
@@ -150,7 +151,7 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 			if err := storage.VerifyProviderHeadContent(h, d); err != nil {
 				return out, err
 			}
-			if d.Provider == "dynatrace" && d.Properties["trace_id"] != "" {
+			if d.Provider == monitorprovider.ProviderDynatrace && d.Properties["trace_id"] != "" {
 				d.Properties = maps.Clone(d.Properties)
 				if d.Properties["correlation"] == "trace_id" {
 					d.Properties["correlation"] = "entity_time"
@@ -163,7 +164,7 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 			if sources[h.JobID] == "" {
 				return out, errors.New("canonical diagnostic source unavailable")
 			}
-			if job := jobsByID[h.JobID]; job.Source.Pack == "prometheus-query" {
+			if job := jobsByID[h.JobID]; job.Source.Pack == monitorprovider.PackPrometheusQuery {
 				first := d.TimestampUTC
 				if firstHead, ok := firstHeads["first:"+h.Key]; ok {
 					firstBatch, _, err := readHead(firstHead)
@@ -218,8 +219,12 @@ func projectPrometheusDiagnostic(d appdynamics.Diagnostic, first time.Time, job 
 // This is shared by direct workers and authenticated collector submissions.
 // Artifacts are durable before their receipt, cursor and canonical heads commit.
 func (s *Server) ingestAppDynamicsBatch(ctx context.Context, job storage.RunMonitorJob, sequence int64, payload storage.ProviderMonitorBatch, term executionLeaseTerm) error {
-	if job.Source.Pack == "prometheus-query" {
-		return s.ingestPrometheusBatch(ctx, job, sequence, payload, term)
+	if job.Source.Pack != monitorprovider.PackAppDynamics {
+		// Callers holding another governed provider's job reach its own ingestion.
+		if provider, governed := lookupProvider(job.Source.Pack); governed {
+			return provider.Ingest(s, ctx, job, sequence, payload, term)
+		}
+		return errors.New("invalid AppDynamics batch")
 	}
 	if job.ConnectionSnapshot == nil || job.Source.AppDynamics == nil || sequence < 0 || len(payload.Points) > 512 || len(payload.Evidence) > 100 || len(payload.Coverage) > 128 || len(payload.Topology) > 256 {
 		return errors.New("invalid AppDynamics batch")
@@ -229,7 +234,7 @@ func (s *Server) ingestAppDynamicsBatch(ctx context.Context, job storage.RunMoni
 		return err
 	}
 	for i, p := range payload.Points {
-		if p.Validate() != nil || p.Provider == nil || p.Provider.Name != "appdynamics" || p.ProjectID != job.ProjectID || p.RunID != job.RunID || p.Source != job.Source.ID || p.ScenarioID != job.ScenarioID || p.Host != job.Source.CollectorID || p.DatasetID != "" || !p.ReceivedAt.IsZero() || p.ActiveRuntimeMS != nil || p.Provider.BucketEnd.After(now.Add(time.Minute)) || p.Provider.BucketEnd.Before(job.StartedAt.Truncate(24*time.Hour)) {
+		if p.Validate() != nil || p.Provider == nil || p.Provider.Name != monitorprovider.ProviderAppDynamics || p.ProjectID != job.ProjectID || p.RunID != job.RunID || p.Source != job.Source.ID || p.ScenarioID != job.ScenarioID || p.Host != job.Source.CollectorID || p.DatasetID != "" || !p.ReceivedAt.IsZero() || p.ActiveRuntimeMS != nil || p.Provider.BucketEnd.After(now.Add(time.Minute)) || p.Provider.BucketEnd.Before(job.StartedAt.Truncate(24*time.Hour)) {
 			return errors.New("invalid or misattributed AppDynamics point")
 		}
 		if !slices.Contains(job.Source.AppDynamics.Applications, p.Provider.EntityIDs["application"]) {

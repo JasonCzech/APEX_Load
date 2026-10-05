@@ -4,6 +4,8 @@ import (
 	"errors"
 	"math"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 // CorrelationScore retains coverage and lag alongside an optional coefficient.
@@ -46,7 +48,7 @@ func LaggedCorrelation(left, right []MetricPoint, from, to time.Time, bucketSeco
 		shifted := make([]MetricPoint, 0, len(right))
 		for _, p := range right {
 			p.TimestampUTC = p.TimestampUTC.Add(-time.Duration(lag) * time.Second)
-			if p.Provider != nil && p.Provider.Name == "prometheus" && p.Provider.Mode == "analysis_bucket" {
+			if p.Provider != nil && p.Provider.Name == monitorprovider.ProviderPrometheus && p.Provider.Mode == "analysis_bucket" {
 				// Shift only the authorized calculation copy. Its explicit display
 				// interval follows that copy's timestamp; response provenance stays
 				// at the original source-aligned interval.

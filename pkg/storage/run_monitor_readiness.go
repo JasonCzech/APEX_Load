@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 // ValidateRunMonitorReadiness checks the exact Start readiness contract inside
@@ -58,7 +60,7 @@ func validateCollectorRunReadiness(project, collector string, packs, destination
 		return errors.New("invalid collector readiness")
 	}
 	for _, pack := range packs {
-		if pack != "go-runtime" && pack != "linux-hosts" && pack != "prometheus" && pack != "ssh-linux" && pack != "otel-metrics" && pack != "jmx" && pack != "jdbc" && pack != "cloudwatch" && pack != "azure-monitor" && pack != "appdynamics" && pack != "appdynamics.v1" && pack != "prometheus-query" && pack != "prometheus-query.v1" && pack != "prometheus-scrape.v2" && pack != "dynatrace" && pack != "dynatrace.v1" {
+		if pack != "go-runtime" && pack != "linux-hosts" && pack != "prometheus" && pack != "ssh-linux" && pack != "otel-metrics" && pack != "jmx" && pack != "jdbc" && pack != "cloudwatch" && pack != "azure-monitor" && !monitorprovider.Canonical(pack) && !monitorprovider.IsCapabilityPack(pack) && pack != "prometheus-scrape.v2" {
 			return errors.New("unsupported collector pack")
 		}
 	}
@@ -87,11 +89,11 @@ func validateCollectorRunReadiness(project, collector string, packs, destination
 			}
 		}
 		for _, pack := range packs {
-			if pack == "appdynamics" || pack == "dynatrace" {
+			if provider, governed := monitorprovider.Lookup(pack); governed && provider.CollectorCredentialKey {
+				// Sealed provider grants need the collector key and HTTPS.
 				u, e := url.Parse(raw)
 				valid = valid || (hasKey && e == nil && u.Scheme == "https" && u.Host != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "")
-			}
-			if pack == "prometheus-query" {
+			} else if governed {
 				u, e := url.Parse(raw)
 				valid = valid || (e == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "")
 			}

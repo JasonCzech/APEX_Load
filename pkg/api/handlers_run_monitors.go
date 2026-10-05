@@ -234,9 +234,7 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 		return
 	}
 	now := time.Now().UTC()
-	appDynamicsContract := false
-	prometheusContract := false
-	dynatraceContract := false
+	providerContracts := map[string]bool{}
 	if advertisement := r.Header.Get("X-APEX-Monitor-Readiness"); advertisement != "" {
 		var ad collectoragent.RunJobReadiness
 		if len(advertisement) > 8192 || json.Unmarshal([]byte(advertisement), &ad) != nil || ad.SigningKey != base64.StdEncoding.EncodeToString(key.Public().(ed25519.PublicKey)) {
@@ -252,25 +250,16 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 			return
 		}
 		for _, contract := range ad.Contracts {
+			if provider, governed := providerForCapability(contract); governed {
+				if !slices.Contains(ad.Packs, provider.Pack) {
+					writeError(w, 400, provider.ContractLabel+" contract requires pack approval")
+					return
+				}
+				providerContracts[provider.Pack] = true
+				ad.Packs = append(ad.Packs, contract)
+				continue
+			}
 			switch contract {
-			case collectoragent.AppDynamicsBatchContract:
-				if !slices.Contains(ad.Packs, "appdynamics") {
-					writeError(w, 400, "AppDynamics contract requires pack approval")
-					return
-				}
-				appDynamicsContract = true
-			case collectoragent.DynatraceBatchContract:
-				if !slices.Contains(ad.Packs, "dynatrace") {
-					writeError(w, 400, "Dynatrace contract requires pack approval")
-					return
-				}
-				dynatraceContract = true
-			case collectoragent.PrometheusBatchContract:
-				if !slices.Contains(ad.Packs, "prometheus-query") {
-					writeError(w, 400, "Prometheus query contract requires pack approval")
-					return
-				}
-				prometheusContract = true
 			case "prometheus-scrape.v2":
 				if !slices.Contains(ad.Packs, "prometheus") {
 					writeError(w, 400, "Prometheus scrape contract requires pack approval")
@@ -349,28 +338,12 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 			job.LoadEndedAt = j.LoadEndedAt
 			job.DrainDeadline = j.DrainDeadline
 		}
-		if j.Source.Pack == "appdynamics" {
-			if !appDynamicsContract {
+		if provider, governed := lookupProvider(j.Source.Pack); governed {
+			if !providerContracts[provider.Pack] {
 				continue
 			}
-			if err := s.populateAppDynamicsGrant(r.Context(), &job, j); err != nil {
-				job.UnavailableReason = "AppDynamics credential unavailable"
-			}
-		}
-		if j.Source.Pack == "prometheus-query" {
-			if !prometheusContract {
-				continue
-			}
-			if err := s.populatePrometheusGrant(r.Context(), &job, j); err != nil {
-				job.UnavailableReason = "Prometheus executor unavailable"
-			}
-		}
-		if j.Source.Pack == "dynatrace" {
-			if !dynatraceContract {
-				continue
-			}
-			if err := s.populateDynatraceGrant(r.Context(), &job, j); err != nil {
-				job.UnavailableReason = "Dynatrace credential or quota unavailable"
+			if err := provider.PopulateGrant(s, r.Context(), &job, j); err != nil {
+				job.UnavailableReason = provider.GrantUnavailable
 			}
 		}
 		if j.Source.CredentialRef != "" {
@@ -440,40 +413,13 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 		writeError(w, 400, "management source requires typed poll evidence")
 		return
 	}
-	if job.Source.Pack == "dynatrace" {
-		if !dynatraceGrantMatchesJob(grant, *job, c.ID) || batch.Sequence < 0 || batch.Sequence > grant.NextSequence+int64(max(1, grant.MaxBatches))-1 {
-			writeError(w, 403, "Dynatrace grant does not match job")
-			return
-		}
-		if !batch.QueryFromUTC.Equal(grant.QueryFromUTC) || !batch.QueryUntilUTC.Equal(grant.QueryUntilUTC) {
-			writeError(w, 400, "Dynatrace query does not match signed window")
+	if provider, governed := lookupProvider(job.Source.Pack); governed {
+		if status, message := provider.ValidateSubmission(grant, *job, c.ID, batch); status != 0 {
+			writeError(w, status, message)
 			return
 		}
 		payload := storage.ProviderMonitorBatch{Points: batch.Points, Evidence: batch.Evidence, Coverage: batch.Coverage, QueryWindowEnd: batch.QueryWindowEnd, Final: batch.Final, Topology: batch.Topology, Progress: batch.Progress, QueryFromUTC: batch.QueryFromUTC, QueryUntilUTC: batch.QueryUntilUTC}
-		if err := s.ingestDynatraceBatch(r.Context(), *job, batch.Sequence, payload, executionLeaseTerm{}); err != nil {
-			writeError(w, 409, err.Error())
-			return
-		}
-		writeJSON(w, 200, map[string]any{"accepted": true, "sequence": batch.Sequence})
-		return
-	}
-	if job.Source.CanonicalProvider() {
-		validProvider := grant.Pack == job.Source.Pack
-		if job.Source.Pack == "appdynamics" {
-			validProvider = validProvider && grant.AppDynamics != nil && job.ConnectionSnapshot != nil && grant.AppDynamics.Config.Endpoint == job.ConnectionSnapshot.Config.Endpoint
-		} else {
-			validProvider = validProvider && grant.Prometheus != nil && job.PrometheusConnectionSnapshot != nil && grant.Prometheus.Config.Endpoint == job.PrometheusConnectionSnapshot.Config.Endpoint
-		}
-		if job.Source.CollectorID != c.ID || grant.SourceID != job.Source.ID || grant.SourceRevision != job.Source.Revision || grant.RunID != job.RunID || !validProvider || batch.Sequence > grant.NextSequence+int64(max(1, grant.MaxBatches))-1 {
-			writeError(w, 403, "provider grant does not match job")
-			return
-		}
-		if batch.Sequence == job.NextSequence && (!batch.QueryFromUTC.Equal(grant.QueryFromUTC) || !batch.QueryUntilUTC.Equal(grant.QueryUntilUTC)) {
-			writeError(w, 400, "query continuation does not match signed window")
-			return
-		}
-		payload := storage.ProviderMonitorBatch{Points: batch.Points, Evidence: batch.Evidence, Coverage: batch.Coverage, QueryWindowEnd: batch.QueryWindowEnd, Final: batch.Final, Topology: batch.Topology, Progress: batch.Progress, QueryFromUTC: batch.QueryFromUTC, QueryUntilUTC: batch.QueryUntilUTC}
-		if err := s.ingestAppDynamicsBatch(r.Context(), *job, batch.Sequence, payload, executionLeaseTerm{}); err != nil {
+		if err := provider.Ingest(s, r.Context(), *job, batch.Sequence, payload, executionLeaseTerm{}); err != nil {
 			writeError(w, 409, err.Error())
 			return
 		}

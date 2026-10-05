@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/jasonczech/apexload/pkg/appdynamics"
-	"github.com/jasonczech/apexload/pkg/storage"
 	"sync"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func (s *Server) startAppDynamicsMonitoring() {
@@ -89,7 +91,8 @@ func (s *Server) startAppDynamicsMonitoring() {
 			}
 			mu.Unlock()
 			for _, job := range jobs {
-				if !runMonitoringEnabled(job.ProjectID) || !job.Source.CanonicalProvider() {
+				provider, governed := lookupProvider(job.Source.Pack)
+				if !runMonitoringEnabled(job.ProjectID) || !governed {
 					continue
 				}
 				if job.State == "reconciling" && !job.ExpiresAt.After(time.Now()) {
@@ -121,26 +124,17 @@ func (s *Server) startAppDynamicsMonitoring() {
 							next[work.ID] = time.Now().Add(5 * time.Second)
 						} else if current != nil && (current.QueryOffset > 0 || current.QueryTime != nil) {
 							next[work.ID] = time.Now()
-						} else if current != nil && current.State == "reconciling" && current.Source.Pack == "dynatrace" {
-							next[work.ID] = time.Now().Add(time.Duration(max(60, work.Source.IntervalSeconds)) * time.Second)
+						} else if current != nil && current.State == "reconciling" && provider.Scheduling == monitorprovider.SchedulingCursor {
+							// A cursor provider reconciles on its next full interval.
+							next[work.ID] = time.Now().Add(time.Duration(max(provider.MinIntervalSeconds, work.Source.IntervalSeconds)) * time.Second)
 						} else if current != nil && current.State == "reconciling" {
 							next[work.ID] = time.Now().Add(15 * time.Second)
 						} else {
-							minimum := 60
-							if work.Source.Pack == "prometheus-query" {
-								minimum = 15
-							}
-							next[work.ID] = time.Now().Add(time.Duration(max(minimum, work.Source.IntervalSeconds)) * time.Second)
+							next[work.ID] = time.Now().Add(time.Duration(max(provider.MinIntervalSeconds, work.Source.IntervalSeconds)) * time.Second)
 						}
 						mu.Unlock()
 					}()
-					if work.Source.Pack == "prometheus-query" {
-						s.collectDirectPrometheus(ctx, work)
-					} else if work.Source.Pack == "dynatrace" {
-						s.collectDirectDynatrace(ctx, work)
-					} else {
-						s.collectDirectAppDynamics(ctx, work)
-					}
+					provider.CollectDirect(s, ctx, work)
 				}) {
 					<-slots
 					mu.Lock()

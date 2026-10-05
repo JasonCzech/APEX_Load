@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -117,7 +118,7 @@ func (tr *TestRunner) validatePrometheusCollectionBudgets(bindings *storage.Moni
 	budgets := map[string]*budget{}
 	for _, binding := range bindings.Sources {
 		for _, source := range sources {
-			if source.ID != binding.SourceID || !source.Enabled || source.Pack != "prometheus-query" || source.Prometheus == nil {
+			if source.ID != binding.SourceID || !source.Enabled || source.Pack != monitorprovider.PackPrometheusQuery || source.Prometheus == nil {
 				continue
 			}
 			connection, err := connections.GetPrometheusConnection(source.ConnectionID)

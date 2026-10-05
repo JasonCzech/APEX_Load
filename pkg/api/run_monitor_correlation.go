@@ -2,10 +2,12 @@ package api
 
 import (
 	"errors"
-	"github.com/jasonczech/apexload/pkg/engine"
-	"github.com/jasonczech/apexload/pkg/storage"
 	"slices"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // Runtime workers consume the frozen job/preparation selections whenever those
@@ -58,10 +60,10 @@ func (tr *TestRunner) runMonitorCorrelationOrigins(id string) []string {
 			continue
 		}
 		origins := []string{}
-		if source.Pack == "appdynamics" && source.AppDynamics != nil && source.AppDynamics.RunHeader {
+		if source.Pack == monitorprovider.PackAppDynamics && source.AppDynamics != nil && source.AppDynamics.RunHeader {
 			origins = source.AppDynamics.HeaderOrigins
 		}
-		if source.Pack == "dynatrace" && source.Dynatrace != nil && source.Dynatrace.RunHeader {
+		if source.Pack == monitorprovider.PackDynatrace && source.Dynatrace != nil && source.Dynatrace.RunHeader {
 			origins = source.Dynatrace.HeaderOrigins
 		}
 		for _, origin := range origins {
