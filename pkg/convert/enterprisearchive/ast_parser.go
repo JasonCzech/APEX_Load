@@ -71,7 +71,36 @@ func parseActionFileASTWithAnalysis(
 	}
 
 	jumpLoops := make(map[string]struct{})
+	cLocalNames := cLocalCandidates(normalized)
+	cLocals := map[string]map[string]bool{} // C function -> qualified locals
+	emitCLocalWrite := func(name, value string, line, column, offset, endOffset int, flow sourceFlowContext) {
+		rawBlock := rawSourceBlock(originalLines, line, line)
+		fn, parseErr := parseFunctionBlock(cLocalSaveCall(name, value), filename, line, line, rawBlock)
+		if parseErr != nil {
+			return
+		}
+		fn.sourceColumn = column
+		fn.sourceOffset = offset
+		fn.sourceEndOffset = endOffset
+		appendParsedFunction(fn, flow)
+	}
 	walkCCNode(ast.TranslationUnit, func(node cc.Node, flow sourceFlowContext) {
+		if declaration, ok := node.(*cc.Declaration); ok {
+			if flow.function == "" || len(cLocalNames) == 0 {
+				return
+			}
+			match := cLocalDeclarationRe.FindStringSubmatch(strings.TrimSpace(cc.NodeSource(declaration)))
+			if match == nil || !cLocalNames[match[1]] {
+				return
+			}
+			if cLocals[flow.function] == nil {
+				cLocals[flow.function] = map[string]bool{}
+			}
+			cLocals[flow.function][match[1]] = true
+			position := declaration.Position()
+			emitCLocalWrite(match[1], match[2], position.Line, position.Column, position.Offset, position.Offset, flow)
+			return
+		}
 		if jump, ok := node.(*cc.JumpStatement); ok {
 			for _, loopID := range flow.jumpAffectedLoopIDs(jump.Case) {
 				jumpLoops[loopID] = struct{}{}
@@ -154,6 +183,15 @@ func parseActionFileASTWithAnalysis(
 			return
 		}
 		block := strings.TrimSpace(cc.NodeSource(stmt.ExpressionList))
+		if match := cLocalAssignmentRe.FindStringSubmatch(block); match != nil && cLocals[flow.function][match[1]] {
+			position := stmt.ExpressionList.Position()
+			endOffset := position.Offset
+			if semicolon := stmt.Token.Position(); semicolon.IsValid() {
+				endOffset = semicolon.Offset
+			}
+			emitCLocalWrite(match[1], match[2], position.Line, position.Column, position.Offset, endOffset, flow)
+			return
+		}
 		if block == "" || !reFuncCall.MatchString(block) || isCControlCall(block) {
 			return
 		}
@@ -190,6 +228,9 @@ func parseActionFileASTWithAnalysis(
 
 	applyAnalyzedSourceCallSpans(parsed.Functions, analysis)
 	parsed.Functions = orderAndMarkSourceFunctions(parsed.Functions)
+	for index := range parsed.Functions {
+		parsed.Functions[index].cLocals = cLocals[parsed.Functions[index].sourceFunction]
+	}
 
 	// A loop whose body jumps (break/continue/goto/return) cannot be
 	// reproduced by a simple count or per-pass condition; defeat its header

@@ -187,6 +187,12 @@ Restored request bodies remain encrypted in candidate storage and are fully reda
 
 Dependency analysis examines executable request fields and nested requests. Definite missing producers block execution; conditional or later producers require review. Commented source is not reactivated, and TSTAMP receives no invented meaning. Every repair refreshes the shared findings and fidelity summary. Acknowledgement cannot clear an execution blocker.
 
+C string literals are decoded exactly once, with C escape rules (`\'`, `\?`, octal and two-digit hex included). A literal containing any other escape keeps its text verbatim, so quoted values such as `C:\data\file.dat` are not altered. Boundaries, extractor queries, text checks and bodies therefore keep escaped JSON such as `userAccountNumber\":\"`. In Windows-1252 scripts a body escape such as `\x81` still names the code-page byte.
+
+`lr_eval_json`, `lr_json_get_values` and `lr_json_stringify` execute. Documents keep member order and number spelling. `QueryString` accepts `$`, `.name`, `['name']`, `[n]` (negative from the end), `[*]`, `.*` and `..` recursive descent. `SelectAll=Yes` publishes `NAME_1..NAME_n` and `NAME_count`; a miss fails the step unless `NotFound=Continue`. JSONPath filters, slices and unions, `Buffer/File`, unknown arguments and the other JSON helpers import as gated review steps with a specific reason code. `ValueParam` and `OutputParam` count as producers in dependency analysis.
+
+Conditions of the form `strlen(lr_eval_string("{p}")) <op> N` translate to `control_if`. A registration with `NotFound=warning` stores an empty string on a miss, so `!= 0` tests "found". An `int` local declared once inside a function, and written only with integer-literal assignments, imports as `lr_save_int` steps on `clocal_<name>`. Conditions and `while` headers that read it then translate. A loop driven by such a local has no bound in the source, so it imports with `max_iterations: 1000` and an import warning.
+
 The private acceptance archive is not committed. Regression tests use synthetic values and local HTTP servers. Live Salesforce replay and comparison with an LR baseline remain separate validation requiring usable credentials and target access.
 
 ### Local acceptance evidence
@@ -228,6 +234,8 @@ Inspection is bounded to 8 MiB per envelope, 128 nesting levels, 256 actions, 13
 Private offline acceptance inspected 409 Aura batches and 504 request actions, retaining 503 structurally matched responses and 25 captured ERROR actions under HTTP 200. One Login response remains incomplete because of duplicate members. These checks and synthetic local HTTP/browser tests establish implementation behavior; live Salesforce session, correlation and physical Chrome/iPad parity require separate qualification. See the [implementation and review record](qa/reviews/aura-record-replay-2026-10-03/implementation.md) and [safe capture counts](qa/reviews/aura-record-replay-2026-10-03/capture-check.json).
 
 Correlation detection rejects values that are not server state before generating any extractor. It skips name-shaped values from the generic id and token key heuristics (`navigation`, `Retail_Home_Page`, `Bearer` in `token_type`), and bare URL origins, which `base_url` retargets. For the weak heuristic rules (generic cookies, redirect query parameters, dynamic headers, JSON/XML ids) it also skips values the client already sent in a URL, body or non-credential header at or before the producing response. Credential, session and Salesforce platform rules are exempt from that check, because an earlier occurrence there usually means the capture began after the first producer. When a Salesforce shape extractor and a generic rule find the same value, the earlier producer wins. The analysis cap counts distinct analyzed values, so values repeated across Lightning responses no longer truncate analysis of later responses.
+
+When Aura requests in the native script still send the recorded `aura.token`, the Salesforce review warns. It says whether the capture has no producer, as with Chrome DevTools HAR exports that drop the `__Host-ERIC_*` Set-Cookie, or has a producer that was not applied.
 
 ## Native archive compatibility
 

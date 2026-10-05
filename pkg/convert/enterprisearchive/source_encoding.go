@@ -124,11 +124,22 @@ func encodeImportedBody(action *dsl.Action, fn ParsedFunction, encoding string) 
 		action.BodyEncoding = encoding
 		return nil
 	}
-	raw, e := charmap.Windows1252.NewEncoder().String(fn.Body)
+	// A source escape such as \x81 names a code-page byte, so the source
+	// spelling is encoded first and its escapes are decoded in byte space.
+	source := fn.Body
+	if fn.RawBody != "" {
+		source = fn.RawBody
+	}
+	raw, e := charmap.Windows1252.NewEncoder().String(source)
 	if e != nil {
 		return e
 	}
-	raw = unescapeSourceCString(raw)
+	if fn.RawBody != "" {
+		// A spelling the decoder rejects stays verbatim, as the parser keeps it.
+		if decoded, ok := decodeCStringContent(raw); ok {
+			raw = decoded
+		}
+	}
 	// Undefined code-page bytes are valid binary payload bytes, but not text.
 	// Fixed payloads can be represented losslessly as base64; mixed binary and
 	// deferred parameters require explicit repair instead of replacement.

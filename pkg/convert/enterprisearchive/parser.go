@@ -14,32 +14,36 @@ import (
 
 // ParsedFunction represents a single C/VUser source function call extracted from a script.
 type ParsedFunction struct {
-	Name                                string            // e.g. "web_url", "web_submit_data", "lr_think_time"
-	StepName                            string            // The first string argument (step name)
-	Args                                map[string]string // Named key-value arguments extracted from ITEMDATA/LAST pairs
-	RawArgs                             []string          // Raw string arguments in order
-	CallArgs                            []ParsedArgument  // Structured top-level C call arguments in order
-	Headers                             map[string]string // Extracted header key-value pairs
-	HeaderList                          dsl.HeaderList    // Ordered header occurrences when the source preserves them
-	Body                                string            // Request body if present
-	Method                              string            // HTTP method (for web_custom_request)
-	URL                                 string            // Target URL
-	Action                              string            // Action/target URL for form submissions
-	Cookies                             []ParsedCookie    // Cookies added through web_add_cookie
-	Phase                               string            // init, action, or teardown
-	LineNumber                          int               // Source line number for diagnostics
-	Filename                            string            // Source file containing the function
-	EndLine                             int               // Source line where the function call ends
-	RawBlock                            string            // Original source block for source review
-	JavaOrigin                          bool              // Body was decoded from Java source; skip C-string unescaping
-	Conditions                          []string          // Enclosing if/else conditions (raw C, outermost first; else pre-negated as !(...))
-	ConditionIDs                        []string          // Stable per-construct identities (source positions) parallel to Conditions
-	Loops                               []string          // Enclosing loop headers (raw C, outermost first)
-	LoopIDs                             []string          // Stable per-construct identities (source positions) parallel to Loops
-	sourceColumn                        int               // 1-based source column used to deduplicate embedded/fallback call discovery
-	sourceOffset                        int               // parser-local byte offset used only for stable evaluation ordering
-	sourceEndOffset                     int               // exclusive parser-local byte offset
-	sourceFunction                      string            // enclosing C function definition; used to preserve lifecycle ownership
+	Name            string            // e.g. "web_url", "web_submit_data", "lr_think_time"
+	StepName        string            // The first string argument (step name)
+	Args            map[string]string // Named key-value arguments extracted from ITEMDATA/LAST pairs
+	RawArgs         []string          // Raw string arguments in order
+	CallArgs        []ParsedArgument  // Structured top-level C call arguments in order
+	Headers         map[string]string // Extracted header key-value pairs
+	HeaderList      dsl.HeaderList    // Ordered header occurrences when the source preserves them
+	Body            string            // Request body if present, C escapes decoded once
+	RawBody         string            // Body with its source C escapes intact (code-page byte encoding); empty when unknown
+	Method          string            // HTTP method (for web_custom_request)
+	URL             string            // Target URL
+	Action          string            // Action/target URL for form submissions
+	Cookies         []ParsedCookie    // Cookies added through web_add_cookie
+	Phase           string            // init, action, or teardown
+	LineNumber      int               // Source line number for diagnostics
+	Filename        string            // Source file containing the function
+	EndLine         int               // Source line where the function call ends
+	RawBlock        string            // Original source block for source review
+	JavaOrigin      bool              // Body was decoded from Java source; skip C-string unescaping
+	Conditions      []string          // Enclosing if/else conditions (raw C, outermost first; else pre-negated as !(...))
+	ConditionIDs    []string          // Stable per-construct identities (source positions) parallel to Conditions
+	Loops           []string          // Enclosing loop headers (raw C, outermost first)
+	LoopIDs         []string          // Stable per-construct identities (source positions) parallel to Loops
+	sourceColumn    int               // 1-based source column used to deduplicate embedded/fallback call discovery
+	sourceOffset    int               // parser-local byte offset used only for stable evaluation ordering
+	sourceEndOffset int               // exclusive parser-local byte offset
+	sourceFunction  string            // enclosing C function definition; used to preserve lifecycle ownership
+	// cLocals are the qualified int locals of the enclosing C function that
+	// its flow conditions may read (see c_locals.go).
+	cLocals                             map[string]bool
 	containsUnsupportedTransactionCall  bool
 	dependsOnUnsupportedTransactionFlow bool
 	javaJDBCConnection                  *javaJDBCConnection
@@ -727,10 +731,12 @@ func parseWebCustomRequest(fn *ParsedFunction, inner string) {
 		fn.Method = fn.Args["Method"]
 	}
 	if m := reBodyArg.FindStringSubmatch(inner); len(m) > 1 {
-		fn.Body = m[1]
+		fn.Body = rawSourceStringContent(m[1])
+		fn.RawBody = m[1]
 	}
 	if fn.Args["Body"] != "" {
 		fn.Body = fn.Args["Body"]
+		fn.RawBody = rawSourceArgument(fn, "Body", fn.Body)
 	}
 	applyMaskedBodyReference(fn)
 }
@@ -754,8 +760,10 @@ func parseWebREST(fn *ParsedFunction, inner string) {
 	}
 	if fn.Args["Body"] != "" {
 		fn.Body = fn.Args["Body"]
+		fn.RawBody = rawSourceArgument(fn, "Body", fn.Body)
 	} else if m := reBodyArg.FindStringSubmatch(inner); len(m) > 1 {
-		fn.Body = m[1]
+		fn.Body = rawSourceStringContent(m[1])
+		fn.RawBody = m[1]
 	}
 	applyMaskedBodyReference(fn)
 	extractWebRESTHeaders(fn)
@@ -825,10 +833,12 @@ func parseWebServiceCall(fn *ParsedFunction, inner string) {
 		fn.URL = fn.Args["Action"]
 	}
 	if m := reBodyArg.FindStringSubmatch(inner); len(m) > 1 {
-		fn.Body = m[1]
+		fn.Body = rawSourceStringContent(m[1])
+		fn.RawBody = m[1]
 	}
 	if fn.Args["Body"] != "" {
 		fn.Body = fn.Args["Body"]
+		fn.RawBody = rawSourceArgument(fn, "Body", fn.Body)
 	}
 
 	if soapAction, ok := fn.Args["SOAPAction"]; ok && soapAction != "" {
@@ -1550,8 +1560,8 @@ func decodeAdjacentCStringLiterals(value string) (string, bool) {
 			return "", false
 		}
 
-		decoded, err := strconv.Unquote(trimmed[start:i])
-		if err != nil {
+		decoded, ok := decodeCStringContent(trimmed[start+1 : i-1])
+		if !ok {
 			return "", false
 		}
 		out.WriteString(decoded)

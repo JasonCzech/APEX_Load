@@ -72,3 +72,17 @@ func TestDetectCorrelationsKeepsEarliestProducerAcrossShapeAndGenericPasses(t *t
 		t.Fatalf("session correlations = %#v, want only the Set-Cookie producer in entry 1", found)
 	}
 }
+
+// One budget reused across two equal-length observation slices must not answer
+// the second slice from the first slice's cached surfaces.
+func TestSalesforceBudgetRequestSearchFollowsTheSlice(t *testing.T) {
+	budget := newSalesforceCorrelationBudget()
+	first := []correlate.Observation{{ID: 1, RequestURL: "https://a.example.test/?v=alpha-123456"}}
+	second := []correlate.Observation{{ID: 1, RequestURL: "https://a.example.test/?v=beta-123456"}}
+	if !budget.requestSearch(first).Contains(0, "alpha-123456") {
+		t.Fatal("first slice not searched")
+	}
+	if !budget.requestSearch(second).Contains(0, "beta-123456") {
+		t.Fatal("second slice answered from the first slice's cache")
+	}
+}

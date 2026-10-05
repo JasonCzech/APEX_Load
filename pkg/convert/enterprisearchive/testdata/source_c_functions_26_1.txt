@@ -31,7 +31,7 @@ lr_end_timer,timer,executable
 lr_end_transaction,transaction,executable
 lr_end_transaction_instance,transaction,review_only
 lr_error_message,message,executable
-lr_eval_json,json,review_only
+lr_eval_json,json,executable
 lr_eval_string,parameter,executable
 lr_eval_string_ext,parameter,executable
 lr_eval_string_ext_free,parameter,native_noop
@@ -54,11 +54,11 @@ lr_get_transaction_think_time,transaction,review_only
 lr_get_vuser_ip,info,executable
 lr_json_delete,json,review_only
 lr_json_find,json,review_only
-lr_json_get_values,json,review_only
+lr_json_get_values,json,executable
 lr_json_insert,json,review_only
 lr_json_replace,json,review_only
 lr_json_set_values,json,review_only
-lr_json_stringify,json,review_only
+lr_json_stringify,json,executable
 lr_load_dll,runtime,external_required
 lr_log_message,message,executable
 lr_message,message,executable

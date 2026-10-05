@@ -81,7 +81,7 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 			Name:       paramName,
 			Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
 			Type:       "regex",
-			Expression: unescapeSourceCString(expression),
+			Expression: expression,
 			OnMiss:     onMiss,
 			Mode:       mode,
 			SaveOffset: saveOffset,
@@ -104,7 +104,7 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 			Name:       paramName,
 			Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
 			Type:       "jsonpath",
-			Expression: unescapeSourceCString(expression),
+			Expression: expression,
 			OnMiss:     onMiss,
 			Mode:       mode,
 			SaveOffset: saveOffset,
@@ -122,7 +122,7 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 			Name:       paramName,
 			Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
 			Type:       "xpath",
-			Expression: unescapeSourceCString(expression),
+			Expression: expression,
 			OnMiss:     onMiss,
 			Mode:       mode,
 			SaveOffset: saveOffset,
@@ -133,8 +133,6 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 
 	lb, rb, caseInsensitive, flagWarnings := sourceBoundaryArguments(fn)
 	warnings = append(warnings, flagWarnings...)
-	lb = unescapeSourceCString(lb)
-	rb = unescapeSourceCString(rb)
 
 	ext := &dsl.Extractor{
 		Name:       paramName,
@@ -333,7 +331,6 @@ func convertGlobalVerification(fn ParsedFunction) (*dsl.ContentCheckConfig, stri
 	if text == "" {
 		text = fn.StepName
 	}
-	text = unescapeSourceCString(text)
 	if strings.TrimSpace(text) == "" {
 		return nil, fmt.Sprintf("line %d: web_global_verification has no Text argument", fn.LineNumber)
 	}
@@ -438,12 +435,14 @@ func encodeRegexOrdinalExpression(expression string, ordinal int) string {
 	return regexOrdinalExpressionConfigPrefix + string(payload)
 }
 
-func unescapeSourceCString(value string) string {
-	if !strings.Contains(value, `\`) {
-		return value
-	}
-	decoded, err := strconv.Unquote(`"` + value + `"`)
-	if err != nil {
+// rawSourceStringContent decodes text captured from raw C source between a
+// literal's quotes (for example by a regular expression over a condition).
+// Parser arguments (Args, RawArgs, CallArgs values, Body) are already decoded
+// exactly once by cleanConfigValue and must never pass through it again: a
+// second decode strips escaped-JSON boundaries such as userAccountNumber\":\".
+func rawSourceStringContent(value string) string {
+	decoded, ok := decodeCStringContent(value)
+	if !ok {
 		return value
 	}
 	return decoded

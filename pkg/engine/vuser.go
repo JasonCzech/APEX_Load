@@ -39,6 +39,9 @@ type VUser struct {
 	sourceSamplers         *sourceSamplerRuntime
 	SecretResolver         SecretResolver
 	RedactionConfig        *RedactionConfig
+	// sourceJSONDocuments holds lr_eval_json documents by lowercased JsonObject
+	// name for the VUser's lifetime, as LoadRunner keeps them.
+	sourceJSONDocuments map[string]any
 	// runtimeRedaction publishes immutable redaction snapshots to protocol
 	// callbacks, which may run on a driver/event goroutine while the VUser adds
 	// newly extracted credentials on its execution goroutine.
