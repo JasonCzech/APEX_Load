@@ -1,0 +1,39 @@
+[
+  {
+    "gate": "typecheck",
+    "command": [
+      "npm",
+      "run",
+      "typecheck"
+    ],
+    "exit_code": 0,
+    "seconds": 72.477,
+    "log": "/private/tmp/apexload-native-identity-v3-client-repeat-typecheck-2026-10-04.log"
+  },
+  {
+    "gate": "lint",
+    "command": [
+      "npm",
+      "run",
+      "lint"
+    ],
+    "exit_code": 0,
+    "seconds": 24.309,
+    "log": "/private/tmp/apexload-native-identity-v3-client-repeat-lint-2026-10-04.log"
+  },
+  {
+    "gate": "units",
+    "command": [
+      "npm",
+      "test",
+      "--",
+      "src/utils/analysisIdentity.test.ts",
+      "src/components/AnalysisIdentityMapping.test.tsx",
+      "src/components/AnalysisComparison.test.tsx",
+      "src/components/AnalysisWorkspace.test.tsx"
+    ],
+    "exit_code": 0,
+    "seconds": 2.505,
+    "log": "/private/tmp/apexload-native-identity-v3-client-repeat-units-2026-10-04.log"
+  }
+]

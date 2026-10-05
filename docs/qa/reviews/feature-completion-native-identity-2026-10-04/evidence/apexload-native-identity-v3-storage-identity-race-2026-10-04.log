@@ -1,0 +1,4 @@
+=== RUN   TestAnalysisIdentityPersistence
+--- PASS: TestAnalysisIdentityPersistence (1.54s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/storage	3.181s

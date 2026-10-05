@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises"
+import type { Locator } from '@playwright/test'
 import { test, expect, seedScript, json, idOf, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
@@ -7,29 +8,108 @@ import { createWorkspace, scopeQuery } from './support/workspace'
 // independent zero-traffic counters are covered by Go integration tests.
 test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: 'wait' }) })
 
+// Playwright follows an option's enclosing label to its select when checking
+// enabled/disabled state. Check the native option itself. Its programmatic
+// selectOption can bypass disabled choices, so exercise malformed-draft
+// admission separately from the native disabled contract.
+async function assertProtectedColumnsUnavailable(column: Locator, area: Locator) {
+  await expect(column).toBeEnabled()
+  for (const name of ['credentials.password (protected)', 'api.key (protected)']) {
+    await expect(column.getByRole('option', { name, exact: true })).toHaveJSProperty('disabled', true)
+  }
+  const previous = await column.inputValue()
+  const validate = area.getByRole('button', { name: 'Validate and import', exact: true })
+  const save = area.getByRole('button', { name: 'Save mapping', exact: true })
+  await expect(validate).toBeEnabled(); await expect(save).toBeEnabled()
+  for (const protectedValue of ['["credentials","password"]', '["api","key"]']) {
+    await column.selectOption(protectedValue)
+    await expect(column).toHaveValue(protectedValue)
+    const disclosure = area.getByRole('alert').filter({ hasText: 'Protected credential columns cannot become analytical timestamps, measurement values, metric names or identity labels.' })
+    await expect(disclosure).toHaveCount(1); await expect(disclosure).toBeVisible()
+    await expect(validate).toBeDisabled(); await expect(save).toBeDisabled()
+    // Native disabled-button clicks cannot submit the retained invalid draft.
+    await validate.evaluate(button => (button as HTMLButtonElement).click())
+    await save.evaluate(button => (button as HTMLButtonElement).click())
+    await column.selectOption(previous)
+    await expect(column).toHaveValue(previous)
+    await expect(area.getByRole('alert')).toHaveCount(0)
+    await expect(validate).toBeEnabled(); await expect(save).toBeEnabled()
+  }
+}
+
+// Capture a bounded editor inside its actual scroll owner. A screenshot of a
+// whole comparison taller than the viewport contains clipped black areas and
+// sticky-toolbar overlap; center hit-testing proves the actual controls remain
+// exposed before any visual evidence is saved.
+async function captureIdentityFilters(filters: Locator, path: string) {
+  await filters.evaluate(element => {
+    const container = element.closest('.main-content')
+    if (!(container instanceof HTMLElement)) throw new Error('Identity editor has no owned scroll container')
+    const toolbar = container.querySelector(':scope > .main-topbar')
+    const top = Math.max(container.getBoundingClientRect().top, toolbar?.getBoundingClientRect().bottom ?? 0) + 16
+    container.scrollTop += element.getBoundingClientRect().top - top
+  })
+  try {
+    await expect.poll(() => filters.evaluate(element => {
+      const box = element.getBoundingClientRect()
+      const container = element.closest('.main-content')
+      if (!(container instanceof HTMLElement)) return false
+      const toolbar = container.querySelector(':scope > .main-topbar')
+      const top = Math.max(container.getBoundingClientRect().top, toolbar?.getBoundingClientRect().bottom ?? 0)
+      const bottom = Math.min(window.innerHeight, container.getBoundingClientRect().bottom)
+      return box.top >= top && box.bottom <= bottom && box.left >= 0 && box.right <= window.innerWidth && element.scrollWidth <= element.clientWidth + 1 && Array.from(element.querySelectorAll('input, button')).every(control => {
+        const bounds = control.getBoundingClientRect()
+        const x = (bounds.left + bounds.right) / 2; const y = (bounds.top + bounds.bottom) / 2
+        const hit = document.elementFromPoint(x, y)
+        return bounds.width > 0 && bounds.height > 0 && bounds.left >= box.left && bounds.right <= box.right && hit !== null && (control === hit || control.contains(hit))
+      })
+    })).toBe(true)
+  } catch (error) {
+    const geometry = await filters.evaluate(element => {
+      const bounds = (node: Element) => {
+        const box = node.getBoundingClientRect(); const style = getComputedStyle(node)
+        return { tag: node.tagName, class: node.className, left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, scrollLeft: node.scrollLeft, minWidth: style.minWidth, gridTemplateColumns: style.gridTemplateColumns, display: style.display }
+      }
+      const ancestors = []; let parent: Element | null = element
+      while (parent) { ancestors.push(bounds(parent)); parent = parent.parentElement }
+      return { viewport: { width: innerWidth, height: innerHeight }, ancestors, controls: Array.from(element.querySelectorAll('input, button')).map(bounds) }
+    })
+    await test.info().attach('identity-filter-geometry', { body: JSON.stringify(geometry, null, 2), contentType: 'application/json' })
+    throw error
+  }
+  const add = filters.getByRole('button', { name: 'Add dimension filter', exact: true })
+  const buttonBounds = await add.boundingBox()
+  const inputBounds = await filters.getByLabel('Filter 1 value', { exact: true }).boundingBox()
+  expect(buttonBounds).not.toBeNull(); expect(inputBounds).not.toBeNull()
+  expect(buttonBounds!.height).toBeLessThanOrEqual(inputBounds!.height + 8)
+  await filters.screenshot({ path })
+}
+
+
 test('Parquet upload, mapping, query and deletion remain in project scope', async ({ page }) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const workspace = await createWorkspace(page.context().request)
   const id = '00000000-0000-0000-0000-000000000001'
   let state = 'uploading'; let revision = 1; let uploaded = false; let deleted = false
+  let mappingRequests = 0; let savedMappingRequests = 0; let commitRequests = 0
   let mapping: unknown
   const record = () => ({ id, project_id: workspace.projectId, name: 'External latency', revision, state, files: [{ id: 'source', relative_path: 'sample.parquet', size: 16, uploaded: uploaded ? 16 : 0 }], accepted: state === 'ready' ? 3 : 0, rejected: 0, mapping })
   const point = (value: number, second: number) => ({ timestamp_utc: `2026-01-01T00:00:0${second}Z`, metric_name: 'latency', unit: 'ms', value, quality: 'valid' })
   await page.route('**/api/v1/analysis/**', async route => {
     const req = route.request(); const url = new URL(req.url()); const method = req.method()
     const send = (value: unknown, status = 200) => route.fulfill({ status, json: value })
-    if (url.pathname.endsWith('/capabilities')) return send({ native_parquet: true, enabled: true, chunk_bytes: 4 * 1024 * 1024 })
-    if (url.pathname.endsWith('/mappings') || url.pathname.endsWith('/comparisons')) return send([])
+    if (url.pathname.endsWith('/capabilities')) return send({ native_parquet: true, enabled: true, imported_identity_version: 2, chunk_bytes: 4 * 1024 * 1024 })
+    if (url.pathname.endsWith('/mappings') || url.pathname.endsWith('/comparisons')) { if (url.pathname.endsWith('/mappings') && method === 'POST') savedMappingRequests++; return send([]) }
     if (url.pathname.endsWith('/imports')) {
       expect(url.searchParams.get('project_id')).toBe(workspace.projectId)
       if (method === 'POST') { expect(req.postDataJSON().files[0].relative_path).toBe('sample.parquet'); return send(record(), 201) }
       return send(deleted ? [] : [record()])
     }
     if (url.pathname.endsWith('/files/source') && method === 'PUT') { expect(req.postDataBuffer()?.length).toBe(16); uploaded = true; revision++; return send(record()) }
-    if (url.pathname.endsWith('/preview')) return send({ schema: { rows: 3, columns: [{ path: 'ts', path_components: ['ts'], physical_type: 'INT64' }, { path: 'latency', path_components: ['latency'], physical_type: 'DOUBLE' }] }, samples: [{ ts: 1767225600000, latency: 20 }] })
-    if (url.pathname.endsWith('/mapping')) { mapping = req.postDataJSON().mapping; expect(req.postDataJSON().revision).toBe(revision); state = 'mapped'; revision++; return send(record()) }
-    if (url.pathname.endsWith('/commit')) { state = 'ready'; revision++; return send(record(), 202) }
-    if (url.pathname.endsWith('/series')) { expect(req.postDataJSON().from).toBe('2026-01-01T00:00:00.000Z'); return send({ points: [point(20, 0), point(40, 1)] }) }
+    if (url.pathname.endsWith('/preview')) return send({ schema: { rows: 3, columns: [{ path: 'ts', path_components: ['ts'], physical_type: 'INT64' }, { path: 'latency', path_components: ['latency'], physical_type: 'DOUBLE' }, { path: 'labels.source', path_components: ['labels', 'source'], physical_type: 'BYTE_ARRAY' }, { path: 'host', path_components: ['host'], physical_type: 'BYTE_ARRAY' }, { path: 'service', path_components: ['service'], physical_type: 'BYTE_ARRAY' }, { path: 'group', path_components: ['group'], physical_type: 'BYTE_ARRAY' }, { path: 'credentials.password', path_components: ['credentials', 'password'], physical_type: 'DOUBLE' }, { path: 'api.key', path_components: ['api', 'key'], physical_type: 'BYTE_ARRAY' }] }, samples: [{ ts: 1767225600000, latency: 20 }] })
+    if (url.pathname.endsWith('/mapping')) { mappingRequests++; mapping = req.postDataJSON().mapping; expect(mapping).toMatchObject({ version: 2, identity: { source: ['labels', 'source'], host: ['host'], service: ['service'], dimensions: [{ name: 'a/b~c', value: ['group'] }] } }); expect(req.postDataJSON().revision).toBe(revision); state = 'mapped'; revision++; return send(record()) }
+    if (url.pathname.endsWith('/commit')) { commitRequests++; state = 'ready'; revision++; return send(record(), 202) }
+    if (url.pathname.endsWith('/series')) { expect(req.postDataJSON()).toMatchObject({ source_id: 'agent', host: 'host-a', service: 'api', dimensions: { 'a/b~c': '' } }); expect(req.postDataJSON().from).toBe('2026-01-01T00:00:00.000Z'); return send({ points: [point(20, 0), point(40, 1)] }) }
     if (method === 'DELETE') { deleted = true; return route.fulfill({ status: 204 }) }
     return send(record())
   })
@@ -45,17 +125,45 @@ test('Parquet upload, mapping, query and deletion remain in project scope', asyn
   await area.getByRole('checkbox', { name: 'latency', exact: true }).check()
   await area.getByLabel('Semantics').selectOption('observation')
   await area.getByRole('combobox', { name: 'Unit', exact: true }).selectOption('ms')
+  await area.getByLabel('Mapping name', { exact: true }).fill('Private-selection admission probe')
+  for (const column of [area.getByRole('combobox', { name: 'Timestamp column', exact: true }), area.getByRole('combobox', { name: 'Metric name column (long table)', exact: true })]) {
+    await assertProtectedColumnsUnavailable(column, area)
+  }
+  await expect(area.getByRole('checkbox', { name: 'credentials.password (protected)', exact: true })).toBeDisabled()
+  await expect(area.getByRole('checkbox', { name: 'api.key (protected)', exact: true })).toBeDisabled()
+  const identityMapping = area.getByRole('group', { name: 'Imported measurement identities', exact: true })
+  for (const label of ['Source column', 'Host column', 'Service column']) {
+    const column = identityMapping.getByRole('combobox', { name: label, exact: true })
+    await assertProtectedColumnsUnavailable(column, area)
+  }
+  expect(mappingRequests).toBe(0); expect(savedMappingRequests).toBe(0); expect(commitRequests).toBe(0)
+  await area.getByLabel('Mapping name', { exact: true }).fill('')
+  await identityMapping.getByRole('combobox', { name: 'Source column', exact: true }).selectOption('["labels","source"]')
+  await identityMapping.getByRole('combobox', { name: 'Host column', exact: true }).selectOption('["host"]')
+  await identityMapping.getByRole('combobox', { name: 'Service column', exact: true }).selectOption('["service"]')
+  await identityMapping.getByRole('button', { name: 'Add dimension', exact: true }).click()
+  await expect(area.getByRole('button', { name: 'Validate and import', exact: true })).toBeDisabled()
+  await identityMapping.getByLabel('Dimension 1 name', { exact: true }).fill('a/b~c')
+  await identityMapping.getByRole('combobox', { name: 'Dimension 1 column', exact: true }).selectOption('["group"]')
   await area.getByRole('button', { name: 'Validate and import', exact: true }).click()
   await expect(area).toContainText('State: ready')
+  expect(mappingRequests).toBe(1); expect(savedMappingRequests).toBe(0); expect(commitRequests).toBe(1)
   const query = area.getByRole('group', { name: 'Query dataset', exact: true })
   await query.getByLabel('Metric', { exact: true }).fill('latency')
   await query.getByLabel('From (UTC)', { exact: true }).fill('2026-01-01T00:00')
   await query.getByLabel('To (UTC)', { exact: true }).fill('2026-01-01T00:01')
+  const identityFilters = query.getByRole('group', { name: 'Dataset identity filters', exact: true })
+  await identityFilters.getByLabel('Source ID', { exact: true }).fill('agent')
+  await identityFilters.getByLabel('Host', { exact: true }).fill('host-a')
+  await identityFilters.getByLabel('Service', { exact: true }).fill('api')
+  await identityFilters.getByRole('button', { name: 'Add dimension filter', exact: true }).click()
+  await expect(query.getByRole('button', { name: 'Show series', exact: true })).toBeDisabled()
+  await identityFilters.getByLabel('Filter 1 name', { exact: true }).fill('a/b~c')
   await query.getByRole('button', { name: 'Show series', exact: true }).click()
   await expect(area.getByRole('img', { name: 'latency over UTC time; 2 buckets' })).toBeVisible()
   await page.setViewportSize({ width: 760, height: 1000 })
   await expect(area.getByRole('heading', { name: 'Parquet analysis', exact: true })).toBeVisible()
-  await query.screenshot({ path: test.info().outputPath('parquet-query.png') })
+  await captureIdentityFilters(identityFilters, test.info().outputPath('parquet-query.png'))
   const chart = area.getByRole('img', { name: 'latency over UTC time; 2 buckets' })
   await expect.poll(async () => chart.evaluate(element => {
     const bounds = element.getBoundingClientRect()
@@ -74,6 +182,8 @@ test('Parquet upload, mapping, query and deletion remain in project scope', asyn
   const csv = await readFile((await (await csvDownload).path())!, 'utf8')
   expect(csv).toContain('latency (ms) [value]')
   expect(csv).toContain(id)
+  expect(csv).toContain('agent')
+  expect(csv).toContain('a/b~c')
   expect(csv).toContain('"20"')
   expect(csv).not.toContain('different metric')
   const svgDownload = page.waitForEvent('download')
@@ -386,4 +496,138 @@ test('messaging management retains exact counts, denied coverage and reload', as
   await page.reload()
   await evidence.getByRole('button', { name: 'Read management evidence' }).click()
   await expect(evidence).toContainText('9007199254740993')
+})
+
+test('imported comparison preserves both exact identity selectors across save and reopen', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const workspace = await createWorkspace(page.context().request)
+  const leftId = '00000000-0000-0000-0000-000000000011'; const rightId = '00000000-0000-0000-0000-000000000012'
+  const mapping = { version: 2, timestamp: ['ts'], timestamp_encoding: 'unix_s', timezone: 'UTC', measures: [{ value: ['value'], name: 'latency', kind: 'observation', unit: 'ms' }], identity: { source: ['source'], host: ['host'], service: ['service'], dimensions: [{ name: 'a/b~c', value: ['label'] }] } }
+  const imports = [leftId, rightId].map((id, i) => ({ id, project_id: workspace.projectId, name: `Identity ${i ? 'B' : 'A'}`, revision: 1, state: 'ready', files: [], accepted: 2, rejected: 0, mapping }))
+  const definition = {
+    left: { dataset_id: leftId, metric: 'latency', aggregation: 'p95', source_id: 'agent-a', host: 'host-a', service: 'service-a', transaction: 'Lookup', protocol: 'grpc', dimensions: { 'a/b~c': '' } },
+    right: { dataset_id: rightId, metric: 'latency', aggregation: 'p95', source_id: 'agent-b', host: 'host-b', service: 'service-b', group: 'two', dimensions: JSON.parse('{"__proto__":"","group":"two"}') },
+    from: '2026-01-01T00:00:00Z', to: '2026-01-01T00:01:00Z', bucket_seconds: 10, max_lag_seconds: 0, mode: 'overlay',
+  }
+  const executedDefinition = {
+    ...definition,
+    left: { dataset_id: leftId, metric: 'latency', aggregation: 'p95', source_id: 'agent-a', host: 'host-a', service: 'service-a', dimensions: { 'a/b~c': '', transaction: 'Lookup', protocol: 'grpc' } },
+    right: { dataset_id: rightId, metric: 'latency', aggregation: 'p95', source_id: 'agent-b', host: 'host-b', service: 'service-b', dimensions: definition.right.dimensions },
+    from: '2026-01-01T00:00:00.000Z', to: '2026-01-01T00:01:00.000Z',
+  }
+  const comparisons: unknown[] = [{ id: 'selectors', name: 'Owned selectors', revision: 1, definition, deleted: false }]
+  let copied = false; let analyzed = 0
+  await page.route('**/api/v1/analysis/**', async route => {
+    const request = route.request(); const path = new URL(request.url()).pathname
+    const send = (value: unknown) => route.fulfill({ json: value })
+    if (path.endsWith('/capabilities')) return send({ native_parquet: true, enabled: true, imported_identity_version: 2, chunk_bytes: 4 * 1024 * 1024 })
+    if (path.endsWith('/imports')) return send(imports)
+    if (path.endsWith('/comparisons')) {
+      if (request.method() === 'POST') {
+        expect(request.postDataJSON().definition).toEqual(executedDefinition)
+        const saved = { id: 'copy', name: 'Selector copy', revision: 1, deleted: false, definition: request.postDataJSON().definition }
+        comparisons.push(saved); copied = true; return send(saved)
+      }
+      return send(comparisons)
+    }
+    if (path.endsWith('/compare')) {
+      const selected = request.postDataJSON()
+      expect(selected).toEqual(executedDefinition)
+      analyzed++
+      const point = { timestamp_utc: '2026-01-01T00:00:00Z', metric_name: 'latency', unit: 'ms', value: 1, quality: 'valid' }
+      return send({ request: selected, left: [point], right: [point] })
+    }
+    if (path.endsWith('/mappings')) return send([])
+    return route.fulfill({ status: 404, json: { error: 'unexpected bounded workflow request' } })
+  })
+  const openDataset = async () => {
+    await page.goto(`/#/monitoring?category=analysis&${scopeQuery(workspace)}`); await page.reload()
+    const area = page.getByRole('region', { name: 'Analysis workspace', exact: true })
+    await area.getByRole('button', { name: 'Identity A · ready', exact: true }).click()
+    return area.getByRole('region', { name: 'Dataset comparison', exact: true })
+  }
+  let comparison = await openDataset()
+  await comparison.getByRole('combobox', { name: 'Saved comparison', exact: true }).selectOption('selectors')
+  const left = comparison.getByRole('group', { name: 'Dataset identity filters', exact: true })
+  const right = comparison.getByRole('group', { name: 'Comparison identity filters', exact: true })
+  await expect(left.getByLabel('Service', { exact: true })).toHaveValue('service-a')
+  await expect(left.getByLabel('Filter 1 value', { exact: true })).toHaveValue('')
+  await expect(left.getByLabel('Filter 2 name', { exact: true })).toHaveValue('transaction')
+  await expect(left.getByLabel('Filter 2 value', { exact: true })).toHaveValue('Lookup')
+  await expect(left.getByLabel('Filter 3 name', { exact: true })).toHaveValue('protocol')
+  await expect(right.getByLabel('Filter 1 name', { exact: true })).toHaveValue('__proto__')
+  await comparison.getByRole('button', { name: 'Analyze comparison', exact: true }).click()
+  await expect(comparison.getByRole('button', { name: 'Save comparison', exact: true })).toBeDisabled()
+  await comparison.getByLabel('Saved comparison name', { exact: true }).fill('Selector copy')
+  await left.getByLabel('Source ID', { exact: true }).fill('later unsaved edit')
+  await comparison.getByRole('button', { name: 'Save comparison', exact: true }).click()
+  await expect.poll(() => copied).toBe(true)
+  const downloading = page.waitForEvent('download')
+  await comparison.getByRole('button', { name: 'Export Dataset comparison data as CSV', exact: true }).click()
+  const download = await downloading
+  const csvPath = await download.path()
+  expect(csvPath).not.toBeNull()
+  const csv = await readFile(csvPath!, 'utf8')
+  expect(csv).toContain('Lookup'); expect(csv).toContain('grpc'); expect(csv).toContain('__proto__')
+  expect(csv).not.toContain('later unsaved edit')
+  comparison = await openDataset()
+  await comparison.getByRole('combobox', { name: 'Saved comparison', exact: true }).selectOption('copy')
+  await expect(comparison.getByRole('group', { name: 'Dataset identity filters', exact: true }).getByLabel('Source ID', { exact: true })).toHaveValue('agent-a')
+  await comparison.getByRole('button', { name: 'Analyze comparison', exact: true }).click()
+  await expect.poll(() => analyzed).toBe(2)
+  await page.setViewportSize({ width: 760, height: 1000 })
+  const reopenedLeft = comparison.getByRole('group', { name: 'Dataset identity filters', exact: true })
+  const reopenedRight = comparison.getByRole('group', { name: 'Comparison identity filters', exact: true })
+  await expect(reopenedLeft.getByLabel('Source ID', { exact: true })).toHaveValue('agent-a')
+  await expect(reopenedRight.getByLabel('Source ID', { exact: true })).toHaveValue('agent-b')
+  // Long valid labels must remain editable in this narrow owned container;
+  // unsaved draft additions still cannot alter the executed result or its save.
+  await reopenedLeft.getByRole('button', { name: 'Add dimension filter', exact: true }).click()
+  await reopenedLeft.getByLabel('Filter 4 name', { exact: true }).fill('x'.repeat(128))
+  await reopenedLeft.getByLabel('Filter 4 value', { exact: true }).fill('y'.repeat(128))
+  await captureIdentityFilters(reopenedLeft, test.info().outputPath('imported-identity-comparison-left.png'))
+  await captureIdentityFilters(reopenedRight, test.info().outputPath('imported-identity-comparison-right.png'))
+})
+
+test('older analytical peers keep v1 imports usable and refuse v2 identity work without downgrade', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const workspace = await createWorkspace(page.context().request)
+  const legacyId = '00000000-0000-0000-0000-000000000021'; const identityId = '00000000-0000-0000-0000-000000000022'
+  const mapping = { version: 1, timestamp: ['ts'], timestamp_encoding: 'unix_s', timezone: 'UTC', measures: [{ value: ['value'], name: 'latency', kind: 'observation', unit: 'ms' }] }
+  let legacyState = 'uploading'; let legacyRevision = 1; let queries = 0; let mutations = 0
+  const records = () => [
+    { id: legacyId, project_id: workspace.projectId, name: 'Legacy measurements', state: legacyState, revision: legacyRevision, files: [{ id: 'file', relative_path: 'legacy.parquet', uploaded: 16, size: 16 }], mapping, accepted: 1, rejected: 0 },
+    { id: identityId, project_id: workspace.projectId, name: 'Retained identity measurements', state: 'ready', revision: 1, files: [], mapping: { ...mapping, version: 2, identity: { source: ['source'] } }, accepted: 1, rejected: 0 },
+  ]
+  await page.route('**/api/v1/analysis/**', async route => {
+    const request = route.request(); const path = new URL(request.url()).pathname
+    const send = (value: unknown) => route.fulfill({ json: value })
+    if (path.endsWith('/capabilities')) return send({ native_parquet: true, enabled: true, chunk_bytes: 4 * 1024 * 1024 })
+    if (path.endsWith('/imports')) return send(records())
+    if (path.endsWith('/mappings') || path.endsWith('/comparisons')) return send([])
+    if (path.endsWith('/preview')) return send({ schema: { rows: 1, columns: [{ path: 'ts', path_components: ['ts'], physical_type: 'INT64', repeated: false }, { path: 'value', path_components: ['value'], physical_type: 'DOUBLE', repeated: false }] }, samples: [] })
+    if (path.endsWith('/mapping')) { expect(request.postDataJSON().mapping).toEqual(mapping); legacyRevision++; mutations++; return send({ ...records()[0], state: 'mapped' }) }
+    if (path.endsWith('/commit')) { legacyState = 'ready'; legacyRevision++; mutations++; return send(records()[0]) }
+    if (path.endsWith('/series')) { expect(path).toContain(legacyId); expect(request.postDataJSON()).not.toHaveProperty('source_id'); queries++; return send({ points: [] }) }
+    return route.fulfill({ status: 404, json: { error: 'unexpected old-peer operation' } })
+  })
+  await page.goto(`/#/monitoring?category=analysis&${scopeQuery(workspace)}`); await page.reload()
+  const area = page.getByRole('region', { name: 'Analysis workspace', exact: true })
+  await area.getByRole('button', { name: 'Legacy measurements · uploading', exact: true }).click()
+  await expect(area.getByRole('group', { name: 'Imported measurement identities', exact: true })).toHaveCount(0)
+  await expect(area).toContainText('Version 1 imports remain available')
+  await area.getByRole('button', { name: 'Validate and import', exact: true }).click()
+  await expect(area).toContainText('State: ready')
+  const query = area.getByRole('group', { name: 'Query dataset', exact: true })
+  await query.getByLabel('From (UTC)', { exact: true }).fill('2026-01-01T00:00')
+  await query.getByLabel('To (UTC)', { exact: true }).fill('2026-01-01T00:01')
+  await query.getByRole('button', { name: 'Show series', exact: true }).click()
+  await expect.poll(() => queries).toBe(1)
+  await area.getByRole('button', { name: 'Retained identity measurements · ready', exact: true }).click()
+  await expect(query).toContainText('This dataset requires imported identity schema 2')
+  await expect(query.getByRole('button', { name: 'Show series', exact: true })).toBeDisabled()
+  await expect(area.getByRole('region', { name: 'Dataset comparison', exact: true })).toContainText('stored selectors remain unchanged')
+  await expect(area.getByRole('button', { name: 'Analyze comparison', exact: true })).toBeDisabled()
+  expect(queries).toBe(1); expect(mutations).toBe(2)
+  expect(records()[1].mapping.version).toBe(2)
 })

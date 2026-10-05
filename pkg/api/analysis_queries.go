@@ -27,6 +27,7 @@ type AnalysisSeriesSelection struct {
 	Group       string            `json:"group,omitempty"`
 	Dimensions  map[string]string `json:"dimensions,omitempty"`
 	Host        string            `json:"host,omitempty"`
+	Service     string            `json:"service,omitempty"`
 	Metric      string            `json:"metric"`
 	Aggregation string            `json:"aggregation"`
 }
@@ -57,10 +58,12 @@ func (q AnalysisComparisonRequest) validate() error {
 		return errors.New("choose overlay or correlation")
 	}
 	for _, s := range []AnalysisSeriesSelection{q.Left, q.Right} {
-		if s.DatasetID != "" && (s.SourceID != "" || s.Transaction != "" || s.Protocol != "" || s.Group != "" || s.Host != "" || len(s.Dimensions) != 0) {
-			return errors.New("imported dataset identity filters are not available in this native schema")
+		if s.DatasetID != "" {
+			if err := validateImportedIdentitySelection(s); err != nil {
+				return err
+			}
 		}
-		if len(s.Protocol) > 64 || len(s.Group) > 256 || len(s.Host) > 256 || len(s.Dimensions) > 16 {
+		if len(s.Protocol) > 64 || len(s.Group) > 256 || len(s.Host) > 256 || len(s.Service) > 256 || len(s.Dimensions) > 16 {
 			return errors.New("protocol or group identity exceeds limit")
 		}
 		for k, v := range s.Dimensions {
@@ -73,7 +76,7 @@ func (q AnalysisComparisonRequest) validate() error {
 		default:
 			return errors.New("unsupported aggregation")
 		}
-		if (s.DatasetID == "") == (s.RunID == "") || s.Metric == "" || len(s.Metric) > 256 || len(s.Transaction) > 256 || len(s.SourceID) > 128 || len(s.RunID) > 128 || len(s.DatasetID) > 128 {
+		if (s.DatasetID == "") == (s.RunID == "") || s.Metric == "" || len(s.Metric) > 256 || len(s.Transaction) > 256 || s.DatasetID == "" && len(s.SourceID) > 128 || s.DatasetID != "" && len(s.SourceID) > 256 || len(s.RunID) > 128 || len(s.DatasetID) > 128 {
 			return errors.New("each series requires a dataset or run and bounded metric identity")
 		}
 	}
@@ -123,9 +126,8 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 		writeError(w, 409, "analysis is not enabled for this project")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
 	var q AnalysisComparisonRequest
-	if !decodeJSONBody(w, r, &q) {
+	if !decodeAnalysisQueryRequest(w, r, &q) {
 		return
 	}
 	if err := q.validate(); err != nil {
@@ -224,7 +226,11 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 			if !exists || plan.dataset.ProjectID != project {
 				return nil, "", errors.New("dataset selection is outside comparison plan")
 			}
-			points, err := queryAnalysisDataset(ctx, plan.dataset, analytics.SeriesQuery{ProjectID: project, DatasetID: plan.dataset.ID, Metric: selection.Metric, From: q.From, To: q.To, BucketSeconds: q.BucketSeconds, Aggregation: selection.Aggregation})
+			nativeQuery, err := importedNativeSeriesQuery(project, plan.dataset, selection, q)
+			if err != nil {
+				return nil, "", err
+			}
+			points, err := queryAnalysisDataset(ctx, plan.dataset, nativeQuery)
 			return points, plan.dataset.RunID, err
 		}
 		store, ok := s.store.(storage.AnalysisImportStore)
@@ -238,7 +244,11 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 		if !analysisProjectEnabled(project) {
 			return nil, "", errors.New("native analysis disabled for project")
 		}
-		points, err := queryAnalysisDataset(ctx, in, analytics.SeriesQuery{ProjectID: project, DatasetID: in.ID, Metric: selection.Metric, From: q.From, To: q.To, BucketSeconds: q.BucketSeconds, Aggregation: selection.Aggregation})
+		nativeQuery, err := importedNativeSeriesQuery(project, in, selection, q)
+		if err != nil {
+			return nil, "", err
+		}
+		points, err := queryAnalysisDataset(ctx, in, nativeQuery)
 		return points, in.RunID, err
 	}
 	run, err := s.store.GetTest(selection.RunID)
@@ -342,7 +352,14 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 				return nil
 			}
 			value := tx.DurationMs
-			return appendPoint(analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: project, RunID: selection.RunID, Source: "transaction:" + sha256String(selection.Transaction), TimestampUTC: tx.Timestamp.UTC(), MetricName: selection.Metric, Kind: analysis.KindObservation, Value: &value, Unit: "ms", Quality: analysis.QualityValid, Dimensions: map[string]string{"protocol": analysisDimensionIdentity(tx.DependencyType), "group": analysisDimensionIdentity(tx.Group), "population": archiveEventPopulation(*tx)}})
+			point := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: project, RunID: selection.RunID, Source: "transaction:" + sha256String(selection.Transaction), TimestampUTC: tx.Timestamp.UTC(), MetricName: selection.Metric, Kind: analysis.KindObservation, Value: &value, Unit: "ms", Quality: analysis.QualityValid, Dimensions: map[string]string{"protocol": analysisDimensionIdentity(tx.DependencyType), "group": analysisDimensionIdentity(tx.Group), "population": archiveEventPopulation(*tx)}}
+			// Apply the same exact selectors as monitor evidence. In particular,
+			// an archive without host/service evidence cannot satisfy a requested
+			// host/service, and a population filter must not change cohorts.
+			if !matchesAnalysisDimensions(point, selection) {
+				return nil
+			}
+			return appendPoint(point)
 		})
 		if err != nil {
 			return nil, "", errors.New("transaction evidence unavailable or exceeds bounded query limits")
@@ -353,7 +370,7 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 }
 
 func matchesAnalysisDimensions(p analysis.MetricPoint, selection AnalysisSeriesSelection) bool {
-	if selection.Host != "" && p.Host != selection.Host {
+	if selection.Host != "" && p.Host != selection.Host || selection.Service != "" && p.Service != selection.Service {
 		return false
 	}
 	for k, v := range selection.Dimensions {
@@ -398,11 +415,10 @@ func (w *analysisStagingWriter) Write(p []byte) (int, error) {
 }
 
 func queryAnalysisDataset(ctx context.Context, in *storage.AnalysisImport, query analytics.SeriesQuery) ([]analysis.MetricPoint, error) {
-	if err := query.Validate(); err != nil {
-		return nil, err
-	}
-	if in == nil || query.ProjectID != in.ProjectID || query.DatasetID != in.ID {
-		return nil, errors.New("dataset query scope mismatch")
+	var queryErr error
+	query, queryErr = bindImportedNativeSeriesQuery(in, query)
+	if queryErr != nil {
+		return nil, queryErr
 	}
 	var pipeline *analytics.NativePipeline
 	var dir string

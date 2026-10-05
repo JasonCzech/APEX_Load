@@ -135,6 +135,7 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		}
 		applyExplicitRouteContractTypes(route, analysis, typeDefinitions)
 		applyRouteRequestSchemaProjection(route, analysis)
+		applyAnalysisRequestContract(route, analysis, typeDefinitions)
 		contract := inferredContractForAnalysis(route, analysis)
 		applySystemSettingsConcurrencyContract(route, &contract)
 		applyDataPoolImportExportContract(route, &contract)
@@ -902,7 +903,7 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 		}
 
 		switch callName {
-		case "decodeJSONBody", "decodeRequestBody":
+		case "decodeJSONBody", "decodeRequestBody", "decodeAnalysisDefinitionJSON", "decodeAnalysisQueryRequest":
 			analysis.jsonRequest = true
 			setInferredRequestSchema(call, variableTypes, typeDefinitions, analysis)
 		case "decodeOptionalJSONBody", "decodeOptionalJSONBodyAllowingUnknownFields":

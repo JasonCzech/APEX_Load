@@ -1,0 +1,10 @@
+
+> apexload-dashboard@0.1.0 lint
+> eslint . --max-warnings=0
+
+
+/Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/dashboard/src/utils/analysisIdentity.ts
+  88:17  error  Unexpected control character(s) in regular expression: \x09, \x0d  no-control-regex
+
+✖ 1 problem (1 error, 0 warnings)
+

@@ -65,6 +65,13 @@ func snapshotAnalysisQueryDataset(in *storage.AnalysisImport) (*storage.Analysis
 	if in == nil || len(in.Normalized) > 1024 || len(in.NormalizedSHA256) > 1024 || in.Mapping != nil && len(in.Mapping.Measures) > 64 {
 		return nil, errors.New("dataset exceeds bounded analytical metadata")
 	}
+	// Refuse protected persisted paths before the bounded projection omits the
+	// original projected paths and before any shared heavy/native admission.
+	if in.Mapping != nil {
+		if err := in.Mapping.ValidateDisclosure(); err != nil {
+			return nil, err
+		}
+	}
 	out := &storage.AnalysisImport{ID: in.ID, ProjectID: in.ProjectID, RunID: in.RunID, State: in.State, Revision: in.Revision, Normalized: append([]string{}, in.Normalized...), NormalizedSHA256: map[string]string{}}
 	for _, key := range in.Normalized {
 		if !strings.HasPrefix(key, analysisObjectKey(in.ProjectID, in.ID, "")) || !analysisObjectPattern.MatchString(key) || !analysisDatasetArtifactDigestValid(in.NormalizedSHA256[key]) {
@@ -73,7 +80,10 @@ func snapshotAnalysisQueryDataset(in *storage.AnalysisImport) (*storage.Analysis
 		out.NormalizedSHA256[key] = in.NormalizedSHA256[key]
 	}
 	if in.Mapping != nil {
-		out.Mapping = &analysis.ParquetMapping{Measures: make([]analysis.ParquetMeasure, len(in.Mapping.Measures))}
+		if in.Mapping.Version != 1 && in.Mapping.Version != 2 {
+			return nil, errors.New("dataset mapping identity version unavailable")
+		}
+		out.Mapping = &analysis.ParquetMapping{Version: in.Mapping.Version, Measures: make([]analysis.ParquetMeasure, len(in.Mapping.Measures))}
 		for i, measure := range in.Mapping.Measures {
 			out.Mapping.Measures[i].Name = measure.Name
 		}

@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -147,6 +148,9 @@ func (e *Engine) childNativePreview(ctx context.Context, path string) (Preview, 
 	if err != nil {
 		return Preview{}, err
 	}
+	if err := analysis.ValidateParquetSQLSchema(schema); err != nil {
+		return Preview{}, err
+	}
 	result := Preview{Schema: schema, Samples: []map[string]any{}}
 	err = e.withDB(ctx, func(ctx context.Context, db *sql.DB) error {
 		// Redact variable-width and nested values inside DuckDB, before the Go
@@ -272,11 +276,13 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 					name = "try_cast(" + column(measure.NameColumn) + " AS VARCHAR)"
 				}
 				value := column(measure.Value)
-				projection := "SELECT file_row_number AS source_row, " + timestampExpression(request.Mapping) + " AS timestamp_utc, " + name + " AS metric_name, try_cast(" + value + " AS DOUBLE)*" + strconv.FormatFloat(scale, 'g', -1, 64) + " AS value, (" + value + " IS NULL) AS was_null FROM read_parquet(" + literal(path) + ", hive_partitioning=false, file_row_number=true)"
+				identityProjection, identityCanonical, identityValid := nativeIdentityProjection(request.Mapping, request.DatasetID)
+				projection := "SELECT " + identityProjection + ", file_row_number AS source_row, " + timestampExpression(request.Mapping) + " AS timestamp_utc, " + name + " AS metric_name, try_cast(" + value + " AS DOUBLE)*" + strconv.FormatFloat(scale, 'g', -1, 64) + " AS value, (" + value + " IS NULL) AS was_null FROM read_parquet(" + literal(path) + ", hive_partitioning=false, file_row_number=true)"
 				if _, err := db.ExecContext(ctx, "CREATE OR REPLACE TEMP VIEW mapped AS "+projection); err != nil {
 					return err
 				}
-				valid := "timestamp_utc IS NOT NULL AND isfinite(timestamp_utc) AND timestamp_utc>=TIMESTAMPTZ '0001-01-01 00:00:00+00' AND timestamp_utc<TIMESTAMPTZ '10000-01-01 00:00:00+00' AND metric_name IS NOT NULL AND length(trim(metric_name))>=1 AND octet_length(encode(metric_name))<=256 AND (was_null OR (value IS NOT NULL AND isfinite(value)))"
+				valid := "timestamp_utc IS NOT NULL AND isfinite(timestamp_utc) AND timestamp_utc>=TIMESTAMPTZ '0001-01-01 00:00:00+00' AND timestamp_utc<TIMESTAMPTZ '10000-01-01 00:00:00+00' AND " + nativeRequiredIdentityText("metric_name", 256) + " AND (was_null OR (value IS NOT NULL AND isfinite(value)))"
+				valid += " AND " + identityValid
 				var accepted, rejected int64
 				if err := db.QueryRowContext(ctx, "SELECT count(*) FILTER(WHERE "+valid+"), count(*) FILTER(WHERE NOT coalesce(("+valid+"),false)) FROM mapped").Scan(&accepted, &rejected); err != nil {
 					return err
@@ -319,7 +325,7 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 					return fmt.Errorf("file %d measure %d contains %d rejected rows; explicit acceptance required", i, j, rejected)
 				}
 				out := filepath.Join(dir, fmt.Sprintf("part-%04d-%02d.parquet", i, j))
-				query := "COPY (SELECT " + literal(analysis.SchemaVersion) + " AS schema_version, " + literal(request.ProjectID) + " AS project_id, " + literal(request.DatasetID) + " AS dataset_id, " + literal(request.DatasetID) + " AS source, timestamp_utc, metric_name, " + literal(measure.Kind) + " AS kind, " + literal(unit) + " AS unit, value, CASE WHEN was_null THEN 'missing' ELSE 'valid' END AS quality FROM mapped WHERE " + valid + ") TO " + literal(out) + " (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 122880)"
+				query := "COPY (SELECT " + literal(analysis.SchemaVersion) + " AS schema_version, " + literal(request.ProjectID) + " AS project_id, " + literal(request.DatasetID) + " AS dataset_id, " + identityCanonical + ", timestamp_utc, metric_name, " + literal(measure.Kind) + " AS kind, " + literal(unit) + " AS unit, value, CASE WHEN was_null THEN 'missing' ELSE 'valid' END AS quality FROM mapped WHERE " + valid + ") TO " + literal(out) + " (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 122880)"
 				if _, err := db.ExecContext(ctx, query); err != nil {
 					return err
 				}
@@ -347,21 +353,39 @@ func (e *Engine) childNativeSeries(ctx context.Context, files []string, q Series
 		if err != nil {
 			return nil, err
 		}
-		paths[i] = literal(path)
+		paths[i] = path
 	}
 	points = []analysis.MetricPoint{}
 	err = e.withDB(ctx, func(ctx context.Context, db *sql.DB) error {
-		table := "read_parquet([" + strings.Join(paths, ",") + "], hive_partitioning=false)"
-		filter := "project_id=" + literal(q.ProjectID) + " AND dataset_id=" + literal(q.DatasetID) + " AND metric_name=" + literal(q.Metric) + " AND timestamp_utc >= TIMESTAMPTZ " + literal(q.From.UTC().Format(time.RFC3339Nano)) + " AND timestamp_utc < TIMESTAMPTZ " + literal(q.To.UTC().Format(time.RFC3339Nano))
-		rows, err := db.QueryContext(ctx, "SELECT DISTINCT kind,unit FROM "+table+" WHERE "+filter+" LIMIT 2")
+		table, err := nativeIdentityTable(paths)
 		if err != nil {
 			return err
 		}
-		var kind, unit string
+		filter := "project_id=" + literal(q.ProjectID) + " AND dataset_id=" + literal(q.DatasetID) + " AND metric_name=" + literal(q.Metric) + " AND timestamp_utc >= TIMESTAMPTZ " + literal(q.From.UTC().Format(time.RFC3339Nano)) + " AND timestamp_utc < TIMESTAMPTZ " + literal(q.To.UTC().Format(time.RFC3339Nano))
+		filter += nativeIdentityFilter(q)
+		// Imported canonical artifacts currently support valid finite samples
+		// and explicit missing samples. Never silently discard other quality
+		// markers, or aggregate their values into a healthy-looking bucket.
+		// Admission covers the complete selected population before rates or
+		// any other aggregation; malformed and unsupported evidence fails.
+		var invalidQuality int64
+		qualityAdmission := "(quality='valid' AND value IS NOT NULL AND isfinite(value)) OR (quality='missing' AND value IS NULL)"
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM "+table+" WHERE "+filter+" AND NOT coalesce(("+qualityAdmission+"),false)").Scan(&invalidQuality); err != nil {
+			return err
+		}
+		if invalidQuality != 0 {
+			return fmt.Errorf("%w: selected canonical evidence has unsupported or inconsistent quality/value semantics", errWorkerProtocol)
+		}
+		rows, err := db.QueryContext(ctx, "SELECT DISTINCT schema_version,kind,unit,identity_version,source,host,service,dimensions_json FROM "+table+" WHERE "+filter+" LIMIT 2")
+		if err != nil {
+			return err
+		}
+		var schemaVersion, kind, unit, source, host, service, dimensionsJSON string
+		var identityVersion int
 		count := 0
 		for rows.Next() {
 			count++
-			if err := rows.Scan(&kind, &unit); err != nil {
+			if err := rows.Scan(&schemaVersion, &kind, &unit, &identityVersion, &source, &host, &service, &dimensionsJSON); err != nil {
 				rows.Close()
 				return err
 			}
@@ -375,7 +399,25 @@ func (e *Engine) childNativeSeries(ctx context.Context, files []string, q Series
 			return nil
 		}
 		if count != 1 {
-			return errors.New("incompatible metric kinds or units prevent overlay")
+			return errors.New("multiple measurement identities, kinds or units require a narrower series selection")
+		}
+		if schemaVersion != analysis.SchemaVersion {
+			return errors.New("unsupported normalized measurement schema")
+		}
+		queryIdentityVersion := q.IdentitySchemaVersion
+		if queryIdentityVersion == 0 {
+			queryIdentityVersion = 1
+		}
+		if identityVersion != 1 && identityVersion != 2 || identityVersion != queryIdentityVersion {
+			return errors.New("normalized identity version requires explicit compatible query capability")
+		}
+		dimensions, err := analysis.DecodeNormalizedDimensions(dimensionsJSON)
+		if err != nil {
+			return err
+		}
+		identityPoint := analysis.MetricPoint{Source: source, Host: host, Service: service, Dimensions: dimensions}
+		if !nativeSeriesIdentityMatches(q, identityPoint) {
+			return errors.New("normalized identity does not match selected query scope")
 		}
 		if err := analysis.ValidateScalarAggregation(kind, q.Aggregation); err != nil {
 			return err
@@ -417,7 +459,7 @@ func (e *Engine) childNativeSeries(ctx context.Context, files []string, q Series
 			if len(points) >= analysis.MaxSeriesPoints {
 				return errors.New("analytical result exceeds point limit")
 			}
-			p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: q.DatasetID, TimestampUTC: at.UTC(), MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Derivation: append([]analysis.DerivationStep(nil), lineage...), Unit: unit, Quality: analysis.QualityMissing}
+			p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: source, Host: host, Service: service, Dimensions: maps.Clone(dimensions), TimestampUTC: at.UTC(), MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Derivation: append([]analysis.DerivationStep(nil), lineage...), Unit: unit, Quality: analysis.QualityMissing}
 			if value.Valid {
 				v := value.Float64
 				p.Value = &v
@@ -440,7 +482,7 @@ func (e *Engine) childNativeSeries(ctx context.Context, files []string, q Series
 		for at := q.From.UTC(); at.Before(q.To); at = at.Add(time.Duration(q.BucketSeconds) * time.Second) {
 			p, ok := byTime[at]
 			if !ok {
-				p = analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: q.DatasetID, TimestampUTC: at, MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Derivation: append([]analysis.DerivationStep(nil), lineage...), Unit: unit, Quality: analysis.QualityMissing}
+				p = analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: source, Host: host, Service: service, Dimensions: maps.Clone(dimensions), TimestampUTC: at, MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Derivation: append([]analysis.DerivationStep(nil), lineage...), Unit: unit, Quality: analysis.QualityMissing}
 			}
 			points = append(points, p)
 		}

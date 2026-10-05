@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	workerProtocolVersion    = 1
+	workerProtocolVersion    = 2
 	workerMaxFrameBytes      = 8 << 20
 	workerMaxInputs          = 1024
 	workerMaxOutputs         = 2048
@@ -345,6 +345,21 @@ func validateWorkerMapping(m Mapping) error {
 		}
 		if len(measure.NameColumn) > 0 && appendPath(measure.NameColumn) != nil {
 			return errWorkerProtocol
+		}
+	}
+	if m.Identity != nil {
+		if len(m.Identity.Dimensions) > 16 {
+			return errWorkerProtocol
+		}
+		for _, path := range []Column{m.Identity.Source, m.Identity.Host, m.Identity.Service} {
+			if len(path) > 0 && appendPath(path) != nil {
+				return errWorkerProtocol
+			}
+		}
+		for _, d := range m.Identity.Dimensions {
+			if appendPath(d.Value) != nil {
+				return errWorkerProtocol
+			}
 		}
 	}
 	if !workerText(m.Timezone, 256) || m.Validate(analysis.ParquetSchemaPreview{Columns: columns}) != nil {

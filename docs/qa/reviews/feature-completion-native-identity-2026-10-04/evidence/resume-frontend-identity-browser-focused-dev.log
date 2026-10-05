@@ -1,0 +1,119 @@
+Building controller...
+Starting controller on http://127.0.0.1:18471 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.BjajaADq46)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 2 tests using 1 worker
+
+(node:2009) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 e2e/workflow-analysis-preparation.spec.ts:84:1 › Parquet upload, mapping, query and deletion remain in project scope (15.9s)
+(node:2212) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 e2e/workflow-analysis-preparation.spec.ts:491:1 › imported comparison preserves both exact identity selectors across save and reopen (1.3s)
+
+
+  1) e2e/workflow-analysis-preparation.spec.ts:84:1 › Parquet upload, mapping, query and deletion remain in project scope 
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator:  getByRole('region', { name: 'Analysis workspace' }).getByRole('combobox', { name: 'Timestamp column', exact: true })
+    Expected: "[\"service\"]"
+    Received: "[\"group\"]"
+    Timeout:  15000ms
+
+    Call log:
+      - Expect "toHaveValue" with timeout 15000ms
+      - waiting for getByRole('region', { name: 'Analysis workspace' }).getByRole('combobox', { name: 'Timestamp column', exact: true })
+        34 × locator resolved to <select>…</select>
+           - unexpected value "["group"]"
+
+
+      23 |   // neither protected trailing option can be reached with the same interaction.
+      24 |   await column.press('ArrowUp')
+    > 25 |   await expect(column).toHaveValue('["service"]')
+         |                        ^
+      26 |   await column.press('ArrowDown')
+      27 |   await expect(column).toHaveValue('["group"]')
+      28 |   await column.press('ArrowDown')
+        at assertProtectedColumnsUnavailable (/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/workflow-analysis-preparation.spec.ts:25:24)
+        at /Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/workflow-analysis-preparation.spec.ts:123:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/native-identity-focused-dev/dev-admin/workflow-analysis-preparat-a769c-ion-remain-in-project-scope/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/native-identity-focused-dev/dev-admin/workflow-analysis-preparat-a769c-ion-remain-in-project-scope/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/native-identity-focused-dev/dev-admin/workflow-analysis-preparat-a769c-ion-remain-in-project-scope/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/native-identity-focused-dev/dev-admin/workflow-analysis-preparat-a769c-ion-remain-in-project-scope/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    e2e/workflow-analysis-preparation.spec.ts:84:1 › Parquet upload, mapping, query and deletion remain in project scope 
+  1 passed (18.7s)
+--- controller log (last 60 lines) ---
+{"time":"2026-10-04T23:40:49.479652-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:64424"}
+{"time":"2026-10-04T23:40:49.48039-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/aa5d04b1-bd80-43ec-b4e8-2f2eca0d80fd/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:64427"}
+{"time":"2026-10-04T23:40:49.513437-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/health","status":200,"duration_ms":0,"remote":"127.0.0.1:64426"}
+{"time":"2026-10-04T23:40:49.513502-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/inventory","status":200,"duration_ms":0,"remote":"127.0.0.1:64427"}
+{"time":"2026-10-04T23:40:49.513693-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/restarts/capabilities","status":200,"duration_ms":0,"remote":"127.0.0.1:64429"}
+{"time":"2026-10-04T23:40:49.513742-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/services","status":200,"duration_ms":0,"remote":"127.0.0.1:64428"}
+{"time":"2026-10-04T23:40:49.514372-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/readiness","status":200,"duration_ms":0,"remote":"127.0.0.1:64425"}
+{"time":"2026-10-04T23:40:49.514443-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:64424"}
+{"time":"2026-10-04T23:40:49.519254-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/inventory","status":200,"duration_ms":0,"remote":"127.0.0.1:64424"}
+{"time":"2026-10-04T23:40:49.519253-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/restarts/capabilities","status":200,"duration_ms":0,"remote":"127.0.0.1:64425"}
+{"time":"2026-10-04T23:40:49.519455-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/fleet/provisioner","status":200,"duration_ms":0,"remote":"127.0.0.1:64426"}
+{"time":"2026-10-04T23:40:49.519651-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/fleet/capacity","status":200,"duration_ms":0,"remote":"127.0.0.1:64427"}
+{"time":"2026-10-04T23:40:49.519892-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/audit-events","status":200,"duration_ms":0,"remote":"127.0.0.1:64429"}
+{"time":"2026-10-04T23:40:49.519994-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/fleet/alerts","status":200,"duration_ms":0,"remote":"127.0.0.1:64428"}
+{"time":"2026-10-04T23:40:49.523577-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/integrations/apm/profiles","status":200,"duration_ms":0,"remote":"127.0.0.1:64428"}
+{"time":"2026-10-04T23:40:49.523742-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/monitoring/packs","status":200,"duration_ms":0,"remote":"127.0.0.1:64429"}
+{"time":"2026-10-04T23:40:49.525253-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/schedules/health","status":200,"duration_ms":0,"remote":"127.0.0.1:64429"}
+{"time":"2026-10-04T23:40:49.525573-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/run-calendar","status":200,"duration_ms":0,"remote":"127.0.0.1:64428"}
+{"time":"2026-10-04T23:40:49.621835-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:64430"}
+{"time":"2026-10-04T23:40:49.621837-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"038510d3-da48-4ab4-9f71-d964230b2027","clients":1}
+{"time":"2026-10-04T23:40:49.831609-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-04T23:40:49.858209-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/me","status":200,"duration_ms":0,"remote":"127.0.0.1:64425"}
+{"time":"2026-10-04T23:40:49.861772-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:64425"}
+{"time":"2026-10-04T23:40:49.861772-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:64426"}
+{"time":"2026-10-04T23:40:49.864639-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:64425"}
+{"time":"2026-10-04T23:40:49.864753-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains","status":200,"duration_ms":0,"remote":"127.0.0.1:64426"}
+{"time":"2026-10-04T23:40:49.864907-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/desktop/status","status":200,"duration_ms":0,"remote":"127.0.0.1:64424"}
+{"time":"2026-10-04T23:40:49.865188-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects","status":200,"duration_ms":0,"remote":"127.0.0.1:64428"}
+{"time":"2026-10-04T23:40:49.871711-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:64427"}
+{"time":"2026-10-04T23:40:49.871774-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/aaf51628-f17b-4c92-85c1-dc787b9e4cd3/application-repository","status":200,"duration_ms":0,"remote":"127.0.0.1:64428"}
+{"time":"2026-10-04T23:40:49.871904-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:64429"}
+{"time":"2026-10-04T23:40:49.871921-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:64426"}
+{"time":"2026-10-04T23:40:49.872024-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:64425"}
+{"time":"2026-10-04T23:40:49.87222-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/aaf51628-f17b-4c92-85c1-dc787b9e4cd3/application-repository/categories","status":200,"duration_ms":0,"remote":"127.0.0.1:64424"}
+{"time":"2026-10-04T23:40:49.87235-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:64427"}
+{"time":"2026-10-04T23:40:49.875877-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:64427"}
+{"time":"2026-10-04T23:40:49.876035-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:64425"}
+{"time":"2026-10-04T23:40:49.876063-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/aa5d04b1-bd80-43ec-b4e8-2f2eca0d80fd/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:64424"}
+{"time":"2026-10-04T23:40:49.876257-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/aa5d04b1-bd80-43ec-b4e8-2f2eca0d80fd/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:64429"}
+{"time":"2026-10-04T23:40:49.90363-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/health","status":200,"duration_ms":0,"remote":"127.0.0.1:64427"}
+{"time":"2026-10-04T23:40:49.903653-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/inventory","status":200,"duration_ms":0,"remote":"127.0.0.1:64426"}
+{"time":"2026-10-04T23:40:49.90375-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/restarts/capabilities","status":200,"duration_ms":0,"remote":"127.0.0.1:64429"}
+{"time":"2026-10-04T23:40:49.904223-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/readiness","status":200,"duration_ms":0,"remote":"127.0.0.1:64428"}
+{"time":"2026-10-04T23:40:49.904485-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/services","status":200,"duration_ms":0,"remote":"127.0.0.1:64425"}
+{"time":"2026-10-04T23:40:49.904661-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:64424"}
+{"time":"2026-10-04T23:40:49.908887-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/inventory","status":200,"duration_ms":0,"remote":"127.0.0.1:64424"}
+{"time":"2026-10-04T23:40:49.908942-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/restarts/capabilities","status":200,"duration_ms":0,"remote":"127.0.0.1:64425"}
+{"time":"2026-10-04T23:40:49.909782-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/fleet/alerts","status":200,"duration_ms":0,"remote":"127.0.0.1:64425"}
+{"time":"2026-10-04T23:40:49.909815-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/fleet/capacity","status":200,"duration_ms":0,"remote":"127.0.0.1:64428"}
+{"time":"2026-10-04T23:40:49.909873-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/fleet/provisioner","status":200,"duration_ms":0,"remote":"127.0.0.1:64429"}
+{"time":"2026-10-04T23:40:49.910162-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/audit-events","status":200,"duration_ms":0,"remote":"127.0.0.1:64424"}
+{"time":"2026-10-04T23:40:49.913903-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/monitoring/packs","status":200,"duration_ms":0,"remote":"127.0.0.1:64429"}
+{"time":"2026-10-04T23:40:49.913722-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/integrations/apm/profiles","status":200,"duration_ms":0,"remote":"127.0.0.1:64424"}
+{"time":"2026-10-04T23:40:49.917367-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/schedules/health","status":200,"duration_ms":0,"remote":"127.0.0.1:64429"}
+{"time":"2026-10-04T23:40:49.917951-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/run-calendar","status":200,"duration_ms":0,"remote":"127.0.0.1:64424"}
+{"time":"2026-10-04T23:40:50.01942-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:64431"}
+{"time":"2026-10-04T23:40:50.019422-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"038510d3-da48-4ab4-9f71-d964230b2027","clients":1}
+{"time":"2026-10-04T23:40:50.602733-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-04T23:40:50.636406-04:00","level":"INFO","msg":"shutting down"}
+2026/10/04 23:40:50 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"

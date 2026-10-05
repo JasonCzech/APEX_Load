@@ -1,0 +1,17 @@
+{
+  "manifest_sha256": "9fb47aff7ee5eee3ff3c8d6f94f8c6572cf3ddb79e751eb8aacbaa23fdeb304c",
+  "patch_sha256": "0c465aa638019c8d1d2c17fb4d1f2aaba1ef4efff9b2ae188a6509ce62e004fc",
+  "preimages": [
+    {
+      "path": "pkg/api/analysis_query_decode_native_test.go",
+      "sha256": "7c205e3200677ad4637d11d20a8f4144bf947ff15ea463d69a17f069d5370626"
+    }
+  ],
+  "targets": [
+    {
+      "path": "pkg/api/analysis_query_decode_native_test.go",
+      "sha256": "dc3391c67102176777227af75882a8ed708b314d4c18a08510d5b1faf15f2ac1",
+      "bytes": 2535
+    }
+  ]
+}

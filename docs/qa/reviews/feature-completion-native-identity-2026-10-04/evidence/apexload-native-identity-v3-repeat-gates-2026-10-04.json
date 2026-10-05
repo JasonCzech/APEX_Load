@@ -1,0 +1,69 @@
+[
+  {
+    "gate": "duckdb-native-repeat",
+    "command": [
+      "go",
+      "test",
+      "-parallel=1",
+      "-count=1",
+      "-timeout=20m",
+      "-ldflags=-s -w",
+      "-tags=analytics_duckdb",
+      "./pkg/analysis/duckdb"
+    ],
+    "exit_code": 0,
+    "seconds": 88.683,
+    "log": "/private/tmp/apexload-native-identity-v3-duckdb-native-repeat-2026-10-04.log"
+  },
+  {
+    "gate": "duckdb-native-race-repeat",
+    "command": [
+      "go",
+      "test",
+      "-parallel=1",
+      "-count=1",
+      "-timeout=20m",
+      "-ldflags=-s -w",
+      "-race",
+      "-tags=analytics_duckdb",
+      "./pkg/analysis/duckdb"
+    ],
+    "exit_code": 0,
+    "seconds": 174.037,
+    "log": "/private/tmp/apexload-native-identity-v3-duckdb-native-race-repeat-2026-10-04.log"
+  },
+  {
+    "gate": "identity-api-default-repeat",
+    "command": [
+      "go",
+      "test",
+      "-parallel=1",
+      "-count=1",
+      "-timeout=20m",
+      "-ldflags=-s -w",
+      "-run=^(TestImported|TestDatasetSeriesIdentity|TestSavedV2|TestSavedDefinition|TestHistoricalSavedMapping|TestAnalyticalDefinition|TestAnalysis|TestOpenAPIClosedAnalytical|TestNativeSeriesHandler|TestImportMappingWrite|TestNativeComparison|TestNativeEvidence|TestNativePipeline|TestSavedAnalysis)",
+      "./pkg/api"
+    ],
+    "exit_code": 0,
+    "seconds": 165.691,
+    "log": "/private/tmp/apexload-native-identity-v3-identity-api-default-repeat-2026-10-04.log"
+  },
+  {
+    "gate": "identity-api-native-race-repeat",
+    "command": [
+      "go",
+      "test",
+      "-parallel=1",
+      "-count=1",
+      "-timeout=20m",
+      "-ldflags=-s -w",
+      "-race",
+      "-tags=analytics_duckdb",
+      "-run=^(TestImported|TestDatasetSeriesIdentity|TestSavedV2|TestSavedDefinition|TestHistoricalSavedMapping|TestAnalyticalDefinition|TestAnalysis|TestOpenAPIClosedAnalytical|TestNativeSeriesHandler|TestImportMappingWrite|TestNativeComparison|TestNativeEvidence|TestNativePipeline|TestSavedAnalysis)",
+      "./pkg/api"
+    ],
+    "exit_code": 1,
+    "seconds": 309.797,
+    "log": "/private/tmp/apexload-native-identity-v3-identity-api-native-race-repeat-2026-10-04.log"
+  }
+]

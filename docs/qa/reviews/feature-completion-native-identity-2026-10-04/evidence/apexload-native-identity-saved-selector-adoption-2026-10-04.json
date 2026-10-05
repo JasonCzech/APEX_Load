@@ -1,0 +1,17 @@
+{
+  "manifest_sha256": "9e2591092daf3be2729a26b66f05a9f8384e2a855ded25109252c87694c125e0",
+  "patch_sha256": "e6c34fe97dadfae295b2d1cd4973f2774ea19c31e2586edf33ba887174acf815",
+  "preimages": [
+    {
+      "path": "dashboard/e2e/workflow-analysis-preparation.spec.ts",
+      "sha256": "9611d3bf1bb6cc47367936cfffd5da68fd7a405859caa0530a899fd439940738"
+    }
+  ],
+  "targets": [
+    {
+      "path": "dashboard/e2e/workflow-analysis-preparation.spec.ts",
+      "sha256": "e20c9f0c61b2fd76db7a5247bb2920dc3d78844532bb180dca3a1ea4ba2adf6d",
+      "bytes": 40662
+    }
+  ]
+}

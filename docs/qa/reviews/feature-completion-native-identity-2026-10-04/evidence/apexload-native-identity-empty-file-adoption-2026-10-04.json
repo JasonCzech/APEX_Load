@@ -1,0 +1,35 @@
+{
+  "manifest_sha256": "7c0f2c5d079492f1659b79c25b66c53777f2e99eee465b02e65388a9a24647cb",
+  "patch_sha256": "997cdd73e32dc0a96bf349f3d2b7b99bd0cb7fae6b33aebe9dad1e71ad09bd89",
+  "preimages": [
+    {
+      "path": "dashboard/e2e/workflow-analysis-preparation.spec.ts",
+      "sha256": "02fd640f495426a3d3d23c33b950ff5e91a70c0abb01cab9ba1b7c13706890b4"
+    },
+    {
+      "path": "dashboard/src/components/AnalysisWorkspace.test.tsx",
+      "sha256": "34a49b8b60aa6554dc9d27e24856156cc21415893411bd233ac44db6ed85394a"
+    },
+    {
+      "path": "dashboard/src/components/AnalysisWorkspace.tsx",
+      "sha256": "56ab3d881de3278082ff82f87cce3ebbf41f662f2807f5c7fd47b56e5643f617"
+    }
+  ],
+  "targets": [
+    {
+      "path": "dashboard/e2e/workflow-analysis-preparation.spec.ts",
+      "sha256": "9611d3bf1bb6cc47367936cfffd5da68fd7a405859caa0530a899fd439940738",
+      "bytes": 40628
+    },
+    {
+      "path": "dashboard/src/components/AnalysisWorkspace.test.tsx",
+      "sha256": "6f1595151ff71453af84ddce2ce67593cc371d66b27468060902711ac1f33b15",
+      "bytes": 12299
+    },
+    {
+      "path": "dashboard/src/components/AnalysisWorkspace.tsx",
+      "sha256": "6ed128922e0cf490eab6e352ca46e400c24b402ee7b32c4758070d1c2a00b466",
+      "bytes": 20242
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+--- FAIL: TestNativeIdentityRequiredSourceUnicodeSpaceAndValidLabels (2.18s)
+    native_identity_test.go:156: another heavy analytics job is running
+--- FAIL: TestNativeMappedMetricNameUnicodeScalarAdmission (2.05s)
+    native_identity_test.go:182: another heavy analytics job is running
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/analysis/duckdb	89.208s
+FAIL

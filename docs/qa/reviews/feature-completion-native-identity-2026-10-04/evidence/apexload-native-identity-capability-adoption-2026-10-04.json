@@ -1,0 +1,18 @@
+{
+  "time": "2026-10-04T17:42:12.109720+00:00",
+  "freeze": "/private/tmp/apexload-native-identity-capability-frozen-2026-10-04",
+  "manifest_sha256": "f9dcfb011d3551317033c9ce775a5efee7c1aef9c56665453ab7d46de9f78dc6",
+  "review": "Root and JMS independent bounded source review clean; actual API/generation pending",
+  "targets": [
+    {
+      "path": "pkg/api/handlers_analysis_imports.go",
+      "sha256": "ee95db9536eee3417105affcd02b9088df8d60d7a24126d47676210d65ba2c01",
+      "bytes": 26525
+    },
+    {
+      "path": "pkg/api/analysis_identity_capability_test.go",
+      "sha256": "e94b9edcd4e5df25b1b70a9e00d45bec2fb4b1ed08dd46df90fab8fcb76883d5",
+      "bytes": 2223
+    }
+  ]
+}

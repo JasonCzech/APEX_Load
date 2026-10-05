@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { request } from '../hooks/apiClient'
 import type { AnalysisMapping } from '../types/analysis'
+import { analysisMappingDisclosureError } from '../utils/analysisIdentity'
 
 export interface SavedAnalysisMapping { id: string; name: string; revision: number; definition: AnalysisMapping; deleted: boolean }
 
@@ -23,10 +24,12 @@ export default function AnalysisSavedMappings({ projectId, mapping, canEdit, onL
     {error && <p role="alert">{error}</p>}
     <label>Apply mapping<select defaultValue="" onChange={e => { const item = items.find(x => x.id === e.target.value); if (item) onLoad(item) }}><option value="">Select a versioned mapping…</option>{items.map(item => <option key={item.id} value={item.id}>{item.name} · revision {item.revision}</option>)}</select></label>
     {canEdit && <><label>Mapping name<input value={name} onChange={e => setName(e.target.value)} maxLength={256} /></label>
-      <button type="button" disabled={!name.trim() || !mapping.measures.length} onClick={() => {
+      <button type="button" disabled={!name.trim() || !mapping.measures.length || !!analysisMappingDisclosureError(mapping)} onClick={() => {
+        const identityError = analysisMappingDisclosureError(mapping)
+        if (identityError) { setError(identityError); return }
         saving.current?.abort(); const controller = new AbortController(); saving.current = controller
         setBusy(true); setError('')
-        void request<SavedAnalysisMapping>(path, { method: 'POST', signal: controller.signal, body: JSON.stringify({ name, definition: mapping }) }).then(item => { if (!controller.signal.aborted) { onLoad(item); setRevision(x => x + 1) } }).catch(e => { if (!controller.signal.aborted) setError(String(e)) }).finally(() => { if (!controller.signal.aborted) setBusy(false) })
+        void request<SavedAnalysisMapping>(path, { method: 'POST', signal: controller.signal, body: JSON.stringify({ name, definition: mapping }) }).then(item => { if (!controller.signal.aborted) { const returnedIdentityError = analysisMappingDisclosureError(item.definition); if (returnedIdentityError) throw new Error(returnedIdentityError); onLoad(item); setRevision(x => x + 1) } }).catch(e => { if (!controller.signal.aborted) setError(String(e)) }).finally(() => { if (!controller.signal.aborted) setBusy(false) })
       }}>Save mapping</button></>}
   </fieldset>
 }

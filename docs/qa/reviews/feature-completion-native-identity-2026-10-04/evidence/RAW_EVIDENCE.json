@@ -1,0 +1,392 @@
+[
+  {
+    "path": "apexload-native-identity-api-fixture-metadata-adoption-2026-10-04.json",
+    "bytes": 555,
+    "sha256": "a7a6fa746fe7e8157db1b123b3f82f6d830dd196e2e6e549fe155ddb5584e4cb",
+    "source": "/private/tmp/apexload-native-identity-api-fixture-metadata-adoption-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-capability-adoption-2026-10-04.json",
+    "bytes": 689,
+    "sha256": "bee4a255265046239d23cfb884804264fd80b93a245fd0a577731283e1913aa3",
+    "source": "/private/tmp/apexload-native-identity-capability-adoption-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-capability-gates-2026-10-04-default.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source": "/private/tmp/apexload-native-identity-capability-gates-2026-10-04-default.log"
+  },
+  {
+    "path": "apexload-native-identity-capability-gates-2026-10-04-generate.log",
+    "bytes": 193,
+    "sha256": "fd343376a624d0fe1d7429363a13a2f9db5f25daa2e2de536b20e336639d5b46",
+    "source": "/private/tmp/apexload-native-identity-capability-gates-2026-10-04-generate.log"
+  },
+  {
+    "path": "apexload-native-identity-capability-gates-2026-10-04.inputs.json",
+    "bytes": 295,
+    "sha256": "ae9948bfb080e1540a0043e38a63c0716a8b0f6d3f4c4c63af483daccc621026",
+    "source": "/private/tmp/apexload-native-identity-capability-gates-2026-10-04.inputs.json"
+  },
+  {
+    "path": "apexload-native-identity-capability-gates-2026-10-04.json",
+    "bytes": 243,
+    "sha256": "315a226f59c6390e8a04b16ce773722e8fa6d5836202d322e6e376b900edb9fe",
+    "source": "/private/tmp/apexload-native-identity-capability-gates-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-client-authority-adoption-2026-10-04.json",
+    "bytes": 2273,
+    "sha256": "41fc778edd32fa6cc116e0afb3e2ef39654917abef8289c3a43ef58af853c0ac",
+    "source": "/private/tmp/apexload-native-identity-client-authority-adoption-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-client-v2-adoption-receipt-2026-10-04.json",
+    "bytes": 4214,
+    "sha256": "656006acc63c6f6cbd47ee373eb5660f2c95ac370156b9c9d2501cdf2221cf81",
+    "source": "/private/tmp/apexload-native-identity-client-v2-adoption-receipt-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-empty-file-adoption-2026-10-04.json",
+    "bytes": 1264,
+    "sha256": "2f85e59300e94fc96ce06d5dac3d1429701cfee9a3ece8437588faf725657b09",
+    "source": "/private/tmp/apexload-native-identity-empty-file-adoption-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-fixture-join-adoption-2026-10-04.json",
+    "bytes": 554,
+    "sha256": "517c44ef0ae36e682a6f5a9064be253721403dc069193ab2da683dba9fc0a64d",
+    "source": "/private/tmp/apexload-native-identity-fixture-join-adoption-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-layout-adoption-2026-10-04.json",
+    "bytes": 892,
+    "sha256": "a838996a59999727f5e619c531b36cf856a5ef3b0acbc9a9bc39c2ae436d8443",
+    "source": "/private/tmp/apexload-native-identity-layout-adoption-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-saved-selector-adoption-2026-10-04.json",
+    "bytes": 570,
+    "sha256": "e304202907195b115e443037a6c64bd0407f505892e6fe762ae917c7162b3498",
+    "source": "/private/tmp/apexload-native-identity-saved-selector-adoption-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-adoption-receipt-2026-10-04.json",
+    "bytes": 10126,
+    "sha256": "30c2ade5ea85c0575eca8f650b9d6e049f7be311a4a731ea480d3363514c63e6",
+    "source": "/private/tmp/apexload-native-identity-v3-adoption-receipt-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-analysis-default-2026-10-04.log",
+    "bytes": 120,
+    "sha256": "253566010f114291150755bf8732627e40162b80b40cbf0dc8edb5b87d6268ad",
+    "source": "/private/tmp/apexload-native-identity-v3-analysis-default-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-analysis-default-race-2026-10-04.log",
+    "bytes": 120,
+    "sha256": "9e291db096218a8dd9e769cfc0275cf979dd54240680ae0a1f1f50e576a0d124",
+    "source": "/private/tmp/apexload-native-identity-v3-analysis-default-race-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-browser-final-build-2026-10-04.log",
+    "bytes": 23719,
+    "sha256": "89146dfd5e0959e4aeb9b29f563a66aeedb6544e469477e2c3ca7906d3b849bd",
+    "source": "/private/tmp/apexload-native-identity-v3-browser-final-build-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-browser-final-dev-admin-2026-10-04.log",
+    "bytes": 2455,
+    "sha256": "05389a7bc739be67cb3332a0d21349a5998fcf56f17876d3d35af6d2accc7b3f",
+    "source": "/private/tmp/apexload-native-identity-v3-browser-final-dev-admin-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-browser-final-gates-2026-10-04.inputs.json",
+    "bytes": 9215,
+    "sha256": "118f2480087f4c06180ca1cfd58e965c5790a6e49930f635e323458c89e82036",
+    "source": "/private/tmp/apexload-native-identity-v3-browser-final-gates-2026-10-04.inputs.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-browser-final-gates-2026-10-04.json",
+    "bytes": 902,
+    "sha256": "ebf0c013d88d0f5277402f67513df822e9691f5960599ce97f1b623c524eb3b3",
+    "source": "/private/tmp/apexload-native-identity-v3-browser-final-gates-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-browser-final-local-auth-2026-10-04.log",
+    "bytes": 2637,
+    "sha256": "f4ef8e62cac6be0632e50ed282586bd59e7ec9f77bcd40b48633765f6427a8b2",
+    "source": "/private/tmp/apexload-native-identity-v3-browser-final-local-auth-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-cli-identity-2026-10-04.log",
+    "bytes": 1230,
+    "sha256": "a35b9bdcb3e57c710a604aef44edd2294ae28f91533ecf13254521e9db4d5a2d",
+    "source": "/private/tmp/apexload-native-identity-v3-cli-identity-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-cli-identity-race-2026-10-04.log",
+    "bytes": 1230,
+    "sha256": "a508b11a1649120a041b41d61d42d147446356c7a1c70724bf8bb3fa280531b7",
+    "source": "/private/tmp/apexload-native-identity-v3-cli-identity-race-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-client-final-gates-2026-10-04.json",
+    "bytes": 886,
+    "sha256": "39550be75a15bdec1b50d4ad042cd583ff13264729f4029b3784643b60175851",
+    "source": "/private/tmp/apexload-native-identity-v3-client-final-gates-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-client-final-lint-2026-10-04.log",
+    "bytes": 62,
+    "sha256": "bf7ea878e62d715055d29dd6955852b7c24f575ba3d1aa177c99df05cc0a6eb6",
+    "source": "/private/tmp/apexload-native-identity-v3-client-final-lint-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-client-final-typecheck-2026-10-04.log",
+    "bytes": 139,
+    "sha256": "a691c3ed7f868f4224b319aa9ea49b8db48d41717efab023a87b3a64b7133ee9",
+    "source": "/private/tmp/apexload-native-identity-v3-client-final-typecheck-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-client-final-units-2026-10-04.log",
+    "bytes": 490,
+    "sha256": "9163fd6b2bd3412a39e51e5f2d8106c04504d8e871ccf6df719d345e0fefbc91",
+    "source": "/private/tmp/apexload-native-identity-v3-client-final-units-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-client-gates-2026-10-04.json",
+    "bytes": 450,
+    "sha256": "2709f4650291a822d9673eead793d3064b3d9bb3c22981bfe2233120e8d8a3d5",
+    "source": "/private/tmp/apexload-native-identity-v3-client-gates-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-client-lint-2026-10-04.log",
+    "bytes": 316,
+    "sha256": "9e496288beff1d9b35c7c210f04c416cad17b40b43740bf94f92af787bac36a5",
+    "source": "/private/tmp/apexload-native-identity-v3-client-lint-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-client-repeat-gates-2026-10-04.json",
+    "bytes": 891,
+    "sha256": "8525328982251c59923685fb46b7af66b86b2de84cfd11f7dfe6d2fef1f0d840",
+    "source": "/private/tmp/apexload-native-identity-v3-client-repeat-gates-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-client-repeat-lint-2026-10-04.log",
+    "bytes": 62,
+    "sha256": "bf7ea878e62d715055d29dd6955852b7c24f575ba3d1aa177c99df05cc0a6eb6",
+    "source": "/private/tmp/apexload-native-identity-v3-client-repeat-lint-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-client-repeat-typecheck-2026-10-04.log",
+    "bytes": 139,
+    "sha256": "a691c3ed7f868f4224b319aa9ea49b8db48d41717efab023a87b3a64b7133ee9",
+    "source": "/private/tmp/apexload-native-identity-v3-client-repeat-typecheck-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-client-repeat-units-2026-10-04.log",
+    "bytes": 490,
+    "sha256": "281ab624ba2996a734adfdba584712cfa52925e532c158e50647279d8a036ead",
+    "source": "/private/tmp/apexload-native-identity-v3-client-repeat-units-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-client-typecheck-2026-10-04.log",
+    "bytes": 139,
+    "sha256": "a691c3ed7f868f4224b319aa9ea49b8db48d41717efab023a87b3a64b7133ee9",
+    "source": "/private/tmp/apexload-native-identity-v3-client-typecheck-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-duckdb-native-2026-10-04.log",
+    "bytes": 362,
+    "sha256": "eb63e9498260d0b4d29937b27fa6610a3675c5db87a235479292d19b6f6311f7",
+    "source": "/private/tmp/apexload-native-identity-v3-duckdb-native-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-duckdb-native-race-repeat-2026-10-04.log",
+    "bytes": 65,
+    "sha256": "fb3d8c86046a2dea25e1506ed49e884067e25fb190aa9372389e83a3c6b99571",
+    "source": "/private/tmp/apexload-native-identity-v3-duckdb-native-race-repeat-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-duckdb-native-repeat-2026-10-04.log",
+    "bytes": 64,
+    "sha256": "aeb21dc36588d3a3ba3a7f6be2233e1b10f06b42de576345fe0697f384b148f6",
+    "source": "/private/tmp/apexload-native-identity-v3-duckdb-native-repeat-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-gates-2026-10-04.inputs.json",
+    "bytes": 7787,
+    "sha256": "d3fdaf56275d985a0da1fa54fc279848aa50fe071ca3251b535e297b9c96e0af",
+    "source": "/private/tmp/apexload-native-identity-v3-gates-2026-10-04.inputs.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-gates-2026-10-04.json",
+    "bytes": 1342,
+    "sha256": "bf21c32a47d872202e0dc7e49093cb6e66324dfea47c4380db224d620a28f302",
+    "source": "/private/tmp/apexload-native-identity-v3-gates-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-generate-api-2026-10-04.log",
+    "bytes": 193,
+    "sha256": "fd343376a624d0fe1d7429363a13a2f9db5f25daa2e2de536b20e336639d5b46",
+    "source": "/private/tmp/apexload-native-identity-v3-generate-api-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-identity-api-default-repeat-2026-10-04.log",
+    "bytes": 52,
+    "sha256": "ec28100b523e0a0ed56c0e4706e18bff87d647458e316e97b87b26ab48883c47",
+    "source": "/private/tmp/apexload-native-identity-v3-identity-api-default-repeat-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-identity-api-native-race-final-repeat-2026-10-04.log",
+    "bytes": 52,
+    "sha256": "0e1a9acb68dde7479891d55571f352386b995155466c7a4e6df235a45e748fc2",
+    "source": "/private/tmp/apexload-native-identity-v3-identity-api-native-race-final-repeat-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-identity-api-native-race-repeat-2026-10-04.log",
+    "bytes": 19725,
+    "sha256": "0186b1eb3572fdb061cfbaee3eb38fb9d3fa9be58cdaa58bc635ca2ae316d6de",
+    "source": "/private/tmp/apexload-native-identity-v3-identity-api-native-race-repeat-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-identity-version-duckdb-native-final-2026-10-04.log",
+    "bytes": 653,
+    "sha256": "a1a583645baa684f6d45e5c156a11db73657135e8819a34ba12450c93edcd968",
+    "source": "/private/tmp/apexload-native-identity-v3-identity-version-duckdb-native-final-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-identity-version-duckdb-native-final-repeat-2026-10-04.log",
+    "bytes": 64,
+    "sha256": "8f29b1cd5114a3bc5b647190fc1482d6b59adbdc172f220f79481bbae0af48c4",
+    "source": "/private/tmp/apexload-native-identity-v3-identity-version-duckdb-native-final-repeat-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-identity-version-duckdb-native-race-final-repeat-2026-10-04.log",
+    "bytes": 65,
+    "sha256": "b3991a13da1b29f732a2322828cbb6bd23abf885cc84692ef65b664f9244bed5",
+    "source": "/private/tmp/apexload-native-identity-v3-identity-version-duckdb-native-race-final-repeat-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-native-api-final-gates-2026-10-04.inputs.json",
+    "bytes": 8921,
+    "sha256": "ea84884c0c7774f5832b2e0c3d8ea885e0c5f47ec03716afee465f55b1584ffc",
+    "source": "/private/tmp/apexload-native-identity-v3-native-api-final-gates-2026-10-04.inputs.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-native-api-final-gates-2026-10-04.json",
+    "bytes": 411,
+    "sha256": "6a16e0bf7b19e093f86cce0f326e0e41e222198ec43baf60d536215c8b8ff279",
+    "source": "/private/tmp/apexload-native-identity-v3-native-api-final-gates-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-native-api-final-gates-2026-10-04.resources.json",
+    "bytes": 168,
+    "sha256": "38a1a4af5bf3574024ed337fa9ee882c2fa7ce38e501574b8b683ba540373a35",
+    "source": "/private/tmp/apexload-native-identity-v3-native-api-final-gates-2026-10-04.resources.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-native-api-final-repeat-gates-2026-10-04.inputs.json",
+    "bytes": 9073,
+    "sha256": "67f9b4f199b672279e9c9e0e6dfaaf2631f27d64e5a08943c5973fd982f916dc",
+    "source": "/private/tmp/apexload-native-identity-v3-native-api-final-repeat-gates-2026-10-04.inputs.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-native-api-final-repeat-gates-2026-10-04.json",
+    "bytes": 1589,
+    "sha256": "ebc29319f58782774cf600fddbe548915f016838fb1f7fba3df873a11d5f6636",
+    "source": "/private/tmp/apexload-native-identity-v3-native-api-final-repeat-gates-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-native-api-final-repeat-gates-2026-10-04.resources.json",
+    "bytes": 168,
+    "sha256": "a67fe524f126fedbf03d4780274d00b3dcfd7abb3644e948a690f6253cc1f215",
+    "source": "/private/tmp/apexload-native-identity-v3-native-api-final-repeat-gates-2026-10-04.resources.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-obsolete-cache-receipt-2026-10-04.json",
+    "bytes": 3107,
+    "sha256": "bcdc855c2f88552f3d9876cc1651c3f22ae532f4cc8cba5ec8fe5f9f828feb47",
+    "source": "/private/tmp/apexload-native-identity-v3-obsolete-cache-receipt-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-obsolete-native-api-cache-receipt-2026-10-04.json",
+    "bytes": 1069,
+    "sha256": "801e836c56390391cf653dcca30b72cccc788bc39620629a1a06f0147d4c6ad4",
+    "source": "/private/tmp/apexload-native-identity-v3-obsolete-native-api-cache-receipt-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-obsolete-production-cache-receipt-2026-10-04.json",
+    "bytes": 523,
+    "sha256": "a7b421ee0d79a41b64ea82f8244e89e39c2de9336f331d3772a74d0cc8590746",
+    "source": "/private/tmp/apexload-native-identity-v3-obsolete-production-cache-receipt-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-postgres-identity-race-2026-10-04.log",
+    "bytes": 16210,
+    "sha256": "d4dae7080b2ec8cbd10c9bd35b076d4f813276772f3954658c3fc9feb43500b4",
+    "source": "/private/tmp/apexload-native-identity-v3-postgres-identity-race-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-repeat-gates-2026-10-04.inputs.json",
+    "bytes": 8744,
+    "sha256": "764506f6626f4104b5d7afa1d04c2f932c769f0326502b4d4470aa71bd78ebea",
+    "source": "/private/tmp/apexload-native-identity-v3-repeat-gates-2026-10-04.inputs.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-repeat-gates-2026-10-04.json",
+    "bytes": 2136,
+    "sha256": "1ee50cf892770fd66528432fe391d3c128b0c0dd268b18d3da45a72e399e6be1",
+    "source": "/private/tmp/apexload-native-identity-v3-repeat-gates-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-sql-cli-gates-2026-10-04.inputs.json",
+    "bytes": 524,
+    "sha256": "43a4e24cade2e0fcd82b8c48762340e6a2c6e6fa5a13b80fbbf9168d4dddbd82",
+    "source": "/private/tmp/apexload-native-identity-v3-sql-cli-gates-2026-10-04.inputs.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-sql-cli-gates-2026-10-04.json",
+    "bytes": 2219,
+    "sha256": "e06ae238b193f3964859fc7d9875c092eee052b27bfa2665e1d14baf214202d0",
+    "source": "/private/tmp/apexload-native-identity-v3-sql-cli-gates-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-storage-identity-2026-10-04.log",
+    "bytes": 152,
+    "sha256": "95e8fbb3ff19dfc5d06605bd3b9d3331be8aebf1d5172dbb1ba961e394dc2d19",
+    "source": "/private/tmp/apexload-native-identity-v3-storage-identity-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-storage-identity-race-2026-10-04.log",
+    "bytes": 152,
+    "sha256": "a88eaf349766fd7683958193bed2ffcc17b66bbecb50217b421c885e7c061911",
+    "source": "/private/tmp/apexload-native-identity-v3-storage-identity-race-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-v3-ui-cycle-2026-10-04.json",
+    "bytes": 214,
+    "sha256": "f1573440ad40175a174b858f7c3d31d156b092c46c97b293ee9bdf7008c0a6ce",
+    "source": "/private/tmp/apexload-native-identity-v3-ui-cycle-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-v3-ui-cycle-2026-10-04.log",
+    "bytes": 108106,
+    "sha256": "de08c3506f10dc83531eb5884d79679dbcc77aaa38a77d459374a004d2a6c6dc",
+    "source": "/private/tmp/apexload-native-identity-v3-ui-cycle-2026-10-04.log"
+  },
+  {
+    "path": "apexload-native-identity-version-fence-adoption-2026-10-04.json",
+    "bytes": 862,
+    "sha256": "c630bec92ef09f24b626669ddd27433b933ceda5e0c6777096a1fad787b6748a",
+    "source": "/private/tmp/apexload-native-identity-version-fence-adoption-2026-10-04.json"
+  },
+  {
+    "path": "apexload-native-identity-version-fixture-error-adoption-2026-10-04.json",
+    "bytes": 468,
+    "sha256": "9c67b331019f780078457d45bed5c6b7917d475cf318800975bd0ad53442fe02",
+    "source": "/private/tmp/apexload-native-identity-version-fixture-error-adoption-2026-10-04.json"
+  }
+]

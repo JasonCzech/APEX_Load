@@ -7322,6 +7322,7 @@ export interface operations {
             "diagnostics_enabled": boolean;
             "enabled": boolean;
             "heavy_jobs": number;
+            "imported_identity_version": number;
             "max_import_bytes": number;
             "memory_limit": string;
             "messaging_management_enabled": boolean;
@@ -7436,6 +7437,15 @@ export interface operations {
             }>;
             "id": string;
             "mapping"?: ({
+              "identity"?: ({
+                "dimensions"?: Array<{
+                  "name": string;
+                  "value": Record<string, unknown>;
+                }>;
+                "host"?: Array<string>;
+                "service"?: Array<string>;
+                "source"?: Array<string>;
+              }) | null;
               "measures": Array<{
                 "kind": string;
                 "name"?: string;
@@ -7494,6 +7504,15 @@ export interface operations {
             }>;
             "id": string;
             "mapping"?: ({
+              "identity"?: ({
+                "dimensions"?: Array<{
+                  "name": string;
+                  "value": Record<string, unknown>;
+                }>;
+                "host"?: Array<string>;
+                "service"?: Array<string>;
+                "source"?: Array<string>;
+              }) | null;
               "measures": Array<{
                 "kind": string;
                 "name"?: string;
@@ -7580,6 +7599,7 @@ export interface operations {
             "metric"?: string;
             "protocol"?: string;
             "run_id"?: string;
+            "service"?: string;
             "source_id"?: string;
             "transaction"?: string;
           };
@@ -7594,6 +7614,7 @@ export interface operations {
             "metric"?: string;
             "protocol"?: string;
             "run_id"?: string;
+            "service"?: string;
             "source_id"?: string;
             "transaction"?: string;
           };
@@ -7654,9 +7675,14 @@ export interface operations {
           "aggregation"?: string;
           "bucket_seconds"?: number;
           "dataset_id"?: string;
+          "dimensions"?: Record<string, string>;
           "from"?: string;
+          "host"?: string;
+          "identity_schema_version"?: number;
           "metric"?: string;
           "project_id"?: string;
+          "service"?: string;
+          "source_id"?: string;
           "to"?: string;
         };
       };
@@ -7788,7 +7814,28 @@ export interface operations {
       content: {
         "application/json": {
           "created_at"?: string;
-          "definition"?: unknown;
+          "definition"?: {
+            "identity"?: {
+              "dimensions"?: Array<{
+                "name"?: string;
+                "value"?: Array<string>;
+              }>;
+              "host"?: Array<string>;
+              "service"?: Array<string>;
+              "source"?: Array<string>;
+            };
+            "measures"?: Array<{
+              "kind"?: string;
+              "name"?: string;
+              "name_column"?: Array<string>;
+              "unit"?: string;
+              "value"?: Array<string>;
+            }>;
+            "timestamp"?: Array<string>;
+            "timestamp_encoding"?: string;
+            "timezone"?: string;
+            "version"?: number;
+          };
           "deleted"?: boolean;
           "id"?: string;
           "kind"?: string;
@@ -7871,7 +7918,39 @@ export interface operations {
       content: {
         "application/json": {
           "created_at"?: string;
-          "definition"?: unknown;
+          "definition"?: {
+            "bucket_seconds"?: number;
+            "from"?: string;
+            "left"?: {
+              "aggregation"?: string;
+              "dataset_id"?: string;
+              "dimensions"?: Record<string, string>;
+              "group"?: string;
+              "host"?: string;
+              "metric"?: string;
+              "protocol"?: string;
+              "run_id"?: string;
+              "service"?: string;
+              "source_id"?: string;
+              "transaction"?: string;
+            };
+            "max_lag_seconds"?: number;
+            "mode"?: string;
+            "right"?: {
+              "aggregation"?: string;
+              "dataset_id"?: string;
+              "dimensions"?: Record<string, string>;
+              "group"?: string;
+              "host"?: string;
+              "metric"?: string;
+              "protocol"?: string;
+              "run_id"?: string;
+              "service"?: string;
+              "source_id"?: string;
+              "transaction"?: string;
+            };
+            "to"?: string;
+          };
           "deleted"?: boolean;
           "id"?: string;
           "kind"?: string;
@@ -8116,7 +8195,39 @@ export interface operations {
       content: {
         "application/json": {
           "created_at"?: string;
-          "definition"?: unknown;
+          "definition"?: {
+            "bucket_seconds"?: number;
+            "from"?: string;
+            "left"?: {
+              "aggregation"?: string;
+              "dataset_id"?: string;
+              "dimensions"?: Record<string, string>;
+              "group"?: string;
+              "host"?: string;
+              "metric"?: string;
+              "protocol"?: string;
+              "run_id"?: string;
+              "service"?: string;
+              "source_id"?: string;
+              "transaction"?: string;
+            };
+            "max_lag_seconds"?: number;
+            "mode"?: string;
+            "right"?: {
+              "aggregation"?: string;
+              "dataset_id"?: string;
+              "dimensions"?: Record<string, string>;
+              "group"?: string;
+              "host"?: string;
+              "metric"?: string;
+              "protocol"?: string;
+              "run_id"?: string;
+              "service"?: string;
+              "source_id"?: string;
+              "transaction"?: string;
+            };
+            "to"?: string;
+          };
           "deleted"?: boolean;
           "id"?: string;
           "kind"?: string;
@@ -8269,7 +8380,28 @@ export interface operations {
       content: {
         "application/json": {
           "created_at"?: string;
-          "definition"?: unknown;
+          "definition"?: {
+            "identity"?: {
+              "dimensions"?: Array<{
+                "name"?: string;
+                "value"?: Array<string>;
+              }>;
+              "host"?: Array<string>;
+              "service"?: Array<string>;
+              "source"?: Array<string>;
+            };
+            "measures"?: Array<{
+              "kind"?: string;
+              "name"?: string;
+              "name_column"?: Array<string>;
+              "unit"?: string;
+              "value"?: Array<string>;
+            }>;
+            "timestamp"?: Array<string>;
+            "timestamp_encoding"?: string;
+            "timezone"?: string;
+            "version"?: number;
+          };
           "deleted"?: boolean;
           "id"?: string;
           "kind"?: string;
@@ -8528,6 +8660,15 @@ export interface operations {
             }>;
             "id": string;
             "mapping"?: ({
+              "identity"?: ({
+                "dimensions"?: Array<{
+                  "name": string;
+                  "value": Record<string, unknown>;
+                }>;
+                "host"?: Array<string>;
+                "service"?: Array<string>;
+                "source"?: Array<string>;
+              }) | null;
               "measures": Array<{
                 "kind": string;
                 "name"?: string;
@@ -8627,6 +8768,15 @@ export interface operations {
             }>;
             "id": string;
             "mapping"?: ({
+              "identity"?: ({
+                "dimensions"?: Array<{
+                  "name": string;
+                  "value": Record<string, unknown>;
+                }>;
+                "host"?: Array<string>;
+                "service"?: Array<string>;
+                "source"?: Array<string>;
+              }) | null;
               "measures": Array<{
                 "kind": string;
                 "name"?: string;
@@ -8726,6 +8876,15 @@ export interface operations {
             }>;
             "id": string;
             "mapping"?: ({
+              "identity"?: ({
+                "dimensions"?: Array<{
+                  "name": string;
+                  "value": Record<string, unknown>;
+                }>;
+                "host"?: Array<string>;
+                "service"?: Array<string>;
+                "source"?: Array<string>;
+              }) | null;
               "measures": Array<{
                 "kind": string;
                 "name"?: string;
@@ -8916,6 +9075,15 @@ export interface operations {
         "application/json": {
           "allow_rejected"?: boolean;
           "mapping"?: {
+            "identity"?: {
+              "dimensions"?: Array<{
+                "name"?: string;
+                "value"?: Array<string>;
+              }>;
+              "host"?: Array<string>;
+              "service"?: Array<string>;
+              "source"?: Array<string>;
+            };
             "measures"?: Array<{
               "kind"?: string;
               "name"?: string;

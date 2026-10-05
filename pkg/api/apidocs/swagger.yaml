@@ -18600,6 +18600,9 @@ paths:
                   heavy_jobs:
                     type: integer
                     format: int64
+                  imported_identity_version:
+                    type: integer
+                    format: int64
                   max_import_bytes:
                     type: integer
                     format: int64
@@ -18828,6 +18831,7 @@ paths:
                   - diagnostics_enabled
                   - enabled
                   - heavy_jobs
+                  - imported_identity_version
                   - max_import_bytes
                   - memory_limit
                   - messaging_management_enabled
@@ -18904,10 +18908,13 @@ paths:
                       type: string
                     run_id:
                       type: string
+                    service:
+                      type: string
                     source_id:
                       type: string
                     transaction:
                       type: string
+                  additionalProperties: false
                 max_lag_seconds:
                   type: integer
                   format: int64
@@ -18934,13 +18941,17 @@ paths:
                       type: string
                     run_id:
                       type: string
+                    service:
+                      type: string
                     source_id:
                       type: string
                     transaction:
                       type: string
+                  additionalProperties: false
                 to:
                   type: string
                   format: date-time
+              additionalProperties: false
       responses:
         "200":
           description: OK
@@ -19132,7 +19143,80 @@ paths:
                 created_at:
                   type: string
                   format: date-time
-                definition: {}
+                definition:
+                  type: object
+                  properties:
+                    bucket_seconds:
+                      type: integer
+                      format: int64
+                    from:
+                      type: string
+                      format: date-time
+                    left:
+                      type: object
+                      properties:
+                        aggregation:
+                          type: string
+                        dataset_id:
+                          type: string
+                        dimensions:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        group:
+                          type: string
+                        host:
+                          type: string
+                        metric:
+                          type: string
+                        protocol:
+                          type: string
+                        run_id:
+                          type: string
+                        service:
+                          type: string
+                        source_id:
+                          type: string
+                        transaction:
+                          type: string
+                      additionalProperties: false
+                    max_lag_seconds:
+                      type: integer
+                      format: int64
+                    mode:
+                      type: string
+                    right:
+                      type: object
+                      properties:
+                        aggregation:
+                          type: string
+                        dataset_id:
+                          type: string
+                        dimensions:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        group:
+                          type: string
+                        host:
+                          type: string
+                        metric:
+                          type: string
+                        protocol:
+                          type: string
+                        run_id:
+                          type: string
+                        service:
+                          type: string
+                        source_id:
+                          type: string
+                        transaction:
+                          type: string
+                      additionalProperties: false
+                    to:
+                      type: string
+                      format: date-time
+                  additionalProperties: false
                 deleted:
                   type: boolean
                 id:
@@ -19146,6 +19230,7 @@ paths:
                 revision:
                   type: integer
                   format: int64
+              additionalProperties: false
       responses:
         "200":
           description: OK
@@ -19548,7 +19633,80 @@ paths:
                 created_at:
                   type: string
                   format: date-time
-                definition: {}
+                definition:
+                  type: object
+                  properties:
+                    bucket_seconds:
+                      type: integer
+                      format: int64
+                    from:
+                      type: string
+                      format: date-time
+                    left:
+                      type: object
+                      properties:
+                        aggregation:
+                          type: string
+                        dataset_id:
+                          type: string
+                        dimensions:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        group:
+                          type: string
+                        host:
+                          type: string
+                        metric:
+                          type: string
+                        protocol:
+                          type: string
+                        run_id:
+                          type: string
+                        service:
+                          type: string
+                        source_id:
+                          type: string
+                        transaction:
+                          type: string
+                      additionalProperties: false
+                    max_lag_seconds:
+                      type: integer
+                      format: int64
+                    mode:
+                      type: string
+                    right:
+                      type: object
+                      properties:
+                        aggregation:
+                          type: string
+                        dataset_id:
+                          type: string
+                        dimensions:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        group:
+                          type: string
+                        host:
+                          type: string
+                        metric:
+                          type: string
+                        protocol:
+                          type: string
+                        run_id:
+                          type: string
+                        service:
+                          type: string
+                        source_id:
+                          type: string
+                        transaction:
+                          type: string
+                      additionalProperties: false
+                    to:
+                      type: string
+                      format: date-time
+                  additionalProperties: false
                 deleted:
                   type: boolean
                 id:
@@ -19562,6 +19720,7 @@ paths:
                 revision:
                   type: integer
                   format: int64
+              additionalProperties: false
       responses:
         "200":
           description: OK
@@ -19751,6 +19910,36 @@ paths:
                   mapping:
                     type: object
                     properties:
+                      identity:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                value:
+                                  type: object
+                                  description: 'Go type: ParquetColumnPath'
+                                  additionalProperties: true
+                              required:
+                                - name
+                                - value
+                          host:
+                            type: array
+                            items:
+                              type: string
+                          service:
+                            type: array
+                            items:
+                              type: string
+                          source:
+                            type: array
+                            items:
+                              type: string
+                        nullable: true
                       measures:
                         type: array
                         items:
@@ -20078,16 +20267,30 @@ paths:
                   format: int64
                 dataset_id:
                   type: string
+                dimensions:
+                  type: object
+                  additionalProperties:
+                    type: string
                 from:
                   type: string
                   format: date-time
+                host:
+                  type: string
+                identity_schema_version:
+                  type: integer
+                  format: int64
                 metric:
                   type: string
                 project_id:
                   type: string
+                service:
+                  type: string
+                source_id:
+                  type: string
                 to:
                   type: string
                   format: date-time
+              additionalProperties: false
       responses:
         "200":
           description: OK
@@ -20381,6 +20584,36 @@ paths:
                   mapping:
                     type: object
                     properties:
+                      identity:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                value:
+                                  type: object
+                                  description: 'Go type: ParquetColumnPath'
+                                  additionalProperties: true
+                              required:
+                                - name
+                                - value
+                          host:
+                            type: array
+                            items:
+                              type: string
+                          service:
+                            type: array
+                            items:
+                              type: string
+                          source:
+                            type: array
+                            items:
+                              type: string
+                        nullable: true
                       measures:
                         type: array
                         items:
@@ -20616,6 +20849,36 @@ paths:
                   mapping:
                     type: object
                     properties:
+                      identity:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                value:
+                                  type: object
+                                  description: 'Go type: ParquetColumnPath'
+                                  additionalProperties: true
+                              required:
+                                - name
+                                - value
+                          host:
+                            type: array
+                            items:
+                              type: string
+                          service:
+                            type: array
+                            items:
+                              type: string
+                          source:
+                            type: array
+                            items:
+                              type: string
+                        nullable: true
                       measures:
                         type: array
                         items:
@@ -20852,6 +21115,36 @@ paths:
                   mapping:
                     type: object
                     properties:
+                      identity:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                value:
+                                  type: object
+                                  description: 'Go type: ParquetColumnPath'
+                                  additionalProperties: true
+                              required:
+                                - name
+                                - value
+                          host:
+                            type: array
+                            items:
+                              type: string
+                          service:
+                            type: array
+                            items:
+                              type: string
+                          source:
+                            type: array
+                            items:
+                              type: string
+                        nullable: true
                       measures:
                         type: array
                         items:
@@ -21038,6 +21331,36 @@ paths:
                   mapping:
                     type: object
                     properties:
+                      identity:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                value:
+                                  type: object
+                                  description: 'Go type: ParquetColumnPath'
+                                  additionalProperties: true
+                              required:
+                                - name
+                                - value
+                          host:
+                            type: array
+                            items:
+                              type: string
+                          service:
+                            type: array
+                            items:
+                              type: string
+                          source:
+                            type: array
+                            items:
+                              type: string
+                        nullable: true
                       measures:
                         type: array
                         items:
@@ -21383,6 +21706,34 @@ paths:
                 mapping:
                   type: object
                   properties:
+                    identity:
+                      type: object
+                      properties:
+                        dimensions:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              value:
+                                type: array
+                                items:
+                                  type: string
+                            additionalProperties: false
+                        host:
+                          type: array
+                          items:
+                            type: string
+                        service:
+                          type: array
+                          items:
+                            type: string
+                        source:
+                          type: array
+                          items:
+                            type: string
+                      additionalProperties: false
                     measures:
                       type: array
                       items:
@@ -21402,6 +21753,7 @@ paths:
                             type: array
                             items:
                               type: string
+                        additionalProperties: false
                     timestamp:
                       type: array
                       items:
@@ -21413,6 +21765,7 @@ paths:
                     version:
                       type: integer
                       format: int64
+                  additionalProperties: false
                 mapping_id:
                   type: string
                 mapping_revision:
@@ -21421,6 +21774,7 @@ paths:
                 revision:
                   type: integer
                   format: int64
+              additionalProperties: false
       responses:
         "200":
           description: OK
@@ -21604,7 +21958,69 @@ paths:
                 created_at:
                   type: string
                   format: date-time
-                definition: {}
+                definition:
+                  type: object
+                  properties:
+                    identity:
+                      type: object
+                      properties:
+                        dimensions:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              value:
+                                type: array
+                                items:
+                                  type: string
+                            additionalProperties: false
+                        host:
+                          type: array
+                          items:
+                            type: string
+                        service:
+                          type: array
+                          items:
+                            type: string
+                        source:
+                          type: array
+                          items:
+                            type: string
+                      additionalProperties: false
+                    measures:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          name_column:
+                            type: array
+                            items:
+                              type: string
+                          unit:
+                            type: string
+                          value:
+                            type: array
+                            items:
+                              type: string
+                        additionalProperties: false
+                    timestamp:
+                      type: array
+                      items:
+                        type: string
+                    timestamp_encoding:
+                      type: string
+                    timezone:
+                      type: string
+                    version:
+                      type: integer
+                      format: int64
+                  additionalProperties: false
                 deleted:
                   type: boolean
                 id:
@@ -21618,6 +22034,7 @@ paths:
                 revision:
                   type: integer
                   format: int64
+              additionalProperties: false
       responses:
         "200":
           description: OK
@@ -22020,7 +22437,69 @@ paths:
                 created_at:
                   type: string
                   format: date-time
-                definition: {}
+                definition:
+                  type: object
+                  properties:
+                    identity:
+                      type: object
+                      properties:
+                        dimensions:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              value:
+                                type: array
+                                items:
+                                  type: string
+                            additionalProperties: false
+                        host:
+                          type: array
+                          items:
+                            type: string
+                        service:
+                          type: array
+                          items:
+                            type: string
+                        source:
+                          type: array
+                          items:
+                            type: string
+                      additionalProperties: false
+                    measures:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          name_column:
+                            type: array
+                            items:
+                              type: string
+                          unit:
+                            type: string
+                          value:
+                            type: array
+                            items:
+                              type: string
+                        additionalProperties: false
+                    timestamp:
+                      type: array
+                      items:
+                        type: string
+                    timestamp_encoding:
+                      type: string
+                    timezone:
+                      type: string
+                    version:
+                      type: integer
+                      format: int64
+                  additionalProperties: false
                 deleted:
                   type: boolean
                 id:
@@ -22034,6 +22513,7 @@ paths:
                 revision:
                   type: integer
                   format: int64
+              additionalProperties: false
       responses:
         "200":
           description: OK

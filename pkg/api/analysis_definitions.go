@@ -1,7 +1,8 @@
 package api
 
 import (
-	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -72,7 +73,18 @@ func (s *Server) handleAnalysisDefinitions(w http.ResponseWriter, r *http.Reques
 		in.Deleted = true
 	} else {
 		r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
-		if !decodeJSONBody(w, r, &in) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			var limit *http.MaxBytesError
+			if errors.As(err, &limit) {
+				writeError(w, 413, "analytical definition exceeds request byte limit")
+			} else {
+				writeError(w, 400, "invalid analytical definition request")
+			}
+			return
+		}
+		if err := decodeAnalysisDefinitionJSON(body, &in); err != nil {
+			writeError(w, 400, err.Error())
 			return
 		}
 		if in.ProjectID != "" && in.ProjectID != project || in.ID != "" && in.ID != id {
@@ -91,31 +103,13 @@ func (s *Server) handleAnalysisDefinitions(w http.ResponseWriter, r *http.Reques
 		}
 		in.ID, in.ProjectID, in.Kind, in.Deleted = id, project, kind, false
 		if kind == "mapping" {
-			var mapping analysis.ParquetMapping
-			if json.Unmarshal(in.Definition, &mapping) != nil {
-				writeError(w, 400, "invalid saved mapping")
-				return
-			}
-			// Validate syntax independently of any file. Applying a mapping still
-			// validates every input's actual schema during normalization.
-			schema := analysis.ParquetSchemaPreview{}
-			paths := []analysis.ParquetColumnPath{mapping.Timestamp}
-			for _, m := range mapping.Measures {
-				paths = append(paths, m.Value)
-				if len(m.NameColumn) > 0 {
-					paths = append(paths, m.NameColumn)
-				}
-			}
-			for _, p := range paths {
-				schema.Columns = append(schema.Columns, analysis.ParquetColumn{PathComponents: p})
-			}
-			if err := mapping.Validate(schema); err != nil {
+			if _, err := analysis.DecodeParquetMappingDefinition(in.Definition); err != nil {
 				writeError(w, 400, err.Error())
 				return
 			}
 		} else {
 			var comparison AnalysisComparisonRequest
-			if json.Unmarshal(in.Definition, &comparison) != nil || comparison.validate() != nil {
+			if decodeAnalysisDefinitionJSON(in.Definition, &comparison) != nil || comparison.validate() != nil {
 				writeError(w, 400, "invalid saved comparison")
 				return
 			}

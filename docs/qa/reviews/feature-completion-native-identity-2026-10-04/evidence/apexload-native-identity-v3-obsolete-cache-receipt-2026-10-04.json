@@ -1,0 +1,71 @@
+{
+  "basis": "Own-cache API test archives proven by actual nm definitions to omit the unconditional newly adopted identity regression. These cannot be inputs to the current changed API test compilation. No active builds, production archives, other packages, dependencies, deliverables or shared cache are removed.",
+  "candidates": [
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/6f/6fe0e71cddae948766a8aafb18fd67b25f95710c56e6f33b8521308aa5a2effc-d",
+      "bytes": 507049168,
+      "inode": 235064976,
+      "mtime_ns": 1791124344012610000,
+      "sha256": "6fe0e71cddae948766a8aafb18fd67b25f95710c56e6f33b8521308aa5a2effc",
+      "api_test_definitions": 9778,
+      "old_upload_test": true,
+      "current_identity_test": false
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/69/69ce3ea48f1622c7334569f8bc578cc5a5b785cee0701a742f8f867908fe8dec-d",
+      "bytes": 569493122,
+      "inode": 235498219,
+      "mtime_ns": 1791128336271079000,
+      "sha256": "69ce3ea48f1622c7334569f8bc578cc5a5b785cee0701a742f8f867908fe8dec",
+      "api_test_definitions": 9759,
+      "old_upload_test": true,
+      "current_identity_test": false
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/d0/d04461982a8ade216b9063c41a018b47b9411b010b6676d3782752d2fd931cbe-d",
+      "bytes": 511240350,
+      "inode": 235493891,
+      "mtime_ns": 1791128186205863000,
+      "sha256": "d04461982a8ade216b9063c41a018b47b9411b010b6676d3782752d2fd931cbe",
+      "api_test_definitions": 9794,
+      "old_upload_test": true,
+      "current_identity_test": false
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/1f/1f2bfbf8b65b08c2d939787657b876111694639b2f626701047bec16c1753033-d",
+      "bytes": 507141596,
+      "inode": 235257288,
+      "mtime_ns": 1791125495013849000,
+      "sha256": "1f2bfbf8b65b08c2d939787657b876111694639b2f626701047bec16c1753033",
+      "api_test_definitions": 9783,
+      "old_upload_test": true,
+      "current_identity_test": false
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/f6/f6c0d7c758c24f876acc0691cc34d8a6048c6c3c8448c325137f16fa2957e24a-d",
+      "bytes": 511234250,
+      "inode": 235488885,
+      "mtime_ns": 1791127353955972000,
+      "sha256": "f6c0d7c758c24f876acc0691cc34d8a6048c6c3c8448c325137f16fa2957e24a",
+      "api_test_definitions": 9794,
+      "old_upload_test": true,
+      "current_identity_test": false
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-go-cache/8b/8b74a7647b1e0c2c6d44b5b0cb4907db4a49f54d53b751b064ef3d3e6d9e10fe-d",
+      "bytes": 565028474,
+      "inode": 235074689,
+      "mtime_ns": 1791124536220220000,
+      "sha256": "8b74a7647b1e0c2c6d44b5b0cb4907db4a49f54d53b751b064ef3d3e6d9e10fe",
+      "api_test_definitions": 9748,
+      "old_upload_test": true,
+      "current_identity_test": false
+    }
+  ],
+  "reclaimed_bytes": 3171186960,
+  "free_bytes_before": 2820857856,
+  "deleted": 6,
+  "free_bytes_after": 5994987520,
+  "completed_utc": "2026-10-04T15:54:40Z",
+  "shared_cache_mutated": false
+}

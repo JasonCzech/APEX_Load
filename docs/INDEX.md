@@ -87,6 +87,7 @@ not the source of truth for current API or DSL contracts.
 | [NODE_STORAGE_RECOVERY.md](NODE_STORAGE_RECOVERY.md) | Worker state inventory, fencing, storage recovery, and qualification limits |
 | [ARCHIVE_SOURCE_RETENTION.md](ARCHIVE_SOURCE_RETENTION.md) | Opt-in confirmed-source retention, publication fences and recoverability limits |
 | [ANALYSIS_WORKFLOWS.md](ANALYSIS_WORKFLOWS.md) | Project-gated run monitoring, traffic-free preparation, native Parquet imports, saved mappings and correlation; validation limits |
+| [ANALYSIS_IDENTITY.md](ANALYSIS_IDENTITY.md) | Imported source/host/service and bounded dimensions, exact query filters, saved comparisons and evidence limits |
 | [ROADMAP.md](ROADMAP.md) | Roadmap: runtime telemetry SLA, protocol telemetry parity, script authoring consolidation, PT Analysis Parquet import, messaging open work and design record, browser/mobile roadmap, CloudTest outcome-parity ledger and phases |
 | [FEATURE_COMPLETION_SPEC.md](FEATURE_COMPLETION_SPEC.md) | Approved implementation and acceptance specification for Event Hubs/messaging, browser evidence/intelligence, telemetry reporting, native analytics and authoring cleanup |
 | [qa/TEST_PROGRAM.md](qa/TEST_PROGRAM.md) | Nine-month progressive test and infrastructure-readiness program; scope of record, live risk register, and release test checklist |

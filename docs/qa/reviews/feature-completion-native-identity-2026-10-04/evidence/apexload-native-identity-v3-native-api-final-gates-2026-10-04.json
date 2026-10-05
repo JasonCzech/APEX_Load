@@ -1,0 +1,18 @@
+[
+  {
+    "gate": "identity-version-duckdb-native-final",
+    "command": [
+      "go",
+      "test",
+      "-parallel=1",
+      "-count=1",
+      "-timeout=20m",
+      "-ldflags=-s -w",
+      "-tags=analytics_duckdb",
+      "./pkg/analysis/duckdb"
+    ],
+    "exit_code": 1,
+    "seconds": 101.185,
+    "log": "/private/tmp/apexload-native-identity-v3-identity-version-duckdb-native-final-2026-10-04.log"
+  }
+]

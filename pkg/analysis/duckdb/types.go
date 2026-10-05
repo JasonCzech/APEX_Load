@@ -41,13 +41,18 @@ type NormalizeResult struct {
 }
 type RejectionSummary = analysis.ParquetRejectionSummary
 type SeriesQuery struct {
-	ProjectID     string    `json:"project_id"`
-	DatasetID     string    `json:"dataset_id"`
-	Metric        string    `json:"metric"`
-	From          time.Time `json:"from"`
-	To            time.Time `json:"to"`
-	BucketSeconds int       `json:"bucket_seconds"`
-	Aggregation   string    `json:"aggregation"`
+	ProjectID             string            `json:"project_id"`
+	DatasetID             string            `json:"dataset_id"`
+	Metric                string            `json:"metric"`
+	IdentitySchemaVersion int               `json:"identity_schema_version,omitempty"`
+	SourceID              string            `json:"source_id,omitempty"`
+	Host                  string            `json:"host,omitempty"`
+	Service               string            `json:"service,omitempty"`
+	Dimensions            map[string]string `json:"dimensions,omitempty"`
+	From                  time.Time         `json:"from"`
+	To                    time.Time         `json:"to"`
+	BucketSeconds         int               `json:"bucket_seconds"`
+	Aggregation           string            `json:"aggregation"`
 }
 type Preview struct {
 	Schema  analysis.ParquetSchemaPreview `json:"schema"`
@@ -109,6 +114,9 @@ func (e *Engine) authorizedPath(path string) (string, error) {
 func (q SeriesQuery) Validate() error {
 	if q.ProjectID == "" || q.DatasetID == "" || q.Metric == "" || len(q.Metric) > 256 || q.From.IsZero() || !q.To.After(q.From) || q.To.Sub(q.From) > 366*24*time.Hour || q.BucketSeconds < 1 || q.BucketSeconds > 86400 || math.Ceil(q.To.Sub(q.From).Seconds()/float64(q.BucketSeconds)) > analysis.MaxSeriesPoints {
 		return errors.New("invalid or excessive analytical series window")
+	}
+	if err := validateNativeSeriesIdentity(q); err != nil {
+		return err
 	}
 	return analysis.ValidateScalarAggregationName(q.Aggregation)
 }

@@ -137,6 +137,11 @@ values. Timestamp mappings require an explicit timezone and encoding. Offset
 text requires `timestamp_offset`; local wall timestamps use `timestamp`.
 Units are normalized before comparison. Saved mappings retain immutable
 revisions, and imports record the selected revision when one is used.
+Mapping version 2 preserves source, host, service and exact bounded dimensions.
+The workspace exposes separate identity filters for ordinary series and both
+comparison sides; saved definitions retain the executed selectors. See
+[imported measurement identities](ANALYSIS_IDENTITY.md) for nested scalar paths,
+legacy mapping behavior, quality admission and saved-bound precision.
 
 Percentiles require raw observations. Summary-only percentiles are never averaged
 or treated as transaction samples. Counters require explicit rate conversion;
@@ -188,7 +193,7 @@ Cancellation deadlines do not release an unresolved process, descriptor or
 publication owner. The watchdog retains uncertainty until actual closure and
 SQL acknowledgement; platform hard containment and restart qualification remain
 separate gates. Concurrent requests receive explicit busy, resource,
-cancellation or size-limit errors. SQLite/PostgreSQL schema 29 records exact
+cancellation or size-limit errors. SQLite/PostgreSQL schema 33 records exact
 attempt ownership, sealed publication and cleanup. Process-local retry records
 bind the immutable SQL and artifact namespaces and retain ambiguous outcomes;
 they are not proof of cross-process or cross-host writer termination.

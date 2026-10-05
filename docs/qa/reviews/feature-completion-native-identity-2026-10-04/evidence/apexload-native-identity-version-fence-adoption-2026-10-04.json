@@ -1,0 +1,26 @@
+{
+  "manifest_sha256": "87e0733eeec73128402df6224c9fe7d8237836217cdc423aacbab40f4c1bdf1f",
+  "patch_sha256": "25a060e6600aa29559aaa034df5922aeea88d0ed017b15c5a17be9e84b3adf4c",
+  "preimages": [
+    {
+      "path": "pkg/analysis/duckdb/native.go",
+      "sha256": "88cbe6ad7da9bebe0c944b253f2eee8b613d4c6026190c44a3685c04a7eb9a8a"
+    },
+    {
+      "path": "pkg/analysis/duckdb/native_identity_test.go",
+      "sha256": "0f6e71988075909fc483348ad26d437e2f2b923529deba5daef5729c7f374112"
+    }
+  ],
+  "targets": [
+    {
+      "path": "pkg/analysis/duckdb/native.go",
+      "sha256": "ba91b9a536d6339f15b6c4fb33c592b2fbe2423476962cb054c63c778e10534f",
+      "bytes": 19303
+    },
+    {
+      "path": "pkg/analysis/duckdb/native_identity_test.go",
+      "sha256": "b2b620c9e1d529157c61f3fd2f89ae7c9f3a7c060ca92d6005822a3281652dbb",
+      "bytes": 16085
+    }
+  ]
+}

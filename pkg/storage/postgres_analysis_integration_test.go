@@ -137,6 +137,7 @@ func TestPostgresAnalysisWorkflows(t *testing.T) {
 	if _, err = s.SaveAnalysisDefinition(*definition, definition.Revision); err != nil {
 		t.Fatal(err)
 	}
+	identityImportID, identityDefinitionID := exerciseIdentityPersistence(t, s, m.ProjectID)
 	identity := strings.Repeat("c", 64)
 	if err = s.EnsureAnalysisStorageIdentity(identity); err != nil {
 		t.Fatal(err)
@@ -149,6 +150,7 @@ func TestPostgresAnalysisWorkflows(t *testing.T) {
 		t.Fatal(err)
 	}
 	s = pg.SQLiteStore
+	assertIdentityPersistence(t, s, m.ProjectID, identityImportID, identityDefinitionID)
 	recovered, err := s.GetRunAnnotations(m.ProjectID, run.ID)
 	if err != nil || recovered.Revision != 1 || len(recovered.Annotations) != 1 || recovered.Annotations[0].Label != "Deployment" {
 		t.Fatalf("annotation recovery: %+v %v", recovered, err)

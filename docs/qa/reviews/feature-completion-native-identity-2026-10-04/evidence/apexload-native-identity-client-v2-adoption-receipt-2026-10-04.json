@@ -1,0 +1,125 @@
+{
+  "carrier_manifest": "24443949e6dd68e4349d2c99fbdbd9772b66908647a79843fbbb054aa7875ba2",
+  "carrier_patch": "88c25e0c32db001599575a21dd53eb2d9b66eefcc3eea68b5b304bfd15221824",
+  "targets": [
+    {
+      "path": "cmd/apexctl/analysis_identity_forwarding_test.go",
+      "sha256": "670f73ac31d7e496cf32e7745f88a8757a5d21119784555c86c8c5087aa24fbe",
+      "bytes": 3091
+    },
+    {
+      "path": "dashboard/e2e/workflow-analysis-preparation.spec.ts",
+      "sha256": "02fd640f495426a3d3d23c33b950ff5e91a70c0abb01cab9ba1b7c13706890b4",
+      "bytes": 40560
+    },
+    {
+      "path": "dashboard/src/components/AnalysisComparison.test.tsx",
+      "sha256": "1dbd501917ccaa90046ad5221f09e5f8dcf3ec38bbfac5f6345e774d78eac40a",
+      "bytes": 8103
+    },
+    {
+      "path": "dashboard/src/components/AnalysisComparison.tsx",
+      "sha256": "09dace17d50271fda0e7b2a8a3817289c2d2c3088a6935975e434258f9c243c1",
+      "bytes": 15942
+    },
+    {
+      "path": "dashboard/src/components/AnalysisIdentityFilters.tsx",
+      "sha256": "663e7227889228577731696a020abe925911442349bb373068b260ccf4866066",
+      "bytes": 2237
+    },
+    {
+      "path": "dashboard/src/components/AnalysisIdentityMapping.test.tsx",
+      "sha256": "067c09e8fc91e2a656a340a62fe950e4a8a93b712b7b0a188dfd055ea9f3fb92",
+      "bytes": 6438
+    },
+    {
+      "path": "dashboard/src/components/AnalysisIdentityMapping.tsx",
+      "sha256": "0d85f5c7fdd7aac1d54ddb0b5584f0ebbe4277da1d88891855f40342e534a319",
+      "bytes": 3574
+    },
+    {
+      "path": "dashboard/src/components/AnalysisSavedMappings.tsx",
+      "sha256": "6579d42c6e09e053e7a06e6d96ecdeb3ba805d9908055c0ba527ae098693285a",
+      "bytes": 2623
+    },
+    {
+      "path": "dashboard/src/components/AnalysisWorkspace.tsx",
+      "sha256": "ca6a2646c28d84cc2034830c2e4c40e009f223a1392755f204e663b9b751dd16",
+      "bytes": 19325
+    },
+    {
+      "path": "dashboard/src/types/analysis.ts",
+      "sha256": "e97846b93f38892c571ccf5cf97481821242ffb257b849f9f59357c4244b8283",
+      "bytes": 2644
+    },
+    {
+      "path": "dashboard/src/utils/analysisIdentity.test.ts",
+      "sha256": "9f86bb892c491d1f835dd29589c6e4a97fd1ce3ed9c7fe348fb9285fb18c074b",
+      "bytes": 3512
+    },
+    {
+      "path": "dashboard/src/utils/analysisIdentity.ts",
+      "sha256": "dba943b2b471746f408b082103f819bbd2b2ffa53be7b1a093a445eca056c928",
+      "bytes": 7753
+    },
+    {
+      "path": "docs/ANALYSIS_IDENTITY.md",
+      "sha256": "8c4b636cbd193bff025340ae511a8b7f48fa0b1663b694d4143e71e7f3990ab6",
+      "bytes": 3225
+    }
+  ],
+  "preimages": [
+    {
+      "path": "cmd/apexctl/analysis_identity_forwarding_test.go",
+      "sha256": null
+    },
+    {
+      "path": "dashboard/e2e/workflow-analysis-preparation.spec.ts",
+      "sha256": "212d0e604286799320b487dde2e0397ef165fe5b984ae93147ace5aa9f9c6882"
+    },
+    {
+      "path": "dashboard/src/components/AnalysisComparison.test.tsx",
+      "sha256": "54bbd24f1e96d3fcdbedbb5c68710050dc438e12e8e6347614db48f8465a3ee6"
+    },
+    {
+      "path": "dashboard/src/components/AnalysisComparison.tsx",
+      "sha256": "22c512dca2d98c4ce25bafb343e4668cd8b6fb9242f1fa47f22420ad4c228f1a"
+    },
+    {
+      "path": "dashboard/src/components/AnalysisIdentityFilters.tsx",
+      "sha256": null
+    },
+    {
+      "path": "dashboard/src/components/AnalysisIdentityMapping.test.tsx",
+      "sha256": null
+    },
+    {
+      "path": "dashboard/src/components/AnalysisIdentityMapping.tsx",
+      "sha256": null
+    },
+    {
+      "path": "dashboard/src/components/AnalysisSavedMappings.tsx",
+      "sha256": "1b81b2cb830e24701a6aad593147107fdb50a91135d7c9e930bdeb493e47e323"
+    },
+    {
+      "path": "dashboard/src/components/AnalysisWorkspace.tsx",
+      "sha256": "cdbd29491e649e5b7fec9e21d425d39004b40bfaefd445598d85a3c5faa90594"
+    },
+    {
+      "path": "dashboard/src/types/analysis.ts",
+      "sha256": "3f3e8ed9c85ef97011891bb362ec519faa9bed0a4849f72effed972dfee3fa38"
+    },
+    {
+      "path": "dashboard/src/utils/analysisIdentity.test.ts",
+      "sha256": null
+    },
+    {
+      "path": "dashboard/src/utils/analysisIdentity.ts",
+      "sha256": null
+    },
+    {
+      "path": "docs/ANALYSIS_IDENTITY.md",
+      "sha256": null
+    }
+  ]
+}

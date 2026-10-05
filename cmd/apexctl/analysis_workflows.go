@@ -83,6 +83,11 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	if *failOnRegression && (kind != "analysis" || action != "baseline") {
 		return errors.New("--fail-on-regression requires analysis baseline")
 	}
+	if kind == "analysis" && analysisCLIIdentityCommand(action) {
+		if err := analysisCLIScopeAdmission(*id, *project); err != nil {
+			return err
+		}
+	}
 	client := NewApiClient(*endpoint)
 	client.Client.Timeout = 2 * time.Minute
 	var body []byte
@@ -391,6 +396,11 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 		}
 	default:
 		return errors.New("unknown workflow")
+	}
+	if kind == "analysis" {
+		if err := client.preflightAnalysisIdentity(ctx, action, *project, *id, body); err != nil {
+			return err
+		}
 	}
 	response, err := client.workflowRequest(ctx, method, path, bytes.NewReader(body), "application/json")
 	if err != nil {
