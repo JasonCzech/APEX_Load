@@ -512,8 +512,8 @@ errors, or falling throughput, on a transaction or action series.
 - **Hypotheses** carry the symptoms they explain (one cause behind several
   symptoms is one hypothesis), score, rank, chain of onsets, the supporting
   and contradicting evidence, the other supported signatures for the same
-  symptoms, the falsification check, and limitations naming competitors that
-  could not be judged. Confidence is `high` when connected,
+  symptoms, the falsification check, limitations naming competitors that
+  could not be judged, and the graph nodes the supporting evidence measured. Confidence is `high` when connected,
   preceding and uncontradicted; `medium` when connected; `low` otherwise,
   with the reasons. The 100 strongest are kept, best first.
 - **Outcome.** `supported` with any hypothesis; `insufficient_evidence` when
@@ -537,6 +537,26 @@ Capacity is reported beside the hypotheses:
   moves it by no more than 10% of its mean (or one message). It reports the
   time-average depth against arrival rate × residence time and their ratio.
   Any other queue or level is `eligible: false` with the reason.
+
+## Root-cause evaluation
+
+The engine is calibrated and judged on a labelled corpus in
+[`docs/qa/rca-eval`](qa/rca-eval/README.md) (WP3.9). Each trial names its run,
+fault class, fault window and the signature that should rank first; healthy
+controls name none. A trial's seed fixes its split: 30% calibrate, 70% are
+held out, decided by the seed's hash before any tuning (`rca.EvalSplit`).
+`apexctl rca eval --corpus DIR` scores a split's assessments. It reports
+top-1 and top-3 recovery, unsupported high-confidence conclusions, false
+attribution on controls, abstention, per-class recall and onset error, each
+rate with a Wilson 95% interval. It also checks the release bars (top-1
+≥ 80%, top-3 ≥ 90%, no unsupported high-confidence conclusion, false
+attribution ≤ 5%) and the corpus minimums (8 fault classes × 20 trials, 100
+controls). `--replay` first re-analyzes each trial's frozen archive with the
+controller's current engine; `--require-bars`, held-out split only, fails
+unless the corpus is ready and every bar is met. The default split is calibration, so held-out
+labels are scored only when asked for. No corpus has been collected yet, so
+the detection, signature and capacity parameters above remain the plan's
+starting values.
 
 ## Root-cause analysis service
 
@@ -588,7 +608,8 @@ MCP tools keep returning v1.
   level with the baseline's same level.
 - **Clients.** `apexctl rca analyze --id RUN [--enrich] [--baseline-id RUN]`,
   `apexctl rca status --id RUN --analysis-id ID`, `apexctl rca show --id RUN`
-  and `apexctl rca bundle --id RUN --analysis-id ID`; MCP tools
+  and `apexctl rca bundle --id RUN --analysis-id ID`, and `apexctl rca eval`
+  for the evaluation corpus; MCP tools
   `run_rca_analyze`, `run_rca_status`, `run_rca_assessment` and
   `run_rca_bundle`.
 

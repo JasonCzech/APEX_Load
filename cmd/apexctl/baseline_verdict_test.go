@@ -17,7 +17,7 @@ func TestBaselineVerdictCIGate(t *testing.T) {
 			}
 			continue
 		}
-		var e *baselineVerdictError
+		var e *verdictError
 		if !errors.As(err, &e) || e.code != tc.code {
 			t.Fatalf("%s: %v", tc.body, err)
 		}

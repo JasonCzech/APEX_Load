@@ -30,7 +30,7 @@ const (
 	rcaBundleSchema   = "apexload.rca_bundle.v1"
 	// rcaEngineVersion changes whenever the engine's output for the same
 	// frozen inputs could change, so it is part of every input digest.
-	rcaEngineVersion  = "apexload.rca.engine.v1+" + rca.ValidityRulesVersion + "+" + rca.DetectParamsVersion + "+" + rca.GraphSchemaVersion + "+" + signatures.Version
+	rcaEngineVersion  = "apexload.rca.engine.v2+" + rca.ValidityRulesVersion + "+" + rca.DetectParamsVersion + "+" + rca.GraphSchemaVersion + "+" + signatures.Version
 	rcaMaxBundleBytes = 256 << 10
 	// An analysis lease outlives the engine's 120 s wall-time budget plus
 	// archive reading, so a live owner is not overtaken.

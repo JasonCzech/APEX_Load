@@ -236,6 +236,7 @@ func Hypothesize(anomalies []Anomaly, series []Series, judged JudgedSeries, grap
 			ctx.Available[evidence] = available
 		}
 		causes := map[string]Anomaly{}
+		causeNodes := map[string][]string{}
 		windowStart := symptom.Onset.Add(-LeadMargin)
 		for _, a := range anomalies {
 			s := byID[a.Series]
@@ -248,6 +249,9 @@ func Hypothesize(anomalies []Anomaly, series []Series, judged JudgedSeries, grap
 				continue
 			}
 			causes[a.ID] = a
+			for _, n := range seriesNodes(s) {
+				causeNodes[a.ID] = append(causeNodes[a.ID], graph.Resolve(n))
+			}
 			ctx.Observations = append(ctx.Observations, signatures.Observation{
 				AnomalyID: a.ID, Series: a.Series, Kind: evidence, Direction: a.Direction, PeakZ: a.PeakZ,
 				Order: onsetOrder(a, symptom), LoadCoincident: loadCoincident(a, levels, params.LevelSettle), Connected: walker.connected(seriesNodes(s), reached),
@@ -267,7 +271,7 @@ func Hypothesize(anomalies []Anomaly, series []Series, judged JudgedSeries, grap
 		}
 		for _, sig := range all {
 			if r := results[sig.Name]; r.Verdict == signatures.Supported {
-				mergeHypothesis(merged, buildHypothesis(sig, r, symptom, causes, results, supported), r)
+				mergeHypothesis(merged, buildHypothesis(sig, r, symptom, causes, causeNodes, results, supported), r)
 			}
 		}
 	}
@@ -306,14 +310,15 @@ func Hypothesize(anomalies []Anomaly, series []Series, judged JudgedSeries, grap
 // hypothesis: its chain of onsets, the evidence for and against it, the
 // hypotheses competing with it and how confident the evidence allows it to
 // be.
-func buildHypothesis(sig signatures.Signature, r signatures.Result, symptom Anomaly, causes map[string]Anomaly, results map[string]signatures.Result, supported []string) Hypothesis {
+func buildHypothesis(sig signatures.Signature, r signatures.Result, symptom Anomaly, causes map[string]Anomaly, causeNodes map[string][]string, results map[string]signatures.Result, supported []string) Hypothesis {
 	h := Hypothesis{
 		Signature: sig.Name, Symptoms: []string{symptom.ID},
 		Score: math.Round(r.Score*1000) / 1000, Falsification: sig.Falsification,
-		Chain: []ChainStep{}, Supporting: []EvidenceRef{}, Contradicting: []EvidenceRef{}, Competing: []string{}, Limitations: []string{}, ConfidenceReasons: []string{},
+		Chain: []ChainStep{}, Supporting: []EvidenceRef{}, Contradicting: []EvidenceRef{}, Competing: []string{}, Limitations: []string{}, ConfidenceReasons: []string{}, Nodes: []string{},
 	}
 	connected, precedes := false, false
 	for _, o := range r.Supporting {
+		h.Nodes = append(h.Nodes, causeNodes[o.AnomalyID]...)
 		relation := o.Order
 		if o.LoadCoincident {
 			relation = RelationLoadCoincident
@@ -391,6 +396,7 @@ func mergeHypothesis(merged map[string]*Hypothesis, h Hypothesis, r signatures.R
 	existing.Contradicting = append(existing.Contradicting, h.Contradicting...)
 	existing.Competing = append(existing.Competing, h.Competing...)
 	existing.Limitations = append(existing.Limitations, h.Limitations...)
+	existing.Nodes = append(existing.Nodes, h.Nodes...)
 	if h.Score > existing.Score {
 		existing.Score = h.Score
 	}
@@ -404,6 +410,7 @@ func finishHypothesis(h *Hypothesis) {
 	h.Symptoms = uniqueSorted(h.Symptoms)
 	h.Competing = uniqueSorted(h.Competing)
 	h.Limitations = uniqueSorted(h.Limitations)
+	h.Nodes = uniqueSorted(h.Nodes)
 	sort.SliceStable(h.Chain, func(i, j int) bool {
 		if h.Chain[i].To != h.Chain[j].To {
 			return h.Chain[i].To < h.Chain[j].To

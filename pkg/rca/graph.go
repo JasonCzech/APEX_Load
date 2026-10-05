@@ -589,8 +589,10 @@ func sortedNodeIDs(nodes map[string]*GraphNode, kind string) []string {
 	return ids
 }
 
+// uniqueSorted returns the distinct values in order; never nil, so a list
+// in the contract stays a list.
 func uniqueSorted(values []string) []string {
-	out := append([]string(nil), values...)
+	out := append(make([]string, 0, len(values)), values...)
 	sort.Strings(out)
 	unique := out[:0]
 	for i, v := range out {

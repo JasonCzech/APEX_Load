@@ -28,7 +28,7 @@ func rcaCmd()      { workflowCommand("rca") }
 func workflowCommand(kind string) {
 	if err := executeWorkflowCommand(context.Background(), kind, os.Args[2:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		var verdict *baselineVerdictError
+		var verdict *verdictError
 		if errors.As(err, &verdict) {
 			os.Exit(verdict.code)
 		}
@@ -41,6 +41,9 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 		return fmt.Errorf("usage: apexctl %s <action> --api URL [--project ID] [--id ID] [--file JSON]", kind)
 	}
 	action := args[0]
+	if kind == "rca" && action == "eval" {
+		return executeRCAEval(ctx, args[1:], out)
+	}
 	flags := flag.NewFlagSet(kind+" "+action, flag.ContinueOnError)
 	flags.SetOutput(out)
 	endpoint := flags.String("api", "http://127.0.0.1:8080", "controller URL")
@@ -132,7 +135,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 		case "show":
 			path = base + "/v2"
 		default:
-			return errors.New("rca actions: analyze, status, show, bundle")
+			return errors.New("rca actions: analyze, status, show, bundle, eval")
 		}
 	case "prepare":
 		if err := requireID(); err != nil {
@@ -421,7 +424,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	response, err := client.workflowRequest(ctx, method, path, bytes.NewReader(body), "application/json")
 	if err != nil {
 		if *failOnRegression {
-			return &baselineVerdictError{exitCodeControllerOrTransport, err.Error()}
+			return &verdictError{exitCodeControllerOrTransport, err.Error()}
 		}
 		return err
 	}
@@ -434,12 +437,15 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	return err
 }
 
-type baselineVerdictError struct {
+// verdictError is a command's verdict on what it checked, with the exit
+// code that carries it: a baseline comparison or an evaluation's release
+// bars.
+type verdictError struct {
 	code    int
 	message string
 }
 
-func (e *baselineVerdictError) Error() string { return e.message }
+func (e *verdictError) Error() string { return e.message }
 func checkBaselineVerdict(response []byte) error {
 	var snapshot struct {
 		Verdict *struct {
@@ -449,13 +455,13 @@ func checkBaselineVerdict(response []byte) error {
 		} `json:"verdict"`
 	}
 	if err := json.Unmarshal(response, &snapshot); err != nil || snapshot.Verdict == nil {
-		return &baselineVerdictError{exitCodeControllerOrTransport, "Baseline verdict unavailable"}
+		return &verdictError{exitCodeControllerOrTransport, "Baseline verdict unavailable"}
 	}
 	if snapshot.Verdict.Status == "regressed" {
-		return &baselineVerdictError{exitCodeTestFailure, "Baseline regression detected"}
+		return &verdictError{exitCodeTestFailure, "Baseline regression detected"}
 	}
 	if snapshot.Verdict.Status != "passed" || snapshot.Verdict.Unavailable != 0 || snapshot.Verdict.Evaluated < 1 {
-		return &baselineVerdictError{exitCodeControllerOrTransport, "Baseline evidence not evaluated"}
+		return &verdictError{exitCodeControllerOrTransport, "Baseline evidence not evaluated"}
 	}
 	return nil
 }

@@ -119,6 +119,8 @@ type Hypothesis struct {
 	Competing         []string      `json:"competing"`
 	Falsification     string        `json:"falsification"`
 	Limitations       []string      `json:"limitations"`
+	// Nodes are the graph nodes the supporting evidence measured.
+	Nodes []string `json:"nodes"`
 }
 
 // ChainStep is one link in a hypothesis's causal chain.
