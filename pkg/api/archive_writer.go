@@ -564,6 +564,7 @@ func (w *runArchiveWriter) RecordResourceSample(timestamp time.Time, activeVUser
 		DiskWeightedIOTimePct:             resources.DiskWeightedIOTimePct,
 		DiskInProgress:                    resources.DiskInProgress,
 		External:                          cloneFloat64Map(resources.External),
+		ContainerCPUPeriodsDelta:          resources.ContainerCPUPeriodsDelta,
 	}
 	if err := w.resourceEncoder.Encode(record); err != nil {
 		w.flushErr = err

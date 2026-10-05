@@ -749,6 +749,8 @@ Percentiles describe the distribution: p95 means 95% of the measured samples wer
 
 For baseline comparisons, hold target environment, release context, script version, data, load shape, runtime settings and measurement windows constant where possible. Explain intentional differences. Separate warm-up/ramp behavior from steady state, and inspect generator saturation before blaming the target.
 
+The run's validity verdict does that check: `suspect` when a load generator stayed saturated at a steady load, `invalid` when results were lost (an OOM-killed generator, dropped results, shed arrivals), and `unknown` when generator statistics are missing. A closed-model run whose throughput falls while latency rises stays valid; that is the system under test, reported as an anomaly. See [run validity](ANALYSIS_WORKFLOWS.md#run-validity) for the rules.
+
 ### Report Profiles
 
 A report is assembled from a registry of sections, selected by profile:

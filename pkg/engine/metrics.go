@@ -259,6 +259,10 @@ type SystemResources struct {
 	DiskWeightedIOTimePct             float64            `json:"disk_weighted_io_time_pct,omitempty"`
 	DiskInProgress                    uint64             `json:"disk_in_progress,omitempty"`
 	External                          map[string]float64 `json:"external_metrics,omitempty"` // Target-side imported metrics
+
+	// ContainerCPUPeriodsDelta is the CFS periods elapsed since the previous
+	// sample: the denominator of the share of periods throttled.
+	ContainerCPUPeriodsDelta uint64 `json:"container_cpu_periods_delta,omitempty"`
 }
 
 type GroupMetrics struct {

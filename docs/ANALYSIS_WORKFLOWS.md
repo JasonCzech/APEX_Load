@@ -246,6 +246,57 @@ Dependency drilldown returns one actual interval with monitor coverage and
 selectable metric links. It never averages percentile values or treats an
 association as proof of cause. Missing and bounded-scan coverage are visible.
 
+## Run validity
+
+Every archived run report carries `validity` (rules `validity.v1`): whether the
+load generators and telemetry could carry the load the run reports. It is one
+of `valid`, `suspect`, `invalid` or `unknown`, with the rules behind it, the
+intervals that were not valid and any limitations.
+
+| Verdict | Rule (first values, recalibrated by the evaluation corpus) |
+| --- | --- |
+| `suspect` | A generator held CPU at or above 85%, lost 10% or more to steal, or was throttled in 10% or more of its CFS periods, for three consecutive intervals |
+| `invalid` | A generator container was OOM-killed, more than 0.1% of an interval's results were dropped, an open model shed arrivals, or test data ran out |
+| `unknown` | Generator statistics are missing for more than 10% of judged intervals, a generator's archive was not collected, or no intervals were archived |
+
+- **Dropped results** are counted per protocol result, so their share is
+  taken against the interval's archived result rows (or its completed
+  transactions, when larger). The counters are cumulative; only a rise above
+  their previous high counts, because a distributed run's fleet total dips
+  when one generator's batch is late.
+- **Missing statistics** count inside the span each generator reported over,
+  so a generator added or removed mid-run is not missing outside it. An
+  expected generator that never reported is missing throughout.
+
+- **Judged intervals.** The verdict is the worst among intervals that overlap
+  a measured steady level (the same plateaus baseline comparison uses, after
+  their 30-second settling): steady VUsers for a closed model, a steady target
+  arrival rate for an open model, and both for a mixed run. With no steady
+  level, every interval is judged and `no_steady_level` is listed. Saturation
+  must be sustained within judged intervals, so a ramp does not count.
+- **Generators.** CPU is the higher of process CPU against allocated cores and
+  container CPU against its limit. Distributed archives name each resource
+  sample's generator (its target) when generator archives merge, so the rules
+  hold per generator and an expected generator that never reported counts as
+  missing. Archives merged before this are judged as one pool by the worst
+  sample, with `generator_identity_unrecorded`.
+- **Throughput.** An open model that misses its arrival target while its
+  generators are healthy is an `open_model_shortfall` anomaly, not invalidity.
+  A closed model whose throughput falls by more than 10% while latency rises by
+  more than 10% at one steady level is a `closed_model_slowdown` anomaly: a
+  system-under-test outcome, and the run stays valid.
+- **Limitations** name evidence a rule could not use, such as throttle periods,
+  dropped results or shed arrivals that the run did not record. Data-pool
+  exhaustion is not recorded yet, so every verdict lists
+  `data_exhaustion_unrecorded`.
+- **Root-cause summary.** The verdict replaces the peak generator-CPU rule:
+  `suspect` is a warning resource finding, `invalid` a critical one, and every
+  verdict appears as the `Run validity` signal.
+
+Archived intervals are about one second long, so three consecutive intervals
+is a short window; the evaluation corpus (WP3.9) recalibrates the rules under a
+new version.
+
 ## Preparation capacity policies
 
 Preparation accepts an immutable `capacity` object. `selection: existing`

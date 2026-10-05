@@ -13,7 +13,7 @@ import (
 func TestCollectCgroupResourcesV2(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "cpu.max"), "200000 100000\n")
-	writeTestFile(t, filepath.Join(root, "cpu.stat"), "usage_usec 1500000\nnr_throttled 7\nthrottled_usec 250000\n")
+	writeTestFile(t, filepath.Join(root, "cpu.stat"), "usage_usec 1500000\nnr_periods 70\nnr_throttled 7\nthrottled_usec 250000\n")
 	writeTestFile(t, filepath.Join(root, "memory.current"), "536870912\n")
 	writeTestFile(t, filepath.Join(root, "memory.max"), "1073741824\n")
 	writeTestFile(t, filepath.Join(root, "memory.events"), "low 0\nhigh 2\nmax 3\noom 1\noom_kill 1\n")
@@ -26,8 +26,8 @@ func TestCollectCgroupResourcesV2(t *testing.T) {
 	if snapshot.CPUUsageNanos != 1_500_000_000 {
 		t.Fatalf("cpu usage ns = %d, want 1500000000", snapshot.CPUUsageNanos)
 	}
-	if snapshot.CPUThrottledPeriods != 7 {
-		t.Fatalf("throttled periods = %d, want 7", snapshot.CPUThrottledPeriods)
+	if snapshot.CPUThrottledPeriods != 7 || snapshot.CPUPeriods != 70 {
+		t.Fatalf("throttled periods = %d of %d, want 7 of 70", snapshot.CPUThrottledPeriods, snapshot.CPUPeriods)
 	}
 	if snapshot.CPUThrottledNanos != 250_000_000 {
 		t.Fatalf("throttled ns = %d, want 250000000", snapshot.CPUThrottledNanos)
@@ -58,7 +58,7 @@ func TestCollectCgroupResourcesV1(t *testing.T) {
 	if snapshot.CPUUsageNanos != 123_456_789 {
 		t.Fatalf("cpu usage ns = %d, want 123456789", snapshot.CPUUsageNanos)
 	}
-	if snapshot.CPUThrottledPeriods != 4 || snapshot.CPUThrottledNanos != 9_000_000 {
+	if snapshot.CPUThrottledPeriods != 4 || snapshot.CPUPeriods != 10 || snapshot.CPUThrottledNanos != 9_000_000 {
 		t.Fatalf("throttle snapshot = %#v, want periods 4 ns 9000000", snapshot)
 	}
 	if snapshot.MemoryWorkingSetBytes != 268_435_456 || snapshot.MemoryLimitBytes != 536_870_912 || snapshot.MemoryFailCount != 6 {

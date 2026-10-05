@@ -10656,6 +10656,11 @@ paths:
                             format: int64
                           transaction:
                             type: string
+                    validity:
+                      type: object
+                      description: 'Go type: rca.Validity'
+                      additionalProperties: true
+                      nullable: true
                     verdict:
                       type: object
                       properties:
@@ -73226,6 +73231,9 @@ paths:
                                 container_cpu_limit_cores:
                                   type: number
                                   format: double
+                                container_cpu_periods_delta:
+                                  type: integer
+                                  format: int64
                                 container_cpu_throttled_periods_delta:
                                   type: integer
                                   format: int64
@@ -74477,6 +74485,9 @@ paths:
                               container_cpu_limit_cores:
                                 type: number
                                 format: double
+                              container_cpu_periods_delta:
+                                type: integer
+                                format: int64
                               container_cpu_throttled_periods_delta:
                                 type: integer
                                 format: int64
@@ -78030,6 +78041,9 @@ paths:
                                 container_cpu_limit_cores:
                                   type: number
                                   format: double
+                                container_cpu_periods_delta:
+                                  type: integer
+                                  format: int64
                                 container_cpu_throttled_periods_delta:
                                   type: integer
                                   format: int64
@@ -79281,6 +79295,9 @@ paths:
                               container_cpu_limit_cores:
                                 type: number
                                 format: double
+                              container_cpu_periods_delta:
+                                type: integer
+                                format: int64
                               container_cpu_throttled_periods_delta:
                                 type: integer
                                 format: int64
@@ -82835,6 +82852,9 @@ paths:
                                 container_cpu_limit_cores:
                                   type: number
                                   format: double
+                                container_cpu_periods_delta:
+                                  type: integer
+                                  format: int64
                                 container_cpu_throttled_periods_delta:
                                   type: integer
                                   format: int64
@@ -84086,6 +84106,9 @@ paths:
                               container_cpu_limit_cores:
                                 type: number
                                 format: double
+                              container_cpu_periods_delta:
+                                type: integer
+                                format: int64
                               container_cpu_throttled_periods_delta:
                                 type: integer
                                 format: int64
@@ -87652,6 +87675,9 @@ paths:
                                 container_cpu_limit_cores:
                                   type: number
                                   format: double
+                                container_cpu_periods_delta:
+                                  type: integer
+                                  format: int64
                                 container_cpu_throttled_periods_delta:
                                   type: integer
                                   format: int64
@@ -88903,6 +88929,9 @@ paths:
                               container_cpu_limit_cores:
                                 type: number
                                 format: double
+                              container_cpu_periods_delta:
+                                type: integer
+                                format: int64
                               container_cpu_throttled_periods_delta:
                                 type: integer
                                 format: int64
@@ -92469,6 +92498,9 @@ paths:
                                 container_cpu_limit_cores:
                                   type: number
                                   format: double
+                                container_cpu_periods_delta:
+                                  type: integer
+                                  format: int64
                                 container_cpu_throttled_periods_delta:
                                   type: integer
                                   format: int64
@@ -93720,6 +93752,9 @@ paths:
                               container_cpu_limit_cores:
                                 type: number
                                 format: double
+                              container_cpu_periods_delta:
+                                type: integer
+                                format: int64
                               container_cpu_throttled_periods_delta:
                                 type: integer
                                 format: int64
@@ -97286,6 +97321,9 @@ paths:
                                 container_cpu_limit_cores:
                                   type: number
                                   format: double
+                                container_cpu_periods_delta:
+                                  type: integer
+                                  format: int64
                                 container_cpu_throttled_periods_delta:
                                   type: integer
                                   format: int64
@@ -98537,6 +98575,9 @@ paths:
                               container_cpu_limit_cores:
                                 type: number
                                 format: double
+                              container_cpu_periods_delta:
+                                type: integer
+                                format: int64
                               container_cpu_throttled_periods_delta:
                                 type: integer
                                 format: int64
@@ -102103,6 +102144,9 @@ paths:
                                 container_cpu_limit_cores:
                                   type: number
                                   format: double
+                                container_cpu_periods_delta:
+                                  type: integer
+                                  format: int64
                                 container_cpu_throttled_periods_delta:
                                   type: integer
                                   format: int64
@@ -103354,6 +103398,9 @@ paths:
                               container_cpu_limit_cores:
                                 type: number
                                 format: double
+                              container_cpu_periods_delta:
+                                type: integer
+                                format: int64
                               container_cpu_throttled_periods_delta:
                                 type: integer
                                 format: int64
@@ -282423,6 +282470,9 @@ paths:
                             container_cpu_limit_cores:
                               type: number
                               format: double
+                            container_cpu_periods_delta:
+                              type: integer
+                              format: int64
                             container_cpu_throttled_periods_delta:
                               type: integer
                               format: int64
@@ -284802,6 +284852,9 @@ paths:
                                 container_cpu_limit_cores:
                                   type: number
                                   format: double
+                                container_cpu_periods_delta:
+                                  type: integer
+                                  format: int64
                                 container_cpu_throttled_periods_delta:
                                   type: integer
                                   format: int64
@@ -286798,6 +286851,9 @@ paths:
                           container_cpu_limit_cores:
                             type: number
                             format: double
+                          container_cpu_periods_delta:
+                            type: integer
+                            format: int64
                           container_cpu_throttled_periods_delta:
                             type: integer
                             format: int64
@@ -294113,6 +294169,9 @@ paths:
                             container_cpu_limit_cores:
                               type: number
                               format: double
+                            container_cpu_periods_delta:
+                              type: integer
+                              format: int64
                             container_cpu_throttled_periods_delta:
                               type: integer
                               format: int64
@@ -296492,6 +296551,9 @@ paths:
                                 container_cpu_limit_cores:
                                   type: number
                                   format: double
+                                container_cpu_periods_delta:
+                                  type: integer
+                                  format: int64
                                 container_cpu_throttled_periods_delta:
                                   type: integer
                                   format: int64
@@ -298488,6 +298550,9 @@ paths:
                           container_cpu_limit_cores:
                             type: number
                             format: double
+                          container_cpu_periods_delta:
+                            type: integer
+                            format: int64
                           container_cpu_throttled_periods_delta:
                             type: integer
                             format: int64
@@ -319506,6 +319571,11 @@ paths:
                         - threshold_ms
                         - total_count
                         - transaction
+                  validity:
+                    type: object
+                    description: 'Go type: rca.Validity'
+                    additionalProperties: true
+                    nullable: true
                   verdict:
                     type: object
                     properties:
@@ -328450,6 +328520,9 @@ paths:
                             container_cpu_limit_cores:
                               type: number
                               format: double
+                            container_cpu_periods_delta:
+                              type: integer
+                              format: int64
                             container_cpu_throttled_periods_delta:
                               type: integer
                               format: int64
@@ -330829,6 +330902,9 @@ paths:
                                 container_cpu_limit_cores:
                                   type: number
                                   format: double
+                                container_cpu_periods_delta:
+                                  type: integer
+                                  format: int64
                                 container_cpu_throttled_periods_delta:
                                   type: integer
                                   format: int64
@@ -332825,6 +332901,9 @@ paths:
                           container_cpu_limit_cores:
                             type: number
                             format: double
+                          container_cpu_periods_delta:
+                            type: integer
+                            format: int64
                           container_cpu_throttled_periods_delta:
                             type: integer
                             format: int64
@@ -340084,6 +340163,9 @@ paths:
                             container_cpu_limit_cores:
                               type: number
                               format: double
+                            container_cpu_periods_delta:
+                              type: integer
+                              format: int64
                             container_cpu_throttled_periods_delta:
                               type: integer
                               format: int64
@@ -342463,6 +342545,9 @@ paths:
                                 container_cpu_limit_cores:
                                   type: number
                                   format: double
+                                container_cpu_periods_delta:
+                                  type: integer
+                                  format: int64
                                 container_cpu_throttled_periods_delta:
                                   type: integer
                                   format: int64
@@ -344459,6 +344544,9 @@ paths:
                           container_cpu_limit_cores:
                             type: number
                             format: double
+                          container_cpu_periods_delta:
+                            type: integer
+                            format: int64
                           container_cpu_throttled_periods_delta:
                             type: integer
                             format: int64

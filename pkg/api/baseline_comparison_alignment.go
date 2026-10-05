@@ -9,6 +9,21 @@ import (
 // Stable windows are made only from fully recorded consecutive intervals. The
 // settling period is trimmed, never extrapolated; interval-boundary cuts are excluded.
 func baselineStableWindows(summaries []IntervalSummaryRecord, started time.Time, group string, selection BaselineComparisonWindow) []BaselineLoadWindow {
+	return stableLoadWindows(summaries, started, group, selection, func(s IntervalSummaryRecord) (float64, bool) {
+		if group == "" {
+			return float64(s.ActiveVUsers), true
+		}
+		g := loadComparisonGroupForSummary(s, group)
+		if g == nil {
+			return 0, false
+		}
+		return float64(g.VUsers), true
+	})
+}
+
+// stableLoadWindows finds the steady spans of the load loadOf measures; an
+// interval it cannot measure ends a span.
+func stableLoadWindows(summaries []IntervalSummaryRecord, started time.Time, group string, selection BaselineComparisonWindow, loadOf func(IntervalSummaryRecord) (float64, bool)) []BaselineLoadWindow {
 	result := []BaselineLoadWindow{}
 	if started.IsZero() {
 		return result
@@ -65,14 +80,10 @@ func baselineStableWindows(summaries []IntervalSummaryRecord, started time.Time,
 		duration, estimated := loadComparisonIntervalSeconds(summaries, i, started)
 		end := s.Timestamp.Sub(started).Seconds()
 		start := end - duration
-		load := float64(s.ActiveVUsers)
-		if group != "" {
-			g := loadComparisonGroupForSummary(s, group)
-			if g == nil {
-				flush()
-				continue
-			}
-			load = float64(g.VUsers)
+		load, measured := loadOf(s)
+		if !measured {
+			flush()
+			continue
 		}
 		// An active-runtime clock that did not advance means this interval includes a pause.
 		paused := i > 0 && s.ActiveRuntimeSeconds != nil && summaries[i-1].ActiveRuntimeSeconds != nil && *s.ActiveRuntimeSeconds-*summaries[i-1].ActiveRuntimeSeconds < duration-.5

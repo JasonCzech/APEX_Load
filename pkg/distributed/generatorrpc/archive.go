@@ -163,6 +163,9 @@ type archiveResourceSample struct {
 	TCPEstablished                    int       `json:"tcp_established,omitempty"`
 	TCPTimeWait                       int       `json:"tcp_time_wait,omitempty"`
 	DiskIOTimePct                     float64   `json:"disk_io_time_pct,omitempty"`
+
+	// ContainerCPUPeriodsDelta is the CFS periods since the previous sample.
+	ContainerCPUPeriodsDelta uint64 `json:"container_cpu_periods_delta,omitempty"`
 }
 
 type archiveIntervalSummary struct {
@@ -1294,6 +1297,7 @@ func (w *archiveRecorder) RecordResourceSample(timestamp time.Time, activeVUsers
 		TCPEstablished:                    resources.TCPEstablished,
 		TCPTimeWait:                       resources.TCPTimeWait,
 		DiskIOTimePct:                     resources.DiskIOTimePct,
+		ContainerCPUPeriodsDelta:          resources.ContainerCPUPeriodsDelta,
 	}
 	if err := w.resourceEncoder.Encode(record); err != nil {
 		w.recordErr = fmt.Errorf("record resource sample: %w", err)

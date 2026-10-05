@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -150,7 +151,9 @@ func TestRootCauseConfidenceReflectsLeadEvidence(t *testing.T) {
 		{name: "advisory lead is capped at medium", mutate: func(r *RunArchiveReport) {
 			r.StatisticalFindings = []StatisticalFinding{{AnomalyEvidence: analysis.AnomalyEvidence{MetricName: "tps", BaselineBuckets: 30, ZScore: 4}, Advisory: true}}
 		}, want: "medium"},
-		{name: "single-reference measured lead is capped at medium", mutate: func(r *RunArchiveReport) { r.ResourcePeaks.CPUProcessPct = 85 }, want: "medium"},
+		{name: "single-reference measured lead is capped at medium", mutate: func(r *RunArchiveReport) {
+			r.Validity = &rca.Validity{Verdict: rca.ValiditySuspect, Reasons: []string{rca.RuleGeneratorCPU}, Rules: rca.DefaultValidityRules}
+		}, want: "medium"},
 		{name: "no findings on a complete archive", mutate: func(*RunArchiveReport) {}, want: "high"},
 		{name: "no findings on an incomplete archive is not reassuring", mutate: func(r *RunArchiveReport) {
 			r.Completeness = RunArchiveCompletenessScore{ScorePct: 80}
@@ -168,5 +171,46 @@ func TestRootCauseConfidenceReflectsLeadEvidence(t *testing.T) {
 				t.Fatalf("confidence = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRootCauseValidityReplacesTheGeneratorCPURule(t *testing.T) {
+	manifest := &RunArchiveManifest{Provenance: RunArchiveProvenance{Groups: []TestGroup{{Name: "g"}}}}
+	for _, tc := range []struct {
+		verdict, severity, status string
+		reasons                   []string
+		detail                    string
+	}{
+		{rca.ValidityInvalid, "critical", "breached", []string{rca.RuleGeneratorOOMKill}, "OOM-killed"},
+		{rca.ValiditySuspect, "warning", "degraded", []string{rca.RuleGeneratorCPU}, "at or above 85% for 3 or more consecutive intervals"},
+		{rca.ValidityUnknown, "", "healthy", []string{rca.RuleGeneratorStatsMissing}, "more than 10% of judged intervals"},
+		{rca.ValidityValid, "", "healthy", []string{}, "carried the load"},
+	} {
+		report := completeRootCauseReport(manifest)
+		// Peak CPU alone no longer produces a finding.
+		report.ResourcePeaks.CPUProcessPct = 99
+		report.Validity = &rca.Validity{Verdict: tc.verdict, Reasons: tc.reasons, Rules: rca.DefaultValidityRules}
+		summary := buildRunRootCauseSummary("run", report)
+		var resource *RootCauseFinding
+		for i := range summary.TopFindings {
+			if summary.TopFindings[i].Category == "resource" {
+				resource = &summary.TopFindings[i]
+			}
+		}
+		if tc.severity == "" && resource != nil || tc.severity != "" && (resource == nil || resource.Severity != tc.severity) || summary.Status != tc.status {
+			t.Fatalf("%s: finding %+v, status %s", tc.verdict, resource, summary.Status)
+		}
+		var signal *RootCauseSignal
+		for i := range summary.Signals {
+			if summary.Signals[i].Name == "Run validity" {
+				signal = &summary.Signals[i]
+			}
+			if summary.Signals[i].Name == "Generator CPU" {
+				t.Fatalf("%s: the peak generator-CPU signal remains", tc.verdict)
+			}
+		}
+		if signal == nil || signal.Status != tc.verdict || !strings.Contains(signal.Value, tc.detail) {
+			t.Fatalf("%s: signal %+v", tc.verdict, signal)
+		}
 	}
 }

@@ -1129,18 +1129,20 @@ func writeMergedRemoteArchiveFilesWithBudget(rootDir string, manifest *RunArchiv
 		kind          string
 		path          func(remoteArchiveBundle) string
 		expectedCount func(remoteArchiveBundle) int64
+		transform     func(remoteArchiveBundle, []byte) ([]byte, error)
 	}{
 		{
 			name: manifest.ResourceSamplesFile, kind: "resource sample",
 			path:          func(bundle remoteArchiveBundle) string { return bundle.resourcesPath },
 			expectedCount: func(bundle remoteArchiveBundle) int64 { return bundle.manifest.ResourceSampleCount },
+			transform:     stampRemoteResourceGenerator,
 		},
 	} {
 		destinationPath, err := archiveArtifactPath(rootDir, dataset.name)
 		if err != nil {
 			return err
 		}
-		if err := mergeRemoteArchiveDataset(destinationPath, bundles, dataset.kind, dataset.path, dataset.expectedCount, budget); err != nil {
+		if err := mergeRemoteArchiveDatasetWith(destinationPath, bundles, dataset.kind, dataset.path, dataset.expectedCount, dataset.transform, budget); err != nil {
 			return err
 		}
 	}
@@ -2605,6 +2607,39 @@ func mergeRemoteArchiveDataset(
 	sourcePath func(remoteArchiveBundle) string,
 	expectedCount func(remoteArchiveBundle) int64,
 	budgets ...*archiveOutputBudget,
+) error {
+	return mergeRemoteArchiveDatasetWith(destinationPath, bundles, kind, sourcePath, expectedCount, nil, budgets...)
+}
+
+// stampRemoteResourceGenerator names the generator that took a resource
+// sample, so per-generator evidence survives the fleet merge. A row that
+// already names its generator keeps it.
+func stampRemoteResourceGenerator(bundle remoteArchiveBundle, line []byte) ([]byte, error) {
+	var row map[string]json.RawMessage
+	if err := json.Unmarshal(line, &row); err != nil {
+		return nil, err
+	}
+	if _, ok := row["generator"]; ok || strings.TrimSpace(bundle.target) == "" {
+		return line, nil
+	}
+	target, err := json.Marshal(bundle.target)
+	if err != nil {
+		return nil, err
+	}
+	row["generator"] = target
+	return json.Marshal(row)
+}
+
+// mergeRemoteArchiveDatasetWith is mergeRemoteArchiveDataset with an optional
+// per-record transform.
+func mergeRemoteArchiveDatasetWith(
+	destinationPath string,
+	bundles []remoteArchiveBundle,
+	kind string,
+	sourcePath func(remoteArchiveBundle) string,
+	expectedCount func(remoteArchiveBundle) int64,
+	transform func(remoteArchiveBundle, []byte) ([]byte, error),
+	budgets ...*archiveOutputBudget,
 ) (err error) {
 	outputBudget, err := mergeBudget(filepath.Dir(destinationPath), budgets)
 	if err != nil {
@@ -2637,6 +2672,14 @@ func mergeRemoteArchiveDataset(
 			if decodeErr := json.Unmarshal(line, &object); decodeErr != nil {
 				_ = source.Close()
 				return fmt.Errorf("decode remote %s record for target %q: %w", kind, bundle.target, decodeErr)
+			}
+			if transform != nil {
+				transformed, transformErr := transform(bundle, line)
+				if transformErr != nil {
+					_ = source.Close()
+					return fmt.Errorf("decode remote %s record for target %q: %w", kind, bundle.target, transformErr)
+				}
+				line = transformed
 			}
 			if _, writeErr := output.Write(line); writeErr != nil {
 				_ = source.Close()

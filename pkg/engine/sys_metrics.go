@@ -225,6 +225,7 @@ func (rc *ResourceCollector) collect() *SystemResources {
 			res.ContainerCPUUsagePct = safeRateUint64(cgroup.CPUUsageNanos, rc.lastCgroup.CPUUsageNanos, dt) / 1_000_000_000 / cgroup.CPULimitCores * 100
 		}
 		res.ContainerCPUThrottledPeriodsDelta = safeDeltaUint64(cgroup.CPUThrottledPeriods, rc.lastCgroup.CPUThrottledPeriods)
+		res.ContainerCPUPeriodsDelta = safeDeltaUint64(cgroup.CPUPeriods, rc.lastCgroup.CPUPeriods)
 		res.ContainerCPUThrottledSecondsRate = safeRateUint64(cgroup.CPUThrottledNanos, rc.lastCgroup.CPUThrottledNanos, dt) / 1_000_000_000
 		res.ContainerMemoryFailCountDelta = safeDeltaUint64(cgroup.MemoryFailCount, rc.lastCgroup.MemoryFailCount)
 		res.ContainerOOMKillCountDelta = safeDeltaUint64(cgroup.OOMKillCount, rc.lastCgroup.OOMKillCount)
@@ -281,6 +282,7 @@ type cgroupResourceSnapshot struct {
 	CPULimitCores         float64
 	CPUUsageNanos         uint64
 	CPUThrottledPeriods   uint64
+	CPUPeriods            uint64
 	CPUThrottledNanos     uint64
 	MemoryWorkingSetBytes uint64
 	MemoryLimitBytes      uint64
@@ -327,6 +329,7 @@ func collectCgroupResources(root string) cgroupResourceSnapshot {
 	if stats, ok := readKeyedUintFile(filepath.Join(root, "cpu.stat")); ok {
 		snapshot.CPUUsageNanos = stats["usage_usec"] * 1000
 		snapshot.CPUThrottledPeriods = stats["nr_throttled"]
+		snapshot.CPUPeriods = stats["nr_periods"]
 		snapshot.CPUThrottledNanos = stats["throttled_usec"] * 1000
 	}
 	if usage, ok := readUintFile(filepath.Join(root, "cpuacct", "cpuacct.usage")); ok && snapshot.CPUUsageNanos == 0 {
@@ -335,6 +338,9 @@ func collectCgroupResources(root string) cgroupResourceSnapshot {
 	if stats, ok := readKeyedUintFile(filepath.Join(root, "cpu", "cpu.stat")); ok {
 		if snapshot.CPUThrottledPeriods == 0 {
 			snapshot.CPUThrottledPeriods = stats["nr_throttled"]
+		}
+		if snapshot.CPUPeriods == 0 {
+			snapshot.CPUPeriods = stats["nr_periods"]
 		}
 		if snapshot.CPUThrottledNanos == 0 {
 			snapshot.CPUThrottledNanos = stats["throttled_time"]

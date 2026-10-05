@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/rca"
 )
 
 const rootCauseSchemaVersion = "apexload.root_cause.v1"
@@ -140,13 +142,22 @@ func buildRunRootCauseSummary(testID string, report *RunArchiveReport) RunRootCa
 			addFinding("telemetry", telemetrySeverity(telemetry.Status), "Telemetry health degraded during the run", telemetryRootCauseDetail(telemetry), []string{"overview.telemetry"}, telemetryScore(telemetry.Status))
 		}
 	}
-	if report.ResourcePeaks.CPUProcessPct >= 80 {
-		severity := "warning"
-		if report.ResourcePeaks.CPUProcessPct >= 90 {
-			severity = "critical"
+	// The validity verdict replaces the peak generator-CPU rule: sustained
+	// saturation is suspect, and lost or shed load is invalid.
+	if validity := report.Validity; validity != nil {
+		detail := validityRootCauseDetail(validity)
+		switch validity.Verdict {
+		case rca.ValidityInvalid:
+			addSignal("Run validity", validity.Verdict, detail, "critical", 92)
+			addFinding("resource", "critical", "Run is not a valid measurement", detail, []string{"validity"}, 92)
+		case rca.ValiditySuspect:
+			addSignal("Run validity", validity.Verdict, detail, "warning", 80)
+			addFinding("resource", "warning", "Load generator evidence is suspect", detail, []string{"validity"}, 80)
+		case rca.ValidityUnknown:
+			addSignal("Run validity", validity.Verdict, detail, "info", 20)
+		default:
+			addSignal("Run validity", validity.Verdict, detail, "healthy", 5)
 		}
-		addSignal("Generator CPU", "saturated", fmt.Sprintf("%.1f%% process CPU", report.ResourcePeaks.CPUProcessPct), severity, report.ResourcePeaks.CPUProcessPct)
-		addFinding("resource", severity, "Generator resource saturation detected", fmt.Sprintf("Peak generator process CPU reached %.1f%%.", report.ResourcePeaks.CPUProcessPct), []string{"resource_peaks.cpu_process_pct"}, report.ResourcePeaks.CPUProcessPct)
 	}
 	if oracle := report.OracleDB; oracle != nil && oracle.Samples > 0 {
 		severity := oracleDBSignalSeverity(oracle)
@@ -422,4 +433,55 @@ func rootCauseNextActions(categories map[string]struct{}) []string {
 		actions = append(actions, "Review browser diagnostics by device profile and isolate client-side regressions from backend latency.")
 	}
 	return actions
+}
+
+// validityRuleText describes each validity rule for the summary.
+var validityRuleText = map[string]string{
+	rca.RuleGeneratorCPU:          "a load generator held CPU at or above %.0f%%",
+	rca.RuleGeneratorSteal:        "a load generator lost at least %.0f%% of CPU to steal",
+	rca.RuleGeneratorThrottled:    "a load generator was throttled in at least %.0f%% of CPU periods",
+	rca.RuleGeneratorOOMKill:      "a load generator container was OOM-killed",
+	rca.RuleDroppedResults:        "more than %.1f%% of an interval's results were dropped",
+	rca.RuleShedArrivals:          "the open model shed arrivals",
+	rca.RuleDataExhausted:         "test data ran out",
+	rca.RuleGeneratorStatsMissing: "generator statistics are missing for more than %.0f%% of judged intervals",
+	rca.RuleEvidenceIncomplete:    "run evidence is incomplete",
+	rca.RuleNoIntervals:           "no intervals were archived",
+}
+
+func validityRootCauseDetail(validity *rca.Validity) string {
+	if validity.Verdict == rca.ValidityValid {
+		return fmt.Sprintf("Generators and telemetry carried the load across %d judged interval(s).", validity.IntervalsJudged)
+	}
+	parts := make([]string, 0, len(validity.Reasons))
+	for _, reason := range validity.Reasons {
+		text := validityRuleText[reason]
+		switch reason {
+		case rca.RuleGeneratorCPU:
+			text = fmt.Sprintf(text, validity.Rules.CPUPct)
+		case rca.RuleGeneratorSteal:
+			text = fmt.Sprintf(text, validity.Rules.StealPct)
+		case rca.RuleGeneratorThrottled:
+			text = fmt.Sprintf(text, validity.Rules.ThrottledFraction*100)
+		case rca.RuleDroppedResults:
+			text = fmt.Sprintf(text, validity.Rules.DroppedFraction*100)
+		case rca.RuleGeneratorStatsMissing:
+			text = fmt.Sprintf(text, validity.Rules.MissingFraction*100)
+		}
+		if text == "" {
+			text = reason
+		}
+		parts = append(parts, text)
+	}
+	if validity.Rules.SustainIntervals > 1 && (validity.Verdict == rca.ValiditySuspect) {
+		return fmt.Sprintf("%s for %d or more consecutive intervals at a steady load (%d interval(s) flagged).", capitalizeFirst(strings.Join(parts, "; ")), validity.Rules.SustainIntervals, len(validity.Windows))
+	}
+	return capitalizeFirst(strings.Join(parts, "; ")) + "."
+}
+
+func capitalizeFirst(value string) string {
+	if value == "" {
+		return value
+	}
+	return strings.ToUpper(value[:1]) + value[1:]
 }

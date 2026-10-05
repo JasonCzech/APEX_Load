@@ -369,6 +369,14 @@ type ResourceSample struct {
 	DiskWeightedIOTimePct             float64            `json:"disk_weighted_io_time_pct,omitempty"`
 	DiskInProgress                    uint64             `json:"disk_in_progress,omitempty"`
 	External                          map[string]float64 `json:"external_metrics,omitempty"`
+
+	// Generator is the target of the load generator that took a distributed
+	// run's sample, stamped when generator archives merge; empty for a local
+	// run and for archives merged before it was recorded.
+	Generator string `json:"generator,omitempty"`
+	// ContainerCPUPeriodsDelta is the CFS periods elapsed since the previous
+	// sample, against which throttled periods are a share.
+	ContainerCPUPeriodsDelta uint64 `json:"container_cpu_periods_delta,omitempty"`
 }
 
 type IntervalSummaryRecord struct {
@@ -539,6 +547,10 @@ type RunArchiveReport struct {
 	// storage-aware handler layer (attachDashboardPanels) from the run's frozen
 	// snapshot, so buildRunArchiveReport stays a pure function of one archive record.
 	DashboardPanels *RunArchiveDashboardPanels `json:"dashboard_panels,omitempty"`
+
+	// Validity says whether the run's load generators and telemetry could
+	// carry the load it reports (apexload rules validity.v1).
+	Validity *rca.Validity `json:"validity,omitempty"`
 }
 
 // RunArchiveLoadLevelSummary preserves the evidence collected while one

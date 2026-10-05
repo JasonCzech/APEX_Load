@@ -3782,6 +3782,7 @@ export interface operations {
               "total_count"?: number;
               "transaction"?: string;
             }>;
+            "validity"?: (Record<string, unknown>) | null;
             "verdict"?: ({
               "conditional"?: boolean;
               "explanation"?: string;
@@ -30843,6 +30844,7 @@ export interface operations {
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -31222,6 +31224,7 @@ export interface operations {
                 }) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -37824,6 +37827,7 @@ export interface operations {
               }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
+                "container_cpu_periods_delta"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
                 "container_cpu_throttled_seconds_rate"?: number;
                 "container_cpu_usage_pct"?: number;
@@ -38528,6 +38532,7 @@ export interface operations {
                 "region"?: string;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -39104,6 +39109,7 @@ export interface operations {
               }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
+                "container_cpu_periods_delta"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
                 "container_cpu_throttled_seconds_rate"?: number;
                 "container_cpu_usage_pct"?: number;
@@ -55118,6 +55124,7 @@ export interface operations {
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -55497,6 +55504,7 @@ export interface operations {
                 }) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -61475,6 +61483,7 @@ export interface operations {
               "total_count": number;
               "transaction": string;
             }>;
+            "validity"?: (Record<string, unknown>) | null;
             "verdict"?: ({
               "conditional": boolean;
               "explanation": string;
@@ -66538,6 +66547,7 @@ export interface operations {
               }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
+                "container_cpu_periods_delta"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
                 "container_cpu_throttled_seconds_rate"?: number;
                 "container_cpu_usage_pct"?: number;
@@ -67242,6 +67252,7 @@ export interface operations {
                 "region"?: string;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -67818,6 +67829,7 @@ export interface operations {
               }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
+                "container_cpu_periods_delta"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
                 "container_cpu_throttled_seconds_rate"?: number;
                 "container_cpu_usage_pct"?: number;
@@ -85759,6 +85771,7 @@ export interface operations {
               }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
+                "container_cpu_periods_delta"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
                 "container_cpu_throttled_seconds_rate"?: number;
                 "container_cpu_usage_pct"?: number;
@@ -86463,6 +86476,7 @@ export interface operations {
                 "region"?: string;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -87039,6 +87053,7 @@ export interface operations {
               }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
+                "container_cpu_periods_delta"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
                 "container_cpu_throttled_seconds_rate"?: number;
                 "container_cpu_usage_pct"?: number;
@@ -98840,6 +98855,7 @@ export interface operations {
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -99219,6 +99235,7 @@ export interface operations {
                 }) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -100412,6 +100429,7 @@ export interface operations {
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -100791,6 +100809,7 @@ export interface operations {
                 }) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -101984,6 +102003,7 @@ export interface operations {
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -102363,6 +102383,7 @@ export interface operations {
                 }) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -103556,6 +103577,7 @@ export interface operations {
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -103935,6 +103957,7 @@ export interface operations {
                 }) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -105128,6 +105151,7 @@ export interface operations {
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -105507,6 +105531,7 @@ export interface operations {
                 }) | null>;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -127146,6 +127171,7 @@ export interface operations {
               }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
+                "container_cpu_periods_delta"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
                 "container_cpu_throttled_seconds_rate"?: number;
                 "container_cpu_usage_pct"?: number;
@@ -127850,6 +127876,7 @@ export interface operations {
                 "region"?: string;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
                   "container_cpu_throttled_periods_delta"?: number;
                   "container_cpu_throttled_seconds_rate"?: number;
                   "container_cpu_usage_pct"?: number;
@@ -128426,6 +128453,7 @@ export interface operations {
               }) | null>;
               "resources"?: ({
                 "container_cpu_limit_cores"?: number;
+                "container_cpu_periods_delta"?: number;
                 "container_cpu_throttled_periods_delta"?: number;
                 "container_cpu_throttled_seconds_rate"?: number;
                 "container_cpu_usage_pct"?: number;

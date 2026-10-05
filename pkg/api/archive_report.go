@@ -113,7 +113,9 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	populations := map[string]*archivePopulationAccumulator{"action": {}, "transaction": {}, "unknown": {}}
 	var totalDuration float64
 	transactionIndex := 0
+	validityResults := newValidityResultCounter(archiveValidityIntervals(manifest, summaries))
 	err = forEachArchiveTransaction(record, func(txPtr *TransactionEvent) error {
+		validityResults.add(txPtr.Timestamp)
 		tx := *txPtr
 		normalizeArchiveTransactionSnapshot(&tx)
 		population := archiveEventPopulation(tx)
@@ -441,6 +443,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		})
 	}
 
+	report.Validity = archiveRunValidity(manifest, validityResults.counted(), summaries, resources)
 	report.Overview.ResourceSamples = int64(len(resources))
 	for _, sample := range resources {
 		if sample.CPUProcessPct > report.ResourcePeaks.CPUProcessPct {
