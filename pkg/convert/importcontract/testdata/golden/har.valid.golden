@@ -18,33 +18,12 @@
           }
         ],
         "metadata": {
-          "execution_blocker": "import_review_required",
-          "execution_blockers": [
-            "import_review_required"
-          ],
           "http_version_capture": {
             "provenance": "request",
             "proxy": false,
+            "reason_code": "http_version_unavailable",
             "request_state": "unavailable",
             "response_state": "unavailable",
-            "version": 1
-          },
-          "import_http_version_fidelity": {
-            "reason_code": "http_version_unavailable",
-            "source_refs": [
-              "log.entries[0].request.httpVersion"
-            ],
-            "version": 1
-          },
-          "import_review": {
-            "reason_codes": [
-              "http_version_unavailable"
-            ],
-            "resolution": "replace_behavior_and_remove_gate",
-            "source": "har",
-            "source_refs": [
-              "log.entries[0].request.httpVersion"
-            ],
             "version": 1
           },
           "response_content_capture": {
@@ -184,10 +163,10 @@
   },
   "unsupported": [
     {
-      "detail": "Captured HTTP version evidence requires review before replay (http_version_unavailable).",
+      "detail": "The capture does not record a replayable HTTP version (http_version_unavailable); replay uses the script's inherited HTTP version policy.",
       "element": "HTTP version",
       "location": "HAR entry 1",
-      "severity": "blocker"
+      "severity": "warning"
     }
   ],
   "warnings": [

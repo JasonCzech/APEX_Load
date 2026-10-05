@@ -31,7 +31,7 @@ type HTTPVersionCapture struct {
 }
 
 func capturedHTTPVersion(raw any, present bool) (string, string) {
-	if !present {
+	if !present || raw == nil {
 		return "", "unavailable"
 	}
 	value, ok := raw.(string)
@@ -126,8 +126,17 @@ func ReviewHTTPVersionCapture(request any, requestPresent bool, response any, re
 	return decision
 }
 
-// ApplyHTTPVersionCapture attaches a durable gate without removing preexisting
-// source requirements. Its metadata is value-free and safe to retain on reopen.
+// HTTPVersionCaptureQualityOnly reports capture gaps that leave a leaf on its
+// inherited HTTP version policy. A missing or "unknown" observation (LoadRunner
+// HAR exports) or a protocol the native runtime cannot select exactly (h3,
+// HTTP/1.0) says nothing about whether the request can replay. Malformed values
+// and contradictory recorder provenance still require review.
+func HTTPVersionCaptureQualityOnly(reason string) bool {
+	return reason == "http_version_unavailable" || reason == reasonUnsupportedHTTPVersion
+}
+
+// ApplyHTTPVersionCapture attaches a durable gate, except for capture-quality
+// gaps, without removing preexisting source requirements. Its metadata is value-free and safe to retain on reopen.
 func ApplyHTTPVersionCapture(action *dsl.Action, capture HTTPVersionCapture, source SourceRef) {
 	if action == nil {
 		return
@@ -142,8 +151,13 @@ func ApplyHTTPVersionCapture(action *dsl.Action, capture HTTPVersionCapture, sou
 	if capture.ResponseVersion == "1.1" || capture.ResponseVersion == "2" {
 		observation["response_version"] = capture.ResponseVersion
 	}
+	if HTTPVersionCaptureQualityOnly(capture.ReasonCode) {
+		// The leaf keeps its inherited policy; the observation records why no
+		// exact version was selected without blocking execution.
+		observation["reason_code"] = capture.ReasonCode
+	}
 	action.Metadata["http_version_capture"] = observation
-	if capture.ReasonCode == "" {
+	if capture.ReasonCode == "" || HTTPVersionCaptureQualityOnly(capture.ReasonCode) {
 		return
 	}
 	detail := "The captured HTTP version is not sufficient to select a faithful replay policy; review the source observation before execution."

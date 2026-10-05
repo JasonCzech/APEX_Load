@@ -355,6 +355,21 @@ func sampleCorrelationReplacementCollisionsWithSurfaceLimit(exchanges []exchange
 			ambiguousPlans[claim.planIndex] = true
 		}
 	}
+	// When a bound is exhausted at claims[firstUnchecked], every pair involving
+	// an earlier claim has been compared, so those claims keep their outcome.
+	// Plans owning any unchecked claim are suppressed whole.
+	markUncheckedClaimsAmbiguous := func(firstUnchecked int) {
+		unchecked := make(map[int]bool)
+		for _, claim := range claims[firstUnchecked:] {
+			unchecked[claim.planIndex] = true
+		}
+		for _, claim := range claims {
+			if unchecked[claim.planIndex] {
+				ambiguousLiterals[claim.literal] = true
+				ambiguousPlans[claim.planIndex] = true
+			}
+		}
+	}
 	requestSurfaces, surfacesComplete := sampleRequestReplacementSurfaces(exchanges, surfaceLimit)
 	if !surfacesComplete {
 		// Collision analysis is safety-critical. A bounded prefix of editable
@@ -362,6 +377,7 @@ func sampleCorrelationReplacementCollisionsWithSurfaceLimit(exchanges []exchange
 		markAllClaimsAmbiguous()
 		return ambiguousLiterals, ambiguousPlans
 	}
+	occurrences := overlapBudget.NewLiteralOccurrenceIndexForSurfaces(requestSurfaces)
 	comparisons := 0
 	for leftIndex, left := range claims {
 		for _, right := range claims[leftIndex+1:] {
@@ -370,23 +386,15 @@ func sampleCorrelationReplacementCollisionsWithSurfaceLimit(exchanges []exchange
 			}
 			comparisons++
 			if comparisons > comparisonLimit {
-				// Collision analysis is safety-critical: when the bounded comparison
-				// budget is exhausted, suppress every automatic claim rather than
-				// returning a partially checked replacement map.
-				markAllClaimsAmbiguous()
+				markUncheckedClaimsAmbiguous(leftIndex)
 				return ambiguousLiterals, ambiguousPlans
 			}
 			overlaps := overlapBudget.Contains(left.literal, right.literal) || overlapBudget.Contains(right.literal, left.literal)
-			if !overlaps {
-				for _, surface := range requestSurfaces {
-					overlaps = overlapBudget.LiteralsPartiallyOverlapInSurface(surface, left.literal, right.literal)
-					if overlapBudget.Exhausted() || overlaps {
-						break
-					}
-				}
+			if !overlaps && !overlapBudget.Exhausted() {
+				overlaps = occurrences.PartiallyOverlap(left.literal, right.literal)
 			}
 			if overlapBudget.Exhausted() {
-				markAllClaimsAmbiguous()
+				markUncheckedClaimsAmbiguous(leftIndex)
 				return ambiguousLiterals, ambiguousPlans
 			}
 			if !overlaps {

@@ -11,9 +11,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
@@ -25,6 +27,17 @@ const (
 	MaxWindowBytes uint64 = 8 << 20
 	MaxMemoryBytes int64  = 256 << 20
 	chunkBytes            = 32 << 10
+
+	// Per-layer codec workspace, measured as retained heap per open reader
+	// mid-stream (flate ~41 KiB, brotli ~100 KiB beyond its ring buffer, zstd
+	// ~1.2 MiB beyond its window) with headroom. The former estimates reserved
+	// 4-50x the real footprint and capped a generator at ~15 brotli responses.
+	flateWorkspaceBytes    int64 = 96 << 10
+	brotliOverheadBytes    int64 = 256 << 10
+	zstdOverheadBytes      int64 = 2 << 20
+	maxProcessMemoryBytes  int64 = 4 << 30
+	DefaultAdmissionWait         = 10 * time.Second
+	processMemoryLimitPart int64 = 8
 )
 
 type ErrorKind string
@@ -66,7 +79,7 @@ func (e *Error) Error() string {
 	case WindowLimit:
 		return "response content decoder exceeded window limit"
 	case MemoryLimit:
-		return "response content decoder memory budget exhausted"
+		return "load generator response decoding capacity exhausted"
 	case Canceled:
 		return "response content decoding canceled"
 	default:
@@ -86,7 +99,9 @@ func failure(kind ErrorKind) error { return &Error{Kind: kind} }
 // counts wire input and every layer's output, including discarded/intermediate
 // bytes. MemoryBudget admits codec workspace and temporary Decode buffers;
 // callers remain responsible for retaining returned output within their own
-// capture budget. Nil uses the process-wide fail-fast budget.
+// capture budget. Nil uses the process-wide budget. AdmissionWait bounds how
+// long a reader waits for workspace before failing with MemoryLimit; zero
+// fails fast.
 type Limits struct {
 	MaxEncodedBytes int64
 	MaxDecodedBytes int64
@@ -94,13 +109,14 @@ type Limits struct {
 	MaxLayers       int
 	MaxWindowBytes  uint64
 	MemoryBudget    *MemoryBudget
+	AdmissionWait   time.Duration
 }
 
 func DefaultLimits(maxBytes int64) Limits {
 	if maxBytes <= 0 || maxBytes > MaxBytes {
 		maxBytes = MaxBytes
 	}
-	return Limits{MaxEncodedBytes: maxBytes, MaxDecodedBytes: maxBytes, MaxWorkBytes: maxBytes * 8, MaxLayers: MaxLayers, MaxWindowBytes: MaxWindowBytes}
+	return Limits{MaxEncodedBytes: maxBytes, MaxDecodedBytes: maxBytes, MaxWorkBytes: maxBytes * 8, MaxLayers: MaxLayers, MaxWindowBytes: MaxWindowBytes, AdmissionWait: DefaultAdmissionWait}
 }
 func (l Limits) normalize() Limits {
 	defaults := DefaultLimits(l.MaxDecodedBytes)
@@ -120,17 +136,60 @@ func (l Limits) normalize() Limits {
 		l.MaxWindowBytes = MaxWindowBytes
 	}
 	if l.MemoryBudget == nil {
-		l.MemoryBudget = &processMemory
+		l.MemoryBudget = processBudget()
+	}
+	if l.AdmissionWait < 0 {
+		l.AdmissionWait = 0
 	}
 	return l
 }
 
+// MemoryBudget admits decoder workspace across concurrent readers. Readers
+// reserve their whole multi-layer workspace at once, so a waiting reader never
+// holds part of the budget while it waits.
 type MemoryBudget struct {
-	limit int64
-	used  atomic.Int64
+	limit      int64
+	used       atomic.Int64
+	peak       atomic.Int64
+	waits      atomic.Int64
+	rejections atomic.Int64
+	waitNanos  atomic.Int64
+	mu         sync.Mutex
+	released   chan struct{}
 }
 
-var processMemory = MemoryBudget{limit: MaxMemoryBytes}
+// BudgetStats reports one budget's capacity telemetry. Waits counts readers
+// that had to queue for workspace; Rejections counts readers that gave up.
+type BudgetStats struct {
+	LimitBytes int64
+	UsedBytes  int64
+	PeakBytes  int64
+	Waits      int64
+	Rejections int64
+	WaitTime   time.Duration
+}
+
+var (
+	processMemory     MemoryBudget
+	processMemoryOnce sync.Once
+)
+
+// processBudget sizes the shared budget on first use, after the generator has
+// applied its container GOMEMLIMIT: one eighth of the limit, at least the
+// historical 256 MiB and at most 4 GiB.
+func processBudget() *MemoryBudget {
+	processMemoryOnce.Do(func() {
+		limit := MaxMemoryBytes
+		if memoryLimit := debug.SetMemoryLimit(-1); memoryLimit > 0 && memoryLimit < 1<<62 {
+			limit = max(limit, min(memoryLimit/processMemoryLimitPart, maxProcessMemoryBytes))
+		}
+		processMemory.limit = limit
+	})
+	return &processMemory
+}
+
+// ProcessStats reports the process-wide decoder budget.
+func ProcessStats() BudgetStats { return processBudget().Stats() }
 
 func NewMemoryBudget(limit int64) *MemoryBudget {
 	if limit <= 0 || limit > MaxMemoryBytes {
@@ -139,6 +198,9 @@ func NewMemoryBudget(limit int64) *MemoryBudget {
 	return &MemoryBudget{limit: limit}
 }
 func (b *MemoryBudget) Used() int64 { return b.used.Load() }
+func (b *MemoryBudget) Stats() BudgetStats {
+	return BudgetStats{LimitBytes: b.limit, UsedBytes: b.used.Load(), PeakBytes: b.peak.Load(), Waits: b.waits.Load(), Rejections: b.rejections.Load(), WaitTime: time.Duration(b.waitNanos.Load())}
+}
 func (b *MemoryBudget) reserve(n int64) bool {
 	for {
 		used := b.used.Load()
@@ -146,7 +208,65 @@ func (b *MemoryBudget) reserve(n int64) bool {
 			return false
 		}
 		if b.used.CompareAndSwap(used, used+n) {
+			for peak := b.peak.Load(); used+n > peak && !b.peak.CompareAndSwap(peak, used+n); peak = b.peak.Load() {
+			}
 			return true
+		}
+	}
+}
+
+// release returns workspace and wakes every waiting reader to retry.
+func (b *MemoryBudget) release(n int64) {
+	if n <= 0 {
+		return
+	}
+	b.used.Add(-n)
+	b.mu.Lock()
+	if b.released != nil {
+		close(b.released)
+		b.released = nil
+	}
+	b.mu.Unlock()
+}
+
+// acquire reserves n bytes, waiting up to wait (and while ctx is live) for
+// other readers to release workspace. A request larger than the whole budget
+// fails immediately. The retry and the wait-channel creation share b.mu with
+// release's notification, so a release between them cannot be missed.
+func (b *MemoryBudget) acquire(ctx context.Context, n int64, wait time.Duration) (time.Duration, error) {
+	if b.reserve(n) {
+		return 0, nil
+	}
+	if wait <= 0 || n > b.limit {
+		b.rejections.Add(1)
+		return 0, failure(MemoryLimit)
+	}
+	start := time.Now()
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	b.waits.Add(1)
+	for {
+		b.mu.Lock()
+		if b.reserve(n) {
+			b.mu.Unlock()
+			waited := time.Since(start)
+			b.waitNanos.Add(int64(waited))
+			return waited, nil
+		}
+		if b.released == nil {
+			b.released = make(chan struct{})
+		}
+		released := b.released
+		b.mu.Unlock()
+		select {
+		case <-released:
+		case <-timer.C:
+			b.waitNanos.Add(int64(time.Since(start)))
+			b.rejections.Add(1)
+			return time.Since(start), failure(MemoryLimit)
+		case <-ctx.Done():
+			b.waitNanos.Add(int64(time.Since(start)))
+			return time.Since(start), failure(Canceled)
 		}
 	}
 }
@@ -170,6 +290,7 @@ type Reader struct {
 	sourceOnce  sync.Once
 	closeOnce   sync.Once
 	stopContext func() bool
+	waited      time.Duration
 }
 
 // NewReader takes ownership of source, including on validation failure. Header
@@ -196,6 +317,13 @@ func NewReader(ctx context.Context, source io.ReadCloser, values []string, limit
 func (r *Reader) EncodedBytes() int64 { return r.encoded.Load() }
 func (r *Reader) DecodedBytes() int64 { return r.decoded.Load() }
 func (r *Reader) Complete() bool      { return r.complete.Load() }
+
+// AdmissionWait reports how long the reader queued for decoder workspace.
+func (r *Reader) AdmissionWait() time.Duration {
+	r.readMu.Lock()
+	defer r.readMu.Unlock()
+	return r.waited
+}
 func (r *Reader) Decoding() bool {
 	for _, e := range r.encodings {
 		if e != "identity" {
@@ -205,12 +333,39 @@ func (r *Reader) Decoding() bool {
 	return false
 }
 func (r *Reader) closeSource() { r.sourceOnce.Do(func() { _ = r.source.Close() }) }
+
+// reserve takes additional workspace without waiting. It serves growth after
+// admission (Decode output buffers), where waiting would hold-and-wait.
 func (r *Reader) reserve(n int64) error {
 	if !r.limits.MemoryBudget.reserve(n) {
+		r.limits.MemoryBudget.rejections.Add(1)
 		return failure(MemoryLimit)
 	}
 	r.held += n
 	return nil
+}
+func (r *Reader) release(n int64) {
+	if n <= 0 || n > r.held {
+		return
+	}
+	r.held -= n
+	r.limits.MemoryBudget.release(n)
+}
+
+// layerWorkspace is the admitted cost of one decoding layer. Brotli's window is
+// unknown until its first byte arrives, so admission assumes the largest
+// allowed window and the layer returns the excess after reading the header.
+func (r *Reader) layerWorkspace(encoding string) int64 {
+	switch encoding {
+	case "gzip", "deflate":
+		return chunkBytes + flateWorkspaceBytes
+	case "br":
+		return chunkBytes + int64(r.limits.MaxWindowBytes) + brotliOverheadBytes
+	case "zstd":
+		return chunkBytes + int64(r.limits.MaxWindowBytes) + int64(r.limits.MaxWindowBytes)/4 + zstdOverheadBytes
+	default:
+		return 0
+	}
 }
 func (r *Reader) charge(n int) error {
 	if int64(n) > r.limits.MaxWorkBytes-r.work {
@@ -242,23 +397,29 @@ func (r *Reader) initialize() error {
 		return nil
 	}
 	r.initialized = true
+	workspace := int64(0)
+	for _, encoding := range r.encodings {
+		workspace += r.layerWorkspace(encoding)
+	}
+	if workspace > 0 {
+		waited, err := r.limits.MemoryBudget.acquire(r.ctx, workspace, r.limits.AdmissionWait)
+		r.waited = waited
+		if err != nil {
+			return err
+		}
+		r.held += workspace
+	}
 	var current io.Reader = &boundedReader{reader: r.source, owner: r, maximum: r.limits.MaxEncodedBytes, wire: true}
 	for i := len(r.encodings) - 1; i >= 0; i-- {
 		encoding := r.encodings[i]
 		if encoding == "identity" {
 			continue
 		}
-		if err := r.reserve(chunkBytes); err != nil {
-			return err
-		}
 		input := &countReader{reader: current}
 		buffered := bufio.NewReaderSize(input, chunkBytes)
 		var decoder io.Reader
 		switch encoding {
 		case "gzip":
-			if err := r.reserve(1 << 20); err != nil {
-				return err
-			}
 			codec, err := gzip.NewReader(buffered)
 			if err != nil {
 				if errors.Is(err, io.EOF) {
@@ -269,9 +430,6 @@ func (r *Reader) initialize() error {
 			r.closers = append(r.closers, codec)
 			decoder = codec
 		case "deflate":
-			if err := r.reserve(1 << 20); err != nil {
-				return err
-			}
 			header, err := buffered.Peek(2)
 			if err != nil {
 				if errors.Is(err, io.EOF) {
@@ -309,14 +467,9 @@ func (r *Reader) initialize() error {
 			if window > r.limits.MaxWindowBytes {
 				return failure(WindowLimit)
 			}
-			if err := r.reserve(int64(window)*2 + 8<<20); err != nil {
-				return err
-			}
+			r.release(int64(r.limits.MaxWindowBytes - window))
 			decoder = brotli.NewReader(buffered)
 		case "zstd":
-			if err := r.reserve(int64(r.limits.MaxWindowBytes)*4 + 8<<20); err != nil {
-				return err
-			}
 			codec, err := zstd.NewReader(buffered, zstd.WithDecoderMaxMemory(r.limits.MaxWindowBytes), zstd.WithDecoderMaxWindow(r.limits.MaxWindowBytes), zstd.WithDecoderConcurrency(1), zstd.WithDecoderLowmem(true), zstd.WithDecodeBuffersBelow(0))
 			if err != nil {
 				return r.classify(err)
@@ -392,7 +545,7 @@ func (r *Reader) Close() error {
 		}
 		r.reader = nil
 		r.closers = nil
-		r.limits.MemoryBudget.used.Add(-r.held)
+		r.limits.MemoryBudget.release(r.held)
 		r.held = 0
 	})
 	return nil
@@ -561,8 +714,7 @@ func Decode(ctx context.Context, body []byte, values []string, limits Limits) ([
 				}
 				next := make([]byte, len(out), capacity)
 				copy(next, out)
-				r.limits.MemoryBudget.used.Add(-int64(cap(out)))
-				r.held -= int64(cap(out))
+				r.release(int64(cap(out)))
 				out = next
 			}
 			out = append(out, chunk[:n]...)

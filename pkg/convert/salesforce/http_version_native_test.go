@@ -24,7 +24,8 @@ func TestCometdNativePreservesLeafHTTPVersionAndSourceGate(t *testing.T) {
 		if len(collapseCometdConnectRun([]dsl.Action{leaf, other})) != 2 {
 			t.Fatal("native folding erased a transport policy boundary")
 		}
-		requestimport.ApplyHTTPVersionCapture(&leaf, requestimport.ReviewHTTPVersionCapture(nil, false, nil, false, nil, false, false), requestimport.SourceRef{Format: "har", Pointer: "request.httpVersion"})
+		// A malformed observation carries a durable gate the native clone must keep.
+		requestimport.ApplyHTTPVersionCapture(&leaf, requestimport.ReviewHTTPVersionCapture(42, true, nil, false, nil, false, false), requestimport.SourceRef{Format: "har", Pointer: "request.httpVersion"})
 		cloned, err := cloneScript(&dsl.Script{Actions: []dsl.Action{leaf}})
 		if err != nil || cloned.Actions[0].HTTPVersion.Value() != version || cloned.Actions[0].Metadata["execution_blocker"] != "import_review_required" {
 			t.Fatal("native clone lost policy or unresolved source gate")

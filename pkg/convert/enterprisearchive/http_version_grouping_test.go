@@ -14,7 +14,8 @@ func TestSourceSequenceChildPreservesOptionalHTTPVersion(t *testing.T) {
 		if version != "" {
 			action.HTTPVersion, _ = dsl.NewHTTPVersionOverride(version)
 		}
-		requestimport.ApplyHTTPVersionCapture(&action, requestimport.ReviewHTTPVersionCapture(nil, false, nil, false, nil, false, false), requestimport.SourceRef{Format: "har", Pointer: "request.httpVersion"})
+		// A malformed observation carries the durable gate the wrapper must keep.
+		requestimport.ApplyHTTPVersionCapture(&action, requestimport.ReviewHTTPVersionCapture(42, true, nil, false, nil, false, false), requestimport.SourceRef{Format: "har", Pointer: "request.httpVersion"})
 		child := sourceSequenceChild(action)
 		_, present := child["http_version"]
 		if present != (version != "") {
