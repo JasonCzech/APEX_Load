@@ -241,6 +241,8 @@ When Aura requests in the native script still send the recorded `aura.token`, th
 
 A HAR file cut off partway through its entries (for example, a device capture that stopped writing) is rejected with HTTP 422. The message says how many complete entries the file holds. With the import option `salvage_truncated=true` (the "Recover the complete entries of a truncated HAR" checkbox), the HAR and Salesforce importers keep the log fields before the entries and every complete entry, and discard the incomplete entry and everything after it. The import then warns how many entries were recovered and how many bytes were dropped, and that the script ends where the capture was cut. Only a file that ends early is salvaged: a file that is malformed in the middle, or has no complete entry, is still rejected.
 
+Suggested secret bindings come from imported credential values. A cookie value counts as one only when it is at least 8 characters long or its cookie name is credential-like (for example `session`, `sid`, `token` or `auth`). Short flags and preferences, such as `autocomplete=1`, a language tag or a consent policy, are not credentials. Treating them as credentials had marked every matching token in the script, such as a digit in `User-Agent` or `en` in `Accept-Language`. On a real iPad capture, removing them cut 1,922 suggested bindings to 468. The same rule applies when optional run-evidence redaction is enabled.
+
 ## Native archive compatibility
 
 Re-import an archive into a new review draft to use these mappings. Stored scripts and approved runtime overrides are not rewritten. The original source values and their selected-file provenance remain in import metadata.

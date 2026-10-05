@@ -1164,3 +1164,54 @@ func containsExactString(values []string, want string) bool {
 	}
 	return false
 }
+
+func TestImportedCookieCredentialsSkipShortPreferenceValues(t *testing.T) {
+	const session = "session-cookie-value-4821"
+	script := &dsl.Script{
+		Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "enterprise_archive",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name:   "sequence",
+			Type:   "http_sequence",
+			Method: "SEQUENCE",
+			Params: map[string]any{
+				"requests": []map[string]any{{
+					"name":   "request",
+					"type":   "GET",
+					"method": "GET",
+					"target": "/resource",
+					"header_list": []map[string]any{{
+						"name":  "Cookie",
+						"value": "autocomplete=1; lang=en; consent=0:1; sid=ab12; store=" + session,
+					}},
+					"metadata": map[string]any{
+						dsl.ImportPreservedCredentialTargetsMetadataKey: []any{
+							map[string]any{"field": "actions[0].params.requests[0].header_list", "index": 0},
+						},
+					},
+				}},
+			},
+		}},
+	}
+	values, err := ImportedCredentialValuesForDisclosure(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A long value and a short value under a credential-like name are
+	// credentials; short preference and flag values are not.
+	for _, want := range []string{session, "ab12"} {
+		if !containsExactString(values, want) {
+			t.Fatalf("values = %#v, want cookie credential %q", values, want)
+		}
+	}
+	for _, notWant := range []string{"1", "en", "0:1"} {
+		if containsExactString(values, notWant) {
+			t.Fatalf("values = %#v, short cookie preference %q treated as a credential", values, notWant)
+		}
+	}
+}

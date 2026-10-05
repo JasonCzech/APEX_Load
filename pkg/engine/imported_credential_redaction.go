@@ -831,17 +831,30 @@ func (collector *importedCredentialCollector) collectRequestHeaders(request map[
 	}
 }
 
+// minImportedCookieCredentialBytes separates session material from cookie
+// flags and preferences (autocomplete=1, lang=en, consent=0:1). A shorter
+// cookie value is a credential only when its cookie name is credential-like;
+// otherwise it would mark every matching token in the script (a User-Agent
+// version digit, an Accept-Language tag) and in run evidence.
+const minImportedCookieCredentialBytes = 8
+
 func (collector *importedCredentialCollector) collectCookieHeaderValues(name, value string) {
 	switch {
 	case strings.EqualFold(strings.TrimSpace(name), "Cookie"):
 		request := &stdhttp.Request{Header: stdhttp.Header{"Cookie": []string{value}}}
 		for _, cookie := range request.Cookies() {
-			collector.add(cookie.Value)
+			collector.addCookieValue(cookie)
 		}
 	case strings.EqualFold(strings.TrimSpace(name), "Set-Cookie"):
 		if cookie, err := stdhttp.ParseSetCookie(value); err == nil {
-			collector.add(cookie.Value)
+			collector.addCookieValue(cookie)
 		}
+	}
+}
+
+func (collector *importedCredentialCollector) addCookieValue(cookie *stdhttp.Cookie) {
+	if len(cookie.Value) >= minImportedCookieCredentialBytes || credential.SensitiveName(cookie.Name) {
+		collector.add(cookie.Value)
 	}
 }
 
