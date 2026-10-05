@@ -54,7 +54,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_reg_async_attributes` | web | `review_only` | Import review | Async polling/push has no APEX runtime equivalent. |
 | `web_reg_find` | web | `executable` | Assertion / count extractor | Text= + optional SaveCount extractor; SaveCount without Fail is non-failing. |
 | `web_reg_save_param` | web | `executable` | Extractor (boundary/regex) | LB=/RB= + ORD= on the next request. |
-| `web_reg_save_param_attrib` | web | `executable` | Extractor (xpath) | Tag=+Attribute= → //tag/@attr; element predicates warned. |
+| `web_reg_save_param_attrib` | web | `executable` | Extractor (xpath) | TagName=+Extract= (or Tag=/Attribute=) → //tag/@attr; element attributes before SEARCH_FILTERS become [@name='value'] predicates. |
 | `web_reg_save_param_ex` | web | `executable` | Extractor (boundary) | Extended boundary form. |
 | `web_reg_save_param_json` | web | `executable` | Extractor (jsonpath) | QueryString=/JSONPath=. |
 | `web_reg_save_param_regexp` | web | `executable` | Extractor (regex) | RegExp= + ordinal. |

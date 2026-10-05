@@ -375,6 +375,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		walkThreadGroup(tg, &ctx, script, opts, result, unsupported, variableNames, csvNames, &diagnostics, sourceFileName, &sourceMappings)
 		if script.Protocol != "kafka" && script.Protocol != "eventhubs" {
 			attachJMeterCounterParameters(script, jmeterThreadGroupCounters(trees, tg), parseInt(prop(tg.Element, "ThreadGroup.num_threads")), &diagnostics, &sourceMappings, sourceFileName)
+			applyJMeterThroughputShaping(script, trees, tg, &diagnostics, &sourceMappings, sourceFileName)
 		}
 		for j := range script.Config.Results.CSVExports {
 			script.Config.Results.CSVExports[j].ID = fmt.Sprintf("jmeter_csv_%d", j+1)
@@ -816,6 +817,19 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			ctx.oneShotTimerMs = 0
 		case "ThreadGroup", "TestPlan":
 			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
+			continue
+		case "GenericController":
+			// A Simple Controller only groups its children: they import in
+			// source order, and its config elements and timers stay scoped to
+			// them, as a Transaction Controller's do.
+			next := *ctx
+			next.csvSources = append([]dsl.DataSource(nil), ctx.csvSources...)
+			walkThreadGroup(child, &next, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
+			ctx.oneShotTimerMs = next.oneShotTimerMs
+			var csvConflicts []jmeterCSVSourceConflict
+			ctx.csvSources, csvConflicts = mergeJMeterCSVSources(ctx.csvSources, next.csvSources)
+			applyJMeterCSVSourceConflicts(script, result, diagnostics, sourceFileName, jmeterElementLocation(child.Element), csvConflicts)
+			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "converted", "JMeter Simple Controller only groups requests; its children were imported in source order."))
 			continue
 		case "TransactionController":
 			next := *ctx

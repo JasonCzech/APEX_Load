@@ -45,7 +45,7 @@ var webFunctionCoverageDetail = map[string]webCoverageDetail{
 	"web_reg_save_param_regexp":      {"Extractor (regex)", "RegExp= + ordinal."},
 	"web_reg_save_param_json":        {"Extractor (jsonpath)", "QueryString=/JSONPath=."},
 	"web_reg_save_param_xpath":       {"Extractor (xpath)", "QueryString=/XPath=."},
-	"web_reg_save_param_attrib":      {"Extractor (xpath)", "Tag=+Attribute= → //tag/@attr; element predicates warned."},
+	"web_reg_save_param_attrib":      {"Extractor (xpath)", "TagName=+Extract= (or Tag=/Attribute=) → //tag/@attr; element attributes before SEARCH_FILTERS become [@name='value'] predicates."},
 	"web_reg_find":                   {"Assertion / count extractor", "Text= + optional SaveCount extractor; SaveCount without Fail is non-failing."},
 	"web_find":                       {"Assertion (body_contains)", "Deprecated inline check; What= aliased to Text=."},
 	"web_global_verification":        {"source_verification action", "Positional per-VUser registration with LR scope, case, failure mode and ID."},

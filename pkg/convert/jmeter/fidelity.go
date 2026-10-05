@@ -277,8 +277,8 @@ func reviewSamplerChildren(nodes []*treeNode, action *dsl.Action, script *dsl.Sc
 			}
 			continue
 		}
-		if child.Element.Name == "CounterConfig" {
-			continue // attachJMeterCounterParameters converts and reports counters
+		if child.Element.Name == "CounterConfig" || child.Element.Name == throughputShapingTimer {
+			continue // converted and reported for the whole thread group
 		}
 		if diagnoseJMeterElement(child.Element, diagnostics) {
 			unsupported[child.Element.Name] = struct{}{}
