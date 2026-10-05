@@ -56,6 +56,12 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 				clone.MonitorRules[i].Dimensions[k] = v
 			}
 		}
+		if config.MonitorRules[i].EntityIDs != nil {
+			clone.MonitorRules[i].EntityIDs = make(map[string]string)
+			for k, v := range config.MonitorRules[i].EntityIDs {
+				clone.MonitorRules[i].EntityIDs[k] = v
+			}
+		}
 	}
 	clone.TransactionRules = append([]TransactionSLARule(nil), config.TransactionRules...)
 	if config.EarlyStop != nil {

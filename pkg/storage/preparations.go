@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/jasonczech/apexload/pkg/compute"
-	"reflect"
 	"time"
 )
 
@@ -264,8 +263,15 @@ func (s *SQLiteStore) transitionPreparation(id, from, to string, revision int64,
 		if err != nil {
 			return nil, err
 		}
-		if !reflect.DeepEqual(current, p.Monitors) {
+		if !samePreparationMonitorConfiguration(current, p.Monitors) {
 			return nil, ErrPreparationConflict
+		}
+		if from == "preparing" && to == "ready" {
+			freezeVerifiedDynatracePreparationCapabilities(p.Monitors, current)
+			body, err = json.Marshal(p)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	result, err := tx.Exec(`UPDATE preparations SET state=?,revision=?,expires_at=?,payload=? WHERE id=? AND revision=? AND state=? AND owner_fence=?`, to, p.Revision, p.ExpiresAt, string(body), id, revision, from, owner)

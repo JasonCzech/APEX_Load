@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"slices"
 	"strings"
@@ -60,6 +61,7 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 	sources := map[string]string{}
 	jobsByID := map[string]storage.RunMonitorJob{}
 	firstHeads := map[string]storage.ObservationHead{}
+	traceProofs := map[string]map[string]bool{}
 	if kind != "point" && len(heads) > 0 {
 		jobs, err := store.ListRunMonitorJobs(project, run)
 		if err != nil {
@@ -68,6 +70,12 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 		for _, job := range jobs {
 			sources[job.ID] = job.Source.ID
 			jobsByID[job.ID] = job
+			if job.Source.Pack == "dynatrace" {
+				traceProofs[job.ID] = map[string]bool{}
+				for _, id := range job.RunTraceIDs {
+					traceProofs[job.ID][id] = true
+				}
+			}
 		}
 		if firstStore, ok := store.(interface {
 			ListProviderFirstDiagnosticHeads(string, string, []string) ([]storage.ObservationHead, error)
@@ -126,6 +134,9 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 			if storage.ObservationKey(p) != h.Key {
 				return out, errors.New("canonical point identity mismatch")
 			}
+			if err := storage.VerifyProviderHeadContent(h, p); err != nil {
+				return out, err
+			}
 			p.ReceivedAt = receipt.ReceivedAt
 			out.Points = append(out.Points, p)
 		} else {
@@ -135,6 +146,19 @@ func loadCanonicalMonitorData(ctx context.Context, store storage.RunMonitorStore
 			d := batch.Evidence[h.Index]
 			if storage.DiagnosticKeyForJob(h.JobID, d) != h.Key {
 				return out, errors.New("canonical diagnostic identity mismatch")
+			}
+			if err := storage.VerifyProviderHeadContent(h, d); err != nil {
+				return out, err
+			}
+			if d.Provider == "dynatrace" && d.Properties["trace_id"] != "" {
+				d.Properties = maps.Clone(d.Properties)
+				if d.Properties["correlation"] == "trace_id" {
+					d.Properties["correlation"] = "entity_time"
+				}
+				if d.Properties["correlation"] != "run_header" && traceProofs[h.JobID][strings.ToLower(d.Properties["trace_id"])] {
+					d.Properties["correlation"] = "trace_id"
+				}
+				d.Properties["correlation_sampling"] = "up_to_64_run_observed_trace_ids"
 			}
 			if sources[h.JobID] == "" {
 				return out, errors.New("canonical diagnostic source unavailable")
@@ -300,6 +324,11 @@ func (s *Server) persistProviderBatch(ctx context.Context, job storage.RunMonito
 		}
 	}
 	return store.AcceptProviderMonitorBatch(job.ProjectID, job.Source.CollectorID, receipt, payload, name, owner, generation)
+}
+
+// Durable persistence is shared across provider-specific validators.
+func (s *Server) persistProviderMonitorBatch(ctx context.Context, job storage.RunMonitorJob, sequence int64, payload storage.ProviderMonitorBatch, term executionLeaseTerm) error {
+	return s.persistProviderBatch(ctx, job, sequence, payload, term, time.Now().UTC())
 }
 func scrubTextBounded(value string, limit int) string {
 	value = scrub.Value(value, scrub.Policy{})

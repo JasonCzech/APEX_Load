@@ -66,11 +66,20 @@ func safeMonitorSource(source storage.MonitorSource) storage.MonitorSource {
 		source.CredentialRef = ""
 		source.CollectorPublicKey = ""
 	}
+	if source.Dynatrace != nil {
+		selection := *source.Dynatrace
+		selection.Cursor = ""
+		selection.QueryOffset = 0
+		source.Dynatrace = &selection
+	}
 	return source
 }
 func safeMonitorJob(job storage.RunMonitorJob) storage.RunMonitorJob {
 	job.ConnectionSnapshot = nil
 	job.PrometheusConnectionSnapshot = nil
+	job.DynatraceSnapshot = nil
+	job.ProviderCursor = ""
+	job.RunTraceIDs = nil
 	job.QueryCoverage = nil
 	job.PrometheusDiagnosticTimes = nil
 	job.StableSinceAt = nil
@@ -88,6 +97,7 @@ func safePreparation(p *storage.Preparation) *storage.Preparation {
 	if out.Monitors != nil {
 		out.Monitors.Connections = nil
 		out.Monitors.PrometheusConnections = nil
+		out.Monitors.DynatraceConnections = nil
 		for id, s := range out.Monitors.Sources {
 			out.Monitors.Sources[id] = safeMonitorSource(s)
 		}

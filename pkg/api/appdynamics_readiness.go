@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -49,15 +50,36 @@ func (tr *TestRunner) validateSelectedMonitorRules(bindings *storage.MonitorBind
 			continue
 		}
 		found := false
-		for _, metric := range source.AppDynamics.Metrics {
-			found = found || metric.Name == rule.Metric && appDynamicsExpectedUnit(metric, metric.Path) == rule.Unit
-		}
-		for _, query := range source.AppDynamics.Analytics {
-			unit := query.Unit
-			if unit == "" {
-				unit = "count"
+		if source.AppDynamics != nil {
+			for _, metric := range source.AppDynamics.Metrics {
+				found = found || metric.Name == rule.Metric && appDynamicsExpectedUnit(metric, metric.Path) == rule.Unit
 			}
-			found = found || query.Kind == "metric" && query.Name == rule.Metric && unit == rule.Unit
+			for _, query := range source.AppDynamics.Analytics {
+				unit := query.Unit
+				if unit == "" {
+					unit = "count"
+				}
+				found = found || query.Kind == "metric" && query.Name == rule.Metric && unit == rule.Unit
+			}
+		}
+		if source.Dynatrace != nil {
+			windowAggregate := false
+			for _, query := range source.Dynatrace.Grail {
+				windowAggregate = windowAggregate || query.Kind == "metric" && query.BucketSeconds == 0 && query.Name == rule.Metric && rule.MetricID == dynatrace.GrailMetricID(query)
+			}
+			if rule.Provider != "dynatrace" || rule.MetricID == "" || rule.SourceStatistic == "" || rule.ResolutionSeconds <= 0 && !windowAggregate || rule.Backend != "classic" && rule.Backend != "grail" {
+				return errors.New("Dynatrace rules require an exact provider, backend, metric identity, source statistic and resolution")
+			}
+			for _, metric := range source.Dynatrace.Metrics {
+				// Classic descriptor units may be discovered at preparation time.
+				// The rule still declares an exact unit, which actual observations
+				// must match before they become eligible for evaluation.
+				unitMatches := metric.Unit == "" || dynatrace.NormalizeUnit(metric.Unit) == rule.Unit
+				found = found || metric.Name == rule.Metric && unitMatches && rule.Backend == "classic" && rule.MetricID == dynatrace.MetricID(metric) && rule.SourceStatistic == dynatrace.MetricStatistic(metric)
+			}
+			for _, query := range source.Dynatrace.Grail {
+				found = found || query.Kind == "metric" && query.Name == rule.Metric && dynatrace.NormalizeUnit(query.Unit) == rule.Unit && rule.Backend == "grail" && rule.MetricID == dynatrace.GrailMetricID(query) && rule.SourceStatistic == query.Statistic
+			}
 		}
 		if !found {
 			return errors.New("monitoring rule metric and unit must match an approved numeric selection")

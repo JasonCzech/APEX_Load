@@ -38,6 +38,45 @@ func (s *Server) startAppDynamicsMonitoring() {
 			}
 			s.resumeAppDynamicsInspections(ctx)
 			s.resumePrometheusInspections(ctx)
+			s.resumeDynatraceOperations(ctx)
+			if cancellations, ok := s.store.(dynatraceCancellationStore); ok {
+				abandoned, _ := cancellations.PollDynatraceCancellationJobs(time.Now().UTC(), 2)
+				for _, job := range abandoned {
+					if !runMonitoringEnabled(job.ProjectID) {
+						continue
+					}
+					mu.Lock()
+					ready := !busy[job.ID] && !time.Now().Before(next[job.ID])
+					if ready {
+						select {
+						case slots <- struct{}{}:
+							busy[job.ID] = true
+						default:
+							ready = false
+						}
+					}
+					mu.Unlock()
+					if !ready {
+						continue
+					}
+					work := job
+					if !s.launchBackground(func() {
+						defer func() {
+							<-slots
+							mu.Lock()
+							delete(busy, work.ID)
+							next[work.ID] = time.Now().Add(30 * time.Second)
+							mu.Unlock()
+						}()
+						s.cancelAbandonedDirectDynatrace(ctx, cancellations, work)
+					}) {
+						<-slots
+						mu.Lock()
+						delete(busy, job.ID)
+						mu.Unlock()
+					}
+				}
+			}
 			jobs, err := store.PollDirectRunMonitorJobs(time.Now().UTC())
 			if err != nil {
 				continue
@@ -78,8 +117,12 @@ func (s *Server) startAppDynamicsMonitoring() {
 						mu.Lock()
 						delete(busy, work.ID)
 						current, _ := store.GetRunMonitorJob(work.ProjectID, work.ID)
-						if current != nil && (current.QueryOffset > 0 || current.QueryTime != nil) {
+						if current != nil && current.ProviderCursor != "" {
+							next[work.ID] = time.Now().Add(5 * time.Second)
+						} else if current != nil && (current.QueryOffset > 0 || current.QueryTime != nil) {
 							next[work.ID] = time.Now()
+						} else if current != nil && current.State == "reconciling" && current.Source.Pack == "dynatrace" {
+							next[work.ID] = time.Now().Add(time.Duration(max(60, work.Source.IntervalSeconds)) * time.Second)
 						} else if current != nil && current.State == "reconciling" {
 							next[work.ID] = time.Now().Add(15 * time.Second)
 						} else {
@@ -93,6 +136,8 @@ func (s *Server) startAppDynamicsMonitoring() {
 					}()
 					if work.Source.Pack == "prometheus-query" {
 						s.collectDirectPrometheus(ctx, work)
+					} else if work.Source.Pack == "dynatrace" {
+						s.collectDirectDynatrace(ctx, work)
 					} else {
 						s.collectDirectAppDynamics(ctx, work)
 					}

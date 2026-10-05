@@ -32,7 +32,7 @@ func (s *Server) handleRunMonitorEvidence(w http.ResponseWriter, r *http.Request
 		limit = parsed
 	}
 	kind := r.URL.Query().Get("kind")
-	if kind != "" && kind != "event" && kind != "violation" && kind != "snapshot" && kind != "log" && kind != "transaction" && kind != "target" && kind != "alert" {
+	if kind != "" && kind != "event" && kind != "violation" && kind != "snapshot" && kind != "log" && kind != "transaction" && kind != "target" && kind != "alert" && kind != "problem" && kind != "span" && kind != "trace" {
 		writeError(w, http.StatusBadRequest, "unsupported evidence kind")
 		return
 	}

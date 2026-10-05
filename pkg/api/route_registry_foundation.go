@@ -47,6 +47,7 @@ var systemFoundationAPIRouteCatalog = apiRouteCatalog{
 var modularAPIRouteCatalogs = []apiRouteCatalog{
 	appDynamicsAPIRouteCatalog,
 	prometheusAPIRouteCatalog,
+	dynatraceNativeAPIRouteCatalog,
 	objectActivityAPIRouteCatalog,
 	analysisAPIRouteCatalog,
 	runMonitoringAPIRouteCatalog,

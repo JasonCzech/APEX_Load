@@ -18,7 +18,10 @@ func (j RunMonitorJob) MarshalJSON() ([]byte, error) {
 		QueryCoverage             map[string]appdynamics.Coverage                 `json:"query_coverage,omitempty"`
 		PrometheusDiagnosticTimes map[string]PrometheusDiagnosticObservationTimes `json:"prometheus_diagnostic_times,omitempty"`
 		StableSinceAt             *time.Time                                      `json:"stable_since_at,omitempty"`
-	}{monitorJobJSON(j), j.ConnectionSnapshot, j.PrometheusConnectionSnapshot, j.QueryCoverage, j.PrometheusDiagnosticTimes, j.StableSinceAt})
+		Dynatrace                 *DynatraceConnectionSnapshot                    `json:"dynatrace_snapshot,omitempty"`
+		Cursor                    string                                          `json:"provider_cursor,omitempty"`
+		RunTraceIDs               []string                                        `json:"run_trace_ids,omitempty"`
+	}{monitorJobJSON(j), j.ConnectionSnapshot, j.PrometheusConnectionSnapshot, j.QueryCoverage, j.PrometheusDiagnosticTimes, j.StableSinceAt, j.DynatraceSnapshot, j.ProviderCursor, j.RunTraceIDs})
 }
 func (j *RunMonitorJob) UnmarshalJSON(body []byte) error {
 	out := struct {
@@ -28,6 +31,9 @@ func (j *RunMonitorJob) UnmarshalJSON(body []byte) error {
 		QueryCoverage             map[string]appdynamics.Coverage                 `json:"query_coverage,omitempty"`
 		PrometheusDiagnosticTimes map[string]PrometheusDiagnosticObservationTimes `json:"prometheus_diagnostic_times,omitempty"`
 		StableSinceAt             *time.Time                                      `json:"stable_since_at,omitempty"`
+		Dynatrace                 *DynatraceConnectionSnapshot                    `json:"dynatrace_snapshot,omitempty"`
+		Cursor                    string                                          `json:"provider_cursor,omitempty"`
+		RunTraceIDs               []string                                        `json:"run_trace_ids,omitempty"`
 	}{monitorJobJSON: (*monitorJobJSON)(j)}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return err
@@ -37,6 +43,9 @@ func (j *RunMonitorJob) UnmarshalJSON(body []byte) error {
 	j.QueryCoverage = out.QueryCoverage
 	j.PrometheusDiagnosticTimes = out.PrometheusDiagnosticTimes
 	j.StableSinceAt = out.StableSinceAt
+	j.DynatraceSnapshot = out.Dynatrace
+	j.ProviderCursor = out.Cursor
+	j.RunTraceIDs = out.RunTraceIDs
 	return nil
 }
 
@@ -47,18 +56,21 @@ func (p PreparationMonitorSnapshot) MarshalJSON() ([]byte, error) {
 		preparationMonitorJSON
 		Connections           map[string]*AppDynamicsConnectionSnapshot `json:"connections,omitempty"`
 		PrometheusConnections map[string]*PrometheusConnectionSnapshot  `json:"prometheus_connections,omitempty"`
-	}{preparationMonitorJSON(p), p.Connections, p.PrometheusConnections})
+		DynatraceConnections  map[string]*DynatraceConnectionSnapshot   `json:"dynatrace_connections,omitempty"`
+	}{preparationMonitorJSON(p), p.Connections, p.PrometheusConnections, p.DynatraceConnections})
 }
 func (p *PreparationMonitorSnapshot) UnmarshalJSON(body []byte) error {
 	out := struct {
 		*preparationMonitorJSON
 		Connections           map[string]*AppDynamicsConnectionSnapshot `json:"connections,omitempty"`
 		PrometheusConnections map[string]*PrometheusConnectionSnapshot  `json:"prometheus_connections,omitempty"`
+		DynatraceConnections  map[string]*DynatraceConnectionSnapshot   `json:"dynatrace_connections,omitempty"`
 	}{preparationMonitorJSON: (*preparationMonitorJSON)(p)}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return err
 	}
 	p.Connections = out.Connections
 	p.PrometheusConnections = out.PrometheusConnections
+	p.DynatraceConnections = out.DynatraceConnections
 	return nil
 }

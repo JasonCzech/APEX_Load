@@ -892,7 +892,7 @@ GitHub.com with OIDC and GHES with a scoped API key.
 | **Prometheus** | Controller and generator metrics scraped into your own monitoring | Settings → Integrations → Prometheus |
 | **Grafana** | Import an existing Grafana dashboard so live run panels appear alongside APEX Load metrics | Settings → Integrations → Dashboards |
 | **Power BI** | Per-run publishing to a push dataset for business reporting | Settings → Integrations → Power BI |
-| **Dynatrace** | Webhook notifications on run and threshold events | Settings → Integrations → Notifications |
+| **Dynatrace** | Native SaaS Classic/Grail test monitoring; separate webhook notifications | [Monitoring setup](DYNATRACE.md), Settings → Integrations → Notifications |
 | **OpenTelemetry** | Opt-in OTLP traces from standalone controller and generators; metrics remain Prometheus, with no native OTLP metrics/log export | Deployment configuration |
 | **GitHub / GHES** | Script sync between a repository and a project, plus pull-request checks | Settings → Integrations → GitHub |
 | **Kubernetes clusters** | Register AKS/EKS/generic control planes so an administrator can place generator pools on them with per-pool CPU, memory, and node placement | Admin cluster registry |

@@ -142,6 +142,8 @@ func (a *Agent) dispatchAppDynamicsJob(ctx context.Context, job RunJob, envelope
 		defer func() { <-a.providerSlots; a.stateMu.Lock(); delete(a.providerBusy, job.ID); a.stateMu.Unlock() }()
 		if job.Prometheus != nil {
 			_ = a.collectPrometheusJob(ctx, job, envelope)
+		} else if job.Pack == "dynatrace" {
+			_ = a.collectDynatraceJob(ctx, job, envelope)
 		} else {
 			_ = a.collectAppDynamicsJob(ctx, job, envelope)
 		}
@@ -265,6 +267,9 @@ func (a *Agent) collectProviderJob(ctx context.Context, job RunJob, envelope Sig
 		// them visible without inventing zero-valued measurements.
 		if collectErr != nil && len(result.Coverage) == 0 {
 			key := "collection"
+			if job.Pack == "dynatrace" {
+				key = "controller"
+			}
 			if job.Prometheus != nil {
 				// Prometheus ingestion accepts this bounded failure capability even
 				// when no approved query could execute. Keep the failed read durable
@@ -592,3 +597,17 @@ func inspectAppDynamicsCapabilities(ctx context.Context, client appDynamicsInspe
 }
 
 func slicesContainsAppDynamics(packs []string) bool { return slices.Contains(packs, "appdynamics") }
+
+func providerQueryWindow(job RunJob, now time.Time) (time.Time, time.Time) {
+	from, to := job.QueryFromUTC, job.QueryUntilUTC
+	if from.IsZero() {
+		from = job.StartedAt
+	}
+	if to.IsZero() {
+		to = now
+	}
+	if job.LoadEndedAt != nil && to.After(*job.LoadEndedAt) {
+		to = *job.LoadEndedAt
+	}
+	return from, to
+}

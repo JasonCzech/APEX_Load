@@ -3050,16 +3050,23 @@ export interface operations {
               "elk_evidence_file"?: string;
               "error"?: string;
               "frozen_monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator"?: string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric"?: string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id"?: string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic"?: string;
                 "threshold"?: number;
@@ -3120,6 +3127,7 @@ export interface operations {
                 "binding_revision"?: number;
                 "connection_id"?: string;
                 "connection_revision"?: number;
+                "dynatrace"?: (Record<string, unknown>) | null;
                 "executor_mode"?: string;
                 "job_id"?: string;
                 "management_incomplete_snapshots"?: number;
@@ -3416,16 +3424,23 @@ export interface operations {
               "message"?: string;
               "observed"?: (number) | null;
               "rule"?: {
+                "backend"?: string;
                 "comparator"?: string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric"?: string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id"?: string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic"?: string;
                 "threshold"?: number;
@@ -4095,16 +4110,23 @@ export interface operations {
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator"?: string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric"?: string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id"?: string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic"?: string;
                 "threshold"?: number;
@@ -6822,16 +6844,23 @@ export interface operations {
               "message": string;
               "observed"?: (number) | null;
               "rule": {
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -9483,6 +9512,7 @@ export interface operations {
             "provider"?: ({
               "aggregation_eligible"?: boolean;
               "analysis_statistic"?: string;
+              "backend"?: string;
               "backend_profile"?: string;
               "bucket_end"?: string;
               "bucket_start"?: string;
@@ -9504,6 +9534,7 @@ export interface operations {
               "settled"?: boolean;
               "statistic"?: string;
               "sum"?: (number) | null;
+              "synthetic"?: boolean;
               "underlying_sample_time"?: (string) | null;
             }) | null;
             "quality"?: string;
@@ -10664,7 +10695,7 @@ export interface operations {
       };
     };
     responses: {
-      "2XX": {
+      "200": {
         content: {
           "application/json": ({
             "allocation"?: Array<{
@@ -14650,16 +14681,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -16610,16 +16648,23 @@ export interface operations {
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -17538,16 +17583,23 @@ export interface operations {
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -26430,16 +26482,23 @@ export interface operations {
             "max_error_count"?: (number) | null;
             "max_error_pct"?: (number) | null;
             "monitor_rules"?: Array<{
+              "backend"?: string;
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "entity_ids"?: Record<string, string>;
               "evaluation_mode"?: string;
+              "evaluation_operation"?: string;
               "metric"?: string;
+              "metric_id"?: string;
               "min_coverage_pct"?: number;
+              "provider"?: string;
               "query_id"?: string;
               "require_freshness"?: boolean;
+              "resolution_seconds"?: number;
               "severity"?: string;
               "source_id"?: string;
+              "source_statistic"?: string;
               "start_offset_seconds"?: number;
               "statistic"?: string;
               "threshold"?: number;
@@ -26499,16 +26558,23 @@ export interface operations {
               "message": string;
               "observed"?: (number) | null;
               "rule": {
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -27317,10 +27383,17 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "collection_mode"?: string;
+          "collector_agent_id"?: string;
           "description"?: string;
+          "drain_reserve_bytes"?: number;
           "enabled"?: boolean;
           "environment_token_secret"?: (string) | null;
           "environment_url"?: string;
+          "events_enabled"?: boolean;
+          "expected_revision"?: number;
+          "grail_events_enabled"?: boolean;
+          "grail_metrics_enabled"?: boolean;
           "log_base_filter"?: string;
           "log_message_field"?: string;
           "log_status_field"?: string;
@@ -27328,6 +27401,8 @@ export interface operations {
           "log_timestamp_field"?: string;
           "log_trace_id_field"?: string;
           "logs_enabled"?: boolean;
+          "max_run_scan_bytes"?: number;
+          "max_scan_bytes"?: number;
           "metric_queries"?: Array<{
             "aggregation"?: string;
             "entity_selector"?: string;
@@ -27341,12 +27416,16 @@ export interface operations {
           "oauth_resource"?: string;
           "oauth_scopes"?: Array<string>;
           "platform_auth_type"?: string;
+          "platform_requests_per_minute"?: number;
           "platform_token_secret"?: (string) | null;
           "platform_url"?: string;
           "poll_interval_seconds"?: number;
           "problem_entity_selector"?: string;
           "problem_selector"?: string;
           "problems_enabled"?: boolean;
+          "requests_per_minute"?: number;
+          "spans_enabled"?: boolean;
+          "topology_mode"?: string;
           "updated_at"?: string;
         };
       };
@@ -27355,10 +27434,34 @@ export interface operations {
       "201": {
         content: {
           "application/json": {
+            "capabilities": {
+              "classic_topology": boolean;
+              "environment_id"?: string;
+              "environment_origin"?: string;
+              "events": boolean;
+              "grail_events": boolean;
+              "grail_metrics": boolean;
+              "logs": boolean;
+              "metrics": boolean;
+              "platform_environment_id"?: string;
+              "platform_origin"?: string;
+              "problems": boolean;
+              "smartscape": boolean;
+              "spans": boolean;
+              "status"?: Record<string, string>;
+              "tenant_id"?: string;
+              "verified_origins"?: Array<string>;
+            };
+            "collection_mode": string;
+            "collector_agent_id"?: string;
             "created_at": string;
             "description"?: string;
+            "drain_reserve_bytes"?: number;
             "enabled": boolean;
             "environment_url"?: string;
+            "events_enabled": boolean;
+            "grail_events_enabled": boolean;
+            "grail_metrics_enabled": boolean;
             "has_environment_token": boolean;
             "has_oauth_client_id": boolean;
             "has_oauth_client_secret": boolean;
@@ -27371,6 +27474,7 @@ export interface operations {
             "last_check_message"?: string;
             "last_check_status"?: string;
             "last_checked_at"?: (string) | null;
+            "legacy_capture_status": string;
             "log_base_filter"?: string;
             "log_message_field"?: string;
             "log_status_field"?: string;
@@ -27378,6 +27482,8 @@ export interface operations {
             "log_timestamp_field"?: string;
             "log_trace_id_field"?: string;
             "logs_enabled": boolean;
+            "max_run_scan_bytes"?: number;
+            "max_scan_bytes"?: number;
             "metric_queries": Array<{
               "aggregation": string;
               "entity_selector"?: string;
@@ -27389,14 +27495,20 @@ export interface operations {
             "oauth_resource"?: string;
             "oauth_scopes": Array<string>;
             "platform_auth_type"?: string;
+            "platform_requests_per_minute"?: number;
             "platform_url"?: string;
             "poll_interval_seconds": number;
             "problem_entity_selector"?: string;
             "problem_selector"?: string;
             "problems_enabled": boolean;
             "project_id": string;
+            "requests_per_minute"?: number;
+            "revision": number;
+            "spans_enabled": boolean;
             "status": string;
+            "topology_mode"?: string;
             "updated_at": string;
+            "verified_revision": number;
           };
         };
       };
@@ -27421,6 +27533,122 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleCreateDynatraceOperation": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "kind"?: string;
+          "options"?: {
+            "cursor"?: string;
+            "kind"?: string;
+            "limit"?: number;
+            "search"?: string;
+            "selector"?: string;
+            "topology_mode"?: string;
+          };
+          "selection"?: ({
+            "cursor"?: string;
+            "entity_selector"?: string;
+            "event_selector"?: string;
+            "events"?: boolean;
+            "grail"?: Array<{
+              "bucket_seconds"?: number;
+              "entity_id_field"?: string;
+              "entity_ids"?: Array<string>;
+              "fields"?: Array<string>;
+              "kind"?: string;
+              "name"?: string;
+              "query"?: string;
+              "run_id_field"?: string;
+              "statistic"?: string;
+              "unit"?: string;
+              "value_field"?: string;
+            }>;
+            "header_origins"?: Array<string>;
+            "metrics"?: Array<{
+              "aggregation"?: string;
+              "entity_selector"?: string;
+              "metric_selector"?: string;
+              "name"?: string;
+              "semantics"?: string;
+              "unit"?: string;
+            }>;
+            "problem_selector"?: string;
+            "problems"?: boolean;
+            "project_id"?: string;
+            "query_offset"?: number;
+            "run_header"?: boolean;
+            "settle_seconds"?: number;
+            "smartscape_entity_ids"?: Array<string>;
+            "smartscape_node_type"?: string;
+            "topology_mode"?: string;
+          }) | null;
+          "source_id"?: string;
+        };
+      };
+    };
+    responses: {
+      "202": {
+        content: {
+          "application/json": {
+            "connection_id": string;
+            "connection_revision": number;
+            "created_at": string;
+            "expires_at": string;
+            "id": string;
+            "kind": string;
+            "message"?: string;
+            "result"?: unknown;
+            "status": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -29006,16 +29234,23 @@ export interface operations {
             "max_vusers"?: (number) | null;
             "min_vusers"?: (number) | null;
             "monitor_rules"?: Array<{
+              "backend"?: string;
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "entity_ids"?: Record<string, string>;
               "evaluation_mode"?: string;
+              "evaluation_operation"?: string;
               "metric"?: string;
+              "metric_id"?: string;
               "min_coverage_pct"?: number;
+              "provider"?: string;
               "query_id"?: string;
               "require_freshness"?: boolean;
+              "resolution_seconds"?: number;
               "severity"?: string;
               "source_id"?: string;
+              "source_statistic"?: string;
               "start_offset_seconds"?: number;
               "statistic"?: string;
               "threshold"?: number;
@@ -29368,16 +29603,23 @@ export interface operations {
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator"?: string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric"?: string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id"?: string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic"?: string;
                 "threshold"?: number;
@@ -30144,16 +30386,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -31835,16 +32084,23 @@ export interface operations {
             "max_vusers"?: (number) | null;
             "min_vusers"?: (number) | null;
             "monitor_rules"?: Array<{
+              "backend"?: string;
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "entity_ids"?: Record<string, string>;
               "evaluation_mode"?: string;
+              "evaluation_operation"?: string;
               "metric"?: string;
+              "metric_id"?: string;
               "min_coverage_pct"?: number;
+              "provider"?: string;
               "query_id"?: string;
               "require_freshness"?: boolean;
+              "resolution_seconds"?: number;
               "severity"?: string;
               "source_id"?: string;
+              "source_statistic"?: string;
               "start_offset_seconds"?: number;
               "statistic"?: string;
               "threshold"?: number;
@@ -32605,16 +32861,23 @@ export interface operations {
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -35383,16 +35646,23 @@ export interface operations {
             "max_vusers"?: (number) | null;
             "min_vusers"?: (number) | null;
             "monitor_rules"?: Array<{
+              "backend"?: string;
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "entity_ids"?: Record<string, string>;
               "evaluation_mode"?: string;
+              "evaluation_operation"?: string;
               "metric"?: string;
+              "metric_id"?: string;
               "min_coverage_pct"?: number;
+              "provider"?: string;
               "query_id"?: string;
               "require_freshness"?: boolean;
+              "resolution_seconds"?: number;
               "severity"?: string;
               "source_id"?: string;
+              "source_statistic"?: string;
               "start_offset_seconds"?: number;
               "statistic"?: string;
               "threshold"?: number;
@@ -36725,16 +36995,23 @@ export interface operations {
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -40477,6 +40754,9 @@ export interface operations {
         "connection_id": string;
         "id": string;
       };
+      "query"?: {
+        "expected_revision"?: string;
+      };
     };
     requestBody?: never;
     responses: {
@@ -40493,12 +40773,17 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      "404": {
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      "409": {
+      "428": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -41806,16 +42091,23 @@ export interface operations {
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator"?: string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric"?: string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id"?: string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic"?: string;
                 "threshold"?: number;
@@ -42459,16 +42751,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -43034,16 +43333,23 @@ export interface operations {
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator"?: string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric"?: string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id"?: string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic"?: string;
                 "threshold"?: number;
@@ -43687,16 +43993,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -44956,7 +45269,7 @@ export interface operations {
       };
     };
     responses: {
-      "2XX": {
+      "202": {
         content: {
           "application/json": {
             "connection_id": string;
@@ -45352,6 +45665,270 @@ export interface operations {
       };
     };
   };
+  "handleDynatraceOperationResult": {
+    parameters: {
+      "path": {
+        "id": string;
+        "operation_id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "capabilities"?: {
+            "classic_topology"?: boolean;
+            "environment_id"?: string;
+            "environment_origin"?: string;
+            "events"?: boolean;
+            "grail_events"?: boolean;
+            "grail_metrics"?: boolean;
+            "logs"?: boolean;
+            "metrics"?: boolean;
+            "platform_environment_id"?: string;
+            "platform_origin"?: string;
+            "problems"?: boolean;
+            "smartscape"?: boolean;
+            "spans"?: boolean;
+            "status"?: Record<string, string>;
+            "tenant_id"?: string;
+            "verified_origins"?: Array<string>;
+          };
+          "discovery"?: {
+            "items"?: Array<{
+              "entity_ids"?: Record<string, string>;
+              "id"?: string;
+              "name"?: string;
+              "parent_id"?: string;
+              "path"?: string;
+              "type"?: string;
+            }>;
+            "message"?: string;
+            "next_cursor"?: string;
+            "truncated"?: boolean;
+          };
+          "job"?: {
+            "payload"?: string;
+            "signature"?: string;
+          };
+          "message"?: string;
+          "preview"?: ({
+            "capabilities"?: {
+              "classic_topology"?: boolean;
+              "environment_id"?: string;
+              "environment_origin"?: string;
+              "events"?: boolean;
+              "grail_events"?: boolean;
+              "grail_metrics"?: boolean;
+              "logs"?: boolean;
+              "metrics"?: boolean;
+              "platform_environment_id"?: string;
+              "platform_origin"?: string;
+              "problems"?: boolean;
+              "smartscape"?: boolean;
+              "spans"?: boolean;
+              "status"?: Record<string, string>;
+              "tenant_id"?: string;
+              "verified_origins"?: Array<string>;
+            };
+            "coverage"?: Record<string, {
+              "cache_age_seconds"?: number;
+              "cached"?: boolean;
+              "evidence"?: number;
+              "expected_points"?: number;
+              "freshness"?: string;
+              "from"?: string;
+              "infos"?: Array<string>;
+              "message"?: string;
+              "missing_points"?: number;
+              "observed_at"?: (string) | null;
+              "points"?: number;
+              "status"?: string;
+              "to"?: string;
+              "truncated"?: boolean;
+              "warnings"?: Array<string>;
+            }>;
+            "evidence"?: Array<{
+              "application_id"?: string;
+              "backend"?: string;
+              "deep_link"?: string;
+              "entity_ids"?: Record<string, string>;
+              "id"?: string;
+              "kind"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "severity"?: string;
+              "status"?: string;
+              "summary"?: string;
+              "timestamp_utc"?: string;
+            }>;
+            "points"?: Array<{
+              "active_runtime_ms"?: (number) | null;
+              "dataset_id"?: string;
+              "derivation"?: Array<Record<string, unknown>>;
+              "dimensions"?: Record<string, string>;
+              "host"?: string;
+              "input_kind"?: string;
+              "kind"?: string;
+              "metric_name"?: string;
+              "metric_version"?: string;
+              "population"?: string;
+              "project_id"?: string;
+              "provider"?: ({
+                "aggregation_eligible"?: boolean;
+                "analysis_statistic"?: string;
+                "backend"?: string;
+                "backend_profile"?: string;
+                "bucket_end"?: string;
+                "bucket_start"?: string;
+                "catalog_path"?: string;
+                "count"?: (number) | null;
+                "definition_hash"?: string;
+                "display_labels"?: Record<string, string>;
+                "entity_ids"?: Record<string, string>;
+                "evaluation_step_seconds"?: number;
+                "freshness_known"?: boolean;
+                "max"?: (number) | null;
+                "metric_id"?: string;
+                "min"?: (number) | null;
+                "mode"?: string;
+                "name"?: string;
+                "query_id"?: string;
+                "query_window"?: boolean;
+                "resolution_seconds"?: number;
+                "settled"?: boolean;
+                "statistic"?: string;
+                "sum"?: (number) | null;
+                "synthetic"?: boolean;
+                "underlying_sample_time"?: (string) | null;
+              }) | null;
+              "quality"?: string;
+              "received_at"?: string;
+              "relative_time_ms"?: (number) | null;
+              "run_id"?: string;
+              "scenario_id"?: string;
+              "schema_version"?: string;
+              "service"?: string;
+              "source"?: string;
+              "timestamp_utc"?: string;
+              "unit"?: string;
+              "value"?: (number) | null;
+            }>;
+            "progress"?: {
+              "complete"?: boolean;
+              "cursor"?: string;
+              "cursor_expires_at"?: (string) | null;
+              "next_query"?: number;
+              "next_time"?: (string) | null;
+              "query_cost_known"?: boolean;
+              "scan_reservation_bytes"?: number;
+              "scan_reservation_ids"?: Array<string>;
+              "scan_settlements"?: Array<Record<string, unknown>>;
+              "scanned_bytes"?: number;
+              "total_queries"?: number;
+            };
+            "topology"?: Array<{
+              "entity_ids"?: Record<string, string>;
+              "id"?: string;
+              "name"?: string;
+              "parent_id"?: string;
+              "path"?: string;
+              "type"?: string;
+            }>;
+          }) | null;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleDynatraceScanReservation": {
+    parameters: {
+      "path": {
+        "id": string;
+        "job_id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "attempt_id"?: string;
+          "bytes"?: number;
+          "job"?: {
+            "payload"?: string;
+            "signature"?: string;
+          };
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleEnableUser": {
     parameters: {
       "path": {
@@ -45518,16 +46095,23 @@ export interface operations {
             "max_vusers"?: (number) | null;
             "min_vusers"?: (number) | null;
             "monitor_rules"?: Array<{
+              "backend"?: string;
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "entity_ids"?: Record<string, string>;
               "evaluation_mode"?: string;
+              "evaluation_operation"?: string;
               "metric"?: string;
+              "metric_id"?: string;
               "min_coverage_pct"?: number;
+              "provider"?: string;
               "query_id"?: string;
               "require_freshness"?: boolean;
+              "resolution_seconds"?: number;
               "severity"?: string;
               "source_id"?: string;
+              "source_statistic"?: string;
               "start_offset_seconds"?: number;
               "statistic"?: string;
               "threshold"?: number;
@@ -48146,6 +48730,15 @@ export interface operations {
     parameters?: never;
     requestBody?: never;
     responses: {
+      "101": {
+        content: {
+          "application/json": {
+            "execution_target_id": string;
+            "generator_id": string;
+            "transport": string;
+          };
+        };
+      };
       "2XX": {
         content: {
           "application/json": {
@@ -50810,16 +51403,23 @@ export interface operations {
               "message": string;
               "observed"?: (number) | null;
               "rule": {
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -51561,10 +52161,34 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
+            "capabilities": {
+              "classic_topology": boolean;
+              "environment_id"?: string;
+              "environment_origin"?: string;
+              "events": boolean;
+              "grail_events": boolean;
+              "grail_metrics": boolean;
+              "logs": boolean;
+              "metrics": boolean;
+              "platform_environment_id"?: string;
+              "platform_origin"?: string;
+              "problems": boolean;
+              "smartscape": boolean;
+              "spans": boolean;
+              "status"?: Record<string, string>;
+              "tenant_id"?: string;
+              "verified_origins"?: Array<string>;
+            };
+            "collection_mode": string;
+            "collector_agent_id"?: string;
             "created_at": string;
             "description"?: string;
+            "drain_reserve_bytes"?: number;
             "enabled": boolean;
             "environment_url"?: string;
+            "events_enabled": boolean;
+            "grail_events_enabled": boolean;
+            "grail_metrics_enabled": boolean;
             "has_environment_token": boolean;
             "has_oauth_client_id": boolean;
             "has_oauth_client_secret": boolean;
@@ -51577,6 +52201,7 @@ export interface operations {
             "last_check_message"?: string;
             "last_check_status"?: string;
             "last_checked_at"?: (string) | null;
+            "legacy_capture_status": string;
             "log_base_filter"?: string;
             "log_message_field"?: string;
             "log_status_field"?: string;
@@ -51584,6 +52209,8 @@ export interface operations {
             "log_timestamp_field"?: string;
             "log_trace_id_field"?: string;
             "logs_enabled": boolean;
+            "max_run_scan_bytes"?: number;
+            "max_scan_bytes"?: number;
             "metric_queries": Array<{
               "aggregation": string;
               "entity_selector"?: string;
@@ -51595,14 +52222,20 @@ export interface operations {
             "oauth_resource"?: string;
             "oauth_scopes": Array<string>;
             "platform_auth_type"?: string;
+            "platform_requests_per_minute"?: number;
             "platform_url"?: string;
             "poll_interval_seconds": number;
             "problem_entity_selector"?: string;
             "problem_selector"?: string;
             "problems_enabled": boolean;
             "project_id": string;
+            "requests_per_minute"?: number;
+            "revision": number;
+            "spans_enabled": boolean;
             "status": string;
+            "topology_mode"?: string;
             "updated_at": string;
+            "verified_revision": number;
           };
         };
       };
@@ -51612,6 +52245,61 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetDynatraceOperation": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+        "operation_id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "connection_id": string;
+            "connection_revision": number;
+            "created_at": string;
+            "expires_at": string;
+            "id": string;
+            "kind": string;
+            "message"?: string;
+            "result"?: unknown;
+            "status": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -53910,16 +54598,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -55468,16 +56163,23 @@ export interface operations {
             "elk_evidence_file"?: string;
             "error"?: string;
             "frozen_monitor_rules"?: Array<{
+              "backend"?: string;
               "comparator": string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "entity_ids"?: Record<string, string>;
               "evaluation_mode"?: string;
+              "evaluation_operation"?: string;
               "metric": string;
+              "metric_id"?: string;
               "min_coverage_pct"?: number;
+              "provider"?: string;
               "query_id"?: string;
               "require_freshness"?: boolean;
+              "resolution_seconds"?: number;
               "severity"?: string;
               "source_id": string;
+              "source_statistic"?: string;
               "start_offset_seconds"?: number;
               "statistic": string;
               "threshold": number;
@@ -55715,16 +56417,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -56180,6 +56889,24 @@ export interface operations {
               "binding_revision": number;
               "connection_id"?: string;
               "connection_revision"?: number;
+              "dynatrace"?: ({
+                "cursor"?: string;
+                "entity_selector"?: string;
+                "event_selector"?: string;
+                "events"?: boolean;
+                "grail"?: Array<Record<string, unknown>>;
+                "header_origins"?: Array<string>;
+                "metrics"?: Array<Record<string, unknown>>;
+                "problem_selector"?: string;
+                "problems"?: boolean;
+                "project_id": string;
+                "query_offset"?: number;
+                "run_header"?: boolean;
+                "settle_seconds"?: number;
+                "smartscape_entity_ids"?: Array<string>;
+                "smartscape_node_type"?: string;
+                "topology_mode"?: string;
+              }) | null;
               "executor_mode"?: string;
               "job_id": string;
               "management_incomplete_snapshots"?: number;
@@ -56242,16 +56969,23 @@ export interface operations {
               "message": string;
               "observed"?: (number) | null;
               "rule": {
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -56493,16 +57227,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -59075,16 +59816,23 @@ export interface operations {
               "elk_evidence_file"?: string;
               "error"?: string;
               "frozen_monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -59370,6 +60118,24 @@ export interface operations {
                 "binding_revision": number;
                 "connection_id"?: string;
                 "connection_revision"?: number;
+                "dynatrace"?: ({
+                  "cursor"?: string;
+                  "entity_selector"?: string;
+                  "event_selector"?: string;
+                  "events"?: boolean;
+                  "grail"?: Array<Record<string, unknown>>;
+                  "header_origins"?: Array<string>;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "problem_selector"?: string;
+                  "problems"?: boolean;
+                  "project_id": string;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "settle_seconds"?: number;
+                  "smartscape_entity_ids"?: Array<string>;
+                  "smartscape_node_type"?: string;
+                  "topology_mode"?: string;
+                }) | null;
                 "executor_mode"?: string;
                 "job_id": string;
                 "management_incomplete_snapshots"?: number;
@@ -59409,16 +60175,23 @@ export interface operations {
                 "message": string;
                 "observed"?: (number) | null;
                 "rule": {
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -59944,11 +60717,13 @@ export interface operations {
             "monitor_diagnostics"?: Array<{
               "diagnostic": {
                 "application_id": string;
+                "backend"?: string;
                 "deep_link"?: string;
                 "entity_ids"?: Record<string, string>;
                 "id": string;
                 "kind": string;
                 "properties"?: Record<string, string>;
+                "provider"?: string;
                 "severity"?: string;
                 "status"?: string;
                 "summary"?: string;
@@ -59962,16 +60737,23 @@ export interface operations {
               "message": string;
               "observed"?: (number) | null;
               "rule": {
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -60864,16 +61646,23 @@ export interface operations {
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -64751,16 +65540,23 @@ export interface operations {
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -69064,16 +69860,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -69562,16 +70365,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -78800,6 +79610,7 @@ export interface operations {
                   "provider"?: ({
                     "aggregation_eligible": boolean;
                     "analysis_statistic"?: string;
+                    "backend"?: string;
                     "backend_profile"?: string;
                     "bucket_end": string;
                     "bucket_start": string;
@@ -78821,6 +79632,7 @@ export interface operations {
                     "settled": boolean;
                     "statistic": string;
                     "sum"?: (number) | null;
+                    "synthetic"?: boolean;
                     "underlying_sample_time"?: (string) | null;
                   }) | null;
                   "quality": string;
@@ -78928,10 +79740,48 @@ export interface operations {
             "connection_id"?: string;
             "credential_ref"?: string;
             "destination"?: string;
+            "dynatrace"?: ({
+              "cursor"?: string;
+              "entity_selector"?: string;
+              "event_selector"?: string;
+              "events"?: boolean;
+              "grail"?: Array<{
+                "bucket_seconds"?: number;
+                "entity_id_field"?: string;
+                "entity_ids"?: Array<string>;
+                "fields"?: Array<string>;
+                "kind": string;
+                "name": string;
+                "query": string;
+                "run_id_field"?: string;
+                "statistic"?: string;
+                "unit"?: string;
+                "value_field"?: string;
+              }>;
+              "header_origins"?: Array<string>;
+              "metrics"?: Array<{
+                "aggregation": string;
+                "entity_selector"?: string;
+                "metric_selector": string;
+                "name": string;
+                "semantics"?: string;
+                "unit"?: string;
+              }>;
+              "problem_selector"?: string;
+              "problems"?: boolean;
+              "project_id": string;
+              "query_offset"?: number;
+              "run_header"?: boolean;
+              "settle_seconds"?: number;
+              "smartscape_entity_ids"?: Array<string>;
+              "smartscape_node_type"?: string;
+              "topology_mode"?: string;
+            }) | null;
             "enabled": boolean;
             "executor_mode"?: string;
             "id": string;
             "interval_seconds": number;
+            "legacy_connection_revision"?: number;
             "management_identity"?: ({
               "credential_ref"?: string;
               "credential_version"?: string;
@@ -79089,10 +79939,48 @@ export interface operations {
           "connection_id"?: string;
           "credential_ref"?: string;
           "destination"?: string;
+          "dynatrace"?: ({
+            "cursor"?: string;
+            "entity_selector"?: string;
+            "event_selector"?: string;
+            "events"?: boolean;
+            "grail"?: Array<{
+              "bucket_seconds"?: number;
+              "entity_id_field"?: string;
+              "entity_ids"?: Array<string>;
+              "fields"?: Array<string>;
+              "kind"?: string;
+              "name"?: string;
+              "query"?: string;
+              "run_id_field"?: string;
+              "statistic"?: string;
+              "unit"?: string;
+              "value_field"?: string;
+            }>;
+            "header_origins"?: Array<string>;
+            "metrics"?: Array<{
+              "aggregation"?: string;
+              "entity_selector"?: string;
+              "metric_selector"?: string;
+              "name"?: string;
+              "semantics"?: string;
+              "unit"?: string;
+            }>;
+            "problem_selector"?: string;
+            "problems"?: boolean;
+            "project_id"?: string;
+            "query_offset"?: number;
+            "run_header"?: boolean;
+            "settle_seconds"?: number;
+            "smartscape_entity_ids"?: Array<string>;
+            "smartscape_node_type"?: string;
+            "topology_mode"?: string;
+          }) | null;
           "enabled"?: boolean;
           "executor_mode"?: string;
           "id"?: string;
           "interval_seconds"?: number;
+          "legacy_connection_revision"?: number;
           "management_identity"?: ({
             "credential_ref"?: string;
             "credential_version"?: string;
@@ -79199,10 +80087,48 @@ export interface operations {
             "connection_id"?: string;
             "credential_ref"?: string;
             "destination"?: string;
+            "dynatrace"?: ({
+              "cursor"?: string;
+              "entity_selector"?: string;
+              "event_selector"?: string;
+              "events"?: boolean;
+              "grail"?: Array<{
+                "bucket_seconds"?: number;
+                "entity_id_field"?: string;
+                "entity_ids"?: Array<string>;
+                "fields"?: Array<string>;
+                "kind": string;
+                "name": string;
+                "query": string;
+                "run_id_field"?: string;
+                "statistic"?: string;
+                "unit"?: string;
+                "value_field"?: string;
+              }>;
+              "header_origins"?: Array<string>;
+              "metrics"?: Array<{
+                "aggregation": string;
+                "entity_selector"?: string;
+                "metric_selector": string;
+                "name": string;
+                "semantics"?: string;
+                "unit"?: string;
+              }>;
+              "problem_selector"?: string;
+              "problems"?: boolean;
+              "project_id": string;
+              "query_offset"?: number;
+              "run_header"?: boolean;
+              "settle_seconds"?: number;
+              "smartscape_entity_ids"?: Array<string>;
+              "smartscape_node_type"?: string;
+              "topology_mode"?: string;
+            }) | null;
             "enabled": boolean;
             "executor_mode"?: string;
             "id": string;
             "interval_seconds": number;
+            "legacy_connection_revision"?: number;
             "management_identity"?: ({
               "credential_ref"?: string;
               "credential_version"?: string;
@@ -79361,10 +80287,48 @@ export interface operations {
           "connection_id"?: string;
           "credential_ref"?: string;
           "destination"?: string;
+          "dynatrace"?: ({
+            "cursor"?: string;
+            "entity_selector"?: string;
+            "event_selector"?: string;
+            "events"?: boolean;
+            "grail"?: Array<{
+              "bucket_seconds"?: number;
+              "entity_id_field"?: string;
+              "entity_ids"?: Array<string>;
+              "fields"?: Array<string>;
+              "kind"?: string;
+              "name"?: string;
+              "query"?: string;
+              "run_id_field"?: string;
+              "statistic"?: string;
+              "unit"?: string;
+              "value_field"?: string;
+            }>;
+            "header_origins"?: Array<string>;
+            "metrics"?: Array<{
+              "aggregation"?: string;
+              "entity_selector"?: string;
+              "metric_selector"?: string;
+              "name"?: string;
+              "semantics"?: string;
+              "unit"?: string;
+            }>;
+            "problem_selector"?: string;
+            "problems"?: boolean;
+            "project_id"?: string;
+            "query_offset"?: number;
+            "run_header"?: boolean;
+            "settle_seconds"?: number;
+            "smartscape_entity_ids"?: Array<string>;
+            "smartscape_node_type"?: string;
+            "topology_mode"?: string;
+          }) | null;
           "enabled"?: boolean;
           "executor_mode"?: string;
           "id"?: string;
           "interval_seconds"?: number;
+          "legacy_connection_revision"?: number;
           "management_identity"?: ({
             "credential_ref"?: string;
             "credential_version"?: string;
@@ -79471,10 +80435,48 @@ export interface operations {
             "connection_id"?: string;
             "credential_ref"?: string;
             "destination"?: string;
+            "dynatrace"?: ({
+              "cursor"?: string;
+              "entity_selector"?: string;
+              "event_selector"?: string;
+              "events"?: boolean;
+              "grail"?: Array<{
+                "bucket_seconds"?: number;
+                "entity_id_field"?: string;
+                "entity_ids"?: Array<string>;
+                "fields"?: Array<string>;
+                "kind": string;
+                "name": string;
+                "query": string;
+                "run_id_field"?: string;
+                "statistic"?: string;
+                "unit"?: string;
+                "value_field"?: string;
+              }>;
+              "header_origins"?: Array<string>;
+              "metrics"?: Array<{
+                "aggregation": string;
+                "entity_selector"?: string;
+                "metric_selector": string;
+                "name": string;
+                "semantics"?: string;
+                "unit"?: string;
+              }>;
+              "problem_selector"?: string;
+              "problems"?: boolean;
+              "project_id": string;
+              "query_offset"?: number;
+              "run_header"?: boolean;
+              "settle_seconds"?: number;
+              "smartscape_entity_ids"?: Array<string>;
+              "smartscape_node_type"?: string;
+              "topology_mode"?: string;
+            }) | null;
             "enabled": boolean;
             "executor_mode"?: string;
             "id": string;
             "interval_seconds": number;
+            "legacy_connection_revision"?: number;
             "management_identity"?: ({
               "credential_ref"?: string;
               "credential_version"?: string;
@@ -79633,10 +80635,48 @@ export interface operations {
           "connection_id"?: string;
           "credential_ref"?: string;
           "destination"?: string;
+          "dynatrace"?: ({
+            "cursor"?: string;
+            "entity_selector"?: string;
+            "event_selector"?: string;
+            "events"?: boolean;
+            "grail"?: Array<{
+              "bucket_seconds"?: number;
+              "entity_id_field"?: string;
+              "entity_ids"?: Array<string>;
+              "fields"?: Array<string>;
+              "kind"?: string;
+              "name"?: string;
+              "query"?: string;
+              "run_id_field"?: string;
+              "statistic"?: string;
+              "unit"?: string;
+              "value_field"?: string;
+            }>;
+            "header_origins"?: Array<string>;
+            "metrics"?: Array<{
+              "aggregation"?: string;
+              "entity_selector"?: string;
+              "metric_selector"?: string;
+              "name"?: string;
+              "semantics"?: string;
+              "unit"?: string;
+            }>;
+            "problem_selector"?: string;
+            "problems"?: boolean;
+            "project_id"?: string;
+            "query_offset"?: number;
+            "run_header"?: boolean;
+            "settle_seconds"?: number;
+            "smartscape_entity_ids"?: Array<string>;
+            "smartscape_node_type"?: string;
+            "topology_mode"?: string;
+          }) | null;
           "enabled"?: boolean;
           "executor_mode"?: string;
           "id"?: string;
           "interval_seconds"?: number;
+          "legacy_connection_revision"?: number;
           "management_identity"?: ({
             "credential_ref"?: string;
             "credential_version"?: string;
@@ -79743,10 +80783,48 @@ export interface operations {
             "connection_id"?: string;
             "credential_ref"?: string;
             "destination"?: string;
+            "dynatrace"?: ({
+              "cursor"?: string;
+              "entity_selector"?: string;
+              "event_selector"?: string;
+              "events"?: boolean;
+              "grail"?: Array<{
+                "bucket_seconds"?: number;
+                "entity_id_field"?: string;
+                "entity_ids"?: Array<string>;
+                "fields"?: Array<string>;
+                "kind": string;
+                "name": string;
+                "query": string;
+                "run_id_field"?: string;
+                "statistic"?: string;
+                "unit"?: string;
+                "value_field"?: string;
+              }>;
+              "header_origins"?: Array<string>;
+              "metrics"?: Array<{
+                "aggregation": string;
+                "entity_selector"?: string;
+                "metric_selector": string;
+                "name": string;
+                "semantics"?: string;
+                "unit"?: string;
+              }>;
+              "problem_selector"?: string;
+              "problems"?: boolean;
+              "project_id": string;
+              "query_offset"?: number;
+              "run_header"?: boolean;
+              "settle_seconds"?: number;
+              "smartscape_entity_ids"?: Array<string>;
+              "smartscape_node_type"?: string;
+              "topology_mode"?: string;
+            }) | null;
             "enabled": boolean;
             "executor_mode"?: string;
             "id": string;
             "interval_seconds": number;
+            "legacy_connection_revision"?: number;
             "management_identity"?: ({
               "credential_ref"?: string;
               "credential_version"?: string;
@@ -80151,6 +81229,7 @@ export interface operations {
               "provider"?: ({
                 "aggregation_eligible": boolean;
                 "analysis_statistic"?: string;
+                "backend"?: string;
                 "backend_profile"?: string;
                 "bucket_end": string;
                 "bucket_start": string;
@@ -80172,6 +81251,7 @@ export interface operations {
                 "settled": boolean;
                 "statistic": string;
                 "sum"?: (number) | null;
+                "synthetic"?: boolean;
                 "underlying_sample_time"?: (string) | null;
               }) | null;
               "quality": string;
@@ -83583,16 +84663,23 @@ export interface operations {
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -86572,6 +87659,45 @@ export interface operations {
       };
     };
   };
+  "handlePollDynatraceOperations": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "capacity"?: boolean;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Array<{
+            "payload": string;
+            "signature": string;
+          }>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handlePollRunMonitorJobs": {
     parameters: {
       "path": {
@@ -86721,16 +87847,23 @@ export interface operations {
             "max_vusers"?: (number) | null;
             "min_vusers"?: (number) | null;
             "monitor_rules"?: Array<{
+              "backend"?: string;
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "entity_ids"?: Record<string, string>;
               "evaluation_mode"?: string;
+              "evaluation_operation"?: string;
               "metric"?: string;
+              "metric_id"?: string;
               "min_coverage_pct"?: number;
+              "provider"?: string;
               "query_id"?: string;
               "require_freshness"?: boolean;
+              "resolution_seconds"?: number;
               "severity"?: string;
               "source_id"?: string;
+              "source_statistic"?: string;
               "start_offset_seconds"?: number;
               "statistic"?: string;
               "threshold"?: number;
@@ -87330,16 +88463,23 @@ export interface operations {
                 }>;
               };
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -87369,10 +88509,29 @@ export interface operations {
                 "connection_id"?: string;
                 "credential_ref"?: string;
                 "destination"?: string;
+                "dynatrace"?: ({
+                  "cursor"?: string;
+                  "entity_selector"?: string;
+                  "event_selector"?: string;
+                  "events"?: boolean;
+                  "grail"?: Array<Record<string, unknown>>;
+                  "header_origins"?: Array<string>;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "problem_selector"?: string;
+                  "problems"?: boolean;
+                  "project_id": string;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "settle_seconds"?: number;
+                  "smartscape_entity_ids"?: Array<string>;
+                  "smartscape_node_type"?: string;
+                  "topology_mode"?: string;
+                }) | null;
                 "enabled": boolean;
                 "executor_mode"?: string;
                 "id": string;
                 "interval_seconds": number;
+                "legacy_connection_revision"?: number;
                 "management_identity"?: ({
                   "credential_ref"?: string;
                   "credential_version"?: string;
@@ -87454,16 +88613,23 @@ export interface operations {
                 }>;
               };
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -87493,10 +88659,29 @@ export interface operations {
                 "connection_id"?: string;
                 "credential_ref"?: string;
                 "destination"?: string;
+                "dynatrace"?: ({
+                  "cursor"?: string;
+                  "entity_selector"?: string;
+                  "event_selector"?: string;
+                  "events"?: boolean;
+                  "grail"?: Array<Record<string, unknown>>;
+                  "header_origins"?: Array<string>;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "problem_selector"?: string;
+                  "problems"?: boolean;
+                  "project_id": string;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "settle_seconds"?: number;
+                  "smartscape_entity_ids"?: Array<string>;
+                  "smartscape_node_type"?: string;
+                  "topology_mode"?: string;
+                }) | null;
                 "enabled": boolean;
                 "executor_mode"?: string;
                 "id": string;
                 "interval_seconds": number;
+                "legacy_connection_revision"?: number;
                 "management_identity"?: ({
                   "credential_ref"?: string;
                   "credential_version"?: string;
@@ -87639,16 +88824,23 @@ export interface operations {
                 }>;
               };
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -87678,10 +88870,29 @@ export interface operations {
                 "connection_id"?: string;
                 "credential_ref"?: string;
                 "destination"?: string;
+                "dynatrace"?: ({
+                  "cursor"?: string;
+                  "entity_selector"?: string;
+                  "event_selector"?: string;
+                  "events"?: boolean;
+                  "grail"?: Array<Record<string, unknown>>;
+                  "header_origins"?: Array<string>;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "problem_selector"?: string;
+                  "problems"?: boolean;
+                  "project_id": string;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "settle_seconds"?: number;
+                  "smartscape_entity_ids"?: Array<string>;
+                  "smartscape_node_type"?: string;
+                  "topology_mode"?: string;
+                }) | null;
                 "enabled": boolean;
                 "executor_mode"?: string;
                 "id": string;
                 "interval_seconds": number;
+                "legacy_connection_revision"?: number;
                 "management_identity"?: ({
                   "credential_ref"?: string;
                   "credential_version"?: string;
@@ -87763,16 +88974,23 @@ export interface operations {
                 }>;
               };
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -87802,10 +89020,29 @@ export interface operations {
                 "connection_id"?: string;
                 "credential_ref"?: string;
                 "destination"?: string;
+                "dynatrace"?: ({
+                  "cursor"?: string;
+                  "entity_selector"?: string;
+                  "event_selector"?: string;
+                  "events"?: boolean;
+                  "grail"?: Array<Record<string, unknown>>;
+                  "header_origins"?: Array<string>;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "problem_selector"?: string;
+                  "problems"?: boolean;
+                  "project_id": string;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "settle_seconds"?: number;
+                  "smartscape_entity_ids"?: Array<string>;
+                  "smartscape_node_type"?: string;
+                  "topology_mode"?: string;
+                }) | null;
                 "enabled": boolean;
                 "executor_mode"?: string;
                 "id": string;
                 "interval_seconds": number;
+                "legacy_connection_revision"?: number;
                 "management_identity"?: ({
                   "credential_ref"?: string;
                   "credential_version"?: string;
@@ -87958,16 +89195,23 @@ export interface operations {
                 }>;
               };
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -87997,10 +89241,29 @@ export interface operations {
                 "connection_id"?: string;
                 "credential_ref"?: string;
                 "destination"?: string;
+                "dynatrace"?: ({
+                  "cursor"?: string;
+                  "entity_selector"?: string;
+                  "event_selector"?: string;
+                  "events"?: boolean;
+                  "grail"?: Array<Record<string, unknown>>;
+                  "header_origins"?: Array<string>;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "problem_selector"?: string;
+                  "problems"?: boolean;
+                  "project_id": string;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "settle_seconds"?: number;
+                  "smartscape_entity_ids"?: Array<string>;
+                  "smartscape_node_type"?: string;
+                  "topology_mode"?: string;
+                }) | null;
                 "enabled": boolean;
                 "executor_mode"?: string;
                 "id": string;
                 "interval_seconds": number;
+                "legacy_connection_revision"?: number;
                 "management_identity"?: ({
                   "credential_ref"?: string;
                   "credential_version"?: string;
@@ -88082,16 +89345,23 @@ export interface operations {
                 }>;
               };
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -88121,10 +89391,29 @@ export interface operations {
                 "connection_id"?: string;
                 "credential_ref"?: string;
                 "destination"?: string;
+                "dynatrace"?: ({
+                  "cursor"?: string;
+                  "entity_selector"?: string;
+                  "event_selector"?: string;
+                  "events"?: boolean;
+                  "grail"?: Array<Record<string, unknown>>;
+                  "header_origins"?: Array<string>;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "problem_selector"?: string;
+                  "problems"?: boolean;
+                  "project_id": string;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "settle_seconds"?: number;
+                  "smartscape_entity_ids"?: Array<string>;
+                  "smartscape_node_type"?: string;
+                  "topology_mode"?: string;
+                }) | null;
                 "enabled": boolean;
                 "executor_mode"?: string;
                 "id": string;
                 "interval_seconds": number;
+                "legacy_connection_revision"?: number;
                 "management_identity"?: ({
                   "credential_ref"?: string;
                   "credential_version"?: string;
@@ -91575,7 +92864,7 @@ export interface operations {
       };
     };
     responses: {
-      "2XX": {
+      "200": {
         content: {
           "application/json": ({
             "allocation"?: Array<{
@@ -94222,7 +95511,7 @@ export interface operations {
       };
     };
     responses: {
-      "2XX": {
+      "202": {
         content: {
           "application/json": {
             "connection_id": string;
@@ -96722,16 +98011,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -98272,16 +99568,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -99822,16 +101125,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -101372,16 +102682,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -102922,16 +104239,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -108823,11 +110147,13 @@ export interface operations {
           }>;
           "evidence"?: Array<{
             "application_id"?: string;
+            "backend"?: string;
             "deep_link"?: string;
             "entity_ids"?: Record<string, string>;
             "id"?: string;
             "kind"?: string;
             "properties"?: Record<string, string>;
+            "provider"?: string;
             "severity"?: string;
             "status"?: string;
             "summary"?: string;
@@ -108994,6 +110320,7 @@ export interface operations {
             "provider"?: ({
               "aggregation_eligible"?: boolean;
               "analysis_statistic"?: string;
+              "backend"?: string;
               "backend_profile"?: string;
               "bucket_end"?: string;
               "bucket_start"?: string;
@@ -109015,6 +110342,7 @@ export interface operations {
               "settled"?: boolean;
               "statistic"?: string;
               "sum"?: (number) | null;
+              "synthetic"?: boolean;
               "underlying_sample_time"?: (string) | null;
             }) | null;
             "quality"?: string;
@@ -109031,8 +110359,18 @@ export interface operations {
           }>;
           "progress"?: ({
             "complete"?: boolean;
+            "cursor"?: string;
+            "cursor_expires_at"?: (string) | null;
             "next_query"?: number;
             "next_time"?: (string) | null;
+            "query_cost_known"?: boolean;
+            "scan_reservation_bytes"?: number;
+            "scan_reservation_ids"?: Array<string>;
+            "scan_settlements"?: Array<{
+              "attempt_id"?: string;
+              "scanned_bytes"?: number;
+            }>;
+            "scanned_bytes"?: number;
             "total_queries"?: number;
           }) | null;
           "prometheus_capabilities"?: ({
@@ -111906,16 +113244,23 @@ export interface operations {
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
+                  "backend"?: string;
                   "comparator": string;
                   "dimensions"?: Record<string, string>;
                   "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
                   "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
                   "metric": string;
+                  "metric_id"?: string;
                   "min_coverage_pct"?: number;
+                  "provider"?: string;
                   "query_id"?: string;
                   "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
                   "severity"?: string;
                   "source_id": string;
+                  "source_statistic"?: string;
                   "start_offset_seconds"?: number;
                   "statistic": string;
                   "threshold": number;
@@ -123474,9 +124819,51 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      "2XX": {
+      "200": {
         content: {
-          "application/json": unknown;
+          "application/json": {
+            "capabilities": {
+              "classic_topology": boolean;
+              "environment_id"?: string;
+              "environment_origin"?: string;
+              "events": boolean;
+              "grail_events": boolean;
+              "grail_metrics": boolean;
+              "logs": boolean;
+              "metrics": boolean;
+              "platform_environment_id"?: string;
+              "platform_origin"?: string;
+              "problems": boolean;
+              "smartscape": boolean;
+              "spans": boolean;
+              "status"?: Record<string, string>;
+              "tenant_id"?: string;
+              "verified_origins"?: Array<string>;
+            };
+            "checked_at": string;
+            "message": string;
+            "status": string;
+          };
+        };
+      };
+      "202": {
+        content: {
+          "application/json": {
+            "connection_id": string;
+            "connection_revision": number;
+            "created_at": string;
+            "expires_at": string;
+            "id": string;
+            "kind": string;
+            "message"?: string;
+            "result"?: unknown;
+            "status": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {
@@ -123490,6 +124877,16 @@ export interface operations {
         };
       };
       "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -123659,7 +125056,7 @@ export interface operations {
       };
     };
     responses: {
-      "2XX": {
+      "202": {
         content: {
           "application/json": {
             "connection_id": string;
@@ -124475,16 +125872,23 @@ export interface operations {
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -129933,10 +131337,17 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "collection_mode"?: string;
+          "collector_agent_id"?: string;
           "description"?: string;
+          "drain_reserve_bytes"?: number;
           "enabled"?: boolean;
           "environment_token_secret"?: (string) | null;
           "environment_url"?: string;
+          "events_enabled"?: boolean;
+          "expected_revision"?: number;
+          "grail_events_enabled"?: boolean;
+          "grail_metrics_enabled"?: boolean;
           "log_base_filter"?: string;
           "log_message_field"?: string;
           "log_status_field"?: string;
@@ -129944,6 +131355,8 @@ export interface operations {
           "log_timestamp_field"?: string;
           "log_trace_id_field"?: string;
           "logs_enabled"?: boolean;
+          "max_run_scan_bytes"?: number;
+          "max_scan_bytes"?: number;
           "metric_queries"?: Array<{
             "aggregation"?: string;
             "entity_selector"?: string;
@@ -129957,12 +131370,16 @@ export interface operations {
           "oauth_resource"?: string;
           "oauth_scopes"?: Array<string>;
           "platform_auth_type"?: string;
+          "platform_requests_per_minute"?: number;
           "platform_token_secret"?: (string) | null;
           "platform_url"?: string;
           "poll_interval_seconds"?: number;
           "problem_entity_selector"?: string;
           "problem_selector"?: string;
           "problems_enabled"?: boolean;
+          "requests_per_minute"?: number;
+          "spans_enabled"?: boolean;
+          "topology_mode"?: string;
           "updated_at"?: string;
         };
       };
@@ -129971,10 +131388,34 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
+            "capabilities": {
+              "classic_topology": boolean;
+              "environment_id"?: string;
+              "environment_origin"?: string;
+              "events": boolean;
+              "grail_events": boolean;
+              "grail_metrics": boolean;
+              "logs": boolean;
+              "metrics": boolean;
+              "platform_environment_id"?: string;
+              "platform_origin"?: string;
+              "problems": boolean;
+              "smartscape": boolean;
+              "spans": boolean;
+              "status"?: Record<string, string>;
+              "tenant_id"?: string;
+              "verified_origins"?: Array<string>;
+            };
+            "collection_mode": string;
+            "collector_agent_id"?: string;
             "created_at": string;
             "description"?: string;
+            "drain_reserve_bytes"?: number;
             "enabled": boolean;
             "environment_url"?: string;
+            "events_enabled": boolean;
+            "grail_events_enabled": boolean;
+            "grail_metrics_enabled": boolean;
             "has_environment_token": boolean;
             "has_oauth_client_id": boolean;
             "has_oauth_client_secret": boolean;
@@ -129987,6 +131428,7 @@ export interface operations {
             "last_check_message"?: string;
             "last_check_status"?: string;
             "last_checked_at"?: (string) | null;
+            "legacy_capture_status": string;
             "log_base_filter"?: string;
             "log_message_field"?: string;
             "log_status_field"?: string;
@@ -129994,6 +131436,8 @@ export interface operations {
             "log_timestamp_field"?: string;
             "log_trace_id_field"?: string;
             "logs_enabled": boolean;
+            "max_run_scan_bytes"?: number;
+            "max_scan_bytes"?: number;
             "metric_queries": Array<{
               "aggregation": string;
               "entity_selector"?: string;
@@ -130005,14 +131449,20 @@ export interface operations {
             "oauth_resource"?: string;
             "oauth_scopes": Array<string>;
             "platform_auth_type"?: string;
+            "platform_requests_per_minute"?: number;
             "platform_url"?: string;
             "poll_interval_seconds": number;
             "problem_entity_selector"?: string;
             "problem_selector"?: string;
             "problems_enabled": boolean;
             "project_id": string;
+            "requests_per_minute"?: number;
+            "revision": number;
+            "spans_enabled": boolean;
             "status": string;
+            "topology_mode"?: string;
             "updated_at": string;
+            "verified_revision": number;
           };
         };
       };
@@ -130037,6 +131487,16 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "428": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -131694,16 +133154,23 @@ export interface operations {
             "max_vusers"?: (number) | null;
             "min_vusers"?: (number) | null;
             "monitor_rules"?: Array<{
+              "backend"?: string;
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "entity_ids"?: Record<string, string>;
               "evaluation_mode"?: string;
+              "evaluation_operation"?: string;
               "metric"?: string;
+              "metric_id"?: string;
               "min_coverage_pct"?: number;
+              "provider"?: string;
               "query_id"?: string;
               "require_freshness"?: boolean;
+              "resolution_seconds"?: number;
               "severity"?: string;
               "source_id"?: string;
+              "source_statistic"?: string;
               "start_offset_seconds"?: number;
               "statistic"?: string;
               "threshold"?: number;
@@ -132464,16 +133931,23 @@ export interface operations {
               "max_vusers"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
+                "backend"?: string;
                 "comparator": string;
                 "dimensions"?: Record<string, string>;
                 "end_offset_seconds"?: (number) | null;
+                "entity_ids"?: Record<string, string>;
                 "evaluation_mode"?: string;
+                "evaluation_operation"?: string;
                 "metric": string;
+                "metric_id"?: string;
                 "min_coverage_pct"?: number;
+                "provider"?: string;
                 "query_id"?: string;
                 "require_freshness"?: boolean;
+                "resolution_seconds"?: number;
                 "severity"?: string;
                 "source_id": string;
+                "source_statistic"?: string;
                 "start_offset_seconds"?: number;
                 "statistic": string;
                 "threshold": number;
@@ -140082,16 +141556,23 @@ export interface operations {
             "max_vusers"?: (number) | null;
             "min_vusers"?: (number) | null;
             "monitor_rules"?: Array<{
+              "backend"?: string;
               "comparator"?: string;
               "dimensions"?: Record<string, string>;
               "end_offset_seconds"?: (number) | null;
+              "entity_ids"?: Record<string, string>;
               "evaluation_mode"?: string;
+              "evaluation_operation"?: string;
               "metric"?: string;
+              "metric_id"?: string;
               "min_coverage_pct"?: number;
+              "provider"?: string;
               "query_id"?: string;
               "require_freshness"?: boolean;
+              "resolution_seconds"?: number;
               "severity"?: string;
               "source_id"?: string;
+              "source_statistic"?: string;
               "start_offset_seconds"?: number;
               "statistic"?: string;
               "threshold"?: number;
@@ -142255,6 +143736,12 @@ export interface paths {
     "delete": operations["handleDeleteMonitoringCollector"];
     "patch": operations["handlePatchMonitoringCollector"];
   };
+  "/api/v1/monitoring/collectors/{id}/dynatrace-operations": {
+    "get": operations["handlePollDynatraceOperations"];
+  };
+  "/api/v1/monitoring/collectors/{id}/dynatrace-operations/{operation_id}/result": {
+    "post": operations["handleDynatraceOperationResult"];
+  };
   "/api/v1/monitoring/collectors/{id}/heartbeat": {
     "post": operations["handleCollectorHeartbeat"];
   };
@@ -142272,6 +143759,9 @@ export interface paths {
   };
   "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/samples": {
     "post": operations["handleRunMonitorSamples"];
+  };
+  "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/scan-reservations": {
+    "post": operations["handleDynatraceScanReservation"];
   };
   "/api/v1/monitoring/collectors/{id}/metrics": {
     "get": operations["handleGetCollectorMetrics"];
@@ -142427,6 +143917,12 @@ export interface paths {
     "get": operations["handleGetDynatraceConnection"];
     "put": operations["handleUpdateDynatraceConnection"];
     "delete": operations["handleDeleteDynatraceConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/operations": {
+    "post": operations["handleCreateDynatraceOperation"];
+  };
+  "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/operations/{operation_id}": {
+    "get": operations["handleGetDynatraceOperation"];
   };
   "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/test": {
     "post": operations["handleTestDynatraceConnection"];

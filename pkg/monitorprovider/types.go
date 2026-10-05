@@ -12,6 +12,8 @@ type Entity struct {
 	EntityIDs map[string]string `json:"entity_ids,omitempty"`
 }
 type Diagnostic struct {
+	Provider      string            `json:"provider,omitempty"`
+	Backend       string            `json:"backend,omitempty"`
 	ID            string            `json:"id"`
 	Kind          string            `json:"kind"`
 	ApplicationID string            `json:"application_id"`
@@ -44,10 +46,17 @@ type Coverage struct {
 // NextTime is the first uncommitted evaluation timestamp for NextQuery. It is
 // carried with the accepted batch, so a retry cannot advance the durable cursor.
 type QueryProgress struct {
-	NextQuery    int        `json:"next_query"`
-	TotalQueries int        `json:"total_queries"`
-	Complete     bool       `json:"complete"`
-	NextTime     *time.Time `json:"next_time,omitempty"`
+	NextQuery            int              `json:"next_query"`
+	TotalQueries         int              `json:"total_queries"`
+	Complete             bool             `json:"complete"`
+	NextTime             *time.Time       `json:"next_time,omitempty"`
+	Cursor               string           `json:"cursor,omitempty"`
+	CursorExpiresAt      *time.Time       `json:"cursor_expires_at,omitempty"`
+	ScannedBytes         int64            `json:"scanned_bytes,omitempty"`
+	ScanReservationBytes int64            `json:"scan_reservation_bytes,omitempty"`
+	ScanReservationIDs   []string         `json:"scan_reservation_ids,omitempty"`
+	ScanSettlements      []ScanSettlement `json:"scan_settlements,omitempty"`
+	QueryCostKnown       bool             `json:"query_cost_known,omitempty"`
 }
 
 // EvaluationWindow binds a terminal query to the immutable test/rule interval.
@@ -55,4 +64,10 @@ type EvaluationWindow struct {
 	QueryID string    `json:"query_id"`
 	From    time.Time `json:"from"`
 	To      time.Time `json:"to"`
+}
+
+// ScanSettlement reports the cost of one admitted upstream attempt.
+type ScanSettlement struct {
+	AttemptID    string `json:"attempt_id"`
+	ScannedBytes int64  `json:"scanned_bytes"`
 }

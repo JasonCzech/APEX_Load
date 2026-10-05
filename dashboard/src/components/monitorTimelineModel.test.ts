@@ -48,3 +48,11 @@ it('keeps Prometheus query identity and evaluation gaps separate from display la
   expect(monitorEntityLabel(azure)).toBe('Job: CheckoutAPI')
   expect(monitorSeriesIdentity(azure)).toBe(monitorSeriesIdentity({ ...azure, provider: { ...azure.provider, display_labels: { JOB: 'CHECKOUTAPI' } } }))
 })
+
+it('keeps native provider names and Dynatrace backend identities separate from Prometheus definitions', () => {
+  const appdynamics = point(0, 0)
+  const dynatrace: AnalysisPoint = { ...appdynamics, provider: { ...appdynamics.provider!, name: 'dynatrace', backend: 'classic' } }
+  expect(monitorSeriesIdentity(appdynamics)).not.toBe(monitorSeriesIdentity(dynatrace))
+  expect(monitorSeriesIdentity(dynatrace)).not.toBe(monitorSeriesIdentity({ ...dynatrace, provider: { ...dynatrace.provider!, backend: 'grail' } }))
+  expect(monitorSeriesIdentity(dynatrace)).not.toBe(monitorSeriesIdentity({ ...dynatrace, provider: { ...dynatrace.provider!, resolution_seconds: 120 } }))
+})

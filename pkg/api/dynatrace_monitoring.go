@@ -11,12 +11,12 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/scrub"
@@ -132,74 +132,108 @@ type DynatraceEvidenceRecord struct {
 }
 
 type DynatraceConnectionRequest struct {
-	Name                    string                         `json:"name"`
-	Description             string                         `json:"description"`
-	Enabled                 bool                           `json:"enabled"`
-	EnvironmentURL          string                         `json:"environment_url"`
-	PlatformURL             string                         `json:"platform_url"`
-	MetricsEnabled          bool                           `json:"metrics_enabled"`
-	ProblemsEnabled         bool                           `json:"problems_enabled"`
-	LogsEnabled             bool                           `json:"logs_enabled"`
-	EnvironmentTokenSecret  *string                        `json:"environment_token_secret,omitempty"`
-	PlatformAuthType        string                         `json:"platform_auth_type"`
-	PlatformTokenSecret     *string                        `json:"platform_token_secret,omitempty"`
-	OAuthClientIDSecret     *string                        `json:"oauth_client_id_secret,omitempty"`
-	OAuthClientSecretSecret *string                        `json:"oauth_client_secret_secret,omitempty"`
-	OAuthResource           string                         `json:"oauth_resource"`
-	OAuthScopes             []string                       `json:"oauth_scopes"`
-	MetricQueries           []storage.DynatraceMetricQuery `json:"metric_queries"`
-	ProblemSelector         string                         `json:"problem_selector"`
-	ProblemEntitySelector   string                         `json:"problem_entity_selector"`
-	LogBaseFilter           string                         `json:"log_base_filter"`
-	LogTestIDField          string                         `json:"log_test_id_field"`
-	LogTimestampField       string                         `json:"log_timestamp_field"`
-	LogStatusField          string                         `json:"log_status_field"`
-	LogMessageField         string                         `json:"log_message_field"`
-	LogTraceIDField         string                         `json:"log_trace_id_field"`
-	PollIntervalSeconds     int                            `json:"poll_interval_seconds"`
-	UpdatedAt               time.Time                      `json:"updated_at"`
+	ExpectedRevision          int64                          `json:"expected_revision,omitempty"`
+	CollectionMode            string                         `json:"collection_mode,omitempty"`
+	CollectorAgentID          string                         `json:"collector_agent_id,omitempty"`
+	EventsEnabled             bool                           `json:"events_enabled"`
+	SpansEnabled              bool                           `json:"spans_enabled"`
+	GrailMetricsEnabled       bool                           `json:"grail_metrics_enabled"`
+	GrailEventsEnabled        bool                           `json:"grail_events_enabled"`
+	TopologyMode              string                         `json:"topology_mode,omitempty"`
+	RequestsPerMinute         int                            `json:"requests_per_minute,omitempty"`
+	PlatformRequestsPerMinute int                            `json:"platform_requests_per_minute,omitempty"`
+	MaxScanBytes              int64                          `json:"max_scan_bytes,omitempty"`
+	MaxRunScanBytes           int64                          `json:"max_run_scan_bytes,omitempty"`
+	DrainReserveBytes         int64                          `json:"drain_reserve_bytes,omitempty"`
+	Name                      string                         `json:"name"`
+	Description               string                         `json:"description"`
+	Enabled                   bool                           `json:"enabled"`
+	EnvironmentURL            string                         `json:"environment_url"`
+	PlatformURL               string                         `json:"platform_url"`
+	MetricsEnabled            bool                           `json:"metrics_enabled"`
+	ProblemsEnabled           bool                           `json:"problems_enabled"`
+	LogsEnabled               bool                           `json:"logs_enabled"`
+	EnvironmentTokenSecret    *string                        `json:"environment_token_secret,omitempty"`
+	PlatformAuthType          string                         `json:"platform_auth_type"`
+	PlatformTokenSecret       *string                        `json:"platform_token_secret,omitempty"`
+	OAuthClientIDSecret       *string                        `json:"oauth_client_id_secret,omitempty"`
+	OAuthClientSecretSecret   *string                        `json:"oauth_client_secret_secret,omitempty"`
+	OAuthResource             string                         `json:"oauth_resource"`
+	OAuthScopes               []string                       `json:"oauth_scopes"`
+	MetricQueries             []storage.DynatraceMetricQuery `json:"metric_queries"`
+	ProblemSelector           string                         `json:"problem_selector"`
+	ProblemEntitySelector     string                         `json:"problem_entity_selector"`
+	LogBaseFilter             string                         `json:"log_base_filter"`
+	LogTestIDField            string                         `json:"log_test_id_field"`
+	LogTimestampField         string                         `json:"log_timestamp_field"`
+	LogStatusField            string                         `json:"log_status_field"`
+	LogMessageField           string                         `json:"log_message_field"`
+	LogTraceIDField           string                         `json:"log_trace_id_field"`
+	PollIntervalSeconds       int                            `json:"poll_interval_seconds"`
+	UpdatedAt                 time.Time                      `json:"updated_at"`
 }
 
+const dynatraceIncompleteEnableMessage = "complete the Dynatrace connection configuration before enabling it"
+
 type DynatraceConnectionResponse struct {
-	ID                    string                                       `json:"id"`
-	ProjectID             string                                       `json:"project_id"`
-	Name                  string                                       `json:"name"`
-	Description           string                                       `json:"description,omitempty"`
-	Enabled               bool                                         `json:"enabled"`
-	Status                string                                       `json:"status"`
-	EnvironmentURL        string                                       `json:"environment_url,omitempty"`
-	PlatformURL           string                                       `json:"platform_url,omitempty"`
-	MetricsEnabled        bool                                         `json:"metrics_enabled"`
-	ProblemsEnabled       bool                                         `json:"problems_enabled"`
-	LogsEnabled           bool                                         `json:"logs_enabled"`
-	HasEnvironmentToken   bool                                         `json:"has_environment_token"`
-	PlatformAuthType      string                                       `json:"platform_auth_type,omitempty"`
-	HasPlatformToken      bool                                         `json:"has_platform_token"`
-	HasOAuthClientID      bool                                         `json:"has_oauth_client_id"`
-	HasOAuthClientSecret  bool                                         `json:"has_oauth_client_secret"`
-	OAuthResource         string                                       `json:"oauth_resource,omitempty"`
-	OAuthScopes           []string                                     `json:"oauth_scopes"`
-	MetricQueries         []storage.DynatraceMetricQuery               `json:"metric_queries"`
-	ProblemSelector       string                                       `json:"problem_selector,omitempty"`
-	ProblemEntitySelector string                                       `json:"problem_entity_selector,omitempty"`
-	LogBaseFilter         string                                       `json:"log_base_filter,omitempty"`
-	LogTestIDField        string                                       `json:"log_test_id_field,omitempty"`
-	LogTimestampField     string                                       `json:"log_timestamp_field,omitempty"`
-	LogStatusField        string                                       `json:"log_status_field,omitempty"`
-	LogMessageField       string                                       `json:"log_message_field,omitempty"`
-	LogTraceIDField       string                                       `json:"log_trace_id_field,omitempty"`
-	PollIntervalSeconds   int                                          `json:"poll_interval_seconds"`
-	LastCheckedAt         *time.Time                                   `json:"last_checked_at,omitempty"`
-	LastCheckStatus       string                                       `json:"last_check_status,omitempty"`
-	LastCheckMessage      string                                       `json:"last_check_message,omitempty"`
-	LastCapabilityHealth  map[string]storage.DynatraceCapabilityHealth `json:"last_capability_health,omitempty"`
-	CreatedAt             time.Time                                    `json:"created_at"`
-	UpdatedAt             time.Time                                    `json:"updated_at"`
+	Capabilities              dynatrace.Capabilities                       `json:"capabilities"`
+	Revision                  int64                                        `json:"revision"`
+	VerifiedRevision          int64                                        `json:"verified_revision"`
+	CollectionMode            string                                       `json:"collection_mode"`
+	CollectorAgentID          string                                       `json:"collector_agent_id,omitempty"`
+	EventsEnabled             bool                                         `json:"events_enabled"`
+	SpansEnabled              bool                                         `json:"spans_enabled"`
+	GrailMetricsEnabled       bool                                         `json:"grail_metrics_enabled"`
+	GrailEventsEnabled        bool                                         `json:"grail_events_enabled"`
+	TopologyMode              string                                       `json:"topology_mode,omitempty"`
+	RequestsPerMinute         int                                          `json:"requests_per_minute,omitempty"`
+	PlatformRequestsPerMinute int                                          `json:"platform_requests_per_minute,omitempty"`
+	MaxScanBytes              int64                                        `json:"max_scan_bytes,omitempty"`
+	MaxRunScanBytes           int64                                        `json:"max_run_scan_bytes,omitempty"`
+	DrainReserveBytes         int64                                        `json:"drain_reserve_bytes,omitempty"`
+	ID                        string                                       `json:"id"`
+	ProjectID                 string                                       `json:"project_id"`
+	Name                      string                                       `json:"name"`
+	Description               string                                       `json:"description,omitempty"`
+	Enabled                   bool                                         `json:"enabled"`
+	Status                    string                                       `json:"status"`
+	LegacyCaptureStatus       string                                       `json:"legacy_capture_status"`
+	EnvironmentURL            string                                       `json:"environment_url,omitempty"`
+	PlatformURL               string                                       `json:"platform_url,omitempty"`
+	MetricsEnabled            bool                                         `json:"metrics_enabled"`
+	ProblemsEnabled           bool                                         `json:"problems_enabled"`
+	LogsEnabled               bool                                         `json:"logs_enabled"`
+	HasEnvironmentToken       bool                                         `json:"has_environment_token"`
+	PlatformAuthType          string                                       `json:"platform_auth_type,omitempty"`
+	HasPlatformToken          bool                                         `json:"has_platform_token"`
+	HasOAuthClientID          bool                                         `json:"has_oauth_client_id"`
+	HasOAuthClientSecret      bool                                         `json:"has_oauth_client_secret"`
+	OAuthResource             string                                       `json:"oauth_resource,omitempty"`
+	OAuthScopes               []string                                     `json:"oauth_scopes"`
+	MetricQueries             []storage.DynatraceMetricQuery               `json:"metric_queries"`
+	ProblemSelector           string                                       `json:"problem_selector,omitempty"`
+	ProblemEntitySelector     string                                       `json:"problem_entity_selector,omitempty"`
+	LogBaseFilter             string                                       `json:"log_base_filter,omitempty"`
+	LogTestIDField            string                                       `json:"log_test_id_field,omitempty"`
+	LogTimestampField         string                                       `json:"log_timestamp_field,omitempty"`
+	LogStatusField            string                                       `json:"log_status_field,omitempty"`
+	LogMessageField           string                                       `json:"log_message_field,omitempty"`
+	LogTraceIDField           string                                       `json:"log_trace_id_field,omitempty"`
+	PollIntervalSeconds       int                                          `json:"poll_interval_seconds"`
+	LastCheckedAt             *time.Time                                   `json:"last_checked_at,omitempty"`
+	LastCheckStatus           string                                       `json:"last_check_status,omitempty"`
+	LastCheckMessage          string                                       `json:"last_check_message,omitempty"`
+	LastCapabilityHealth      map[string]storage.DynatraceCapabilityHealth `json:"last_capability_health,omitempty"`
+	CreatedAt                 time.Time                                    `json:"created_at"`
+	UpdatedAt                 time.Time                                    `json:"updated_at"`
 }
 
 func dynatraceConnectionResponse(c *storage.DynatraceConnection) DynatraceConnectionResponse {
 	return DynatraceConnectionResponse{ID: c.ID, ProjectID: c.ProjectID, Name: c.Name, Description: c.Description, Enabled: c.Enabled,
-		Status: c.ConfigurationStatus(), EnvironmentURL: c.EnvironmentURL, PlatformURL: c.PlatformURL, MetricsEnabled: c.MetricsEnabled,
+		Revision: c.Revision, VerifiedRevision: c.VerifiedRevision, CollectionMode: c.CollectionMode, CollectorAgentID: c.CollectorAgentID,
+		EventsEnabled: c.EventsEnabled, SpansEnabled: c.SpansEnabled, GrailMetricsEnabled: c.GrailMetricsEnabled, GrailEventsEnabled: c.GrailEventsEnabled, TopologyMode: c.TopologyMode,
+		RequestsPerMinute: c.RequestsPerMinute, PlatformRequestsPerMinute: c.PlatformRequestsPerMinute, MaxScanBytes: c.MaxScanBytes, MaxRunScanBytes: c.MaxRunScanBytes, DrainReserveBytes: c.DrainReserveBytes,
+		Capabilities: c.Capabilities, Status: c.Readiness(), LegacyCaptureStatus: c.ConfigurationStatus(), EnvironmentURL: c.EnvironmentURL, PlatformURL: c.PlatformURL, MetricsEnabled: c.MetricsEnabled,
 		ProblemsEnabled: c.ProblemsEnabled, LogsEnabled: c.LogsEnabled, HasEnvironmentToken: c.EnvironmentTokenSecret != "",
 		PlatformAuthType: c.PlatformAuthType, HasPlatformToken: c.PlatformTokenSecret != "", HasOAuthClientID: c.OAuthClientIDSecret != "",
 		HasOAuthClientSecret: c.OAuthClientSecretSecret != "", OAuthResource: c.OAuthResource, OAuthScopes: append([]string(nil), c.OAuthScopes...),
@@ -212,6 +246,17 @@ func dynatraceConnectionResponse(c *storage.DynatraceConnection) DynatraceConnec
 }
 
 func applyDynatraceConnectionRequest(c *storage.DynatraceConnection, req DynatraceConnectionRequest) {
+	// Omitted replacements preserve credentials only for the same approved identity.
+	if c.EnvironmentURL != req.EnvironmentURL {
+		c.EnvironmentTokenSecret = ""
+	}
+	if c.PlatformURL != req.PlatformURL || c.PlatformAuthType != req.PlatformAuthType || c.OAuthResource != req.OAuthResource {
+		c.PlatformTokenSecret, c.OAuthClientIDSecret, c.OAuthClientSecretSecret = "", "", ""
+	}
+	c.CollectionMode, c.CollectorAgentID = req.CollectionMode, req.CollectorAgentID
+	c.EventsEnabled, c.SpansEnabled, c.GrailMetricsEnabled, c.TopologyMode = req.EventsEnabled, req.SpansEnabled, req.GrailMetricsEnabled, req.TopologyMode
+	c.GrailEventsEnabled = req.GrailEventsEnabled
+	c.RequestsPerMinute, c.PlatformRequestsPerMinute, c.MaxScanBytes, c.MaxRunScanBytes, c.DrainReserveBytes = req.RequestsPerMinute, req.PlatformRequestsPerMinute, req.MaxScanBytes, req.MaxRunScanBytes, req.DrainReserveBytes
 	c.Name, c.Description, c.Enabled = req.Name, req.Description, req.Enabled
 	c.EnvironmentURL, c.PlatformURL = req.EnvironmentURL, req.PlatformURL
 	c.MetricsEnabled, c.ProblemsEnabled, c.LogsEnabled = req.MetricsEnabled, req.ProblemsEnabled, req.LogsEnabled
@@ -223,16 +268,27 @@ func applyDynatraceConnectionRequest(c *storage.DynatraceConnection, req Dynatra
 	c.LogTimestampField, c.LogStatusField, c.LogMessageField, c.LogTraceIDField = req.LogTimestampField, req.LogStatusField, req.LogMessageField, req.LogTraceIDField
 	c.PollIntervalSeconds = req.PollIntervalSeconds
 	if req.EnvironmentTokenSecret != nil {
-		c.EnvironmentTokenSecret = strings.TrimSpace(*req.EnvironmentTokenSecret)
+		if value := strings.TrimSpace(*req.EnvironmentTokenSecret); value != "" {
+			c.EnvironmentTokenSecret = value
+		}
 	}
 	if req.PlatformTokenSecret != nil {
-		c.PlatformTokenSecret = strings.TrimSpace(*req.PlatformTokenSecret)
+		if value := strings.TrimSpace(*req.PlatformTokenSecret); value != "" {
+			c.PlatformTokenSecret = value
+		}
 	}
 	if req.OAuthClientIDSecret != nil {
-		c.OAuthClientIDSecret = strings.TrimSpace(*req.OAuthClientIDSecret)
+		if value := strings.TrimSpace(*req.OAuthClientIDSecret); value != "" {
+			if value != c.OAuthClientIDSecret {
+				c.OAuthClientSecretSecret = ""
+			}
+			c.OAuthClientIDSecret = value
+		}
 	}
 	if req.OAuthClientSecretSecret != nil {
-		c.OAuthClientSecretSecret = strings.TrimSpace(*req.OAuthClientSecretSecret)
+		if value := strings.TrimSpace(*req.OAuthClientSecretSecret); value != "" {
+			c.OAuthClientSecretSecret = value
+		}
 	}
 	if c.PlatformAuthType == storage.DynatracePlatformAuthToken {
 		c.OAuthClientIDSecret, c.OAuthClientSecretSecret = "", ""
@@ -253,6 +309,12 @@ func (s *Server) dynatraceConnectionStore(w http.ResponseWriter) (storage.Dynatr
 }
 
 func (s *Server) handleCreateDynatraceConnection(w http.ResponseWriter, r *http.Request) {
+	release, err := s.acquireSecretReferenceMutation(r.PathValue("id"))
+	if err != nil {
+		writeError(w, 503, "project credential references are temporarily unavailable")
+		return
+	}
+	defer release()
 	store, ok := s.dynatraceConnectionStore(w)
 	if !ok {
 		return
@@ -261,9 +323,20 @@ func (s *Server) handleCreateDynatraceConnection(w http.ResponseWriter, r *http.
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	// Enabled admits legacy test capture, as before native monitoring existed,
+	// so it requires a complete configuration. Native sources additionally
+	// require a verified revision (Readiness).
 	c := &storage.DynatraceConnection{ID: uuid.NewString(), ProjectID: strings.TrimSpace(r.PathValue("id"))}
 	applyDynatraceConnectionRequest(c, req)
 	if err := c.Validate(); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	if c.Enabled && c.ConfigurationStatus() != "ready" {
+		writeError(w, 409, dynatraceIncompleteEnableMessage)
+		return
+	}
+	if err := validateDynatraceSecretReferences(c); err != nil {
 		writeError(w, 400, err.Error())
 		return
 	}
@@ -298,9 +371,7 @@ func (s *Server) handleListDynatraceConnections(w http.ResponseWriter, r *http.R
 	}
 	responses := make([]map[string]any, 0, len(items))
 	for _, item := range items {
-		if item.ConfigurationStatus() == "ready" {
-			responses = append(responses, map[string]any{"id": item.ID, "project_id": item.ProjectID, "name": item.Name, "status": "ready", "metrics_enabled": item.MetricsEnabled, "problems_enabled": item.ProblemsEnabled, "logs_enabled": item.LogsEnabled})
-		}
+		responses = append(responses, map[string]any{"id": item.ID, "project_id": item.ProjectID, "name": item.Name, "status": item.Readiness(), "legacy_capture_status": item.ConfigurationStatus(), "revision": item.Revision, "enabled": item.Enabled, "collection_mode": item.CollectionMode, "collector_agent_id": item.CollectorAgentID, "capabilities": item.Capabilities})
 	}
 	writeJSON(w, 200, map[string]any{"connections": responses, "count": len(responses)})
 }
@@ -329,6 +400,12 @@ func (s *Server) handleGetDynatraceConnection(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleUpdateDynatraceConnection(w http.ResponseWriter, r *http.Request) {
+	release, mutationErr := s.acquireSecretReferenceMutation(r.PathValue("id"))
+	if mutationErr != nil {
+		writeError(w, 503, "project credential references are temporarily unavailable")
+		return
+	}
+	defer release()
 	c, store, ok := s.loadProjectDynatraceConnection(w, r)
 	if !ok {
 		return
@@ -337,8 +414,8 @@ func (s *Server) handleUpdateDynatraceConnection(w http.ResponseWriter, r *http.
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if req.UpdatedAt.IsZero() {
-		writeError(w, 400, "updated_at is required")
+	if req.ExpectedRevision <= 0 && req.UpdatedAt.IsZero() {
+		writeError(w, 428, "expected_revision or updated_at is required")
 		return
 	}
 	applyDynatraceConnectionRequest(c, req)
@@ -346,7 +423,27 @@ func (s *Server) handleUpdateDynatraceConnection(w http.ResponseWriter, r *http.
 		writeError(w, 400, err.Error())
 		return
 	}
-	updated, err := store.UpdateDynatraceConnectionIfUnchanged(c, req.UpdatedAt)
+	if c.Enabled && c.ConfigurationStatus() != "ready" {
+		writeError(w, 409, dynatraceIncompleteEnableMessage)
+		return
+	}
+	if err := validateDynatraceSecretReferences(c); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	var updated bool
+	var err error
+	if req.ExpectedRevision > 0 {
+		if revisioned, ok := store.(interface {
+			UpdateDynatraceConnectionIfRevision(*storage.DynatraceConnection, int64) (bool, error)
+		}); ok {
+			updated, err = revisioned.UpdateDynatraceConnectionIfRevision(c, req.ExpectedRevision)
+		} else {
+			err = errors.New("revisioned connection storage unavailable")
+		}
+	} else {
+		updated, err = store.UpdateDynatraceConnectionIfUnchanged(c, req.UpdatedAt)
+	}
 	if err != nil {
 		writeError(w, 409, "failed to update Dynatrace connection: "+err.Error())
 		return
@@ -360,61 +457,87 @@ func (s *Server) handleUpdateDynatraceConnection(w http.ResponseWriter, r *http.
 }
 
 func (s *Server) handleDeleteDynatraceConnection(w http.ResponseWriter, r *http.Request) {
+	release, mutationErr := s.acquireSecretReferenceMutation(r.PathValue("id"))
+	if mutationErr != nil {
+		writeError(w, 503, "project credential references are temporarily unavailable")
+		return
+	}
+	defer release()
 	c, store, ok := s.loadProjectDynatraceConnection(w, r)
 	if !ok {
 		return
 	}
-	deleted, err := store.DeleteDynatraceConnection(c.ID, c.ProjectID)
+	expected, parseErr := strconv.ParseInt(r.URL.Query().Get("expected_revision"), 10, 64)
+	if parseErr != nil || expected <= 0 {
+		writeError(w, 428, "expected_revision is required")
+		return
+	}
+	revisioned, ok := store.(interface {
+		DeleteDynatraceConnectionIfRevision(string, string, int64) (bool, error)
+	})
+	if !ok {
+		writeError(w, 503, "revisioned connection storage unavailable")
+		return
+	}
+	deleted, err := revisioned.DeleteDynatraceConnectionIfRevision(c.ID, c.ProjectID, expected)
 	if err != nil {
 		writeError(w, 409, err.Error())
 		return
 	}
 	if !deleted {
-		writeError(w, 404, "Dynatrace connection not found")
+		writeError(w, 409, "Dynatrace connection changed; reload and retry")
 		return
 	}
 	s.recordAuditEvent(r, "monitoring.dynatrace.delete", "success", "dynatrace_connection", c.ID, c.ProjectID, nil)
 	w.WriteHeader(204)
 }
 
+// DynatraceConnectionVerificationResponse is the synchronous compatibility
+// verifier's wire contract; native setup operations use the async response.
+type DynatraceConnectionVerificationResponse struct {
+	Status       string                 `json:"status"`
+	CheckedAt    time.Time              `json:"checked_at"`
+	Message      string                 `json:"message"`
+	Capabilities dynatrace.Capabilities `json:"capabilities"`
+}
+
 func (s *Server) handleTestDynatraceConnection(w http.ResponseWriter, r *http.Request) {
-	c, store, ok := s.loadProjectDynatraceConnection(w, r)
+	c, _, ok := s.loadProjectDynatraceConnection(w, r)
 	if !ok {
 		return
 	}
-	check := *c
-	check.Enabled = true // Verify saved configuration without enabling it.
-	if check.ConfigurationStatus() != "ready" {
+	if c.CollectionMode == "collector" {
+		r.Body = io.NopCloser(strings.NewReader(`{"kind":"verify"}`))
+		r.ContentLength = int64(len(`{"kind":"verify"}`))
+		s.handleCreateDynatraceOperation(w, r)
+		return
+	}
+	if c.RuntimeConfig().Validate() != nil {
 		writeError(w, 409, "Dynatrace connection is not fully configured")
 		return
 	}
-	checkedAt := time.Now().UTC()
-	cfg := dynatraceCaptureFromConnection(c)
-	result := queryDynatrace(r.Context(), s.runner, cfg, "", nil, checkedAt.Add(-time.Minute), checkedAt)
-	capabilities := make(map[string]storage.DynatraceCapabilityHealth, len(result.Capabilities))
-	overall, messages := "connected", []string{}
-	for name, health := range result.Capabilities {
-		capabilities[name] = storage.DynatraceCapabilityHealth{Status: health.Status, Message: health.Message}
-		if health.Status == "error" {
-			overall = "partial"
-			messages = append(messages, name+": "+health.Message)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	caps := dynatrace.Capabilities{}
+	client, err := s.nativeDynatraceClient(ctx, c.Snapshot(), "direct:"+s.controllerID)
+	if err == nil {
+		caps, err = client.Test(ctx)
+	}
+	if err == nil && !dynatraceWantedCapabilitiesAvailable(dynatraceWantedCapabilities(c), caps) {
+		err = errors.New("selected capability unavailable")
+	}
+	message, overall, status := "Dynatrace capabilities verified", "connected", 200
+	if err != nil {
+		message, overall, status = "Dynatrace verification failed", "error", 502
+	}
+	caps = sanitizeDynatraceCapabilitiesForConfig(caps, c.RuntimeConfig())
+	s.publishDynatraceOperationHealth(&storage.DynatraceOperation{ConnectionID: c.ID, ProjectID: c.ProjectID, ConnectionRevision: c.Revision}, func() string {
+		if err != nil {
+			return message
 		}
-	}
-	if len(result.Capabilities) == 0 || len(messages) == len(result.Capabilities) {
-		overall = "error"
-	}
-	message := "Dynatrace capabilities verified"
-	if len(messages) > 0 {
-		sort.Strings(messages)
-		message = strings.Join(messages, "; ")
-	}
-	_ = store.UpdateDynatraceConnectionHealth(c.ID, c.ProjectID, overall, message, capabilities, checkedAt)
-	s.recordAuditEvent(r, "monitoring.dynatrace.test", overall, "dynatrace_connection", c.ID, c.ProjectID, map[string]any{"capabilities": capabilities})
-	status := 200
-	if overall == "error" {
-		status = 502
-	}
-	writeJSON(w, status, map[string]any{"status": overall, "checked_at": checkedAt, "message": message, "capabilities": result.Capabilities})
+		return ""
+	}(), caps)
+	writeJSON(w, status, DynatraceConnectionVerificationResponse{Status: overall, CheckedAt: time.Now().UTC(), Message: message, Capabilities: caps})
 }
 
 func dynatraceCaptureFromConnection(c *storage.DynatraceConnection) *DynatraceCaptureConfig {
