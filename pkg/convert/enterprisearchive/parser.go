@@ -74,6 +74,9 @@ type ParsedAction struct {
 	Phase         string
 	Functions     []ParsedFunction
 	ParseFailures []CSourceParseFailure
+	// SplicedCommentLines are code lines a backslash-continued // comment
+	// swallows; they are reported, not imported.
+	SplicedCommentLines []CSplicedCommentLine
 }
 
 // CSourceParseFailure is value-free evidence that a C lifecycle/action file
@@ -177,12 +180,15 @@ var (
 // surrounding C validity, so it recovers the valid steps the AST parser drops.
 func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 	analysis := analyzeCTransactionSource(filename, content)
+	spliced := findSplicedCommentLines(content)
 	astParsed, astErr := parseActionFileASTWithAnalysis(filename, content, analysis)
 	if astErr == nil && len(astParsed.Functions) > 0 {
+		astParsed.SplicedCommentLines = spliced
 		return astParsed, nil
 	}
 
-	legacyParsed, legacyErr := parseActionFileLegacy(filename, content)
+	legacyParsed, legacyErr := parseActionFileLegacy(filename, content, splicedCommentLineSet(spliced))
+	legacyParsed.SplicedCommentLines = spliced
 	if astParsed != nil {
 		legacyParsed.ParseFailures = appendUniqueCSourceParseFailures(
 			legacyParsed.ParseFailures,
@@ -212,6 +218,7 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 	// otherwise-empty file; otherwise surface the richer AST diagnostic so the
 	// caller can flag the archive for review.
 	if astErr == nil {
+		astParsed.SplicedCommentLines = spliced
 		return astParsed, nil
 	}
 	return legacyParsed, astErr
@@ -239,7 +246,10 @@ func appendUniqueCSourceParseFailures(
 	return failures
 }
 
-func parseActionFileLegacy(filename string, content string) (*ParsedAction, error) {
+// parseActionFileLegacy scans content line by line. Lines in splicedComments
+// belong to a backslash-continued // comment and are skipped, as the C parser
+// skips them.
+func parseActionFileLegacy(filename string, content string, splicedComments map[int]bool) (*ParsedAction, error) {
 	parsed := &ParsedAction{
 		Filename:  filename,
 		Functions: make([]ParsedFunction, 0),
@@ -258,7 +268,10 @@ func parseActionFileLegacy(filename string, content string) (*ParsedAction, erro
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
-		parseLine := stripCComments(line, &inComment)
+		parseLine := ""
+		if !splicedComments[lineNum] {
+			parseLine = stripCComments(line, &inComment)
+		}
 		trimmed := strings.TrimSpace(parseLine)
 
 		// Skip empty lines, comments

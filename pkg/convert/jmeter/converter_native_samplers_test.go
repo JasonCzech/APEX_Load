@@ -515,3 +515,84 @@ func TestConvertJMXHeterogeneousGroupReviewGatesNonDominant(t *testing.T) {
 		t.Fatalf("warnings = %#v, want a mixed-protocol warning", result.Warnings)
 	}
 }
+
+// A LoadRunner Enterprise JMeter plan interleaved Event Hubs samplers with HTTP
+// samplers in one thread group. The Event Hubs samplers became actions in the
+// HTTP script, failed its validation and took the whole import down.
+func TestConvertJMXHeterogeneousGroupReviewGatesMessagingSamplers(t *testing.T) {
+	const jmx = "\ufeff" + `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.4.1">
+  <hashTree>
+    <TestPlan testname="Mixed Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="API" enabled="true"/>
+      <hashTree>
+        <GenericController testname="email" enabled="true"/>
+        <hashTree>
+          <HTTPSamplerProxy testname="Notify" enabled="true">
+            <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+            <stringProp name="HTTPSampler.protocol">https</stringProp>
+            <stringProp name="HTTPSampler.path">/notify</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+          </HTTPSamplerProxy>
+          <hashTree/>
+        </hashTree>
+        <GenericController testname="SMS" enabled="true"/>
+        <hashTree>
+          <jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler testclass="jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler" testname="hub west" enabled="true">
+            <stringProp name="namespaceName">west.servicebus.windows.net</stringProp>
+            <stringProp name="eventHubName">hub</stringProp>
+          </jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(jmx), ConvertOptions{FileName: "mixed.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 || result.Scripts[0].Protocol != "http" {
+		t.Fatalf("scripts = %#v, want one HTTP script", result.Scripts)
+	}
+	if actions := result.Scripts[0].Actions; len(actions) != 1 || actions[0].Type != "GET" {
+		t.Fatalf("actions = %#v, want only the HTTP GET", actions)
+	}
+	if !containsJMeterDiagnostic(result, "JMeter "+pnopEventHubsSampler) {
+		t.Fatalf("diagnostics = %#v, want the review-gated Event Hubs sampler", result.Diagnostics)
+	}
+	gated := false
+	for _, mapping := range result.SourceReview.Mappings {
+		if mapping.Function == pnopEventHubsSampler && mapping.Status == "review_only" {
+			gated = true
+		}
+	}
+	if !gated {
+		t.Fatal("Event Hubs sampler has no review_only source mapping")
+	}
+}
+
+// A TestAction pause before a review-gated messaging sampler is consumed by it,
+// as for a review-only JMS sampler, instead of delaying the next HTTP request.
+func TestGatedMessagingSamplerConsumesPrecedingPause(t *testing.T) {
+	const jmx = `<?xml version="1.0"?><jmeterTestPlan><hashTree>
+<TestPlan testname="Plan" enabled="true"/><hashTree><ThreadGroup testname="Users" enabled="true"/><hashTree>
+<HTTPSamplerProxy testname="Before" enabled="true"><stringProp name="HTTPSampler.domain">api.example</stringProp><stringProp name="HTTPSampler.path">/before</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/>
+<TestAction testname="Pause" enabled="true"><stringProp name="ActionProcessor.duration">250</stringProp></TestAction><hashTree/>
+<jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler testname="hub" enabled="true"><stringProp name="eventHubName">hub</stringProp></jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler><hashTree/>
+<HTTPSamplerProxy testname="After" enabled="true"><stringProp name="HTTPSampler.domain">api.example</stringProp><stringProp name="HTTPSampler.path">/after</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/>
+</hashTree></hashTree></hashTree></jmeterTestPlan>`
+	result, err := ConvertJMX([]byte(jmx), ConvertOptions{FileName: "pause.jmx"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions := result.Scripts[0].Actions
+	if len(actions) != 2 || actions[1].Target != "/after" {
+		t.Fatalf("actions = %#v", actions)
+	}
+	if actions[1].ThinkTime.MeanMs != 0 {
+		t.Fatalf("pause leaked past the gated messaging sampler: %#v", actions[1].ThinkTime)
+	}
+}

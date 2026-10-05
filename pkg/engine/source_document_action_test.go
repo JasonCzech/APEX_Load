@@ -162,3 +162,20 @@ func TestSourceJSONEvalResolvesEachOccurrenceParameterOnce(t *testing.T) {
 		t.Fatalf("Buffer saw counter value %q, want the first value 30", vu.Variables["id"])
 	}
 }
+
+// A JSONPath filter selects matching array elements; SelectAll=No saves the
+// first match.
+func TestSourceJSONGetValuesWithFilter(t *testing.T) {
+	vu := &VUser{ID: 1, Group: "g", Script: &dsl.Script{Name: "s"}, Variables: map[string]string{
+		"resp": `{"customers":[{"accounts":[{"plan":"fiber","number":"F-1"},{"plan":"mobile","number":"M-1"},{"plan":"mobile","number":"M-2"}]}]}`,
+	}}
+	if err := runSourceJSON(t, vu, "lr_eval_json", map[string]any{"json_object": "J", "buffer": "{{var.resp}}"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runSourceJSON(t, vu, "lr_json_get_values", map[string]any{"json_object": "J", "value_param": "c_mobile", "query": "$.customers[0].accounts[?(@.plan=='mobile')].number", "select_all": "no"}); err != nil {
+		t.Fatal(err)
+	}
+	if vu.Variables["c_mobile"] != "M-1" {
+		t.Fatalf("c_mobile = %q, want M-1", vu.Variables["c_mobile"])
+	}
+}

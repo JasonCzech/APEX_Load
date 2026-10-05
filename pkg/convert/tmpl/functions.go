@@ -84,7 +84,7 @@ func translateJMeterFunction(name string, rawArgs string, c *diag.Collector, loc
 			key += "_" + sanitizeName(args[1])
 		}
 		if global {
-			addWarning(c, "JMeter dynamic function", location, token+" uses a cross-thread counter; APEX preserved it as an explicitly review-gated counter because the runtime counter is per VUser")
+			addWarning(c, "JMeter dynamic function", location, token+" uses a counter JMeter shares across threads; an importer that declares it maps it to a unique-number counter, otherwise the request stays gated until the parameter is declared")
 		}
 		return "{{param." + key + "}}", true
 	case "__threadnum":

@@ -68,7 +68,7 @@ func TestSelectFollowsLoadRunnerQueries(t *testing.T) {
 }
 
 func TestParseRejectsUnsupportedAndMalformedQueries(t *testing.T) {
-	for _, expr := range []string{"$.a[?(@.b)]", "$.a[0:2]", "$.a[0,1]", "$['a','b']"} {
+	for _, expr := range []string{"$.a[0:2]", "$.a[0,1]", "$['a','b']", "$.a[(@.length-1)]", "$.a[?(@.b.length() > 1)]", "$.a[?(@..b)]", "$.a[?(1 == 1)]", "$.a[?(@.b == 'x')"} {
 		if _, err := Parse(expr); !errors.Is(err, ErrUnsupported) {
 			t.Errorf("Parse(%q) error = %v, want ErrUnsupported", expr, err)
 		}
@@ -160,5 +160,42 @@ func TestFirstMatchIgnoresTheResultCeiling(t *testing.T) {
 	}
 	if _, err := path.Select(document, 0); err == nil {
 		t.Error("select all over more than MaxMatches truncated silently instead of failing")
+	}
+}
+
+const accountsDocument = `{"customers":[{"accounts":[
+	{"plan":"mobile","number":"M-100","billingId":"B-1","active":true,"balance":12.5},
+	{"plan":"fiber","number":"F-200","billingId":"B-2","active":false,"balance":0},
+	{"plan":"mobile","number":"M-300","billingId":"B-3","active":true,"balance":99,"note":null},
+	{"number":"X-400","balance":"n/a"}]}]}`
+
+// Recorded scripts select array elements with JSONPath filters; LoadRunner
+// returns the first match for SelectAll=No.
+func TestFilterSelectsMatchingElements(t *testing.T) {
+	document, err := Decode([]byte(accountsDocument))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct{ expr, want string }{
+		{"$.customers[0].accounts[?(@.plan=='mobile')].number", "M-100|M-300"},
+		{"$.customers[0].accounts[?(@.plan=='fiber')].billingId", "B-2"},
+		{`$.customers[0].accounts[?(@.plan == "mobile")].number`, "M-100|M-300"},
+		{"$.customers[0].accounts[?(@.plan != 'mobile')].number", "F-200"},
+		{"$..accounts[?(@.balance > 10)].number", "M-100|M-300"},
+		{"$..accounts[?(@.balance <= 12.5 && @.active == true)].number", "M-100"},
+		{"$..accounts[?(@.active == false || @.balance >= 99)].number", "F-200|M-300"},
+		{"$..accounts[?(!(@.active == true))].number", "F-200|X-400"}, // negation includes elements without the field
+		{"$..accounts[?(@.note)].number", "M-300"},
+		{"$..accounts[?(@.note == null)].number", "M-300"},
+		{"$..accounts[?(@['plan'] == 'fiber')].number", "F-200"},
+		{"$..accounts[?(@.missing == 'x')].number", ""},
+		{"$..accounts[?(@.balance == 'n/a')].number", "X-400"},
+	} {
+		if got := strings.Join(selectStrings(t, document, tt.expr, 0), "|"); got != tt.want {
+			t.Errorf("%s = %q, want %q", tt.expr, got, tt.want)
+		}
+	}
+	if got := selectStrings(t, document, "$.customers[0].accounts[?(@.plan=='mobile')].number", 1); len(got) != 1 || got[0] != "M-100" {
+		t.Errorf("first mobile account = %v", got)
 	}
 }

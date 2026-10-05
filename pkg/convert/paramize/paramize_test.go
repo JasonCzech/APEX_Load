@@ -510,7 +510,7 @@ func TestSuggestSurfacesCorrelationWorkLimit(t *testing.T) {
 }
 
 func TestSuggestRejectsTruncatedCorrelationCandidatePrefix(t *testing.T) {
-	const candidateLimit = 1024
+	candidateLimit := correlate.MaxCandidatesPerObservation
 	var responseBody strings.Builder
 	responseBody.WriteByte('{')
 	for index := 0; index <= candidateLimit; index++ {
@@ -523,12 +523,12 @@ func TestSuggestRejectsTruncatedCorrelationCandidatePrefix(t *testing.T) {
 
 	result := Suggest(httpScript(
 		dsl.Action{Name: "source", Type: "request", Method: "GET", Target: "/source"},
-		dsl.Action{Name: "consumer", Type: "request", Method: "GET", Target: "/use?token=token-value-001024"},
+		dsl.Action{Name: "consumer", Type: "request", Method: "GET", Target: fmt.Sprintf("/use?token=token-value-%06d", candidateLimit)},
 	), Options{
 		EnableCorrelation: true,
 		Observations: []correlate.Observation{
 			{ID: 1, ResponseBody: responseBody.String()},
-			{ID: 2, RequestURL: "https://api.example.com/use?token=token-value-001024"},
+			{ID: 2, RequestURL: fmt.Sprintf("https://api.example.com/use?token=token-value-%06d", candidateLimit)},
 		},
 	})
 	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "Correlation analysis was not completed") {

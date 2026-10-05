@@ -532,3 +532,18 @@ func actionTypes(actions []dsl.Action) []string {
 	}
 	return types
 }
+
+// Re-adding a cookie with the same name, domain and path replaces it, as the
+// source cookie jar does; distinct domains keep their own cookie.
+func TestWebAddCookieReplacesTheSameCookie(t *testing.T) {
+	action := convertSingleAction(t, ""+
+		`web_add_cookie("rxvt=1|first; DOMAIN=app.example.com");`+"\n\t"+
+		`web_add_cookie("rxvt=2|second; DOMAIN=.app.example.com");`+"\n\t"+
+		`web_add_cookie("rxvt=other; DOMAIN=other.example.com");`+"\n\t"+
+		`web_add_cookie("dtPC=abc; DOMAIN=app.example.com");`+"\n\t"+
+		`web_url("Home", "URL=https://app.example.com/home", LAST);`, ConvertOptions{})
+	cookie := action.Headers["Cookie"]
+	if cookie != "rxvt=2|second; dtPC=abc" {
+		t.Fatalf("Cookie = %q, want one rxvt with the latest value and dtPC", cookie)
+	}
+}

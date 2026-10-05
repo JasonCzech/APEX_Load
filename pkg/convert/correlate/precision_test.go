@@ -139,12 +139,12 @@ func TestDetectClientOriginCheckScope(t *testing.T) {
 
 // Lightning responses repeat the same values thousands of times. Repeats cost
 // no scanning and must not exhaust the analysis cap before later responses
-// are examined: 5 x 1000 candidates here, but only 1000 distinct values.
+// are examined: 5 x 3500 candidates here, but only 3500 distinct values.
 func TestDetectCandidateCapCountsOnlyAnalyzedValues(t *testing.T) {
 	const token = "late-token-abcdef123456"
 	var body strings.Builder
 	body.WriteString(`{"records":[`)
-	for index := 0; index < 1000; index++ {
+	for index := 0; index < 3500; index++ {
 		if index > 0 {
 			body.WriteString(",")
 		}
@@ -155,7 +155,7 @@ func TestDetectCandidateCapCountsOnlyAnalyzedValues(t *testing.T) {
 	for index := 1; index <= 5; index++ {
 		observations = append(observations, Observation{ID: index, RequestURL: "https://app.example.test/page", ResponseBody: body.String()})
 	}
-	if candidates, err := CandidatesChecked(body.String(), nil); err != nil || 5*len(candidates) <= maxCorrelationCandidatesPerAnalysis {
+	if candidates, err := CandidatesChecked(body.String(), nil); err != nil || 5*len(candidates) <= maxCorrelationAnalyzedValuesPerAnalysis {
 		t.Fatalf("fixture yields %d candidates per response (err %v); it must exceed the cap in total", len(candidates), err)
 	}
 	observations = append(observations,
@@ -169,4 +169,79 @@ func TestDetectCandidateCapCountsOnlyAnalyzedValues(t *testing.T) {
 	if values := correlationValues(correlations); values[token] != RuleJSONAuthToken {
 		t.Fatalf("correlations = %v, want the late token", values)
 	}
+}
+
+// One response with more distinct values than the per-response cap must not
+// use up the analysis-wide budget: a token in a later response is still found.
+func TestOversizedResponseLeavesBudgetForLaterTokens(t *testing.T) {
+	const token = "late-token-abcdef123456"
+	var body strings.Builder
+	body.WriteString(`{"records":[`)
+	for index := 0; index < maxCorrelationCandidatesPerObservation+200; index++ {
+		if index > 0 {
+			body.WriteString(",")
+		}
+		fmt.Fprintf(&body, `{"Id":"a1k4M%013d"}`, index)
+	}
+	body.WriteString("]}")
+	observations := []Observation{
+		{ID: 1, RequestURL: "https://app.example.test/preload", ResponseBody: body.String()},
+		{ID: 2, RequestURL: "https://app.example.test/login", ResponseBody: `{"access_token":"` + token + `"}`},
+		{ID: 3, RequestURL: "https://app.example.test/use", RequestHeaders: map[string]string{"Authorization": "Bearer " + token}},
+	}
+	correlations, warnings, err := DetectCheckedWithWarnings(observations)
+	if err != nil {
+		t.Fatalf("DetectCheckedWithWarnings: %v", err)
+	}
+	if values := correlationValues(correlations); values[token] != RuleJSONAuthToken {
+		t.Fatalf("correlations = %v (warnings %v), want the late token", values, warnings)
+	}
+}
+
+// Lightning Aura responses reach ~56,000 JSON tokens. They must be walked as
+// JSON (precise JSONPath extractors), not degraded to the capped regex scan.
+func TestLargeAuraSizedResponseUsesTheStructuredWalk(t *testing.T) {
+	var body strings.Builder
+	body.WriteString(`{"actions":[{"returnValue":{"fields":[`)
+	for index := 0; index < 6000; index++ {
+		if index > 0 {
+			body.WriteString(",")
+		}
+		fmt.Fprintf(&body, `{"label":"Field %d","value":%d,"meta":{"a":1,"b":2}}`, index, index)
+	}
+	body.WriteString(`],"sessionToken":"sess-abcdef1234567890"}}]}`)
+	if extractType := candidateExtractType(t, body.String(), "sess-abcdef1234567890"); extractType != "jsonpath" {
+		t.Fatalf("large response degraded to %s extraction, want jsonpath", extractType)
+	}
+}
+
+// A container wider than the walk accepts would abort it with an empty
+// prefix; such a document must keep the regex scan and still find its token.
+func TestWideJSONContainerKeepsTheRegexScan(t *testing.T) {
+	var body strings.Builder
+	body.WriteString(`{"rows":[`)
+	for index := 0; index < maxCorrelationStructuredFields+100; index++ {
+		if index > 0 {
+			body.WriteString(",")
+		}
+		fmt.Fprintf(&body, `%d`, index)
+	}
+	body.WriteString(`],"sessionToken":"sess-abcdef1234567890"}`)
+	if extractType := candidateExtractType(t, body.String(), "sess-abcdef1234567890"); extractType == "" {
+		t.Fatal("token in a document with a wide array was lost")
+	}
+}
+
+func candidateExtractType(t *testing.T, body, value string) string {
+	t.Helper()
+	candidates, err := CandidatesChecked(body, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range candidates {
+		if candidate.Value == value {
+			return candidate.ExtractType
+		}
+	}
+	return ""
 }

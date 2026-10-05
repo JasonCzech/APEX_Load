@@ -567,6 +567,7 @@ func finalizeEnterpriseArchiveImportResult(
 		return nil
 	}
 	appendCSourceParseFailureGates(result, ctx.ParsedActions)
+	appendSplicedCommentWarnings(result, ctx.ParsedActions)
 	applyBrowserEmulationRuntimeSettingsReview(result, ctx.RuntimeConfig)
 	parameterSections := make(map[string]map[string]map[string]string)
 	scripts := result.effectiveScripts()
@@ -1376,8 +1377,9 @@ func sourceActionForLifecycleDeclaration(
 		phase = sourceActionPhase(declaration.Name)
 	}
 	out := &ParsedAction{
-		Filename: parsed.Filename,
-		Phase:    phase,
+		Filename:            parsed.Filename,
+		Phase:               phase,
+		SplicedCommentLines: parsed.SplicedCommentLines,
 	}
 
 	phases := make(map[string]struct{})

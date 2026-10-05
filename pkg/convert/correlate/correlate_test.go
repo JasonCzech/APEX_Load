@@ -1357,13 +1357,15 @@ func TestCandidatesCheckedSkipsJSONWalkForOversizedStructures(t *testing.T) {
 	}
 }
 
-// Regression for the review finding that one standard 2000-record SOQL-style
-// page (each record carrying an Id field) aborted the whole analysis: the walk
-// must return the bounded candidate prefix instead of an error.
+// Regression for the review finding that one large SOQL-style page (each
+// record carrying an Id field) aborted the whole analysis: past the
+// per-response cap the walk must return the bounded candidate prefix instead
+// of an error.
 func TestCandidatesCheckedTruncatesLargeRecordPageInsteadOfFailing(t *testing.T) {
+	records := maxCorrelationCandidatesPerObservation + 500
 	var body strings.Builder
-	body.WriteString(`{"totalSize":2000,"done":true,"records":[`)
-	for index := 0; index < 2000; index++ {
+	fmt.Fprintf(&body, `{"totalSize":%d,"done":true,"records":[`, records)
+	for index := 0; index < records; index++ {
 		if index > 0 {
 			body.WriteByte(',')
 		}
@@ -1373,10 +1375,10 @@ func TestCandidatesCheckedTruncatesLargeRecordPageInsteadOfFailing(t *testing.T)
 
 	candidates, err := CandidatesChecked(body.String(), nil)
 	if err != nil {
-		t.Fatalf("2000-record page must degrade, got error %v", err)
+		t.Fatalf("%d-record page must degrade, got error %v", records, err)
 	}
 	if len(candidates) != maxCorrelationCandidatesPerObservation {
-		t.Fatalf("2000-record page candidates = %d, want truncation at %d", len(candidates), maxCorrelationCandidatesPerObservation)
+		t.Fatalf("%d-record page candidates = %d, want truncation at %d", records, len(candidates), maxCorrelationCandidatesPerObservation)
 	}
 }
 

@@ -42,6 +42,7 @@ func TestJSONHelpersImportAsExecutableProducers(t *testing.T) {
 		"\tlr_json_stringify(\"JsonObject=JSON_param\",\"Format=auto\",\"OutputParam=Result\",LAST);\n"+
 		"\tlr_json_get_values(\"JsonObject=JSON_param\",\"ValueParam=c_StoreId\",\"QueryString=$.Id\",\"SelectAll=No\",LAST);\n"+
 		"\tlr_json_get_values(\"JsonObject=JSON_param\",\"ValueParam=c_Queue\",\"QueryString=$.Queues[*].Id\",\"SelectAll=Yes\",\"NotFound=Continue\",LAST);\n"+
+		"\tlr_json_get_values(\"JsonObject=JSON_param\",\"ValueParam=c_mobile\",\"QueryString=$.customers[0].accounts[?(@.plan=='mobile')].number\",\"SelectAll=No\",LAST);\n"+
 		"\tlr_xml_get_values(\"XML={c_xml}\",\"ValueParam=c_value\",\"Query=/a/b\",LAST);\n"+
 		"\tweb_url(\"use\",\"URL=https://example.com/use?store={c_StoreId}&queues={c_Queue_count}&json={Result}\",LAST);\n")
 
@@ -56,6 +57,18 @@ func TestJSONHelpersImportAsExecutableProducers(t *testing.T) {
 	stringify := helperAction(t, script, "lr_json_stringify")
 	if stringify.Type != "source_json" || stringify.Params["output_param"] != "Result" || stringify.Params["save_param"] != "Result" {
 		t.Fatalf("lr_json_stringify = %s %v", stringify.Type, stringify.Params)
+	}
+	filtered := false
+	for _, action := range script.Actions {
+		if action.Params["value_param"] == "c_mobile" {
+			filtered = true
+			if action.Type != "source_json" {
+				t.Fatalf("filtered lr_json_get_values converted as %s, want executable source_json", action.Type)
+			}
+		}
+	}
+	if !filtered {
+		t.Fatal("filtered lr_json_get_values call was not imported")
 	}
 	if xml := helperAction(t, script, "lr_xml_get_values"); xml.Type != "source_review" {
 		t.Fatalf("lr_xml_get_values = %s, want gated source_review", xml.Type)
@@ -98,7 +111,7 @@ func TestJSONHelpersOutsideTheEvaluatedSubsetAreGated(t *testing.T) {
 	for _, tc := range []struct {
 		name, call, function, want string
 	}{
-		{"JSONPath filter", `lr_json_get_values("JsonObject=J","ValueParam=v","QueryString=$.a[?(@.b=='c')].d",LAST);`, "lr_json_get_values", "source_json_query_unsupported"},
+		{"JSONPath slice", `lr_json_get_values("JsonObject=J","ValueParam=v","QueryString=$.a[0:2].d",LAST);`, "lr_json_get_values", "source_json_query_unsupported"},
 		{"invalid JSONPath", `lr_json_get_values("JsonObject=J","ValueParam=v","QueryString=Id",LAST);`, "lr_json_get_values", "source_json_query_invalid"},
 		{"file buffer", `lr_eval_json("Buffer/File=store.json","JsonObject=J",LAST);`, "lr_eval_json", "source_json_buffer_file_unsupported"},
 		{"unknown argument", `lr_json_get_values("JsonObject=J","ValueParam=v","QueryString=$.a","Base64=Yes",LAST);`, "lr_json_get_values", "source_json_argument_unsupported"},

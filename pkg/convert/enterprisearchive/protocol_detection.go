@@ -137,7 +137,7 @@ var protocolTypeAliases = map[string]protocolProfile{
 	"java over http":                javaHTTPProfile(),
 	"vb .net":                       templateProfile("vb_dotnet_vuser", "VB .NET Vuser"),
 	"devweb":                        reviewProfile("devweb", "DevWeb", "Templates Protocol Bundle", "Use the native DevWeb importer for executable conversion."),
-	"jmeter":                        reviewProfile("jmeter", "JMeter", "Templates Protocol Bundle", "Use the native JMeter importer for executable conversion."),
+	"jmeter":                        reviewProfile("jmeter", "JMeter", "Templates Protocol Bundle", "Import this archive with the JMeter importer, which reads the .jmx inside a ZIP or USZ directly."),
 }
 
 func DetectProtocol(files map[string]string, projectConfig *ProjectConfig, actions []*ParsedAction) DetectedProtocol {

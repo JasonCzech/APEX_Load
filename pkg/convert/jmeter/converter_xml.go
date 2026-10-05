@@ -51,7 +51,9 @@ func parseXML(data []byte) (*xmlNode, error) {
 			}
 			stack = append(stack, node)
 		case xml.CharData:
-			if len(stack) == 0 && strings.TrimSpace(string(t)) != "" {
+			// A leading UTF-8 byte-order mark (JMX files saved by Windows
+			// editors) reaches the decoder as text before the root element.
+			if len(stack) == 0 && strings.TrimSpace(strings.TrimPrefix(string(t), "\ufeff")) != "" {
 				return nil, fmt.Errorf("JMX XML contains text outside its root element")
 			}
 			if len(stack) > 0 {

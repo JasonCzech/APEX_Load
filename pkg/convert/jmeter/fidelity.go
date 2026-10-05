@@ -277,6 +277,9 @@ func reviewSamplerChildren(nodes []*treeNode, action *dsl.Action, script *dsl.Sc
 			}
 			continue
 		}
+		if child.Element.Name == "CounterConfig" {
+			continue // attachJMeterCounterParameters converts and reports counters
+		}
 		if diagnoseJMeterElement(child.Element, diagnostics) {
 			unsupported[child.Element.Name] = struct{}{}
 		}

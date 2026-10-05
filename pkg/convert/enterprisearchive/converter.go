@@ -402,7 +402,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					continue
 				}
 				cookie.Value = convertParamReferences(cookie.Value)
-				persistentCookies = append(persistentCookies, cookie)
+				persistentCookies = upsertPersistentCookie(persistentCookies, cookie)
 			}
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers.Cookie", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "headers", "converted", "Mapped to Cookie headers on matching downstream HTTP requests.", SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
@@ -825,6 +825,9 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	)
 
 	appendCSourceParseFailureGates(result, actions)
+	if !opts.deferArchiveFinalization {
+		appendSplicedCommentWarnings(result, actions) // ConvertZip reports them for every protocol
+	}
 	structureSourceConcurrentGroups(result, concurrentPlan)
 	structureSourceControlFlow(result)
 	compactSourceHTTPActions(result)

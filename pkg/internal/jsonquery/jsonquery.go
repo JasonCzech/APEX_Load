@@ -202,6 +202,7 @@ const (
 	stepField stepKind = iota
 	stepIndex
 	stepWildcard
+	stepFilter
 )
 
 type step struct {
@@ -209,6 +210,7 @@ type step struct {
 	name      string
 	index     int
 	recursive bool
+	filter    filter
 }
 
 // Path is a parsed query.
@@ -217,7 +219,8 @@ type Path struct {
 }
 
 // Parse accepts $, .name, ['name'] / ["name"], [n] (negative counts from the
-// end), [*] and .* wildcards, and ..name / ..* / ..[n] recursive descent.
+// end), [*] and .* wildcards, ..name / ..* / ..[n] recursive descent, and
+// [?( ... )] filters (see filter.go).
 func Parse(expr string) (Path, error) {
 	expr = strings.TrimSpace(expr)
 	if !strings.HasPrefix(expr, "$") {
@@ -288,6 +291,13 @@ func dotSegment(rest, expr string) (string, string, error) {
 
 func bracketSegment(rest, expr string) (step, string, error) {
 	body := rest[1:]
+	if strings.HasPrefix(body, "?(") {
+		predicate, remaining, err := parseFilter(body[2:], expr)
+		if err != nil {
+			return step{}, "", err
+		}
+		return step{kind: stepFilter, filter: predicate}, remaining, nil
+	}
 	if strings.HasPrefix(body, "'") || strings.HasPrefix(body, `"`) {
 		quote := body[0]
 		var name strings.Builder
@@ -436,6 +446,21 @@ func applyStep(s step, node any, out []any) []any {
 			}
 		case []any:
 			out = append(out, typed...)
+		}
+	case stepFilter:
+		switch typed := node.(type) {
+		case Object:
+			for _, member := range typed {
+				if s.filter.matches(member.Value) {
+					out = append(out, member.Value)
+				}
+			}
+		case []any:
+			for _, item := range typed {
+				if s.filter.matches(item) {
+					out = append(out, item)
+				}
+			}
 		}
 	}
 	return out
