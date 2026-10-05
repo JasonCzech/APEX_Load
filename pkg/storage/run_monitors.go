@@ -437,8 +437,12 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 				}
 				job.ElasticSnapshot, job.CoverageReason = snapshot, reason
 			}
-			if job.CoverageReason == "" && ValidateElasticSourceConnection(job.Source, job.ElasticSnapshot) != nil {
-				job.CoverageReason = "connection_source_mismatch"
+			if job.CoverageReason == "" {
+				if err := ValidateElasticSourceConnection(job.Source, job.ElasticSnapshot); errors.Is(err, ErrElasticAuthUnsupported) {
+					job.CoverageReason = "connection_auth_unsupported"
+				} else if err != nil {
+					job.CoverageReason = "connection_source_mismatch"
+				}
 			}
 		}
 		if job.CoverageReason == "" && job.Source.ManagementScope != nil {

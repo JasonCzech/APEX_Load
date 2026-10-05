@@ -1,0 +1,218 @@
+[
+  {
+    "id": "host_cpu_percent",
+    "name": "host_cpu_percent",
+    "expression": "100 * (1 - avg by (job, instance) (rate(node_cpu_seconds_total{job=\"kube-state-metrics\",namespace=\"checkout\",mode=\"idle\"}[2m])))",
+    "unit": "%",
+    "semantics": "gauge",
+    "allowed_labels": [
+      "job",
+      "instance"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (job, instance) (timestamp(node_cpu_seconds_total{job=\"kube-state-metrics\",namespace=\"checkout\",mode=\"idle\"}))",
+    "max_sample_age_seconds": 90
+  },
+  {
+    "id": "host_memory_percent",
+    "name": "host_memory_percent",
+    "expression": "100 * (1 - sum by (job, instance) (node_memory_MemAvailable_bytes{job=\"kube-state-metrics\",namespace=\"checkout\"}) / sum by (job, instance) (node_memory_MemTotal_bytes{job=\"kube-state-metrics\",namespace=\"checkout\"}))",
+    "unit": "%",
+    "semantics": "gauge",
+    "allowed_labels": [
+      "job",
+      "instance"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (job, instance) (label_replace(timestamp(node_memory_MemAvailable_bytes{job=\"kube-state-metrics\",namespace=\"checkout\"}), \"apex_memory_operand\", \"0\", \"\", \"\") or label_replace(timestamp(node_memory_MemTotal_bytes{job=\"kube-state-metrics\",namespace=\"checkout\"}), \"apex_memory_operand\", \"1\", \"\", \"\"))",
+    "max_sample_age_seconds": 90
+  },
+  {
+    "id": "process_cpu_cores",
+    "name": "process_cpu_cores",
+    "expression": "sum by (job, instance) (rate(process_cpu_seconds_total{job=\"kube-state-metrics\",namespace=\"checkout\"}[2m]))",
+    "unit": "cores",
+    "semantics": "rate",
+    "allowed_labels": [
+      "job",
+      "instance"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (job, instance) (timestamp(process_cpu_seconds_total{job=\"kube-state-metrics\",namespace=\"checkout\"}))",
+    "max_sample_age_seconds": 90,
+    "terminal_expression": "sum by (job, instance) (rate(process_cpu_seconds_total{job=\"kube-state-metrics\",namespace=\"checkout\"}[{{window.duration}}]))"
+  },
+  {
+    "id": "process_memory_bytes",
+    "name": "process_memory_bytes",
+    "expression": "max by (job, instance) (process_resident_memory_bytes{job=\"kube-state-metrics\",namespace=\"checkout\"})",
+    "unit": "bytes",
+    "semantics": "gauge",
+    "allowed_labels": [
+      "job",
+      "instance"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (job, instance) (timestamp(process_resident_memory_bytes{job=\"kube-state-metrics\",namespace=\"checkout\"}))",
+    "max_sample_age_seconds": 90
+  },
+  {
+    "id": "http_request_rate",
+    "name": "http_request_rate",
+    "expression": "sum by (job) (rate(http_requests_total{job=\"kube-state-metrics\",namespace=\"checkout\"}[2m]))",
+    "unit": "requests/s",
+    "semantics": "rate",
+    "allowed_labels": [
+      "job"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (job) (timestamp(http_requests_total{job=\"kube-state-metrics\",namespace=\"checkout\"}))",
+    "max_sample_age_seconds": 90,
+    "terminal_expression": "sum by (job) (rate(http_requests_total{job=\"kube-state-metrics\",namespace=\"checkout\"}[{{window.duration}}]))"
+  },
+  {
+    "id": "go_heap_bytes",
+    "name": "go_heap_bytes",
+    "expression": "max by (job, instance) (go_memstats_heap_alloc_bytes{job=\"kube-state-metrics\",namespace=\"checkout\"})",
+    "unit": "bytes",
+    "semantics": "gauge",
+    "allowed_labels": [
+      "job",
+      "instance"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (job, instance) (timestamp(go_memstats_heap_alloc_bytes{job=\"kube-state-metrics\",namespace=\"checkout\"}))",
+    "max_sample_age_seconds": 90
+  },
+  {
+    "id": "go_gc_seconds_rate",
+    "name": "go_gc_seconds_rate",
+    "expression": "sum by (job, instance) (rate(go_gc_duration_seconds_sum{job=\"kube-state-metrics\",namespace=\"checkout\"}[2m]))",
+    "unit": "seconds/s",
+    "semantics": "rate",
+    "allowed_labels": [
+      "job",
+      "instance"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (job, instance) (timestamp(go_gc_duration_seconds_sum{job=\"kube-state-metrics\",namespace=\"checkout\"}))",
+    "max_sample_age_seconds": 90,
+    "terminal_expression": "sum by (job, instance) (rate(go_gc_duration_seconds_sum{job=\"kube-state-metrics\",namespace=\"checkout\"}[{{window.duration}}]))"
+  },
+  {
+    "id": "jvm_gc_seconds_rate",
+    "name": "jvm_gc_seconds_rate",
+    "expression": "sum by (job, instance) (rate(jvm_gc_collection_seconds_sum{job=\"kube-state-metrics\",namespace=\"checkout\"}[2m]))",
+    "unit": "seconds/s",
+    "semantics": "rate",
+    "allowed_labels": [
+      "job",
+      "instance"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (job, instance) (timestamp(jvm_gc_collection_seconds_sum{job=\"kube-state-metrics\",namespace=\"checkout\"}))",
+    "max_sample_age_seconds": 90,
+    "terminal_expression": "sum by (job, instance) (rate(jvm_gc_collection_seconds_sum{job=\"kube-state-metrics\",namespace=\"checkout\"}[{{window.duration}}]))"
+  },
+  {
+    "id": "pod_cpu_cores",
+    "name": "pod_cpu_cores",
+    "expression": "sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{job=\"kube-state-metrics\",namespace=\"checkout\",container!=\"\",container!=\"POD\"}[2m]))",
+    "unit": "cores",
+    "semantics": "rate",
+    "allowed_labels": [
+      "namespace",
+      "pod"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (namespace, pod) (timestamp(container_cpu_usage_seconds_total{job=\"kube-state-metrics\",namespace=\"checkout\",container!=\"\",container!=\"POD\"}))",
+    "max_sample_age_seconds": 90,
+    "terminal_expression": "sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{job=\"kube-state-metrics\",namespace=\"checkout\",container!=\"\",container!=\"POD\"}[{{window.duration}}]))"
+  },
+  {
+    "id": "pod_memory_bytes",
+    "name": "pod_memory_bytes",
+    "expression": "sum by (namespace, pod) (container_memory_working_set_bytes{job=\"kube-state-metrics\",namespace=\"checkout\",container!=\"\",container!=\"POD\"})",
+    "unit": "bytes",
+    "semantics": "gauge",
+    "allowed_labels": [
+      "namespace",
+      "pod"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (namespace, pod) (timestamp(container_memory_working_set_bytes{job=\"kube-state-metrics\",namespace=\"checkout\",container!=\"\",container!=\"POD\"}))",
+    "max_sample_age_seconds": 90
+  },
+  {
+    "id": "pod_restart_count",
+    "name": "pod_restart_count",
+    "expression": "sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total{job=\"kube-state-metrics\",namespace=\"checkout\"}[2m]))",
+    "unit": "count",
+    "semantics": "count",
+    "allowed_labels": [
+      "namespace",
+      "pod"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (namespace, pod) (timestamp(kube_pod_container_status_restarts_total{job=\"kube-state-metrics\",namespace=\"checkout\"}))",
+    "max_sample_age_seconds": 90,
+    "terminal_expression": "sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total{job=\"kube-state-metrics\",namespace=\"checkout\"}[{{window.duration}}]))"
+  },
+  {
+    "id": "pod_oom_kills",
+    "name": "pod_oom_kills",
+    "expression": "sum by (namespace, pod) (increase(container_oom_events_total{job=\"kube-state-metrics\",namespace=\"checkout\",container!=\"\",container!=\"POD\"}[2m]))",
+    "unit": "count",
+    "semantics": "count",
+    "allowed_labels": [
+      "namespace",
+      "pod"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (namespace, pod) (timestamp(container_oom_events_total{job=\"kube-state-metrics\",namespace=\"checkout\",container!=\"\",container!=\"POD\"}))",
+    "max_sample_age_seconds": 90,
+    "terminal_expression": "sum by (namespace, pod) (increase(container_oom_events_total{job=\"kube-state-metrics\",namespace=\"checkout\",container!=\"\",container!=\"POD\"}[{{window.duration}}]))"
+  },
+  {
+    "id": "deployment_replicas_available",
+    "name": "deployment_replicas_available",
+    "expression": "sum by (namespace, deployment) (kube_deployment_status_replicas_available{job=\"kube-state-metrics\",namespace=\"checkout\"})",
+    "unit": "replicas",
+    "semantics": "gauge",
+    "allowed_labels": [
+      "namespace",
+      "deployment"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (namespace, deployment) (timestamp(kube_deployment_status_replicas_available{job=\"kube-state-metrics\",namespace=\"checkout\"}))",
+    "max_sample_age_seconds": 90
+  },
+  {
+    "id": "hpa_desired_replicas",
+    "name": "hpa_desired_replicas",
+    "expression": "max by (namespace, horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_desired_replicas{job=\"kube-state-metrics\",namespace=\"checkout\"})",
+    "unit": "replicas",
+    "semantics": "gauge",
+    "allowed_labels": [
+      "namespace",
+      "horizontalpodautoscaler"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (namespace, horizontalpodautoscaler) (timestamp(kube_horizontalpodautoscaler_status_desired_replicas{job=\"kube-state-metrics\",namespace=\"checkout\"}))",
+    "max_sample_age_seconds": 90
+  },
+  {
+    "id": "hpa_current_replicas",
+    "name": "hpa_current_replicas",
+    "expression": "max by (namespace, horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_current_replicas{job=\"kube-state-metrics\",namespace=\"checkout\"})",
+    "unit": "replicas",
+    "semantics": "gauge",
+    "allowed_labels": [
+      "namespace",
+      "horizontalpodautoscaler"
+    ],
+    "min_series": 1,
+    "freshness_expression": "min by (namespace, horizontalpodautoscaler) (timestamp(kube_horizontalpodautoscaler_status_current_replicas{job=\"kube-state-metrics\",namespace=\"checkout\"}))",
+    "max_sample_age_seconds": 90
+  }
+]

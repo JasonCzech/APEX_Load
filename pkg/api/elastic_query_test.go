@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +31,8 @@ type elasticFixture struct {
 	mu       sync.Mutex
 	docs     []elasticDoc
 	requests []map[string]any
+	// authorization is the header the server requires.
+	authorization string
 }
 
 func (f *elasticFixture) add(doc elasticDoc) {
@@ -39,8 +43,11 @@ func (f *elasticFixture) add(doc elasticDoc) {
 
 func (f *elasticFixture) RoundTrip(r *http.Request) (*http.Response, error) {
 	var body map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || r.Header.Get("Authorization") != "ApiKey fixture-token" {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		return &http.Response{StatusCode: 400, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	}
+	if r.Header.Get("Authorization") != f.authorization {
+		return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -112,20 +119,27 @@ func (f *elasticFixture) RoundTrip(r *http.Request) (*http.Response, error) {
 
 func apiElasticFixture(t *testing.T, terms []string) (*Server, providerMonitorStore, storage.RunMonitorJob, *elasticFixture) {
 	t.Helper()
+	return apiElasticProfileFixture(t, terms, storage.ElasticProfileElasticsearch, storage.ELKAuthAPIKey)
+}
+
+// apiElasticProfileFixture is apiElasticFixture for a server profile and
+// connection authentication; the fixture accepts only that authentication.
+func apiElasticProfileFixture(t *testing.T, terms []string, profile, authType string) (*Server, providerMonitorStore, storage.RunMonitorJob, *elasticFixture) {
+	t.Helper()
 	server, db := newTimeslotServer(t)
 	if server.appDynamicsCancel != nil {
 		server.appDynamicsCancel()
 	}
 	t.Setenv("APEXLOAD_RUN_MONITOR_PROJECTS", "proj-a")
 	t.Setenv("APEXLOAD_MONITOR_SIGNING_SEED", "")
-	connection := &storage.ELKConnection{ID: "elk-api", ProjectID: "proj-a", Name: "Logs", Enabled: true, Endpoint: "https://elk.example", IndexPattern: "logs-*", TimestampField: "@timestamp", ErrorFilter: "level:error", AuthType: storage.ELKAuthAPIKey, APIKeySecretName: "elk-token"}
+	connection := &storage.ELKConnection{ID: "elk-api", ProjectID: "proj-a", Name: "Logs", Enabled: true, Endpoint: "https://elk.example", IndexPattern: "logs-*", TimestampField: "@timestamp", ErrorFilter: "level:error", AuthType: authType, APIKeySecretName: "elk-token", UsernameSecretName: "elk-user", PasswordSecretName: "elk-password"}
 	if err := db.(interface {
 		CreateELKConnection(*storage.ELKConnection) error
 	}).CreateELKConnection(connection); err != nil {
 		t.Fatal(err)
 	}
 	monitors := db.(providerMonitorStore)
-	source := storage.MonitorSource{ID: "elastic-source", ProjectID: "proj-a", Name: "Log buckets", Enabled: true, Pack: "elastic-query", ExecutorMode: "direct", ConnectionID: connection.ID, IntervalSeconds: 30, ElasticQuery: &storage.ElasticQuerySelection{ProjectID: "proj-a", TermsFields: terms, TermsSize: 2}}
+	source := storage.MonitorSource{ID: "elastic-source", ProjectID: "proj-a", Name: "Log buckets", Enabled: true, Pack: "elastic-query", ExecutorMode: "direct", ConnectionID: connection.ID, IntervalSeconds: 30, ElasticQuery: &storage.ElasticQuerySelection{ProjectID: "proj-a", TermsFields: terms, TermsSize: 2, Profile: profile}}
 	if _, err := monitors.SaveMonitorSource(source, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +152,10 @@ func apiElasticFixture(t *testing.T, terms []string) (*Server, providerMonitorSt
 	if err != nil || len(jobs) != 1 || jobs[0].ElasticSnapshot == nil {
 		t.Fatal(jobs, err)
 	}
-	fixture := &elasticFixture{}
+	fixture := &elasticFixture{authorization: "ApiKey fixture-token"}
+	if authType == storage.ELKAuthBasic {
+		fixture.authorization = "Basic " + base64.StdEncoding.EncodeToString([]byte("fixture-token:fixture-token"))
+	}
 	server.elasticHTTPClient = &http.Client{Transport: fixture}
 	server.runner.projectSecretStore = &devSecretStore{value: "fixture-token"}
 	return server, monitors, jobs[0], fixture
@@ -357,5 +374,67 @@ func TestLegacyELKCaptureIsLabelledCumulative(t *testing.T) {
 	plain, _ := newRunArchiveWriter(&ManagedTest{ID: "no-elk"}, RunArchiveProvenance{})
 	if plain.manifest.ELKObservation != "" {
 		t.Fatal("runs without ELK capture claimed an observation")
+	}
+}
+
+func TestElasticQueryOpenSearchProfileCollectsWithBasicAuth(t *testing.T) {
+	s, store, job, fixture := apiElasticProfileFixture(t, []string{"method"}, storage.ElasticProfileOpenSearch, storage.ELKAuthBasic)
+	bucket := time.Now().UTC().Truncate(time.Minute).Add(-4 * time.Minute)
+	for i, level := range []string{"info", "error", "info"} {
+		fixture.add(elasticDoc{at: bucket.Add(time.Duration(i) * time.Second), level: level, fields: map[string]string{"method": "GET"}})
+	}
+	s.collectDirectElastic(context.Background(), job)
+	values := elasticPointValues(t, store, job)
+	if values["logs.count"][bucket] != 3 || values["logs.errors"][bucket] != 1 || values["logs.terms.method.GET"][bucket] != 3 {
+		t.Fatalf("OpenSearch bucket values = %v", values)
+	}
+	page, err := loadCanonicalMonitorData(context.Background(), store, job.ProjectID, job.RunID, job.Source.ID, "point", "", 500)
+	if err != nil || len(page.Points) == 0 {
+		t.Fatal(page, err)
+	}
+	for _, p := range page.Points {
+		if p.Provider == nil || p.Provider.Backend != storage.ElasticProfileOpenSearch || p.Provider.Name != "elasticsearch" {
+			t.Fatalf("OpenSearch point provenance = %+v", p.Provider)
+		}
+	}
+}
+
+func TestOpenSearchSourcesRequireBasicAuthConnections(t *testing.T) {
+	s, store, job, _ := apiElasticProfileFixture(t, nil, storage.ElasticProfileOpenSearch, storage.ELKAuthBasic)
+	elk := s.store.(interface {
+		GetELKConnection(string) (*storage.ELKConnection, error)
+		UpdateELKConnectionIfUnchanged(*storage.ELKConnection, time.Time) (bool, error)
+	})
+	connection, err := elk.GetELKConnection(job.Source.ConnectionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The connection an enabled OpenSearch source reads keeps basic auth.
+	connection.AuthType = storage.ELKAuthAPIKey
+	if ok, err := elk.UpdateELKConnectionIfUnchanged(connection, connection.UpdatedAt); !errors.Is(err, storage.ErrElasticAuthUnsupported) || ok {
+		t.Fatalf("API key on an OpenSearch connection: %v %v", ok, err)
+	}
+	if current, err := elk.GetELKConnection(connection.ID); err != nil || current.AuthType != storage.ELKAuthBasic {
+		t.Fatalf("refused update changed the connection: %+v %v", current, err)
+	}
+	// Once the OpenSearch source is disabled the connection may change, and
+	// the source cannot be re-enabled or another one added on it.
+	source := job.Source
+	source.Enabled = false
+	saved, err := store.SaveMonitorSource(source, source.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := elk.UpdateELKConnectionIfUnchanged(connection, connection.UpdatedAt); err != nil || !ok {
+		t.Fatalf("API key with only a disabled OpenSearch source: %v %v", ok, err)
+	}
+	saved.Enabled = true
+	if _, err := store.SaveMonitorSource(*saved, saved.Revision); !strings.Contains(fmt.Sprint(err), "basic authentication") {
+		t.Fatalf("re-enabled OpenSearch source on an API-key connection: %v", err)
+	}
+	another := *saved
+	another.ID, another.Name, another.Revision = "opensearch-api-key", "API key", 0
+	if _, err := store.SaveMonitorSource(another, 0); !strings.Contains(fmt.Sprint(err), "basic authentication") {
+		t.Fatalf("new OpenSearch source on an API-key connection: %v", err)
 	}
 }

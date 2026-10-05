@@ -62,6 +62,18 @@ and collects interval buckets instead of the legacy capture's run totals:
   stays under 10,000 aggregation buckets (`search.max_buckets` before
   Elasticsearch 7.9). A selection whose overlap re-read plus one new bucket
   does not fit one search is rejected, so every poll can advance.
+- **OpenSearch:** set `"profile": "opensearch"` in `elastic_query`. The
+  search is the same (`date_histogram` with `fixed_interval`, terms and
+  filters exist in OpenSearch 1.x and 2.x), and points record
+  `backend: opensearch`. OpenSearch has no Elasticsearch API keys, so the
+  connection must use basic authentication. Saving an OpenSearch source on an
+  API-key connection is refused, and a run whose connection has since switched
+  to an API key records `connection_source_mismatch` for that source. AWS
+  SigV4 signing is not supported; use fine-grained access control's internal
+  users. The ELK connection's default trace link is Kibana's legacy Discover
+  URL; newer OpenSearch Dashboards Discover pages use a different URL, so if
+  the default does not open the trace, save a trace template for your
+  version.
 
 The legacy ELK capture keeps running unchanged. Its status and the archive
 manifest label it `observation: cumulative` (`elk_observation`), and its run
@@ -386,6 +398,19 @@ without links and with `links_unavailable`.
   connection unused, since connection IDs are never reused.
 - **Not yet.** Grafana Explore links need a Grafana or Tempo connection, which
   APEX Load does not have; Grafana is currently an annotation sink only.
+
+### Provider breadth
+
+- **OpenSearch** collects through the `elastic-query` source's `opensearch`
+  profile (see Bucketed Elasticsearch capture).
+- **Kubernetes restarts, OOM kills and scaling** come from Prometheus query
+  presets: pod restarts and Deployment and HorizontalPodAutoscaler replicas
+  from kube-state-metrics, and OOM kills from the kubelet's cAdvisor
+  `container_oom_events_total` (see [Prometheus monitoring](PROMETHEUS_MONITORING.md)).
+- **Not yet built**, each needing its own short spec first:
+  - a read-only Kubernetes namespace events watch with a namespace allow-list;
+  - bounded Azure Log Analytics queries;
+  - an IBM MQ PCF queue-depth reader on the messaging management pipeline.
 
 ### Messaging trace carriers
 

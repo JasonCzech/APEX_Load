@@ -2,7 +2,9 @@ package storage
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -48,7 +50,9 @@ type ElasticQuerySelection struct {
 	TermsSize     int      `json:"terms_size,omitempty"`
 	// OverlapSeconds re-reads recent buckets for late documents (default 300).
 	OverlapSeconds int `json:"overlap_seconds,omitempty"`
-	// Profile selects the server dialect: elasticsearch (default) or opensearch.
+	// Profile selects the server dialect: elasticsearch (default) or
+	// opensearch. Both take the same search; OpenSearch has no Elasticsearch
+	// API keys, so an opensearch source needs a basic-auth connection.
 	Profile string `json:"profile,omitempty"`
 }
 
@@ -176,6 +180,10 @@ func validateElasticSourceTx(tx *storeTx, m *MonitorSource) error {
 	return ValidateElasticSourceConnection(*m, connection.ElasticSnapshot())
 }
 
+// ErrElasticAuthUnsupported means an OpenSearch source's connection does not
+// use basic authentication.
+var ErrElasticAuthUnsupported = errors.New("OpenSearch has no Elasticsearch API keys; give the connection basic authentication")
+
 // ValidateElasticSourceConnection checks a source against its frozen connection.
 func ValidateElasticSourceConnection(source MonitorSource, snapshot *ElasticConnectionSnapshot) error {
 	if snapshot == nil || source.ElasticQuery == nil || snapshot.ConnectionID != source.ConnectionID || snapshot.ProjectID != source.ProjectID {
@@ -187,7 +195,37 @@ func ValidateElasticSourceConnection(source MonitorSource, snapshot *ElasticConn
 	if snapshot.AuthType != ELKAuthAPIKey && snapshot.AuthType != ELKAuthBasic {
 		return errors.New("Elasticsearch connection authentication is not configured")
 	}
+	if source.ElasticQuery.Defaults().Profile == ElasticProfileOpenSearch && snapshot.AuthType != ELKAuthBasic {
+		return ErrElasticAuthUnsupported
+	}
 	return nil
+}
+
+// elasticAuthServesSourcesTx refuses a non-basic authentication for a
+// connection that enabled OpenSearch sources read.
+func elasticAuthServesSourcesTx(tx *storeTx, connection *ELKConnection) error {
+	if connection.AuthType == ELKAuthBasic {
+		return nil
+	}
+	rows, err := tx.Query(`SELECT payload FROM monitor_sources WHERE project_id=?`, connection.ProjectID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var body string
+		var source MonitorSource
+		if err := rows.Scan(&body); err != nil {
+			return err
+		}
+		if json.Unmarshal([]byte(body), &source) != nil {
+			continue
+		}
+		if source.Enabled && source.Pack == monitorprovider.PackElasticQuery && source.ConnectionID == connection.ID && source.ElasticQuery != nil && source.ElasticQuery.Defaults().Profile == ElasticProfileOpenSearch {
+			return fmt.Errorf("%w (source %q reads this connection)", ErrElasticAuthUnsupported, source.Name)
+		}
+	}
+	return rows.Err()
 }
 
 func elasticConnectionSnapshotTx(tx *storeTx, project, connectionID string) (*ElasticConnectionSnapshot, string, error) {

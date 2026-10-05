@@ -35,3 +35,19 @@ it('checks freshness of both memory ratio operands without merging their timesta
   expect(query.allowed_labels).toEqual(['job', 'instance'])
   expect(query.max_sample_age_seconds).toBe(90)
 })
+
+it('covers Kubernetes restarts, OOM kills and scaling, scoped to a namespace', () => {
+  const byID = (id: string) => prometheusPresets.find(preset => preset.id === id)!
+  for (const id of ['pod_restart_count', 'pod_oom_kills', 'deployment_replicas_available', 'hpa_desired_replicas', 'hpa_current_replicas']) {
+    expect(byID(id).kubernetes).toBe(true)
+    expect(buildPrometheusPreset(byID(id), { job: 'kube-state-metrics' })).toBeUndefined()
+  }
+  const oom = buildPrometheusPreset(byID('pod_oom_kills'), { job: 'kubelet', namespace: 'checkout' })!
+  expect(oom.expression).toBe('sum by (namespace, pod) (increase(container_oom_events_total{job="kubelet",namespace="checkout",container!="",container!="POD"}[2m]))')
+  expect(oom.semantics).toBe('count')
+  expect(oom.terminal_expression).toContain('[{{window.duration}}]')
+  const scaling = buildPrometheusPreset(byID('hpa_desired_replicas'), { job: 'kube-state-metrics', namespace: 'checkout' })!
+  expect(scaling.allowed_labels).toEqual(['namespace', 'horizontalpodautoscaler'])
+  expect(scaling.semantics).toBe('gauge')
+  expect(buildPrometheusPreset(byID('deployment_replicas_available'), { job: 'kube-state-metrics', namespace: 'checkout' })!.unit).toBe('replicas')
+})

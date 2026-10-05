@@ -89,8 +89,22 @@ func (s *SQLiteStore) UpdateELKConnectionIfUnchanged(connection *ELKConnection, 
 	if err != nil {
 		return false, err
 	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if connection.AuthType != ELKAuthBasic {
+		// Serialize with source saves, which hold the same project lock.
+		if _, err = lockProjectForOwnedMutation(tx, connection.ProjectID); err != nil {
+			return false, err
+		}
+		if err = elasticAuthServesSourcesTx(tx, connection); err != nil {
+			return false, err
+		}
+	}
 	updatedAt := time.Now().UTC()
-	result, err := s.db.Exec(`UPDATE elk_connections SET name=?, description=?, enabled=?, endpoint=?, index_pattern=?,
+	result, err := tx.Exec(`UPDATE elk_connections SET name=?, description=?, enabled=?, endpoint=?, index_pattern=?,
 		timestamp_field=?, level_field=?, message_field=?, test_id_field=?, trace_id_field=?, base_filter=?, error_filter=?,
 		auth_type=?, api_key_secret_name=?, username_secret_name=?, password_secret_name=?, metric_aggregations_json=?, updated_at=?
 		WHERE id=? AND project_id=? AND updated_at=?`, connection.Name, connection.Description, connection.Enabled, connection.Endpoint,
@@ -101,10 +115,16 @@ func (s *SQLiteStore) UpdateELKConnectionIfUnchanged(connection *ELKConnection, 
 		return false, err
 	}
 	count, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return false, err
+	}
 	if count == 1 {
 		connection.UpdatedAt = updatedAt
 	}
-	return count == 1, err
+	return count == 1, nil
 }
 
 func (s *SQLiteStore) UpdateELKConnectionHealth(id, projectID, status, message string, checkedAt time.Time) error {
