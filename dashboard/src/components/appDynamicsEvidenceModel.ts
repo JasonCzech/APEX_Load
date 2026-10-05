@@ -9,7 +9,7 @@ export function safeAppDynamicsEvidenceLink(value?: string): string | undefined 
   } catch { return undefined }
 }
 
-export async function readBoundedMonitorArchive(response: Response, provider = 'appdynamics'): Promise<AnalysisPoint[]> {
+export async function readBoundedMonitorArchive(response: Response, provider?: string): Promise<AnalysisPoint[]> {
   if (!response.ok) throw new Error(`Monitoring artifact unavailable (${response.status}).`)
   const limit = 8 * 1024 * 1024
   if (Number(response.headers.get('content-length')) > limit) throw new Error('Monitoring artifact exceeds the 8 MiB preview limit. Download the complete evidence for analysis.')
@@ -28,7 +28,7 @@ export async function readBoundedMonitorArchive(response: Response, provider = '
     text += decoder.decode()
   } finally { await reader.cancel() }
   const rows = text.split('\n').filter(line => line.trim()).map(line => JSON.parse(line) as AnalysisPoint)
-  const points = rows.filter(row => row.provider?.name === provider)
+  const points = rows.filter(row => provider ? row.provider?.name === provider : row.provider?.name === 'appdynamics' || row.provider?.name === 'dynatrace')
   if (points.length > 10000) throw new Error('Monitoring artifact exceeds the 10,000 point preview limit. Download the complete evidence for analysis.')
   return points
 }

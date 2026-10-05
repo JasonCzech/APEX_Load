@@ -94,6 +94,8 @@ type ProviderMeasurement struct {
 	Settled               bool              `json:"settled"`
 	AggregationEligible   bool              `json:"aggregation_eligible"`
 	QueryWindow           bool              `json:"query_window,omitempty"`
+	Backend               string            `json:"backend,omitempty"`
+	Synthetic             bool              `json:"synthetic,omitempty"`
 }
 
 // Validate rejects non-finite, ambiguous, and unbounded measurements before
@@ -101,14 +103,14 @@ type ProviderMeasurement struct {
 func (p MetricPoint) Validate() error {
 	if p.Provider != nil {
 		m := p.Provider
-		if m.Name != "appdynamics" && m.Name != "prometheus" || m.MetricID == "" || len(m.MetricID) > 256 || len(m.CatalogPath) > 4096 || len(m.EntityIDs) > 16 || len(m.Statistic) > 64 {
+		if m.Name != "appdynamics" && m.Name != "prometheus" && m.Name != "dynatrace" || m.MetricID == "" || len(m.MetricID) > 256 || len(m.CatalogPath) > 4096 || len(m.EntityIDs) > 16 || len(m.Statistic) > 64 || len(m.Backend) > 64 {
 			return errors.New("invalid provider bucket measurement")
 		}
 		if m.Name == "prometheus" {
 			if err := validatePrometheusMeasurement(p); err != nil {
 				return err
 			}
-		} else if m.Mode != "" && m.Mode != "interval_bucket" && m.Mode != "query_window" || m.Name == "appdynamics" && (m.BucketStart.Location() != time.UTC || m.BucketEnd.Location() != time.UTC || m.BucketStart.IsZero() || !m.BucketEnd.After(m.BucketStart) || m.ResolutionSeconds < 1 || (!m.QueryWindow && m.ResolutionSeconds > 86400) || int64(m.ResolutionSeconds) > math.MaxInt64/int64(time.Second) || m.BucketEnd.Year() < 1 || m.BucketEnd.Year() > 9999 || !m.BucketStart.Add(time.Duration(m.ResolutionSeconds)*time.Second).Equal(m.BucketEnd) || !p.TimestampUTC.Equal(m.BucketStart)) {
+		} else if m.Mode != "" && m.Mode != "interval_bucket" && m.Mode != "query_window" || (m.Name == "appdynamics" || m.Name == "dynatrace") && (m.BucketStart.Location() != time.UTC || m.BucketEnd.Location() != time.UTC || m.BucketStart.IsZero() || !m.BucketEnd.After(m.BucketStart) || m.ResolutionSeconds < 1 || (!m.QueryWindow && m.ResolutionSeconds > 86400) || int64(m.ResolutionSeconds) > math.MaxInt64/int64(time.Second) || m.BucketEnd.Year() < 1 || m.BucketEnd.Year() > 9999 || !m.BucketStart.Add(time.Duration(m.ResolutionSeconds)*time.Second).Equal(m.BucketEnd) || !p.TimestampUTC.Equal(m.BucketStart)) {
 			return errors.New("invalid provider bucket measurement")
 		}
 		for k, v := range m.EntityIDs {
@@ -291,7 +293,16 @@ func compatiblePrometheusProvenance(a, b MetricPoint) bool {
 	if a.Provider != nil && a.Provider.Name == "prometheus" || b.Provider != nil && b.Provider.Name == "prometheus" {
 		return samePrometheusIdentity(a, b)
 	}
-	return true
+	return compatibleProvider(a.Provider, b.Provider)
+}
+
+// ProviderCompatibility excludes bucket clocks and mutable settlement state,
+// but retains source identity and the semantics required for valid comparisons.
+func compatibleProvider(a, b *ProviderMeasurement) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Name == b.Name && a.Backend == b.Backend && a.Synthetic == b.Synthetic && a.MetricID == b.MetricID && maps.Equal(a.EntityIDs, b.EntityIDs) && a.ResolutionSeconds == b.ResolutionSeconds && a.Statistic == b.Statistic && a.QueryWindow == b.QueryWindow
 }
 
 func sameSeries(a, b MetricPoint) bool {

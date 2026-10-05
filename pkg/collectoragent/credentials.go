@@ -17,6 +17,7 @@ import (
 type Credentials struct {
 	Prometheus  *PrometheusCredentials  `json:"prometheus,omitempty"`
 	AppDynamics *AppDynamicsCredentials `json:"appdynamics,omitempty"`
+	Dynatrace   *DynatraceCredentials   `json:"dynatrace,omitempty"`
 	Username    string                  `json:"username,omitempty"`
 	Password    string                  `json:"password,omitempty"`
 	PrivateKey  string                  `json:"private_key,omitempty"`
@@ -29,6 +30,10 @@ type SealedCredentials struct {
 }
 
 func credentialContext(job RunJob) []byte {
+	if job.Dynatrace != nil {
+		b, _ := json.Marshal([]any{"apexload.dynatrace-credentials.v1", job.ID, job.ProjectID, job.CollectorID, job.SourceID, job.SourceRevision, job.Pack, job.Destination, job.LeaseExpiresAt.UTC(), job.Dynatrace.Config.EnvironmentURL, job.Dynatrace.Config.PlatformURL, job.Dynatrace.Config.PlatformAuthType, job.Dynatrace.Config.OAuthResource, job.Dynatrace.Config.OAuthScopes})
+		return b
+	}
 	b, _ := json.Marshal([]any{"apexload.monitor-credentials.v1", job.ID, job.ProjectID, job.CollectorID, job.SourceID, job.SourceRevision, job.Pack, job.Destination, job.LeaseExpiresAt.UTC()})
 	return b
 }

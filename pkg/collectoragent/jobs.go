@@ -18,6 +18,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 )
@@ -25,6 +26,7 @@ import (
 // RunJob grants a short collection lease for one immutable run/source binding.
 // Destination is also checked against local operator configuration before I/O.
 type RunJob struct {
+	Dynatrace         *dynatrace.JobConfig               `json:"dynatrace,omitempty"`
 	Management        *ManagementJob                     `json:"management,omitempty"`
 	FlushOnly         bool                               `json:"flush_only,omitempty"`
 	Prometheus        *prometheus.JobConfig              `json:"prometheus,omitempty"`
@@ -87,7 +89,7 @@ func SignRunJob(job RunJob, key ed25519.PrivateKey) (SignedRunJob, error) {
 	if err != nil {
 		return SignedRunJob{}, err
 	}
-	if len(body) > 96<<10 || job.Pack != "appdynamics" && job.Prometheus == nil && len(body) > 32768 {
+	if len(body) > 96<<10 || job.Pack != "appdynamics" && job.Pack != "dynatrace" && job.Prometheus == nil && len(body) > 32768 {
 		return SignedRunJob{}, errors.New("monitor job exceeds payload limit")
 	}
 	return SignedRunJob{Payload: string(body), Signature: base64.RawStdEncoding.EncodeToString(ed25519.Sign(key, body))}, nil
@@ -105,10 +107,10 @@ func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, 
 	if err = json.Unmarshal([]byte(signed.Payload), &job); err != nil {
 		return job, err
 	}
-	if job.Pack != "appdynamics" && job.Prometheus == nil && len(signed.Payload) > 32768 {
+	if job.Pack != "appdynamics" && job.Pack != "dynatrace" && job.Prometheus == nil && len(signed.Payload) > 32768 {
 		return RunJob{}, errors.New("monitor job exceeds payload limit")
 	}
-	if job.MaxBatches < 0 || job.MaxBatches > 32 || job.Pack != "appdynamics" && job.Prometheus == nil && job.MaxBatches > 1 {
+	if job.MaxBatches < 0 || job.MaxBatches > 32 || job.Pack != "appdynamics" && job.Pack != "dynatrace" && job.Prometheus == nil && job.MaxBatches > 1 {
 		return RunJob{}, errors.New("monitor grant batch budget rejected")
 	}
 	if job.CollectorID != collector || job.ID == "" || job.ProjectID == "" || job.RunID == "" || job.SourceID == "" || job.SourceRevision < 1 || job.NextSequence < 0 || job.IntervalSeconds < 1 || job.IntervalSeconds > 3600 || job.StartedAt.IsZero() || job.StartedAt.After(now.Add(30*time.Second)) || !job.ExpiresAt.After(now) || !job.LeaseExpiresAt.After(now) || job.LeaseExpiresAt.After(now.Add(2*time.Minute)) || job.LeaseExpiresAt.After(job.ExpiresAt) {
@@ -146,6 +148,9 @@ func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, 
 		}
 	} else if isManagementPack(job.Pack) {
 		return RunJob{}, errors.New("management job requires explicit versioned approval")
+	}
+	if job.Pack == "dynatrace" && (job.Dynatrace == nil || job.Dynatrace.Validate() != nil || job.Dynatrace.Selection.ProjectID != job.ProjectID || job.IntervalSeconds < 60 || job.AppDynamics != nil || job.Prometheus != nil || job.Management != nil) {
+		return RunJob{}, errors.New("Dynatrace configuration or interval rejected")
 	}
 	return job, nil
 }
@@ -188,6 +193,9 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 		for id := range a.otlpAccepted {
 			a.jobScanUnseen[id] = true
 		}
+		for id := range a.dynatraceJobs {
+			a.jobScanUnseen[id] = true
+		}
 	}
 	a.jobPollAfterKey = next
 	a.discardExpiredMonitorSpool(now)
@@ -213,11 +221,18 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 				a.jobScanManagement[job.ID] = envelope
 				return nil
 			}
-			if job.Pack == "appdynamics" || job.Prometheus != nil {
+			if job.Pack == "appdynamics" || job.Pack == "dynatrace" || job.Prometheus != nil {
 				if !slices.Contains(a.cfg.Packs, job.Pack) || job.UnavailableReason != "" {
 					return errors.New("provider pack is disabled or temporarily unavailable")
 				}
-				a.dispatchAppDynamicsJob(ctx, job, envelope)
+				if job.Pack == "dynatrace" {
+					if _, exists := a.dynatraceJobs[job.ID]; exists || len(a.dynatraceJobs) < maxCollectorSpoolJobs {
+						a.rememberDynatraceJob(job)
+					}
+					a.dispatchDynatraceJob(ctx, job, envelope)
+				} else {
+					a.dispatchAppDynamicsJob(ctx, job, envelope)
+				}
 				return nil
 			}
 			if job.UnavailableReason != "" {
@@ -399,6 +414,14 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 	// before any retry is submitted.
 	if next == "" {
 		for id := range a.jobScanUnseen {
+			if job, ok := a.dynatraceJobs[id]; ok {
+				a.dispatchDynatraceCancellation(ctx, a.dynatraceCancellationJob(job))
+				if timer := a.dynatraceCancelTimers[id]; timer != nil {
+					timer.Stop()
+					delete(a.dynatraceCancelTimers, id)
+				}
+				delete(a.dynatraceJobs, id)
+			}
 			delete(a.pendingBatches, id)
 			delete(a.providerBacklog, id)
 			delete(a.otlpAccepted, id)
@@ -475,6 +498,9 @@ func (a *Agent) jobRequestWithHeaders(ctx context.Context, method, path string, 
 		if slices.Contains(a.cfg.Packs, "prometheus") {
 			ad.Contracts = append(ad.Contracts, PrometheusScrapeContract)
 		}
+		if slices.Contains(a.cfg.Packs, "dynatrace") {
+			ad.Contracts = append(ad.Contracts, DynatraceBatchContract)
+		}
 		ad.Destinations = a.approvedDestinations()
 		payload, _ := json.Marshal(ad)
 		req.Header.Set("X-APEX-Monitor-Readiness", string(payload))
@@ -519,8 +545,14 @@ type RunJobReadiness struct {
 // AppDynamicsBatchContract identifies signed query progress, diagnostic and
 // topology batches; the pack name alone does not attest support for them.
 const AppDynamicsBatchContract = "appdynamics.v1"
+const DynatraceBatchContract = "dynatrace.v1"
 
 func normalizeAdapterPoint(point *analysis.MetricPoint) error {
+	// Typed provider buckets carry a frozen unit and provider statistics. Scaling
+	// only Value would disagree with direct collection and invalidate Sum/extrema.
+	if point.Provider != nil {
+		return point.Validate()
+	}
 	switch point.Unit {
 	case "By":
 		point.Unit = "bytes"

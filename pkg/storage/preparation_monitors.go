@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"maps"
+	"reflect"
+	"slices"
 )
 
 // PreparationMonitorSnapshot is immutable execution evidence. Definitions may
@@ -17,6 +21,47 @@ type PreparationMonitorSnapshot struct {
 	Bindings              MonitorBindings                           `json:"bindings"`
 	Sources               map[string]MonitorSource                  `json:"sources"`
 	Connections           map[string]*AppDynamicsConnectionSnapshot `json:"-"`
+	DynatraceConnections  map[string]*DynatraceConnectionSnapshot   `json:"-"`
+}
+
+// Capability verification is mutable health for one unchanged connection
+// revision. Comparing it as configuration would reject a preparation whose own
+// connectivity probe just verified its frozen profile.
+func samePreparationMonitorConfiguration(a, b *PreparationMonitorSnapshot) bool {
+	withoutHealth := func(p *PreparationMonitorSnapshot) *PreparationMonitorSnapshot {
+		if p == nil {
+			return nil
+		}
+		copy := *p
+		copy.DynatraceConnections = maps.Clone(p.DynatraceConnections)
+		for id, snapshot := range copy.DynatraceConnections {
+			if snapshot == nil {
+				continue
+			}
+			configuration := *snapshot
+			configuration.Capabilities = dynatrace.Capabilities{}
+			configuration.VerifiedRevision = 0
+			copy.DynatraceConnections[id] = &configuration
+		}
+		return &copy
+	}
+	return reflect.DeepEqual(withoutHealth(a), withoutHealth(b))
+}
+
+func freezeVerifiedDynatracePreparationCapabilities(frozen, current *PreparationMonitorSnapshot) {
+	if frozen == nil || current == nil {
+		return
+	}
+	for id, snapshot := range frozen.DynatraceConnections {
+		verified := current.DynatraceConnections[id]
+		if snapshot == nil || verified == nil || snapshot.Revision != verified.Revision || snapshot.ConnectionID != verified.ConnectionID {
+			continue
+		}
+		snapshot.VerifiedRevision = verified.VerifiedRevision
+		snapshot.Capabilities = verified.Capabilities
+		snapshot.Capabilities.Status = maps.Clone(verified.Capabilities.Status)
+		snapshot.Capabilities.VerifiedOrigins = slices.Clone(verified.Capabilities.VerifiedOrigins)
+	}
 }
 
 func preparationMonitorSnapshotTx(tx *storeTx, project, run string) (*PreparationMonitorSnapshot, error) {
@@ -77,6 +122,19 @@ func preparationMonitorSnapshotTx(tx *storeTx, project, run string) (*Preparatio
 				snapshot.PrometheusConnections = map[string]*PrometheusConnectionSnapshot{}
 			}
 			snapshot.PrometheusConnections[source.ID] = c.Snapshot()
+		}
+		if source.Pack == "dynatrace" {
+			c, e := scanDynatraceConnection(tx.QueryRow(`SELECT `+dynatraceConnectionColumns+` FROM dynatrace_connections WHERE id=? AND project_id=?`, source.ConnectionID, project))
+			if errors.Is(e, sql.ErrNoRows) {
+				continue
+			}
+			if e != nil {
+				return nil, e
+			}
+			if snapshot.DynatraceConnections == nil {
+				snapshot.DynatraceConnections = map[string]*DynatraceConnectionSnapshot{}
+			}
+			snapshot.DynatraceConnections[source.ID] = c.Snapshot()
 		}
 		if source.Pack == "appdynamics" {
 			var raw string

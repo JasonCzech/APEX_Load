@@ -70,6 +70,7 @@ pkg/
   prometheus/    — Governed PromQL target monitoring and Azure managed Prometheus query adapter
   monitorprovider/ — Provider-neutral monitoring topology, diagnostics, coverage and cursors
   appdynamics/   — Classic AppDynamics Controller and Events Service client, governed discovery and typed test monitoring
+  dynatrace/     — Dynatrace SaaS Classic and Grail client, governed discovery, bounded queries and typed test monitoring
   Java execution stack:
   javarunner/    — Shared policy-enforcing Java Vuser primitives (classpath, command, containment);
                    deliberately depends on neither dsl nor protocol so authoring and execution share it

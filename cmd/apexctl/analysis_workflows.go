@@ -69,7 +69,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	failOnRegression := flags.Bool("fail-on-regression", false, "fail CI for regression or unavailable baseline evidence")
 	ttl := flags.Duration("ttl", 30*time.Minute, "readiness lifetime")
 	metric := flags.String("metric", "", "monitor metric name filter")
-	evidenceKind := flags.String("kind", "", "diagnostic kind filter: event, violation, snapshot, log, transaction, target or alert")
+	evidenceKind := flags.String("kind", "", "diagnostic kind filter: event, violation, snapshot, log, transaction, target or alert; Dynatrace also supports problem, span and trace")
 	afterKey := flags.String("after-key", "", "monitor evidence pagination cursor")
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -281,7 +281,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 				}
 			} else {
 				if *evidenceKind != "" {
-					if !strings.Contains("|event|violation|snapshot|log|transaction|target|alert|", "|"+*evidenceKind+"|") {
+					if !strings.Contains("|event|violation|snapshot|log|transaction|target|alert|problem|span|trace|", "|"+*evidenceKind+"|") {
 						return errors.New("unsupported diagnostic --kind")
 					}
 					query.Set("kind", *evidenceKind)

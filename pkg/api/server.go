@@ -21,6 +21,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/importsession"
@@ -318,6 +319,10 @@ type Server struct {
 	// tracing is the process startup result, not merely the presence of OTel
 	// libraries. Integration readiness must never advertise an inactive exporter.
 	tracing telemetry.Status
+
+	// dynatraceClient is a private fixture seam. Production leaves it nil and
+	// always uses the governed transport built by dynatrace.NewClient.
+	dynatraceClient func(dynatrace.Config, dynatrace.Credentials) (*dynatrace.Client, error)
 }
 
 // ServerConfig configures API server startup behavior and integrations.
@@ -628,6 +633,7 @@ func NewServer(cfg ServerConfig) *Server {
 	s.configureReplaySessionReservations()
 	runner.appDynamicsPrepare = s.verifyPreparedAppDynamics
 	runner.prometheusPrepare = s.verifyPreparedPrometheus
+	runner.dynatracePrepare = s.verifyPreparedDynatrace
 	hub.SetOriginAuthProvider(s.authSettingsForRequest)
 	if leadership != nil {
 		leadership.setOnLoss(func() {
@@ -1111,6 +1117,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.registerAPIRouteCatalog(runMonitoringAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(appDynamicsAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(prometheusAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(dynatraceNativeAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(analysisAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(objectActivityAPIRouteCatalog, standardRouteMiddleware)
 	s.mux.Handle("GET /api/v1/scenarios/{id}/results", cors(log(auth(http.HandlerFunc(s.handleScenarioResults)))))

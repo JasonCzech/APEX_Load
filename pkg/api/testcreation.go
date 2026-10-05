@@ -1350,6 +1350,18 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	// Without the project run-monitoring gate, legacy capture keeps its original
+	// runtime unchanged. With the gate, it becomes an immutable native binding.
+	if dynatraceCapture != nil && runMonitoringEnabled(projectID) {
+		bindings, err := tr.translateLegacyDynatraceBindings(projectID, req.ScenarioID, req.MonitorBindings, dynatraceCapture.ConnectionID)
+		if err != nil {
+			return nil, err
+		}
+		req.MonitorBindings = &bindings
+		// Future tests use only the durable executor. Already active legacy
+		// runtimes retain their previously persisted capture snapshots.
+		dynatraceCapture = nil
+	}
 	projectQuota, quotaOK := req.projectQuotaEvidence.quotaFor(&ManagedTest{ProjectID: projectID, Assignment: req.Assignment})
 	if !quotaOK && status != "DRAFT" {
 		return nil, fmt.Errorf("project quota evidence changed or is unavailable; retry test creation")

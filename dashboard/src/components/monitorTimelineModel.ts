@@ -12,7 +12,7 @@ export type MonitorLoadOverlay = keyof typeof monitorLoadOverlays
 export interface MonitorTimelineRow { time: number; monitor?: number | null; load?: number | null }
 
 export function monitorSeriesIdentity(point: AnalysisPoint): string {
-  return JSON.stringify([point.source, point.metric_name, point.unit, point.kind, point.host, point.provider?.query_id, point.provider?.definition_hash, point.provider?.backend_profile, point.provider?.mode, point.provider?.evaluation_step_seconds, point.provider?.metric_id, point.provider?.statistic, point.provider?.query_window ? 'query_window' : point.provider?.resolution_seconds, Object.entries(point.dimensions || {}).sort(([a], [b]) => a.localeCompare(b)), Object.entries(point.provider?.entity_ids || {}).sort(([a], [b]) => a.localeCompare(b))])
+  return JSON.stringify([point.source, point.metric_name, point.unit, point.kind, point.host, point.provider?.name, point.provider?.backend, point.provider?.query_id, point.provider?.definition_hash, point.provider?.backend_profile, point.provider?.mode, point.provider?.evaluation_step_seconds, point.provider?.metric_id, point.provider?.statistic, point.provider?.query_window ? 'query_window' : point.provider?.resolution_seconds, Object.entries(point.dimensions || {}).sort(([a], [b]) => a.localeCompare(b)), Object.entries(point.provider?.entity_ids || {}).sort(([a], [b]) => a.localeCompare(b))])
 }
 
 export function latestMonitorQueryAggregate(points: AnalysisPoint[]): AnalysisPoint | undefined {

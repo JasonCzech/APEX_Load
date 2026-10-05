@@ -58,12 +58,15 @@ func validateCollectorRunReadiness(project, collector string, packs, destination
 		return errors.New("invalid collector readiness")
 	}
 	for _, pack := range packs {
-		if pack != "go-runtime" && pack != "linux-hosts" && pack != "prometheus" && pack != "ssh-linux" && pack != "otel-metrics" && pack != "jmx" && pack != "jdbc" && pack != "cloudwatch" && pack != "azure-monitor" && pack != "appdynamics" && pack != "appdynamics.v1" && pack != "prometheus-query" && pack != "prometheus-query.v1" && pack != "prometheus-scrape.v2" {
+		if pack != "go-runtime" && pack != "linux-hosts" && pack != "prometheus" && pack != "ssh-linux" && pack != "otel-metrics" && pack != "jmx" && pack != "jdbc" && pack != "cloudwatch" && pack != "azure-monitor" && pack != "appdynamics" && pack != "appdynamics.v1" && pack != "prometheus-query" && pack != "prometheus-query.v1" && pack != "prometheus-scrape.v2" && pack != "dynatrace" && pack != "dynatrace.v1" {
 			return errors.New("unsupported collector pack")
 		}
 	}
 	if containsReadinessPack(packs, "appdynamics.v1") && !containsReadinessPack(packs, "appdynamics") {
 		return errors.New("AppDynamics contract requires pack approval")
+	}
+	if containsReadinessPack(packs, "dynatrace.v1") && !containsReadinessPack(packs, "dynatrace") {
+		return errors.New("Dynatrace contract requires its pack")
 	}
 	if containsReadinessPack(packs, "prometheus-query.v1") && !containsReadinessPack(packs, "prometheus-query") {
 		return errors.New("Prometheus query contract requires pack approval")
@@ -84,7 +87,7 @@ func validateCollectorRunReadiness(project, collector string, packs, destination
 			}
 		}
 		for _, pack := range packs {
-			if pack == "appdynamics" {
+			if pack == "appdynamics" || pack == "dynatrace" {
 				u, e := url.Parse(raw)
 				valid = valid || (hasKey && e == nil && u.Scheme == "https" && u.Host != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "")
 			}

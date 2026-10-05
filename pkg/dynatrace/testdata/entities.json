@@ -1,0 +1,18 @@
+{
+  "totalCount": 1,
+  "pageSize": 100,
+  "entities": [
+    {
+      "entityId": "SERVICE-0000000000000001",
+      "type": "SERVICE",
+      "displayName": "checkout",
+      "fromRelationships": {
+        "calls": [{"id": "SERVICE-0000000000000002", "type": "SERVICE"}],
+        "runsOnProcessGroupInstance": [{"id": "PROCESS_GROUP_INSTANCE-0000000000000003", "type": "PROCESS_GROUP_INSTANCE"}]
+      },
+      "toRelationships": {
+        "calls": [{"id": "APPLICATION-0000000000000004", "type": "APPLICATION"}]
+      }
+    }
+  ]
+}

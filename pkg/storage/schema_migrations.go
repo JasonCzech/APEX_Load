@@ -59,7 +59,8 @@ var schemaReleases = []schemaRelease{
 	{Version: 32, Name: "durable-messaging-management-polls", Fingerprint: "8302b2875bbd64d91edac96ab4c39b6adf66bbfb288f60fbef5428718a1d4911"},
 	{Version: 33, Name: "isolated-native-analysis-attempts", Fingerprint: "348e5bff6128c23431046d91f301e65f219eaa542faead33fc42d1508c4587df"},
 	{Version: 34, Name: "durable-analysis-upload-physical-writers", Fingerprint: "52971cd3c20e72aefeb2c719f02e125a3689f107a50981c4da14d01a8e34783b"},
-	{Version: 35, Name: "run-trace-context-policy", Fingerprint: "98825cf139be6e10240e502551410950df1ddba423adc811cad0187911826e0a"},
+	{Version: 35, Name: "dynatrace-saas-durable-run-monitoring", Fingerprint: "de996ade9928b95fa97e6ede0c811d2ee20ee73e0f44d1e26945547814066d7a"},
+	{Version: 36, Name: "run-trace-context-policy", Fingerprint: "26cd04b1928418d383f28268ae70c20e2b943e08217c7fdb3855e8a092a6d8cc"},
 }
 
 type SchemaMigrationRecord struct {

@@ -114,6 +114,24 @@ func TestAppDynamicsSafeJobOmitsPrivateCursorState(t *testing.T) {
 	}
 }
 
+func TestPublicationSafeJobOmitsAllProviderPrivateState(t *testing.T) {
+	job := storage.RunMonitorJob{
+		ConnectionSnapshot:           &storage.AppDynamicsConnectionSnapshot{PasswordSecretName: "app-private"},
+		PrometheusConnectionSnapshot: &storage.PrometheusConnectionSnapshot{ConnectionID: "prom-private"},
+		DynatraceSnapshot:            &storage.DynatraceConnectionSnapshot{ConnectionID: "dyn-private"},
+		ProviderCursor:               "request-private", RunTraceIDs: []string{"trace-private"},
+	}
+	body, err := json.Marshal(safeMonitorJob(job))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, private := range []string{"app-private", "prom-private", "dyn-private", "request-private", "trace-private"} {
+		if strings.Contains(string(body), private) {
+			t.Fatalf("public job disclosed %s", private)
+		}
+	}
+}
+
 func TestAppDynamicsTerminalRulesDoNotCountAsLiveGoals(t *testing.T) {
 	config := &GoalConfig{MonitorRules: []analysis.MonitorRule{{SourceID: "s", Metric: "calls", Unit: "count", Statistic: "sum", Comparator: "lt", Threshold: 0}}}
 	if !hasGoalConfig(config) || hasLiveGoalConfig(config) {

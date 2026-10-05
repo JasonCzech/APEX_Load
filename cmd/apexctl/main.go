@@ -37,7 +37,8 @@ var apexctlCommandHandlers = map[string]func(){
 	"monitor":      monitorCmd,
 	"analysis":     analysisCmd,
 	"appdynamics":  appDynamicsCmd,
-	"prometheus": prometheusCmd,
+	"prometheus":   prometheusCmd,
+	"dynatrace":    dynatraceCmd,
 }
 
 func main() {
@@ -426,6 +427,7 @@ Commands:
   monitor   Configure run-bound monitoring sources and scenario bindings
   appdynamics Manage AppDynamics connections and asynchronous inspections
   prometheus  Manage target-system monitoring connections, discovery and previews
+  dynatrace  Manage Dynatrace SaaS connections, discovery and query previews
   analysis  Import/query datasets, save analysis definitions, and assess baseline regressions
   version   Print version information
   help      Show this help

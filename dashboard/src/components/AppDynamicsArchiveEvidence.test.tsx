@@ -24,6 +24,8 @@ it('rejects insecure links and bounded artifact previews', async () => {
   await expect(readBoundedMonitorArchive(new Response('', { headers: { 'content-length': String(8 * 1024 * 1024 + 1) } }))).rejects.toThrow('8 MiB')
   const point = { source: 'apm', timestamp_utc: '2026-10-03T12:00:00Z', provider: { name: 'appdynamics' } }
   expect(await readBoundedMonitorArchive(new Response(`${JSON.stringify(point)}\n${JSON.stringify({ source: 'legacy' })}\n`))).toEqual([point])
+  const dynatrace = { ...point, source: 'dt', provider: { name: 'dynatrace' } }
+  expect(await readBoundedMonitorArchive(new Response(`${JSON.stringify(dynatrace)}\n${JSON.stringify(point)}\n`))).toEqual([dynatrace, point])
 })
 
 it('renders archive diagnostics in bounded pages', async () => {

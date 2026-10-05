@@ -188,6 +188,10 @@ test('[U16] every report lens renders the same run', async ({ request, page, see
       ).toBeVisible({ timeout: 30_000 })
       const scorecard = page.locator('[aria-label="Run KPI scorecard"]')
       await expect(scorecard, `the ${lens} lens must show shared headline metrics`).toBeVisible()
+      await expect(
+        scorecard.locator('article strong'),
+        `the ${lens} lens must load the captured fixture metrics before comparing values`,
+      ).toHaveText([/^\d[\d,.]* ms$/, /^\d[\d,.]* ms$/, /^\d[\d,.]*%$/, /^\d[\d,.]*$/, /^\d[\d,.]*$/, /^\d[\d,.]*%$/])
       scorecards.push((await scorecard.innerText()).replace(/\s+/g, ' ').trim())
       expect(pageErrors, `the ${lens} lens threw: ${pageErrors.map(e => e.message).join('; ')}`).toEqual([])
     } finally {

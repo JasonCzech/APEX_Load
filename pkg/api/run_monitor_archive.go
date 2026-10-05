@@ -9,11 +9,13 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type RunMonitorCoverage struct {
+	Dynatrace                     *dynatrace.Selection            `json:"dynatrace,omitempty"`
 	ManagementSnapshots           int64                           `json:"management_snapshots,omitempty"`
 	ManagementIncompleteSnapshots int64                           `json:"management_incomplete_snapshots,omitempty"`
 	JobID                         string                          `json:"job_id"`
@@ -91,6 +93,15 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			selection.CollectionID = ""
 			selection.GridAnchor = nil
 			coverage.PrometheusSelection = &selection
+		}
+		if job.DynatraceSnapshot != nil {
+			coverage.ConnectionRevision = job.DynatraceSnapshot.Revision
+		}
+		if job.Source.Dynatrace != nil {
+			selection := *job.Source.Dynatrace
+			selection.QueryOffset = 0
+			selection.Cursor = ""
+			coverage.Dynatrace = &selection
 		}
 		if job.Source.AppDynamics != nil {
 			selection := *job.Source.AppDynamics
@@ -200,7 +211,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			}
 			for _, receipt := range page {
 				afterJob, afterSequence = receipt.JobID, receipt.Sequence
-				if packs[receipt.JobID] == "appdynamics" || packs[receipt.JobID] == "prometheus-query" {
+				if packs[receipt.JobID] == "appdynamics" || packs[receipt.JobID] == "prometheus-query" || packs[receipt.JobID] == "dynatrace" {
 					continue
 				}
 				evidence, err := readMonitorEvidence(ctx, project, run, receipt)
@@ -311,6 +322,11 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			}
 		}
 		if coverage.Selection != nil && !selectedMonitorMetricsObserved(*coverage.Selection, eligibleMetrics[coverage.SourceID]) {
+			coverage.State = "incomplete"
+			coverage.Reason = "no_eligible_metric_buckets"
+			manifest.MonitoringStatus = "incomplete"
+		}
+		if coverage.Dynatrace != nil && !selectedDynatraceMetricsObserved(*coverage.Dynatrace, eligibleMetrics[coverage.SourceID]) {
 			coverage.State = "incomplete"
 			coverage.Reason = "no_eligible_metric_buckets"
 			manifest.MonitoringStatus = "incomplete"
@@ -426,7 +442,7 @@ func persistRunMonitorManagementArchive(ctx context.Context, project, run string
 				break
 			}
 			for _, receipt := range page {
-				if packs[receipt.JobID] == "appdynamics" || packs[receipt.JobID] == "prometheus-query" {
+				if packs[receipt.JobID] == "appdynamics" || packs[receipt.JobID] == "prometheus-query" || packs[receipt.JobID] == "dynatrace" {
 					afterJob, afterSequence = receipt.JobID, receipt.Sequence
 					continue
 				}
@@ -521,7 +537,7 @@ func monitorPointSatisfiesCapture(point analysis.MetricPoint, start, end time.Ti
 	if point.Provider != nil && point.Provider.Name == "prometheus" {
 		return point.Value != nil && point.Quality == analysis.QualityValid && point.Validate() == nil && point.Provider.Settled && !point.TimestampUTC.Before(start) && !point.TimestampUTC.After(end)
 	}
-	return point.Provider != nil && point.Value != nil && point.Quality == analysis.QualityValid && point.Validate() == nil && point.Provider.Settled && !point.Provider.BucketStart.Before(start) && !point.Provider.BucketEnd.After(end)
+	return point.Provider != nil && !point.Provider.Synthetic && point.Value != nil && point.Quality == analysis.QualityValid && point.Validate() == nil && point.Provider.Settled && !point.Provider.BucketStart.Before(start) && !point.Provider.BucketEnd.After(end)
 }
 
 func selectedMonitorMetricsObserved(selection appdynamics.Selection, observed map[string]bool) bool {
@@ -532,6 +548,20 @@ func selectedMonitorMetricsObserved(selection appdynamics.Selection, observed ma
 	}
 	for _, query := range selection.Analytics {
 		if query.Kind == "metric" && !observed[query.ApplicationID+":"+query.Name] {
+			return false
+		}
+	}
+	return true
+}
+
+func selectedDynatraceMetricsObserved(selection dynatrace.Selection, observed map[string]bool) bool {
+	for _, metric := range selection.Metrics {
+		if !observed[":"+metric.Name] {
+			return false
+		}
+	}
+	for _, query := range selection.Grail {
+		if (query.Kind == "metric" || query.Kind == "aggregate") && !observed[":"+query.Name] {
 			return false
 		}
 	}

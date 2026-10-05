@@ -8,8 +8,9 @@ import { readBoundedMonitorArchive } from './appDynamicsEvidenceModel'
 import { monitorSeriesIdentity, monitorEntityLabel } from './monitorTimelineModel'
 
 export default function AppDynamicsArchiveEvidence({ report, testId, history = [] }: { report: RunArchiveReport; testId: string; history?: MetricsHistoryPoint[] }) {
-  const coverage = report.manifest.monitor_coverage?.filter(source => source.appdynamics) || []
-  const evidence = (report.monitor_diagnostics || []).map(row => ({ ...row.diagnostic, source_id: row.source_id }))
+  const coverage = report.manifest.monitor_coverage?.filter(source => source.appdynamics || source.dynatrace) || []
+  const provider = coverage.some(source => source.dynatrace) ? coverage.some(source => source.appdynamics) ? 'Monitoring' : 'Dynatrace' : 'AppDynamics'
+  const evidence = (report.monitor_diagnostics || []).map(row => ({ ...row.diagnostic, source_id: row.source_id, provider: row.diagnostic.provider || (coverage.find(source => source.source_id === row.source_id)?.dynatrace ? 'dynatrace' as const : 'appdynamics' as const) }))
   const [evidencePage, setEvidencePage] = useState(0)
   const [points, setPoints] = useState<AnalysisPoint[]>([])
   const [series, setSeries] = useState('')
@@ -29,13 +30,13 @@ export default function AppDynamicsArchiveEvidence({ report, testId, history = [
   const identities = [...new Map(points.map(point => [monitorSeriesIdentity(point), point])).entries()]
   const selected = points.filter(point => monitorSeriesIdentity(point) === series)
   const visible = evidence.slice(evidencePage * 100, (evidencePage + 1) * 100)
-  return <section aria-label="Archived AppDynamics evidence"><h3>AppDynamics archive evidence</h3>
+  return <section aria-label={`Archived ${provider} evidence`}><h3>{provider} archive evidence</h3>
     <p>Monitoring: {report.manifest.monitoring_status || 'Unknown'}. Canonical observations and bounded diagnostic summaries were frozen when this archive closed.</p>
     <ul>{coverage.map(source => <li key={source.job_id}>{source.source_id} · revision {source.source_revision} · {source.executor_mode || 'collector'} · {source.state}{source.required ? ' · required' : ' · optional'}{source.reason ? ` · ${source.reason}` : ''}
       {source.provider_coverage && <ul>{Object.entries(source.provider_coverage).map(([capability, health]) => <li key={capability}>{capability}: {health.status}{health.truncated ? ' · truncated' : ''}{health.message ? ` · ${health.message}` : ''}</li>)}</ul>}
       {source.topology?.length ? <p>{source.topology.length} retained topology entities.</p> : null}
     </li>)}</ul>
-    <AppDynamicsEvidenceTable evidence={visible} />
+    <AppDynamicsEvidenceTable evidence={visible} provider={provider} />
     {evidence.length > 100 && <div><p>Diagnostics {evidencePage * 100 + 1}–{Math.min((evidencePage + 1) * 100, evidence.length)} of {evidence.length}.</p><button type="button" disabled={evidencePage === 0} onClick={() => setEvidencePage(value => value - 1)}>Previous archived evidence page</button><button type="button" disabled={(evidencePage + 1) * 100 >= evidence.length} onClick={() => setEvidencePage(value => value + 1)}>Next archived evidence page</button></div>}
     {report.manifest.monitor_evidence_file && <button type="button" disabled={loading} onClick={() => setLoad(value => value + 1)}>{loading ? 'Loading archived monitoring…' : 'Load archived metric timeline'}</button>}
     {error && <p role="alert">{error}</p>}

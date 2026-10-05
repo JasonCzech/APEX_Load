@@ -357,9 +357,13 @@ func TestAnalysisUploadSchemaMigrationRecreatesJournalAndPreservesPriorLedgerIde
 	if err = upgraded.db.QueryRow(`SELECT fingerprint FROM schema_migrations WHERE version=33`).Scan(&prior); err != nil || prior != "348e5bff6128c23431046d91f301e65f219eaa542faead33fc42d1508c4587df" {
 		t.Fatal("prior migration identity changed", prior, err)
 	}
+	var uploadRelease string
+	if err = upgraded.db.QueryRow(`SELECT fingerprint FROM schema_migrations WHERE version=34`).Scan(&uploadRelease); err != nil || uploadRelease != "52971cd3c20e72aefeb2c719f02e125a3689f107a50981c4da14d01a8e34783b" {
+		t.Fatal("published upload migration identity changed", uploadRelease, err)
+	}
 	var current string
-	if err = upgraded.db.QueryRow(`SELECT fingerprint FROM schema_migrations WHERE version=34`).Scan(&current); err != nil || current != "52971cd3c20e72aefeb2c719f02e125a3689f107a50981c4da14d01a8e34783b" {
-		t.Fatal("upload migration did not converge", current, err)
+	if err = upgraded.db.QueryRow(`SELECT fingerprint FROM schema_migrations WHERE version=?`, currentSchemaRelease().Version).Scan(&current); err != nil || current != schemaConvergenceFingerprint() {
+		t.Fatal("latest schema migration did not converge", current, err)
 	}
 	in := uploadWriterFixture(t, upgraded)
 	if _, err = upgraded.BeginAnalysisUploadWriter(t.Context(), uploadWriterRequest(in)); err != nil {

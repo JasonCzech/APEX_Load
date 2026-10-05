@@ -1,0 +1,24 @@
+{
+  "totalCount": 1,
+  "pageSize": 100,
+  "events": [
+    {
+      "eventId": "-7432085836429447680_1791028800000",
+      "startTime": 1791028800000,
+      "endTime": 1791028860000,
+      "eventType": "CUSTOM_DEPLOYMENT",
+      "title": "Deploy checkout 1.2.3",
+      "entityId": {"entityId": {"id": "SERVICE-0000000000000001", "type": "SERVICE"}, "name": "checkout"},
+      "properties": [{"key": "dt.event.deployment.version", "value": "1.2.3"}],
+      "status": "CLOSED",
+      "correlationId": "0000000000000000",
+      "entityTags": [],
+      "managementZones": [],
+      "underMaintenance": false,
+      "suppressAlert": false,
+      "suppressProblem": false,
+      "frequentEvent": false
+    }
+  ],
+  "warnings": []
+}
