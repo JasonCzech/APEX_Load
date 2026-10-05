@@ -113,6 +113,8 @@ Certify atomic consume-transform-produce-plus-offset transactions using the exis
 
 Separate fresh-run transactional identity from any supported continuation. Persist a logical run/group/VUser identity and fence it if restart continuation is offered; the current random suffix alone does not establish that promise. Otherwise terminate the old source session and publish explicit recovery limits. Real broker tests reconcile committed output/input offsets and prove aborted/failed messages invisible to `read_committed`.
 
+Delivery progress: the separate fresh-source Kafka transaction slice qualifies `read_committed` latest/LSO seek, production commit and buffered-output abort with SDK input rewind, and stale-producer epoch fencing on genuine Apache Kafka 3.9.2 single-broker TLS/PLAIN, with independent stable-offset/output readers. Broker-aborted visibility is verified separately from buffered-output discard. [Retained review and evidence](qa/reviews/feature-completion-kafka-transactions-2026-10-05/README.md) distinguish actual acceptance from offline harness controls. Broker recovery, transactional revocation/cancellation, durable continuation, multi-broker/provider breadth and full repository composition remain open; this does not close MSG-3.
+
 ### MSG-4: Generic JMS and Service Bus
 
 Use a packaged restricted Java/Jakarta Messaging helper for genuine JMS semantics, initially certified against ActiveMQ Artemis with approved factories/drivers. Reuse containment primitives where applicable, but give the helper its own typed, versioned messaging contract; the existing arbitrary-command Solace sidecar is not a complete governed runner.

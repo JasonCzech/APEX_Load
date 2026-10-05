@@ -202,19 +202,67 @@ def suite_definition(suite):
                          '--- PASS: TestKafkaOwnedSeekActualBroker/revocation_during_lookup ',
                          '--- PASS: TestKafkaOwnedSeekActualBroker/commit_group_fence '),
         }
+    if suite == 'transactions':
+        return {
+            'environment': 'APEXLOAD_KAFKA_TRANSACTION_FIXTURE',
+            'command': ['go', 'test', '-v', '-p', '1', '-tags=kafka_real,kafka_transaction_integration', './pkg/protocol/kafka', '-run', '^TestKafkaTransactionsActualBroker$', '-count=1', '-timeout=8m'],
+            'required': ('--- PASS: TestKafkaTransactionsActualBroker ',
+                         '--- PASS: TestKafkaTransactionsActualBroker/read_committed_latest_lso ',
+                         '--- PASS: TestKafkaTransactionsActualBroker/consume_transform_commit_abort ',
+                         '--- PASS: TestKafkaTransactionsActualBroker/stale_producer_fencing '),
+        }
     raise ValueError('unsupported Kafka qualification suite')
+
+
+def transaction_inventory(suffix):
+    # A short random prefix retains the exact approved prefix after the runtime
+    # appends its fresh-source UUID. No wildcard, restart or continuation grant.
+    if len(suffix) != 12 or any(c not in '0123456789abcdef' for c in suffix):
+        raise ValueError('invalid transaction fixture identity suffix')
+    inventory = {'visibility_topic': 'txn-visibility-' + suffix,
+                 'input_topic': 'txn-input-' + suffix,
+                 'output_topic': 'txn-output-' + suffix,
+                 'group': 'txn-workers-' + suffix,
+                 'seek_group': 'txn-seek-' + suffix,
+                 'fence_group': 'txn-fence-' + suffix,
+                 'transactional_prefix': 'apex-txn-' + suffix + '-'}
+    inventory['topics'] = [inventory[k] for k in ('visibility_topic', 'input_topic', 'output_topic')]
+    inventory['groups'] = [inventory[k] for k in ('group', 'seek_group', 'fence_group')]
+    return inventory
+
+
+def transaction_acl_plan(inventory):
+    grants = []
+    def grant(principal, operations, resource):
+        grants.append(['--allow-principal', 'User:' + principal,
+                       *[flag for operation in operations for flag in ('--operation', operation)],
+                       *resource])
+    for name in inventory['topics']:
+        grant('executor', ('Read', 'Write', 'Describe'), ('--topic', name))
+        grant('writer', ('Write', 'Describe'), ('--topic', name))
+        grant('oracle', ('Describe',), ('--topic', name))
+    grant('output', ('Read', 'Describe'), ('--topic', inventory['output_topic']))
+    for name in inventory['groups']:
+        grant('executor', ('Read', 'Describe'), ('--group', name))
+        grant('oracle', ('Describe',), ('--group', name))
+    for principal in ('executor', 'writer'):
+        grant(principal, ('IdempotentWrite',), ('--cluster',))
+        grant(principal, ('Write', 'Describe'), ('--transactional-id', inventory['transactional_prefix'], '--resource-pattern-type', 'prefixed'))
+    return grants
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument('--platform', choices=tuple(PLATFORMS), default='arm64' if os.uname().machine == 'arm64' else 'amd64')
     parser.add_argument('--port', type=int, default=19392)
-    parser.add_argument('--suite', choices=('management', 'owned-seek'), default='management')
+    parser.add_argument('--suite', choices=('management', 'owned-seek', 'transactions'), default='management')
     parser.add_argument('--report', type=Path, required=True)
     args = parser.parse_args()
     suite = suite_definition(args.suite)
     oracle_password = ''
     password = ''
+    writer_password = ''
+    output_password = ''
     if not 1024 <= args.port <= 65533:
         parser.error('port must leave room for the two adjacent loopback fixture ports')
     if os.path.lexists(args.report) or os.path.lexists(args.report.with_suffix('.tests.txt')):
@@ -247,7 +295,7 @@ def main():
         if check and result.returncode:
             report['failed_operation'] = next((Path(value).name for value in argv if value.startswith('/opt/kafka/bin/')), ' '.join(argv[:2]))
             if argv[:2] == ['docker', 'exec'] and (scratch/'broker.key').is_file():
-                report['command_diagnostics'] = broker_error_summary(result.stdout + result.stderr, password, (scratch/'broker.key').read_text(), oracle_password)
+                report['command_diagnostics'] = broker_error_summary(result.stdout + result.stderr, password, (scratch/'broker.key').read_text(), oracle_password, writer_password, output_password)
             # Classify local container admission without retaining raw daemon or
             # provider output, which may include private configuration.
             if argv[:2] == ['docker', 'start']:
@@ -272,6 +320,18 @@ def main():
 
     try:
         report['free_before_bytes'] = headroom()
+        if args.suite == 'transactions':
+            report['source_sha256'] = {name: hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in (
+                'go.mod', 'go.sum', 'pkg/protocol/kafka/kafka.go',
+                'pkg/protocol/kafka/realclient_franz.go', 'pkg/protocol/kafka/owned_seek_fixture_test.go',
+                'pkg/protocol/kafka/transactions_fixture_test.go', 'pkg/protocol/kafka/transactions_fixture_controls_test.go',
+                'pkg/protocol/kafka/transactions_integration_test.go',
+                'scripts/kafka-management-fixture.py', 'scripts/test-kafka-transactions.sh')}
+            report['go_version'] = call(['go', 'version']).stdout.strip()
+            report['go_platform'] = call(['go', 'env', 'GOOS', 'GOARCH', 'CGO_ENABLED']).stdout.strip().splitlines()
+            report['test_command'] = suite['command']
+            report['requested_qualification_scope'] = 'fresh-source Apache Kafka 3.9.2 single-broker TLS/PLAIN LSO, atomic commit/abort and stale-producer fencing'
+            report['open_gates'] = ['restart-continuation', 'broker-recovery', 'transaction-revocation-and-cancellation', 'multi-broker', 'other-providers-or-authentication']
         raw = call(['docker', 'buildx', 'imagetools', 'inspect', IMAGE, '--raw']).stdout.encode()
         if 'sha256:' + hashlib.sha256(raw).hexdigest() != INDEX:
             raise RuntimeError('registry index does not match pinned digest')
@@ -282,10 +342,14 @@ def main():
         call(['docker', 'pull', '--platform', 'linux/' + args.platform, IMAGE], timeout=180)
         password = secrets.token_urlsafe(24)
         username = 'reader' if args.suite == 'management' else 'executor'
-        oracle_password = secrets.token_urlsafe(24) if args.suite == 'owned-seek' else ''
+        oracle_password = secrets.token_urlsafe(24) if args.suite in ('owned-seek', 'transactions') else ''
+        if args.suite == 'transactions':
+            writer_password, output_password = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
         plain_users = f'user_{username}=\"{password}\"'
         if oracle_password:
             plain_users += f' user_oracle=\"{oracle_password}\"'
+        if writer_password:
+            plain_users += f' user_writer=\"{writer_password}\" user_output=\"{output_password}\"'
         write('password', password + '\n')
         write('extensions.cnf', 'subjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n')
         write('ca.cnf', '[req]\ndistinguished_name=dn\nx509_extensions=ca\nprompt=no\n[dn]\nCN=APEX disposable Kafka CA\n[ca]\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\nsubjectKeyIdentifier=hash\n')
@@ -305,7 +369,7 @@ listener.security.protocol.map=SASL_SSL:SASL_SSL,SETUP:PLAINTEXT,CONTROLLER:PLAI
 controller.listener.names=CONTROLLER
 inter.broker.listener.name=SETUP
 log.dirs=/data/kafka
-num.partitions={1 if args.suite == 'management' else 3}
+num.partitions={3 if args.suite == 'owned-seek' else 1}
 auto.create.topics.enable=false
 offsets.topic.replication.factor=1
 offsets.topic.num.partitions=1
@@ -357,7 +421,7 @@ allow.everyone.if.no.acl.found=false
             for mechanism in ('SCRAM-SHA-256', 'SCRAM-SHA-512'):
                 scram = 'read -r fixture_password </fixture/password; exec /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9094 --alter --entity-type users --entity-name reader --add-config "' + mechanism + '=[iterations=8192,password=${fixture_password}]"'
                 call(setup + ['/bin/bash', '-c', scram])
-        else:
+        elif args.suite == 'owned-seek':
             suffix = secrets.token_hex(6)
             topic, unpolled_topic = 'seek-input-' + suffix, 'seek-unpolled-' + suffix
             group, peer_group = 'seek-workers-' + suffix, 'seek-peers-' + suffix
@@ -372,6 +436,12 @@ allow.everyone.if.no.acl.found=false
                     operation_flags = [flag for operation in operations for flag in ('--operation', operation)]
                     call(setup + ['/opt/kafka/bin/kafka-acls.sh', '--bootstrap-server', 'localhost:9094', '--add', '--allow-principal', 'User:' + principal, *operation_flags, '--group', name])
             call(setup + ['/opt/kafka/bin/kafka-acls.sh', '--bootstrap-server', 'localhost:9094', '--add', '--allow-principal', 'User:executor', '--operation', 'IdempotentWrite', '--cluster'])
+        else:
+            inventory = transaction_inventory(secrets.token_hex(6))
+            for name in inventory['topics']:
+                call(setup + ['/opt/kafka/bin/kafka-topics.sh', '--bootstrap-server', 'localhost:9094', '--create', '--topic', name, '--partitions', '1', '--replication-factor', '1'])
+            for flags in transaction_acl_plan(inventory):
+                call(setup + ['/opt/kafka/bin/kafka-acls.sh', '--bootstrap-server', 'localhost:9094', '--add', *flags])
         def data_usage(timeout=5):
             usage = call(setup + ['du', '-sk', '/data'], timeout=timeout).stdout.split()[0]
             total = int(usage) * 1024
@@ -383,6 +453,8 @@ allow.everyone.if.no.acl.found=false
         fixture = {'endpoint': f'tls://localhost:{args.port}', 'dial_address': f'127.0.0.1:{args.port}', 'broker_address': f'127.0.0.1:{args.port+1}', 'setup_address': f'127.0.0.1:{args.port+2}', 'ca_file': str(scratch/'ca.pem'), 'proxy_cert_file': str(scratch/'broker.crt'), 'proxy_key_file': str(scratch/'broker.key'), 'cluster_id': cluster_id, 'username': 'reader', 'password': password, 'mechanisms': ['plain', 'scram_sha_256', 'scram_sha_512'], 'topic': 'orders', 'group': 'workers', 'denied_group': 'denied-workers', 'expected_committed_next': '1', 'expected_high_watermark_next': '4', 'expected_last_stable_next': '4'}
         if args.suite == 'owned-seek':
             fixture = {'endpoint': f'tls://localhost:{args.port}', 'dial_address': f'127.0.0.1:{args.port}', 'broker_address': f'127.0.0.1:{args.port+1}', 'setup_address': f'127.0.0.1:{args.port+2}', 'ca_file': str(scratch/'ca.pem'), 'proxy_cert_file': str(scratch/'broker.crt'), 'proxy_key_file': str(scratch/'broker.key'), 'cluster_id': cluster_id, 'username': username, 'password': password, 'oracle_username': 'oracle', 'oracle_password': oracle_password, 'topic': topic, 'unpolled_topic': unpolled_topic, 'group': group, 'peer_group': peer_group, 'denied_group': 'denied-workers-' + suffix}
+        if args.suite == 'transactions':
+            fixture = {'endpoint': f'tls://localhost:{args.port}', 'dial_address': f'127.0.0.1:{args.port}', 'broker_address': f'127.0.0.1:{args.port+1}', 'setup_address': f'127.0.0.1:{args.port+2}', 'ca_file': str(scratch/'ca.pem'), 'proxy_cert_file': str(scratch/'broker.crt'), 'proxy_key_file': str(scratch/'broker.key'), 'cluster_id': cluster_id, 'username': username, 'password': password, 'oracle_username': 'oracle', 'oracle_password': oracle_password, 'writer_username': 'writer', 'writer_password': writer_password, 'output_username': 'output', 'output_password': output_password, **{key: value for key, value in inventory.items() if key not in ('topics', 'groups')}}
         fixture_path = write('fixture.json', json.dumps(fixture))
         env = dict(os.environ, **{suite['environment']: str(fixture_path)})
         # The fixture owns the complete test process group, including the Go
@@ -428,14 +500,14 @@ allow.everyone.if.no.acl.found=false
         if label + ':container' in report['created_resources'] and (scratch/'broker.key').is_file() and (scratch/'password').is_file():
             try:
                 logs = subprocess.run(['docker', 'logs', '--tail', '60', label], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=5)
-                report['broker_diagnostics'] = broker_error_summary(logs.stdout, (scratch/'password').read_text().strip(), (scratch/'broker.key').read_text(), oracle_password)
+                report['broker_diagnostics'] = broker_error_summary(logs.stdout, (scratch/'password').read_text().strip(), (scratch/'broker.key').read_text(), oracle_password, writer_password, output_password)
             except (OSError, subprocess.TimeoutExpired):
                 report['broker_diagnostic_status'] = 'unavailable'
         raise
     finally:
         # All test outcomes pass through evidence protection before the existing
         # independent resource cleanup; an unreadable key withholds the own log.
-        finalize_fixture_evidence(report, scratch, args.report.with_suffix('.tests.txt'), (password, oracle_password))
+        finalize_fixture_evidence(report, scratch, args.report.with_suffix('.tests.txt'), (password, oracle_password, writer_password, output_password))
         report['duration_seconds'] = round(time.monotonic()-started, 3)
         report['cleanup'] = []
         # Cleanup attempts are independent: one unavailable Docker operation

@@ -1,4 +1,4 @@
-//go:build kafka_real && kafka_seek_integration
+//go:build kafka_real && (kafka_seek_integration || kafka_transaction_integration)
 
 package kafka
 
@@ -187,6 +187,7 @@ type ownedSeekProxy struct {
 	holds                                []*ownedSeekHeldResponse
 	topic, group                         string
 	pipelinePeak                         int
+	transactions                         bool
 }
 
 func newOwnedSeekProxy(t *testing.T, ctx context.Context, f ownedSeekFixture, upstreamTLS *tls.Config) *ownedSeekProxy {
@@ -417,7 +418,7 @@ func (p *ownedSeekProxy) runPipeline(parent context.Context, client, upstream ne
 		key := int16(binary.BigEndian.Uint16(body[:2]))
 		version := int16(binary.BigEndian.Uint16(body[2:4]))
 		request := ownedSeekWireRequest{key: key, version: version, correlation: int32(binary.BigEndian.Uint32(body[4:8]))}
-		if !ownedSeekExecutionKey(key) {
+		if !p.executionKey(key) {
 			clear(body)
 			p.fail("execution proxy observed an unexpected API")
 			return
@@ -509,6 +510,21 @@ func (p *ownedSeekProxy) awaitHeld(ctx context.Context, held *ownedSeekHeldRespo
 	}
 }
 
+func (p *ownedSeekProxy) executionKey(key int16) bool {
+	if ownedSeekExecutionKey(key) {
+		return true
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.transactions {
+		return false
+	}
+	switch key {
+	case 24, 25, 26, 28: // AddPartitions/AddOffsets/EndTxn/TxnOffsetCommit only.
+		return true
+	}
+	return false
+}
 func ownedSeekExecutionKey(key int16) bool {
 	switch key {
 	case 0, 1, 2, 3, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 22, 23, 36:

@@ -33,7 +33,7 @@ class FixtureCleanupTest(unittest.TestCase):
                 fixture.bounded_fixture_test_output(path)
 
     def test_named_wrappers_refuse_switching_qualification_suites(self):
-        for name, other in (('test-kafka-management.sh', 'owned-seek'), ('test-kafka-owned-seek.sh', 'management')):
+        for name, other in (('test-kafka-management.sh', 'owned-seek'), ('test-kafka-owned-seek.sh', 'management'), ('test-kafka-transactions.sh', 'owned-seek')):
             with self.subTest(wrapper=name):
                 command = ['bash', str(Path(__file__).with_name(name)), '--suite', other]
                 result = subprocess.run(command, capture_output=True, text=True, timeout=10)
@@ -105,7 +105,7 @@ class FixtureCleanupTest(unittest.TestCase):
                        '\n'.join(required[:-1])):
             self.assertTrue(any(case not in output for case in required))
         with self.assertRaisesRegex(ValueError, 'unsupported'):
-            fixture.suite_definition('transactions')
+            fixture.suite_definition('unsupported-eos-profile')
 
     def test_execution_failure_diagnostics_redact_both_independent_identities(self):
         lines = fixture.broker_error_summary('Error executor=execution-private oracle=oracle-private\nException harmless',
@@ -285,6 +285,71 @@ class FixtureCleanupTest(unittest.TestCase):
             self.assertFalse(evidence['cleanup_verified'])
             self.assertTrue(evidence['scratch_removed'])
             self.assertEqual(evidence['status'], 'failed')
+
+
+
+
+class TransactionProfileTest(unittest.TestCase):
+    def test_transaction_profile_requires_three_distinct_actual_cases(self):
+        profile = fixture.suite_definition('transactions')
+        self.assertEqual(profile['environment'], 'APEXLOAD_KAFKA_TRANSACTION_FIXTURE')
+        self.assertIn('-tags=kafka_real,kafka_transaction_integration', profile['command'])
+        self.assertIn('^TestKafkaTransactionsActualBroker$', profile['command'])
+        self.assertEqual(profile['required'], (
+            '--- PASS: TestKafkaTransactionsActualBroker ',
+            '--- PASS: TestKafkaTransactionsActualBroker/read_committed_latest_lso ',
+            '--- PASS: TestKafkaTransactionsActualBroker/consume_transform_commit_abort ',
+            '--- PASS: TestKafkaTransactionsActualBroker/stale_producer_fencing '))
+        previous = fixture.suite_definition('owned-seek')
+        self.assertEqual(previous['environment'], 'APEXLOAD_KAFKA_SEEK_FIXTURE')
+        self.assertEqual(len(previous['required']), 5)
+        self.assertNotIn(profile['environment'], previous['command'])
+
+    def test_scope_uses_distinct_exact_topics_groups_and_short_uuid_safe_prefix(self):
+        inventory = fixture.transaction_inventory('123456abcdef')
+        self.assertEqual(len(set(inventory['topics'] + inventory['groups'])), 6)
+        self.assertEqual(inventory['transactional_prefix'], 'apex-txn-123456abcdef-')
+        self.assertLess(len(inventory['transactional_prefix']) + len('visibility') + 37, 249)
+        for bad in ('*', '123456abcdeg', '123456abcdef0', '../123456abc'):
+            with self.assertRaises(ValueError): fixture.transaction_inventory(bad)
+
+    def test_oracle_acl_is_describe_only_and_output_reader_never_joins_group(self):
+        inventory = fixture.transaction_inventory('123456abcdef')
+        plan = fixture.transaction_acl_plan(inventory)
+        for grant in plan:
+            principal = grant[grant.index('--allow-principal') + 1]
+            operations = [grant[i+1] for i, value in enumerate(grant) if value == '--operation']
+            self.assertNotIn('All', operations)
+            self.assertNotIn('*', grant)
+            if principal == 'User:oracle':
+                self.assertEqual(operations, ['Describe'])
+                self.assertTrue('--topic' in grant or '--group' in grant)
+            if principal == 'User:output':
+                self.assertEqual(operations, ['Read', 'Describe'])
+                self.assertEqual(grant[-2:], ['--topic', inventory['output_topic']])
+            if principal == 'User:writer':
+                self.assertNotIn('--group', grant)
+                self.assertNotIn('Read', operations)
+            if '--transactional-id' in grant:
+                self.assertIn(principal, ('User:executor', 'User:writer'))
+                self.assertEqual(operations, ['Write', 'Describe'])
+                self.assertEqual(grant[grant.index('--transactional-id') + 1], inventory['transactional_prefix'])
+                self.assertEqual(grant[-2:], ['--resource-pattern-type', 'prefixed'])
+        self.assertEqual(sum(grant[1] == 'User:oracle' for grant in plan), 6)
+        self.assertEqual(sum(grant[1] == 'User:output' for grant in plan), 1)
+
+    def test_all_four_transaction_credentials_are_redacted_on_failure(self):
+        with tempfile.TemporaryDirectory(prefix='apexload-kafka-txn-log-test-') as directory:
+            scratch = Path(directory)
+            (scratch/'broker.key').write_text('-----BEGIN PRIVATE KEY-----\nkeymaterial\n-----END PRIVATE KEY-----')
+            log = scratch/'report.tests.txt'
+            log.write_text('FAIL executor-private oracle-private writer-private output-private keymaterial')
+            report = {'status': 'passed', 'test_log_created': True}
+            fixture.finalize_fixture_evidence(report, scratch, log,
+                ['executor-private', 'oracle-private', 'writer-private', 'output-private'])
+            self.assertEqual(report['status'], 'failed')
+            self.assertEqual(log.read_text(), 'FAIL [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED]')
+            self.assertTrue(report['test_log_withheld_or_redacted'])
 
 
 if __name__ == '__main__':

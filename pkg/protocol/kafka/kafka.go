@@ -218,6 +218,19 @@ func (k *Kafka) Init(ctx context.Context, cfg map[string]any) error {
 		TLSClientKeyFile:      stringValue(cfg, "kafka_tls_client_key_file"),
 		TLSCACertFile:         stringValue(cfg, "kafka_tls_ca_cert_file"),
 	}
+	// The SDK defaults to uncommitted reads. Reject an explicitly unsupported
+	// isolation value before creating even a lazy client, so direct runtime
+	// callers cannot silently downgrade the requested visibility semantics.
+	if value, configured := cfg["kafka_isolation_level"]; configured {
+		if _, ok := value.(string); !ok {
+			return fmt.Errorf("kafka_isolation_level must be empty, read_committed, or read_uncommitted")
+		}
+	}
+	switch k.cfg.IsolationLevel {
+	case "", "read_committed", "read_uncommitted":
+	default:
+		return fmt.Errorf("kafka_isolation_level must be empty, read_committed, or read_uncommitted")
+	}
 	if k.cfg.ConsumerTransactions && (k.cfg.Mock || !realKafkaAvailable || k.cfg.TransactionalID == "" || k.cfg.ConsumerGroup == "" || k.cfg.IsolationLevel != "read_committed") {
 		return fmt.Errorf("Kafka consumer_transactions requires kafka_real, a non-mock consumer_group, transactional_id and read_committed isolation")
 	}
@@ -530,16 +543,20 @@ func (k *Kafka) Teardown(ctx context.Context) error {
 	if k.client == nil {
 		return nil
 	}
-	// Abort a transaction left open by the script so buffered records are not
-	// silently dropped and the rollback is accounted for.
+	// Count a rollback only after the broker confirms the abort. An uncertain
+	// outcome is terminal, but it must not prevent physical client cleanup.
+	var abortErr error
 	if k.txOpen {
-		_ = k.client.AbortTransaction(ctx)
+		abortErr = k.client.AbortTransaction(ctx)
 		k.txOpen, k.txBuffer, k.txBytes = false, nil, 0
-		if k.session != nil {
+		if abortErr != nil {
+			k.txPoisoned = true
+			abortErr = fmt.Errorf("abort open Kafka transaction during teardown: %w", abortErr)
+		} else if k.session != nil {
 			k.session.Rollback()
 		}
 	}
-	return k.client.Teardown(ctx)
+	return errors.Join(abortErr, k.client.Teardown(ctx))
 }
 
 func (k *Kafka) HealthCheck(ctx context.Context) error {
