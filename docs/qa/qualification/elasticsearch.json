@@ -1,0 +1,48 @@
+{
+  "schema": "apexload.provider_qualification.v1",
+  "provider": "elasticsearch",
+  "pack": "elastic-query",
+  "updated": "2026-10-05",
+  "required_permissions": [
+    "Read and search on the configured index pattern and fields only; no index administration, document write, cluster administration or Kibana privileges",
+    "OpenSearch: an internal user with basic authentication and the same read access"
+  ],
+  "environments": [],
+  "capabilities": [
+    {
+      "name": "metrics",
+      "summary": "Bucketed log counts, error counts and terms from elastic-query sources",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/api/elastic_query_test.go#TestElasticQueryCollectsUTCBucketsAndErrors", "pkg/api/elastic_query_test.go#TestElasticQueryLateDocumentUpdatesItsBucketThenSettles"],
+      "remaining": "A live Elasticsearch 7.x or 8.x cluster: search.max_buckets, late documents and terms truncation"
+    },
+    {
+      "name": "trace_lookup",
+      "summary": "Exemplar trace-ID lookups in the legacy ELK capture; elastic-query sources do not send trace IDs yet",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/api/exemplar_lookups_test.go#TestELKPollRecordsLookupOutcomesIncludingMisses"],
+      "remaining": "Lookups from elastic-query sources, then trace IDs indexed by a live SUT's logging"
+    },
+    {
+      "name": "opensearch_profile",
+      "summary": "The same bucketed search against OpenSearch with basic authentication",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/api/elastic_query_test.go#TestElasticQueryOpenSearchProfileCollectsWithBasicAuth", "pkg/api/elastic_query_test.go#TestOpenSearchSourcesRequireBasicAuthConnections"],
+      "remaining": "Live OpenSearch 1.x and 2.x clusters, including AWS OpenSearch Service with fine-grained access control"
+    },
+    {
+      "name": "deep_links",
+      "summary": "Kibana Discover links for archived exemplars",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/api/connection_links_test.go#TestExemplarAPIReturnsWorkingDeepLinks"],
+      "remaining": "Opening a generated link in live Kibana and OpenSearch Dashboards versions"
+    },
+    {
+      "name": "legacy_capture",
+      "summary": "Run-total log capture correlated by test and trace IDs",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/api/elk_monitoring_test.go#TestBuildELKSearchBodyUsesTestThenTraceCorrelation", "pkg/api/elastic_query_test.go#TestLegacyELKCaptureIsLabelledCumulative"],
+      "remaining": "A live cluster's field mappings"
+    }
+  ]
+}

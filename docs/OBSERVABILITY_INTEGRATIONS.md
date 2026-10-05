@@ -30,7 +30,53 @@ AppDynamics, Dynatrace and Prometheus query sources share the durable provider p
 | Prometheus query | `prometheus-query` | Polled at a fixed interval | Snapshot evaluations | 30 s / 15 s | Not used |
 | Elasticsearch query | `elastic-query` | Windowed, re-reading a five-minute overlap | Interval buckets | 60 s / 30 s | Not used (controller only) |
 
-Intervals may go up to 3,600 seconds. Dynatrace defaults to direct execution and is the provider that supports trace lookups. Collectors must advertise the provider's capability (`appdynamics.v1`, `dynatrace.v1` or `prometheus-query.v1`); a job whose collector lacks it records that provider's `collector_*_contract_unavailable` coverage reason.
+Intervals may go up to 3,600 seconds. Dynatrace defaults to direct execution. The registry marks Dynatrace and Elasticsearch query as trace-lookup providers: Dynatrace sources look up exemplar trace IDs, while Elasticsearch lookups run in the legacy ELK capture. An `elastic-query` search reserves room for a trace lookup but does not yet send exemplar trace IDs. Collectors must advertise the provider's capability (`appdynamics.v1`, `dynatrace.v1` or `prometheus-query.v1`); a job whose collector lacks it records that provider's `collector_*_contract_unavailable` coverage reason.
+
+### Provider qualification
+
+Each governed provider has a record in `docs/qa/qualification/<provider>.json`
+(`apexload.provider_qualification.v1`): its required permissions, any real
+environments it was checked against (product and API versions, non-production
+tenant type, permissions, observed limits and date) and an outcome per
+capability with its evidence. **Qualified** means checked against such an
+environment; **fixture-tested** means exercised only against fixtures that
+model the provider's documented contract, which does not establish
+compatibility with a licensed tenant. A `docs/qa` test requires a record for
+every provider in the registry, covering the capabilities the registry
+declares, with evidence that names existing test functions, and keeps this
+table in step with the records. Gate C needs a record for every provider in
+the RCA evaluation corpus; when that corpus's manifest lands (WP3.9), the test
+must also read its providers. Update a record when a
+qualification succeeds, then regenerate the table with
+`APEXLOAD_UPDATE_QUALIFICATION_TABLE=1 go test ./docs/qa -run TestQualificationTableMatchesRecords`.
+
+<!-- provider-qualification:begin -->
+| Provider | Capability | Status | Qualified on |
+| --- | --- | --- | --- |
+| AppDynamics | metrics | fixture-tested | — |
+| AppDynamics | diagnostics | fixture-tested | — |
+| AppDynamics | run header | fixture-tested | — |
+| AppDynamics | analytics | fixture-tested | — |
+| AppDynamics | private collector | fixture-tested | — |
+| Dynatrace | metrics | fixture-tested | — |
+| Dynatrace | diagnostics | fixture-tested | — |
+| Dynatrace | grail queries | fixture-tested | — |
+| Dynatrace | trace lookup | fixture-tested | — |
+| Dynatrace | run header | fixture-tested | — |
+| Dynatrace | deep links | fixture-tested | — |
+| Dynatrace | load phase annotations | fixture-tested | — |
+| Elasticsearch query | metrics | fixture-tested | — |
+| Elasticsearch query | trace lookup | fixture-tested | — |
+| Elasticsearch query | opensearch profile | fixture-tested | — |
+| Elasticsearch query | deep links | fixture-tested | — |
+| Elasticsearch query | legacy capture | fixture-tested | — |
+| Prometheus | metrics | qualified | Prometheus 2.55.1 (2026-10-04); Prometheus 3.13.0 (2026-10-04) |
+| Prometheus | diagnostics | qualified | Prometheus 2.55.1 (2026-10-04); Prometheus 3.13.0 (2026-10-04) |
+| Prometheus | discovery | qualified | Prometheus 2.55.1 (2026-10-04); Prometheus 3.13.0 (2026-10-04) |
+| Prometheus | private collector | fixture-tested | — |
+| Prometheus | azure managed prometheus | fixture-tested | — |
+| Prometheus | kubernetes presets | fixture-tested | — |
+<!-- provider-qualification:end -->
 
 ### Bucketed Elasticsearch capture
 

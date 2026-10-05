@@ -1,0 +1,63 @@
+{
+  "schema": "apexload.provider_qualification.v1",
+  "provider": "dynatrace",
+  "pack": "dynatrace",
+  "updated": "2026-10-05",
+  "required_permissions": [
+    "Classic Environment API token: metrics.read, entities.read, problems.read, events.read for the selected capabilities",
+    "Platform OAuth client or token: storage:logs:read, storage:events:read, storage:spans:read, storage:metrics:read, storage:entities:read, storage:smartscape:read and storage:buckets:read on approved buckets only",
+    "Lifecycle and load-phase webhooks: an events.ingest token on the receiving environment"
+  ],
+  "environments": [],
+  "capabilities": [
+    {
+      "name": "metrics",
+      "summary": "Classic metric buckets and Grail numeric series",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/dynatrace/collect_test.go#TestMetricBucketsPreserveEndTimestampNullZeroDimensionsAndUnits", "pkg/api/dynatrace_native_test.go#TestDynatraceNativeCanonicalRevisionsAndDisclosure"],
+      "remaining": "A licensed non-production SaaS tenant: record the tenant release and Environment API capabilities"
+    },
+    {
+      "name": "diagnostics",
+      "summary": "Problems and events",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/dynatrace/api_shapes_test.go#TestProblemsAndEventsDecodeDocumentedEntityStubs", "pkg/api/dynatrace_completeness_test.go#TestDynatraceDirectCollectionCompletesSelectedCoverageOnDocumentedResponses"],
+      "remaining": "Live problems and events with entity scope on a tenant"
+    },
+    {
+      "name": "grail_queries",
+      "summary": "Asynchronous Grail DQL with cancellation and scan budgets",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/dynatrace/grail_test.go#TestGrailTimeseriesTypedBucketsAndSampleProjection", "pkg/dynatrace/cancel_test.go#TestGrailContinuationBindsOriginatingPrincipalAndCancellation"],
+      "remaining": "Licensed Grail with observed scan costs and query limits"
+    },
+    {
+      "name": "trace_lookup",
+      "summary": "Exemplar trace lookups and observed traces",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/api/exemplar_lookups_test.go#TestProviderLookupOutcomesRecordMisses", "pkg/api/dynatrace_trace_correlation_test.go#TestDistributedDynatraceNativeMonitoringPersistsObservedTraces"],
+      "remaining": "A SUT instrumented by OneAgent or OTel ingest that propagates the run's traceparent"
+    },
+    {
+      "name": "run_header",
+      "summary": "Diagnostics correlated by the opt-in run header",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/dynatrace/grail_test.go#TestGrailTimeseriesTypedBucketsAndSampleProjection"],
+      "remaining": "Request-attribute capture of the run header on a tenant"
+    },
+    {
+      "name": "deep_links",
+      "summary": "Distributed-tracing links for archived exemplars",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/api/connection_links_test.go#TestExemplarAPIReturnsWorkingDeepLinks"],
+      "remaining": "Confirm the trace app URL and timeframe parameters on a live tenant"
+    },
+    {
+      "name": "load_phase_annotations",
+      "summary": "Load-phase events sent as custom annotations",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/api/phase_events_test.go#TestThreeStepRampSendsEachLevelEventOnce"],
+      "remaining": "Events v2 ingest on a tenant"
+    }
+  ]
+}

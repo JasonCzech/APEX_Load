@@ -1,0 +1,81 @@
+{
+  "schema": "apexload.provider_qualification.v1",
+  "provider": "prometheus",
+  "pack": "prometheus-query",
+  "updated": "2026-10-05",
+  "required_permissions": [
+    "Read-only HTTP API access: /api/v1/query, /api/v1/query_range, /api/v1/targets, /api/v1/alerts and the metadata/label/series discovery routes",
+    "Azure Monitor managed Prometheus: a data-reader role on the workspace for the configured identity"
+  ],
+  "environments": [
+    {
+      "id": "prometheus-2.55.1-linux-arm64",
+      "product": "Prometheus",
+      "product_version": "2.55.1",
+      "api_versions": ["HTTP API v1"],
+      "tenant_type": "disposable_non_production",
+      "permissions": ["Unauthenticated read-only HTTP API on an owned disposable server"],
+      "observed_limits": {},
+      "date": "2026-10-04",
+      "evidence": ["pkg/prometheus/testdata/compatibility-matrix.json", "pkg/prometheus/compatibility_test.go#TestPrometheusRealCompatibilityFixture"]
+    },
+    {
+      "id": "prometheus-3.13.0-linux-arm64",
+      "product": "Prometheus",
+      "product_version": "3.13.0",
+      "api_versions": ["HTTP API v1"],
+      "tenant_type": "disposable_non_production",
+      "permissions": ["Unauthenticated read-only HTTP API on an owned disposable server"],
+      "observed_limits": {},
+      "date": "2026-10-04",
+      "evidence": ["pkg/prometheus/testdata/compatibility-matrix.json", "pkg/prometheus/compatibility_test.go#TestPrometheusRealCompatibilityFixture"]
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "metrics",
+      "summary": "Range and terminal PromQL queries on the evaluation grid",
+      "outcome": "qualified",
+      "environments": ["prometheus-2.55.1-linux-arm64", "prometheus-3.13.0-linux-arm64"],
+      "evidence": ["pkg/prometheus/compatibility_test.go#TestPrometheusRealCompatibilityFixture", "pkg/api/prometheus_ingestion_test.go#TestPrometheusArchiveUsesCanonicalGridAndFrozenRules"],
+      "remaining": "Production proxy context paths, workload instrumentation, retained labels and source staleness"
+    },
+    {
+      "name": "diagnostics",
+      "summary": "Target and alert summaries",
+      "outcome": "qualified",
+      "environments": ["prometheus-2.55.1-linux-arm64", "prometheus-3.13.0-linux-arm64"],
+      "evidence": ["pkg/prometheus/compatibility_test.go#TestPrometheusRealCompatibilityFixture", "pkg/api/prometheus_ingestion_test.go#TestPrometheusPartialDiagnosticSnapshotDoesNotProveAbsence"],
+      "remaining": "Target scope on a production server"
+    },
+    {
+      "name": "discovery",
+      "summary": "Metric, label, label-value, series, metadata and target discovery",
+      "outcome": "qualified",
+      "environments": ["prometheus-2.55.1-linux-arm64", "prometheus-3.13.0-linux-arm64"],
+      "evidence": ["pkg/prometheus/compatibility_test.go#TestPrometheusRealCompatibilityFixture", "pkg/prometheus/client_test.go#TestDiscoveryExplicitTruncationAndAzureRestrictions"],
+      "remaining": ""
+    },
+    {
+      "name": "private_collector",
+      "summary": "Signed, sealed and fenced queries through an enrolled collector",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/collectoragent/prometheus_test.go#TestPrometheusCollectorExecutesSignedScopedQueryAndPreservesEmptyOrFailedCoverage"],
+      "remaining": "On-premises origin, CIDR, CA and mTLS approval, persistent keys, restart and HA artifact identity"
+    },
+    {
+      "name": "azure_managed_prometheus",
+      "summary": "Azure Monitor workspace queries with Entra identities",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/prometheus/client_test.go#TestAzureExplicitAudienceRefreshAndCaseIdentity"],
+      "remaining": "Live workspace query origin, RBAC, managed, workload and service-principal tokens, rotation and service quotas"
+    },
+    {
+      "name": "kubernetes_presets",
+      "summary": "Pod CPU, memory, restarts, OOM kills and Deployment/HPA replica presets",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/prometheus/dashboard_presets_test.go#TestDashboardPresetsValidate"],
+      "remaining": "A live cluster with kube-state-metrics and kubelet cAdvisor scrape jobs"
+    }
+  ]
+}
