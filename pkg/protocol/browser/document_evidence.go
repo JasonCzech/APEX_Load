@@ -377,12 +377,34 @@ func (b *Browser) censorDocumentEvidence(page playwright.Page, boundary string) 
 		d.ended = true
 	}
 }
+func (b *Browser) finalizeDocumentFrameBatch(ctx context.Context, frames []playwright.Frame, finalizer string) {
+	for _, frame := range frames {
+		if ctx.Err() != nil {
+			return
+		}
+		_, err := frame.Evaluate(fmt.Sprintf("async () => { const f=globalThis[%q]; if(typeof f==='function') await f('graceful_end'); }", finalizer))
+		if err != nil {
+			// A stale frame does not prove page/sibling death. The final shared
+			// boundary censors unresolved documents after every live attempt.
+			continue
+		}
+	}
+}
+
 func (b *Browser) finalizeDocumentEvidence(ctx context.Context) {
 	b.mu.Lock()
-	frames := make(map[playwright.Frame]playwright.Page)
-	for _, doc := range b.evidence.documents {
-		if !doc.ended {
-			frames[doc.frame] = doc.page
+	keys := make([]string, 0, len(b.evidence.documents))
+	for key := range b.evidence.documents {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	frames := make([]playwright.Frame, 0, len(keys))
+	seen := make(map[playwright.Frame]bool)
+	for _, key := range keys {
+		doc := b.evidence.documents[key]
+		if !doc.ended && doc.frame != nil && !seen[doc.frame] {
+			seen[doc.frame] = true
+			frames = append(frames, doc.frame)
 		}
 	}
 	finalizer := b.evidence.finalizer
@@ -406,15 +428,7 @@ func (b *Browser) finalizeDocumentEvidence(ctx context.Context) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for frame, page := range frames {
-			if bounded.Err() != nil {
-				return
-			}
-			_, err := frame.Evaluate(fmt.Sprintf("async () => { const f=globalThis[%q]; if(typeof f==='function') await f('graceful_end'); }", finalizer))
-			if err != nil {
-				b.censorDocumentEvidence(page, "context_closed")
-			}
-		}
+		b.finalizeDocumentFrameBatch(bounded, frames, finalizer)
 	}()
 	<-done
 	if !stopClose() {
