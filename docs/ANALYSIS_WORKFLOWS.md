@@ -320,9 +320,10 @@ its result and is not reported as truncated. A stage is not interrupted part
 way: validity is linear (about 0.2 µs per resource sample), so it reaches the
 wall limit only on inputs of hundreds of millions of rows. The heap limit
 applies to the live heap's growth since the analysis started, measured
-process-wide, so two concurrent analyses see each other's growth. Running
-analyses inside the analytical worker limits arrives with the analysis
-service; until then the engine is not invoked by any job.
+process-wide, so two concurrent analyses see each other's growth. Analysis
+jobs run in the controller process, at most two at a time (see the
+root-cause analysis service below); they do not take the native analytical
+pipeline's single slot, whose limits govern DuckDB imports and queries.
 
 Until onset detection lands, an assessment judges acceptance (the run's SLA
 verdict) and validity, and its outcome is `insufficient_evidence` with a
@@ -341,6 +342,59 @@ Times are from a quiet machine; under heavy load (load average about 15) the
 same runs took about 2.5 ms and 290–305 ms. Allocation does not vary.
 
 Rerun with `go test ./pkg/rca -run '^$' -bench BenchmarkRCAAnalyze -benchtime 5x`.
+
+## Root-cause analysis service
+
+v2 root-cause analyses run as revisioned jobs over a run's archive.
+`APEXLOAD_RCA_V2_PROJECTS` lets a project compute them; saved analyses stay
+readable when the project leaves that list. `APEXLOAD_RCA_V2_PRESENT_PROJECTS`
+marks the projects whose Summary, Diagnostics and reports present v2 (each
+response carries `presented`); v1 routes, explain, AI root-cause and the v1
+MCP tools keep returning v1.
+
+| Route | Access | Returns |
+| --- | --- | --- |
+| `POST /api/v1/tests/{id}/archive/root-cause/analyses` | Editor | 202 with the queued analysis; body `{enrich, baseline_test_id}`. Identical frozen inputs return the existing analysis with 200 |
+| `GET /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}` | Viewer | State (`queued`, `running`, `completed`, `failed`, `cancelled`), inputs and, once completed, the `apexload.root_cause.v2` assessment |
+| `POST /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/cancel` | Editor | The cancelled analysis; 409 when it already ended |
+| `GET /api/v1/tests/{id}/archive/root-cause/v2` | Viewer | The latest completed analysis, or `{"state":"none"}` |
+| `GET /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle` | Viewer | `apexload.rca_bundle.v1`: the assessment and its evidence revision, at most 256 KiB (`truncated` when windows or evidence were cut) |
+
+- **Frozen inputs.** An analysis's `input_digest` hashes the archive's
+  manifest digest, the evidence revision, the baseline archive's digest, the
+  mapping and policy revisions (none yet) and the engine version. A POST
+  whose digest matches a queued, running or completed analysis returns it;
+  a failed or cancelled one can be retried. A run keeps at most 200
+  analyses and 200 evidence revisions.
+- **Evidence revisions** freeze the archive's evidence sidecars and the run's
+  monitor sources with their outcomes. A POST captures one when the run has
+  none, when the archive changed since the latest, or when `enrich` is true.
+  `APEXLOAD_RCA_AUTO_ENRICH_PROJECTS` captures an enriched revision at archive
+  finalize. Provider evidence pulls (traces, logs) arrive with onset
+  detection; until then enrichment records the same inventory.
+- **Jobs** run on the execution leader, at most two at a time per controller,
+  inside the engine's budgets. A job holds the archive's materialization
+  lease while it reads; an analysis whose archive changed after the request
+  fails rather than judging different evidence. A claimed job holds a
+  five-minute lease, renewed while it runs; if its controller stalls, shuts
+  down or loses leadership, another takes it over once the lease expires,
+  and the stalled owner's late result is rejected, so each analysis records
+  one outcome. A job that panics fails instead of being retried.
+  Cancellation stops the running job, on another controller once its next
+  renewal finds the analysis cancelled, and discards its result.
+- **Retention.** Analyses and evidence revisions are deleted with their run,
+  their project, or the run's archive.
+- **Baselines.** `baseline_test_id` names an archived run in the same
+  project; its workload qualification against the run appears as `baseline`
+  coverage.
+- **Clients.** `apexctl rca analyze --id RUN [--enrich] [--baseline-id RUN]`,
+  `apexctl rca status --id RUN --analysis-id ID`, `apexctl rca show --id RUN`
+  and `apexctl rca bundle --id RUN --analysis-id ID`; MCP tools
+  `run_rca_analyze`, `run_rca_status`, `run_rca_assessment` and
+  `run_rca_bundle`.
+
+Schema release 37 (`rca-analysis-revisions`) adds `rca_evidence_revisions`
+and `rca_analyses`.
 
 ## Preparation capacity policies
 

@@ -2,9 +2,7 @@ package api
 
 import (
 	"fmt"
-	"os"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
@@ -21,12 +19,7 @@ type StatisticalFinding struct {
 }
 
 func diagnosticsProjectEnabled(project string) bool {
-	for _, configured := range strings.Split(os.Getenv("APEXLOAD_DIAGNOSTICS_PROJECTS"), ",") {
-		if project != "" && strings.TrimSpace(configured) == project {
-			return true
-		}
-	}
-	return false
+	return projectListed("APEXLOAD_DIAGNOSTICS_PROJECTS", project)
 }
 
 // Statistical windows must be consecutive and have the same load and sampling

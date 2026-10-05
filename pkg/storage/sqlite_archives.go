@@ -211,8 +211,19 @@ func (s *SQLiteStore) DeleteRunArchive(testID string) error {
 	if strings.TrimSpace(testID) == "" {
 		return errors.New("test id is required")
 	}
-	_, err := s.db.Exec(`DELETE FROM run_archives WHERE test_id = ?`, testID)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM run_archives WHERE test_id = ?`, testID); err != nil {
+		return err
+	}
+	// Root-cause analyses read the archive; they go with it.
+	if err := deleteRCAForTestTx(tx, testID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // DeleteRunArchiveIfUnchanged removes exactly the publication described by
@@ -222,7 +233,12 @@ func (s *SQLiteStore) DeleteRunArchiveIfUnchanged(expected *RunArchiveRecord) (b
 	if expected == nil || strings.TrimSpace(expected.TestID) == "" {
 		return false, errors.New("expected run archive is required")
 	}
-	result, err := s.db.Exec(`DELETE FROM run_archives
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`DELETE FROM run_archives
 		WHERE test_id = ?
 		  AND COALESCE(ref_key, '') = ?
 		  AND schema_version = ?
@@ -256,7 +272,14 @@ func (s *SQLiteStore) DeleteRunArchiveIfUnchanged(expected *RunArchiveRecord) (b
 		return false, err
 	}
 	affected, err := result.RowsAffected()
-	return affected > 0, err
+	if err != nil || affected == 0 {
+		return false, err
+	}
+	// Root-cause analyses read the archive; they go with it.
+	if err := deleteRCAForTestTx(tx, expected.TestID); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
 }
 
 func (s *SQLiteStore) SaveReleaseSLAWaiver(waiver *ReleaseSLAWaiver) error {

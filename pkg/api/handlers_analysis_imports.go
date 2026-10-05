@@ -45,12 +45,7 @@ func admitAnalysisPipeline(w http.ResponseWriter) bool {
 }
 
 func analysisProjectEnabled(project string) bool {
-	for _, p := range strings.Split(os.Getenv("APEXLOAD_ANALYSIS_PROJECTS"), ",") {
-		if strings.TrimSpace(p) == project && project != "" {
-			return true
-		}
-	}
-	return false
+	return projectListed("APEXLOAD_ANALYSIS_PROJECTS", project)
 }
 func resolveAnalysisProject(r *http.Request, _ storage.Store) (string, int, string) {
 	p := strings.TrimSpace(r.URL.Query().Get("project_id"))

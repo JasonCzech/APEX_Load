@@ -893,4 +893,11 @@ var accessRequirementGolden = map[string]string{
 	"GET /api/v1/projects/sample-id/monitoring/connection-links/sample-kind/sample-connection-id": "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
 	"PUT /api/v1/projects/sample-id/monitoring/connection-links/sample-kind/sample-connection-id": "auth=false global=project_admin,system_admin project=project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
 	"GET /api/v1/tests/sample-id/archive/exemplars":                                               "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
+
+	// Root-cause v2 analyses (WP3.5).
+	"POST /api/v1/tests/sample-id/archive/root-cause/analyses":                           "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=16384 featureID=",
+	"GET /api/v1/tests/sample-id/archive/root-cause/analyses/sample-analysis-id":         "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
+	"POST /api/v1/tests/sample-id/archive/root-cause/analyses/sample-analysis-id/cancel": "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
+	"GET /api/v1/tests/sample-id/archive/root-cause/analyses/sample-analysis-id/bundle":  "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
+	"GET /api/v1/tests/sample-id/archive/root-cause/v2":                                  "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
 }

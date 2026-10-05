@@ -6406,6 +6406,56 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/archive/root-cause/analyses",
+      "operationId": "handleCreateRCAAnalysis",
+      "summary": "Create RCA Analysis",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}",
+      "operationId": "handleGetRCAAnalysis",
+      "summary": "Get RCA Analysis",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle",
+      "operationId": "handleGetRCABundle",
+      "summary": "Get RCA Bundle",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/cancel",
+      "operationId": "handleCancelRCAAnalysis",
+      "summary": "Cancel RCA Analysis",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/root-cause/v2",
+      "operationId": "handleGetRCAAssessmentV2",
+      "summary": "Get RCA Assessment V2",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/tests/{id}/archive/summaries",
       "operationId": "handleGetRunArchiveSummaries",

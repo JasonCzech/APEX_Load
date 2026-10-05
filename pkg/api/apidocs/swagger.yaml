@@ -319926,6 +319926,397 @@ paths:
       tags:
         - Tests
       x-handler: handleGetRunArchiveRootCause
+  /api/v1/tests/{id}/archive/root-cause/analyses:
+    post:
+      summary: Create RCA Analysis
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      operationId: handleCreateRCAAnalysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                baseline_test_id:
+                  type: string
+                enrich:
+                  type: boolean
+      responses:
+        2XX:
+          description: Successful response; exact status is selected by the handler.
+          content:
+            application/json:
+              schema:
+                description: Operation-specific JSON response.
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleCreateRCAAnalysis
+  /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}:
+    get:
+      summary: Get RCA Analysis
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleGetRCAAnalysis
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  analysis_id:
+                    type: string
+                  assessment:
+                    type: object
+                    description: 'Go type: rca.Assessment'
+                    additionalProperties: true
+                    nullable: true
+                  completed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  created_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  error:
+                    type: string
+                  inputs:
+                    type: object
+                    description: 'Go type: rca.InputDigests'
+                    additionalProperties: true
+                    nullable: true
+                  presented:
+                    type: boolean
+                  revision:
+                    type: integer
+                    format: int64
+                  state:
+                    type: string
+                required:
+                  - presented
+                  - state
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: analysis_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleGetRCAAnalysis
+  /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle:
+    get:
+      summary: Get RCA Bundle
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleGetRCABundle
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  analysis_id:
+                    type: string
+                  assessment:
+                    type: object
+                    description: 'Go type: rca.Assessment'
+                    additionalProperties: true
+                  evidence:
+                    nullable: true
+                  evidence_revision:
+                    type: integer
+                    format: int64
+                  revision:
+                    type: integer
+                    format: int64
+                  schema:
+                    type: string
+                  truncated:
+                    type: boolean
+                required:
+                  - analysis_id
+                  - assessment
+                  - evidence_revision
+                  - revision
+                  - schema
+                  - truncated
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: analysis_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleGetRCABundle
+  /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/cancel:
+    post:
+      summary: Cancel RCA Analysis
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      operationId: handleCancelRCAAnalysis
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  analysis_id:
+                    type: string
+                  assessment:
+                    type: object
+                    description: 'Go type: rca.Assessment'
+                    additionalProperties: true
+                    nullable: true
+                  completed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  created_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  error:
+                    type: string
+                  inputs:
+                    type: object
+                    description: 'Go type: rca.InputDigests'
+                    additionalProperties: true
+                    nullable: true
+                  presented:
+                    type: boolean
+                  revision:
+                    type: integer
+                    format: int64
+                  state:
+                    type: string
+                required:
+                  - presented
+                  - state
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: analysis_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleCancelRCAAnalysis
+  /api/v1/tests/{id}/archive/root-cause/v2:
+    get:
+      summary: Get RCA Assessment V2
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleGetRCAAssessmentV2
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  analysis_id:
+                    type: string
+                  assessment:
+                    type: object
+                    description: 'Go type: rca.Assessment'
+                    additionalProperties: true
+                    nullable: true
+                  completed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  created_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  error:
+                    type: string
+                  inputs:
+                    type: object
+                    description: 'Go type: rca.InputDigests'
+                    additionalProperties: true
+                    nullable: true
+                  presented:
+                    type: boolean
+                  revision:
+                    type: integer
+                    format: int64
+                  state:
+                    type: string
+                required:
+                  - presented
+                  - state
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleGetRCAAssessmentV2
   /api/v1/tests/{id}/archive/summaries:
     get:
       summary: Get Run Archive Summaries

@@ -265,3 +265,37 @@ async def test_dynatrace_native_operations_revision_and_evidence_parity():
     assert seen[-1].url.params["kind"] == "span"
     assert "target or alert" in tool("run_monitor_evidence").description
     assert "problem, span and trace" in tool("run_monitor_evidence").description
+
+
+@pytest.mark.asyncio
+async def test_rca_v2_tools_call_expected_routes():
+    seen: list[tuple[str, str, bytes]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, request.content))
+        return httpx.Response(202, json={"analysis_id": "a1", "state": "queued"})
+
+    client = APEXLoadClient(
+        APEXLoadClientConfig(base_url="http://storm.test/api/v1"),
+        transport=httpx.MockTransport(handler),
+    )
+    unconfirmed = json.loads(await run_endpoint_tool(tool("run_rca_analyze"), client=client, path_params={"id": "run-1"}, payload={"enrich": True}))
+    assert unconfirmed["ok"] is False and seen == []
+
+    calls = [
+        (tool("run_rca_analyze"), {"path_params": {"id": "run-1"}, "payload": {"enrich": True}, "confirm": True}),
+        (tool("run_rca_status"), {"path_params": {"id": "run-1", "analysis_id": "a1"}}),
+        (tool("run_rca_assessment"), {"path_params": {"id": "run-1"}}),
+        (tool("run_rca_bundle"), {"path_params": {"id": "run-1", "analysis_id": "a1"}}),
+    ]
+    for spec, kwargs in calls:
+        result = json.loads(await run_endpoint_tool(spec, client=client, **kwargs))
+        assert result["ok"] is True
+
+    assert [(method, path) for method, path, _ in seen] == [
+        ("POST", "/api/v1/tests/run-1/archive/root-cause/analyses"),
+        ("GET", "/api/v1/tests/run-1/archive/root-cause/analyses/a1"),
+        ("GET", "/api/v1/tests/run-1/archive/root-cause/v2"),
+        ("GET", "/api/v1/tests/run-1/archive/root-cause/analyses/a1/bundle"),
+    ]
+    assert json.loads(seen[0][2]) == {"enrich": True}

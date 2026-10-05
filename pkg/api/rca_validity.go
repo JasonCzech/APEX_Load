@@ -85,6 +85,13 @@ func archiveRunValidity(manifest *RunArchiveManifest, intervals []rca.ValidityIn
 	if manifest == nil {
 		return nil
 	}
+	validity := rca.AssessValidity(archiveValidityInput(manifest, intervals, summaries, resources), rca.DefaultValidityRules)
+	return &validity
+}
+
+// archiveValidityInput is the evidence the validity verdict reads from an
+// archive.
+func archiveValidityInput(manifest *RunArchiveManifest, intervals []rca.ValidityInterval, summaries []IntervalSummaryRecord, resources []ResourceSample) rca.ValidityInput {
 	input := rca.ValidityInput{ArrivalModel: archiveArrivalModel(manifest.Provenance.Workload), Intervals: intervals}
 
 	// A distributed run names its generators; its samples must say which one
@@ -131,8 +138,7 @@ func archiveRunValidity(manifest *RunArchiveManifest, intervals []rca.ValidityIn
 		sort.Strings(input.Generators)
 	}
 	input.SteadyLevels = archiveSteadyLevels(summaries, archiveRunStarted(manifest), input.ArrivalModel)
-	validity := rca.AssessValidity(input, rca.DefaultValidityRules)
-	return &validity
+	return input
 }
 
 // archiveSteadyLevels are the spans where the offered load held steady: the

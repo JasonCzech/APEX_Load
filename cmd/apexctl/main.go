@@ -36,6 +36,7 @@ var apexctlCommandHandlers = map[string]func(){
 	"prepare":      prepareCmd,
 	"monitor":      monitorCmd,
 	"analysis":     analysisCmd,
+	"rca":          rcaCmd,
 	"appdynamics":  appDynamicsCmd,
 	"prometheus":   prometheusCmd,
 	"dynatrace":    dynatraceCmd,

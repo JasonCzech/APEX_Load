@@ -234,3 +234,40 @@ func TestMonitorMergedCommandsPreserveDistinctDefaultPageBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestRCAWorkflowCommands(t *testing.T) {
+	var gotPath, gotMethod string
+	var body map[string]any
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotMethod, body = r.URL.Path, r.Method, nil
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"state":"queued"}`))
+	}))
+	defer s.Close()
+	for _, tc := range []struct {
+		args         []string
+		method, path string
+	}{
+		{[]string{"analyze", "--id", "run", "--enrich", "--baseline-id", "base"}, "POST", "/api/v1/tests/run/archive/root-cause/analyses"},
+		{[]string{"status", "--id", "run", "--analysis-id", "a1"}, "GET", "/api/v1/tests/run/archive/root-cause/analyses/a1"},
+		{[]string{"show", "--id", "run"}, "GET", "/api/v1/tests/run/archive/root-cause/v2"},
+		{[]string{"bundle", "--id", "run", "--analysis-id", "a1"}, "GET", "/api/v1/tests/run/archive/root-cause/analyses/a1/bundle"},
+	} {
+		var output bytes.Buffer
+		if err := executeWorkflowCommand(context.Background(), "rca", append(tc.args, "--api", s.URL), &output); err != nil {
+			t.Fatal(err)
+		}
+		if gotPath != tc.path || gotMethod != tc.method || !strings.Contains(output.String(), "queued") {
+			t.Fatalf("%v: request %s %s", tc.args, gotMethod, gotPath)
+		}
+		if tc.args[0] == "analyze" && (body["enrich"] != true || body["baseline_test_id"] != "base") {
+			t.Fatalf("analyze body %+v", body)
+		}
+	}
+	for _, args := range [][]string{{"show"}, {"status", "--id", "run"}, {"retry", "--id", "run"}} {
+		if err := executeWorkflowCommand(context.Background(), "rca", append(args, "--api", s.URL), &bytes.Buffer{}); err == nil {
+			t.Fatalf("%v accepted", args)
+		}
+	}
+}

@@ -21427,6 +21427,55 @@ export interface operations {
       };
     };
   };
+  "handleCancelRCAAnalysis": {
+    parameters: {
+      "path": {
+        "analysis_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "analysis_id"?: string;
+            "assessment"?: (Record<string, unknown>) | null;
+            "completed_at"?: (string) | null;
+            "created_at"?: (string) | null;
+            "error"?: string;
+            "inputs"?: (Record<string, unknown>) | null;
+            "presented": boolean;
+            "revision"?: number;
+            "state": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleCheckCapacityAvailability": {
     parameters?: never;
     requestBody: {
@@ -29205,6 +29254,66 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleCreateRCAAnalysis": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "baseline_test_id"?: string;
+          "enrich"?: boolean;
+        };
+      };
+    };
+    responses: {
+      "2XX": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -54139,6 +54248,135 @@ export interface operations {
         };
       };
       "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetRCAAnalysis": {
+    parameters: {
+      "path": {
+        "analysis_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "analysis_id"?: string;
+            "assessment"?: (Record<string, unknown>) | null;
+            "completed_at"?: (string) | null;
+            "created_at"?: (string) | null;
+            "error"?: string;
+            "inputs"?: (Record<string, unknown>) | null;
+            "presented": boolean;
+            "revision"?: number;
+            "state": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetRCAAssessmentV2": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "analysis_id"?: string;
+            "assessment"?: (Record<string, unknown>) | null;
+            "completed_at"?: (string) | null;
+            "created_at"?: (string) | null;
+            "error"?: string;
+            "inputs"?: (Record<string, unknown>) | null;
+            "presented": boolean;
+            "revision"?: number;
+            "state": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetRCABundle": {
+    parameters: {
+      "path": {
+        "analysis_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "analysis_id": string;
+            "assessment": Record<string, unknown>;
+            "evidence"?: (unknown) | null;
+            "evidence_revision": number;
+            "revision": number;
+            "schema": string;
+            "truncated": boolean;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -145476,6 +145714,21 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/root-cause": {
     "get": operations["handleGetRunArchiveRootCause"];
+  };
+  "/api/v1/tests/{id}/archive/root-cause/analyses": {
+    "post": operations["handleCreateRCAAnalysis"];
+  };
+  "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}": {
+    "get": operations["handleGetRCAAnalysis"];
+  };
+  "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle": {
+    "get": operations["handleGetRCABundle"];
+  };
+  "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/cancel": {
+    "post": operations["handleCancelRCAAnalysis"];
+  };
+  "/api/v1/tests/{id}/archive/root-cause/v2": {
+    "get": operations["handleGetRCAAssessmentV2"];
   };
   "/api/v1/tests/{id}/archive/summaries": {
     "get": operations["handleGetRunArchiveSummaries"];

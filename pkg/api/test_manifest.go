@@ -879,6 +879,9 @@ func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTe
 	if err := refreshRunArchiveManifestTrust(record); err != nil {
 		return err
 	}
+	// Enrichment runs once the archive is final, for gated projects, before
+	// provider retention can expire the run's evidence.
+	tr.autoEnrichRCAEvidence(test, record, archiveManifest)
 	return nil
 }
 

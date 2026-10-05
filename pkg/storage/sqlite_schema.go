@@ -1750,6 +1750,29 @@ func schemaCreateTableStatements() []string {
 			captured_at DATETIME NOT NULL,
 			FOREIGN KEY(test_id) REFERENCES tests(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS rca_evidence_revisions (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			test_id TEXT NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
+			revision BIGINT NOT NULL,
+			created_at DATETIME NOT NULL,
+			payload TEXT NOT NULL,
+			UNIQUE(test_id, revision)
+		)`,
+		`CREATE TABLE IF NOT EXISTS rca_analyses (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			test_id TEXT NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
+			revision BIGINT NOT NULL,
+			state TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			completed_at DATETIME,
+			input_digest TEXT NOT NULL,
+			payload TEXT NOT NULL,
+			owner TEXT NOT NULL DEFAULT '',
+			lease_expires_at DATETIME,
+			UNIQUE(test_id, revision)
+		)`,
 	}
 }
 
@@ -2160,6 +2183,8 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_audit_events_resource_created ON audit_events(resource_type, resource_id, created_at)`, "idx_audit_events_resource_created"},
 	{`CREATE INDEX IF NOT EXISTS idx_usage_snapshots_created ON usage_accounting_snapshots(created_at)`, "idx_usage_snapshots_created"},
 	{`CREATE INDEX IF NOT EXISTS idx_usage_snapshots_project_created ON usage_accounting_snapshots(project_id, created_at)`, "idx_usage_snapshots_project_created"},
+	{`CREATE INDEX IF NOT EXISTS idx_rca_analyses_test_digest ON rca_analyses(test_id, input_digest)`, "idx_rca_analyses_test_digest"},
+	{`CREATE INDEX IF NOT EXISTS idx_rca_analyses_claim ON rca_analyses(state, lease_expires_at)`, "idx_rca_analyses_claim"},
 }
 
 func (s *SQLiteStore) init() error {

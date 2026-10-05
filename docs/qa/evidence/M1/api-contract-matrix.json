@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 694,
+    "routes": 699,
     "public": 27,
-    "protected": 667,
-    "rbac": 662,
+    "protected": 672,
+    "rbac": 667,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 694,
+    "green": 699,
     "partial": 0,
     "missing": 0
   },
@@ -14921,6 +14921,137 @@
       "method": "GET",
       "path": "/api/v1/tests/{id}/archive/root-cause",
       "operation_id": "handleGetRunArchiveRootCause",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/archive/root-cause/analyses",
+      "operation_id": "handleCreateRCAAnalysis",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "tests:run"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}",
+      "operation_id": "handleGetRCAAnalysis",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle",
+      "operation_id": "handleGetRCABundle",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/cancel",
+      "operation_id": "handleCancelRCAAnalysis",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "tests:run"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/root-cause/v2",
+      "operation_id": "handleGetRCAAssessmentV2",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

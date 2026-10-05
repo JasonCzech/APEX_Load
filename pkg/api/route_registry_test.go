@@ -439,7 +439,7 @@ func TestArchiveAPIRoutesUseModularCatalogs(t *testing.T) {
 			}
 		}
 	}
-	if got, want := len(modular), 18; got != want {
+	if got, want := len(modular), 23; got != want {
 		t.Fatalf("modular archive route count = %d, want %d", got, want)
 	}
 
@@ -494,6 +494,9 @@ func TestArchiveRouteCatalogPreservesAccessContracts(t *testing.T) {
 		"/api/v1/tests/{id}/archive/analysis",
 		"/api/v1/tests/{id}/archive/root-cause",
 		"/api/v1/tests/{id}/archive/ai-root-cause",
+		"/api/v1/tests/{id}/archive/root-cause/v2",
+		"/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}",
+		"/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle",
 		"/api/v1/tests/{id}/archive/comparison",
 	}
 	for _, path := range readPaths {
@@ -511,7 +514,7 @@ func TestArchiveRouteCatalogPreservesAccessContracts(t *testing.T) {
 			}
 			assertAccessRequirementEqual(t, documented, viewerProjectAccess(resolveTestProjectID))
 
-			concrete := strings.NewReplacer("{id}", "run-1", "{name}", "artifact.json").Replace(path)
+			concrete := strings.NewReplacer("{id}", "run-1", "{name}", "artifact.json", "{analysis_id}", "analysis-1").Replace(path)
 			req := httptest.NewRequest(http.MethodGet, concrete, nil)
 			req.SetPathValue("id", "run-1")
 			req.SetPathValue("name", "artifact.json")

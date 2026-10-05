@@ -1762,6 +1762,9 @@ func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
 	if _, err := tx.Exec(`DELETE FROM test_history WHERE test_id = ?`, id); err != nil {
 		return err
 	}
+	if err := deleteRCAForTestTx(tx, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM test_notes WHERE test_id = ?`, id); err != nil {
 		return err
 	}

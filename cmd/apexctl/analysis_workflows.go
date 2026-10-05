@@ -23,6 +23,7 @@ import (
 func prepareCmd()  { workflowCommand("prepare") }
 func monitorCmd()  { workflowCommand("monitor") }
 func analysisCmd() { workflowCommand("analysis") }
+func rcaCmd()      { workflowCommand("rca") }
 
 func workflowCommand(kind string) {
 	if err := executeWorkflowCommand(context.Background(), kind, os.Args[2:], os.Stdout); err != nil {
@@ -71,6 +72,9 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	metric := flags.String("metric", "", "monitor metric name filter")
 	evidenceKind := flags.String("kind", "", "diagnostic kind filter: event, violation, snapshot, log, transaction, target or alert; Dynatrace also supports problem, span and trace")
 	afterKey := flags.String("after-key", "", "monitor evidence pagination cursor")
+	analysisID := flags.String("analysis-id", "", "root-cause v2 analysis ID")
+	enrich := flags.Bool("enrich", false, "capture a new root-cause evidence revision before analysis")
+	baselineID := flags.String("baseline-id", "", "baseline run for root-cause analysis")
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -108,6 +112,28 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 		return nil
 	}
 	switch kind {
+	case "rca":
+		if err := requireID(); err != nil {
+			return err
+		}
+		base := "/api/v1/tests/" + url.PathEscape(*id) + "/archive/root-cause"
+		switch action {
+		case "analyze":
+			method, path = http.MethodPost, base+"/analyses"
+			body, _ = json.Marshal(map[string]any{"enrich": *enrich, "baseline_test_id": *baselineID})
+		case "status", "bundle":
+			if *analysisID == "" {
+				return errors.New("--analysis-id is required")
+			}
+			path = base + "/analyses/" + url.PathEscape(*analysisID)
+			if action == "bundle" {
+				path += "/bundle"
+			}
+		case "show":
+			path = base + "/v2"
+		default:
+			return errors.New("rca actions: analyze, status, show, bundle")
+		}
 	case "prepare":
 		if err := requireID(); err != nil {
 			return err

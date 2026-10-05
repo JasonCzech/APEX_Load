@@ -59,6 +59,21 @@ var runArchiveAPIRouteCatalog = preserveRawAccessRequirementsForMethod(apiRouteC
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/ai-root-cause", "handleGetRunArchiveAIRootCause", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRunArchiveAIRootCause)
 		}),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/archive/root-cause/analyses", "handleCreateRCAAnalysis", editorProjectAccessWithBodyLimit(resolveTestProjectID, 16<<10), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleCreateRCAAnalysis)
+		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}", "handleGetRCAAnalysis", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleGetRCAAnalysis)
+		}),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/cancel", "handleCancelRCAAnalysis", editorProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleCancelRCAAnalysis)
+		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle", "handleGetRCABundle", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleGetRCABundle)
+		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/root-cause/v2", "handleGetRCAAssessmentV2", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleGetRCAAssessmentV2)
+		}),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/comparison", "handleGetRunArchiveComparison", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRunArchiveComparison)
 		}),

@@ -325,6 +325,11 @@ type Server struct {
 	// dynatraceClient is a private fixture seam. Production leaves it nil and
 	// always uses the governed transport built by dynatrace.NewClient.
 	dynatraceClient func(dynatrace.Config, dynatrace.Credentials) (*dynatrace.Client, error)
+
+	// Root-cause v2 analysis jobs (rca_analyses.go).
+	rcaWorker  rcaWorker
+	rcaRunning sync.Map
+	rcaCancel  context.CancelFunc
 }
 
 // ServerConfig configures API server startup behavior and integrations.
@@ -1713,6 +1718,7 @@ func (s *Server) Start() (startErr error) {
 	s.startArchiveCleanupRetry()
 	s.startArchiveFinalizationRetry()
 	s.startAppDynamicsMonitoring()
+	s.startRCAAnalysisWorker()
 	s.startAccessReviewNotifierCadence()
 	s.startCIGitHubCheckReconciliation()
 
@@ -2309,6 +2315,10 @@ func (s *Server) shutdown(ctx context.Context) error {
 	if s.appDynamicsCancel != nil {
 		s.appDynamicsCancel()
 		s.appDynamicsCancel = nil
+	}
+	if s.rcaCancel != nil {
+		s.rcaCancel()
+		s.rcaCancel = nil
 	}
 	if s.archiveFinalizationCancel != nil {
 		s.archiveFinalizationCancel()
