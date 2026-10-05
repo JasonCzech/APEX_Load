@@ -1,0 +1,8 @@
+--- FAIL: TestHARSampleShapeUsesLogicalStorageAndPreservesCaptureGaps (0.00s)
+    har_sample_shape_test.go:61: unsupported vendor version became an override or lost its durable review gate
+--- FAIL: TestHARSampleShapeUsesLogicalStorageAndPreservesCaptureGaps (0.00s)
+    har_sample_shape_test.go:61: unsupported vendor version became an override or lost its durable review gate
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/convert/sample	0.399s
+ok  	github.com/jasonczech/apexload/pkg/convert/salesforce	0.338s
+FAIL

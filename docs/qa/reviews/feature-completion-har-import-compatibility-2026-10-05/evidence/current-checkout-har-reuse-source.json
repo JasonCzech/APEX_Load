@@ -1,0 +1,328 @@
+{
+  "schema": "apexload.private-primary-har-reuse-source.v1",
+  "created_at": "2026-10-05T19:03:33.655276+00:00",
+  "primary": "/Users/jasonczech/Documents/GitHub/Project_Stormrunner",
+  "primary_head": "0a480cee9d80efd68c984e2cbc1627e25443b2fd",
+  "primary_branch": "codex/diagnostics-collectors-capacity",
+  "resume": "/Users/jasonczech/.codex/worktrees/kafka-owned-seek/Project_Stormrunner",
+  "resume_head": "be26392bda4ddec548e860bc7580ef7e7e7512a5",
+  "source_file_count": 45,
+  "files": [
+    {
+      "path": "pkg/api/handlers_import_har.go",
+      "bytes": 9843,
+      "sha256": "baa5f52cd92314e84c7b96745855fec1dba0647a3d8bcf762743f1f9287aad7e",
+      "resume_sha256": "baa5f52cd92314e84c7b96745855fec1dba0647a3d8bcf762743f1f9287aad7e",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/api/handlers_import_enterprise.go",
+      "bytes": 55312,
+      "sha256": "50414d2e3b2abe0f35166502fe4c7500d02ccd45750a9bfe5518e0ed2c9f5a21",
+      "resume_sha256": "f2b71de22ce3d127d2407edb24b0835890309937940ea558b586b6533dc9dc97",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/api/handlers_import_enterprise_collection.go",
+      "bytes": 13895,
+      "sha256": "cbc0ff877c3c1e447bddc9997745166dbeff763b9cc7d4d33448d31ad7729a76",
+      "resume_sha256": "cbc0ff877c3c1e447bddc9997745166dbeff763b9cc7d4d33448d31ad7729a76",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/api/handlers_import_enterprise_save.go",
+      "bytes": 13982,
+      "sha256": "d5d5c8db55c9f36dc8c92cca4a2ce69ccbb2206d8de94f6028e3c2b06b7e6f1f",
+      "resume_sha256": "d5d5c8db55c9f36dc8c92cca4a2ce69ccbb2206d8de94f6028e3c2b06b7e6f1f",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/api/handlers_import_assets.go",
+      "bytes": 6327,
+      "sha256": "c3c864132b0a81e67a58421dcaa43f294744d81d04f6d87d2d3022f8baf4b09d",
+      "resume_sha256": "2c0de335f47619638006b078ef77dfba1ee7e5e10f68ec0edfa92913ef4c9efe",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/api/import_asset_object.go",
+      "bytes": 4675,
+      "sha256": "84d259199466ea84e80739106919a7cecd3413e03eb342b9b30225aff5ae6416",
+      "resume_sha256": "84d259199466ea84e80739106919a7cecd3413e03eb342b9b30225aff5ae6416",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/api/import_source_secrets.go",
+      "bytes": 12013,
+      "sha256": "0a932091f0e7b26f4923a73f4155e90bef86ae3d259cd9e0787d280a7c2fac5b",
+      "resume_sha256": "0a932091f0e7b26f4923a73f4155e90bef86ae3d259cd9e0787d280a7c2fac5b",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/api/import_response.go",
+      "bytes": 52141,
+      "sha256": "bab84d1d8d9391418f97cba0aed07e6cb8e9a27d0780083c29544e38966d7c55",
+      "resume_sha256": "eafaed0bf728136babc0a1270f8c99177303dba55ea380ba1791fd08656cf2e0",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/api/import_draft_attestation.go",
+      "bytes": 39110,
+      "sha256": "c2a4629d06bd2efb98cb3e45e867aaee3c8e41cc683993b711d34ec04c769a4b",
+      "resume_sha256": "e1b5b9b949e2f9561fc401b79288a88d3a579545c597899bf098f1da22ff6d63",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/api/import_candidate_sessions.go",
+      "bytes": 18381,
+      "sha256": "9285766a3ff6b365670d78ef4c8dad499013f296a8f1558f8986db563118bb6b",
+      "resume_sha256": "9285766a3ff6b365670d78ef4c8dad499013f296a8f1558f8986db563118bb6b",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/api/protected_import_credentials.go",
+      "bytes": 30904,
+      "sha256": "b7e4dc11ea6fa690a7c98f9d717d8ee8d2a4d9aafe553b924472e275aeaf62f2",
+      "resume_sha256": "b7e4dc11ea6fa690a7c98f9d717d8ee8d2a4d9aafe553b924472e275aeaf62f2",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/api/handlers_project_secrets.go",
+      "bytes": 56450,
+      "sha256": "c25de7e51b8a21b7199b5dd15a7dd4ab6bd18f92f6e66e7f8c938d07a21ae1d5",
+      "resume_sha256": "0bd6ca82cf427fcf1d2886e984cc5905ccbca934f5a08bd0abf61e144b249a0a",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/api/route_catalog.go",
+      "bytes": 46414,
+      "sha256": "99798100b8dcf2695a1c6e9ecd6e17ac1c4c4d835843ecdd479d033df62b6619",
+      "resume_sha256": "7a5187dfe2b6f46f3a37cf5817860088e1f8b2ddc538508177d6c52e7cbbc320",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/api/middleware.go",
+      "bytes": 37684,
+      "sha256": "9a7e25f5110a9815fdd6887b03c39efeb8b6e4421ba565e90a60870d0f609b3b",
+      "resume_sha256": "bcb2569794c8dffdf0f6c43b0fa586159015dc184cc8c6b062573681a0a11391",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/api/import_source_retention.go",
+      "bytes": 8177,
+      "sha256": "166df9395f8477949a81936145d78d0318a949f2e5cf949df086619c24d9aadd",
+      "resume_sha256": "166df9395f8477949a81936145d78d0318a949f2e5cf949df086619c24d9aadd",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/api/generic_import_batch_commit.go",
+      "bytes": 30315,
+      "sha256": "7bef629aedca05dc9c7036d00f8ad4fad59b205f418c64947851888fd43af707",
+      "resume_sha256": "7bef629aedca05dc9c7036d00f8ad4fad59b205f418c64947851888fd43af707",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/api/import_commit_service.go",
+      "bytes": 44952,
+      "sha256": "2c9ce33f64fe882c00fe1fd61a41b69e339f44c67dde69ad73b719d628c00165",
+      "resume_sha256": "2c9ce33f64fe882c00fe1fd61a41b69e339f44c67dde69ad73b719d628c00165",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/api/handlers_web_api_imports.go",
+      "bytes": 50428,
+      "sha256": "5daf2d21146a4a59b5e1a1aeb0e43b3580b41941560f7d44fee96cd3486979ae",
+      "resume_sha256": "5daf2d21146a4a59b5e1a1aeb0e43b3580b41941560f7d44fee96cd3486979ae",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/api/har_artifact_retention.go",
+      "bytes": 6660,
+      "sha256": "498a30e70e21df093dc4fc4368b7195b801f7b5773f94509651cf63e65952295",
+      "resume_sha256": "498a30e70e21df093dc4fc4368b7195b801f7b5773f94509651cf63e65952295",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/convert/har/converter.go",
+      "bytes": 6433,
+      "sha256": "328aa9ac5cf627a216c8a9e3842f0d2449df78a9416cca42bfa3226c1340d1e2",
+      "resume_sha256": "328aa9ac5cf627a216c8a9e3842f0d2449df78a9416cca42bfa3226c1340d1e2",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/convert/har/converter_test.go",
+      "bytes": 14833,
+      "sha256": "b2c27693e79f34f0284ab5454af50bae3e1a4b253ec7bad7d4faa46dfa08b81b",
+      "resume_sha256": "b2c27693e79f34f0284ab5454af50bae3e1a4b253ec7bad7d4faa46dfa08b81b",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/convert/har/protected_credentials_test.go",
+      "bytes": 1364,
+      "sha256": "0163a3a5161f1634c16762cdc33ce324926dbc92c55617840c7f15000dc983ed",
+      "resume_sha256": "0163a3a5161f1634c16762cdc33ce324926dbc92c55617840c7f15000dc983ed",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/convert/sample/har.go",
+      "bytes": 22423,
+      "sha256": "5c1e2b043634b79d6a8350b84f8ee3221685df6d5ddaea2f6b7145566a8b3a48",
+      "resume_sha256": "9d40cde7fb713104eff85ce2108fd805e74e385a956e30239d9d698a80a9bfa6",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/convert/sample/converter.go",
+      "bytes": 19044,
+      "sha256": "73846a9cf57307bc44b6f2b86106920c76cf4296a73031c10361d2d3e97a88e6",
+      "resume_sha256": "a9d299594d35239df8dc9879764f4057ec201cb297a82ee62d2a2594f551e11b",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/convert/sample/request_pipeline.go",
+      "bytes": 9533,
+      "sha256": "5c070103fb7481208ffbb977769b659a39bcfd1321fa9088698d3ed20f0c875c",
+      "resume_sha256": "5c070103fb7481208ffbb977769b659a39bcfd1321fa9088698d3ed20f0c875c",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/convert/sample/sourceview.go",
+      "bytes": 5548,
+      "sha256": "72c806fad95343163f4cd760c969d5594fb309b5857c3faf413dc6a6a2584001",
+      "resume_sha256": "72c806fad95343163f4cd760c969d5594fb309b5857c3faf413dc6a6a2584001",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/convert/sample/converter_test.go",
+      "bytes": 112560,
+      "sha256": "09eb76f757fb5f8572d9d1bf5cede73cfa2c8b34f6412c7970266ad9e168e052",
+      "resume_sha256": "c4fd473a053e7d272c6a2db9fe7ad282265c260684f6d6c68f330d43fa38660c",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/convert/salesforce/analyzer.go",
+      "bytes": 106305,
+      "sha256": "789203dd990a3288a63672fac7cbc254589b676f19e6e07a4dc9fcaf995a3a9f",
+      "resume_sha256": "de30d371b6defd9ec443ef03e9e8e9fa025f8922b4bfc82c25ccce76c4a8bf7f",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/convert/salesforce/analyzer_test.go",
+      "bytes": 121944,
+      "sha256": "dbc0334b2c8db5296dcbbd555e861a87600269aa4c48fbe821b88656612e1a74",
+      "resume_sha256": "3d09f6395b3a0a3174dff99eb714a873d4a276fdffb407de95462ca17a3c1ff7",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/convert/salesforce/analyzer_match_test.go",
+      "bytes": 7972,
+      "sha256": "ae03c71b77955d872f2d3b6cc3c61c8ebd30e5f13ab19c1f4ba9b177fd680ecb",
+      "resume_sha256": "0b2066e5f76701c8f49e90a6f98c00ef22e2627de9647ecb32f9182c617f60be",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/convert/requestimport/runtime_fidelity.go",
+      "bytes": 46053,
+      "sha256": "e19d64d891af7ed8e6df805c988e66b83c5d9ca6eb58c17dc132ff27614bc3a7",
+      "resume_sha256": "6122d4701eb73f7d655f15f72a012e701075d3004504db006be12e4a35a8e7c6",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/convert/requestimport/project.go",
+      "bytes": 66309,
+      "sha256": "291f720e348ea0b834e355e766dc428c6f3376d3a6992d977fc7869a323cd071",
+      "resume_sha256": "6e0157101bac35b13355a48498691f3b2557431652fc7b1469c0ce372449fa51",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/convert/sourceview/source_review.go",
+      "bytes": 13394,
+      "sha256": "44f911ef955024d9ca6b27fd56094fae1eb08f8e4c3747ad9c4be14e993cba02",
+      "resume_sha256": "35906dab17dd75a1edbbb421bada2877abc02f3b98cf95e9a75e7a04bc036d9e",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/convert/enterprisearchive/zip.go",
+      "bytes": 92400,
+      "sha256": "86e8b48edbd71afcd8752da44e4ba2069aa93929902b7634e811d781ecec80fc",
+      "resume_sha256": "e09418f3125ef6275dbc7b9b3ae0a7d891f1b01ce2b4584da3b928c259276eb6",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/convert/enterprisearchive/source_review.go",
+      "bytes": 6634,
+      "sha256": "841b2f22a3b2ca2780565c32b468351eee9f1e5971539508eb4a02eaaa394450",
+      "resume_sha256": "841b2f22a3b2ca2780565c32b468351eee9f1e5971539508eb4a02eaaa394450",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/convert/enterprisearchive/converter.go",
+      "bytes": 51202,
+      "sha256": "b84f29846e2503fef052e36692d4ca1bbfc65f11b769f320dd9784819137e0af",
+      "resume_sha256": "7f726378fb7ac744fb3389ddcefdb5dfdc6bc4fe586782fe062ed1ab12bd0d9a",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/protocol/http/capabilities.go",
+      "bytes": 27485,
+      "sha256": "52a36ed74bf8618f0c288ec8fc7db347c6bfe2bfea1b9dcb02a193d4ffce1bb5",
+      "resume_sha256": "3d16c1ce87fdf3a5cc8dd361291fdedbb242b873e9e16df86aed9df0d67160cd",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/importartifact/encrypted_store.go",
+      "bytes": 87303,
+      "sha256": "e99464d04a9dd3ca03c0b25aaca6c6eab445a6b35d0b3f420205c0d339ff6aef",
+      "resume_sha256": "e99464d04a9dd3ca03c0b25aaca6c6eab445a6b35d0b3f420205c0d339ff6aef",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/importartifact/session_publication.go",
+      "bytes": 1978,
+      "sha256": "4fc5a008f317417b45ec64ded281a8d61fa3281503ccc44aff447b001f560dcd",
+      "resume_sha256": "4fc5a008f317417b45ec64ded281a8d61fa3281503ccc44aff447b001f560dcd",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/importsession/session.go",
+      "bytes": 17836,
+      "sha256": "aa9c6a363c0626e670611c989de4664683718eed5f2ca87166ae6eb184d36f26",
+      "resume_sha256": "aa9c6a363c0626e670611c989de4664683718eed5f2ca87166ae6eb184d36f26",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "dashboard/src/components/EnterpriseArchiveImport.tsx",
+      "bytes": 268831,
+      "sha256": "a2e63df9ced69546420d32f4555e0bc49385b3d6533cecd1c9f25b4f0efe6aa6",
+      "resume_sha256": "7dc4e3b1b78e5ab12d0d7688bf1e86bed46a2b4fcbe27c1c459fa821821a5c4f",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "dashboard/src/components/EnterpriseArchiveImport.test.tsx",
+      "bytes": 293105,
+      "sha256": "a85f7837d4d6cea4a7a0b74f001c9f8a23f941e9eda474bb0812547d4d2a6303",
+      "resume_sha256": "d935c7b22152fbac3d2c9bf9a518d9d6fb3c303faee0ddb9544aa8cb7698a033",
+      "relationship_to_resume": "different"
+    },
+    {
+      "path": "pkg/api/import_candidate_source_test.go",
+      "bytes": 3435,
+      "sha256": "bdf5b424037a2f500524aa7ac3423291e91f1ec04aed058e0bfdc9117fdc3daa",
+      "resume_sha256": "bdf5b424037a2f500524aa7ac3423291e91f1ec04aed058e0bfdc9117fdc3daa",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/api/har_artifact_retention_test.go",
+      "bytes": 7028,
+      "sha256": "55a5bf9fe778a2dcdab12a835e8c37dd1c7f68b6c422e0705de78303d6a66a14",
+      "resume_sha256": "55a5bf9fe778a2dcdab12a835e8c37dd1c7f68b6c422e0705de78303d6a66a14",
+      "relationship_to_resume": "identical"
+    },
+    {
+      "path": "pkg/api/handlers_scripts_test.go",
+      "bytes": 264621,
+      "sha256": "6215b47c7403181c9968b475437e77a5fcd3d56d4c67a79a2eea918d87edcba1",
+      "resume_sha256": "cccb190195ea63164ad68eeff64936cfc7eba97de5ab4d8c0440ffd37351f9cb",
+      "relationship_to_resume": "different"
+    }
+  ],
+  "limits": "Read-only source inspection; source file coverage includes bounded sections of large files and existing fixtures, not whole-program qualification. No source edits/builds/tests/commits/pushes/cache cleanup."
+}

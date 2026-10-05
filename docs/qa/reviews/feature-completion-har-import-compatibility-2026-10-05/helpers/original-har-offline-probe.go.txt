@@ -1,0 +1,158 @@
+package main
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"os"
+	"sync/atomic"
+
+	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
+)
+
+var attemptedHTTP atomic.Int64
+
+type rejectingTransport struct{}
+
+func (rejectingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	attemptedHTTP.Add(1)
+	return nil, errors.New("offline_probe_forbids_http")
+}
+
+func main() {
+	http.DefaultTransport = rejectingTransport{}
+	http.DefaultClient.Transport = rejectingTransport{}
+	summary := map[string]any{"schema": "apexload.private-original-har-offline-probe.v1", "scope": "Offline parsing and conversion only; no API, controller, browser, replay or target traffic; aggregate output only"}
+	defer func() {
+		if recover() != nil {
+			summary["error_code"] = "offline_probe_panicked"
+		}
+		summary["forbidden_http_attempts"] = attemptedHTTP.Load()
+		if attemptedHTTP.Load() != 0 {
+			summary["error_code"] = "attempted_http_rejected"
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(summary)
+	}()
+	source, err := os.Open("/Users/jasonczech/Downloads/WLS_MultiLineCRP.har")
+	if err != nil {
+		summary["error_code"] = "source_open_failed"
+		return
+	}
+	defer source.Close()
+	data, err := io.ReadAll(io.LimitReader(source, (100<<20)+1))
+	if err != nil || len(data) > 100<<20 {
+		summary["error_code"] = "source_read_or_limit_failed"
+		return
+	}
+	hash := sha256.Sum256(data)
+	identity := hex.EncodeToString(hash[:])
+	if identity != "e7b8dc723f4bfb4c28489297606b97cccb75c06adad8c7777757c016e43c3703" {
+		summary["error_code"] = "source_identity_changed"
+		return
+	}
+	summary["source_sha256"] = identity
+	summary["source_bytes"] = len(data)
+	observations, err := sample.HARSourceObservations(string(data), true)
+	if err != nil {
+		summary["error_code"] = "private_observation_parse_failed"
+		return
+	}
+	nonempty := 0
+	for _, o := range observations {
+		if o.ResponseBody != "" {
+			nonempty++
+		}
+	}
+	summary["private_observation_count"] = len(observations)
+	summary["private_nonempty_logical_response_count"] = nonempty
+	includeStatic := true
+	result, err := har.Convert(data, har.ConvertOptions{IncludeStaticAssets: &includeStatic})
+	if err != nil {
+		summary["error_code"] = "protected_converter_failed"
+		return
+	}
+	summary["conversion_accounting"] = map[string]int{"total_requests": result.Stats.TotalRequests, "converted_actions": result.Stats.ConvertedActions, "filtered_assets": result.Stats.FilteredAssets, "skipped_requests": result.Stats.SkippedRequests, "assertions": result.Stats.Assertions, "extractors": result.Stats.Extractors, "correlations": result.Stats.CorrelationsDetected}
+	severity := map[string]int{"info": 0, "warning": 0, "blocker": 0, "other": 0}
+	for _, d := range result.Unsupported {
+		switch d.Severity {
+		case diag.Info:
+			severity["info"]++
+		case diag.Warning:
+			severity["warning"]++
+		case diag.Blocker:
+			severity["blocker"]++
+		default:
+			severity["other"]++
+		}
+	}
+	summary["diagnostic_severity_counts"] = severity
+	capture := map[string]int{"complete_text": 0, "complete_binary": 0, "unavailable": 0, "other": 0}
+	quality := map[string]int{"http_version_unsupported": 0, "http_version_unavailable": 0, "http_version_other": 0, "execution_blocked": 0, "send_unavailable": 0, "wait_unavailable": 0, "connect_invalid_negative": 0}
+	retained := 0
+	for _, a := range result.Script.Actions {
+		if raw, ok := a.Metadata["response_content_capture"]; ok {
+			retained++
+			c := requestimport.ReviewResponseContentMetadata(raw)
+			if c.Complete() {
+				if c.BodyKind == "binary" {
+					capture["complete_binary"]++
+				} else {
+					capture["complete_text"]++
+				}
+			} else if c.State == "unavailable" {
+				capture["unavailable"]++
+			} else {
+				capture["other"]++
+			}
+		}
+		if v, ok := a.Metadata["http_version_capture"].(map[string]any); ok {
+			switch v["reason_code"] {
+			case "unsupported_http_version":
+				quality["http_version_unsupported"]++
+			case "http_version_unavailable":
+				quality["http_version_unavailable"]++
+			default:
+				quality["http_version_other"]++
+			}
+		}
+		if a.Metadata["execution_blocker"] != "" && a.Metadata["execution_blocker"] != nil {
+			quality["execution_blocked"]++
+		}
+		if timings, ok := a.Metadata["har.timings"].(map[string]any); ok {
+			for _, key := range []string{"send", "wait"} {
+				if value, ok := timings[key].(float64); ok && value < 0 {
+					quality[key+"_unavailable"]++
+				}
+			}
+			if value, ok := timings["connect"].(float64); ok && value < -1 {
+				quality["connect_invalid_negative"]++
+			}
+		}
+	}
+	summary["top_level_actions_with_content_provenance"] = retained
+	summary["top_level_content_counts"] = capture
+	summary["top_level_quality_counts"] = quality
+	finalHash := sha256.Sum256(data)
+	summary["source_buffer_unchanged"] = finalHash == hash
+	check, err := os.Open("/Users/jasonczech/Downloads/WLS_MultiLineCRP.har")
+	if err != nil {
+		summary["error_code"] = "source_recheck_open_failed"
+		return
+	}
+	defer check.Close()
+	afterHash := sha256.New()
+	size, err := io.Copy(afterHash, io.LimitReader(check, (100<<20)+1))
+	if err != nil || size > 100<<20 {
+		summary["error_code"] = "source_recheck_failed"
+		return
+	}
+	summary["source_sha256_after"] = hex.EncodeToString(afterHash.Sum(nil))
+	summary["source_file_unchanged"] = size == int64(len(data)) && hex.EncodeToString(afterHash.Sum(nil)) == identity
+	summary["error_code"] = ""
+}

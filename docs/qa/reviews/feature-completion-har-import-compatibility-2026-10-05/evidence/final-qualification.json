@@ -1,0 +1,123 @@
+{
+  "schema": "apexload.synthetic-har-final-qualification.v1",
+  "created_utc": "2026-10-05T20:12:55.673191+00:00",
+  "worktree": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "source_inventory_path": "/private/tmp/apexload-har-sample-regression-final-source-20261005.json",
+  "source_inventory_sha256": "2d8cf914ac8a389148dba4bc053c0af9adc83a0db00cdfa9f204da1c80cd3ff7",
+  "source_unchanged": true,
+  "direct_source_input_count": 11,
+  "new_test_files": [
+    "pkg/convert/sample/har_sample_shape_test.go",
+    "pkg/convert/salesforce/har_sample_shape_test.go"
+  ],
+  "qualified_receipts": [
+    {
+      "label": "har-sample-shape-focused-final-2",
+      "receipt_path": "/private/tmp/har-sample-shape-focused-final-2.json",
+      "receipt_sha256": "0b213e9034c5891c470bb3282bba07972062551705a91c7f5eb74c71ef8459a0",
+      "exit_code": 0,
+      "duration_seconds": 8.711,
+      "raw_log_sha256": "435f5061e972223733011e1f00b2f36a61395187a04af9021b7c38e98b4d71ca",
+      "raw_hash_matches": true,
+      "source_unchanged": true,
+      "inputs_match_final_freeze": []
+    },
+    {
+      "label": "har-sample-shape-affected-final-1",
+      "receipt_path": "/private/tmp/har-sample-shape-affected-final-1.json",
+      "receipt_sha256": "803588978916ba53d359d47fc4266a88f109d11cf88be11ea2ebee65e6f63fad",
+      "exit_code": 0,
+      "duration_seconds": 10.113,
+      "raw_log_sha256": "790db0fe2b6467ddcf606cc5d458bb9db4e0dc435d17ce1e10398bc29a75ec83",
+      "raw_hash_matches": true,
+      "source_unchanged": true,
+      "inputs_match_final_freeze": []
+    },
+    {
+      "label": "har-sample-shape-race-final-1",
+      "receipt_path": "/private/tmp/har-sample-shape-race-final-1.json",
+      "receipt_sha256": "d990a0f242fbba5794d7dddd96b13fb3a7164d53442f3c7c4c4181483d0dbf4b",
+      "exit_code": 0,
+      "duration_seconds": 42.054,
+      "raw_log_sha256": "d21d40bce7dbb9df019465001e6cff09f5143379766a041d63e76b563813be54",
+      "raw_hash_matches": true,
+      "source_unchanged": true,
+      "inputs_match_final_freeze": []
+    },
+    {
+      "label": "original-har-offline-probe-1",
+      "receipt_path": "/private/tmp/original-har-offline-probe-1.json",
+      "receipt_sha256": "92f8474fff44aa5923c1cbd0a2e75697bb2d0096ed155bb9ab6a24d19aa03275",
+      "exit_code": 0,
+      "duration_seconds": 10.608,
+      "raw_log_sha256": "a7a6bc8018a49256e246f105e646d6fe04835cb7c43da2a5b6d5766bdbef336e",
+      "raw_hash_matches": true,
+      "source_unchanged": true,
+      "inputs_match_final_freeze": []
+    }
+  ],
+  "whitespace_checks": [
+    {
+      "path": "pkg/convert/sample/har_sample_shape_test.go",
+      "exit_code": 1,
+      "output_bytes": 0
+    },
+    {
+      "path": "pkg/convert/salesforce/har_sample_shape_test.go",
+      "exit_code": 1,
+      "output_bytes": 0
+    }
+  ],
+  "retained_failed_attempts": [
+    "har-sample-shape-focused-1",
+    "har-sample-shape-focused-2",
+    "har-sample-shape-focused-final-1"
+  ],
+  "failure_disposition": "Internal exchange version is a string, source time retains offset until explicitly projected to UTC, and unsupported textual HTTP version is a quality-only gap. Test expectations were corrected; no product decoder or replay policy change.",
+  "offline_original_probe_summary": {
+    "conversion_accounting": {
+      "assertions": 158,
+      "converted_actions": 158,
+      "correlations": 39,
+      "extractors": 32,
+      "filtered_assets": 0,
+      "skipped_requests": 0,
+      "total_requests": 158
+    },
+    "diagnostic_severity_counts": {
+      "blocker": 0,
+      "info": 437,
+      "other": 0,
+      "warning": 307
+    },
+    "error_code": "",
+    "forbidden_http_attempts": 0,
+    "private_nonempty_logical_response_count": 148,
+    "private_observation_count": 158,
+    "schema": "apexload.private-original-har-offline-probe.v1",
+    "scope": "Offline parsing and conversion only; no API, controller, browser, replay or target traffic; aggregate output only",
+    "source_buffer_unchanged": true,
+    "source_bytes": 21441296,
+    "source_file_unchanged": true,
+    "source_sha256": "e7b8dc723f4bfb4c28489297606b97cccb75c06adad8c7777757c016e43c3703",
+    "source_sha256_after": "e7b8dc723f4bfb4c28489297606b97cccb75c06adad8c7777757c016e43c3703",
+    "top_level_actions_with_content_provenance": 158,
+    "top_level_content_counts": {
+      "complete_binary": 2,
+      "complete_text": 148,
+      "other": 0,
+      "unavailable": 8
+    },
+    "top_level_quality_counts": {
+      "connect_invalid_negative": 146,
+      "execution_blocked": 0,
+      "http_version_other": 0,
+      "http_version_unavailable": 158,
+      "http_version_unsupported": 0,
+      "send_unavailable": 28,
+      "wait_unavailable": 28
+    }
+  },
+  "findings": [],
+  "limits": "Eleven direct source/module inputs, not full Go transitive inventory or whole program qualification. No API upload, browser/native HAR publication, runtime replay, provider or target acceptance. Original raw capture and private body/header/URL/correlation values remain outside Git; probe derived only aggregate counts in private receipts. No source edits beyond the two synthetic-only test files, no commit/push/cache cleanup."
+}

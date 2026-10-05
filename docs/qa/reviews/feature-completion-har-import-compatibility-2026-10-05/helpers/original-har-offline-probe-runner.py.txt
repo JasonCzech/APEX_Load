@@ -1,0 +1,19 @@
+from pathlib import Path
+import datetime,hashlib,json,os,signal,subprocess,time
+root=Path.cwd();label='original-har-offline-probe-1';base=Path('/private/tmp');program=base/'apexload-original-har-offline-probe-20261005.go';log=base/(label+'.log');receipt=base/(label+'.json');paths=['pkg/convert/sample/har_sample_shape_test.go','pkg/convert/salesforce/har_sample_shape_test.go','pkg/convert/sample/har.go','pkg/convert/sample/converter.go','pkg/convert/sample/request_pipeline.go','pkg/convert/salesforce/analyzer.go','pkg/convert/requestimport/response_content_capture.go','pkg/convert/requestimport/http_version_capture.go','pkg/protocol/http/capabilities.go','go.mod','go.sum']
+def inventory():return [{'path':p,'sha256':hashlib.sha256((root/p).read_bytes()).hexdigest()} for p in paths]
+before=inventory();tick=time.monotonic();started=datetime.datetime.now(datetime.timezone.utc);env=os.environ.copy();env['GOMEMLIMIT']='1GiB';cmd=['go','run',str(program)];run=subprocess.Popen(cmd,cwd=root,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env,start_new_session=True);timed_out=False
+try:out,err=run.communicate(timeout=60)
+except subprocess.TimeoutExpired:
+ timed_out=True;os.killpg(run.pid,signal.SIGTERM)
+ try:out,err=run.communicate(timeout=5)
+ except subprocess.TimeoutExpired:os.killpg(run.pid,signal.SIGKILL);out,err=run.communicate(timeout=5)
+log.write_bytes(out+err);summary=None;public_error=''
+if timed_out:public_error='offline_probe_timeout'
+elif run.returncode!=0:public_error='offline_probe_process_failed'
+else:
+ try:summary=json.loads(out)
+ except Exception:public_error='offline_probe_output_not_single_json'
+allowed={'schema','scope','source_sha256','source_bytes','private_observation_count','private_nonempty_logical_response_count','conversion_accounting','diagnostic_severity_counts','top_level_actions_with_content_provenance','top_level_content_counts','top_level_quality_counts','source_buffer_unchanged','source_sha256_after','source_file_unchanged','error_code','forbidden_http_attempts'}
+if summary is not None and set(summary)-allowed:summary=None;public_error='offline_probe_output_shape_rejected'
+after=inventory();d={'label':label,'started_utc':started.isoformat(),'ended_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'duration_seconds':round(time.monotonic()-tick,3),'command':cmd,'worktree':str(root),'program_sha256':hashlib.sha256(program.read_bytes()).hexdigest(),'exit_code':run.returncode,'timed_out':timed_out,'public_error_code':public_error,'summary':summary,'raw_log_path':str(log),'raw_log_sha256':hashlib.sha256(log.read_bytes()).hexdigest(),'source_before':before,'source_after':after,'source_unchanged':before==after,'limits':'Exactly eleven directly inspected source/module inputs, not full transitive Go inventory. Offline private original capture conversion and observation parse only; raw/private derived source content is never persisted or printed. This is not API import, browser export, runtime replay, provider readiness or completed-run acceptance.'};receipt.write_text(json.dumps(d,indent=2)+'\n');print(json.dumps({k:d[k] for k in ['label','exit_code','duration_seconds','public_error_code','raw_log_sha256','source_unchanged','summary']},indent=2))
