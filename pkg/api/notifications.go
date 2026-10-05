@@ -20,6 +20,7 @@ const (
 	notificationFormatSlack            = "slack"
 	notificationFormatTeams            = "teams"
 	notificationFormatDynatrace        = "dynatrace"
+	notificationFormatGrafana          = "grafana"
 	notificationsAllowInsecureHTTPEnv  = "APEXLOAD_NOTIFICATIONS_ALLOW_INSECURE_HTTP"
 	maxNotificationWebhooks            = 64
 	maxNotificationDeliveries          = 16
@@ -48,6 +49,8 @@ var supportedNotificationEvents = map[string]struct{}{
 	"telemetry_recovered": {},
 
 	"threshold_alert": {},
+
+	"load_phase": {},
 
 	"fleet_alert":                {},
 	"fleet_alert_acknowledged":   {},
@@ -163,9 +166,12 @@ func validateNotificationsSettings(settings NotificationsSettings) error {
 			return err
 		}
 		switch webhook.Format {
-		case notificationFormatSlack, notificationFormatTeams, notificationFormatDynatrace:
+		case notificationFormatSlack, notificationFormatTeams, notificationFormatDynatrace, notificationFormatGrafana:
 		default:
-			return fmt.Errorf("%s.format must be one of %q, %q, or %q", prefix, notificationFormatSlack, notificationFormatTeams, notificationFormatDynatrace)
+			return fmt.Errorf("%s.format must be one of %q, %q, %q or %q", prefix, notificationFormatSlack, notificationFormatTeams, notificationFormatDynatrace, notificationFormatGrafana)
+		}
+		if webhook.Format == notificationFormatGrafana && strings.TrimSpace(webhook.APIToken) == "" {
+			return fmt.Errorf("%s.api_token is required for Grafana webhooks", prefix)
 		}
 		if webhook.Format == notificationFormatDynatrace {
 			if strings.TrimSpace(webhook.APIToken) == "" {
@@ -190,8 +196,20 @@ func validateNotificationsSettings(settings NotificationsSettings) error {
 // Dispatch submits an event to every enabled matching webhook and reports
 // whether at least one delivery was admitted by the bounded executor.
 func (d *notificationDispatcher) Dispatch(settings NotificationsSettings, event NotificationEvent) bool {
+	return d.DispatchObserved(settings, event, nil)
+}
+
+// DispatchObserved is Dispatch that also reports each matching webhook's
+// outcome: pending once admitted, then delivered or failed, or dropped or
+// failed when it never leaves the controller.
+func (d *notificationDispatcher) DispatchObserved(settings NotificationsSettings, event NotificationEvent, observe func(NotificationWebhookSettings, string)) bool {
 	if d == nil {
 		return false
+	}
+	report := func(webhook NotificationWebhookSettings, status string) {
+		if observe != nil {
+			observe(webhook, status)
+		}
 	}
 	admitted := false
 	for _, webhook := range settings.Webhooks {
@@ -201,11 +219,15 @@ func (d *notificationDispatcher) Dispatch(settings NotificationsSettings, event 
 		payload, err := buildNotificationPayloadForWebhook(webhook, event)
 		if err != nil {
 			slog.Warn("notification payload build failed", "event", event.Type, "format", webhook.Format, "err", err)
+			report(webhook, phaseDeliveryFailed)
 			continue
 		}
-		if !d.tryDispatch(webhook, payload, notificationDedupeKey(webhook, event)) {
+		// Pending is recorded before the delivery goroutine can finish.
+		report(webhook, phaseDeliveryPending)
+		if !d.tryDispatch(webhook, payload, notificationDedupeKey(webhook, event), observe) {
 			notificationDeliveryDroppedTotal.Add(1)
 			slog.Warn("notification delivery dropped by bounded dispatcher", "event", event.Type, "webhook", webhook.Name)
+			report(webhook, phaseDeliveryDropped)
 			continue
 		}
 		admitted = true
@@ -217,7 +239,7 @@ func (d *notificationDispatcher) Dispatch(settings NotificationsSettings, event 
 // number of deliveries process-wide per dispatcher and a smaller fixed number
 // per destination stripe. Saturation is observable and drops the new delivery
 // instead of retaining an unbounded goroutine/queue while a webhook is slow.
-func (d *notificationDispatcher) tryDispatch(webhook NotificationWebhookSettings, payload any, dedupeKey string) bool {
+func (d *notificationDispatcher) tryDispatch(webhook NotificationWebhookSettings, payload any, dedupeKey string, observe func(NotificationWebhookSettings, string)) bool {
 	if d == nil || d.deliverySlots == nil || len(d.destinationSlots) == 0 {
 		return false
 	}
@@ -246,7 +268,7 @@ func (d *notificationDispatcher) tryDispatch(webhook NotificationWebhookSettings
 			<-destination
 			<-d.deliverySlots
 		}()
-		d.postJSON(webhook, payload, dedupeKey)
+		d.postJSON(webhook, payload, dedupeKey, observe)
 	}()
 	return true
 }
@@ -274,6 +296,12 @@ func (d *notificationDispatcher) Close() {
 	})
 }
 
+// notificationFormatUsesToken reports whether a format authenticates with the
+// webhook's write-only API token.
+func notificationFormatUsesToken(format string) bool {
+	return format == notificationFormatDynatrace || format == notificationFormatGrafana
+}
+
 func notificationWebhookMatchesEvent(webhook NotificationWebhookSettings, eventType string) bool {
 	if len(webhook.Events) == 0 {
 		return true
@@ -299,6 +327,8 @@ func buildNotificationPayloadForWebhook(webhook NotificationWebhookSettings, eve
 		return buildTeamsNotificationPayload(event), nil
 	case notificationFormatDynatrace:
 		return buildDynatraceNotificationPayload(webhook, event), nil
+	case notificationFormatGrafana:
+		return buildGrafanaNotificationPayload(event), nil
 	default:
 		return nil, fmt.Errorf("unsupported notification format %q", format)
 	}
@@ -394,7 +424,10 @@ func notificationTeamsFacts(event NotificationEvent) []map[string]any {
 
 func buildDynatraceNotificationPayload(webhook NotificationWebhookSettings, event NotificationEvent) map[string]any {
 	eventType := "CUSTOM_INFO"
-	if event.Type == "test_failed" || event.Type == "telemetry_breached" ||
+	if event.Type == notificationEventLoadPhase {
+		// A load step is context for the monitored entities, not an incident.
+		eventType = "CUSTOM_ANNOTATION"
+	} else if event.Type == "test_failed" || event.Type == "telemetry_breached" ||
 		((event.Type == "fleet_alert" || event.Type == "threshold_alert") && strings.EqualFold(event.Severity, "danger")) {
 		eventType = "ERROR_EVENT"
 	} else if event.Type == "telemetry_degraded" || event.Type == "fleet_alert" || event.Type == "fleet_degraded" || event.Type == "threshold_alert" {
@@ -431,6 +464,21 @@ func buildDynatraceNotificationPayload(webhook NotificationWebhookSettings, even
 		payload["timeout"] = webhook.TimeoutMinutes
 	}
 	return payload
+}
+
+// buildGrafanaNotificationPayload is a Grafana annotation (POST
+// /api/annotations) tagged apexload and run:<id> so dashboards can overlay a
+// run's events by tag.
+func buildGrafanaNotificationPayload(event NotificationEvent) map[string]any {
+	tags := []string{"apexload", "run:" + event.TestID, "event:" + event.Type}
+	if event.Type == notificationEventLoadPhase && strings.TrimSpace(event.Status) != "" {
+		tags = append(tags, "phase:"+event.Status)
+	}
+	text := fmt.Sprintf("APEX Load %s: %s", humanizeNotificationEvent(event.Type), fallbackNotificationValue(event.TestName))
+	if strings.TrimSpace(event.Summary) != "" {
+		text += " — " + event.Summary
+	}
+	return map[string]any{"time": event.Timestamp.UTC().UnixMilli(), "tags": tags, "text": text}
 }
 
 func notificationDedupeKey(webhook NotificationWebhookSettings, event NotificationEvent) string {
@@ -472,9 +520,14 @@ func fallbackNotificationValue(value string) string {
 	return value
 }
 
-func (d *notificationDispatcher) postJSON(webhook NotificationWebhookSettings, payload any, dedupeKey string) {
+func (d *notificationDispatcher) postJSON(webhook NotificationWebhookSettings, payload any, dedupeKey string, observe func(NotificationWebhookSettings, string)) {
 	status := "failed"
-	defer func() { d.recordDelivery(webhook, status) }()
+	defer func() {
+		d.recordDelivery(webhook, status)
+		if observe != nil {
+			observe(webhook, status)
+		}
+	}()
 	if err := validateCredentialTransportURL("notification webhook URL", webhook.URL, notificationsAllowInsecureHTTPEnv); err != nil {
 		slog.Warn("notification delivery rejected", "format", webhook.Format, "url", redactURL(webhook.URL), "err", err)
 		notificationDeliveryFailuresTotal.Add(1)
@@ -504,6 +557,9 @@ func (d *notificationDispatcher) postJSON(webhook NotificationWebhookSettings, p
 		}
 		if webhook.Format == notificationFormatDynatrace && strings.TrimSpace(webhook.APIToken) != "" {
 			req.Header.Set("Authorization", "Api-Token "+strings.TrimSpace(webhook.APIToken))
+		}
+		if webhook.Format == notificationFormatGrafana && strings.TrimSpace(webhook.APIToken) != "" {
+			req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(webhook.APIToken))
 		}
 		resp, err := d.client.Do(req)
 		if err == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {

@@ -1280,15 +1280,23 @@ func (tr *TestRunner) broadcastEvent(eventType string, test *ManagedTest) {
 			"timestamp":  now,
 		})
 	}
+	// Pause, resume and stop are phase events too; their lifecycle
+	// notification is the delivery, so its outcomes attach to the phase.
+	log, index, phase := tr.recordLifecyclePhase(test.ID, eventType, now)
 	if tr.notifier != nil {
-		tr.notifier.Dispatch(tr.currentNotificationSettings(), NotificationEvent{
+		event := NotificationEvent{
 			Type:      eventType,
 			TestID:    test.ID,
 			ProjectID: normalizeProjectID(test.ProjectID),
 			TestName:  test.Name,
 			Status:    test.Status,
 			Timestamp: now,
-		})
+		}
+		if phase {
+			tr.dispatchPhaseNotification(log, index, event)
+		} else {
+			tr.notifier.Dispatch(tr.currentNotificationSettings(), event)
+		}
 	}
 }
 

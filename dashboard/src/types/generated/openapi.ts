@@ -3176,6 +3176,9 @@ export interface operations {
               }>;
               "monitor_rules_frozen"?: boolean;
               "monitoring_status"?: string;
+              "phase_event_count"?: number;
+              "phase_events_file"?: string;
+              "phase_events_truncated"?: boolean;
               "provenance"?: {
                 "application_id"?: string;
                 "assignment"?: (Record<string, unknown>) | null;
@@ -57148,6 +57151,9 @@ export interface operations {
             }>;
             "monitor_rules_frozen"?: boolean;
             "monitoring_status"?: string;
+            "phase_event_count"?: number;
+            "phase_events_file"?: string;
+            "phase_events_truncated"?: boolean;
             "provenance"?: {
               "application_id"?: string;
               "assignment"?: ({
@@ -60374,6 +60380,9 @@ export interface operations {
               }>;
               "monitor_rules_frozen"?: boolean;
               "monitoring_status"?: string;
+              "phase_event_count"?: number;
+              "phase_events_file"?: string;
+              "phase_events_truncated"?: boolean;
               "provenance"?: {
                 "application_id"?: string;
                 "assignment"?: ({

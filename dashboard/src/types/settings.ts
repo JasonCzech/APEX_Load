@@ -81,7 +81,7 @@ export interface DashboardNotificationWebhook {
   name?: string
   enabled: boolean
   url: string
-  format: 'slack' | 'teams' | 'dynatrace'
+  format: 'slack' | 'teams' | 'dynatrace' | 'grafana'
   events?: string[]
   api_token?: string
   has_api_token?: boolean

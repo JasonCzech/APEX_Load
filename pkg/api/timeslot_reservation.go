@@ -635,6 +635,7 @@ func (tr *TestRunner) evictMissingManagedTestIdentityLocked(id string, candidate
 		tr.storedHistoryCache.deleteTest(id)
 	}
 	delete(tr.tests, id)
+	tr.phaseLogs.Delete(id)
 	delete(tr.archives, id)
 	forgetRunArchiveCache(id)
 	deleteGroupMetricsHistoryCache(id)

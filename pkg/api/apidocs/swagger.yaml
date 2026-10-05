@@ -8990,6 +8990,13 @@ paths:
                           type: boolean
                         monitoring_status:
                           type: string
+                        phase_event_count:
+                          type: integer
+                          format: int64
+                        phase_events_file:
+                          type: string
+                        phase_events_truncated:
+                          type: boolean
                         provenance:
                           type: object
                           properties:
@@ -305119,6 +305126,13 @@ paths:
                     type: boolean
                   monitoring_status:
                     type: string
+                  phase_event_count:
+                    type: integer
+                    format: int64
+                  phase_events_file:
+                    type: string
+                  phase_events_truncated:
+                    type: boolean
                   provenance:
                     type: object
                     properties:
@@ -316206,6 +316220,13 @@ paths:
                         type: boolean
                       monitoring_status:
                         type: string
+                      phase_event_count:
+                        type: integer
+                        format: int64
+                      phase_events_file:
+                        type: string
+                      phase_events_truncated:
+                        type: boolean
                       provenance:
                         type: object
                         properties:

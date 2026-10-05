@@ -3785,6 +3785,8 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 		}
 	}
 	defer tr.clearActiveLoadStage(testID, groupName)
+	// level is the last load level announced as a phase event; -1 until one is.
+	level := -1
 	for index, stage := range stages {
 		if !tr.runtimeGroupAcceptsStages(testID, groupName) {
 			return
@@ -3823,11 +3825,17 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 			}
 			tr.setActiveLoadStage(testID, groupName, index, stage)
 			if ramp == nil {
+				// Already at the target: the level holds for this stage.
+				if level != stage.TargetVUsers {
+					tr.recordLoadPhase(testID, PhaseLevelReached, groupName, stage.TargetVUsers, time.Now())
+					level = stage.TargetVUsers
+				}
 				if !tr.waitTestActiveDuration(ctx, testID, duration) {
 					return
 				}
 				continue
 			}
+			tr.recordLoadPhase(testID, PhaseRampStart, groupName, stage.TargetVUsers, time.Now())
 			select {
 			case <-ctx.Done():
 				ramp.cancel()
@@ -3841,6 +3849,8 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 					return
 				}
 			}
+			tr.recordLoadPhase(testID, PhaseLevelReached, groupName, stage.TargetVUsers, time.Now())
+			level = stage.TargetVUsers
 			continue
 		case "hold":
 			// The first hold is seeded by compilation, but later holds can define a
@@ -3855,6 +3865,11 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 				return
 			}
 			tr.setActiveLoadStage(testID, groupName, index, stage)
+			if level != stage.TargetVUsers {
+				// A hold with its own target is a step: the level changes at once.
+				tr.recordLoadPhase(testID, PhaseLevelChange, groupName, stage.TargetVUsers, time.Now())
+				level = stage.TargetVUsers
+			}
 		default:
 			slog.Warn("stage schedule stopped on invalid stage type", "test_id", testID, "group", groupName, "stage", index, "type", stage.Type)
 			return

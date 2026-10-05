@@ -448,6 +448,10 @@ type TestRunner struct {
 	// clockObservationSpacing keeps at most one clock observation per source
 	// in each window; zero means a minute. Tests shorten it before a run.
 	clockObservationSpacing time.Duration
+	// phaseLogs holds each run's *phaseEventLog by test ID. It is a sync.Map,
+	// not a ManagedTest field, because lifecycle broadcasts record phases and
+	// some run while holding mu.
+	phaseLogs sync.Map
 }
 
 type archiveCommitGate struct {

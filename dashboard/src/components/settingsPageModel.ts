@@ -773,8 +773,11 @@ export function validateSettingsDetailed(settings: DashboardSystemSettings): Set
         push('integrations', 'notifications', `notifications.webhooks.${index}.url`, `${label} URL must be a valid absolute URL.`)
       }
     }
-    if (webhook.format !== 'slack' && webhook.format !== 'teams' && webhook.format !== 'dynatrace') {
-      push('integrations', 'notifications', `notifications.webhooks.${index}.format`, `${label} format must be Slack, Microsoft Teams, or Dynatrace.`)
+    if (webhook.format !== 'slack' && webhook.format !== 'teams' && webhook.format !== 'dynatrace' && webhook.format !== 'grafana') {
+      push('integrations', 'notifications', `notifications.webhooks.${index}.format`, `${label} format must be Slack, Microsoft Teams, Dynatrace or Grafana.`)
+    }
+    if (webhook.format === 'grafana' && !webhook.api_token?.trim() && !webhook.has_api_token) {
+      push('integrations', 'notifications', `notifications.webhooks.${index}.api_token`, `${label} requires a Grafana service account token.`)
     }
     if (webhook.format === 'dynatrace') {
       if (!webhook.api_token?.trim() && !webhook.has_api_token) {

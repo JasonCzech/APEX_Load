@@ -824,6 +824,9 @@ func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTe
 	if err := tr.persistClockObservationArchive(context.Background(), test, record, archiveManifest); err != nil {
 		slog.Warn("failed to archive clock observations", "test_id", test.ID, "error", err)
 	}
+	if err := tr.persistPhaseEventArchive(context.Background(), test, record, archiveManifest); err != nil {
+		slog.Warn("failed to archive phase events", "test_id", test.ID, "error", err)
+	}
 	manifest, err := tr.buildTestManifestForManagedTest(test, test.ID, record, false)
 	if err != nil {
 		return err

@@ -546,7 +546,38 @@ APEX Load sends lifecycle and telemetry-health notifications to Dynatrace throug
 
 #### Events
 
-Dynatrace webhooks can subscribe to the same event names as Slack and Teams, including `test_started`, `test_complete`, `test_failed`, `telemetry_degraded`, `telemetry_breached`, `telemetry_recovered`, and fleet alert events.
+Dynatrace webhooks can subscribe to the same event names as Slack and Teams, including `test_started`, `test_complete`, `test_failed`, `telemetry_degraded`, `telemetry_breached`, `telemetry_recovered`, `load_phase` and fleet alert events. `load_phase` events are sent as `CUSTOM_ANNOTATION` on the webhook's entity selector.
+
+### Load-phase events and Grafana annotations
+
+Load-level transitions become phase events, so analysis and the monitored
+systems can tell a load step from an incident:
+
+- **Kinds:** `ramp_start` and `level_reached` for each ramp stage,
+  `level_change` for a hold whose target steps the load, and `pause`, `resume`
+  and `stop` from the run's lifecycle. Each level event carries the group
+  (`target`) and its target VUsers (`level`).
+- **Bounds:** events are deduplicated by kind, group, level and second (one
+  `stop` per run) and capped at 500 per run.
+- **Delivery:** level events go to notification webhooks as `load_phase`, the
+  same way pause, resume and stop already go out as `test_paused`,
+  `test_resumed` and `test_stopping`/`test_complete`/`test_failed`. Webhooks
+  set to *All events* receive `load_phase` too. Delivery fails open:
+  bounded retries, never affecting the run.
+- **Grafana:** a webhook with format `grafana` posts annotations to the URL
+  given (for example `https://grafana.example.com/api/annotations`) with a
+  service-account token sent as `Authorization: Bearer`. Every annotation is
+  tagged `apexload`, `run:<test id>` and `event:<type>`, plus `phase:<kind>` for
+  load phases, so dashboards can overlay a run by tag. Like Dynatrace, the
+  token is write-only.
+- **Archive:** after finalization, `phase_events.jsonl`
+  (`apexload.phase_event.v1`) holds each phase event with every sink's outcome
+  (`pending`, `delivered`, `failed` or `dropped`, named by the webhook's name,
+  never its URL). It is kept apart from analyst-authored run annotations. A run
+  with no recorded stop gets one at its end time. Phase events live with the
+  controller that recorded them, so after an HA adoption the archive holds only
+  the transitions the adopting controller saw; delivered notifications are not
+  affected.
 
 ### Optional Elastic (ELK) in-flight monitoring
 

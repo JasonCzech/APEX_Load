@@ -75,7 +75,7 @@ func (s *Server) handleNotificationTest(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "Saved notification format is invalid")
 		return
 	}
-	if !s.runner.notifier.tryDispatch(webhook, payload, notificationDedupeKey(webhook, event)) {
+	if !s.runner.notifier.tryDispatch(webhook, payload, notificationDedupeKey(webhook, event), nil) {
 		writeError(w, http.StatusServiceUnavailable, "Notification dispatcher is busy or unavailable; retry later")
 		return
 	}

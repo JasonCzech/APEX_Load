@@ -142,6 +142,7 @@ const NOTIFICATION_FORMAT_OPTIONS = [
   { value: 'slack', label: 'Slack Block Kit' },
   { value: 'teams', label: 'Microsoft Teams Adaptive Card' },
   { value: 'dynatrace', label: 'Dynatrace Events API v2' },
+  { value: 'grafana', label: 'Grafana annotations' },
 ] as const
 
 const NOTIFICATION_EVENTS = [
@@ -157,6 +158,7 @@ const NOTIFICATION_EVENTS = [
   'telemetry_breached',
   'telemetry_recovered',
   'threshold_alert',
+  'load_phase',
   'fleet_alert',
   'fleet_alert_acknowledged',
   'fleet_alert_unacknowledged',
@@ -6459,7 +6461,7 @@ export default function SettingsPage({
               <div className="settings-manager-summary">
                 <div>
                   <span className="setting-label">Notification Webhooks</span>
-                  <span className="setting-desc">Send Slack, Microsoft Teams, or Dynatrace Events API notifications when tests or telemetry health change state.</span>
+                  <span className="setting-desc">Send Slack, Microsoft Teams, Dynatrace Events API or Grafana annotation notifications when tests, load phases or telemetry health change state.</span>
                 </div>
                 <strong>{notificationWebhookCount}</strong>
               </div>
@@ -6508,9 +6510,23 @@ export default function SettingsPage({
                           className="settings-input"
                           value={webhook.url}
                           onChange={event => updateNotificationWebhook(index, { url: event.target.value })}
-                          placeholder={webhook.format === 'dynatrace' ? 'https://{environment}.live.dynatrace.com/api/v2/events/ingest' : 'https://hooks.slack.com/services/...'}
+                          placeholder={webhook.format === 'dynatrace' ? 'https://{environment}.live.dynatrace.com/api/v2/events/ingest' : webhook.format === 'grafana' ? 'https://grafana.example.com/api/annotations' : 'https://hooks.slack.com/services/...'}
                         />
                       </label>
+
+                      {webhook.format === 'grafana' && (
+                        <label className="project-redaction-rule-field">
+                          <span>Grafana service account token</span>
+                          <input
+                            className="settings-input"
+                            type="password"
+                            value={webhook.api_token || ''}
+                            onChange={event => updateNotificationWebhook(index, { api_token: event.target.value, has_api_token: webhook.has_api_token })}
+                            placeholder={webhook.has_api_token ? 'Configured; enter a new token to rotate' : 'glsa_...'}
+                          />
+                          <span>{webhook.has_api_token ? 'A token is configured and hidden. Enter a new value only when rotating it.' : 'Token is write-only and will not be shown after saving. Annotations are tagged apexload and run:<id>.'}</span>
+                        </label>
+                      )}
 
                       {webhook.format === 'dynatrace' && (
                         <div className="project-redaction-rule-grid">

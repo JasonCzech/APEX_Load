@@ -359,7 +359,7 @@ func TestNotificationDispatcherRetriesRetryableStatus(t *testing.T) {
 	defer server.Close()
 
 	dispatcher := newNotificationDispatcher(server.Client())
-	dispatcher.postJSON(NotificationWebhookSettings{URL: server.URL, Format: notificationFormatSlack}, map[string]any{"ok": true}, "dedupe-key")
+	dispatcher.postJSON(NotificationWebhookSettings{URL: server.URL, Format: notificationFormatSlack}, map[string]any{"ok": true}, "dedupe-key", nil)
 
 	if attempts != 2 {
 		t.Fatalf("attempts = %d, want retry then success", attempts)
@@ -408,7 +408,7 @@ func TestNotificationDispatcherCountsFinalFailure(t *testing.T) {
 	defer server.Close()
 
 	dispatcher := newNotificationDispatcher(server.Client())
-	dispatcher.postJSON(NotificationWebhookSettings{URL: server.URL, Format: notificationFormatSlack}, map[string]any{"ok": true}, "dedupe-key")
+	dispatcher.postJSON(NotificationWebhookSettings{URL: server.URL, Format: notificationFormatSlack}, map[string]any{"ok": true}, "dedupe-key", nil)
 
 	if attempts != 3 {
 		t.Fatalf("attempts = %d, want bounded 3 retries", attempts)

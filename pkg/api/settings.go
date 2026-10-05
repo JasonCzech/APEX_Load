@@ -1975,7 +1975,7 @@ func preserveWriteOnlySystemSettingsSecrets(next SystemSettings, current SystemS
 	}
 	currentTokens := make(map[string]tokenCandidate, len(current.Notifications.Webhooks))
 	for _, webhook := range current.Notifications.Webhooks {
-		if webhook.Format != notificationFormatDynatrace {
+		if !notificationFormatUsesToken(webhook.Format) {
 			continue
 		}
 		identity := notificationWebhookStableIdentity(webhook)
@@ -1988,13 +1988,13 @@ func preserveWriteOnlySystemSettingsSecrets(next SystemSettings, current SystemS
 	}
 	nextCounts := make(map[string]int, len(out.Notifications.Webhooks))
 	for _, webhook := range out.Notifications.Webhooks {
-		if webhook.Format == notificationFormatDynatrace {
+		if notificationFormatUsesToken(webhook.Format) {
 			nextCounts[notificationWebhookStableIdentity(webhook)]++
 		}
 	}
 	for index := range out.Notifications.Webhooks {
 		webhook := &out.Notifications.Webhooks[index]
-		if webhook.Format != notificationFormatDynatrace || strings.TrimSpace(webhook.APIToken) != "" {
+		if !notificationFormatUsesToken(webhook.Format) || strings.TrimSpace(webhook.APIToken) != "" {
 			continue
 		}
 		identity := notificationWebhookStableIdentity(*webhook)

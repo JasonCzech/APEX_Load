@@ -129,6 +129,11 @@ type RunArchiveManifest struct {
 	ClockObservationsFile      string `json:"clock_observations_file,omitempty"`
 	ClockObservationCount      int64  `json:"clock_observation_count,omitempty"`
 	ClockObservationsTruncated bool   `json:"clock_observations_truncated,omitempty"`
+	// PhaseEventsFile holds generated load-phase transitions and their sink
+	// outcomes (apexload.phase_event.v1), apart from analyst annotations.
+	PhaseEventsFile      string `json:"phase_events_file,omitempty"`
+	PhaseEventCount      int64  `json:"phase_event_count,omitempty"`
+	PhaseEventsTruncated bool   `json:"phase_events_truncated,omitempty"`
 }
 
 type TransactionSLARuleResult struct {

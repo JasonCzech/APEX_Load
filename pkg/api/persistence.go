@@ -712,6 +712,7 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 			tr.storedHistoryCache.deleteTest(id)
 		}
 		delete(tr.tests, id)
+		tr.phaseLogs.Delete(id)
 		tr.mu.Unlock()
 	}
 	return nil
@@ -1743,6 +1744,7 @@ func (tr *TestRunner) forgetProject(projectID string) {
 			tr.removeRefKeyLocked(test.RefKey)
 			tr.forgetRunSnapshotWriteStateLocked(id)
 			delete(tr.tests, id)
+			tr.phaseLogs.Delete(id)
 			delete(tr.archives, id)
 			forgetRunArchiveCache(id)
 			deleteGroupMetricsHistoryCache(id)
