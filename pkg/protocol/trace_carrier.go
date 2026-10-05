@@ -98,6 +98,15 @@ func ExtractMessageTraceLink(props map[string]string, kind string, deliveryCount
 	return link, true
 }
 
+// SettleMessagingTraceContext clears Sent when no send was attempted: a record
+// rejected for its size, or one only buffered in an open transaction that may
+// still abort. The context is then never looked up as a trace someone received.
+func SettleMessagingTraceContext(result *Result, attempted bool) {
+	if result != nil && result.TraceContext != nil && !attempted {
+		result.TraceContext.Sent = false
+	}
+}
+
 // AppendTraceLink adds a link within MaxTraceLinks, flagging any overflow.
 func AppendTraceLink(result *Result, link TraceLink) {
 	if result == nil || link.TraceID == "" {

@@ -61,6 +61,24 @@ func TestLookupSetTakesErrorsThenSlowThenRepresentative(t *testing.T) {
 	}
 }
 
+func TestLookupSetRestoreKeepsRank(t *testing.T) {
+	var set exemplarLookupSet
+	set.observe(&LiveMetrics{Transactions: map[string]*TxMetrics{"checkout": {Exemplars: []engine.TraceExemplar{
+		{TraceID: traceID(1), Reason: engine.ExemplarFirstError, Success: false, DurationMs: 5},
+	}}}})
+	failed := set.take()
+	// A full window of newer samples arrives before the failed poll is restored.
+	live := &LiveMetrics{Transactions: map[string]*TxMetrics{}}
+	for i := 0; i < maxLookupCandidates; i++ {
+		live.Transactions[fmt.Sprintf("tx-%d", i)] = &TxMetrics{Exemplars: []engine.TraceExemplar{{TraceID: traceID(100 + i), Reason: engine.ExemplarSample, Success: true, DurationMs: 900}}}
+	}
+	set.observe(live)
+	set.restore(failed)
+	if got := set.take(); len(got) == 0 || got[0] != traceID(1) {
+		t.Fatalf("restored error exemplar lost its rank: %v", got[:min(3, len(got))])
+	}
+}
+
 func TestProviderLookupOutcomesRecordMisses(t *testing.T) {
 	at := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
 	records := providerLookupOutcomes("elasticsearch", []string{traceID(1), traceID(2)}, []string{traceID(1)}, false, nil, at)

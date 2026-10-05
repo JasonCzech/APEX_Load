@@ -77,12 +77,17 @@ func (tr *TestRunner) runMonitorCorrelationOrigins(id string) []string {
 	return out
 }
 func (tr *TestRunner) validateRunMonitorCorrelation(id string) error {
-	origins := tr.runCorrelationAssignment(id).Origins
-	if len(origins) == 0 {
+	correlation := tr.runCorrelationAssignment(id)
+	if len(correlation.Origins) == 0 {
 		return nil
 	}
-	if len(origins) > 32 {
+	if len(correlation.Origins) > 32 {
 		return errors.New("run correlation supports at most 32 approved origins")
+	}
+	// Only the run marker can conflict with an authored X-Apex-Test-Run; a run
+	// that carries trace context alone leaves that header to the script.
+	if !correlation.carriesRunMarker() {
+		return nil
 	}
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()

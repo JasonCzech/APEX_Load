@@ -338,6 +338,7 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 		err = fmt.Errorf("unsupported JMS action type %q", action.Type)
 	}
 
+	protocol.SettleMessagingTraceContext(result, sendAttempted)
 	result.Duration = time.Since(start)
 	if result.ServerTelemetry == nil {
 		result.ServerTelemetry = finalizeJMSServerTelemetry(result, requestMsg, hasRequestMsg, responseMsg, hasResponseMsg)

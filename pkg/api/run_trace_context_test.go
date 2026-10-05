@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 )
 
@@ -105,5 +106,24 @@ func TestRunTraceContextPersistsWithTheRun(t *testing.T) {
 	// A stored value that no longer validates is dropped, never guessed.
 	if decodeStoredRunTraceContext(map[string]any{"enabled": true}) != nil {
 		t.Fatal("an origin-less stored setting was accepted")
+	}
+}
+
+func TestTraceContextOnlyRunLeavesAuthoredRunHeader(t *testing.T) {
+	// The run sends trace context but no run marker, so the script's own
+	// X-Apex-Test-Run header cannot conflict with anything the run adds.
+	script := &dsl.Script{Name: "authored", Protocol: "http", Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{DefaultHeaders: map[string]string{"X-Apex-Test-Run": "fixed-by-author"}}}}
+	tr := &TestRunner{tests: map[string]*ManagedTest{"trace-only": {
+		ID: "trace-only", TraceContext: &RunTraceContextSettings{Enabled: true, Origins: []string{"https://shop.test"}},
+		groupSpecs: []engine.GroupConfig{{Script: script}},
+	}}}
+	if correlation := tr.runCorrelationAssignment("trace-only"); correlation.carriesRunMarker() {
+		t.Fatalf("trace-only run carries the run marker: %+v", correlation)
+	}
+	if err := tr.validateRunMonitorCorrelation("trace-only"); err != nil {
+		t.Fatalf("trace-only run rejected an authored run header: %v", err)
+	}
+	if !(runCorrelation{Origins: []string{"https://shop.test"}}).carriesRunMarker() {
+		t.Fatal("a carrier-free policy must carry the run marker")
 	}
 }

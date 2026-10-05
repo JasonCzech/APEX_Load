@@ -142,3 +142,57 @@ func TestTraceContextGivesEachTransactionInstanceItsOwnTrace(t *testing.T) {
 		t.Fatal("two requests in one transaction claimed the same parent span")
 	}
 }
+
+const traceRecordingProtocolName = "correlation-trace-recording-test"
+
+// recordedTraces holds the trace each action ran under. Branches build their
+// own protocol instance from the registry, so the record is package-level.
+var recordedTraces = struct {
+	sync.Mutex
+	byAction map[string]string
+}{byAction: map[string]string{}}
+
+type traceRecordingProtocol struct{}
+
+func (*traceRecordingProtocol) Name() string                               { return traceRecordingProtocolName }
+func (*traceRecordingProtocol) ParallelSafe() bool                         { return true }
+func (*traceRecordingProtocol) Init(context.Context, map[string]any) error { return nil }
+func (*traceRecordingProtocol) Teardown(context.Context) error             { return nil }
+func (*traceRecordingProtocol) HealthCheck(context.Context) error          { return nil }
+func (*traceRecordingProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+	recordedTraces.Lock()
+	recordedTraces.byAction[action.Name] = trace.SpanContextFromContext(ctx).TraceID().String()
+	recordedTraces.Unlock()
+	return &protocol.Result{ActionName: action.Name, StartTime: time.Now(), Duration: time.Millisecond, Success: true}, nil
+}
+
+func init() {
+	protocol.Register(traceRecordingProtocolName, func() protocol.Protocol { return &traceRecordingProtocol{} })
+}
+
+func TestParallelBranchesKeepTheOpenTransactionsTrace(t *testing.T) {
+	vu := &VUser{
+		ID: 2, Group: "parallel", Proto: &traceRecordingProtocol{}, Variables: map[string]string{}, Metrics: NewMetricsCollector(32),
+		correlation: vuserCorrelation{traceRoots: true, sampled: true},
+		Script:      &dsl.Script{Protocol: traceRecordingProtocolName, Actions: []dsl.Action{{Name: "unused", Type: "GET", Target: "/"}}},
+	}
+	state := &sourceTransactionRuntimeState{name: "Checkout", startedAt: time.Now()}
+	vu.sourceTransactions = map[string]*sourceTransactionRuntimeState{"checkout": state}
+	vu.startSourceTransactionTraceRoot(context.Background(), state)
+	defer state.endTrace()
+	block := dsl.Action{Name: "fan-out", Type: "parallel", Control: &dsl.ControlFlow{Concurrency: 2, Branches: []dsl.ParallelBranch{
+		{Name: "catalog", Steps: []dsl.Action{{Name: "catalog-call", Type: "GET", Target: "/catalog"}}},
+		{Name: "cart", Steps: []dsl.Action{{Name: "cart-call", Type: "GET", Target: "/cart"}}},
+	}}}
+	if !vu.executeParallelBlock(context.Background(), block, "action") {
+		t.Fatal("parallel block failed")
+	}
+	want := state.trace.root.TraceID().String()
+	recordedTraces.Lock()
+	defer recordedTraces.Unlock()
+	for _, name := range []string{"catalog-call", "cart-call"} {
+		if got := recordedTraces.byAction[name]; got != want {
+			t.Fatalf("%s ran under trace %q, want the open transaction's %q", name, got, want)
+		}
+	}
+}

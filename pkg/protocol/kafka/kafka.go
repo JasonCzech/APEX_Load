@@ -484,6 +484,7 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 		}
 	}
 
+	protocol.SettleMessagingTraceContext(result, sendAttempted)
 	result.Duration = time.Since(result.StartTime)
 	if k.sharedProducer {
 		result.WorkerDuration = time.Since(start)

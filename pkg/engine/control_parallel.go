@@ -54,6 +54,11 @@ func (s *parallelResultSink) RecordTransaction(result *protocol.Result) error {
 
 func (vu *VUser) executeParallelBlock(ctx context.Context, action dsl.Action, phase string) bool {
 	started := time.Now()
+	// Branch VUsers carry no transaction state, so the block resolves its
+	// correlation context once: inside an open transaction every branch keeps
+	// that transaction's trace, and otherwise the branches share the block's.
+	ctx, endTransactionRoot := vu.correlationContext(ctx, &protocol.Action{Name: action.Name})
+	defer endTransactionRoot()
 	success := vu.runParallelBranches(ctx, action.Control, phase)
 	result := &protocol.Result{
 		ActionName: action.Name,

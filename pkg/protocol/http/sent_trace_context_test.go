@@ -144,3 +144,20 @@ func TestHTTPSentTraceContextSources(t *testing.T) {
 		}
 	})
 }
+
+func TestHTTPSentTraceContextNotSentWhenDialFails(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	url := ts.URL
+	ts.Close()
+	h := initHTTP(t, map[string]any{"base_url": url})
+	result, err := h.Execute(context.Background(), &protocol.Action{Name: "refused", Method: "GET", Target: "/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || result.TraceContext == nil {
+		t.Fatalf("result = %#v, want a failed request that still records its context", result)
+	}
+	if result.TraceContext.Sent || result.TraceContext.LookupTraceID() != "" {
+		t.Fatalf("TraceContext = %#v, want not sent after a refused dial", result.TraceContext)
+	}
+}

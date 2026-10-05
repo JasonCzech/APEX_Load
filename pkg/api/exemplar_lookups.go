@@ -52,6 +52,9 @@ type lookupCandidate struct {
 // Each poll takes the best 64 and starts a new window.
 type exemplarLookupSet struct {
 	candidates map[string]lookupCandidate
+	// taken holds the last poll's candidates so a failed poll restores them
+	// with their original rank.
+	taken map[string]lookupCandidate
 }
 
 func (s *exemplarLookupSet) add(c lookupCandidate) {
@@ -126,16 +129,23 @@ func (s *exemplarLookupSet) take() []string {
 		candidates = candidates[:maxProviderLookupTraceIDs]
 	}
 	out := make([]string, 0, len(candidates))
+	s.taken = make(map[string]lookupCandidate, len(candidates))
 	for _, c := range candidates {
 		out = append(out, c.traceID)
+		s.taken[c.traceID] = c
 	}
 	return out
 }
 
-// restore puts unqueried IDs back when a poll could not run.
+// restore puts unqueried IDs back when a poll could not run, keeping the rank
+// they were taken with so errors and slow requests stay ahead of new samples.
 func (s *exemplarLookupSet) restore(ids []string) {
-	for i, id := range ids {
-		s.add(lookupCandidate{traceID: id, rank: lookupRankCorrelation, durationMs: float64(len(ids) - i)})
+	for _, id := range ids {
+		c, ok := s.taken[id]
+		if !ok {
+			c = lookupCandidate{traceID: id, rank: lookupRankCorrelation}
+		}
+		s.add(c)
 	}
 }
 

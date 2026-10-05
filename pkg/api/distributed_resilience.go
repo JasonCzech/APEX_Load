@@ -1276,22 +1276,19 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 				}
 				secretBundleID := runSecrets.ID
 				correlation := tr.runCorrelationAssignment(testID)
-				if len(correlation.Origins) > 0 {
+				messagingCarrier := tr.testUsesMessagingTraceCarrier(testID)
+				if len(correlation.Origins) > 0 || messagingCarrier {
+					// One probe answers every feature the replacement must support.
 					ctx, cancel := context.WithTimeout(parent, b.timeout)
 					snapshot := b.probeGeneratorLoad(ctx, shard.Target, client)
 					cancel()
-					if !stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureRunCorrelationV1) {
+					if len(correlation.Origins) > 0 && !stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureRunCorrelationV1) {
 						return fail(fmt.Errorf("generator %q lacks run_correlation_v1 for evacuation", shard.Target))
 					}
 					if correlation.requiresPolicyV2() && !stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureCorrelationPolicyV2) {
 						return fail(fmt.Errorf("generator %q lacks correlation_policy_v2 for evacuation", shard.Target))
 					}
-				}
-				if tr.testUsesMessagingTraceCarrier(testID) {
-					ctx, cancel := context.WithTimeout(parent, b.timeout)
-					snapshot := b.probeGeneratorLoad(ctx, shard.Target, client)
-					cancel()
-					if !stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureMessagingTraceCarrierV1) {
+					if messagingCarrier && !stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureMessagingTraceCarrierV1) {
 						return fail(fmt.Errorf("generator %q lacks messaging_trace_carrier_v1 for evacuation", shard.Target))
 					}
 				}

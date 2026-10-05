@@ -27,8 +27,6 @@ const (
 	exemplarReasonNearMedian = "near_median"
 
 	exemplarsPerReason = 2
-	// maxExemplarErrorClasses bounds the error classes tracked per interval.
-	maxExemplarErrorClasses = 8
 )
 
 // Selection bounds. Variables so tests can exercise truncation.
@@ -36,6 +34,9 @@ var (
 	maxRunExemplars         = 20000
 	maxTransactionExemplars = 2000
 	maxExemplarTransactions = 1000
+	// maxExemplarSlots bounds the transaction-interval pairs held while the
+	// rows are scanned; each holds at most six candidates.
+	maxExemplarSlots = 100000
 )
 
 // ArchiveExemplar is one request picked after the run as evidence for one
@@ -80,8 +81,9 @@ type exemplarKey struct{ population, group, name string }
 
 type exemplarSlot struct {
 	slowest []ArchiveExemplar
-	errors  map[string]ArchiveExemplar
-	median  []ArchiveExemplar
+	// errors holds the earliest error of up to two distinct classes.
+	errors []ArchiveExemplar
+	median []ArchiveExemplar
 }
 
 // exemplarBefore orders candidates: longer duration, then earlier, then trace ID.
@@ -113,6 +115,22 @@ func keepTop(list []ArchiveExemplar, candidate ArchiveExemplar, before func(a, b
 		list = list[:exemplarsPerReason]
 	}
 	return list
+}
+
+// keepEarliestClasses keeps the earliest error of each of the two classes
+// whose earliest errors come first. A class's earliest error only moves
+// earlier, so a class dropped here can return only by beating a kept one.
+func keepEarliestClasses(list []ArchiveExemplar, candidate ArchiveExemplar) []ArchiveExemplar {
+	for i, existing := range list {
+		if existing.ErrorClass == candidate.ErrorClass {
+			if earlierExemplar(candidate, existing) {
+				list[i] = candidate
+				sort.SliceStable(list, func(a, b int) bool { return earlierExemplar(list[a], list[b]) })
+			}
+			return list
+		}
+	}
+	return keepTop(list, candidate, earlierExemplar)
 }
 
 func medianDistance(e ArchiveExemplar) float64 {
@@ -196,6 +214,7 @@ func selectArchiveExemplars(ctx context.Context, record *storage.RunArchiveRecor
 		return nil, false, err
 	}
 	slots := map[exemplarKey]map[int]*exemplarSlot{}
+	slotCount := 0
 	err = forEachArchiveRecordContext(ctx, record, func(m *RunArchiveManifest) string { return m.TransactionsFile }, func(row *exemplarRow) error {
 		if row.TraceSent == nil || !*row.TraceSent || !protocol.ValidTraceID(row.SentTraceID) || math.IsNaN(row.DurationMs) || math.IsInf(row.DurationMs, 0) || row.DurationMs < 0 || row.ActionName == "" || len(row.ActionName) > 256 || len(row.Group) > 256 {
 			return nil
@@ -218,7 +237,12 @@ func selectArchiveExemplars(ctx context.Context, record *storage.RunArchiveRecor
 		}
 		slot := byInterval[index]
 		if slot == nil {
-			slot = &exemplarSlot{errors: map[string]ArchiveExemplar{}}
+			if slotCount >= maxExemplarSlots {
+				truncated = true
+				return nil
+			}
+			slotCount++
+			slot = &exemplarSlot{}
 			byInterval[index] = slot
 		}
 		spanID := row.SentSpanID
@@ -234,15 +258,7 @@ func selectArchiveExemplars(ctx context.Context, record *storage.RunArchiveRecor
 		if !row.Success {
 			candidate.Reason = exemplarReasonError
 			candidate.ErrorClass = engine.ClassifyError(row.StatusCode, row.ErrorMessage, false)
-			existing, seen := slot.errors[candidate.ErrorClass]
-			switch {
-			case seen && earlierExemplar(candidate, existing):
-				slot.errors[candidate.ErrorClass] = candidate
-			case !seen && len(slot.errors) < maxExemplarErrorClasses:
-				slot.errors[candidate.ErrorClass] = candidate
-			case !seen:
-				truncated = true
-			}
+			slot.errors = keepEarliestClasses(slot.errors, candidate)
 			return nil
 		}
 		slowest := candidate
@@ -296,17 +312,9 @@ func intervalExemplarLists(byInterval map[int]*exemplarSlot) [][]ArchiveExemplar
 	lists := make([][]ArchiveExemplar, 0, len(indexes))
 	for _, index := range indexes {
 		slot := byInterval[index]
-		errors := make([]ArchiveExemplar, 0, len(slot.errors))
-		for _, e := range slot.errors {
-			errors = append(errors, e)
-		}
-		sort.Slice(errors, func(i, j int) bool { return earlierExemplar(errors[i], errors[j]) })
-		if len(errors) > exemplarsPerReason {
-			errors = errors[:exemplarsPerReason]
-		}
 		seen := map[string]bool{}
 		var list []ArchiveExemplar
-		for _, group := range [][]ArchiveExemplar{errors, slot.slowest, slot.median} {
+		for _, group := range [][]ArchiveExemplar{slot.errors, slot.slowest, slot.median} {
 			for _, e := range group {
 				if !seen[e.TraceID] {
 					seen[e.TraceID] = true

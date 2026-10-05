@@ -467,6 +467,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	var traceMu sync.Mutex
 	var dnsStart, connStart, tlsStart time.Time
 	var traceDNSTime, traceConnectTime, traceTLSTime, traceTTFB time.Duration
+	// wroteHeaders records whether any hop's headers reached a connection, so a
+	// request that failed before sending does not claim its trace was sent.
+	wroteHeaders := false
 	startTime := result.StartTime
 	trace := &httptrace.ClientTrace{
 		DNSStart:          func(_ httptrace.DNSStartInfo) { traceMu.Lock(); dnsStart = time.Now(); traceMu.Unlock() },
@@ -479,7 +482,8 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			traceTLSTime = time.Since(tlsStart)
 			traceMu.Unlock()
 		},
-		GotConn: func(info httptrace.GotConnInfo) { traceMu.Lock(); connectionReused = info.Reused; traceMu.Unlock() },
+		GotConn:      func(info httptrace.GotConnInfo) { traceMu.Lock(); connectionReused = info.Reused; traceMu.Unlock() },
+		WroteHeaders: func() { traceMu.Lock(); wroteHeaders = true; traceMu.Unlock() },
 		GotFirstResponseByte: func() {
 			traceMu.Lock()
 			if traceTTFB == 0 {
@@ -538,6 +542,16 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.TTFB = traceTTFB
 		return connectionReused, redirectCount, redirectDuration
 	}
+	// markUnsentTraceContext clears Sent when a transport failure happened
+	// before any request headers were written, such as a refused dial.
+	markUnsentTraceContext := func() {
+		traceMu.Lock()
+		wrote := wroteHeaders
+		traceMu.Unlock()
+		if !wrote && result.TraceContext != nil {
+			result.TraceContext.Sent = false
+		}
+	}
 
 	if requestBytes > 0 {
 		result.BytesSent = requestBytes
@@ -549,6 +563,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		if err != nil {
 			result.Duration = time.Since(result.StartTime)
 			reused, rCount, rDur := applyTraceTelemetry()
+			markUnsentTraceContext()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
 			result.ErrorMessage = h.transportErrorMessage(err)
 			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)

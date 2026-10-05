@@ -151,3 +151,34 @@ func TestAchievedComparisonTPSWeightsActiveIntervals(t *testing.T) {
 		t.Fatalf("empty achieved TPS = %v", got)
 	}
 }
+
+func TestWorkloadRuntimeDigestFollowsGroupMappings(t *testing.T) {
+	runtime := &RuntimeSettingsOverride{Log: &dsl.LogConfig{Level: "debug"}}
+	run := func(id, group string) *baselineComparisonRun {
+		r := &baselineComparisonRun{identity: BaselineRunIdentity{ID: id}}
+		r.manifest = &RunArchiveManifest{Provenance: RunArchiveProvenance{Groups: []TestGroup{{Name: group, VUsers: 10, RuntimeSettings: runtime}}}}
+		return r
+	}
+	current, baseline := run("current", "checkout-v2"), run("baseline", "checkout")
+	mappings := map[string]string{"baseline/checkout": "checkout-v2"}
+	got := rca.QualifyBaseline(comparisonWorkloadKey(current, mappings, "transaction"), comparisonWorkloadKey(baseline, mappings, "transaction"))
+	for _, reason := range got.Reasons {
+		if reason == rca.ReasonConfigChanged {
+			t.Fatalf("a renamed group with identical runtime settings reported %v", got.Reasons)
+		}
+	}
+	// Without the mapping the groups are different groups, and so is the config.
+	got = rca.QualifyBaseline(comparisonWorkloadKey(current, nil, "transaction"), comparisonWorkloadKey(baseline, nil, "transaction"))
+	if !slicesContains(got.Reasons, rca.ReasonConfigChanged) {
+		t.Fatalf("unmapped groups = %v, want config_changed", got.Reasons)
+	}
+}
+
+func slicesContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}

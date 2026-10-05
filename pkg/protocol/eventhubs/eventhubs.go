@@ -360,6 +360,7 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 		err = fmt.Errorf("unsupported eventhubs action type %q", action.Type)
 	}
 
+	protocol.SettleMessagingTraceContext(result, sendAttempted)
 	result.Duration = time.Since(start)
 	if err != nil && !hasSent && e.cfg.SampleTiming == "pnop_create_send_excludes_close" {
 		result.Duration = 0

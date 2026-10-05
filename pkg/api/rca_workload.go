@@ -27,7 +27,7 @@ func frozenWorkloadKey(p *RunArchiveProvenance, test *ManagedTest, scripts map[s
 			compiled[g.Name] = g.script
 		}
 	}
-	key := &rca.WorkloadKey{Version: rca.WorkloadKeyVersion, Source: rca.WorkloadKeyFrozen, Groups: map[string]rca.WorkloadGroup{}, RuntimeDigest: workloadRuntimeDigest(p)}
+	key := &rca.WorkloadKey{Version: rca.WorkloadKeyVersion, Source: rca.WorkloadKeyFrozen, Groups: map[string]rca.WorkloadGroup{}, RuntimeDigest: workloadRuntimeDigest(p, nil)}
 	for _, g := range p.Groups {
 		group := workloadGroup(g, compiled[g.Name])
 		group.ScriptDigest = scripts[g.Name]
@@ -44,24 +44,30 @@ func comparisonWorkloadKey(r *baselineComparisonRun, mappings map[string]string,
 	if r.manifest.InitialProvenance != nil {
 		provenance = *r.manifest.InitialProvenance
 	}
+	comparisonName := func(name string) string {
+		if mapped := mappings[r.identity.ID+"/"+name]; mapped != "" {
+			return mapped
+		}
+		return name
+	}
 	var key rca.WorkloadKey
 	if provenance.Workload != nil && provenance.Workload.Recorded() {
 		key = *provenance.Workload
 	} else {
-		key = rca.WorkloadKey{Version: rca.WorkloadKeyVersion, Source: rca.WorkloadKeyDerived, Groups: map[string]rca.WorkloadGroup{}, RuntimeDigest: workloadRuntimeDigest(&provenance)}
+		key = rca.WorkloadKey{Version: rca.WorkloadKeyVersion, Source: rca.WorkloadKeyDerived, Groups: map[string]rca.WorkloadGroup{}}
 		for _, g := range provenance.Groups {
 			key.Groups[g.Name] = workloadGroup(g, nil)
 		}
 	}
 	named := make(map[string]rca.WorkloadGroup, len(key.Groups))
 	for name, group := range key.Groups {
-		if mapped := mappings[r.identity.ID+"/"+name]; mapped != "" {
-			name = mapped
-		}
 		group.Levels = append([]float64(nil), group.Levels...)
-		named[name] = group
+		named[comparisonName(name)] = group
 	}
 	key.Groups = named
+	// The runtime digest is keyed by group name, so it is taken under the
+	// comparison names; a renamed group with the same settings then matches.
+	key.RuntimeDigest = workloadRuntimeDigest(&provenance, comparisonName)
 	key.Population = population
 	return key
 }
@@ -148,8 +154,9 @@ func workloadPacingPolicy(pacing dsl.PacingConfig, think dsl.ThinkTimeConfig) st
 }
 
 // workloadRuntimeDigest covers the scenario and group runtime overrides other
-// than pacing and think time, which each group key compares on its own.
-func workloadRuntimeDigest(p *RunArchiveProvenance) string {
+// than pacing and think time, which each group key compares on its own. name
+// maps each group to the name it is compared under; nil keeps its own.
+func workloadRuntimeDigest(p *RunArchiveProvenance, name func(string) string) string {
 	strip := func(settings *RuntimeSettingsOverride) *RuntimeSettingsOverride {
 		if settings == nil {
 			return nil
@@ -160,7 +167,11 @@ func workloadRuntimeDigest(p *RunArchiveProvenance) string {
 	}
 	groups := map[string]*RuntimeSettingsOverride{}
 	for _, g := range p.Groups {
-		groups[g.Name] = strip(g.RuntimeSettings)
+		key := g.Name
+		if name != nil {
+			key = name(g.Name)
+		}
+		groups[key] = strip(g.RuntimeSettings)
 	}
 	return comparisonDigest(struct {
 		Scenario *RuntimeSettingsOverride

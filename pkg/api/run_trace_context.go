@@ -98,6 +98,12 @@ func (c runCorrelation) requiresPolicyV2() bool {
 	return false
 }
 
+// carriesRunMarker reports whether generators add X-Apex-Test-Run. A policy
+// without explicit carriers carries only the run marker.
+func (c runCorrelation) carriesRunMarker() bool {
+	return len(c.Carriers) == 0 || slices.Contains(c.Carriers, engine.CorrelationCarrierRunMarker)
+}
+
 // combineRunCorrelation merges AppDynamics run-header origins with the run's
 // trace-context setting. Approved origins are shared by every carrier. A run
 // with only run-header origins keeps the carrier-free form older generators

@@ -225,3 +225,34 @@ func TestExemplarCapsSpreadAcrossIntervals(t *testing.T) {
 		t.Fatalf("capped to %d exemplars over %d intervals, truncated %v", len(exemplars), len(intervals), truncated)
 	}
 }
+
+func TestKeepEarliestClassesMatchesPerClassMinimum(t *testing.T) {
+	at := func(class string, second int) ArchiveExemplar {
+		return ArchiveExemplar{ErrorClass: class, TraceID: fmt.Sprintf("%s-%02d", class, second), Timestamp: exemplarFixtureStart.Add(time.Duration(second) * time.Second)}
+	}
+	// Twelve classes arrive out of order; a dropped class returns earlier.
+	arrivals := []ArchiveExemplar{at("a", 50), at("b", 40), at("c", 30), at("d", 45), at("e", 20), at("f", 60), at("g", 55), at("h", 58), at("i", 59), at("b", 10), at("j", 70), at("a", 15), at("k", 5), at("l", 80)}
+	var kept []ArchiveExemplar
+	for _, e := range arrivals {
+		kept = keepEarliestClasses(kept, e)
+	}
+	if len(kept) != 2 || kept[0].TraceID != "k-05" || kept[1].TraceID != "b-10" {
+		t.Fatalf("kept %+v, want k-05 then b-10", kept)
+	}
+}
+
+func TestExemplarSlotBoundTruncates(t *testing.T) {
+	previous := maxExemplarSlots
+	maxExemplarSlots = 5
+	defer func() { maxExemplarSlots = previous }()
+	server, store := baselineTestServer(t)
+	record := exemplarArchiveFixture(t, server, store, "slot-bound", nil)
+	exemplars, truncated, _ := selectFixtureExemplars(t, record)
+	intervals := map[time.Time]bool{}
+	for _, e := range exemplars {
+		intervals[e.IntervalEnd] = true
+	}
+	if !truncated || len(intervals) != 5 {
+		t.Fatalf("slot bound kept %d intervals, truncated %v", len(intervals), truncated)
+	}
+}

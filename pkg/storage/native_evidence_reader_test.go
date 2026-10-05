@@ -65,3 +65,54 @@ func TestForEachNativeIntervalEvidencePagesInTimestampOrder(t *testing.T) {
 		t.Fatalf("callback error not propagated: %v after %d calls", err, calls)
 	}
 }
+
+func TestForEachNativeIntervalEvidenceReadsDuplicateTimestampsOnce(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "native.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.SaveTest(&TestRecord{ID: "run", Name: "run", ProjectID: DefaultProjectID, Status: "COMPLETE", Groups: []any{}, StartTime: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, 10, 4, 12, 0, 0, 125_000_000, time.UTC)
+	// Distinct sub-second rows, then a run of one repeated timestamp that
+	// crosses a page boundary and fills a whole page, then distinct rows again.
+	var stamps []time.Time
+	for i := 0; i < nativeEvidencePageSize-3; i++ {
+		stamps = append(stamps, start.Add(time.Duration(i)*1500*time.Millisecond))
+	}
+	repeated := start.Add(time.Hour)
+	for i := 0; i < nativeEvidencePageSize+7; i++ {
+		stamps = append(stamps, repeated)
+	}
+	for i := 1; i <= 3; i++ {
+		stamps = append(stamps, repeated.Add(time.Duration(i)*time.Second))
+	}
+	for i, at := range stamps {
+		evidence := &NativeIntervalEvidence{Version: 2, WindowSeconds: 5, Dimensions: map[string]map[string]NativeIntervalMetric{"transaction": {"Purchase": {Count: int64(i)}}}}
+		if err := store.SaveHistory("run", at, map[string]any{"timestamp": at, "native_evidence": evidence}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seen := map[int64]int{}
+	var previous time.Time
+	if err := store.ForEachNativeIntervalEvidence(context.Background(), "run", func(at time.Time, evidence *NativeIntervalEvidence) error {
+		if at.Before(previous) {
+			t.Fatalf("timestamps out of order: %s after %s", at, previous)
+		}
+		previous = at
+		seen[evidence.Dimensions["transaction"]["Purchase"].Count]++
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != len(stamps) {
+		t.Fatalf("read %d distinct rows, want %d", len(seen), len(stamps))
+	}
+	for id, n := range seen {
+		if n != 1 {
+			t.Fatalf("row %d read %d times", id, n)
+		}
+	}
+}

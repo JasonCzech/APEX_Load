@@ -829,6 +829,7 @@ func (w *runArchiveWriter) syncAndCloseDataFilesLocked() error {
 	w.summaryFile = nil
 	w.elkFile = nil
 	w.dynatraceFile = nil
+	w.lookupFile = nil
 	var failures []error
 	for _, file := range files {
 		if file == nil {

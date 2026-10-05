@@ -29,9 +29,11 @@ func TestMetricAggregateCarriesTraceExemplars(t *testing.T) {
 		{TraceId: fmt.Sprintf("%032x", 4), Reason: engine.ExemplarSample, DurationMs: -1},
 		{TraceId: fmt.Sprintf("%032x", 5), Reason: engine.ExemplarSample},
 		{TraceId: fmt.Sprintf("%032x", 6), Reason: engine.ExemplarSample},
+		// A duplicate reason is skipped on its own; later exemplars still count.
+		{TraceId: fmt.Sprintf("%032x", 7), Reason: engine.ExemplarFirstError, StatusCode: 500},
 	}}
 	kept := metricAggregateFromProto(wire).Exemplars
-	if len(kept) != 1 || kept[0].TraceID != fmt.Sprintf("%032x", 5) {
+	if len(kept) != 2 || kept[0].TraceID != fmt.Sprintf("%032x", 5) || kept[1].TraceID != fmt.Sprintf("%032x", 7) {
 		t.Fatalf("kept = %+v", kept)
 	}
 }

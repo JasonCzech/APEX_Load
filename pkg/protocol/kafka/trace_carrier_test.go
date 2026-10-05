@@ -39,3 +39,36 @@ func TestKafkaTraceCarrierPropagatesAndLinks(t *testing.T) {
 		t.Fatal("an unsupported carrier was accepted")
 	}
 }
+
+func TestKafkaTraceCarrierRejectedRecordIsNotSent(t *testing.T) {
+	k := newMockKafka(t, map[string]any{"kafka_topic": "orders", "kafka_timeout_ms": float64(250), "kafka_max_message_bytes": float64(16), protocol.ConfigMessagingTraceCarrier: "w3c"})
+	result, err := k.Execute(context.Background(), &protocol.Action{Name: "produce", Type: "kafka_produce", Body: []byte("a body longer than the sixteen byte limit")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || result.TraceContext == nil {
+		t.Fatalf("result = %+v, want a rejected record that still records its context", result)
+	}
+	if result.TraceContext.Sent || result.TraceContext.LookupTraceID() != "" {
+		t.Fatalf("TraceContext = %+v, want not sent for a record rejected before the client", result.TraceContext)
+	}
+}
+
+func TestKafkaTraceCarrierBufferedTransactionalRecordIsNotSent(t *testing.T) {
+	ctx := context.Background()
+	k := newMockKafka(t, map[string]any{"kafka_topic": "tx.events", "kafka_transactional_id": "tx-trace", "kafka_timeout_ms": float64(40), protocol.ConfigMessagingTraceCarrier: "w3c"})
+	if begin, err := k.Execute(ctx, &protocol.Action{Name: "b", Type: "kafka_begin_transaction"}); err != nil || !begin.Success {
+		t.Fatalf("begin: %v %+v", err, begin)
+	}
+	buffered, err := k.Execute(ctx, &protocol.Action{Name: "p", Type: "kafka_produce", Body: []byte("t0")})
+	if err != nil || !buffered.Success || buffered.TraceContext == nil {
+		t.Fatalf("buffered produce = %+v %v", buffered, err)
+	}
+	// The record waits in the client for a commit that may never come.
+	if buffered.TraceContext.Sent || buffered.TraceContext.LookupTraceID() != "" {
+		t.Fatalf("buffered TraceContext = %+v, want not sent", buffered.TraceContext)
+	}
+	if abort, err := k.Execute(ctx, &protocol.Action{Name: "a", Type: "kafka_abort_transaction"}); err != nil || !abort.Success {
+		t.Fatalf("abort: %v %+v", err, abort)
+	}
+}

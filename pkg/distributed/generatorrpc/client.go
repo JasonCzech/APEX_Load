@@ -1791,11 +1791,11 @@ func traceExemplarsFromProto(values []*pb.TraceExemplar) []engine.TraceExemplar 
 	var out []engine.TraceExemplar
 	seen := map[string]bool{}
 	for _, value := range values {
-		reason := value.GetReason()
-		if len(out) == engine.MaxTraceExemplars || seen[reason] {
+		if len(out) == engine.MaxTraceExemplars {
 			break
 		}
-		if reason != engine.ExemplarSlowestSuccess && reason != engine.ExemplarFirstError && reason != engine.ExemplarSample {
+		reason := value.GetReason()
+		if seen[reason] || reason != engine.ExemplarSlowestSuccess && reason != engine.ExemplarFirstError && reason != engine.ExemplarSample {
 			continue
 		}
 		duration := value.GetDurationMs()
