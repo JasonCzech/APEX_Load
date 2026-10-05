@@ -954,6 +954,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -4813,6 +4814,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -5620,6 +5622,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -6329,6 +6332,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -10205,6 +10209,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -11066,6 +11071,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -11752,6 +11758,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -12407,6 +12414,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -12952,6 +12960,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -13570,6 +13579,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -14200,6 +14210,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -15506,6 +15517,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -18868,6 +18880,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -19706,6 +19719,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -20508,6 +20522,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -22171,6 +22186,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -22842,6 +22858,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -23821,6 +23838,7 @@ export interface operations {
                   "name"?: string;
                   "url"?: string;
                 }>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -24796,6 +24814,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -25494,6 +25513,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -34311,6 +34331,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -35162,6 +35183,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -48037,6 +48059,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -49911,6 +49934,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -63053,6 +63077,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -73710,6 +73735,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -74400,6 +74426,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -90080,6 +90107,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -90936,6 +90964,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -91635,6 +91664,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -92403,6 +92433,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -93380,6 +93411,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -94066,6 +94098,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -94721,6 +94754,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -95266,6 +95300,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -97091,6 +97126,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -106068,6 +106104,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -106852,6 +106889,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -109397,6 +109435,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -111321,6 +111360,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -111943,6 +111983,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -114394,6 +114435,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -115638,6 +115680,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -116959,6 +117002,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -118303,6 +118347,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -119648,6 +119693,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -120992,6 +121038,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -129621,6 +129668,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -130318,6 +130366,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -135683,6 +135732,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;
@@ -136533,6 +136583,7 @@ export interface operations {
                 };
                 "observability"?: {
                   "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
                 };
                 "pacing"?: {
                   "delay_ms"?: number;
@@ -141032,6 +141083,7 @@ export interface operations {
               };
               "observability"?: {
                 "external_metrics"?: Array<Record<string, unknown>>;
+                "trace_carrier"?: string;
               };
               "pacing"?: {
                 "delay_ms"?: number;

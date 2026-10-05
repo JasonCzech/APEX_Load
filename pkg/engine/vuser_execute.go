@@ -173,6 +173,7 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 		tx.Region = source.Region
 		tx.CorrelationID = source.CorrelationID
 		tx.TraceContext = source.TraceContext
+		tx.TraceLinks, tx.TraceLinksTruncated = source.TraceLinks, source.TraceLinksTruncated
 		tx.NetworkProfile = source.NetworkProfile
 		tx.DependencyType = source.DependencyType
 		tx.DependencyTarget = source.DependencyTarget
@@ -1173,6 +1174,7 @@ func copySequenceSourceResult(target *protocol.Result, source *protocol.Result) 
 	target.Region = source.Region
 	target.CorrelationID = source.CorrelationID
 	target.TraceContext = source.TraceContext
+	target.TraceLinks, target.TraceLinksTruncated = source.TraceLinks, source.TraceLinksTruncated
 	target.NetworkProfile = source.NetworkProfile
 	target.DependencyType = source.DependencyType
 	target.DependencyTarget = source.DependencyTarget

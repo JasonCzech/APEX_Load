@@ -259,6 +259,9 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	appendJMSConfig(cfg, script)
 	appendKafkaConfig(cfg, script)
 	appendEventHubsConfig(cfg, script)
+	if carrier := strings.TrimSpace(script.Config.Observability.TraceCarrier); carrier != "" {
+		cfg[protocol.ConfigMessagingTraceCarrier] = strings.ToLower(carrier)
+	}
 	appendHTTPSecurityConfig(cfg, script)
 
 	return resolveProtoConfigSecrets(cfg, resolver).(map[string]any)

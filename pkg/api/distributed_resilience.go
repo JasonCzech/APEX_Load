@@ -1287,6 +1287,14 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 						return fail(fmt.Errorf("generator %q lacks correlation_policy_v2 for evacuation", shard.Target))
 					}
 				}
+				if tr.testUsesMessagingTraceCarrier(testID) {
+					ctx, cancel := context.WithTimeout(parent, b.timeout)
+					snapshot := b.probeGeneratorLoad(ctx, shard.Target, client)
+					cancel()
+					if !stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureMessagingTraceCarrierV1) {
+						return fail(fmt.Errorf("generator %q lacks messaging_trace_carrier_v1 for evacuation", shard.Target))
+					}
+				}
 				if len(secretBundle) > 0 {
 					ctx, cancel := context.WithTimeout(parent, b.timeout)
 					snapshot := b.probeGeneratorLoad(ctx, shard.Target, client)

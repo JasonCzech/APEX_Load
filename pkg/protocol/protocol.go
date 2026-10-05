@@ -705,6 +705,10 @@ type Result struct {
 	// TraceContext is the W3C context the request actually carried, kept apart
 	// from CorrelationID; nil when the protocol does not record one.
 	TraceContext *SentTraceContext `json:"trace_context,omitempty"`
+	// TraceLinks relate a messaging result to other contexts: a consumed
+	// message's producer, batch members or a redelivery. At most MaxTraceLinks.
+	TraceLinks          []TraceLink `json:"trace_links,omitempty"`
+	TraceLinksTruncated bool        `json:"trace_links_truncated,omitempty"`
 	// Extractions carries the values an action's extractors pulled out of the
 	// response, keyed by the variable they are saved to. An entry whose KEY is
 	// sensitive (scrub.SensitiveName — "session_token" and the like) IS

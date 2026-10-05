@@ -3,6 +3,7 @@ package eventhubs
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -69,6 +70,20 @@ func (e *EventHubs) produceBatch(ctx context.Context, action *protocol.Action, r
 	for i, body := range bodies {
 		events[i] = base
 		events[i].Body = []byte(body)
+		if e.traceCarrier {
+			// Every member carries its own span; the row links them all.
+			events[i].Properties = maps.Clone(base.Properties)
+			if events[i].Properties == nil {
+				events[i].Properties = map[string]string{}
+			}
+			sent := protocol.InjectMessageTraceContext(ctx, events[i].Properties, true)
+			if i == 0 {
+				result.TraceContext = sent
+			}
+			if sent != nil && sent.TraceID != "" {
+				protocol.AppendTraceLink(result, protocol.TraceLink{TraceID: sent.TraceID, SpanID: sent.SpanID, Kind: protocol.TraceLinkBatchMember})
+			}
+		}
 		n := eventSize(events[i])
 		if n > MaxEventHubsEventBytes-size {
 			return event{}, fmt.Errorf("Event Hubs message list and properties exceed size limit")

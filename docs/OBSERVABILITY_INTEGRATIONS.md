@@ -264,6 +264,40 @@ valid trace ID) become exemplars.
   function of the archive, so it is byte-identical when repeated.
   `exemplars_truncated` marks any cap.
 
+### Messaging trace carriers
+
+Messaging scripts opt in per script with `config.observability.trace_carrier:
+"w3c"` (default `none`). Kafka, JMS on Solace, IBM MQ and Service Bus, and
+Event Hubs then write the carrier their consumers' instrumentation reads.
+
+| Protocol | Carrier |
+| --- | --- |
+| Kafka | `traceparent` and `tracestate` record headers |
+| JMS (Solace, IBM MQ) | `traceparent` and `tracestate` message properties |
+| Service Bus | Those properties plus `Diagnostic-Id` for Azure SDK consumers |
+| Event Hubs | `traceparent`, `tracestate` and `Diagnostic-Id` event properties |
+
+- **Producers:** each message carries a child of the transaction root (or of
+  the active span) with its own span ID and the parent's flags and state.
+  Without a root it starts a new unsampled trace. A `traceparent` or
+  `Diagnostic-Id` the script sets wins and is recorded as authored. The
+  producer row archives what was sent like an HTTP request (`trace_sent`,
+  `sent_trace_id`), so producers can be exemplars.
+- **Batches:** each Event Hubs batch member gets its own span, and the
+  producer row links every member (`batch_member`).
+- **Consumers:** a consumed message is not a child of the consumer's trace.
+  The consumer row archives `trace_links` naming the producer's context,
+  `consumed` or, for a redelivery, `redelivery` with the broker's delivery
+  count when reported (JMS rollbacks and delivery counts, Kafka and Event
+  Hubs duplicate offsets or sequence numbers). Earlier deliveries have no
+  span of their own to link, so a redelivery links the producer context.
+  Rows keep at most eight links (`trace_links_truncated`).
+
+Distributed runs whose scripts opt in require generators advertising
+`messaging_trace_carrier_v1`; older generators fail before any traffic starts.
+These behaviours are covered by the protocols' in-memory brokers; they have
+not yet been qualified against live brokers or APM tenants.
+
 ### Signal boundary
 
 This implementation exports traces only. Prometheus remains the metrics

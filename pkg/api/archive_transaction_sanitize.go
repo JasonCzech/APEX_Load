@@ -117,6 +117,13 @@ func sanitizeArchivedTransaction(item *TransactionEvent) {
 	item.SpanID = scrub.ValueLabel(item.SpanID, policy)
 	item.SentTraceID = scrub.ValueLabel(item.SentTraceID, policy)
 	item.SentSpanID = scrub.ValueLabel(item.SentSpanID, policy)
+	if len(item.TraceLinks) > protocol.MaxTraceLinks {
+		item.TraceLinks, item.TraceLinksTruncated = item.TraceLinks[:protocol.MaxTraceLinks], true
+	}
+	for i := range item.TraceLinks {
+		item.TraceLinks[i].TraceID = scrub.ValueLabel(item.TraceLinks[i].TraceID, policy)
+		item.TraceLinks[i].SpanID = scrub.ValueLabel(item.TraceLinks[i].SpanID, policy)
+	}
 	item.TraceSource = scrub.ValueLabel(item.TraceSource, policy)
 	if len(item.PropertyDimensions) > 4 {
 		item.PropertyDimensions = nil

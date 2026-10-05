@@ -46,6 +46,11 @@ const FeatureCorrelationPolicyV2 = "correlation_policy_v2"
 // from peers without it.
 const FeatureExemplarsV1 = "exemplars_v1"
 
+// FeatureMessagingTraceCarrierV1 honors config.observability.trace_carrier on
+// messaging protocols. A run whose scripts opt in fails before traffic on
+// generators without it, because older generators would silently send nothing.
+const FeatureMessagingTraceCarrierV1 = "messaging_trace_carrier_v1"
+
 type assignedTest struct {
 	sourcePlan                *pb.SourcePlanManifest
 	terminationMode           string
@@ -1423,7 +1428,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
 		activeTestIDs := s.activeTestIDs()
-		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1, FeatureRunCorrelationV1, FeatureCorrelationPolicyV2, FeatureExemplarsV1)
+		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1, FeatureRunCorrelationV1, FeatureCorrelationPolicyV2, FeatureExemplarsV1, FeatureMessagingTraceCarrierV1)
 		javaHosts := s.javaHostCapabilities()
 		if javaHosts != nil {
 			compatibleFeatures = append(compatibleFeatures, FeatureJavaHostBrokerV1, FeatureJavaHostPreparedPopulationV1)

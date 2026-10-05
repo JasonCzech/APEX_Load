@@ -356,6 +356,10 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		SourceProfile:         result.SourceProfile,
 	}
 	applySentTraceContext(&event, result.TraceContext)
+	if len(result.TraceLinks) > 0 || result.TraceLinksTruncated {
+		event.TraceLinks = append([]protocol.TraceLink(nil), result.TraceLinks...)
+		event.TraceLinksTruncated = result.TraceLinksTruncated
+	}
 	// Direct recorder callers do not pass through the engine's pre-redaction
 	// binding. Bind them against the same immutable admission provenance here.
 	provenance := w.manifest.InitialProvenance

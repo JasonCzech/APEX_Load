@@ -86,6 +86,8 @@ type Kafka struct {
 	rrCounter      uint64 // round-robin partition counter
 	initialized    bool
 	sharedProducer bool
+	// traceCarrier writes and reads W3C context in record headers (trace_carrier).
+	traceCarrier bool
 }
 
 // pendingProduce is a record buffered during an open transaction; it is flushed
@@ -156,6 +158,9 @@ func (k *Kafka) Name() string { return k.name }
 func (k *Kafka) Init(ctx context.Context, cfg map[string]any) error {
 	partitions, err := boundedConfigInt(cfg, "kafka_partitions", defaultMockPartitions, 0, MaxConfiguredPartitions)
 	if err != nil {
+		return err
+	}
+	if k.traceCarrier, err = protocol.MessagingTraceCarrierEnabled(cfg); err != nil {
 		return err
 	}
 	maxMessageBytes, err := boundedConfigInt(cfg, "kafka_max_message_bytes", 0, 0, MaxConfiguredMessageBytes)
@@ -692,6 +697,7 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 		return kafkaRecord{}, fmt.Errorf("kafka topic is required")
 	}
 	rec := k.buildRecord(action, topic)
+	k.injectTraceContext(ctx, &rec, result)
 	framed, serr := k.valueSerde.Serialize(ctx, topic, rec.Value)
 	if serr != nil {
 		return kafkaRecord{}, serr
@@ -907,10 +913,30 @@ func (k *Kafka) consume(ctx context.Context, action *protocol.Action, result *pr
 			result.Extractions["kafka_out_of_order"] = "1"
 		}
 	}
+	if k.traceCarrier {
+		kind := protocol.TraceLinkConsumed
+		if result.Extractions["kafka_duplicate"] == "1" {
+			kind = protocol.TraceLinkRedelivery
+		}
+		if link, ok := protocol.ExtractMessageTraceLink(rec.Headers, kind, 0); ok {
+			protocol.AppendTraceLink(result, link)
+		}
+	}
 	if err := runExtractors(action.Extractors, result, rec); err != nil {
 		return kafkaRecord{}, err
 	}
 	return rec, evaluateAssertions(action.Assertions, result, rec)
+}
+
+// injectTraceContext writes the record's W3C headers when trace_carrier is on.
+func (k *Kafka) injectTraceContext(ctx context.Context, rec *kafkaRecord, result *protocol.Result) {
+	if !k.traceCarrier || rec == nil {
+		return
+	}
+	if rec.Headers == nil {
+		rec.Headers = make(map[string]string)
+	}
+	result.TraceContext = protocol.InjectMessageTraceContext(ctx, rec.Headers, false)
 }
 
 func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, result *protocol.Result, sentOK, receivedOK, attempted *bool) (observedRequest, observedResponse kafkaRecord, operationErr error) {
@@ -952,6 +978,7 @@ func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, resul
 		request.Headers = make(map[string]string)
 	}
 	request.Headers["kafka_correlation_id"] = request.CorrelationID
+	k.injectTraceContext(ctx, &request, result)
 	if err := k.checkRecordSize(request); err != nil {
 		return kafkaRecord{}, kafkaRecord{}, err
 	}

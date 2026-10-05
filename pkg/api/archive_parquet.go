@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/writer"
 )
@@ -36,6 +37,8 @@ type parquetTransactionEvent struct {
 	TraceSource            string  `parquet:"name=trace_source, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	SentTraceID            string  `parquet:"name=sent_trace_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	SentSpanID             string  `parquet:"name=sent_span_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TraceLinks             string  `parquet:"name=trace_links, type=BYTE_ARRAY, convertedtype=UTF8"`
+	TraceLinksTruncated    bool    `parquet:"name=trace_links_truncated, type=BOOLEAN"`
 	NetworkProfile         string  `parquet:"name=network_profile, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	SourceTransaction      string  `parquet:"name=source_transaction, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	DependencyType         string  `parquet:"name=dependency_type, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
@@ -276,6 +279,8 @@ func toParquetTransactions(items []TransactionEvent) []parquetTransactionEvent {
 			TraceSource:            item.TraceSource,
 			SentTraceID:            item.SentTraceID,
 			SentSpanID:             item.SentSpanID,
+			TraceLinks:             parquetTraceLinks(item.TraceLinks),
+			TraceLinksTruncated:    item.TraceLinksTruncated,
 			NetworkProfile:         item.NetworkProfile,
 			SourceTransaction:      item.SourceTransaction,
 			DependencyType:         item.DependencyType,
@@ -413,4 +418,16 @@ func parquetOptionalBool(value *bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+// parquetTraceLinks encodes a row's trace links as JSON; empty when none.
+func parquetTraceLinks(links []protocol.TraceLink) string {
+	if len(links) == 0 {
+		return ""
+	}
+	encoded, err := json.Marshal(links)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }

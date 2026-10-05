@@ -108,6 +108,8 @@ type JMS struct {
 	mockNamespace      string
 	mockRelease        *sync.Once
 	allowedTargetHosts []string
+	// traceCarrier writes and reads W3C context in message properties.
+	traceCarrier bool
 }
 
 type config struct {
@@ -188,6 +190,9 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 	}
 	j.provider = provider
 	j.allowedTargetHosts = protocol.TargetPolicyHosts(cfg)
+	if j.traceCarrier, err = protocol.MessagingTraceCarrierEnabled(cfg); err != nil {
+		return err
+	}
 	timeoutMS, err := boundedJMSInteger(cfg["jms_timeout_ms"], int((5*time.Second)/time.Millisecond), 0, int(MaxConfiguredTimeout/time.Millisecond))
 	if err != nil {
 		return fmt.Errorf("jms timeout_ms: %w", err)
@@ -641,6 +646,7 @@ func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *prot
 		return message{}, fmt.Errorf("JMS destination is required")
 	}
 	msg := j.buildMessage(action, destination)
+	j.injectTraceContext(ctx, &msg, result)
 	if err := validateJMSMessageBounds(msg); err != nil {
 		return message{}, err
 	}
@@ -820,6 +826,7 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 	// delivers the SAME broker sequence to every subscription, so a single session
 	// consuming two subscriptions of one topic would otherwise flag the second,
 	// distinct delivery as a duplicate.
+	j.linkConsumedTraceContext(msg, result)
 	if msg.SequenceNumber > 0 && !isRedeliveredMessage(msg) {
 		if dup, ooo := j.session.ObserveKeyed(msg.sourceSubscription, msg.SequenceNumber); dup || ooo {
 			if dup {
@@ -1287,6 +1294,7 @@ func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result 
 	if request.CorrelationID == "" {
 		request.CorrelationID = request.ID
 	}
+	j.injectTraceContext(ctx, &request, result)
 	if err := validateJMSMessageBounds(request); err != nil {
 		return message{}, message{}, err
 	}
@@ -1880,4 +1888,44 @@ func lookupString(key string, values map[string]string, label string) (string, e
 		return "", fmt.Errorf("JMS %s %q not found", label, key)
 	}
 	return value, nil
+}
+
+// injectTraceContext writes the message's W3C properties when trace_carrier is
+// on; Service Bus consumers built on the Azure SDK also read Diagnostic-Id.
+func (j *JMS) injectTraceContext(ctx context.Context, msg *message, result *protocol.Result) {
+	if !j.traceCarrier || msg == nil {
+		return
+	}
+	if msg.Properties == nil {
+		msg.Properties = make(map[string]string)
+	}
+	result.TraceContext = protocol.InjectMessageTraceContext(ctx, msg.Properties, strings.EqualFold(strings.TrimSpace(j.provider), "servicebus"))
+}
+
+// linkConsumedTraceContext archives a delivery's producer context, marking
+// redeliveries with the broker's delivery count when it reports one.
+func (j *JMS) linkConsumedTraceContext(msg message, result *protocol.Result) {
+	if !j.traceCarrier {
+		return
+	}
+	kind, count := protocol.TraceLinkConsumed, 0
+	if isRedeliveredMessage(msg) {
+		kind = protocol.TraceLinkRedelivery
+		if dc, ok := firstMatchingMapValue(msg.Properties, "delivery_count", "x-delivery-count", "JMSXDeliveryCount"); ok {
+			count, _ = strconv.Atoi(strings.TrimSpace(dc))
+		}
+	}
+	props := msg.Properties
+	if len(msg.Headers) > 0 {
+		props = make(map[string]string, len(msg.Properties)+len(msg.Headers))
+		for key, value := range msg.Headers {
+			props[key] = value
+		}
+		for key, value := range msg.Properties {
+			props[key] = value
+		}
+	}
+	if link, ok := protocol.ExtractMessageTraceLink(props, kind, count); ok {
+		protocol.AppendTraceLink(result, link)
+	}
 }

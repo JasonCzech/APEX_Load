@@ -16,6 +16,7 @@ import (
 	"unicode"
 
 	"github.com/jasonczech/apexload/pkg/fileasset"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
@@ -2148,6 +2149,9 @@ func validateWebRuntimeIssues(script *Script) []string {
 		issues = append(issues, "config.web_runtime.streaming.bandwidth_estimation must be rolling or instant")
 	}
 
+	if err := protocol.ValidateTraceCarrier(script.Config.Observability.TraceCarrier); err != nil {
+		issues = append(issues, "config.observability."+err.Error())
+	}
 	for index, metric := range script.Config.Observability.ExternalMetrics {
 		prefix := fmt.Sprintf("config.observability.external_metrics[%d]", index)
 		if strings.TrimSpace(metric.Name) == "" {

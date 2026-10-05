@@ -278,6 +278,8 @@ type TransactionEvent struct {
 	TraceSource           string                    `json:"trace_source,omitempty"`
 	SentTraceID           string                    `json:"sent_trace_id,omitempty"`
 	SentSpanID            string                    `json:"sent_span_id,omitempty"`
+	TraceLinks            []protocol.TraceLink      `json:"trace_links,omitempty"`
+	TraceLinksTruncated   bool                      `json:"trace_links_truncated,omitempty"`
 	DependencyType        string                    `json:"dependency_type,omitempty"`
 	DependencyTarget      string                    `json:"dependency_target,omitempty"`
 	DurationMs            float64                   `json:"duration_ms"`

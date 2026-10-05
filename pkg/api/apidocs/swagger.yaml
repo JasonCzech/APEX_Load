@@ -2738,6 +2738,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -13348,6 +13350,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -15394,6 +15398,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -17250,6 +17256,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -41388,6 +41396,8 @@ paths:
                                   type: string
                                 url:
                                   type: string
+                          trace_carrier:
+                            type: string
                       pacing:
                         type: object
                         properties:
@@ -159994,6 +160004,8 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -162197,6 +162209,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -164430,6 +164444,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -166490,6 +166506,8 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -168691,6 +168709,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -170885,6 +170905,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -172933,6 +172955,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -176651,6 +176675,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -180957,6 +180983,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -183014,6 +183042,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -186690,6 +186720,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -190290,6 +190322,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -192163,6 +192197,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -194127,6 +194163,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -196008,6 +196046,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -197823,6 +197863,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -201568,6 +201610,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -203760,6 +203804,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -206963,6 +207009,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -208790,6 +208838,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -210861,6 +210911,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -212954,6 +213006,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -216318,6 +216372,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -219082,6 +219138,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -220811,6 +220869,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -223002,6 +223062,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -224718,6 +224780,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -226819,6 +226883,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -229769,6 +229835,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -232095,6 +232163,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -235510,6 +235580,8 @@ paths:
                                       type: object
                                       description: 'Go type: ExternalMetricConfig'
                                       additionalProperties: true
+                                  trace_carrier:
+                                    type: string
                               pacing:
                                 type: object
                                 properties:
@@ -237354,6 +237426,8 @@ paths:
                                       type: object
                                       description: 'Go type: ExternalMetricConfig'
                                       additionalProperties: true
+                                  trace_carrier:
+                                    type: string
                               pacing:
                                 type: object
                                 properties:
@@ -239142,6 +239216,8 @@ paths:
                                         type: object
                                         description: 'Go type: ExternalMetricConfig'
                                         additionalProperties: true
+                                    trace_carrier:
+                                      type: string
                                 pacing:
                                   type: object
                                   properties:
@@ -240680,6 +240756,8 @@ paths:
                                         type: object
                                         description: 'Go type: ExternalMetricConfig'
                                         additionalProperties: true
+                                    trace_carrier:
+                                      type: string
                                 pacing:
                                   type: object
                                   properties:
@@ -242628,6 +242706,8 @@ paths:
                                       type: object
                                       description: 'Go type: ExternalMetricConfig'
                                       additionalProperties: true
+                                  trace_carrier:
+                                    type: string
                               pacing:
                                 type: object
                                 properties:
@@ -244472,6 +244552,8 @@ paths:
                                       type: object
                                       description: 'Go type: ExternalMetricConfig'
                                       additionalProperties: true
+                                  trace_carrier:
+                                    type: string
                               pacing:
                                 type: object
                                 properties:
@@ -246260,6 +246342,8 @@ paths:
                                         type: object
                                         description: 'Go type: ExternalMetricConfig'
                                         additionalProperties: true
+                                    trace_carrier:
+                                      type: string
                                 pacing:
                                   type: object
                                   properties:
@@ -247798,6 +247882,8 @@ paths:
                                         type: object
                                         description: 'Go type: ExternalMetricConfig'
                                         additionalProperties: true
+                                    trace_carrier:
+                                      type: string
                                 pacing:
                                   type: object
                                   properties:
@@ -249769,6 +249855,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -251571,6 +251659,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -253501,6 +253591,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -255162,6 +255254,8 @@ paths:
                                   type: object
                                   description: 'Go type: ExternalMetricConfig'
                                   additionalProperties: true
+                              trace_carrier:
+                                type: string
                           pacing:
                             type: object
                             properties:
@@ -256825,6 +256919,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -258864,6 +258960,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -262232,6 +262330,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -264065,6 +264165,8 @@ paths:
                                 type: object
                                 description: 'Go type: ExternalMetricConfig'
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:
@@ -266096,6 +266198,8 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            trace_carrier:
+                              type: string
                         pacing:
                           type: object
                           properties:

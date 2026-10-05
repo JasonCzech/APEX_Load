@@ -506,6 +506,8 @@ export interface ExternalMetricConfig {
 
 export interface ObservabilityConfig {
   external_metrics?: ExternalMetricConfig[]
+  // Messaging protocols write W3C trace context and archive consumer links when 'w3c'.
+  trace_carrier?: 'none' | 'w3c'
 }
 
 export interface NetworkProfileWeight extends NetworkSimulationConfig {

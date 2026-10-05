@@ -269,6 +269,10 @@ type BrunoRuntimeLimits struct {
 
 type ObservabilityConfig struct {
 	ExternalMetrics []ExternalMetricConfig `json:"external_metrics,omitempty"`
+	// TraceCarrier opts messaging protocols into W3C trace context: "w3c"
+	// writes it on produce and archives consumed messages' producer links.
+	// Empty or "none" leaves messages unchanged.
+	TraceCarrier string `json:"trace_carrier,omitempty"`
 }
 
 type ExternalMetricConfig struct {

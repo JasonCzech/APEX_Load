@@ -89,6 +89,8 @@ type EventHubs struct {
 	// consume probe. Event Hubs has no ack/rollback model, so the session is used
 	// only for its bounded sequence observer (lazily created on first consume).
 	observer *messaging.Session[struct{}]
+	// traceCarrier writes and reads W3C context and Diagnostic-Id in event properties.
+	traceCarrier bool
 }
 
 func (e *EventHubs) Name() string              { return e.name }
@@ -99,6 +101,11 @@ func (e *EventHubs) MessagingProgressSnapshot() *protocol.MessagingProgressSnaps
 }
 
 func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
+	carrier, err := protocol.MessagingTraceCarrierEnabled(cfg)
+	if err != nil {
+		return err
+	}
+	e.traceCarrier = carrier
 	ready := false
 	// Iteration reset first releases the old client. Keep its immutable local
 	// evidence visible while constructing a replacement, so an ordinary tick
@@ -436,6 +443,9 @@ func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result
 		return event{}, fmt.Errorf("event hub name is required")
 	}
 	ev := e.buildEvent(action)
+	if e.traceCarrier {
+		result.TraceContext = protocol.InjectMessageTraceContext(ctx, ev.Properties, true)
+	}
 	if size := eventSize(ev); size > MaxEventHubsEventBytes {
 		return event{}, fmt.Errorf("event payload and properties exceed %d bytes", MaxEventHubsEventBytes)
 	}
@@ -604,6 +614,15 @@ func (e *EventHubs) consume(ctx context.Context, action *protocol.Action, result
 			if err := protocol.StoreExtraction(result, "eventhubs_out_of_order", "1"); err != nil {
 				return event{}, err
 			}
+		}
+	}
+	if e.traceCarrier {
+		kind := protocol.TraceLinkConsumed
+		if result.Extractions["eventhubs_duplicate"] == "1" {
+			kind = protocol.TraceLinkRedelivery
+		}
+		if link, ok := protocol.ExtractMessageTraceLink(ev.Properties, kind, 0); ok {
+			protocol.AppendTraceLink(result, link)
 		}
 	}
 	if err := runExtractors(action.Extractors, result, ev); err != nil {

@@ -100,6 +100,8 @@ type archiveTransactionEvent struct {
 	TraceSource           string                    `json:"trace_source,omitempty"`
 	SentTraceID           string                    `json:"sent_trace_id,omitempty"`
 	SentSpanID            string                    `json:"sent_span_id,omitempty"`
+	TraceLinks            []protocol.TraceLink      `json:"trace_links,omitempty"`
+	TraceLinksTruncated   bool                      `json:"trace_links_truncated,omitempty"`
 	DependencyType        string                    `json:"dependency_type,omitempty"`
 	DependencyTarget      string                    `json:"dependency_target,omitempty"`
 	SourceStepID          string                    `json:"source_step_id,omitempty"`
@@ -1063,6 +1065,10 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 		if wasSent {
 			event.TraceID, event.SpanID = sent.TraceID, sent.SpanID
 		}
+	}
+	if len(result.TraceLinks) > 0 || result.TraceLinksTruncated {
+		event.TraceLinks = append([]protocol.TraceLink(nil), result.TraceLinks...)
+		event.TraceLinksTruncated = result.TraceLinksTruncated
 	}
 	if len(event.Extractions) != len(result.Extractions) {
 		event.ExtractionsIncomplete = true

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
@@ -165,4 +166,21 @@ func runTraceContextForStorage(settings *RunTraceContextSettings) any {
 		return nil
 	}
 	return cloneRunTraceContext(settings)
+}
+
+// testUsesMessagingTraceCarrier reports whether any group's script opts its
+// messaging protocol into W3C trace carriers.
+func (tr *TestRunner) testUsesMessagingTraceCarrier(id string) bool {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	test := tr.tests[id]
+	if test == nil {
+		return false
+	}
+	for _, group := range test.Groups {
+		if group.script != nil && strings.EqualFold(strings.TrimSpace(group.script.Config.Observability.TraceCarrier), protocol.TraceCarrierW3C) {
+			return true
+		}
+	}
+	return false
 }

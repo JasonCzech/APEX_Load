@@ -1181,6 +1181,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 					continue
 				}
 			}
+			if tr.testUsesMessagingTraceCarrier(test.ID) && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeatureMessagingTraceCarrierV1) {
+				_ = result.client.Close()
+				discoveryFatal = fmt.Errorf("generator %s lacks messaging_trace_carrier_v1; no traffic was started", result.target)
+				continue
+			}
 			if b.requireRunSupervision && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeatureRunSupervisionV1) {
 				_ = result.client.Close()
 				slog.Warn("distributed generator lacks required run supervision", "target", result.target, "feature", generatorrpc.FeatureRunSupervisionV1)
