@@ -297,6 +297,51 @@ Archived intervals are about one second long, so three consecutive intervals
 is a short window; the evaluation corpus (WP3.9) recalibrates the rules under a
 new version.
 
+## Root-cause analysis budgets
+
+The v2 root-cause engine (`pkg/rca`) runs every analysis inside a budget
+(`rca.DefaultBudget`):
+
+| Limit | Default |
+| --- | --- |
+| Series | 2,000 |
+| Points per series (`MaxSeriesPoints`) | 10,000 |
+| Exemplars | 20,000 |
+| Graph nodes / edges | 5,000 / 20,000 |
+| Wall time | 120 s |
+| Heap growth | 512 MiB |
+
+Exceeding a limit never fails the analysis and never cuts evidence silently:
+the engine keeps what the limit allows and adds a `budget_truncated`
+limitation naming the limit, for example `series: 2000 of 2500`. Wall time and
+heap are checked before each stage; a stage that would start over budget is
+skipped and reported the same way, while a stage that finishes over time keeps
+its result and is not reported as truncated. A stage is not interrupted part
+way: validity is linear (about 0.2 µs per resource sample), so it reaches the
+wall limit only on inputs of hundreds of millions of rows. The heap limit
+applies to the live heap's growth since the analysis started, measured
+process-wide, so two concurrent analyses see each other's growth. Running
+analyses inside the analytical worker limits arrives with the analysis
+service; until then the engine is not invoked by any job.
+
+Until onset detection lands, an assessment judges acceptance (the run's SLA
+verdict) and validity, and its outcome is `insufficient_evidence` with a
+`detection_unavailable` limitation; anomalies and hypotheses stay empty.
+
+`BenchmarkRCAAnalyze` baselines (Apple M4, Go 1.26.5, darwin/arm64,
+2026-10-05; a row is one generator resource sample, ten generators at one
+steady level):
+
+| Rows | Time per analysis | Allocated | Allocations |
+| --- | --- | --- | --- |
+| 10,000 | 1.5–2.1 ms | 0.67 MB | 69 |
+| 1,000,000 | 180–220 ms | 67 MB | 884 |
+
+Times are from a quiet machine; under heavy load (load average about 15) the
+same runs took about 2.5 ms and 290–305 ms. Allocation does not vary.
+
+Rerun with `go test ./pkg/rca -run '^$' -bench BenchmarkRCAAnalyze -benchtime 5x`.
+
 ## Preparation capacity policies
 
 Preparation accepts an immutable `capacity` object. `selection: existing`
