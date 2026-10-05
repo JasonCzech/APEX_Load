@@ -208,7 +208,22 @@ func convertSourceFunctionAction(fn ParsedFunction) (dsl.Action, SourceFunctionS
 		}
 		return action, def.SupportMode, true
 	case "json":
-		return convertGenericSourceAction(fn, "source_json", def), def.SupportMode, true
+		action := convertGenericSourceAction(fn, "source_json", def)
+		if def.SupportMode != SourceFunctionSupportExecutable {
+			return action, def.SupportMode, true
+		}
+		if code, detail := annotateSourceJSONAction(&action, fn); code != "" {
+			action.Type = "source_review"
+			makeSourceReviewActionDisclosureSafe(&action, fn, SourceFunctionSupportReviewOnly)
+			importreview.ApplyToAction(&action, []importreview.Finding{{
+				Code: code, ReasonCode: code,
+				Element: fn.Name, Source: "enterprise_script_archive", SourceRef: fn.Filename,
+				Detail: detail,
+				Gate:   importreview.GateExecution,
+			}})
+			return action, SourceFunctionSupportReviewOnly, true
+		}
+		return action, def.SupportMode, true
 	case "xml":
 		return convertGenericSourceAction(fn, "source_xml", def), def.SupportMode, true
 	case "database":

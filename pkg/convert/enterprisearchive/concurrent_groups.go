@@ -197,7 +197,7 @@ func sourceConcurrentScopeSupported(fn ParsedFunction) bool {
 		return false
 	}
 	if len(fn.Conditions) > 0 {
-		expr, ok := translateSourceConditionChain(fn.Conditions)
+		expr, ok := translateSourceConditionChain(expandCLocalFrames(fn.Conditions, fn.cLocals))
 		if !ok || dsl.ValidateConditionExpression(expr) != nil {
 			return false
 		}
@@ -206,7 +206,7 @@ func sourceConcurrentScopeSupported(fn ParsedFunction) bool {
 		return false
 	}
 	if len(fn.Loops) == 1 {
-		_, ok := translateSourceLoopHeader(fn.Loops[0])
+		_, ok := translateSourceLoopHeader(expandCLocalReferences(fn.Loops[0], fn.cLocals))
 		return ok
 	}
 	return true

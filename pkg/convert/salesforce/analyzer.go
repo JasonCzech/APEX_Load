@@ -255,6 +255,9 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 			return nil, err
 		}
 		review.NativePreview = preview
+		if warning := auraTokenProvenanceWarning(preview.Script, correlations); warning != "" {
+			review.Warnings = append(review.Warnings, warning)
+		}
 		if preview.CorrelationCoverage != nil && len(correlationWarnings) > 0 {
 			preview.referenceCatalog.base.Complete = false
 			preview.CorrelationCoverage.Complete = false
@@ -2149,14 +2152,22 @@ type salesforceCorrelationBudget struct {
 	maxSearchBytes       int64
 	maxConstructionBytes int64
 	// requests caches each observation's searchable request surfaces for the
-	// one analysis this budget belongs to.
-	requests     *correlate.RequestSearch
-	requestsSize int
+	// observation slice this budget's analysis searches.
+	requests      *correlate.RequestSearch
+	requestsFirst *correlate.Observation
+	requestsSize  int
 }
 
+// requestSearch returns the cached surfaces for observations, rebuilding them
+// when a different slice (not merely a different length) is passed.
 func (budget *salesforceCorrelationBudget) requestSearch(observations []correlate.Observation) *correlate.RequestSearch {
-	if budget.requests == nil || budget.requestsSize != len(observations) {
+	var first *correlate.Observation
+	if len(observations) > 0 {
+		first = &observations[0]
+	}
+	if budget.requests == nil || budget.requestsFirst != first || budget.requestsSize != len(observations) {
 		budget.requests = correlate.NewRequestSearch(observations)
+		budget.requestsFirst = first
 		budget.requestsSize = len(observations)
 	}
 	return budget.requests

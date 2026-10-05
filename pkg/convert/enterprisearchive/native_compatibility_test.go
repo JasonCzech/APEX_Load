@@ -79,7 +79,9 @@ func TestNativeArchiveEncodingPreservesBodiesAndAssets(t *testing.T) {
 		t.Fatalf("%+v", a)
 	}
 	b := &dsl.Action{}
-	if e := encodeImportedBody(b, ParsedFunction{Body: `\x81\x00`}, encoding); e != nil {
+	// Body is decoded once by the parser; RawBody keeps the source spelling so
+	// the escapes name Windows-1252 bytes.
+	if e := encodeImportedBody(b, ParsedFunction{Body: "\x81\x00", RawBody: `\x81\x00`}, encoding); e != nil {
 		t.Fatal(e)
 	}
 	raw, e := base64.StdEncoding.DecodeString(b.Body)

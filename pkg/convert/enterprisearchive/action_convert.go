@@ -108,13 +108,9 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 
 	// Apply body
 	if fn.Body != "" {
-		// A Java-origin body was already unescaped by the Java string parser;
-		// running the C-string unescaper again would corrupt literal backslashes.
-		if fn.JavaOrigin {
-			action.Body = fn.Body
-		} else {
-			action.Body = unescapeSourceCString(fn.Body)
-		}
+		// The C parser and the Java string parser each decode source literals
+		// exactly once; decoding again would corrupt literal backslashes.
+		action.Body = fn.Body
 		// Convert source parameter syntax {ParamName} to template syntax.
 		// Known .prm-backed parameters are rewritten from var to param after all archive files are parsed.
 		action.Body = convertParamReferences(action.Body)

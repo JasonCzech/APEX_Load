@@ -39,7 +39,13 @@ func AnalyzeDependencies(script *dsl.Script) ([]Finding, error) {
 		if a.Type == "source_parameter" || a.Type == "source_json" || a.Type == "source_xml" || a.Type == "set_variable" {
 			for _, k := range []string{"save_param", "saveparam", "save_param_name", "parameter", "param", "name"} {
 				if v, ok := a.Params[k].(string); ok && v != "" {
-					names = append(names, v)
+					// A save_all producer (lr_json_get_values SelectAll=Yes)
+					// publishes NAME_1..NAME_n and NAME_count, never NAME itself.
+					if all, _ := a.Params["save_all"].(bool); all {
+						names = append(names, v+"_count")
+					} else {
+						names = append(names, v)
+					}
 					break
 				}
 			}
@@ -79,6 +85,13 @@ func AnalyzeDependencies(script *dsl.Script) ([]Finding, error) {
 				arrayProducers[e.Name] = true
 			}
 		}
+		if a := actionOf(ref); a.Type == "source_json" {
+			if all, _ := a.Params["save_all"].(bool); all {
+				if name, ok := a.Params["save_param"].(string); ok && name != "" {
+					arrayProducers[name] = true
+				}
+			}
+		}
 		for _, name := range producers(actionOf(ref)) {
 			possible[name] = true
 		}
@@ -101,6 +114,8 @@ func AnalyzeDependencies(script *dsl.Script) ([]Finding, error) {
 			executable["params"] = p
 		} else if a.Type == "source_parameter" {
 			executable["source_string"] = a.Params["source_string"]
+		} else if a.Type == "source_json" {
+			executable["source_json"] = map[string]any{"buffer": a.Params["buffer"], "query": a.Params["query"]}
 		}
 		if a.Type == "http_sequence" {
 			executable = map[string]any{}

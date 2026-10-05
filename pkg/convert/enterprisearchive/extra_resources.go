@@ -55,7 +55,7 @@ func applyExtraResources(fn ParsedFunction, action *dsl.Action) {
 		if _, exists := current[key]; exists {
 			invalid = true
 		}
-		current[key] = convertParamReferences(unescapeSourceCString(arg.Value))
+		current[key] = convertParamReferences(arg.Value)
 	}
 	if len(resources) > 64 || active {
 		invalid = true

@@ -64,7 +64,9 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 	case "source_metric":
 		vu.handleSourceMetricAction(ctx, action)
 		return true, nil
-	case "source_json", "source_xml":
+	case "source_json":
+		return true, vu.handleSourceJSONAction(ctx, action)
+	case "source_xml":
 		return true, sourceDocumentActionUnsupported(action)
 	case "source_parameter", "source_database", "source_secret":
 		vu.handleSourceStateAction(ctx, action)
