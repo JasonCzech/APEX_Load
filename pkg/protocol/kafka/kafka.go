@@ -671,6 +671,13 @@ func (k *Kafka) validateActionBounds(action *protocol.Action) error {
 			return fmt.Errorf("kafka %s exceeds %d bytes", name, MaxKafkaIdentifierBytes)
 		}
 	}
+	// Real clients bind one consumer group for their lifetime. Check the
+	// resolved action identity before a commit can flush or touch that group.
+	if !k.cfg.Mock && strings.EqualFold(action.Type, "kafka_commit") {
+		if err := ValidateConsumerGroupOverride(k.consumerGroup(action), k.cfg.ConsumerGroup); err != nil {
+			return err
+		}
+	}
 	if _, _, err := optionalBoundedParamInt(action.Params, "timeout_ms", 0, int(MaxConfiguredTimeout/time.Millisecond)); err != nil {
 		return err
 	}

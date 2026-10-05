@@ -1,0 +1,20 @@
+=== RUN   TestKafkaOwnedSeekActualBroker
+    owned_seek_integration_test.go:70: independent real coordinator request retried 1 times after Kafka code 15
+=== RUN   TestKafkaOwnedSeekActualBroker/earliest_latest_exact
+    owned_seek_integration_test.go:141: genuine multi-partition seeks retained committed offsets map[0:1 1:1 2:1]; following SDK records buffered=6; one real adapter pending record was purged
+=== RUN   TestKafkaOwnedSeekActualBroker/unpolled_unowned_refusal
+=== RUN   TestKafkaOwnedSeekActualBroker/commit_group_fence
+=== RUN   TestKafkaOwnedSeekActualBroker/revocation_during_lookup
+    owned_seek_integration_test.go:292: bounded genuine fixture did not observe broker-driven revocation and peer assignment during lookup
+    owned_seek_integration_test.go:288: bounded revocation state before cleanup: initial generation=20 current generation=20 current=map[0:20 1:20 2:20] peer generation=0 peer=map[] release requested=false lookup exited=false API counts=map[0:39 1:24 2:5 3:12 8:3 9:5 10:3 11:14 12:1 13:1 14:10 17:13 18:13 22:2 23:3 36:13]
+=== NAME  TestKafkaOwnedSeekActualBroker
+    owned_seek_fixture_test.go:596: independent direct oracle API counts=map[3:14 9:14 10:4 17:2 18:2 36:2]
+    owned_seek_fixture_test.go:232: genuine execution proxy joined: accepts=14 peak=9 frames=175 bytes=67157 API counts=map[0:39 1:26 2:5 3:12 8:3 9:5 10:3 11:16 12:3 13:3 14:13 17:14 18:14 22:2 23:3 36:14]
+--- FAIL: TestKafkaOwnedSeekActualBroker (10.80s)
+    --- PASS: TestKafkaOwnedSeekActualBroker/earliest_latest_exact (1.42s)
+    --- PASS: TestKafkaOwnedSeekActualBroker/unpolled_unowned_refusal (0.17s)
+    --- PASS: TestKafkaOwnedSeekActualBroker/commit_group_fence (0.24s)
+    --- FAIL: TestKafkaOwnedSeekActualBroker/revocation_during_lookup (5.46s)
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/protocol/kafka	11.165s
+FAIL

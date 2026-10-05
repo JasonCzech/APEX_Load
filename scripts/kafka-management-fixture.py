@@ -44,7 +44,7 @@ def protected_container_bundle(scratch):
     return output.getvalue()
 
 
-def broker_error_summary(output, password, private_key):
+def broker_error_summary(output, password, private_key, *other_passwords):
     """Bounded diagnostic lines for this fixture, excluding private inputs."""
     key_lines = [line for line in private_key.splitlines() if line and not line.startswith('-----')]
     result = []
@@ -54,7 +54,10 @@ def broker_error_summary(output, password, private_key):
         if any(secret in line for secret in key_lines):
             result.append('[fixture private key material omitted]')
         else:
-            result.append(line.replace(password, '[REDACTED]')[:512])
+            for credential in (password, *other_passwords):
+                if credential:
+                    line = line.replace(credential, '[REDACTED]')
+            result.append(line[:512])
         if len(result) == 16:
             break
     return result
@@ -125,12 +128,93 @@ def reap_fixture_test_group(child, leader_exited):
         time.sleep(0.1)
 
 
+def bounded_fixture_test_output(path):
+    # A final output burst may finish between resource polls. Admission must
+    # precede decoding and PASS parsing even after the child has exited.
+    with path.open('rb') as source:
+        data = source.read(16 * 1024**2 + 1)
+    if len(data) > 16 * 1024**2:
+        raise RuntimeError('fixture test log exceeded its 16 MiB evidence limit')
+    return data.decode('utf-8')
+
+
+def sanitize_fixture_test_log(path, private_values):
+    """Withhold oversized logs and remove private input even on failed gates."""
+    if not path.exists():
+        return False
+    with path.open('rb') as source:
+        data = source.read(16 * 1024**2 + 1)
+    if len(data) > 16 * 1024**2:
+        path.write_text('[fixture test log exceeded its 16 MiB evidence limit]\n')
+        path.chmod(0o600)
+        return True
+    changed = False
+    for value in private_values:
+        if value and value.encode() in data:
+            data = data.replace(value.encode(), b'[REDACTED]')
+            changed = True
+    if changed:
+        path.write_bytes(data)
+        path.chmod(0o600)
+    return changed
+
+
+def finalize_fixture_evidence(report, scratch, test_log, passwords):
+    """Evidence failure cannot prevent independent owned-resource cleanup."""
+    try:
+        private_values = [value for value in passwords if value]
+        if (scratch/'broker.key').is_file():
+            private_values.extend(line for line in (scratch/'broker.key').read_text().splitlines() if line and not line.startswith('-----'))
+        report['test_log_withheld_or_redacted'] = sanitize_fixture_test_log(test_log, private_values)
+        if report['test_log_withheld_or_redacted']:
+            report['status'] = 'failed'
+            report['evidence_failure'] = 'test log exceeded bounds or contained private input'
+    except (OSError, UnicodeError):
+        report['status'] = 'failed'
+        report['evidence_failure'] = 'private test log could not be checked'
+        if report.get('test_log_created'):
+            try:
+                test_log.unlink(missing_ok=True)
+                report['test_log_withheld_or_redacted'] = True
+            except OSError:
+                report['evidence_failure'] = 'private test log could not be checked or withheld'
+
+
+def suite_definition(suite):
+    """Separate execution qualification from the unchanged management gate."""
+    if suite == 'management':
+        return {
+            'environment': 'APEXLOAD_KAFKA_MANAGEMENT_FIXTURE',
+            'command': ['go', 'test', '-v', '-p', '1', './pkg/collectoragent', '-run', '^TestKafkaManagementActualBroker', '-count=1', '-timeout=8m'],
+            'required': ('--- PASS: TestKafkaManagementActualBroker ',
+                         '--- PASS: TestKafkaManagementActualBroker/plain ',
+                         '--- PASS: TestKafkaManagementActualBroker/scram_sha_256 ',
+                         '--- PASS: TestKafkaManagementActualBroker/scram_sha_512 ',
+                         '--- PASS: TestKafkaManagementActualBroker/open_transaction_read_boundaries '),
+        }
+    if suite == 'owned-seek':
+        return {
+            'environment': 'APEXLOAD_KAFKA_SEEK_FIXTURE',
+            'command': ['go', 'test', '-v', '-p', '1', '-tags=kafka_real,kafka_seek_integration', './pkg/protocol/kafka', '-run', '^TestKafkaOwnedSeekActualBroker$', '-count=1', '-timeout=8m'],
+            'required': ('--- PASS: TestKafkaOwnedSeekActualBroker ',
+                         '--- PASS: TestKafkaOwnedSeekActualBroker/earliest_latest_exact ',
+                         '--- PASS: TestKafkaOwnedSeekActualBroker/unpolled_unowned_refusal ',
+                         '--- PASS: TestKafkaOwnedSeekActualBroker/revocation_during_lookup ',
+                         '--- PASS: TestKafkaOwnedSeekActualBroker/commit_group_fence '),
+        }
+    raise ValueError('unsupported Kafka qualification suite')
+
+
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument('--platform', choices=tuple(PLATFORMS), default='arm64' if os.uname().machine == 'arm64' else 'amd64')
     parser.add_argument('--port', type=int, default=19392)
+    parser.add_argument('--suite', choices=('management', 'owned-seek'), default='management')
     parser.add_argument('--report', type=Path, required=True)
     args = parser.parse_args()
+    suite = suite_definition(args.suite)
+    oracle_password = ''
+    password = ''
     if not 1024 <= args.port <= 65533:
         parser.error('port must leave room for the two adjacent loopback fixture ports')
     if os.path.lexists(args.report) or os.path.lexists(args.report.with_suffix('.tests.txt')):
@@ -138,11 +222,11 @@ def main():
     args.report.parent.mkdir(parents=True, exist_ok=True)
     scratch = Path(tempfile.mkdtemp(prefix='apexload-kafka-management-'))
     scratch.chmod(0o700)
-    label = 'apexload-kafka-management-' + secrets.token_hex(6)
+    label = 'apexload-kafka-' + args.suite + '-' + secrets.token_hex(6)
     volumes = [label + '-config', label + '-data']
     started = time.monotonic()
     deadline = started + 900
-    report = {'version': 1, 'kafka_version': '3.9.2', 'image_index': INDEX, 'platform': 'linux/' + args.platform, 'platform_manifest': PLATFORMS[args.platform], 'profile': 'single-kraft-broker', 'memory_bytes': 1536 * 1024**2, 'cpus': 1, 'data_guard_bytes': 2 * GIB, 'created_resources': [], 'status': 'failed'}
+    report = {'version': 1, 'kafka_version': '3.9.2', 'image_index': INDEX, 'platform': 'linux/' + args.platform, 'platform_manifest': PLATFORMS[args.platform], 'profile': 'single-kraft-broker', 'suite': args.suite, 'memory_bytes': 1536 * 1024**2, 'cpus': 1, 'data_guard_bytes': 2 * GIB, 'created_resources': [], 'status': 'failed'}
 
     def headroom():
         free = shutil.disk_usage(scratch).free
@@ -163,7 +247,7 @@ def main():
         if check and result.returncode:
             report['failed_operation'] = next((Path(value).name for value in argv if value.startswith('/opt/kafka/bin/')), ' '.join(argv[:2]))
             if argv[:2] == ['docker', 'exec'] and (scratch/'broker.key').is_file():
-                report['command_diagnostics'] = broker_error_summary(result.stdout + result.stderr, password, (scratch/'broker.key').read_text())
+                report['command_diagnostics'] = broker_error_summary(result.stdout + result.stderr, password, (scratch/'broker.key').read_text(), oracle_password)
             # Classify local container admission without retaining raw daemon or
             # provider output, which may include private configuration.
             if argv[:2] == ['docker', 'start']:
@@ -197,6 +281,11 @@ def main():
             raise RuntimeError('registry platform differs from approved manifest')
         call(['docker', 'pull', '--platform', 'linux/' + args.platform, IMAGE], timeout=180)
         password = secrets.token_urlsafe(24)
+        username = 'reader' if args.suite == 'management' else 'executor'
+        oracle_password = secrets.token_urlsafe(24) if args.suite == 'owned-seek' else ''
+        plain_users = f'user_{username}=\"{password}\"'
+        if oracle_password:
+            plain_users += f' user_oracle=\"{oracle_password}\"'
         write('password', password + '\n')
         write('extensions.cnf', 'subjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n')
         write('ca.cnf', '[req]\ndistinguished_name=dn\nx509_extensions=ca\nprompt=no\n[dn]\nCN=APEX disposable Kafka CA\n[ca]\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\nsubjectKeyIdentifier=hash\n')
@@ -216,7 +305,7 @@ listener.security.protocol.map=SASL_SSL:SASL_SSL,SETUP:PLAINTEXT,CONTROLLER:PLAI
 controller.listener.names=CONTROLLER
 inter.broker.listener.name=SETUP
 log.dirs=/data/kafka
-num.partitions=1
+num.partitions={1 if args.suite == 'management' else 3}
 auto.create.topics.enable=false
 offsets.topic.replication.factor=1
 offsets.topic.num.partitions=1
@@ -233,7 +322,7 @@ ssl.truststore.type=PEM
 ssl.truststore.location=/fixture/ca.pem
 ssl.client.auth=none
 sasl.enabled.mechanisms=PLAIN,SCRAM-SHA-256,SCRAM-SHA-512
-listener.name.sasl_ssl.plain.sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required user_reader="{password}";
+listener.name.sasl_ssl.plain.sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required {plain_users};
 listener.name.sasl_ssl.scram-sha-256.sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required;
 listener.name.sasl_ssl.scram-sha-512.sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required;
 authorizer.class.name=org.apache.kafka.metadata.authorizer.StandardAuthorizer
@@ -255,18 +344,34 @@ allow.everyone.if.no.acl.found=false
         wait_for_broker_readiness(call, label, args.port + 2)
         # Setup runs on a distinct listener and never uses the collector identity.
         setup = ['docker', 'exec', label]
-        call(setup + ['/opt/kafka/bin/kafka-topics.sh', '--bootstrap-server', 'localhost:9094', '--create', '--topic', 'orders', '--partitions', '1', '--replication-factor', '1'])
-        # Independent fixture mutation waits for each acknowledgement. Fixed
-        # per-record limits shorten provider failures; the unchanged host command
-        # bound remains the aggregate guard, including producer close.
-        call(['docker', 'exec', '-i', label, '/opt/kafka/bin/kafka-console-producer.sh', '--bootstrap-server', 'localhost:9094', '--topic', 'orders', '--sync', '--producer-property', 'max.block.ms=10000', '--producer-property', 'request.timeout.ms=3000', '--producer-property', 'delivery.timeout.ms=10000', '--producer-property', 'linger.ms=0', '--producer-property', 'retries=3', '--producer-property', 'acks=all'], data='one\ntwo\nthree\nfour\n')
-        call(setup + ['/opt/kafka/bin/kafka-consumer-groups.sh', '--bootstrap-server', 'localhost:9094', '--group', 'workers', '--topic', 'orders:0', '--reset-offsets', '--to-offset', '1', '--execute'])
-        for resource in ('--topic', '--group'):
-            call(setup + ['/opt/kafka/bin/kafka-acls.sh', '--bootstrap-server', 'localhost:9094', '--add', '--allow-principal', 'User:reader', '--operation', 'Describe', resource, 'orders' if resource == '--topic' else 'workers'])
-        # Secrets are read inside the private container; never rendered in output.
-        for mechanism in ('SCRAM-SHA-256', 'SCRAM-SHA-512'):
-            scram = 'read -r fixture_password </fixture/password; exec /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9094 --alter --entity-type users --entity-name reader --add-config "' + mechanism + '=[iterations=8192,password=${fixture_password}]"'
-            call(setup + ['/bin/bash', '-c', scram])
+        if args.suite == 'management':
+            call(setup + ['/opt/kafka/bin/kafka-topics.sh', '--bootstrap-server', 'localhost:9094', '--create', '--topic', 'orders', '--partitions', '1', '--replication-factor', '1'])
+            # Independent fixture mutation waits for each acknowledgement. Fixed
+            # per-record limits shorten provider failures; the unchanged host command
+            # bound remains the aggregate guard, including producer close.
+            call(['docker', 'exec', '-i', label, '/opt/kafka/bin/kafka-console-producer.sh', '--bootstrap-server', 'localhost:9094', '--topic', 'orders', '--sync', '--producer-property', 'max.block.ms=10000', '--producer-property', 'request.timeout.ms=3000', '--producer-property', 'delivery.timeout.ms=10000', '--producer-property', 'linger.ms=0', '--producer-property', 'retries=3', '--producer-property', 'acks=all'], data='one\ntwo\nthree\nfour\n')
+            call(setup + ['/opt/kafka/bin/kafka-consumer-groups.sh', '--bootstrap-server', 'localhost:9094', '--group', 'workers', '--topic', 'orders:0', '--reset-offsets', '--to-offset', '1', '--execute'])
+            for resource in ('--topic', '--group'):
+                call(setup + ['/opt/kafka/bin/kafka-acls.sh', '--bootstrap-server', 'localhost:9094', '--add', '--allow-principal', 'User:reader', '--operation', 'Describe', resource, 'orders' if resource == '--topic' else 'workers'])
+            # Secrets are read inside the private container; never rendered in output.
+            for mechanism in ('SCRAM-SHA-256', 'SCRAM-SHA-512'):
+                scram = 'read -r fixture_password </fixture/password; exec /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9094 --alter --entity-type users --entity-name reader --add-config "' + mechanism + '=[iterations=8192,password=${fixture_password}]"'
+                call(setup + ['/bin/bash', '-c', scram])
+        else:
+            suffix = secrets.token_hex(6)
+            topic, unpolled_topic = 'seek-input-' + suffix, 'seek-unpolled-' + suffix
+            group, peer_group = 'seek-workers-' + suffix, 'seek-peers-' + suffix
+            for name in (topic, unpolled_topic):
+                call(setup + ['/opt/kafka/bin/kafka-topics.sh', '--bootstrap-server', 'localhost:9094', '--create', '--topic', name, '--partitions', '3', '--replication-factor', '1'])
+            for principal, operations in (('executor', ('Read', 'Write', 'Describe')), ('oracle', ('Describe',))):
+                for name in (topic, unpolled_topic):
+                    operation_flags = [flag for operation in operations for flag in ('--operation', operation)]
+                    call(setup + ['/opt/kafka/bin/kafka-acls.sh', '--bootstrap-server', 'localhost:9094', '--add', '--allow-principal', 'User:' + principal, *operation_flags, '--topic', name])
+            for principal, operations in (('executor', ('Read', 'Describe')), ('oracle', ('Describe',))):
+                for name in (group, peer_group):
+                    operation_flags = [flag for operation in operations for flag in ('--operation', operation)]
+                    call(setup + ['/opt/kafka/bin/kafka-acls.sh', '--bootstrap-server', 'localhost:9094', '--add', '--allow-principal', 'User:' + principal, *operation_flags, '--group', name])
+            call(setup + ['/opt/kafka/bin/kafka-acls.sh', '--bootstrap-server', 'localhost:9094', '--add', '--allow-principal', 'User:executor', '--operation', 'IdempotentWrite', '--cluster'])
         def data_usage(timeout=5):
             usage = call(setup + ['du', '-sk', '/data'], timeout=timeout).stdout.split()[0]
             total = int(usage) * 1024
@@ -276,13 +381,17 @@ allow.everyone.if.no.acl.found=false
             return total
         data_usage()
         fixture = {'endpoint': f'tls://localhost:{args.port}', 'dial_address': f'127.0.0.1:{args.port}', 'broker_address': f'127.0.0.1:{args.port+1}', 'setup_address': f'127.0.0.1:{args.port+2}', 'ca_file': str(scratch/'ca.pem'), 'proxy_cert_file': str(scratch/'broker.crt'), 'proxy_key_file': str(scratch/'broker.key'), 'cluster_id': cluster_id, 'username': 'reader', 'password': password, 'mechanisms': ['plain', 'scram_sha_256', 'scram_sha_512'], 'topic': 'orders', 'group': 'workers', 'denied_group': 'denied-workers', 'expected_committed_next': '1', 'expected_high_watermark_next': '4', 'expected_last_stable_next': '4'}
+        if args.suite == 'owned-seek':
+            fixture = {'endpoint': f'tls://localhost:{args.port}', 'dial_address': f'127.0.0.1:{args.port}', 'broker_address': f'127.0.0.1:{args.port+1}', 'setup_address': f'127.0.0.1:{args.port+2}', 'ca_file': str(scratch/'ca.pem'), 'proxy_cert_file': str(scratch/'broker.crt'), 'proxy_key_file': str(scratch/'broker.key'), 'cluster_id': cluster_id, 'username': username, 'password': password, 'oracle_username': 'oracle', 'oracle_password': oracle_password, 'topic': topic, 'unpolled_topic': unpolled_topic, 'group': group, 'peer_group': peer_group, 'denied_group': 'denied-workers-' + suffix}
         fixture_path = write('fixture.json', json.dumps(fixture))
-        env = dict(os.environ, APEXLOAD_KAFKA_MANAGEMENT_FIXTURE=str(fixture_path))
+        env = dict(os.environ, **{suite['environment']: str(fixture_path)})
         # The fixture owns the complete test process group, including the Go
         # test child. Deadline/resource failures kill and reap that group before
         # provider teardown; killing only the go driver would leak its child.
         with args.report.with_suffix('.tests.txt').open('w') as test_log:
-            child = subprocess.Popen(['go', 'test', '-v', '-p', '1', './pkg/collectoragent', '-run', '^TestKafkaManagementActualBroker', '-count=1', '-timeout=8m'], env=env, stdout=test_log, stderr=subprocess.STDOUT, start_new_session=True)
+            report['test_log_created'] = True
+            args.report.with_suffix('.tests.txt').chmod(0o600)
+            child = subprocess.Popen(suite['command'], env=env, stdout=test_log, stderr=subprocess.STDOUT, start_new_session=True)
             test_deadline = min(deadline, time.monotonic()+480)
             leader_exited = False
             try:
@@ -298,6 +407,8 @@ allow.everyone.if.no.acl.found=false
                     if remaining_test <= 0:
                         raise RuntimeError('genuine Kafka test exceeded wall deadline')
                     headroom()
+                    if args.report.with_suffix('.tests.txt').stat().st_size > 16 * 1024**2:
+                        raise RuntimeError('fixture test log exceeded its 16 MiB evidence limit')
                     data_usage(timeout=min(5, remaining_test))
                     time.sleep(min(5, max(0, test_deadline-time.monotonic())))
             finally:
@@ -307,12 +418,8 @@ allow.everyone.if.no.acl.found=false
                 report['test_group_reaped'] = reap_fixture_test_group(child, leader_exited)
         if report['test_exit']:
             raise RuntimeError('genuine Kafka test failed; see sanitized test log')
-        test_output = args.report.with_suffix('.tests.txt').read_text()
-        required = ('--- PASS: TestKafkaManagementActualBroker ',
-                    '--- PASS: TestKafkaManagementActualBroker/plain ',
-                    '--- PASS: TestKafkaManagementActualBroker/scram_sha_256 ',
-                    '--- PASS: TestKafkaManagementActualBroker/scram_sha_512 ',
-                    '--- PASS: TestKafkaManagementActualBroker/open_transaction_read_boundaries ')
+        test_output = bounded_fixture_test_output(args.report.with_suffix('.tests.txt'))
+        required = suite['required']
         if any(case not in test_output for case in required):
             raise RuntimeError('genuine Kafka test did not execute every required case')
         report['status'] = 'passed'
@@ -321,11 +428,14 @@ allow.everyone.if.no.acl.found=false
         if label + ':container' in report['created_resources'] and (scratch/'broker.key').is_file() and (scratch/'password').is_file():
             try:
                 logs = subprocess.run(['docker', 'logs', '--tail', '60', label], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=5)
-                report['broker_diagnostics'] = broker_error_summary(logs.stdout, (scratch/'password').read_text().strip(), (scratch/'broker.key').read_text())
+                report['broker_diagnostics'] = broker_error_summary(logs.stdout, (scratch/'password').read_text().strip(), (scratch/'broker.key').read_text(), oracle_password)
             except (OSError, subprocess.TimeoutExpired):
                 report['broker_diagnostic_status'] = 'unavailable'
         raise
     finally:
+        # All test outcomes pass through evidence protection before the existing
+        # independent resource cleanup; an unreadable key withholds the own log.
+        finalize_fixture_evidence(report, scratch, args.report.with_suffix('.tests.txt'), (password, oracle_password))
         report['duration_seconds'] = round(time.monotonic()-started, 3)
         report['cleanup'] = []
         # Cleanup attempts are independent: one unavailable Docker operation
@@ -360,9 +470,11 @@ allow.everyone.if.no.acl.found=false
             report['cleanup_failure'] = 'owned fixture resource or protected scratch removal could not be proven'
         report['free_after_bytes'] = shutil.disk_usage(args.report.parent).free
         args.report.write_text(json.dumps(report, indent=2)+'\n')
-        print('Kafka management fixture:', report['status'], '; report:', args.report)
+        print('Kafka', args.suite, 'fixture:', report['status'], '; report:', args.report)
         if report.get('cleanup_failure'):
             raise RuntimeError(report['cleanup_failure'])
+        if report.get('evidence_failure'):
+            raise RuntimeError(report['evidence_failure'])
 
 
 if __name__ == '__main__':

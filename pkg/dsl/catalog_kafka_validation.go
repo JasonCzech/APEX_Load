@@ -240,6 +240,19 @@ func validateKafkaActionSemanticIssues(path string, action Action, kafka KafkaCo
 	if value := actionParamString(action.Params, "consumer_group"); len(value) > kafkaprotocol.MaxKafkaIdentifierBytes {
 		issues = append(issues, fmt.Sprintf("%s: consumer_group must not exceed %d bytes", label, kafkaprotocol.MaxKafkaIdentifierBytes))
 	}
+	if actionType == "kafka_commit" && !kafka.Mock {
+		// Compare literal identities exactly as the runtime does. Template
+		// values are resolved at execution, where the same fence is enforced.
+		group, _ := action.Params["consumer_group"].(string)
+		hasTemplate := func(value string) bool {
+			return strings.Contains(value, "{{") && strings.Contains(value, "}}")
+		}
+		if strings.TrimSpace(group) != "" && !hasTemplate(group) && !hasTemplate(kafka.ConsumerGroup) {
+			if err := kafkaprotocol.ValidateConsumerGroupOverride(group, kafka.ConsumerGroup); err != nil {
+				issues = append(issues, fmt.Sprintf("%s: %v", label, err))
+			}
+		}
+	}
 	if value, present := actionParamIntValue(action.Params, "timeout_ms"); present && (value < 0 || value > int(kafkaprotocol.MaxConfiguredTimeout/time.Millisecond)) {
 		issues = append(issues, fmt.Sprintf("%s: timeout_ms must be between 0 and %d", label, kafkaprotocol.MaxConfiguredTimeout/time.Millisecond))
 	}

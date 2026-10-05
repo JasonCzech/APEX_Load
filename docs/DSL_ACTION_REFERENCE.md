@@ -1375,7 +1375,7 @@ Commits consumer group offsets.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `params.consumer_group` | string |  | Consumer group identity; falls back to config.kafka.consumer_group. |
+| `params.consumer_group` | string |  | Consumer group identity; falls back to config.kafka.consumer_group. In real mode an explicit identity must match the configured group. |
 
 ### `kafka_commit_transaction`
 

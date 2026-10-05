@@ -93,3 +93,17 @@ Controlled unit, SDK/store-counter and transport fixtures cover pause admission 
 For an explicitly owned partition, set `consumer_mode: "exclusive"`, `mock: false`, a dedicated `consumer_group`, `event_hub`, `partition_id`, and `owner_level` in `config.eventhubs`. The epoch must be an exact integer from 0 through 9007199254740991; zero is explicit ownership, while an omitted value is never treated as zero. Existing AAD/SAS identity and destination policies still apply. This requires the real build and the `eventhubs_exclusive_consumer_v1` generator capability. Consumer actions cannot change the configured hub or group. `checkpoint_container_url` is not accepted in this mode; use `processor` for balanced ownership and durable restart positions.
 
 A higher epoch can disconnect lower-priority and non-exclusive consumers of that partition/group, as described in [Azure's ownership semantics](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-features). Choose the group/partition intentionally and use one consumer per assigned partition. A reported SDK ownership-loss error fences future receives in that client; APEX does not silently reconnect with the old epoch. Receiver creation remains lazy until execution, with prefetch disabled. Local validation, SDK-option and ownership-loss tests do not replace live Azure takeover acceptance.
+
+## Kafka owned-partition seek
+
+For the separate real Kafka adapter, build with `-tags kafka_real`, configure an approved broker/TLS/SASL identity, `mock: false`, an explicit dedicated `consumer_group`, and `isolation_level: "read_uncommitted"`. After consuming, `kafka_seek` repositions every currently owned partition of the selected topic:
+
+```json
+{"type": "kafka_seek", "params": {"offset": "earliest"}}
+```
+
+`offset` also accepts `"latest"` or an exact nonnegative decimal offset string. Every current partition must have genuinely polled evidence from its current assignment; receiving from only some assigned partitions leaves seek unavailable. This proof survives a delivered cursor equalling its committed cursor. Unowned or unpolled inputs fail before offset lookup, and ownership change during lookup refuses repositioning. Successful seek clears buffered delivery and explicit commit tracking without committing broker offsets.
+
+`kafka_commit` uses the configured consumer group when the action omits an override. An explicit real-mode group must match exactly; a different literal or resolved template fails before commit I/O. Seek has the same configured-group fence and remains unavailable in `consumer_transactions` mode or with an open transaction. Use explicit commit actions for the intended delivery boundary.
+
+The [owned-seek qualification](qa/reviews/feature-completion-kafka-seek-2026-10-05/README.md) passed on genuine Apache Kafka 3.9.2, single KRaft broker, TLS/SASL PLAIN and read-uncommitted isolation. It independently checks committed offsets and real revoked/peer-owned partitions. Reproduce it with `scripts/test-kafka-owned-seek.sh --report <new-report-path>`; the explicit qualification tag fails when its fixture is missing. This qualification does not certify Event Hubs Kafka endpoints, read-committed LSO seek, EOS, restart/failover, other authentication profiles or broker versions. Their acceptance remains separate.

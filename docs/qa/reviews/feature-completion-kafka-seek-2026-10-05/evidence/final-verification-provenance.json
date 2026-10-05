@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "purpose": "Byte-for-byte final owned-seek gate evidence; synthetic wire controls are separate from actual Apache Kafka qualification.",
+  "pinned_go": "go1.26.5 darwin/arm64",
+  "source_freeze": {
+    "pkg/protocol/kafka/owned_seek_fixture_test.go": "f67013a46b8402710753a28ce8b0148cae90adb6931395b2502b9314b3dfec3e",
+    "pkg/protocol/kafka/owned_seek_integration_test.go": "0f44164e0b5c05b501f468fc0d505074421d0c47ce6fbae809fede773485bbf6",
+    "pkg/protocol/kafka/owned_seek_pipeline_test.go": "b1cc33ae4b9a69bdf829772303a7e27115c6d8aec8a9b317389f0d186dd8f018",
+    "pkg/protocol/kafka/owned_seek_tls_lifecycle_test.go": "316586b3742de4f06df4afa4248e17cc7f80981b3202ddca02d01ba0f3e16601"
+  },
+  "files_sha256": {
+    "evidence/final-default-kafka-dsl-20261005.json": "1005b5247d387087345145ebf9117b73267654df5f5003b1716e32ac3e8a10f5",
+    "evidence/final-default-race-kafka-dsl-20261005.json": "6fdb9271eb3d502e5e91844f3a8ac41136451143c732f5658cac4f630be6ccf3",
+    "evidence/final-docs-20261005.json": "1f800a0a089633a65951cf06c1b188c717e5b9ff7a4cbb2f7eac27480e5037e9",
+    "evidence/final-owned-helpers-race-20261005.json": "c71d064d4c62e7c46e8830cc1d057efd656e3c8ad22f3061266fc504b683108e",
+    "evidence/final-python-wrapper-20261005.json": "4760b3c359fcb89b9d889b009b613b8d21587fafbdbb9899fa268e86c836d0f8",
+    "evidence/final-real-kafka-dsl-20261005.json": "3a8ffef90207ad3f16cd789b73a698a928df60b26ebaed158867674c2c6a83bd",
+    "evidence/final-real-race-kafka-dsl-20261005.json": "331658ce8c674db5625666a9fa6a3278b9b5dc457080358426534336115eac3a",
+    "evidence/final-default-kafka-dsl-20261005.log": "310aac040809d54fd874d0d89c542aab15cf1fd2c3f3f5c19ac3091c51a740b7",
+    "evidence/final-default-race-kafka-dsl-20261005.log": "daffe56028f913a20e3d57ffa77743bf4985536ecd6f65272c7fc2635320d469",
+    "evidence/final-docs-20261005.log": "d6ed4f24b517cbce75332f17624fa0892fd0e8a623028a55bb6bc12b1c127e6f",
+    "evidence/final-owned-helpers-race-20261005.log": "e3f0e7f3b965183f82a8d673088c261374a5c7b94cbabd20111d2c6801a06481",
+    "evidence/final-python-wrapper-20261005.log": "7090416cd97249eb280bc438dadba0beff5edea1aec6881b91bee405297b4abd",
+    "evidence/final-real-kafka-dsl-20261005.log": "608f8ca46b012b8f52b2c4e8c28195046cb54c7540122929d025a6cebf76efe8",
+    "evidence/final-real-race-kafka-dsl-20261005.log": "d73a918b814ff5f10712f4c347abcec9b628599c55459cd7f474884712c98f8c",
+    "evidence/actual-broker-repeat-5.json": "c623ca214edcccb9a564e974b8458e3ed6e3d7f3f26777bd43a3494acb1eb44e",
+    "evidence/actual-broker-repeat-5.tests.txt": "8fbced9f3d1fe1dd590286757158c935dd44de9ecad8f835a16ff223c392c97c",
+    "evidence/verification-recorder.py": "9b4ced3d99489c903f103b8cd8273a6225c6781ec4dee776098dd91219042b18"
+  },
+  "full_repository_composition_gate": "Required separately after slice composition; not certified by package gates.",
+  "documentation_sha256": {
+    "docs/ROADMAP.md": "e1ad8e7d5d143f7e9cf4bbf54da0195e1a0f8ee1d36b0bba9e346dbdd6c8cb69",
+    "docs/EVENT_HUBS_HOWTO.md": "699a0f62500b8b2e2a9387564cbf9fdb6d847bb47e4b95ccd8189e4663dc3313",
+    "docs/qa/reviews/feature-completion-kafka-seek-2026-10-05/README.md": "d0463fb7a2a60e2b599177e54e9f2b287464686c3ed06550187f47998e4172ef"
+  }
+}

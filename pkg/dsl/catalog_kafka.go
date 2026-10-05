@@ -49,7 +49,7 @@ func kafkaActionSpecs() []ActionSpec {
 			Protocols: []string{"kafka"},
 			Summary:   "Commits consumer group offsets.",
 			Fields: []FieldSpec{
-				{Name: "params.consumer_group", Kind: FieldKindString, Doc: "Consumer group identity; falls back to config.kafka.consumer_group."},
+				{Name: "params.consumer_group", Kind: FieldKindString, Doc: "Consumer group identity; falls back to config.kafka.consumer_group. In real mode an explicit identity must match the configured group."},
 			},
 		},
 		{
