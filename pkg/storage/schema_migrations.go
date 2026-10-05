@@ -60,6 +60,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 33, Name: "isolated-native-analysis-attempts", Fingerprint: "348e5bff6128c23431046d91f301e65f219eaa542faead33fc42d1508c4587df"},
 	{Version: 34, Name: "durable-analysis-upload-physical-writers", Fingerprint: "52971cd3c20e72aefeb2c719f02e125a3689f107a50981c4da14d01a8e34783b"},
 	{Version: 35, Name: "dynatrace-saas-durable-run-monitoring", Fingerprint: "de996ade9928b95fa97e6ede0c811d2ee20ee73e0f44d1e26945547814066d7a"},
+	{Version: 36, Name: "durable-script-goal-config", Fingerprint: "2d937708f297ade2cdcdc224678c7f25689d3f5f923124549963014c38e0b29e"},
 }
 
 type SchemaMigrationRecord struct {

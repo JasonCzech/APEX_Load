@@ -42,7 +42,7 @@ func TestDynatraceSchemaUpgradesPublishedAppDynamicsWithoutRewritingEvidence(t *
 	}
 	defer s.Close()
 	status, err := s.SchemaStatus()
-	if err != nil || status.AppliedVersion != 35 || status.Applied[28].Fingerprint != "ba1618a00f60ea7b120e07b375d67d8fd7c6368d1a9e8a18ef25c09f9b4c0186" {
+	if err != nil || status.AppliedVersion != currentSchemaRelease().Version || status.Applied[28].Fingerprint != "ba1618a00f60ea7b120e07b375d67d8fd7c6368d1a9e8a18ef25c09f9b4c0186" {
 		t.Fatalf("release identity changed %+v %v", status, err)
 	}
 	run, err = s.GetTest("monitor-run")

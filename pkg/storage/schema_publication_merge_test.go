@@ -45,7 +45,7 @@ func TestSchemaPublicationMergePreservesMainLedgerAndAddsFeatureReleases(t *test
 			t.Fatalf("open %d from published main ledger: %v", reopen, err)
 		}
 		status, err := store.SchemaStatus()
-		if err != nil || status.AppliedVersion != 35 || len(status.Pending) != 0 || len(status.Applied) != 35 {
+		if err != nil || status.AppliedVersion != currentSchemaRelease().Version || len(status.Pending) != 0 || len(status.Applied) != len(schemaReleases) {
 			store.Close()
 			t.Fatalf("merged schema status: %#v, %v", status, err)
 		}

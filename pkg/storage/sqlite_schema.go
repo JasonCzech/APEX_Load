@@ -559,6 +559,7 @@ func schemaCreateTableStatements() []string {
 			generated_by TEXT,
 			generated_from TEXT,
 			metadata_json TEXT,
+			goal_config_json TEXT,
 			config TEXT,
 			data_sources TEXT,
 			parameters TEXT,
@@ -1758,6 +1759,7 @@ func schemaCreateTableStatements() []string {
 // columns added here (e.g. boolean flags added to existing tables).
 func schemaColumnMigrations() []optionalSchemaMigration {
 	return []optionalSchemaMigration{
+		{name: "scripts.goal_config_json", query: `ALTER TABLE scripts ADD COLUMN goal_config_json TEXT`},
 		{name: "run_monitor_collector_readiness.instance_id", query: `ALTER TABLE run_monitor_collector_readiness ADD COLUMN instance_id TEXT`},
 		{name: "run_monitor_collector_readiness.capabilities_json", query: `ALTER TABLE run_monitor_collector_readiness ADD COLUMN capabilities_json TEXT`},
 		{name: "run_monitor_collector_readiness.management_scopes_json", query: `ALTER TABLE run_monitor_collector_readiness ADD COLUMN management_scopes_json TEXT`},

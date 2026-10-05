@@ -1,0 +1,15 @@
+Building controller...
+Starting controller on http://127.0.0.1:18476 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.LW5834DWLZ)...
+Controller healthy.
+Starting controller on http://127.0.0.1:18476 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.LW5834DWLZ)...
+Controller healthy.
+Auth profile verified: local-auth.
+
+Running 2 tests using 1 worker
+
+(node:36902) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/workflow-script-editor.spec.ts:7:1 › operator edits the failed nested browser assertion and reruns without losing source fields (8.5s)
+  ✓  2 e2e/workflow-script-editor.spec.ts:60:1 › authored script goals survive an unrelated editor save and canonical reopen (8.4s)
+
+  2 passed (17.8s)

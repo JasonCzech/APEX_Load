@@ -54,14 +54,14 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 		return fmt.Errorf("script %q belongs to another project", script.ID)
 	}
 
-	query := `INSERT INTO scripts (id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO scripts (id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, goal_config_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
 			  ref_key=CASE WHEN TRIM(COALESCE(excluded.ref_key, '')) = '' THEN scripts.ref_key ELSE excluded.ref_key END,
 			  name=excluded.name, protocol=excluded.protocol, version=excluded.version,
 			  folder_id=excluded.folder_id,
 			  generated_by=excluded.generated_by, generated_from=excluded.generated_from,
-			  metadata_json=excluded.metadata_json,
+			  metadata_json=excluded.metadata_json, goal_config_json=excluded.goal_config_json,
 			  config=excluded.config, data_sources=excluded.data_sources, parameters=excluded.parameters,
 			  init=excluded.init, actions=excluded.actions, teardown=excluded.teardown,
 			  updated_at=excluded.updated_at
@@ -70,7 +70,7 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 	result, err := tx.Exec(query,
 		script.ID, script.RefKey, script.Name, script.Protocol, script.Version, script.ProjectID, script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
-		encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
+		encoded.metadata, encoded.goals, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
 		script.CreatedAt, script.UpdatedAt)
 	if err != nil {
 		return err
@@ -115,12 +115,12 @@ func (s *SQLiteStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
 	if err := validateScriptObjectRepositoryProjectsTx(tx, script.ProjectID, script); err != nil {
 		return false, err
 	}
-	result, err := tx.Exec(`INSERT INTO scripts (id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	result, err := tx.Exec(`INSERT INTO scripts (id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, goal_config_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`,
 		script.ID, script.RefKey, script.Name, script.Protocol, script.Version, script.ProjectID, script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
-		encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
+		encoded.metadata, encoded.goals, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
 		script.CreatedAt, script.UpdatedAt)
 	if err != nil {
 		return false, err
@@ -243,11 +243,11 @@ func (s *SQLiteStore) updateScriptIfUnchanged(
 	script.UpdatedAt = time.Now().UTC()
 	result, err := tx.Exec(`UPDATE scripts SET
 		ref_key = ?, name = ?, protocol = ?, version = ?, folder_id = ?,
-		generated_by = ?, generated_from = ?, metadata_json = ?, config = ?, data_sources = ?, parameters = ?, init = ?, actions = ?, teardown = ?, updated_at = ?
+		generated_by = ?, generated_from = ?, metadata_json = ?, goal_config_json = ?, config = ?, data_sources = ?, parameters = ?, init = ?, actions = ?, teardown = ?, updated_at = ?
 		WHERE id = ? AND project_id = ? AND CAST(updated_at AS TEXT) = ?`,
 		script.RefKey, script.Name, script.Protocol, script.Version, script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
-		encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
+		encoded.metadata, encoded.goals, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
 		script.UpdatedAt, script.ID, script.ProjectID, currentUpdatedRaw)
 	if err != nil {
 		return false, err
@@ -438,6 +438,7 @@ func (s *SQLiteStore) DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.
 
 type storedScriptJSON struct {
 	metadata    string
+	goals       string
 	config      string
 	dataSources string
 	parameters  string
@@ -447,27 +448,21 @@ type storedScriptJSON struct {
 }
 
 func marshalScriptForStorage(script *dsl.Script) (storedScriptJSON, error) {
+	var encoded storedScriptJSON
 	fields := []struct {
 		name  string
 		value any
 		dst   *string
 	}{
-		{name: "metadata_json", value: script.Metadata},
-		{name: "config", value: script.Config},
-		{name: "data_sources", value: script.DataSources},
-		{name: "parameters", value: script.Parameters},
-		{name: "init", value: script.Init},
-		{name: "actions", value: script.Actions},
-		{name: "teardown", value: script.Teardown},
+		{name: "metadata_json", value: script.Metadata, dst: &encoded.metadata},
+		{name: "goal_config_json", value: script.GoalConfig, dst: &encoded.goals},
+		{name: "config", value: script.Config, dst: &encoded.config},
+		{name: "data_sources", value: script.DataSources, dst: &encoded.dataSources},
+		{name: "parameters", value: script.Parameters, dst: &encoded.parameters},
+		{name: "init", value: script.Init, dst: &encoded.init},
+		{name: "actions", value: script.Actions, dst: &encoded.actions},
+		{name: "teardown", value: script.Teardown, dst: &encoded.teardown},
 	}
-	var encoded storedScriptJSON
-	fields[0].dst = &encoded.metadata
-	fields[1].dst = &encoded.config
-	fields[2].dst = &encoded.dataSources
-	fields[3].dst = &encoded.parameters
-	fields[4].dst = &encoded.init
-	fields[5].dst = &encoded.actions
-	fields[6].dst = &encoded.teardown
 	for _, field := range fields {
 		payload, err := json.Marshal(field.value)
 		if err != nil {
@@ -480,21 +475,21 @@ func marshalScriptForStorage(script *dsl.Script) (storedScriptJSON, error) {
 
 func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 	var script dsl.Script
-	var metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
+	var metadataJSON, goalsJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
 
-	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='script' AND a.resource_id=scripts.id AND ` + archiveIncarnationMatch(s.db.dialect, "a.incarnation", "scripts.created_at") + `)
+	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), COALESCE(goal_config_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='script' AND a.resource_id=scripts.id AND ` + archiveIncarnationMatch(s.db.dialect, "a.incarnation", "scripts.created_at") + `)
 			  FROM scripts WHERE id = ?`
 	err := s.db.QueryRow(query, id).Scan(
 		&script.ID, &script.RefKey, &script.Name, &script.Protocol, &script.Version,
 		&script.ProjectID, &script.FolderID,
 		&script.GeneratedBy, &script.GeneratedFrom,
-		&metadataJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
+		&metadataJSON, &goalsJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
 		&script.CreatedAt, &script.UpdatedAt, &script.ArchivedAt)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := decodeStoredScriptJSON(&script, metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON); err != nil {
+	if err := decodeStoredScriptJSON(&script, metadataJSON, goalsJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON); err != nil {
 		return nil, fmt.Errorf("decode script %s: %w", script.ID, err)
 	}
 	recognizeLegacyCredentialPreservingImport(&script)
@@ -504,7 +499,7 @@ func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 
 func (s *SQLiteStore) ListScripts(projectID string, folderID *string) ([]*dsl.Script, error) {
 	args := []any{}
-	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='script' AND a.resource_id=scripts.id AND ` + archiveIncarnationMatch(s.db.dialect, "a.incarnation", "scripts.created_at") + `) FROM scripts`
+	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), COALESCE(goal_config_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='script' AND a.resource_id=scripts.id AND ` + archiveIncarnationMatch(s.db.dialect, "a.incarnation", "scripts.created_at") + `) FROM scripts`
 	var filters []string
 	if projectID != "" {
 		filters = append(filters, `project_id = ?`)
@@ -531,17 +526,17 @@ func (s *SQLiteStore) ListScripts(projectID string, folderID *string) ([]*dsl.Sc
 	var scripts []*dsl.Script
 	for rows.Next() {
 		var script dsl.Script
-		var metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
+		var metadataJSON, goalsJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
 		err := rows.Scan(
 			&script.ID, &script.RefKey, &script.Name, &script.Protocol, &script.Version,
 			&script.ProjectID, &script.FolderID,
 			&script.GeneratedBy, &script.GeneratedFrom,
-			&metadataJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
+			&metadataJSON, &goalsJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
 			&script.CreatedAt, &script.UpdatedAt, &script.ArchivedAt)
 		if err != nil {
 			return nil, err
 		}
-		if err := decodeStoredScriptJSON(&script, metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON); err != nil {
+		if err := decodeStoredScriptJSON(&script, metadataJSON, goalsJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON); err != nil {
 			return nil, fmt.Errorf("decode script %s: %w", script.ID, err)
 		}
 		recognizeLegacyCredentialPreservingImport(&script)
@@ -620,7 +615,7 @@ func detachOrDeleteGitHubCheckLinksForScriptTx(tx *storeTx, scriptID string) err
 	return err
 }
 
-func decodeStoredScriptJSON(script *dsl.Script, metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string) error {
+func decodeStoredScriptJSON(script *dsl.Script, metadataJSON, goalsJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string) error {
 	if script == nil {
 		return errors.New("script is required")
 	}
@@ -631,6 +626,7 @@ func decodeStoredScriptJSON(script *dsl.Script, metadataJSON, configJSON, dataSo
 		optional bool
 	}{
 		{name: "metadata_json", raw: metadataJSON, dst: &script.Metadata, optional: true},
+		{name: "goal_config_json", raw: goalsJSON, dst: &script.GoalConfig, optional: true},
 		{name: "config", raw: configJSON, dst: &script.Config},
 		{name: "data_sources", raw: dataSourcesJSON, dst: &script.DataSources},
 		{name: "parameters", raw: parametersJSON, dst: &script.Parameters, optional: true},

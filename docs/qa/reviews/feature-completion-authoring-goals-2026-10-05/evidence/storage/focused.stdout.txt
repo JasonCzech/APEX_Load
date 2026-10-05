@@ -1,0 +1,5 @@
+--- FAIL: TestScriptGoalConfigBlankIDRepairPreservesGoals (0.27s)
+    script_goal_config_test.go:360: load script with blank id: sql: Scan error on column index 4, name "version": converting NULL to string is unsupported
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/storage	2.654s
+FAIL

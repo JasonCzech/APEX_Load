@@ -115,16 +115,16 @@ func backfillOneBlankScriptID(tx *storeTx, oldID string) (string, error) {
 	}
 	if _, err := tx.Exec(`INSERT INTO scripts (
 		id, ref_key, name, protocol, version, project_id, folder_id,
-		generated_by, generated_from, metadata_json, config, data_sources,
+		generated_by, generated_from, metadata_json, goal_config_json, config, data_sources,
 		parameters, init, actions, teardown, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		// The old parent still owns the globally unique ref_key until the end of
 		// this transaction. Reserve the repaired parent with an empty key, then
 		// restore the exact key immediately after deleting the old parent.
 		script.ID, "", script.Name, script.Protocol, script.Version,
 		normalizeProjectID(script.ProjectID), script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
-		encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters,
+		encoded.metadata, encoded.goals, encoded.config, encoded.dataSources, encoded.parameters,
 		encoded.init, encoded.actions, encoded.teardown,
 		script.CreatedAt, script.UpdatedAt,
 	); err != nil {

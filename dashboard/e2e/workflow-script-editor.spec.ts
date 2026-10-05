@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import type { ScriptDebugRuntimeState } from '../src/types/replay'
-import { login } from './support/workflow'
+import { idOf, json, login, mutation } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('operator edits the failed nested browser assertion and reruns without losing source fields', async ({ page }, testInfo) => {
@@ -55,4 +55,53 @@ test('operator edits the failed nested browser assertion and reruns without losi
   expect(runs).toBe(2)
   expect(replayExpected).toBe('Hello')
   await page.screenshot({ path: testInfo.outputPath('script-debug-evidence.png'), fullPage: true })
+})
+
+test('authored script goals survive an unrelated editor save and canonical reopen', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const goals = {
+    target_average_tps: 8.75, p95_latency_ms: 217.5, max_error_pct: 0,
+    min_vusers: 1, max_vusers: 6, max_error_count: 17,
+    stop_on_sla_breach: true, stop_on_max_errors: true, sla_breach_window: '11s',
+    transaction_rules: [{ population: 'transaction', protocol: 'http', group: 'checkout', transaction: 'Purchase', metric: 'p95_duration_ms', comparator: 'lte', threshold: 215.25, severity: 'fail' }],
+  }
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: {
+    project_id: workspace.projectId,
+    script: { name: 'Durable script goals', version: '1.0', protocol: 'http', goal_config: goals,
+      config: { base_url: 'http://127.0.0.1:1' }, actions: [{ name: 'Purchase', type: 'request', method: 'GET', target: '/' }] },
+  } })))
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  const workbench = page.getByRole('region', { name: 'Author center workbench' })
+  await workbench.getByRole('tab', { name: 'Runtime Settings' }).click()
+  const baseURL = workbench.getByRole('textbox', { name: 'Base URL' })
+  await expect(baseURL).toHaveValue('http://127.0.0.1:1')
+  await baseURL.fill('http://127.0.0.1:2')
+  const saved = mutation(page, 'PUT', `/api/v1/scripts/${id}`)
+  await page.getByRole('button', { name: 'Save script', exact: true }).click()
+  await json(await saved)
+  await expect(page.getByRole('button', { name: 'Save script', exact: true })).toBeDisabled()
+  const canonical = await json(await request.get(`/api/v1/scripts/${id}`))
+  expect(canonical.script).toMatchObject({ goal_config: goals, config: { base_url: 'http://127.0.0.1:2' } })
+  await page.reload()
+  await workbench.getByRole('tab', { name: 'Runtime Settings' }).click()
+  await expect(baseURL).toHaveValue('http://127.0.0.1:2')
+  await workbench.getByRole('tab', { name: 'Source' }).click()
+  const code = page.locator('.script-code-pane')
+  // With no action selected, Source already owns the complete canonical JSON.
+  // Its virtualized code view must navigate to the authored goals to inspect
+  // them; no conditional action-scope toggle is present on this entry path.
+  await code.getByRole('button', { name: 'Find', exact: true }).click()
+  const find = code.getByPlaceholder('Find', { exact: true })
+  await find.pressSequentially('goal_config')
+  await find.press('Enter')
+  await expect(code.locator('.cm-content')).toContainText('goal_config')
+  await find.fill('')
+  await find.pressSequentially('217.5')
+  await find.press('Enter')
+  await expect(code.locator('.cm-content')).toContainText('217.5')
+  await find.press('Escape')
+  await page.screenshot({ path: testInfo.outputPath('canonical-goals-reopen.png'), fullPage: true })
 })

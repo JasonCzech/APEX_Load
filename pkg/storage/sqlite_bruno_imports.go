@@ -181,10 +181,10 @@ func upsertBrunoImportScriptTx(tx *storeTx, script *dsl.Script, encoded storedSc
 		script.UpdatedAt = now
 		if _, err := tx.Exec(`INSERT INTO scripts (
 			id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from,
-			metadata_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			metadata_json, goal_config_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			script.ID, script.RefKey, script.Name, script.Protocol, script.Version, script.ProjectID, script.FolderID,
-			script.GeneratedBy, script.GeneratedFrom, encoded.metadata, encoded.config, encoded.dataSources,
+			script.GeneratedBy, script.GeneratedFrom, encoded.metadata, encoded.goals, encoded.config, encoded.dataSources,
 			encoded.parameters, encoded.init, encoded.actions, encoded.teardown, script.CreatedAt, script.UpdatedAt); err != nil {
 			return false, err
 		}
@@ -204,10 +204,10 @@ func upsertBrunoImportScriptTx(tx *storeTx, script *dsl.Script, encoded storedSc
 	result, err := tx.Exec(`UPDATE scripts SET
 		ref_key = CASE WHEN TRIM(COALESCE(?, '')) = '' THEN ref_key ELSE ? END,
 		name = ?, protocol = ?, version = ?, folder_id = ?, generated_by = ?, generated_from = ?,
-		metadata_json = ?, config = ?, data_sources = ?, parameters = ?, init = ?, actions = ?, teardown = ?, updated_at = ?
+		metadata_json = ?, goal_config_json = ?, config = ?, data_sources = ?, parameters = ?, init = ?, actions = ?, teardown = ?, updated_at = ?
 		WHERE id = ? AND project_id = ? AND CAST(updated_at AS TEXT) = ?`,
 		script.RefKey, script.RefKey, script.Name, script.Protocol, script.Version, script.FolderID,
-		script.GeneratedBy, script.GeneratedFrom, encoded.metadata, encoded.config, encoded.dataSources,
+		script.GeneratedBy, script.GeneratedFrom, encoded.metadata, encoded.goals, encoded.config, encoded.dataSources,
 		encoded.parameters, encoded.init, encoded.actions, encoded.teardown, script.UpdatedAt,
 		script.ID, script.ProjectID, currentUpdatedRaw)
 	if err != nil {
