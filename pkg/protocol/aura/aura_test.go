@@ -164,3 +164,76 @@ func TestReportsAndErrorsNeverDiscloseSourceValues(t *testing.T) {
 		}
 	}
 }
+
+func TestParseBaseline(t *testing.T) {
+	if recorded, err := ParseBaseline(nil); recorded != nil || err != nil {
+		t.Fatalf("nil baseline = %v, %v", recorded, err)
+	}
+	typed := Baseline{Recorded: []RecordedOutcome{{Ordinal: 2, State: Error}, {Ordinal: 3, State: Aborted}}}
+	var decoded any
+	if err := json.Unmarshal([]byte(`{"recorded":[{"ordinal":2,"state":"ERROR"},{"ordinal":3,"state":"ABORTED"}]}`), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	for _, form := range []any{typed, &typed, decoded, map[string][]RecordedOutcome{"recorded": typed.Recorded}} {
+		recorded, err := ParseBaseline(form)
+		if err != nil || len(recorded) != 2 || recorded[2] != Error || recorded[3] != Aborted {
+			t.Fatalf("ParseBaseline(%#v) = %v, %v", form, recorded, err)
+		}
+	}
+	for _, invalid := range []string{
+		`"SUCCESS"`, `{}`, `{"recorded":[]}`, `{"recorded":[{"ordinal":0,"state":"ERROR"}]}`,
+		`{"recorded":[{"ordinal":1,"state":"SUCCESS"}]}`, `{"recorded":[{"ordinal":1,"state":"ERROR"},{"ordinal":1,"state":"ERROR"}]}`,
+		`{"recorded":[{"ordinal":1,"state":"ERROR"}],"extra":true}`, `{"recorded":[{"ordinal":1.5,"state":"ERROR"}]}`,
+		`{"recorded":[{"ordinal":1,"state":"ERROR","note":"x"}]}`, `{"recorded":[{"ordinal":"1","state":"ERROR"}]}`,
+	} {
+		var value any
+		if err := json.Unmarshal([]byte(invalid), &value); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ParseBaseline(value); err == nil {
+			t.Errorf("ParseBaseline(%s) accepted", invalid)
+		}
+	}
+}
+
+// An action that failed in the recording fails again labelled as such; with
+// accept it passes when it ends in the same state, but a new failure, a
+// different failure state and structural problems are never excused.
+func TestApplyRecordedBaseline(t *testing.T) {
+	failedSecond := strings.Replace(response, `"2;a","state":"SUCCESS"`, `"2;a","state":"ERROR"`, 1)
+	recorded := map[int]State{2: Error}
+
+	report := Validate([]byte(request), []byte(failedSecond))
+	report.ApplyRecordedBaseline(recorded, false)
+	if report.Success || len(report.Issues) != 1 || !report.Issues[0].RecordedFailure || report.Outcomes[1].Recorded != Error ||
+		!strings.Contains(report.Err().Error(), "non_success_state at action 2 (also failed in the recording)") {
+		t.Fatalf("require success: %+v err=%v", report, report.Err())
+	}
+
+	report = Validate([]byte(request), []byte(failedSecond))
+	report.ApplyRecordedBaseline(recorded, true)
+	if !report.Success || report.AcceptedRecordedFailures != 1 || len(report.Issues) != 0 {
+		t.Fatalf("accept recorded: %+v", report)
+	}
+
+	for name, tc := range map[string]struct {
+		response string
+		recorded map[int]State
+	}{
+		"new failure":         {strings.Replace(response, `"1;a","state":"SUCCESS"`, `"1;a","state":"ERROR"`, 1), recorded},
+		"other failure state": {strings.Replace(response, `"2;a","state":"SUCCESS"`, `"2;a","state":"INCOMPLETE"`, 1), recorded},
+		"missing response":    {`{"actions":[{"id":"1;a","state":"SUCCESS"}]}`, recorded},
+	} {
+		report := Validate([]byte(request), []byte(tc.response))
+		report.ApplyRecordedBaseline(tc.recorded, true)
+		if report.Success || report.AcceptedRecordedFailures != 0 {
+			t.Errorf("%s accepted: %+v", name, report)
+		}
+	}
+
+	recovered := Validate([]byte(request), []byte(response))
+	recovered.ApplyRecordedBaseline(recorded, false)
+	if !recovered.Success {
+		t.Fatalf("a replay that succeeds where the recording failed must pass: %+v", recovered)
+	}
+}

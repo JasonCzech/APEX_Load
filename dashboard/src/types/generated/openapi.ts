@@ -803,6 +803,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -3874,6 +3875,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
                 "password"?: string;
@@ -4272,6 +4274,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -4646,6 +4649,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -5453,6 +5457,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -6162,6 +6167,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -10038,6 +10044,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -10899,6 +10906,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -11585,6 +11593,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -12240,6 +12249,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -12785,6 +12795,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -13403,6 +13414,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -14033,6 +14045,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -14811,6 +14824,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -15339,6 +15353,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -16822,6 +16837,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -17183,6 +17199,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -17757,6 +17774,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -18118,6 +18136,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -18701,6 +18720,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -19539,6 +19559,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -20341,6 +20362,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -22004,6 +22026,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -22675,6 +22698,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -23595,6 +23619,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -24629,6 +24654,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -25327,6 +25353,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -29406,6 +29433,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: Record<string, unknown>;
               "cache_enabled"?: (boolean) | null;
               "cache_excluded_mime_types"?: Array<string>;
@@ -29774,6 +29802,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -31244,6 +31273,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -32230,6 +32260,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -32459,6 +32490,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
                 "password"?: string;
@@ -33035,6 +33067,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -33396,6 +33429,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -34072,6 +34106,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -34968,6 +35003,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -35792,6 +35828,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -36030,6 +36067,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
                 "password"?: string;
@@ -37168,6 +37206,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -39474,6 +39513,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -42253,6 +42293,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -42913,6 +42954,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -43495,6 +43537,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -44155,6 +44198,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -46241,6 +46285,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -46479,6 +46524,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
                 "password"?: string;
@@ -46992,6 +47038,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -47814,6 +47861,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -49688,6 +49736,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -55456,6 +55505,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -56637,6 +56687,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -57447,6 +57498,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -61820,6 +61872,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -62181,6 +62234,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -62785,6 +62839,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -65713,6 +65768,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -68019,6 +68075,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -68624,6 +68681,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -68921,6 +68979,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -69204,6 +69263,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -69487,6 +69547,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -70045,6 +70106,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -70550,6 +70612,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -71073,6 +71136,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -73423,6 +73487,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -74113,6 +74178,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -84836,6 +84902,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -87142,6 +87209,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -88019,6 +88087,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: Record<string, unknown>;
               "cache_enabled"?: (boolean) | null;
               "cache_excluded_mime_types"?: Array<string>;
@@ -89768,6 +89837,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -90624,6 +90694,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -91323,6 +91394,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -92091,6 +92163,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -93068,6 +93141,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -93754,6 +93828,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -94409,6 +94484,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -94954,6 +95030,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -96779,6 +96856,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -98869,6 +98947,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -100426,6 +100505,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -101983,6 +102063,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -103540,6 +103621,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -105097,6 +105179,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -105691,6 +105774,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -106475,6 +106559,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -109020,6 +109105,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -110625,6 +110711,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -110944,6 +111031,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -111566,6 +111654,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -113406,6 +113495,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -114017,6 +114107,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -115261,6 +115352,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -116582,6 +116674,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -117926,6 +118019,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -119271,6 +119365,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -120615,6 +120710,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -126045,6 +126141,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -128351,6 +128448,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -129225,6 +129323,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -129922,6 +130021,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -133300,6 +133400,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -133529,6 +133630,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
                 "password"?: string;
@@ -134105,6 +134207,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -134466,6 +134569,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -135242,6 +135346,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -136137,6 +136242,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -139519,6 +139625,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
                 "password"?: string;
@@ -139812,6 +139919,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -140591,6 +140699,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -141702,6 +141811,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -141931,6 +142041,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
                 "password"?: string;

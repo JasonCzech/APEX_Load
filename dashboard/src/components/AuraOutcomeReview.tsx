@@ -81,6 +81,10 @@ export default function AuraOutcomeReview({ report, sourceReview, onViewSource }
       {failedActions > 0 && ` ${failedActions} captured action${failedActions === 1 ? '' : 's'} did not succeed.`}
     </p>
     <p>These are captured baseline results, not replay results. HTTP 200 does not establish Aura action success. Successful capture inspection does not verify login, correlation, or replay readiness.</p>
+    {count(report.recorded_failure_actions) > 0 && <div className="aura-outcome-limits" role="note">
+      <strong>Actions that failed in the recording</strong>
+      <p>{count(report.recorded_failure_actions)} action{count(report.recorded_failure_actions) === 1 ? '' : 's'} in {count(report.recorded_failure_batches)} request{count(report.recorded_failure_batches) === 1 ? '' : 's'} already failed in the recording. Replay still requires success and labels these failures “also failed in the recording”. To accept the recorded outcome for all of them, set “Aura actions that failed in the recording” to “Accept the recorded outcome” in the script’s HTTP settings or a scenario override.</p>
+    </div>}
     <ImportEvidenceFacts facts={[
       { label: 'Batches inspected', value: `${count(report.inspected_batches)} / ${count(report.total_batches)}` },
       { label: 'Complete batches', value: count(report.complete_batches) },

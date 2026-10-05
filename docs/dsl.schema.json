@@ -7740,6 +7740,14 @@
         "accept_language": {
           "type": "string"
         },
+        "aura_recorded_failures": {
+          "enum": [
+            "",
+            "require_success",
+            "accept_recorded"
+          ],
+          "type": "string"
+        },
         "auth": {
           "$ref": "#/$defs/AuthConfig"
         },

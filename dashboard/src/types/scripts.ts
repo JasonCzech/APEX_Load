@@ -305,6 +305,7 @@ export interface HTTPConfig {
   cache_max_unused_iterations?: number
   cache_excluded_mime_types?: string[]
   html_parse_mode?: 'html' | 'text' | 'any'
+  aura_recorded_failures?: 'require_success' | 'accept_recorded'
   html_excluded_mime_types?: string[]
   connect_timeout_ms?: number
   request_timeout_ms?: number

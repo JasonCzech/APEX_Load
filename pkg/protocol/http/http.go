@@ -918,7 +918,7 @@ extractors:
 		}
 		var assertionErr error
 		if assertion.Type == "aura_actions_success" {
-			assertionErr = evaluateAuraAssertion(result, requestBody, respBody)
+			assertionErr = evaluateAuraAssertion(assertion, h.outcome.acceptRecordedAura, result, requestBody, respBody)
 		} else {
 			assertionErr = evaluateResponseAssertion(assertion, result, resp.Header, bodyText)
 		}

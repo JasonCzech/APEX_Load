@@ -2031,7 +2031,7 @@ func validateWebRuntimeIssues(script *Script) []string {
 	}
 	if err := httpprotocol.ValidateReplayCompatibilityConfig(map[string]any{
 		"receive_buffer_bytes": httpCfg.ReceiveBufferBytes, "max_meta_refresh": httpCfg.MaxMetaRefresh, "content_check_error_limit": httpCfg.ContentCheckErrorLimit,
-		"ip_version": httpCfg.IPVersion, "html_parse_mode": httpCfg.HTMLParseMode,
+		"ip_version": httpCfg.IPVersion, "html_parse_mode": httpCfg.HTMLParseMode, "aura_recorded_failures": httpCfg.AuraRecordedFailures,
 		"cache_max_unused_iterations": httpCfg.CacheMaxUnusedIterations,
 		"cache_excluded_mime_types":   httpCfg.CacheExcludedMIMETypes,
 		"html_excluded_mime_types":    httpCfg.HTMLExcludedMIMETypes,

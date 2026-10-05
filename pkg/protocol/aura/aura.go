@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"strings"
 	"unicode/utf8"
@@ -59,11 +60,17 @@ const (
 type Outcome struct {
 	Ordinal int   `json:"ordinal"`
 	State   State `json:"state"`
+	// Recorded is the action's unsuccessful state in the recording, when the
+	// import captured one.
+	Recorded State `json:"recorded,omitempty"`
 }
 
 type Issue struct {
 	Code    Code `json:"code"`
 	Ordinal int  `json:"ordinal,omitempty"`
+	// RecordedFailure marks a non_success_state on an action that also failed
+	// in the recording, so it is not mistaken for a correlation problem.
+	RecordedFailure bool `json:"recorded_failure,omitempty"`
 }
 
 // Report is deliberately value-free. Request-only Success means structural
@@ -79,10 +86,13 @@ type Report struct {
 	MatchedActions  int  `json:"matched_actions"`
 	// Nonzero omission counts describe retained runtime diagnostics only.
 	// Validation still evaluates every action permitted by the parser bounds.
-	OutcomesOmitted int       `json:"outcomes_omitted,omitempty"`
-	IssuesOmitted   int       `json:"issues_omitted,omitempty"`
-	Outcomes        []Outcome `json:"outcomes,omitempty"`
-	Issues          []Issue   `json:"issues,omitempty"`
+	OutcomesOmitted int `json:"outcomes_omitted,omitempty"`
+	IssuesOmitted   int `json:"issues_omitted,omitempty"`
+	// AcceptedRecordedFailures counts actions that ended in the same
+	// unsuccessful state as the recording and were accepted by policy.
+	AcceptedRecordedFailures int       `json:"accepted_recorded_failures,omitempty"`
+	Outcomes                 []Outcome `json:"outcomes,omitempty"`
+	Issues                   []Issue   `json:"issues,omitempty"`
 }
 
 // Err provides only an enum and ordinal, never parser errors or source values.
@@ -94,10 +104,165 @@ func (r Report) Err() error {
 		return fmt.Errorf("Aura validation failed")
 	}
 	issue := r.Issues[0]
-	if issue.Ordinal > 0 {
-		return fmt.Errorf("Aura validation failed: %s at action %d", issue.Code, issue.Ordinal)
+	recorded := ""
+	if issue.RecordedFailure {
+		recorded = " (also failed in the recording)"
 	}
-	return fmt.Errorf("Aura validation failed: %s", issue.Code)
+	if issue.Ordinal > 0 {
+		return fmt.Errorf("Aura validation failed: %s at action %d%s", issue.Code, issue.Ordinal, recorded)
+	}
+	return fmt.Errorf("Aura validation failed: %s%s", issue.Code, recorded)
+}
+
+// RecordedOutcome is an action's unsuccessful state in the recording, by its
+// position in the request envelope.
+type RecordedOutcome struct {
+	Ordinal int   `json:"ordinal"`
+	State   State `json:"state"`
+}
+
+// Baseline is the recorded outcome of a batch's actions that did not succeed.
+type Baseline struct {
+	Recorded []RecordedOutcome `json:"recorded"`
+}
+
+// ParseBaseline reads a baseline from an assertion's expected value (nil means
+// none). It runs for every Aura request at replay, so the forms it meets
+// there, a Baseline or its decoded JSON, are read directly; anything else
+// goes through JSON.
+func ParseBaseline(expected any) (map[int]State, error) {
+	var outcomes []RecordedOutcome
+	switch typed := expected.(type) {
+	case nil:
+		return nil, nil
+	case Baseline:
+		outcomes = typed.Recorded
+	case *Baseline:
+		if typed == nil {
+			return nil, nil
+		}
+		outcomes = typed.Recorded
+	case map[string]any:
+		decoded, err := decodedBaseline(typed)
+		if err != nil {
+			return nil, err
+		}
+		outcomes = decoded
+	default:
+		encoded, err := json.Marshal(expected)
+		if err != nil {
+			return nil, errInvalidBaseline
+		}
+		var value any
+		if err := json.Unmarshal(encoded, &value); err != nil {
+			return nil, errInvalidBaseline
+		}
+		object, ok := value.(map[string]any)
+		if !ok {
+			return nil, errInvalidBaseline
+		}
+		decoded, err := decodedBaseline(object)
+		if err != nil {
+			return nil, err
+		}
+		outcomes = decoded
+	}
+	if len(outcomes) == 0 || len(outcomes) > MaxActions {
+		return nil, fmt.Errorf("recorded baseline must list 1 to %d actions", MaxActions)
+	}
+	recorded := make(map[int]State, len(outcomes))
+	for _, outcome := range outcomes {
+		if outcome.Ordinal < 1 || outcome.Ordinal > MaxActions {
+			return nil, fmt.Errorf("recorded baseline ordinal must be between 1 and %d", MaxActions)
+		}
+		switch outcome.State {
+		case Error, Incomplete, Aborted:
+		default:
+			return nil, fmt.Errorf("recorded baseline state must be ERROR, INCOMPLETE or ABORTED")
+		}
+		if _, duplicate := recorded[outcome.Ordinal]; duplicate {
+			return nil, fmt.Errorf("recorded baseline repeats action %d", outcome.Ordinal)
+		}
+		recorded[outcome.Ordinal] = outcome.State
+	}
+	return recorded, nil
+}
+
+var errInvalidBaseline = fmt.Errorf("recorded baseline must be {\"recorded\": [{\"ordinal\", \"state\"}]}")
+
+// decodedBaseline reads the decoded JSON form, rejecting unknown members and
+// non-integer ordinals.
+func decodedBaseline(object map[string]any) ([]RecordedOutcome, error) {
+	if len(object) != 1 {
+		return nil, errInvalidBaseline
+	}
+	items, ok := object["recorded"].([]any)
+	if !ok {
+		return nil, errInvalidBaseline
+	}
+	outcomes := make([]RecordedOutcome, 0, len(items))
+	for _, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok || len(entry) != 2 {
+			return nil, errInvalidBaseline
+		}
+		ordinal, ok := baselineOrdinal(entry["ordinal"])
+		state, isString := entry["state"].(string)
+		if !ok || !isString {
+			return nil, errInvalidBaseline
+		}
+		outcomes = append(outcomes, RecordedOutcome{Ordinal: ordinal, State: State(state)})
+	}
+	return outcomes, nil
+}
+
+func baselineOrdinal(value any) (int, bool) {
+	switch typed := value.(type) {
+	case float64:
+		if typed != math.Trunc(typed) || typed < math.MinInt32 || typed > math.MaxInt32 {
+			return 0, false
+		}
+		return int(typed), true
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil || parsed < math.MinInt32 || parsed > math.MaxInt32 {
+			return 0, false
+		}
+		return int(parsed), true
+	case int:
+		return typed, true
+	default:
+		return 0, false
+	}
+}
+
+// ApplyRecordedBaseline relates a validated replay to the recording: actions
+// that failed again are marked as recorded failures, and with accept an
+// action that ended in the same unsuccessful state as the recording is
+// accepted rather than reported. Structural issues are never affected.
+func (r *Report) ApplyRecordedBaseline(recorded map[int]State, accept bool) {
+	if len(recorded) == 0 {
+		return
+	}
+	replayed := make(map[int]State, len(r.Outcomes))
+	for index := range r.Outcomes {
+		outcome := &r.Outcomes[index]
+		replayed[outcome.Ordinal] = outcome.State
+		outcome.Recorded = recorded[outcome.Ordinal]
+	}
+	issues := make([]Issue, 0, len(r.Issues))
+	for _, issue := range r.Issues {
+		if state, ok := recorded[issue.Ordinal]; ok && issue.Code == NonSuccessState {
+			if accept && replayed[issue.Ordinal] == state {
+				r.AcceptedRecordedFailures++
+				continue
+			}
+			issue.RecordedFailure = true
+		}
+		issues = append(issues, issue)
+	}
+	r.Issues = issues
+	r.Success = r.Complete && len(r.Issues) == 0
 }
 
 func ValidateRequest(body []byte) Report {

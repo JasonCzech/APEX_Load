@@ -812,6 +812,11 @@ type HTTPConfig struct {
 	// HTMLParseMode controls resource discovery; empty preserves the native HTML/XHTML default.
 	HTMLParseMode         string   `json:"html_parse_mode,omitempty" jsonschema:"enum=,enum=html,enum=text,enum=any"`
 	HTMLExcludedMIMETypes []string `json:"html_excluded_mime_types,omitempty"`
+	// AuraRecordedFailures decides how aura_actions_success treats actions that
+	// already failed in the recording: "require_success" (the empty default)
+	// fails them, labelled as recorded failures; "accept_recorded" accepts a
+	// replay that ends in the same unsuccessful state as the recording.
+	AuraRecordedFailures string `json:"aura_recorded_failures,omitempty" jsonschema:"enum=,enum=require_success,enum=accept_recorded"`
 
 	// Connection
 	Version         string `json:"version,omitempty" jsonschema:"enum=,enum=1.1,enum=2"` // "1.1" exact, "2" required/no fallback; empty auto-negotiates HTTP/1.1 or HTTP/2

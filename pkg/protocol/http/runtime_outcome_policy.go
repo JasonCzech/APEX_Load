@@ -14,7 +14,14 @@ import (
 
 type replayOutcomePolicy struct {
 	httpWarnings, failResources, resourceTimeoutWarning, timeoutConfigured, legacyChecks, resourcesConfigured bool
+	// acceptRecordedAura accepts Aura actions that end in the same
+	// unsuccessful state as in the recording.
+	acceptRecordedAura bool
 }
+
+// AuraRecordedFailurePolicies are the config.http.aura_recorded_failures
+// values; empty means require_success.
+var AuraRecordedFailurePolicies = []string{"", "require_success", "accept_recorded"}
 
 func parseReplayOutcomePolicy(config map[string]any) replayOutcomePolicy {
 	p := replayOutcomePolicy{legacyChecks: true}
@@ -24,6 +31,8 @@ func parseReplayOutcomePolicy(config map[string]any) replayOutcomePolicy {
 	if value, ok := config["legacy_html_checks"].(bool); ok {
 		p.legacyChecks = value
 	}
+	policy, _ := config["aura_recorded_failures"].(string)
+	p.acceptRecordedAura = strings.EqualFold(strings.TrimSpace(policy), "accept_recorded")
 	return p
 }
 func addReplayWarning(result *protocol.Result, code string) {

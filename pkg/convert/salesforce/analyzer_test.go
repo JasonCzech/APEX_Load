@@ -415,6 +415,7 @@ func TestBuildNativePreviewSkipsCorrelationWithUnmatchedSource(t *testing.T) {
 			Value:       token,
 			Confidence:  0.9,
 		}},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("buildNativePreview returned error: %v", err)
@@ -462,6 +463,7 @@ func TestBuildNativePreviewDoesNotRewriteBeforeMappedExtractorSource(t *testing.
 			Value:       token,
 			Confidence:  0.9,
 		}},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("buildNativePreview returned error: %v", err)
@@ -525,6 +527,7 @@ func TestBuildNativePreviewPersistsHTTPSequenceCorrelationMutations(t *testing.T
 			Value:       token,
 			Confidence:  0.9,
 		}},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("buildNativePreview returned error: %v", err)
@@ -587,6 +590,7 @@ func TestBuildNativePreviewDetectsAndRewritesEncodedHeaderListCorrelation(t *tes
 			Value:       token,
 			Confidence:  0.9,
 		}},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("buildNativePreview returned error: %v", err)
@@ -647,6 +651,7 @@ func TestBuildNativePreviewLeavesUnsupportedEncodedSpellingsForReview(t *testing
 					Value:       rawValue,
 					Confidence:  0.9,
 				}},
+				nil,
 			)
 			if err != nil {
 				t.Fatalf("buildNativePreview returned error: %v", err)
@@ -705,6 +710,7 @@ func TestBuildNativePreviewEncodedSourceDoesNotDoubleEncodeReuse(t *testing.T) {
 			Value:       token,
 			Confidence:  0.95,
 		}},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("buildNativePreview returned error: %v", err)
@@ -755,6 +761,7 @@ func TestBuildNativePreviewEncodedSourceRequiresExactConsumerSpelling(t *testing
 			Value:       token,
 			Confidence:  0.95,
 		}},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("buildNativePreview returned error: %v", err)
@@ -817,6 +824,7 @@ func TestBuildNativePreviewSharesIdenticalEncodedRawSpelling(t *testing.T) {
 				Confidence:  0.9,
 			},
 		},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("buildNativePreview returned error: %v", err)
@@ -889,6 +897,7 @@ func TestBuildNativePreviewPrefersContainingLiteralForSubstringEncodedRawCollisi
 				Confidence:  0.9,
 			},
 		},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("buildNativePreview returned error: %v", err)
@@ -945,6 +954,7 @@ func TestBuildNativePreviewIncludesReviewOnlyOwnersInCollisionCheck(t *testing.T
 			{Name: "corr_short", Source: "body", ExtractType: "regex", Expression: `(token-123456)`, Value: shortValue, FoundInID: 1, UsedInIDs: []int{3}, Confidence: 0.9},
 			{Name: "corr_long", Source: "body", ExtractType: "regex", Expression: `(token-123456-extra)`, Value: longValue, FoundInID: 2, UsedInIDs: []int{3}, Confidence: 0.6},
 		},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("buildNativePreview returned error: %v", err)
@@ -1052,6 +1062,7 @@ func TestBuildNativePreviewReservesCorrelationExtractorCapacityBeforeRewriting(t
 					Value:       value,
 					Confidence:  0.95,
 				}},
+				nil,
 			)
 			if err != nil {
 				t.Fatalf("buildNativePreview returned error: %v", err)
@@ -1101,6 +1112,7 @@ func TestBuildNativePreviewLeavesLowConfidenceCorrelationForReviewOnly(t *testin
 			RuleID:      correlate.RuleJSONDynamicID,
 			Confidence:  0.62,
 		}},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("buildNativePreview returned error: %v", err)

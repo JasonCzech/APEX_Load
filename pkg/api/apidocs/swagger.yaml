@@ -2351,6 +2351,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -10867,6 +10869,8 @@ paths:
                           type: string
                         accept_language:
                           type: string
+                        aura_recorded_failures:
+                          type: string
                         auth:
                           type: object
                           properties:
@@ -11927,6 +11931,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -12917,6 +12923,8 @@ paths:
                             accept_encoding:
                               type: string
                             accept_language:
+                              type: string
+                            aura_recorded_failures:
                               type: string
                             auth:
                               type: object
@@ -14964,6 +14972,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -16815,6 +16825,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -40829,6 +40841,8 @@ paths:
                           accept_encoding:
                             type: string
                           accept_language:
+                            type: string
+                          aura_recorded_failures:
                             type: string
                           auth:
                             type: object
@@ -69059,6 +69073,8 @@ paths:
                           type: string
                         accept_language:
                           type: string
+                        aura_recorded_failures:
+                          type: string
                         auth:
                           type: object
                           additionalProperties: true
@@ -70065,6 +70081,8 @@ paths:
                             accept_encoding:
                               type: string
                             accept_language:
+                              type: string
+                            aura_recorded_failures:
                               type: string
                             auth:
                               type: object
@@ -74598,6 +74616,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -79345,6 +79365,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -84091,6 +84113,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -88851,6 +88875,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -93609,6 +93635,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -98369,6 +98397,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -103127,6 +103157,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -115213,6 +115245,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -116289,6 +116323,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -116894,6 +116930,8 @@ paths:
                         accept_encoding:
                           type: string
                         accept_language:
+                          type: string
+                        aura_recorded_failures:
                           type: string
                         auth:
                           type: object
@@ -118411,6 +118449,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -119387,6 +119427,8 @@ paths:
                                 accept_encoding:
                                   type: string
                                 accept_language:
+                                  type: string
+                                aura_recorded_failures:
                                   type: string
                                 auth:
                                   type: object
@@ -120964,6 +121006,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -121940,6 +121984,8 @@ paths:
                                 accept_encoding:
                                   type: string
                                 accept_language:
+                                  type: string
+                                aura_recorded_failures:
                                   type: string
                                 auth:
                                   type: object
@@ -123214,6 +123260,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -123819,6 +123867,8 @@ paths:
                         accept_encoding:
                           type: string
                         accept_language:
+                          type: string
+                        aura_recorded_failures:
                           type: string
                         auth:
                           type: object
@@ -125336,6 +125386,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -126312,6 +126364,8 @@ paths:
                                 accept_encoding:
                                   type: string
                                 accept_language:
+                                  type: string
+                                aura_recorded_failures:
                                   type: string
                                 auth:
                                   type: object
@@ -127862,6 +127916,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -128838,6 +128894,8 @@ paths:
                                 accept_encoding:
                                   type: string
                                 accept_language:
+                                  type: string
+                                aura_recorded_failures:
                                   type: string
                                 auth:
                                   type: object
@@ -131099,6 +131157,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -132075,6 +132135,8 @@ paths:
                                 accept_encoding:
                                   type: string
                                 accept_language:
+                                  type: string
+                                aura_recorded_failures:
                                   type: string
                                 auth:
                                   type: object
@@ -133672,6 +133734,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -137147,6 +137211,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -138989,6 +139055,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -141042,6 +141110,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -142695,6 +142765,8 @@ paths:
                             accept_encoding:
                               type: string
                             accept_language:
+                              type: string
+                            aura_recorded_failures:
                               type: string
                             auth:
                               type: object
@@ -144539,6 +144611,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -146034,6 +146108,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -146639,6 +146715,8 @@ paths:
                         accept_encoding:
                           type: string
                         accept_language:
+                          type: string
+                        aura_recorded_failures:
                           type: string
                         auth:
                           type: object
@@ -159067,6 +159145,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               properties:
@@ -161356,6 +161436,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -163589,6 +163671,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -165562,6 +165646,8 @@ paths:
                             accept_encoding:
                               type: string
                             accept_language:
+                              type: string
+                            aura_recorded_failures:
                               type: string
                             auth:
                               type: object
@@ -167850,6 +167936,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -170044,6 +170132,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -172095,6 +172185,8 @@ paths:
                             accept_encoding:
                               type: string
                             accept_language:
+                              type: string
+                            aura_recorded_failures:
                               type: string
                             auth:
                               type: object
@@ -175813,6 +175905,8 @@ paths:
                             accept_encoding:
                               type: string
                             accept_language:
+                              type: string
+                            aura_recorded_failures:
                               type: string
                             auth:
                               type: object
@@ -180120,6 +180214,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -182176,6 +182272,8 @@ paths:
                             accept_encoding:
                               type: string
                             accept_language:
+                              type: string
+                            aura_recorded_failures:
                               type: string
                             auth:
                               type: object
@@ -185849,6 +185947,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -189449,6 +189549,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -191321,6 +191423,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -193286,6 +193390,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -195171,6 +195277,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -196981,6 +197089,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -200727,6 +200837,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -202922,6 +203034,8 @@ paths:
                             accept_encoding:
                               type: string
                             accept_language:
+                              type: string
+                            aura_recorded_failures:
                               type: string
                             auth:
                               type: object
@@ -206126,6 +206240,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -207948,6 +208064,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -210019,6 +210137,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -212116,6 +212236,8 @@ paths:
                             accept_encoding:
                               type: string
                             accept_language:
+                              type: string
+                            aura_recorded_failures:
                               type: string
                             auth:
                               type: object
@@ -215481,6 +215603,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -218240,6 +218364,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -219973,6 +220099,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -222160,6 +222288,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -223875,6 +224005,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -225981,6 +226113,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -228932,6 +229066,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -231257,6 +231393,8 @@ paths:
                             accept_encoding:
                               type: string
                             accept_language:
+                              type: string
+                            aura_recorded_failures:
                               type: string
                             auth:
                               type: object
@@ -234669,6 +234807,8 @@ paths:
                                     type: string
                                   accept_language:
                                     type: string
+                                  aura_recorded_failures:
+                                    type: string
                                   auth:
                                     type: object
                                     additionalProperties: true
@@ -236513,6 +236653,8 @@ paths:
                                     type: string
                                   accept_language:
                                     type: string
+                                  aura_recorded_failures:
+                                    type: string
                                   auth:
                                     type: object
                                     additionalProperties: true
@@ -238296,6 +238438,8 @@ paths:
                                       type: string
                                     accept_language:
                                       type: string
+                                    aura_recorded_failures:
+                                      type: string
                                     auth:
                                       type: object
                                       description: 'Go type: AuthConfig'
@@ -239833,6 +239977,8 @@ paths:
                                     accept_encoding:
                                       type: string
                                     accept_language:
+                                      type: string
+                                    aura_recorded_failures:
                                       type: string
                                     auth:
                                       type: object
@@ -241787,6 +241933,8 @@ paths:
                                     type: string
                                   accept_language:
                                     type: string
+                                  aura_recorded_failures:
+                                    type: string
                                   auth:
                                     type: object
                                     additionalProperties: true
@@ -243631,6 +243779,8 @@ paths:
                                     type: string
                                   accept_language:
                                     type: string
+                                  aura_recorded_failures:
+                                    type: string
                                   auth:
                                     type: object
                                     additionalProperties: true
@@ -245414,6 +245564,8 @@ paths:
                                       type: string
                                     accept_language:
                                       type: string
+                                    aura_recorded_failures:
+                                      type: string
                                     auth:
                                       type: object
                                       description: 'Go type: AuthConfig'
@@ -246951,6 +247103,8 @@ paths:
                                     accept_encoding:
                                       type: string
                                     accept_language:
+                                      type: string
+                                    aura_recorded_failures:
                                       type: string
                                     auth:
                                       type: object
@@ -248932,6 +249086,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -250729,6 +250885,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -252664,6 +252822,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -254319,6 +254479,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -255987,6 +256149,8 @@ paths:
                             accept_encoding:
                               type: string
                             accept_language:
+                              type: string
+                            aura_recorded_failures:
                               type: string
                             auth:
                               type: object
@@ -258026,6 +258190,8 @@ paths:
                             accept_encoding:
                               type: string
                             accept_language:
+                              type: string
+                            aura_recorded_failures:
                               type: string
                             auth:
                               type: object
@@ -261395,6 +261561,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -263227,6 +263395,8 @@ paths:
                             accept_encoding:
                               type: string
                             accept_language:
+                              type: string
+                            aura_recorded_failures:
                               type: string
                             auth:
                               type: object
@@ -265168,6 +265338,8 @@ paths:
                             accept_encoding:
                               type: string
                             accept_language:
+                              type: string
+                            aura_recorded_failures:
                               type: string
                             auth:
                               type: object
@@ -275889,6 +276061,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -276514,6 +276688,8 @@ paths:
                         accept_encoding:
                           type: string
                         accept_language:
+                          type: string
+                        aura_recorded_failures:
                           type: string
                         auth:
                           type: object
@@ -279976,6 +280152,8 @@ paths:
                                 accept_encoding:
                                   type: string
                                 accept_language:
+                                  type: string
+                                aura_recorded_failures:
                                   type: string
                                 auth:
                                   type: object
@@ -287687,6 +287865,8 @@ paths:
                           accept_encoding:
                             type: string
                           accept_language:
+                            type: string
+                          aura_recorded_failures:
                             type: string
                           auth:
                             type: object
@@ -291579,6 +291759,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -299290,6 +299472,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -303026,6 +303210,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -305440,6 +305626,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -325524,6 +325712,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -333234,6 +333424,8 @@ paths:
                           accept_encoding:
                             type: string
                           accept_language:
+                            type: string
+                          aura_recorded_failures:
                             type: string
                           auth:
                             type: object
@@ -337070,6 +337262,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -344781,6 +344975,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -347074,6 +347270,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -347836,6 +348034,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -348556,6 +348756,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -349275,6 +349477,8 @@ paths:
                           accept_encoding:
                             type: string
                           accept_language:
+                            type: string
+                          aura_recorded_failures:
                             type: string
                           auth:
                             type: object
@@ -350055,6 +350259,8 @@ paths:
                           type: string
                         accept_language:
                           type: string
+                        aura_recorded_failures:
+                          type: string
                         auth:
                           type: object
                           properties:
@@ -350770,6 +350976,8 @@ paths:
                           accept_encoding:
                             type: string
                           accept_language:
+                            type: string
+                          aura_recorded_failures:
                             type: string
                           auth:
                             type: object
@@ -352193,6 +352401,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -353663,6 +353873,8 @@ paths:
                               accept_encoding:
                                 type: string
                               accept_language:
+                                type: string
+                              aura_recorded_failures:
                                 type: string
                               auth:
                                 type: object
@@ -355221,6 +355433,8 @@ paths:
                                 accept_encoding:
                                   type: string
                                 accept_language:
+                                  type: string
+                                aura_recorded_failures:
                                   type: string
                                 auth:
                                   type: object
@@ -362892,6 +363106,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -363517,6 +363733,8 @@ paths:
                         accept_encoding:
                           type: string
                         accept_language:
+                          type: string
+                        aura_recorded_failures:
                           type: string
                         auth:
                           type: object
@@ -364886,6 +365104,8 @@ paths:
                                 accept_encoding:
                                   type: string
                                 accept_language:
+                                  type: string
+                                aura_recorded_failures:
                                   type: string
                                 auth:
                                   type: object
@@ -366335,6 +366555,8 @@ paths:
                         accept_encoding:
                           type: string
                         accept_language:
+                          type: string
+                        aura_recorded_failures:
                           type: string
                         auth:
                           type: object

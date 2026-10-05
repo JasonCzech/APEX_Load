@@ -33,6 +33,14 @@ describe('AuraOutcomeReview', () => {
     expect(container.textContent).not.toContain('Captured success')
   })
 
+  it('explains the replay decision for actions that failed in the recording', () => {
+    render(report({ state_counts: { SUCCESS: 1, ERROR: 2 }, recorded_failure_actions: 2, recorded_failure_batches: 1 }))
+    expect(container.textContent).toContain('2 actions in 1 request already failed in the recording')
+    expect(container.textContent).toContain('Accept the recorded outcome')
+    render(report())
+    expect(container.textContent).not.toContain('already failed in the recording')
+  })
+
   it('does not interpret request-only success as a response or silently hide omitted evidence', () => {
     render(report({ complete: false, total_batches: 3, complete_batches: 0, omitted_batches: 2, missing_responses: 1, incomplete_batches: 1, response_actions: 0, matched_actions: 0, state_counts: {}, batches: [batch(1, { analysis: { success: true, complete: true, has_response: false, request_actions: 1, response_actions: 0, matched_actions: 0 } })] }))
     expect(container.textContent).toContain('Capture inspection incomplete.')
