@@ -3,8 +3,11 @@ import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, CapacityAdvisory, GoalSta
 import { formatTimeCompact } from '../utils/timeUtils'
 import { browserMetricRecord, finiteBrowserMetric, formatBrowserSampleCount, formatBrowserEngineLabel, formatDevicePlatformLabel } from './browserBreakdownModel'
 import BrowserUXAssessment from './BrowserUXAssessment'
+import BrowserDocumentEvidencePanel from './BrowserDocumentEvidencePanel'
+import type { BrowserDocumentSummary } from '../types/browserDocumentEvidence'
 
 interface LiveMetricsSummary {
+  browser_documents?: BrowserDocumentSummary | null
   tps?: number
   target_tps?: number
   throughput_gap_pct?: number
@@ -465,6 +468,10 @@ export default function TestExecutionStatusPanels({
             </div>
           )}
         </div>
+      )}
+
+      {(metrics?.browser_documents != null || metrics?.browser || test.groups?.some(group => group.protocol === 'browser')) && (
+        <BrowserDocumentEvidencePanel summary={metrics?.browser_documents} summaryMode="live-history" />
       )}
 
       {isGoalOriented && (

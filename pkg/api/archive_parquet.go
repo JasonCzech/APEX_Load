@@ -104,6 +104,7 @@ type parquetResourceSample struct {
 }
 
 type parquetIntervalSummary struct {
+	BrowserDocumentsJSON   string  `parquet:"name=browser_documents_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	ObservationState       string  `parquet:"name=observation_state, type=BYTE_ARRAY, convertedtype=UTF8"`
 	SampleWindowSeconds    float64 `parquet:"name=sample_window_seconds, type=DOUBLE"`
 	TimestampUnixMs        int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
@@ -182,7 +183,7 @@ func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest, budg
 	if count != manifest.IntervalSummaryCount {
 		return fmt.Errorf("interval summary archive count is %d, want %d", count, manifest.IntervalSummaryCount)
 	}
-	return nil
+	return writeBrowserDocumentParquet(rootDir, manifest, budget)
 }
 
 // streamJSONLToParquet keeps memory proportional to one bounded archive record.
@@ -190,6 +191,10 @@ func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest, budg
 // so use the repository's 64 MiB JSONL ceiling rather than decoding a record
 // with no allocation bound.
 func streamJSONLToParquet[In any, Out any](inputPath string, outputPath string, convert func(In) Out, budgets ...*archiveOutputBudget) (count int64, err error) {
+	return streamJSONLToParquetChecked(inputPath, outputPath, func(item In) (Out, error) { return convert(item), nil }, budgets...)
+}
+
+func streamJSONLToParquetChecked[In any, Out any](inputPath string, outputPath string, convert func(In) (Out, error), budgets ...*archiveOutputBudget) (count int64, err error) {
 	budget, err := conversionBudget(filepath.Dir(outputPath), budgets)
 	if err != nil {
 		return 0, err
@@ -226,7 +231,13 @@ func streamJSONLToParquet[In any, Out any](inputPath string, outputPath string, 
 			_ = fw.Close()
 			return count, err
 		}
-		if err := pw.Write(convert(item)); err != nil {
+		row, err := convert(item)
+		if err != nil {
+			_ = pw.WriteStop()
+			_ = fw.Close()
+			return count, err
+		}
+		if err := pw.Write(row); err != nil {
 			_ = pw.WriteStop()
 			_ = fw.Close()
 			return count, err
@@ -378,6 +389,7 @@ func toParquetSummaries(items []IntervalSummaryRecord) []parquetIntervalSummary 
 			TransactionsJSON:       mustJSON(item.Transactions),
 			ByRegionJSON:           mustJSON(item.ByRegion),
 			BrowserJSON:            mustJSON(item.Browser),
+			BrowserDocumentsJSON:   mustJSON(item.BrowserDocuments),
 			BrowserDeviceJSON:      mustJSON(item.BrowserByDevice),
 			TelemetryJSON:          mustJSON(item.Telemetry),
 			TelemetryStatusJSON:    mustJSON(item.TelemetryStatus),

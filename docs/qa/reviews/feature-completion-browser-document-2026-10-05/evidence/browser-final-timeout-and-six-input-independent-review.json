@@ -1,0 +1,87 @@
+{
+  "captured_utc": "2026-10-05T14:46:50.004783+00:00",
+  "workspace": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "scope": "Independent read-only timeout/source audit. Reviewer ran no builds/tests, edited no worktree files and kept application/static freeze intact.",
+  "outcome": "No actionable correction finding or concrete readiness hang. Evidence supports cumulative package duration exceeding the default ten-minute test alarm; the longer full-suite repeat has independently completed the API package, but its overall completion is not claimed here.",
+  "timeout": {
+    "receipt": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-terminal-and-cli-final-full-go.json",
+    "receipt_sha256": "ddcb1e9dadead13bf93200534d2798e5f408b1d5392e0ebeace0d7ec80cf41c0",
+    "exit_code": 1,
+    "helper_duration_seconds": 1364.71,
+    "raw_log_sha256": "30adb7e1cdc051c0bc09b9c77f1bfa531cf61feb37a95c36855ec398c7305955",
+    "package_alarm_seconds": 600,
+    "active_test_age_seconds": 10,
+    "prior_explicit_test_failures": 0,
+    "active_frame": "gopkg.in/yaml.v3 decoder mapping/unmarshal (runnable), TestGeneratedSystemReadinessRoutePublishesStructured503Body openapi_gen_test.go:738",
+    "generated_yaml_bytes_in_stack": 16634957
+  },
+  "focused_triage": {
+    "command": [
+      "go",
+      "test",
+      "./pkg/api",
+      "-run",
+      "^TestGeneratedSystemReadinessRoutePublishesStructured503Body$",
+      "-count=3",
+      "-timeout=2m"
+    ],
+    "exit_code": 0,
+    "helper_duration_seconds": 15.657,
+    "package_duration_seconds": 5.145,
+    "raw_log_sha256": "16d1948cc229c0a4decdff5db9aa12d2534898949ab91b2389c7bbda03944b86"
+  },
+  "longer_repeat_snapshot": {
+    "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-terminal-and-cli-final-full-go-timeout-repeat1.stdout.txt",
+    "sampled_bytes": 7941,
+    "api_package_passed": true,
+    "api_duration_seconds": 671.392,
+    "overall_completion_claimed": false
+  },
+  "reviewed_corrections": [
+    "Separate raw request identity loss from counted document observation loss; derive explicit incomplete coverage from either typed source loss",
+    "Publish first dirty unavailable/provider-cap coverage once; rejected-identity retry is unknown coverage, not invented count",
+    "Pending terminal window survives zero-gauge acknowledgement/provider retirement and is consumed by snapshot publication once",
+    "Archive raw evidence remains immutable; source loss deltas and bounded rejected identities keep the same units",
+    "CLI pins the actual manifest.test_id, rejects ambiguity/malformed identity, and performs at most one bounded authenticated canonical/RefKey/project lookup",
+    "Historical absent/empty identity stays explicitly unverified; cancellation/no-redirect/oversized lookup and exact typed report regressions remain meaningful"
+  ],
+  "source_before_after_matches": true,
+  "files_list_sha256": "b3af9298582e169c779629ff8a526e3f0b187442d0ca37d73f24946fc086c398",
+  "files": [
+    {
+      "path": "pkg/engine/browser_documents.go",
+      "bytes": 10647,
+      "sha256": "8fc5f9b4b562778a133d17b9d7c08e4cb1873bec2ea48941fe3e8d8c38a9c787"
+    },
+    {
+      "path": "pkg/engine/browser_documents_test.go",
+      "bytes": 23295,
+      "sha256": "ac5aa27ddb4b39b9d940be6150214a7f3ddbec4fc1a8845b890a3448a5f5e819"
+    },
+    {
+      "path": "pkg/api/archive_browser_documents.go",
+      "bytes": 15169,
+      "sha256": "7ee7a66528b246aeff908b872bc5e06e09b4a65de7de039bff0309442a266fa5"
+    },
+    {
+      "path": "pkg/api/archive_browser_documents_test.go",
+      "bytes": 28833,
+      "sha256": "48f6d9985251076415878d65f96198c963e13190cd8dafc6678af749754e439f"
+    },
+    {
+      "path": "cmd/apexctl/browser_document_evidence.go",
+      "bytes": 11242,
+      "sha256": "ef3d8fc1ab3aa0b0bd7b5edc9da77f220b57a9325d2e2887e9062a41de6041c9"
+    },
+    {
+      "path": "cmd/apexctl/browser_document_evidence_test.go",
+      "bytes": 23515,
+      "sha256": "bd50e1425b59cd43ea6151cc34f98bb2f6118dc505aca23c897a5db8670c70c7"
+    }
+  ],
+  "limits": [
+    "No new runtime test was performed by reviewer",
+    "Cumulative suite duration is a test-profile budget observation, not a platform or performance acceptance result",
+    "No full-suite pass is inferred from the targeted readiness pass or API-only completion snapshot"
+  ]
+}

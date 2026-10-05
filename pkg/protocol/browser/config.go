@@ -22,6 +22,17 @@ const (
 )
 
 func (b *Browser) applyConfig(config map[string]any) error {
+	if raw, present := config["browser_capture_document_metrics"]; present {
+		if _, valid := raw.(bool); !valid {
+			return fmt.Errorf("browser_capture_document_metrics must be boolean")
+		}
+	}
+	if raw, present := config["browser_runtime_new_user_policy"]; present {
+		policy, typed := raw.(string)
+		if !typed || policy != "persistent_context" && policy != "context_each_iteration" && policy != "cookies_each_iteration" && policy != "cookies_and_cache_each_iteration" {
+			return fmt.Errorf("browser_runtime_new_user_policy is unsupported")
+		}
+	}
 	b.applyDefaultConfig()
 	b.applyConfigOverrides(config)
 	if err := b.configureStorageState(config); err != nil {
@@ -57,6 +68,8 @@ func (b *Browser) applyConfig(config map[string]any) error {
 
 func (b *Browser) applyDefaultConfig() {
 	b.storageState = nil
+	b.documentMetricsEnabled = false
+	b.newUserPolicy = "persistent_context"
 	b.engine = "chromium"
 	b.baseURL = ""
 	b.currentURL = ""
@@ -116,6 +129,10 @@ func (b *Browser) applyDefaultConfig() {
 }
 
 func (b *Browser) applyConfigOverrides(config map[string]any) {
+	b.documentMetricsEnabled, _ = config["browser_capture_document_metrics"].(bool)
+	if policy, present := config["browser_runtime_new_user_policy"].(string); present {
+		b.newUserPolicy = policy
+	}
 	b.allowedTargetHosts = protocol.TargetPolicyHosts(config)
 	if baseURL, ok := config["base_url"].(string); ok {
 		b.baseURL = strings.TrimSpace(baseURL)

@@ -40,6 +40,9 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 		return fmt.Errorf("usage: apexctl %s <action> --api URL [--project ID] [--id ID] [--file JSON]", kind)
 	}
 	action := args[0]
+	if kind == "analysis" && action == "browser-documents" {
+		return executeBrowserDocumentCommand(ctx, args[1:], out)
+	}
 	flags := flag.NewFlagSet(kind+" "+action, flag.ContinueOnError)
 	flags.SetOutput(out)
 	endpoint := flags.String("api", "http://127.0.0.1:8080", "controller URL")
@@ -53,7 +56,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	spot := flags.String("spot", "off", "off, preferred, or required")
 	floor := flags.Int("on-demand-floor", 0, "minimum on-demand ephemeral generators")
 	ceiling := flags.Int("spot-ceiling", 0, "maximum spot percentage")
-	mode := flags.String("mode", "live", "live or archive processor evidence")
+	mode := flags.String("mode", "live", "live or archive evidence")
 	group := flags.String("group", "", "processor execution group")
 	sourceID := flags.String("source-id", "", "immutable monitor or processor source identity")
 	entityID := flags.String("entity-id", "", "approved management entity identity")
@@ -394,7 +397,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 					return errors.New("--file JSON query is required")
 				}
 			default:
-				return errors.New("analysis actions: telemetry-policy, progress, baseline, capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison")
+				return errors.New("analysis actions: telemetry-policy, browser-documents, progress, baseline, capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison")
 			}
 		}
 	default:

@@ -18,10 +18,13 @@ func init() {
 }
 
 type Browser struct {
-	storageState          *playwright.OptionalStorageState
-	systemLanguage        string
-	availableScreenWidth  int
-	availableScreenHeight int
+	evidence               browserEvidenceState
+	newUserPolicy          string
+	documentMetricsEnabled bool
+	storageState           *playwright.OptionalStorageState
+	systemLanguage         string
+	availableScreenWidth   int
+	availableScreenHeight  int
 
 	engine                     string
 	baseURL                    string
@@ -219,7 +222,13 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 		// would provide a bypassable security boundary. Fail closed before launch.
 		return fmt.Errorf("browser execution is disabled while the CI target-host policy is active")
 	}
-	return b.openBrowserContext()
+	if err := b.openBrowserContext(); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	b.evidence.lifecycleContext = ctx
+	b.mu.Unlock()
+	return nil
 }
 
 func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
@@ -246,6 +255,8 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		return result, nil
 	}
 
+	b.beginEvidenceAction()
+	defer func() { b.endEvidenceAction(ctx.Err() != nil) }()
 	consoleStart, networkStart := b.eventOffsets()
 	// Remember the previous action's network start so a browser_wait_response
 	// here scans from the trigger action rather than from its own start.
@@ -300,7 +311,8 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	return result, nil
 }
 
-func (b *Browser) Teardown(_ context.Context) error {
+func (b *Browser) Teardown(ctx context.Context) error {
+	b.finalizeDocumentEvidence(ctx)
 	b.close()
 	return nil
 }

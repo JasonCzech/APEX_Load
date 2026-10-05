@@ -1,0 +1,9 @@
+=== RUN   TestBrowserDocumentActualTrustedInteractionRank
+    document_actual_integration_test.go:218: INP differs from independent native interaction grouping/rank: actual=0x5b4ae24d7b38 expected=200 count=50
+    document_actual_integration_test.go:56: owned fixture diagnostics documents=2 frames=1 issued=1 binding= finalizer= browser= errors=[]
+--- FAIL: TestBrowserDocumentActualTrustedInteractionRank (5.07s)
+=== RUN   TestBrowserDocumentActualCLSSessionWindows
+--- PASS: TestBrowserDocumentActualCLSSessionWindows (2.26s)
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/protocol/browser	7.617s
+FAIL

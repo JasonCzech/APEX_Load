@@ -232,5 +232,7 @@ func cloneClientMetrics(metrics *protocol.ClientMetrics) *protocol.ClientMetrics
 		return nil
 	}
 	cloned := *metrics
+	cloned.DocumentEvidence = metrics.DocumentEvidence.Clone()
+	cloned.RuntimeAvailability = metrics.RuntimeAvailability.Clone()
 	return &cloned
 }

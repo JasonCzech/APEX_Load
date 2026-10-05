@@ -1002,3 +1002,27 @@ func isTerminalTestStatus(status string) bool {
 func IsTerminalTestStatus(status string) bool {
 	return isTerminalTestStatus(status)
 }
+
+// Only typed sinks receive lifecycle records. Live action/error/trace sinks
+// remain separate, so this fanout cannot manufacture an ordinary result.
+func (sink combinedResultSink) RecordBrowserDocumentEvidence(evidence *protocol.BrowserDocumentEvidence) error {
+	evidence = evidence.Clone()
+	if evidence == nil {
+		return fmt.Errorf("browser document evidence is malformed")
+	}
+	supported := false
+	for _, candidate := range sink {
+		documentSink, ok := candidate.(engine.BrowserDocumentEvidenceSink)
+		if !ok {
+			continue
+		}
+		supported = true
+		if err := documentSink.RecordBrowserDocumentEvidence(evidence.Clone()); err != nil {
+			return err
+		}
+	}
+	if !supported {
+		return fmt.Errorf("browser document archive sink is unavailable")
+	}
+	return nil
+}

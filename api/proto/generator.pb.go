@@ -828,14 +828,14 @@ type WorkAssignment struct {
 	JavaHost *JavaHostSelection `protobuf:"bytes,41,opt,name=java_host,json=javaHost,proto3" json:"java_host,omitempty"`
 	// Defer runtime preflight and all target interaction until CommitWork.
 	PrepareOnly bool `protobuf:"varint,42,opt,name=prepare_only,json=prepareOnly,proto3" json:"prepare_only,omitempty"`
-	// Immutable, capability-negotiated lifetime peak and resource intent.
-	// The generator recomputes demand; this wire claim never grants a lease.
 	// Controller-approved HTTP/SOAP origins for the opt-in X-Apex-Test-Run marker.
 	// Omission keeps run correlation disabled.
-	RunCorrelationOrigins []string              `protobuf:"bytes,43,rep,name=run_correlation_origins,json=runCorrelationOrigins,proto3" json:"run_correlation_origins,omitempty"`
-	RuntimeResourceClaim  *RuntimeResourceClaim `protobuf:"bytes,44,opt,name=runtime_resource_claim,json=runtimeResourceClaim,proto3" json:"runtime_resource_claim,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	RunCorrelationOrigins []string `protobuf:"bytes,43,rep,name=run_correlation_origins,json=runCorrelationOrigins,proto3" json:"run_correlation_origins,omitempty"`
+	// Immutable, capability-negotiated lifetime peak and resource intent.
+	// The generator recomputes demand; this wire claim never grants a lease.
+	RuntimeResourceClaim *RuntimeResourceClaim `protobuf:"bytes,44,opt,name=runtime_resource_claim,json=runtimeResourceClaim,proto3" json:"runtime_resource_claim,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *WorkAssignment) Reset() {
@@ -3212,8 +3212,11 @@ type MetricsBatch struct {
 	// Standalone cumulative processor evidence: present even without actions.
 	MessagingProgressJson    string `protobuf:"bytes,27,opt,name=messaging_progress_json,json=messagingProgressJson,proto3" json:"messaging_progress_json,omitempty"`
 	MessagingProgressVersion uint32 `protobuf:"varint,28,opt,name=messaging_progress_version,json=messagingProgressVersion,proto3" json:"messaging_progress_version,omitempty"`
-	unknownFields            protoimpl.UnknownFields
-	sizeCache                protoimpl.SizeCache
+	// Document lifecycle observations are independent of legacy action samples.
+	BrowserDocumentSummaryJson    string `protobuf:"bytes,29,opt,name=browser_document_summary_json,json=browserDocumentSummaryJson,proto3" json:"browser_document_summary_json,omitempty"`
+	BrowserDocumentSummaryVersion uint32 `protobuf:"varint,30,opt,name=browser_document_summary_version,json=browserDocumentSummaryVersion,proto3" json:"browser_document_summary_version,omitempty"`
+	unknownFields                 protoimpl.UnknownFields
+	sizeCache                     protoimpl.SizeCache
 }
 
 func (x *MetricsBatch) Reset() {
@@ -3438,6 +3441,20 @@ func (x *MetricsBatch) GetMessagingProgressJson() string {
 func (x *MetricsBatch) GetMessagingProgressVersion() uint32 {
 	if x != nil {
 		return x.MessagingProgressVersion
+	}
+	return 0
+}
+
+func (x *MetricsBatch) GetBrowserDocumentSummaryJson() string {
+	if x != nil {
+		return x.BrowserDocumentSummaryJson
+	}
+	return ""
+}
+
+func (x *MetricsBatch) GetBrowserDocumentSummaryVersion() uint32 {
+	if x != nil {
+		return x.BrowserDocumentSummaryVersion
 	}
 	return 0
 }
@@ -6873,7 +6890,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x15run_supervision_token\x18\x04 \x01(\fR\x13runSupervisionToken\"T\n" +
 	"\aStopAck\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x12%\n" +
-	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xe2\r\n" +
+	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xee\x0e\n" +
 	"\fMetricsBatch\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12!\n" +
 	"\fgenerator_id\x18\x02 \x01(\tR\vgeneratorId\x12*\n" +
@@ -6903,7 +6920,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x18action_dimension_metrics\x18\x1a \x03(\v2\x1c.apexload.v1.MetricAggregateR\x16actionDimensionMetrics\x12t\n" +
 	"\x1dtransaction_response_time_sla\x18\x15 \x03(\v21.apexload.v1.TransactionResponseTimeSLAComplianceR\x1atransactionResponseTimeSla\x126\n" +
 	"\x17messaging_progress_json\x18\x1b \x01(\tR\x15messagingProgressJson\x12<\n" +
-	"\x1amessaging_progress_version\x18\x1c \x01(\rR\x18messagingProgressVersion\"\x98\x03\n" +
+	"\x1amessaging_progress_version\x18\x1c \x01(\rR\x18messagingProgressVersion\x12A\n" +
+	"\x1dbrowser_document_summary_json\x18\x1d \x01(\tR\x1abrowserDocumentSummaryJson\x12G\n" +
+	" browser_document_summary_version\x18\x1e \x01(\rR\x1dbrowserDocumentSummaryVersion\"\x98\x03\n" +
 	"\x15MetricsBatchTelemetry\x12'\n" +
 	"\x0fdropped_results\x18\x01 \x01(\x03R\x0edroppedResults\x12/\n" +
 	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x12/\n" +

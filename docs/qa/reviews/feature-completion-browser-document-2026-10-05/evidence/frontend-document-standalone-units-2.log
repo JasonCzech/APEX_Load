@@ -1,0 +1,42 @@
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard
+
+ ❯ src/components/BrowserDocumentEvidencePanel.test.tsx (5 tests | 5 failed) 4ms
+   × labels live history and computes statistics from qualified final population only 2ms
+   × labels latest archive pending state and displays only concrete supplied identities/windows 0ms
+   × shows unavailable empty distribution, malformed tuples and retained observations plus explicit cap 0ms
+   × shows absent summary and unknown retention, then explicit incomplete source without legacy substitution 0ms
+   × keeps actual cohorts, frame scopes, lifecycles and workload identities separate 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/BrowserDocumentEvidencePanel.test.tsx > labels live history and computes statistics from qualified final population only
+ FAIL  src/components/BrowserDocumentEvidencePanel.test.tsx > labels latest archive pending state and displays only concrete supplied identities/windows
+ FAIL  src/components/BrowserDocumentEvidencePanel.test.tsx > shows unavailable empty distribution, malformed tuples and retained observations plus explicit cap
+ FAIL  src/components/BrowserDocumentEvidencePanel.test.tsx > shows absent summary and unknown retention, then explicit incomplete source without legacy substitution
+ FAIL  src/components/BrowserDocumentEvidencePanel.test.tsx > keeps actual cohorts, frame scopes, lifecycles and workload identities separate
+TypeError: document.createElement is not a function
+ ❯ src/components/BrowserDocumentEvidencePanel.test.tsx:9:41
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯
+
+ FAIL  src/components/BrowserDocumentEvidencePanel.test.tsx > labels live history and computes statistics from qualified final population only
+ FAIL  src/components/BrowserDocumentEvidencePanel.test.tsx > labels latest archive pending state and displays only concrete supplied identities/windows
+ FAIL  src/components/BrowserDocumentEvidencePanel.test.tsx > shows unavailable empty distribution, malformed tuples and retained observations plus explicit cap
+ FAIL  src/components/BrowserDocumentEvidencePanel.test.tsx > shows absent summary and unknown retention, then explicit incomplete source without legacy substitution
+ FAIL  src/components/BrowserDocumentEvidencePanel.test.tsx > keeps actual cohorts, frame scopes, lifecycles and workload identities separate
+TypeError: Cannot read properties of undefined (reading 'unmount')
+ ❯ src/components/BrowserDocumentEvidencePanel.test.tsx:10:52
+
+ ❯ act node_modules/react/cjs/react.development.js:2512:16
+ ❯ src/components/BrowserDocumentEvidencePanel.test.tsx:10:31
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  5 failed | 60 passed (65)
+   Start at  05:45:33
+   Duration  937ms (transform 88ms, setup 54ms, import 93ms, tests 21ms, environment 611ms)
+

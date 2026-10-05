@@ -173,6 +173,7 @@ func cloneSourcePlan(m *pb.SourcePlanManifest) *pb.SourcePlanManifest {
 // retain the group identity. Transactions come from each group's own buffer.
 func (o *sourcePlanExecution) groupSnapshot(full engine.MetricsSnapshot, group string) engine.MetricsSnapshot {
 	snapshot := engine.MetricsSnapshot{Timestamp: full.Timestamp, Window: full.Window, Resources: full.Resources}
+	snapshot.BrowserDocuments = browserDocumentsForGroup(full.BrowserDocuments, group)
 	if o.processorGroups[group] {
 		snapshot.MessagingProgress = messagingProgressForGroup(full.MessagingProgress, group)
 	}

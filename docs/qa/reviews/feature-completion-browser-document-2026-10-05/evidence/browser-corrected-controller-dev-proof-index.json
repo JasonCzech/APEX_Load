@@ -1,0 +1,539 @@
+{
+  "captured_utc": "2026-10-05T13:26:51.526659+00:00",
+  "profile": "dev-admin",
+  "scope": "Three selected actual-controller/UI evidence workflows from the successful eight-workflow affected repeat against the corrected controller and unchanged final full-cycle embedded bundle. The six reviewed backend correction inputs are checked alongside frontend/build inputs. Document measurements are bounded synthetic fixtures; native measurement acquisition is qualified separately. Successful JSON attachments are physically retained by this JSON reporter. This index derives from those original bodies and immutable PNG files; no successful trace is claimed.",
+  "reporter": {
+    "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-corrected-controller-dev-results-final-1.json",
+    "bytes": 34395,
+    "sha256": "3ed73f5c49a5cf918e7b7fb0349330671d4707ab3cea6ffa45cb87849687ef40",
+    "stats": {
+      "startTime": "2026-10-05T13:25:30.005Z",
+      "duration": 21358.194,
+      "expected": 8,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    }
+  },
+  "verified_frozen_inputs": [
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/frontend-document-chart-cycle-build-source-inventory.json",
+      "receipt_sha256": "c0a5ba4b447779a67d7fc272749ff4313ac614374cd549c7564036c7ccfcaf9c",
+      "file_count": 1508,
+      "files_list_sha256": "671411253c0184e5f20e58c42da72dd4df848edf1eb9176a474659878299c135"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/frontend-document-chart-cycle-final-embedded-inventory.json",
+      "receipt_sha256": "cdc296fe182630d0410a66fae97d78997342e4e51cc8c424d845a70405144c30",
+      "file_count": 247,
+      "files_list_sha256": "d21effd983b4274051016e6045cf48cc223e2ed0311ca5cf23dbf60efc9b5c44"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-document-loss-identity-reviewed-final-source-inventory.json",
+      "receipt_sha256": "d0e114df039f9537ee000a944e6012361d2edd138ebcba8e06eee29cfb68330e",
+      "file_count": 6,
+      "files_list_sha256": "89e5a591bc4456c992b1e7ef4c41997117e72ca7dd3024134c076eb1fecbc4e0"
+    }
+  ],
+  "workflows": [
+    {
+      "title": "Author creates, reverses, validates, edits source and saves without losing context",
+      "file": "workflow-author-experience.spec.ts",
+      "line": 76,
+      "status": "passed",
+      "duration_ms": 4351,
+      "started_utc": "2026-10-05T13:25:32.794Z",
+      "attachments": [
+        {
+          "name": "rapid-target-edit-before-frame",
+          "content_type": "application/json",
+          "body_sha256": "2641da724db0fc7f961a016594915468c17b9b7a27db9b805401b3a40944faee",
+          "value": {
+            "owner": "Actions \u203a Create orderscript.actions[0] \u00b7 Current draft",
+            "active": {
+              "tag": "INPUT",
+              "field": "target",
+              "value": "/orders",
+              "start": 0,
+              "end": 7
+            },
+            "target": "/orders",
+            "queued_frames": 13
+          }
+        },
+        {
+          "name": "rapid-target-edit-after-frame",
+          "content_type": "application/json",
+          "body_sha256": "cbfd2ba58e15db1b21ca857980bb34a5f3a3cbbca391b3b303b25e146ce94e3f",
+          "value": {
+            "owner": "Actions \u203a Create orderscript.actions[0] \u00b7 Current draft",
+            "active": {
+              "tag": "INPUT",
+              "field": "target",
+              "value": "/orders",
+              "start": 0,
+              "end": 7
+            },
+            "target": "/orders",
+            "queued_frames": 0
+          }
+        }
+      ]
+    },
+    {
+      "title": "live document populations preserve overlapping provisional history, actual cohorts and missing-peer coverage",
+      "file": "workflow-browser-resource-evidence.spec.ts",
+      "line": 358,
+      "status": "passed",
+      "duration_ms": 2885,
+      "started_utc": "2026-10-05T13:25:46.992Z",
+      "attachments": [
+        {
+          "name": "browser-document-live-overview.png-before-geometry",
+          "content_type": "application/json",
+          "body_sha256": "a0fd89fadda6180132872e345b02547841e66d049a66d9158f4136aa0286c882",
+          "value": {
+            "left": 93,
+            "right": 731,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 636,
+            "clientWidth": 636,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 147,
+            "headingLeft": 114,
+            "headingRight": 710,
+            "headingTop": 1061.578125,
+            "headingBottom": 1084.375,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-live-overview.png-table-geometry",
+          "content_type": "application/json",
+          "body_sha256": "b1740701fb78b96d37974dc45f9333a4321041651ceb31e4851d18246f0fe936",
+          "value": {
+            "ownerWidth": 596,
+            "tableWidth": 1600,
+            "headerWidth": 80
+          }
+        },
+        {
+          "name": "browser-document-live-overview.png-after-geometry",
+          "content_type": "application/json",
+          "body_sha256": "a0fd89fadda6180132872e345b02547841e66d049a66d9158f4136aa0286c882",
+          "value": {
+            "left": 93,
+            "right": 731,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 636,
+            "clientWidth": 636,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 147,
+            "headingLeft": 114,
+            "headingRight": 710,
+            "headingTop": 1061.578125,
+            "headingBottom": 1084.375,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-live-overview.png-geometry",
+          "content_type": "application/json",
+          "body_sha256": "add625602784ab9b0d86f439c3a2504e43a54d7f6be7d73f55c1b5bf3428887c",
+          "value": {
+            "before": {
+              "left": 93,
+              "right": 731,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 636,
+              "clientWidth": 636,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 147,
+              "headingLeft": 114,
+              "headingRight": 710,
+              "headingTop": 1061.578125,
+              "headingBottom": 1084.375,
+              "headingHit": true
+            },
+            "after": {
+              "left": 93,
+              "right": 731,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 636,
+              "clientWidth": 636,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 147,
+              "headingLeft": 114,
+              "headingRight": 710,
+              "headingTop": 1061.578125,
+              "headingBottom": 1084.375,
+              "headingHit": true
+            }
+          }
+        },
+        {
+          "name": "browser-document-live-keyboard-before",
+          "content_type": "application/json",
+          "body_sha256": "adfd9671143fde64eb61222ff494523c78279a36a83bf1cccddb36d069e278ea",
+          "value": {
+            "scrollLeft": 0,
+            "scrollWidth": 1600,
+            "clientWidth": 596,
+            "mainScrollLeft": 0
+          }
+        },
+        {
+          "name": "browser-document-live-keyboard-after",
+          "content_type": "application/json",
+          "body_sha256": "ddbd1c716a4db2bfd682a30835181336d958f536d3dcf6fe630450eb16f4bc05",
+          "value": {
+            "scrollLeft": 37,
+            "scrollWidth": 1600,
+            "clientWidth": 596,
+            "mainScrollLeft": 0
+          }
+        },
+        {
+          "name": "browser-document-live.png-before-geometry",
+          "content_type": "application/json",
+          "body_sha256": "4b2bd4c48f6366a805da6f0acba32f0a46c7e522a257c2e0fa9c8153cf2b4668",
+          "value": {
+            "left": 93,
+            "right": 731,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 636,
+            "clientWidth": 636,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 147,
+            "headingLeft": 114,
+            "headingRight": 710,
+            "headingTop": 486.578125,
+            "headingBottom": 509.375,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-live.png-table-geometry",
+          "content_type": "application/json",
+          "body_sha256": "b1740701fb78b96d37974dc45f9333a4321041651ceb31e4851d18246f0fe936",
+          "value": {
+            "ownerWidth": 596,
+            "tableWidth": 1600,
+            "headerWidth": 80
+          }
+        },
+        {
+          "name": "browser-document-live.png-after-geometry",
+          "content_type": "application/json",
+          "body_sha256": "4b2bd4c48f6366a805da6f0acba32f0a46c7e522a257c2e0fa9c8153cf2b4668",
+          "value": {
+            "left": 93,
+            "right": 731,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 636,
+            "clientWidth": 636,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 147,
+            "headingLeft": 114,
+            "headingRight": 710,
+            "headingTop": 486.578125,
+            "headingBottom": 509.375,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-live.png-geometry",
+          "content_type": "application/json",
+          "body_sha256": "890a15d7142625dd658ec645d1c0a77ce41ad224a12f4885e55a6c1380a26e4c",
+          "value": {
+            "before": {
+              "left": 93,
+              "right": 731,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 636,
+              "clientWidth": 636,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 147,
+              "headingLeft": 114,
+              "headingRight": 710,
+              "headingTop": 486.578125,
+              "headingBottom": 509.375,
+              "headingHit": true
+            },
+            "after": {
+              "left": 93,
+              "right": 731,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 636,
+              "clientWidth": 636,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 147,
+              "headingLeft": 114,
+              "headingRight": 710,
+              "headingTop": 486.578125,
+              "headingBottom": 509.375,
+              "headingHit": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "title": "archive document evidence retains latest pending, censored and unavailable measurements independently from actions",
+      "file": "workflow-browser-resource-evidence.spec.ts",
+      "line": 398,
+      "status": "passed",
+      "duration_ms": 1349,
+      "started_utc": "2026-10-05T13:25:49.902Z",
+      "attachments": [
+        {
+          "name": "browser-document-archive-overview.png-before-geometry",
+          "content_type": "application/json",
+          "body_sha256": "f793a14d80294d01f370df7d665ce9b5a6245f2ad23cc148b9991df1c08f8fbc",
+          "value": {
+            "left": 118,
+            "right": 706,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 586,
+            "clientWidth": 586,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 127,
+            "headingLeft": 139,
+            "headingRight": 685,
+            "headingTop": 163.734375,
+            "headingBottom": 186.53125,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-archive-overview.png-table-geometry",
+          "content_type": "application/json",
+          "body_sha256": "8337b2e3dbda843c69ba73e86b72abb5ea50b9ce6078265a2f02f828f3894b39",
+          "value": {
+            "ownerWidth": 546,
+            "tableWidth": 1600,
+            "headerWidth": 80
+          }
+        },
+        {
+          "name": "browser-document-archive-overview.png-after-geometry",
+          "content_type": "application/json",
+          "body_sha256": "f793a14d80294d01f370df7d665ce9b5a6245f2ad23cc148b9991df1c08f8fbc",
+          "value": {
+            "left": 118,
+            "right": 706,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 586,
+            "clientWidth": 586,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 127,
+            "headingLeft": 139,
+            "headingRight": 685,
+            "headingTop": 163.734375,
+            "headingBottom": 186.53125,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-archive-overview.png-geometry",
+          "content_type": "application/json",
+          "body_sha256": "fce3e30f73cc1ec56bca5fb7fca520e6a05068a3b466fcc49b53c5f4d92dc7e3",
+          "value": {
+            "before": {
+              "left": 118,
+              "right": 706,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 586,
+              "clientWidth": 586,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 127,
+              "headingLeft": 139,
+              "headingRight": 685,
+              "headingTop": 163.734375,
+              "headingBottom": 186.53125,
+              "headingHit": true
+            },
+            "after": {
+              "left": 118,
+              "right": 706,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 586,
+              "clientWidth": 586,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 127,
+              "headingLeft": 139,
+              "headingRight": 685,
+              "headingTop": 163.734375,
+              "headingBottom": 186.53125,
+              "headingHit": true
+            }
+          }
+        },
+        {
+          "name": "browser-document-archive-keyboard-before",
+          "content_type": "application/json",
+          "body_sha256": "df5d81531f7da33cf5101007b7d3fffe1eb0b5ad0679e9c9bf83127dda3f1d47",
+          "value": {
+            "scrollLeft": 0,
+            "scrollWidth": 1600,
+            "clientWidth": 546,
+            "mainScrollLeft": 0
+          }
+        },
+        {
+          "name": "browser-document-archive-keyboard-after",
+          "content_type": "application/json",
+          "body_sha256": "bb71c307ec47c42a9d64ad9225c39fb195de5b7ac10b7f626d8eab6d8d0962ce",
+          "value": {
+            "scrollLeft": 37,
+            "scrollWidth": 1600,
+            "clientWidth": 546,
+            "mainScrollLeft": 0
+          }
+        },
+        {
+          "name": "browser-document-archive.png-before-geometry",
+          "content_type": "application/json",
+          "body_sha256": "f793a14d80294d01f370df7d665ce9b5a6245f2ad23cc148b9991df1c08f8fbc",
+          "value": {
+            "left": 118,
+            "right": 706,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 586,
+            "clientWidth": 586,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 127,
+            "headingLeft": 139,
+            "headingRight": 685,
+            "headingTop": 163.734375,
+            "headingBottom": 186.53125,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-archive.png-table-geometry",
+          "content_type": "application/json",
+          "body_sha256": "8337b2e3dbda843c69ba73e86b72abb5ea50b9ce6078265a2f02f828f3894b39",
+          "value": {
+            "ownerWidth": 546,
+            "tableWidth": 1600,
+            "headerWidth": 80
+          }
+        },
+        {
+          "name": "browser-document-archive.png-after-geometry",
+          "content_type": "application/json",
+          "body_sha256": "f793a14d80294d01f370df7d665ce9b5a6245f2ad23cc148b9991df1c08f8fbc",
+          "value": {
+            "left": 118,
+            "right": 706,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 586,
+            "clientWidth": 586,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 127,
+            "headingLeft": 139,
+            "headingRight": 685,
+            "headingTop": 163.734375,
+            "headingBottom": 186.53125,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-archive.png-geometry",
+          "content_type": "application/json",
+          "body_sha256": "fce3e30f73cc1ec56bca5fb7fca520e6a05068a3b466fcc49b53c5f4d92dc7e3",
+          "value": {
+            "before": {
+              "left": 118,
+              "right": 706,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 586,
+              "clientWidth": 586,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 127,
+              "headingLeft": 139,
+              "headingRight": 685,
+              "headingTop": 163.734375,
+              "headingBottom": 186.53125,
+              "headingHit": true
+            },
+            "after": {
+              "left": 118,
+              "right": 706,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 586,
+              "clientWidth": 586,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 127,
+              "headingLeft": 139,
+              "headingRight": 685,
+              "headingTop": 163.734375,
+              "headingBottom": 186.53125,
+              "headingHit": true
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-corrected-controller-final-proof-1/dev-admin/workflow-author-experience-50289-aves-without-losing-context/author-operator-experience.png",
+      "bytes": 176655,
+      "sha256": "8d36e13a71e921e6b6fbf353ccfff707e7e274d026054daec48991dba784f9e8"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-corrected-controller-final-proof-1/dev-admin/workflow-browser-resource--6abc2--independently-from-actions/browser-document-archive-overview.png",
+      "bytes": 259555,
+      "sha256": "13e3b3246fdff36c93043869f274999048738c9d606dc1d21d46bbd7ab18e981"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-corrected-controller-final-proof-1/dev-admin/workflow-browser-resource--6abc2--independently-from-actions/browser-document-archive.png",
+      "bytes": 235496,
+      "sha256": "0337b6f89aed6ad3dd80b4bf1cb0e0d2fa13e19e869c0ee2b3bb7ccdc1e31548"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-corrected-controller-final-proof-1/dev-admin/workflow-browser-resource--814c4-s-and-missing-peer-coverage/browser-document-live-overview.png",
+      "bytes": 299568,
+      "sha256": "53e713c978b644a6f9264286aa743ab4dd2029eb5fd5130a2c6caf763e477a79"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-corrected-controller-final-proof-1/dev-admin/workflow-browser-resource--814c4-s-and-missing-peer-coverage/browser-document-live.png",
+      "bytes": 309457,
+      "sha256": "e000a9f5817b9c1083b8e8ac395f4241e8ead5a7984d6099b6cf1eaada2c3596"
+    }
+  ]
+}

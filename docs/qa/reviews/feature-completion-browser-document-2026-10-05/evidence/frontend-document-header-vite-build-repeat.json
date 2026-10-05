@@ -1,0 +1,30 @@
+{
+  "label": "document-header-vite-build-repeat",
+  "command": [
+    "./node_modules/.bin/vite",
+    "build",
+    "--outDir",
+    "../pkg/api/static",
+    "--emptyOutDir"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard",
+  "started_utc": "2026-10-05T10:30:45.841193+00:00",
+  "finished_utc": "2026-10-05T10:30:46.472698+00:00",
+  "duration_seconds": 0.631,
+  "exit_code": 0,
+  "profile": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "APEXLOAD_ANALYSIS_MEMORY_LIMIT": "512MiB",
+    "APEXLOAD_ANALYSIS_SPILL_LIMIT": "128MiB",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_AUTH_PORT": "18472"
+  },
+  "log_bytes": 25766,
+  "log_sha256": "a4f76d9c9041eb8678e3da8ae71269a7a080314863d5aa69ac2815a0a24e83a4"
+}

@@ -71,6 +71,13 @@ type RunArchiveManifest struct {
 	// Continuity records the HA controller failovers the run survived
 	// (docs/HA_RUN_CONTINUITY_PLAN.md); absent when the run never failed over.
 	Continuity                        *RunContinuityStatus               `json:"continuity,omitempty"`
+	BrowserDocumentCoverageIncomplete bool                               `json:"browser_document_coverage_incomplete,omitempty"`
+	BrowserDocumentCaptureRequested   bool                               `json:"browser_document_capture_requested,omitempty"`
+	BrowserDocumentsFile              string                             `json:"browser_documents_file,omitempty"`
+	BrowserDocumentsParquetFile       string                             `json:"browser_documents_parquet_file,omitempty"`
+	BrowserDocumentRecordCount        int64                              `json:"browser_document_record_count,omitempty"`
+	BrowserDocumentsSHA256            string                             `json:"browser_documents_sha256,omitempty"`
+	BrowserDocumentsParquetSHA256     string                             `json:"browser_documents_parquet_sha256,omitempty"`
 	TransactionsFile                  string                             `json:"transactions_file"`
 	TransactionsParquetFile           string                             `json:"transactions_parquet_file,omitempty"`
 	ResourceSamplesFile               string                             `json:"resource_samples_file"`
@@ -336,6 +343,7 @@ type ResourceSample struct {
 }
 
 type IntervalSummaryRecord struct {
+	BrowserDocuments         *protocol.BrowserDocumentSummary      `json:"browser_documents,omitempty"`
 	MessagingProgress        *protocol.MessagingProgressSnapshot   `json:"messaging_progress,omitempty"`
 	Messaging                map[string]*protocol.MessagingSummary `json:"messaging,omitempty"`
 	ObservationState         string                                `json:"observation_state,omitempty"`
@@ -445,6 +453,9 @@ type RunArchiveIdentityNames struct {
 
 type RunArchiveReport struct {
 	TelemetryPolicy                   *TelemetryPolicyEvidence               `json:"telemetry_policy,omitempty"`
+	BrowserDocumentEvidence           []protocol.BrowserDocumentObservation  `json:"browser_document_evidence,omitempty"`
+	BrowserDocumentEvidenceTruncated  bool                                   `json:"browser_document_evidence_truncated,omitempty"`
+	BrowserDocuments                  *protocol.BrowserDocumentSummary       `json:"browser_documents,omitempty"`
 	MessagingProgress                 *protocol.MessagingProgressSnapshot    `json:"messaging_progress,omitempty"`
 	MonitorDiagnostics                []RunMonitorDiagnostic                 `json:"monitor_diagnostics,omitempty"`
 	MonitorRuleResults                []analysis.MonitorRuleResult           `json:"monitor_rule_results,omitempty"`
@@ -654,33 +665,35 @@ type RunArchiveEvidenceTier struct {
 }
 
 type BrowserResourceTiming struct {
-	FailureKind    string    `json:"failure_kind,omitempty"`
-	Timestamp      time.Time `json:"timestamp"`
-	ActionName     string    `json:"action_name,omitempty"`
-	PageURL        string    `json:"page_url,omitempty"`
-	URL            string    `json:"url,omitempty"`
-	Method         string    `json:"method,omitempty"`
-	StatusCode     int       `json:"status_code,omitempty"`
-	ResourceType   string    `json:"resource_type,omitempty"`
-	DurationMs     float64   `json:"duration_ms,omitempty"`
-	BytesReceived  int64     `json:"bytes_received,omitempty"`
-	DeviceProfile  string    `json:"device_profile,omitempty"`
-	DevicePlatform string    `json:"device_platform,omitempty"`
-	BrowserEngine  string    `json:"browser_engine,omitempty"`
+	BrowserEvidence *protocol.BrowserResourceEvidence `json:"browser_evidence,omitempty"`
+	FailureKind     string                            `json:"failure_kind,omitempty"`
+	Timestamp       time.Time                         `json:"timestamp"`
+	ActionName      string                            `json:"action_name,omitempty"`
+	PageURL         string                            `json:"page_url,omitempty"`
+	URL             string                            `json:"url,omitempty"`
+	Method          string                            `json:"method,omitempty"`
+	StatusCode      int                               `json:"status_code,omitempty"`
+	ResourceType    string                            `json:"resource_type,omitempty"`
+	DurationMs      float64                           `json:"duration_ms,omitempty"`
+	BytesReceived   int64                             `json:"bytes_received,omitempty"`
+	DeviceProfile   string                            `json:"device_profile,omitempty"`
+	DevicePlatform  string                            `json:"device_platform,omitempty"`
+	BrowserEngine   string                            `json:"browser_engine,omitempty"`
 }
 
 type RunArchiveSummaryPoint struct {
-	Timestamp              time.Time `json:"timestamp"`
-	ActiveVUsers           int64     `json:"active_vusers"`
-	TPS                    float64   `json:"tps"`
-	TargetTPS              float64   `json:"target_tps,omitempty"`
-	ThroughputGapPct       float64   `json:"throughput_gap_pct,omitempty"`
-	ThroughputTargetMissed bool      `json:"throughput_target_missed,omitempty"`
-	ErrorPct               float64   `json:"error_pct"`
-	P95Ms                  float64   `json:"p95_ms"`
-	PercentileQuality      string    `json:"percentile_quality,omitempty"`
-	TotalTx                int64     `json:"total_transactions"`
-	TotalErrors            int64     `json:"total_errors"`
+	BrowserDocuments       *protocol.BrowserDocumentSummary `json:"browser_documents,omitempty"`
+	Timestamp              time.Time                        `json:"timestamp"`
+	ActiveVUsers           int64                            `json:"active_vusers"`
+	TPS                    float64                          `json:"tps"`
+	TargetTPS              float64                          `json:"target_tps,omitempty"`
+	ThroughputGapPct       float64                          `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed bool                             `json:"throughput_target_missed,omitempty"`
+	ErrorPct               float64                          `json:"error_pct"`
+	P95Ms                  float64                          `json:"p95_ms"`
+	PercentileQuality      string                           `json:"percentile_quality,omitempty"`
+	TotalTx                int64                            `json:"total_transactions"`
+	TotalErrors            int64                            `json:"total_errors"`
 }
 
 func (point RunArchiveSummaryPoint) HasP95() bool {
@@ -920,35 +933,38 @@ var archiveErrorWhitespacePattern = regexp.MustCompile(`\s+`)
 var archiveSnapshotLeadingTemplateBasePattern = regexp.MustCompile(`^\{\{\s*(?:var|param)\.[^{}]+\s*\}\}\s*(.*)$`)
 
 type runArchiveWriter struct {
-	captureBudget       *archiveCaptureBudget
-	conversionBudget    *archiveOutputBudget
-	mu                  sync.Mutex
-	manifest            RunArchiveManifest
-	region              string
-	rootDir             string
-	manifestPath        string
-	txFile              *os.File
-	resourceFile        *os.File
-	summaryFile         *os.File
-	elkFile             *os.File
-	dynatraceFile       *os.File
-	txBuf               *bufio.Writer
-	resourceBuf         *bufio.Writer
-	summaryBuf          *bufio.Writer
-	elkBuf              *bufio.Writer
-	dynatraceBuf        *bufio.Writer
-	txEncoder           *json.Encoder
-	resourceEncoder     *json.Encoder
-	summaryEncoder      *json.Encoder
-	elkEncoder          *json.Encoder
-	dynatraceEncoder    *json.Encoder
-	flushStop           chan struct{}
-	flushStopped        chan struct{}
-	flushErr            error
-	detailItems         int64
-	detailBytes         int64
-	detailPriorityItems [4]int64
-	detailPriorityBytes [4]int64
+	captureBudget           *archiveCaptureBudget
+	conversionBudget        *archiveOutputBudget
+	mu                      sync.Mutex
+	manifest                RunArchiveManifest
+	region                  string
+	rootDir                 string
+	manifestPath            string
+	txFile                  *os.File
+	resourceFile            *os.File
+	summaryFile             *os.File
+	elkFile                 *os.File
+	browserDocumentsFile    *os.File
+	browserDocumentsBuf     *bufio.Writer
+	browserDocumentsEncoder *json.Encoder
+	dynatraceFile           *os.File
+	txBuf                   *bufio.Writer
+	resourceBuf             *bufio.Writer
+	summaryBuf              *bufio.Writer
+	elkBuf                  *bufio.Writer
+	dynatraceBuf            *bufio.Writer
+	txEncoder               *json.Encoder
+	resourceEncoder         *json.Encoder
+	summaryEncoder          *json.Encoder
+	elkEncoder              *json.Encoder
+	dynatraceEncoder        *json.Encoder
+	flushStop               chan struct{}
+	flushStopped            chan struct{}
+	flushErr                error
+	detailItems             int64
+	detailBytes             int64
+	detailPriorityItems     [4]int64
+	detailPriorityBytes     [4]int64
 }
 
 func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {
@@ -958,6 +974,7 @@ func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {
 	cloned := make([]TestGroup, len(groups))
 	copy(cloned, groups)
 	for i := range cloned {
+		cloned[i].BrowserDocumentCaptureRequested = len(requiredBrowserFeaturesForGroup(groups[i])) > 0
 		cloned[i].EffectiveEndAt = cloneTimePtr(groups[i].EffectiveEndAt)
 		cloned[i].EndedAt = cloneTimePtr(groups[i].EndedAt)
 		cloned[i].Stages = cloneLoadStages(groups[i].Stages)

@@ -1,0 +1,62 @@
+{
+  "reviewed_at": "2026-10-05T11:31:09.141661+00:00",
+  "worktree": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "scope": "Independent read-only final deferred inspector focus production, modal handoff and actual browser deterministic fixture source review",
+  "remaining_actionable_findings": [],
+  "qualification": "Source review only, no reviewer edits/tests/builds. Owner reports old-source reproduction and corrected three editor regressions plus focused modal/hook tests; type/lint/full affected units and real browser profiles remain owner gates.",
+  "review_notes": [
+    "Focus generation and original connected focus fence prevent later operator keystroke interception, including move away then return.",
+    "Exact resource/incarnation/action/path ownership and request generation invalidate stale/superseded/unmounted callbacks.",
+    "Repair destination handoff suppresses modal restoration only for explicitly marked action issue selection; ordinary Close/Escape retain restoration.",
+    "Insert/replay/selection/repair locate only the owned editor; replay no longer queries the global document.",
+    "Bounded main-world RAF fixture preserves native pair and restores before callback flush/finally, asserts exact current action and selected Target before/after, then uses global Delete without locator refocus.",
+    "Nullable owner fields preserve exact null/undefined identities; stable request-generation object cleanup retains invalidation."
+  ],
+  "files": [
+    {
+      "path": "dashboard/src/components/useDeferredScriptInspectorFocus.ts",
+      "sha256": "c3ac75d8fd37828eefdca26dbbcab514982f49401963ba542ee2b5f6b97dcbd0",
+      "bytes": 2745
+    },
+    {
+      "path": "dashboard/src/components/useDeferredScriptInspectorFocus.test.tsx",
+      "sha256": "60f5f593e5dfdb03991021fd3180f4624028fa45b6a22792542c252f58ec69bc",
+      "bytes": 4330
+    },
+    {
+      "path": "dashboard/src/components/ScriptEditor.tsx",
+      "sha256": "f3acbaa391b0f73e5ea1c19d559958ffecee045c51522f42488897a3f1381eba",
+      "bytes": 351883
+    },
+    {
+      "path": "dashboard/src/components/ScriptEditor.test.tsx",
+      "sha256": "dccfeb877b71ca5c0e7932afef206e044830a72bb530696c74dc40696a1b2665",
+      "bytes": 467352
+    },
+    {
+      "path": "dashboard/src/components/IssueDetailsDialog.tsx",
+      "sha256": "1419507dee844ff63725f471acbcbd3b191e89b4d7492f9244751e8f9c24b2c7",
+      "bytes": 5006
+    },
+    {
+      "path": "dashboard/src/components/IssueDetailsDialog.test.tsx",
+      "sha256": "9b2a1a2a56d39b75597069664101e376a0ddbbc464749e2fdc6bc5cad0261850",
+      "bytes": 4132
+    },
+    {
+      "path": "dashboard/src/hooks/useModalDialog.ts",
+      "sha256": "39341404207c9aad1e0b078fafd8535c75f1d4e1cd9f33d305230f103bb93041",
+      "bytes": 5650
+    },
+    {
+      "path": "dashboard/src/hooks/useModalDialog.test.tsx",
+      "sha256": "a6bff362179fb1014aeafd7ee8a427eb46d238ba342d265c1084966bc24277c1",
+      "bytes": 5261
+    },
+    {
+      "path": "dashboard/e2e/workflow-author-experience.spec.ts",
+      "sha256": "9de67ddc91d6c8cb88a96fde85458e06b9ac8eb0191ab59a9ac0f47d83163a4d",
+      "bytes": 11062
+    }
+  ]
+}

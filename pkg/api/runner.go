@@ -786,7 +786,9 @@ type TestGroup struct {
 	stageDriven     bool
 	initialVUsers   int
 	currentVUsers   int
-	script          *dsl.Script
+	// Frozen execution intent survives terminal compaction and durable run snapshots.
+	BrowserDocumentCaptureRequested bool `json:"browser_document_capture_requested,omitempty"`
+	script                          *dsl.Script
 	// scheduleOverriddenScriptIterations is the script-sourced per-VUser
 	// iteration cap that applyScheduleIterationAuthority removed from the
 	// compiled script because the scenario schedule owns run length (0 = none).
@@ -838,6 +840,7 @@ type RunLogicGoalSnapshot struct {
 }
 
 type LiveMetrics struct {
+	BrowserDocuments    *protocol.BrowserDocumentSummary      `json:"browser_documents,omitempty"`
 	MessagingProgress   *protocol.MessagingProgressSnapshot   `json:"messaging_progress,omitempty"`
 	Messaging           map[string]*protocol.MessagingSummary `json:"messaging,omitempty"`
 	NativeEvidence      *storage.NativeIntervalEvidence       `json:"native_evidence,omitempty"`

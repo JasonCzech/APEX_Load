@@ -1,0 +1,19 @@
+Building controller...
+Starting controller on http://127.0.0.1:18471 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.TfCmyXk0t8)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 8 tests using 1 worker
+
+(node:46845) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/workflow-analysis-preparation.spec.ts:509:1 › imported comparison preserves both exact identity selectors across save and reopen (1.5s)
+  ✓  2 e2e/workflow-author-experience.spec.ts:76:1 › Author creates, reverses, validates, edits source and saves without losing context (5.4s)
+  ✓  3 e2e/workflow-browser-resource-evidence.spec.ts:5:1 › browser resource evidence filters retained failures and inspects action attribution (568ms)
+  ✓  4 e2e/workflow-browser-resource-evidence.spec.ts:96:1 › live browser legacy summary refuses unavailable values and distinguishes explicit zero without standards qualification (6.9s)
+  ✓  5 e2e/workflow-browser-resource-evidence.spec.ts:141:1 › archived browser legacy summary preserves mixed-cohort gaps in engine CSV and ranks only complete devices (964ms)
+  ✓  6 e2e/workflow-browser-resource-evidence.spec.ts:194:1 › browser results comparison cards preserve exact mixed cohorts and malformed summaries (673ms)
+  ✓  7 e2e/workflow-browser-resource-evidence.spec.ts:358:1 › live document populations preserve overlapping provisional history, actual cohorts and missing-peer coverage (2.6s)
+  ✓  8 e2e/workflow-browser-resource-evidence.spec.ts:398:1 › archive document evidence retains latest pending, censored and unavailable measurements independently from actions (1.2s)
+
+  8 passed (20.8s)

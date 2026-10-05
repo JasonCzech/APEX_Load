@@ -1,0 +1,4 @@
+# github.com/jasonczech/apexload/pkg/protocol/browser [github.com/jasonczech/apexload/pkg/protocol/browser.test]
+pkg/protocol/browser/document_evidence_test.go:196:113: undefined: playwright.BrowserContextExposeBindingOptions
+FAIL	github.com/jasonczech/apexload/pkg/protocol/browser [build failed]
+FAIL

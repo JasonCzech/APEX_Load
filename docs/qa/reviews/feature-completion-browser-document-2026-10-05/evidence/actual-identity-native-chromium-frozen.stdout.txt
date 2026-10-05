@@ -1,0 +1,8 @@
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:114: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:168: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.64s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.64s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/protocol/browser	0.754s

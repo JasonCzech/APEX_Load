@@ -1309,6 +1309,9 @@ func trimTerminalManagedTestRuntime(test *ManagedTest) {
 		if group.script != nil || group.baseScript != nil || len(group.sharedDataSources) > 0 || len(group.redactionRules) > 0 {
 			test.terminalGroupRuntimeTrimmed = true
 		}
+		if group.script != nil {
+			group.BrowserDocumentCaptureRequested = len(dsl.RequiredBrowserRuntimeFeatures(group.script)) > 0
+		}
 		group.script = nil
 		group.baseScript = nil
 		group.sharedDataSources = nil

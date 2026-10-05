@@ -43,6 +43,7 @@ func groupActiveVUsers(gm *engine.GroupMetrics, configured int) int {
 
 func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[string]int) *LiveMetrics {
 	live := &LiveMetrics{
+		BrowserDocuments:           browserDocumentsForLive(snap.BrowserDocuments, snap.Browser != nil),
 		MessagingProgress:          snap.MessagingProgress.Clone(),
 		Timestamp:                  snap.Timestamp,
 		CompletedIterations:        snap.CompletedIterations,

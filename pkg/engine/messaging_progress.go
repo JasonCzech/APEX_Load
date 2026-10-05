@@ -23,6 +23,7 @@ type engineMessagingProgress struct {
 }
 
 type messagingProgressRegistration struct {
+	browser  *browserDocumentRegistration
 	mu       sync.Mutex
 	id       uint64
 	provider protocol.Protocol
@@ -32,8 +33,16 @@ type messagingProgressRegistration struct {
 }
 
 func (mc *MetricsCollector) registerMessagingProgress(p protocol.Protocol, group string, resources *engineRuntimeResources, phase ...string) *messagingProgressRegistration {
+	return mc.registerMessagingProgressWithRedaction(p, group, resources, nil, phase...)
+}
+
+func (mc *MetricsCollector) registerMessagingProgressWithRedaction(p protocol.Protocol, group string, resources *engineRuntimeResources, redaction func() *RedactionConfig, phase ...string) *messagingProgressRegistration {
 	if mc == nil || p == nil {
 		return nil
+	}
+	browser := mc.registerBrowserDocuments(p, group, redaction)
+	if browser != nil {
+		return &messagingProgressRegistration{browser: browser}
 	}
 	// Processor configuration alone does not imply consumption. Producer-only
 	// scripts must not retain otherwise unused per-VUser processor trackers.
@@ -193,6 +202,13 @@ func (entry *messagingProgressRegistration) finish() { entry.capture(true) }
 
 func runProtocolTeardownWithMessagingProgress(p protocol.Protocol, entry *messagingProgressRegistration, providers ...func() *RedactionConfig) error {
 	err := runProtocolTeardown(p, providers...)
+	if entry != nil && entry.browser != nil {
+		var redaction *RedactionConfig
+		if len(providers) > 0 && providers[0] != nil {
+			redaction = providers[0]()
+		}
+		entry.browser.finish(redaction)
+	}
 	entry.finish()
 	return err
 }
@@ -273,4 +289,10 @@ func (state *engineMessagingProgress) snapshot() *protocol.MessagingProgressSnap
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	return state.latest.Clone()
+}
+
+func (entry *messagingProgressRegistration) publishBrowser(sink ResultSink, region string, redaction func() *RedactionConfig) {
+	if entry != nil && entry.browser != nil {
+		entry.browser.publish(sink, redaction, region)
+	}
 }

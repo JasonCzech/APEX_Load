@@ -483,5 +483,26 @@ describe('TestExecutionStatusPanels', () => {
     expect(card?.textContent).toContain('do not establish synchronized clocks')
   })
 
+  it('renders an independent incomplete document population without legacy browser Samples', async () => {
+    await act(async () => root.render(<TestExecutionStatusPanels
+      isGoalOriented={false} goalDescription="" test={{ id: 'document-run', groups: [], total_vusers: 1 } as never}
+      metrics={{ browser_documents: { version: 2, metrics: [], incomplete: true, dropped_observations: 0 } }}
+      isMultiGroup={false} groupMetrics={[]} groupColors={[]}
+    />))
+    const panel = container.querySelector('[aria-label="Browser document evidence"]')!
+    expect(panel.textContent).toContain('Live intervals retain first-seen provisional history')
+    expect(panel.textContent).toContain('Document evidence is incomplete. 0 observations were dropped')
+    expect(panel.textContent).toContain('No document metric tuples were recorded')
+    expect(container.querySelector('.browser-metrics-card')).toBeNull()
+  })
+
+  it('shows requested browser evidence as unavailable while old peers provide no document contract', async () => {
+    await act(async () => root.render(<TestExecutionStatusPanels
+      isGoalOriented={false} goalDescription="" test={{ id: 'old-peer-run', groups: [{ protocol: 'browser' }], total_vusers: 1 } as never}
+      metrics={{}} isMultiGroup={false} groupMetrics={[]} groupColors={[]}
+    />))
+    expect(container.querySelector('[aria-label="Browser document evidence"]')?.textContent).toContain('Document summary unavailable')
+    expect(container.textContent).not.toContain('0 eligible final document measurements')
+  })
 
 })

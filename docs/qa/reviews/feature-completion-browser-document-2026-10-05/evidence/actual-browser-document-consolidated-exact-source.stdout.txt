@@ -1,0 +1,44 @@
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:114: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:168: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:114: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:168: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (1.16s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.43s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.74s)
+=== RUN   TestBrowserDocumentActualTrustedInteractionRank
+    document_actual_integration_test.go:186: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:227: pre-final native source value=304 interaction_count=1 settled_oracle_count=50
+--- PASS: TestBrowserDocumentActualTrustedInteractionRank (4.61s)
+=== RUN   TestBrowserDocumentActualCLSSessionWindows
+    document_actual_integration_test.go:260: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+--- PASS: TestBrowserDocumentActualCLSSessionWindows (2.25s)
+=== RUN   TestBrowserResourceActualCompletionAcrossActions
+=== RUN   TestBrowserResourceActualCompletionAcrossActions/chromium
+    document_actual_integration_test.go:330: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+=== RUN   TestBrowserResourceActualCompletionAcrossActions/webkit
+    document_actual_integration_test.go:330: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+--- PASS: TestBrowserResourceActualCompletionAcrossActions (0.53s)
+    --- PASS: TestBrowserResourceActualCompletionAcrossActions/chromium (0.21s)
+    --- PASS: TestBrowserResourceActualCompletionAcrossActions/webkit (0.32s)
+=== RUN   TestBrowserDocumentActualCancelledRunCannotInventFinality
+=== RUN   TestBrowserDocumentActualCancelledRunCannotInventFinality/chromium
+2026/10/05 06:31:24 ERROR could not resolve BindingCall error="playwright: target closed: Target page, context or browser has been closed"
+=== RUN   TestBrowserDocumentActualCancelledRunCannotInventFinality/webkit
+--- PASS: TestBrowserDocumentActualCancelledRunCannotInventFinality (0.21s)
+    --- PASS: TestBrowserDocumentActualCancelledRunCannotInventFinality/chromium (0.05s)
+    --- PASS: TestBrowserDocumentActualCancelledRunCannotInventFinality/webkit (0.15s)
+=== RUN   TestBrowserDocumentActualBlockedDrainClosesOwnedContext
+=== RUN   TestBrowserDocumentActualBlockedDrainClosesOwnedContext/chromium
+    document_actual_integration_test.go:441: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:474: actual native held drain physically closed and joined in 2.004022833s
+=== RUN   TestBrowserDocumentActualBlockedDrainClosesOwnedContext/webkit
+    document_actual_integration_test.go:441: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:474: actual native held drain physically closed and joined in 2.004120125s
+--- PASS: TestBrowserDocumentActualBlockedDrainClosesOwnedContext (4.43s)
+    --- PASS: TestBrowserDocumentActualBlockedDrainClosesOwnedContext/chromium (2.15s)
+    --- PASS: TestBrowserDocumentActualBlockedDrainClosesOwnedContext/webkit (2.27s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/protocol/browser	13.501s

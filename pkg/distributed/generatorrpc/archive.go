@@ -34,27 +34,33 @@ import (
 const archiveSchemaVersion = "apexload.archive.v4"
 
 type archiveManifest struct {
-	SourceIdentity               string                       `json:"source_identity,omitempty"`
-	SchemaVersion                string                       `json:"schema_version"`
-	TestID                       string                       `json:"test_id"`
-	TestName                     string                       `json:"test_name"`
-	CreatedAt                    time.Time                    `json:"created_at"`
-	CompletedAt                  time.Time                    `json:"completed_at,omitempty"`
-	Status                       string                       `json:"status,omitempty"`
-	Error                        string                       `json:"error,omitempty"`
-	ExecutionGeneration          uint64                       `json:"execution_generation,omitempty"`
-	ExecutionGroups              []string                     `json:"execution_groups,omitempty"`
-	TransactionsFile             string                       `json:"transactions_file"`
-	TransactionsParquetFile      string                       `json:"transactions_parquet_file,omitempty"`
-	ResourceSamplesFile          string                       `json:"resource_samples_file"`
-	ResourceSamplesParquetFile   string                       `json:"resource_samples_parquet_file,omitempty"`
-	IntervalSummariesFile        string                       `json:"interval_summaries_file"`
-	IntervalSummariesParquetFile string                       `json:"interval_summaries_parquet_file,omitempty"`
-	TransactionCount             int64                        `json:"transaction_count"`
-	ResourceSampleCount          int64                        `json:"resource_sample_count"`
-	IntervalSummaryCount         int64                        `json:"interval_summary_count"`
-	TerminalMetrics              json.RawMessage              `json:"terminal_metrics,omitempty"`
-	MessageDetailCapture         *archiveMessageDetailCapture `json:"message_detail_capture,omitempty"`
+	BrowserDocumentCaptureRequested bool                         `json:"browser_document_capture_requested,omitempty"`
+	BrowserDocumentsFile            string                       `json:"browser_documents_file,omitempty"`
+	BrowserDocumentsParquetFile     string                       `json:"browser_documents_parquet_file,omitempty"`
+	BrowserDocumentRecordCount      int64                        `json:"browser_document_record_count,omitempty"`
+	BrowserDocumentsSHA256          string                       `json:"browser_documents_sha256,omitempty"`
+	BrowserDocumentsParquetSHA256   string                       `json:"browser_documents_parquet_sha256,omitempty"`
+	SourceIdentity                  string                       `json:"source_identity,omitempty"`
+	SchemaVersion                   string                       `json:"schema_version"`
+	TestID                          string                       `json:"test_id"`
+	TestName                        string                       `json:"test_name"`
+	CreatedAt                       time.Time                    `json:"created_at"`
+	CompletedAt                     time.Time                    `json:"completed_at,omitempty"`
+	Status                          string                       `json:"status,omitempty"`
+	Error                           string                       `json:"error,omitempty"`
+	ExecutionGeneration             uint64                       `json:"execution_generation,omitempty"`
+	ExecutionGroups                 []string                     `json:"execution_groups,omitempty"`
+	TransactionsFile                string                       `json:"transactions_file"`
+	TransactionsParquetFile         string                       `json:"transactions_parquet_file,omitempty"`
+	ResourceSamplesFile             string                       `json:"resource_samples_file"`
+	ResourceSamplesParquetFile      string                       `json:"resource_samples_parquet_file,omitempty"`
+	IntervalSummariesFile           string                       `json:"interval_summaries_file"`
+	IntervalSummariesParquetFile    string                       `json:"interval_summaries_parquet_file,omitempty"`
+	TransactionCount                int64                        `json:"transaction_count"`
+	ResourceSampleCount             int64                        `json:"resource_sample_count"`
+	IntervalSummaryCount            int64                        `json:"interval_summary_count"`
+	TerminalMetrics                 json.RawMessage              `json:"terminal_metrics,omitempty"`
+	MessageDetailCapture            *archiveMessageDetailCapture `json:"message_detail_capture,omitempty"`
 }
 
 type archiveMessageDetailCapture struct {
@@ -158,6 +164,7 @@ type archiveResourceSample struct {
 }
 
 type archiveIntervalSummary struct {
+	BrowserDocuments    *protocol.BrowserDocumentSummary              `json:"browser_documents,omitempty"`
 	MessagingProgress   *protocol.MessagingProgressSnapshot           `json:"messaging_progress,omitempty"`
 	Messaging           map[string]*protocol.MessagingSummary         `json:"messaging,omitempty"`
 	CompletedIterations int64                                         `json:"completed_iterations,omitempty"`
@@ -349,29 +356,31 @@ type archiveTelemetryHealth struct {
 }
 
 type archiveRecorder struct {
-	mu                  sync.Mutex
-	manifest            archiveManifest
-	namespace           *generatorArchiveNamespace
-	ownsNamespace       bool
-	runRoot             *os.Root
-	runIdentity         os.FileInfo
-	runName             string
-	rootDir             string
-	manifestPath        string
-	txFile              *os.File
-	resourceFile        *os.File
-	summaryFile         *os.File
-	txEncoder           *json.Encoder
-	resourceEncoder     *json.Encoder
-	summaryEncoder      *json.Encoder
-	byteBudget          *generatorArchiveByteBudget
-	recordErr           error
-	failureSignaled     bool
-	closed              bool
-	detailItems         int64
-	detailBytes         int64
-	detailPriorityItems [4]int64
-	detailPriorityBytes [4]int64
+	browserDocumentsFile    *os.File
+	browserDocumentsEncoder *json.Encoder
+	mu                      sync.Mutex
+	manifest                archiveManifest
+	namespace               *generatorArchiveNamespace
+	ownsNamespace           bool
+	runRoot                 *os.Root
+	runIdentity             os.FileInfo
+	runName                 string
+	rootDir                 string
+	manifestPath            string
+	txFile                  *os.File
+	resourceFile            *os.File
+	summaryFile             *os.File
+	txEncoder               *json.Encoder
+	resourceEncoder         *json.Encoder
+	summaryEncoder          *json.Encoder
+	byteBudget              *generatorArchiveByteBudget
+	recordErr               error
+	failureSignaled         bool
+	closed                  bool
+	detailItems             int64
+	detailBytes             int64
+	detailPriorityItems     [4]int64
+	detailPriorityBytes     [4]int64
 }
 
 func (w *archiveRecorder) bindExecution(generation uint64, group, sourceIdentity string) {
@@ -674,6 +683,7 @@ type parquetIntervalSummary struct {
 	P99Ms                 float64 `parquet:"name=p99_ms, type=DOUBLE"`
 	DurationDigestJSON    string  `parquet:"name=duration_digest_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	GroupsJSON            string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	BrowserDocumentsJSON  string  `parquet:"name=browser_documents_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	MessagingProgressJSON string  `parquet:"name=messaging_progress_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	MessagingJSON         string  `parquet:"name=messaging_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	TransactionsJSON      string  `parquet:"name=transactions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
@@ -758,6 +768,7 @@ func newArchiveRecorderInNamespace(namespace *generatorArchiveNamespace, testID 
 	}
 	artifactNames := []string{
 		"transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl",
+		"browser_documents.jsonl", "browser_documents.parquet",
 		"transactions.parquet", "resources.parquet", "interval_summaries.parquet",
 		"manifest.json",
 	}
@@ -853,7 +864,7 @@ type archiveRecorderCleanup struct {
 
 func (w *archiveRecorder) detachCleanupLocked() archiveRecorderCleanup {
 	cleanup := archiveRecorderCleanup{
-		files:         []*os.File{w.txFile, w.resourceFile, w.summaryFile},
+		files:         []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.browserDocumentsFile},
 		namespace:     w.namespace,
 		runRoot:       w.runRoot,
 		runIdentity:   w.runIdentity,
@@ -868,6 +879,7 @@ func (w *archiveRecorder) detachCleanupLocked() archiveRecorderCleanup {
 	w.txFile = nil
 	w.resourceFile = nil
 	w.summaryFile = nil
+	w.browserDocumentsFile = nil
 	w.runRoot = nil
 	w.closed = true
 	return cleanup
@@ -1291,6 +1303,7 @@ func (w *archiveRecorder) RecordIntervalSummary(summary archiveIntervalSummary) 
 	if w.recordErr != nil {
 		return w.recordErr
 	}
+	summary.BrowserDocuments = summary.BrowserDocuments.Clone()
 	summary.MessagingProgress = summary.MessagingProgress.Clone()
 	summary.TestID = w.manifest.TestID
 	summary.TestName = w.manifest.TestName
@@ -1330,7 +1343,7 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 	w.manifest.CompletedAt = completedAt
 	w.manifest.Error = errStr
 
-	for _, file := range []*os.File{w.txFile, w.resourceFile, w.summaryFile} {
+	for _, file := range []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.browserDocumentsFile} {
 		if file == nil {
 			continue
 		}
@@ -1344,11 +1357,22 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 	w.txFile = nil
 	w.resourceFile = nil
 	w.summaryFile = nil
+	w.browserDocumentsFile = nil
 	if w.runRoot == nil {
 		return nil, fmt.Errorf("archive run root is unavailable")
 	}
 	if err := writeArchiveParquetFilesAtWithBudget(w.runRoot, &w.manifest, w.byteBudget); err != nil {
 		return nil, err
+	}
+	if w.manifest.BrowserDocumentsFile != "" {
+		w.manifest.BrowserDocumentsSHA256, err = archiveBrowserDocumentSHA256(w.runRoot, w.manifest.BrowserDocumentsFile)
+		if err != nil {
+			return nil, err
+		}
+		w.manifest.BrowserDocumentsParquetSHA256, err = archiveBrowserDocumentSHA256(w.runRoot, w.manifest.BrowserDocumentsParquetFile)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if size, err := generatorArchiveRunSize(w.runRoot); err != nil {
 		return nil, err
@@ -1435,7 +1459,7 @@ func archiveArtifactNames(manifest *archiveManifest) []string {
 		return nil
 	}
 	names := []string{"manifest.json", manifest.TransactionsFile, manifest.ResourceSamplesFile, manifest.IntervalSummariesFile}
-	for _, name := range []string{manifest.TransactionsParquetFile, manifest.ResourceSamplesParquetFile, manifest.IntervalSummariesParquetFile} {
+	for _, name := range []string{manifest.TransactionsParquetFile, manifest.ResourceSamplesParquetFile, manifest.IntervalSummariesParquetFile, manifest.BrowserDocumentsFile, manifest.BrowserDocumentsParquetFile} {
 		if name != "" {
 			names = append(names, name)
 		}
@@ -1508,6 +1532,11 @@ func writeArchiveParquetFilesAtWithBudget(root *os.Root, manifest *archiveManife
 	); err != nil {
 		return fmt.Errorf("write resource parquet: %w", err)
 	}
+	if manifest.BrowserDocumentsFile != "" {
+		if err := streamJSONLToParquetAtWithBudget(root, manifest.BrowserDocumentsFile, manifest.BrowserDocumentsParquetFile, budget, browserDocumentRecordParquet, decodeBrowserDocumentRecord); err != nil {
+			return fmt.Errorf("write browser document parquet: %w", err)
+		}
+	}
 	if err := streamJSONLToParquetAtWithBudget(
 		root,
 		manifest.IntervalSummariesFile,
@@ -1546,7 +1575,7 @@ func streamJSONLToParquetAt[In any, Out any](root *os.Root, inputName string, ou
 	return streamJSONLToParquetAtWithBudget(root, inputName, outputName, nil, convert)
 }
 
-func streamJSONLToParquetAtWithBudget[In any, Out any](root *os.Root, inputName string, outputName string, budget *generatorArchiveByteBudget, convert func(In) Out) error {
+func streamJSONLToParquetAtWithBudget[In any, Out any](root *os.Root, inputName string, outputName string, budget *generatorArchiveByteBudget, convert func(In) Out, decoders ...func([]byte, *In) error) error {
 	input, _, err := openGeneratorArchiveRegularFile(root, inputName)
 	if err != nil {
 		return err
@@ -1572,10 +1601,18 @@ func streamJSONLToParquetAtWithBudget[In any, Out any](root *os.Root, inputName 
 	scanner.Buffer(make([]byte, 0, 64*1024), maxGeneratorArchiveJSONLRecordBytes)
 	for scanner.Scan() {
 		var item In
-		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
+		var decodeError error
+		if len(decoders) == 0 {
+			decodeError = json.Unmarshal(scanner.Bytes(), &item)
+		} else if len(decoders) == 1 {
+			decodeError = decoders[0](scanner.Bytes(), &item)
+		} else {
+			decodeError = fmt.Errorf("invalid archive decoder configuration")
+		}
+		if decodeError != nil {
 			_ = pw.WriteStop()
 			_ = fw.Close()
-			return err
+			return decodeError
 		}
 		if err := pw.Write(convert(item)); err != nil {
 			_ = pw.WriteStop()
@@ -1743,6 +1780,7 @@ func toParquetSummaries(items []archiveIntervalSummary) []parquetIntervalSummary
 			DurationDigestJSON:    mustJSON(item.DurationDigest),
 			GroupsJSON:            mustJSON(item.Groups),
 			MessagingJSON:         mustJSON(item.Messaging),
+			BrowserDocumentsJSON:  browserDocumentsJSON(item.BrowserDocuments),
 			MessagingProgressJSON: messagingProgressJSON(item.MessagingProgress),
 			TransactionsJSON:      mustJSON(item.Transactions),
 			ByRegionJSON:          mustJSON(item.ByRegion),

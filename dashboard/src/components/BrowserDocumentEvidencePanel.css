@@ -1,0 +1,44 @@
+.browser-document-evidence {
+  min-width: 0;
+  max-width: 100%;
+}
+.browser-document-evidence > *,
+.browser-document-evidence table,
+.browser-document-evidence th,
+.browser-document-evidence td,
+.browser-document-evidence details {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.browser-document-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.browser-document-table-scroll > .browser-document-populations {
+  min-width: 100rem;
+  table-layout: auto;
+}
+.browser-document-table-scroll > .browser-document-observations {
+  min-width: 80rem;
+  table-layout: auto;
+}
+.browser-document-table-scroll > table > thead > tr > th {
+  min-width: 5rem;
+}
+.browser-document-table-scroll > table > tbody > tr > td:last-child {
+  min-width: 24rem;
+}
+.browser-document-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 0.35rem 0.75rem;
+}
+.browser-document-details dd {
+  margin: 0;
+  min-width: 0;
+}
+@media (max-width: 700px) {
+  .browser-document-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -32,11 +33,13 @@ func (b *Browser) captureClientMetrics(ctx context.Context, duration time.Durati
 	}
 
 	metrics := &protocol.ClientMetrics{
-		DeviceProfile:    b.deviceProfile,
-		DevicePlatform:   b.devicePlatform,
-		DeviceTier:       b.deviceTier,
-		BrowserEngine:    b.engine,
-		ActionDurationMs: float64(duration) / float64(time.Millisecond),
+		DocumentEvidence:    b.BrowserDocumentEvidence(),
+		RuntimeAvailability: b.runtimeMetricAvailability(),
+		DeviceProfile:       b.deviceProfile,
+		DevicePlatform:      b.devicePlatform,
+		DeviceTier:          b.deviceTier,
+		BrowserEngine:       b.engine,
+		ActionDurationMs:    float64(duration) / float64(time.Millisecond),
 	}
 
 	if err := b.capturePageMetrics(ctx, metrics); err != nil {
@@ -137,16 +140,22 @@ func (b *Browser) captureRuntimeMetrics(ctx context.Context, metrics *protocol.C
 	}
 	if metrics.JSHeapTotalMB <= 0 {
 		var snapshot struct {
-			Used  float64 `json:"used"`
-			Total float64 `json:"total"`
+			Available bool    `json:"available"`
+			Used      float64 `json:"used"`
+			Total     float64 `json:"total"`
 		}
 		if err := b.evaluatePageExpression(ctx, `(() => {
 			const memory = performance.memory || {};
 			return {
-				used: memory.usedJSHeapSize || 0,
+				available:typeof memory.usedJSHeapSize==='number'&&typeof memory.totalJSHeapSize==='number',
+ used: memory.usedJSHeapSize || 0,
 				total: memory.totalJSHeapSize || memory.jsHeapSizeLimit || 0,
 			};
 		})()`, &snapshot); err == nil {
+			if snapshot.Available && browserMetricNumber(snapshot.Used) && browserMetricNumber(snapshot.Total) {
+				setBrowserRuntimeAvailability(metrics, "js_heap_used_mb", "page_performance_memory", true)
+				setBrowserRuntimeAvailability(metrics, "js_heap_total_mb", "page_performance_memory", true)
+			}
 			metrics.JSHeapUsedMB = bytesToMegabytes(snapshot.Used)
 			metrics.JSHeapTotalMB = bytesToMegabytes(snapshot.Total)
 		}
@@ -179,6 +188,11 @@ func (b *Browser) applyCDPPerformanceMetrics(raw any, metrics *protocol.ClientMe
 		}
 		values[name] = value
 	}
+	for name, metric := range map[string]string{"JSHeapUsedSize": "js_heap_used_mb", "JSHeapTotalSize": "js_heap_total_mb", "LayoutCount": "layout_count", "RecalcStyleCount": "recalc_style_count", "ScriptDuration": "script_duration_ms", "LayoutDuration": "layout_duration_ms", "TaskDuration": "task_duration_ms"} {
+		if value, present := values[name]; present && browserMetricNumber(value) {
+			setBrowserRuntimeAvailability(metrics, metric, "cdp", true)
+		}
+	}
 	metrics.JSHeapUsedMB = bytesToMegabytes(values["JSHeapUsedSize"])
 	metrics.JSHeapTotalMB = bytesToMegabytes(values["JSHeapTotalSize"])
 	metrics.LayoutCount = int(values["LayoutCount"])
@@ -194,9 +208,15 @@ func (b *Browser) applyCDPHeapMetrics(raw any, metrics *protocol.ClientMetrics) 
 		return
 	}
 	if used, ok := numberFromAny(payload["usedSize"]); ok {
+		if browserMetricNumber(used) {
+			setBrowserRuntimeAvailability(metrics, "js_heap_used_mb", "cdp", true)
+		}
 		metrics.JSHeapUsedMB = bytesToMegabytes(used)
 	}
 	if total, ok := numberFromAny(payload["totalSize"]); ok {
+		if browserMetricNumber(total) {
+			setBrowserRuntimeAvailability(metrics, "js_heap_total_mb", "cdp", true)
+		}
 		metrics.JSHeapTotalMB = bytesToMegabytes(total)
 	}
 }
@@ -416,3 +436,38 @@ const browserMetricsBootstrapScript = `(() => {
 		}).observe({ type: 'event', buffered: true, durationThreshold: 16 });
 	} catch (e) {}
 })();`
+
+func browserMetricNumber(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 }
+func (b *Browser) runtimeMetricAvailability() *protocol.BrowserRuntimeMetricAvailability {
+	out := &protocol.BrowserRuntimeMetricAvailability{Version: 1}
+	for _, metric := range []string{"js_heap_used_mb", "js_heap_total_mb", "layout_count", "recalc_style_count", "script_duration_ms", "layout_duration_ms", "task_duration_ms"} {
+		reason := "not_exposed"
+		if !b.supportsCDP() {
+			reason = "unsupported"
+		}
+		out.Metrics = append(out.Metrics, protocol.BrowserRuntimeMetricCapability{Metric: metric, Source: "cdp", Scope: "active_page", UnavailableReason: reason})
+	}
+	for _, metric := range []string{"browser_process_cpu_pct", "browser_process_mem_mb"} {
+		reason := "scope_unqualified"
+		if b.engine == "webkit" {
+			reason = "unsupported"
+		}
+		out.Metrics = append(out.Metrics, protocol.BrowserRuntimeMetricCapability{Metric: metric, Source: "driver_process_tree", Scope: "driver_process_tree", UnavailableReason: reason})
+	}
+	return out
+}
+func setBrowserRuntimeAvailability(metrics *protocol.ClientMetrics, metric, source string, available bool) {
+	if metrics.RuntimeAvailability == nil {
+		return
+	}
+	for i, row := range metrics.RuntimeAvailability.Metrics {
+		if row.Metric == metric {
+			metrics.RuntimeAvailability.Metrics[i].Source = source
+			metrics.RuntimeAvailability.Metrics[i].Available = available
+			if available {
+				metrics.RuntimeAvailability.Metrics[i].UnavailableReason = ""
+			}
+			return
+		}
+	}
+}

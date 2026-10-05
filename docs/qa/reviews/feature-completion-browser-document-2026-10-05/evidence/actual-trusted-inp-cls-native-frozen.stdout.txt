@@ -1,0 +1,9 @@
+=== RUN   TestBrowserDocumentActualTrustedInteractionRank
+    document_actual_integration_test.go:186: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:227: pre-final native source value=200 interaction_count=50 settled_oracle_count=50
+--- PASS: TestBrowserDocumentActualTrustedInteractionRank (5.02s)
+=== RUN   TestBrowserDocumentActualCLSSessionWindows
+    document_actual_integration_test.go:260: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+--- PASS: TestBrowserDocumentActualCLSSessionWindows (2.24s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/protocol/browser	7.533s

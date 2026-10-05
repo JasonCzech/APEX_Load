@@ -3,6 +3,7 @@ import MonitorRuleResults from './MonitorRuleResults'
 import PrometheusArchiveEvidence from './PrometheusArchiveEvidence'
 import AppDynamicsArchiveEvidence from './AppDynamicsArchiveEvidence'
 import BrowserResourceEvidence from './BrowserResourceEvidence'
+import BrowserDocumentEvidencePanel from './BrowserDocumentEvidencePanel'
 import { grpcDiagnosticLines } from '../utils/grpcDiagnostics'
 import { websocketDiagnosticLines } from '../utils/websocketDiagnostics'
 import ResourceSnapshotList from './ResourceSnapshotList'
@@ -1225,7 +1226,8 @@ export default function TestExecutionArchive({
               )}
 
           {showReportBrowserSummaryView && (
-            archiveReport.overview.browser ? renderBrowserSummary(
+            <>
+            {archiveReport.overview.browser ? renderBrowserSummary(
               archiveReport.overview.browser,
               archiveReport.browser_by_device,
               archiveReport.browser_by_platform,
@@ -1234,7 +1236,11 @@ export default function TestExecutionArchive({
               setBrowserBreakdown,
             ) : showStandaloneReportSection ? (
               <p className="scenario-script-status">Browser metrics were not captured for this archive.</p>
-            ) : null
+            ) : null}
+            {(archiveReport.browser_documents != null || archiveReport.browser_document_evidence !== undefined || archiveReport.overview.browser || showStandaloneReportSection) &&
+              <BrowserDocumentEvidencePanel summary={archiveReport.browser_documents} observations={archiveReport.browser_document_evidence}
+                summaryMode="archive-latest" observationsTruncated={archiveReport.browser_document_evidence_truncated} />}
+            </>
           )}
 
           {showReportBrowserResourcesView && (

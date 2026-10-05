@@ -4,6 +4,7 @@ import { admitScriptAuthoringBaseline, baselineFromSavedScript, reapplyScriptDra
 import ScriptRevisionConflict from './ScriptRevisionConflict'
 import TooltipButton from './ux/TooltipButton'
 import { AuthorInsertDialog } from './AuthorInsertDialog'
+import { useDeferredScriptInspectorFocus } from './useDeferredScriptInspectorFocus'
 import { actionBreadcrumb, dedupeAuthorIssues, humanActionType, insertAuthorAction, remapInsertedBreakpoints, changedDocumentLines, type InsertPosition } from './authorExperience'
 import { captureScript, type DebugRunRecord } from './debuggerExperience'
 import { preserveMappingBindings, withMappingReviewState } from './sourceMappingReviewState'
@@ -180,9 +181,11 @@ import {
   normalizeOccurrenceIndex,
   parseScriptJsonDraft,
   phaseActionsForScript,
+  resolveAuthorJsonScope,
   resolveAuthorJsonScopeByKey,
   updateNestedAction,
   SCRIPT_JSON_DEFAULT_COMPANION_TAB,
+  type AuthorCodeFocus,
   type AuthorJsonScope,
 } from './scriptEditorJsonModel'
 import {
@@ -1048,6 +1051,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // Container actions (http_sequence / control_*) the operator has expanded in the
   // Author outline to reveal their nested sub-requests / steps.
   const editorElementRef = useRef<HTMLDivElement>(null)
+  const { updateOwner: updateInspectorFocusOwner, requestFocus: requestDeferredInspectorFocus } = useDeferredScriptInspectorFocus(editorElementRef)
+  const requestInspectorFocus = useCallback((focus: AuthorCodeFocus, locate: (panel: HTMLElement) => HTMLElement | null = panel => panel.querySelector('[data-inspector-focus]'), document: ScriptDefinition = script, scroll = false) => {
+    const scope = resolveAuthorJsonScope(document, focus)
+    if (scope) requestDeferredInspectorFocus({ scriptId, projectId, folderId, initialScript, path: scope.path, action: scope.action }, locate, scroll)
+  }, [folderId, initialScript, projectId, requestDeferredInspectorFocus, script, scriptId])
   const [inspectorFocusSection, setInspectorFocusSection] = useState('request')
   const [narrowAuthorPane, setNarrowAuthorPane] = useState<'outline' | 'editor' | 'inspector'>('editor')
   useEffect(() => {
@@ -1904,7 +1912,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     openCenterTab(ACTION_LIST_TAB_ID)
     setInspectorFocusSection('request')
     setNarrowAuthorPane('editor')
-    requestAnimationFrame(() => editorElementRef.current?.querySelector<HTMLElement>('.author-main-action [data-inspector-focus]')?.focus())
+    requestInspectorFocus({ phase: row.phase, actionIndex: row.actionIndex })
     setAuthorRightSidebarCollapsed(false)
     setSelectedOutlineParameterName(null)
     setScriptJsonSidebarTab('details')
@@ -1922,7 +1930,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     openCenterTab(ACTION_LIST_TAB_ID)
     setInspectorFocusSection('request')
     setNarrowAuthorPane('editor')
-    requestAnimationFrame(() => editorElementRef.current?.querySelector<HTMLElement>('.author-main-action [data-inspector-focus]')?.focus())
+    requestInspectorFocus({ phase: item.row.phase, actionIndex: item.row.actionIndex, stepPath: item.stepPath })
     setAuthorRightSidebarCollapsed(false)
     setSelectedOutlineParameterName(null)
     setScriptJsonSidebarTab('details')
@@ -2547,7 +2555,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       openCenterTab(ACTION_LIST_TAB_ID)
       setSuccess(`Inserted ${action.name}. Changes are not saved yet.`)
       setError('')
-      requestAnimationFrame(() => editorElementRef.current?.querySelector<HTMLInputElement>('.author-main-action input')?.focus())
+      requestInspectorFocus(result.focus, panel => panel.querySelector('input'), result.script)
     } catch (error) { setError(getErrorMessage(error, 'Could not insert action.')) }
   }
 
@@ -5078,6 +5086,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     const key = `${focus.phase}:${focus.actionIndex}${focus.stepPath?.length ? `#${focus.stepPath.join('/')}` : ''}`
     return resolveAuthorJsonScopeByKey(script, key)
   }, [activeAction, authorCodeFocus, script])
+  updateInspectorFocusOwner(activeInspectorScope ? { scriptId, projectId, folderId, initialScript, path: activeInspectorScope.path, action: activeInspectorScope.action } : null)
   const selectedJsonUnavailable = Boolean(jsonDirty || jsonParseMessage)
   const showSelectedActionJson = Boolean(
     workspaceTab === 'author' &&
@@ -5138,14 +5147,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         severity: issue.severity,
         title: issue.message,
         source: actionBreadcrumb(script, { phase: row.phase, actionIndex: row.actionIndex, stepPath: issue.stepPath }),
+        ownsDestinationFocus: true,
         onSelect: () => {
           selectAuthorPhaseActionRef.current(row)
           if (issue.stepPath?.length) { setActiveAction(null); setAuthorCodeFocus({ phase: row.phase, actionIndex: row.actionIndex, stepPath: issue.stepPath }) }
           const field = issue.id.split(':').pop() || ''
-          requestAnimationFrame(() => {
-            const panel = editorElementRef.current?.querySelector('.author-main-action')
-            const input = ['name', 'target', 'selector'].includes(field) ? panel?.querySelector<HTMLElement>(`[data-author-field="${field}"]`) : null
-            ;(input || panel?.querySelector<HTMLElement>('[data-inspector-focus]'))?.focus()
+          requestInspectorFocus({ phase: row.phase, actionIndex: row.actionIndex, stepPath: issue.stepPath }, panel => {
+            const input = ['name', 'target', 'selector'].includes(field) ? panel.querySelector<HTMLElement>(`[data-author-field="${field}"]`) : null
+            return input || panel.querySelector<HTMLElement>('[data-inspector-focus]')
           })
         },
       })),
@@ -5186,7 +5195,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       return authoringIssues.some(local => local.phase === phase && local.actionIndex === index && local.id.endsWith(`:${field}`))
     }
     return dedupeAuthorIssues([...structured, ...serverIssues.filter(issue => !overlapsLocal(issue)), ...operational.filter(issue => !overlapsLocal(issue))])
-  }, [selectRuntimeSettingsSection, actionProblemRows, authoringIssues, error, jsonParseMessage, openCenterTab, script, setActiveAction, setAuthorCodeFocus, scriptLevelIssues, scriptPhaseActionRows, setShowFullScriptJson, validationResultIsCurrent, validationSidebarResult, warnings])
+  }, [selectRuntimeSettingsSection, actionProblemRows, authoringIssues, error, jsonParseMessage, openCenterTab, requestInspectorFocus, script, setActiveAction, setAuthorCodeFocus, scriptLevelIssues, scriptPhaseActionRows, setShowFullScriptJson, validationResultIsCurrent, validationSidebarResult, warnings])
   const problemCount = editorIssueDetails.length
   const editorIssueDetailsRef = useRef(editorIssueDetails)
   editorIssueDetailsRef.current = editorIssueDetails
@@ -5903,14 +5912,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setAuthorCodeFocus({ phase, actionIndex, stepPath: path, key, label: event.action_name })
     setAuthorRightSidebarCollapsed(false)
     setShowFullScriptJson(false)
-    requestAnimationFrame(() => {
-      const assertions = document.querySelector('[data-action-section="assertions"]')
-      const field = assertions?.querySelector<HTMLElement>('input[aria-label*="expected"]')
+    requestInspectorFocus({ phase, actionIndex, stepPath: path }, panel => {
+      const assertions = panel.querySelector('[data-action-section="assertions"]')
+      return assertions?.querySelector<HTMLElement>('input[aria-label*="expected"]')
         || assertions?.querySelector<HTMLElement>('input')
-        || document.querySelector<HTMLElement>('.action-editor-panel input')
-      field?.focus()
-      field?.scrollIntoView({ block: 'nearest' })
-    })
+        || panel.querySelector<HTMLElement>('.action-editor-panel input')
+    }, script, true)
   }
   const renderCenterTabPanel = (tabId: CenterWorkbenchTabId) => {
     if (tabId === BROWSER_REPLAY_TAB_ID && isBrowserScript) {

@@ -1526,6 +1526,7 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 		}
 		visiting[definitionKey] = true
 		schema := openAPISchemaForASTTypeInPackage(definition, typeDefinitions, visiting, depth+1, currentPackage)
+		applyBrowserEvidenceWireNullability(currentPackage, value.Name, &schema)
 		delete(visiting, definitionKey)
 		return schema
 	case *ast.StarExpr:
@@ -1588,6 +1589,7 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 					modelDepth = 0
 				}
 				schema := openAPISchemaForASTTypeInPackage(definition, typeDefinitions, visiting, modelDepth, pkg.Name)
+				applyBrowserEvidenceWireNullability(pkg.Name, value.Sel.Name, &schema)
 				delete(visiting, definitionKey)
 				return schema
 			}

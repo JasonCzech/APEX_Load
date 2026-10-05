@@ -88,6 +88,8 @@ func boundResultMetadata(result *protocol.Result) {
 	result.RequestType = cloneBoundedResultString(result.RequestType, maxResultMetadataBytes)
 	result.OperationKind = cloneBoundedResultString(result.OperationKind, maxResultMetadataBytes)
 	if result.ClientMetrics != nil {
+		result.ClientMetrics.DocumentEvidence = result.ClientMetrics.DocumentEvidence.Clone()
+		result.ClientMetrics.RuntimeAvailability = result.ClientMetrics.RuntimeAvailability.Clone()
 		result.ClientMetrics.DeviceProfile = cloneBoundedResultString(result.ClientMetrics.DeviceProfile, maxResultMetadataBytes)
 		result.ClientMetrics.DevicePlatform = cloneBoundedResultString(result.ClientMetrics.DevicePlatform, maxResultMetadataBytes)
 		result.ClientMetrics.DeviceTier = cloneBoundedResultString(result.ClientMetrics.DeviceTier, maxResultMetadataBytes)

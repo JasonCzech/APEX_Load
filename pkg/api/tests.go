@@ -1087,6 +1087,7 @@ func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {
 		return nil
 	}
 	cloned := *metrics
+	cloned.BrowserDocuments = metrics.BrowserDocuments.Clone()
 	cloned.NativeEvidence = storage.CloneNativeIntervalEvidence(metrics.NativeEvidence)
 	cloned.StatisticalFindings = append([]StatisticalFinding(nil), metrics.StatisticalFindings...)
 	cloned.ObservationValidUntil = cloneTimePtr(metrics.ObservationValidUntil)

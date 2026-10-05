@@ -17,6 +17,7 @@ import type {
   ProtocolEvidence,
 } from './types/replay'
 import type { ActiveLoadLevel, ClientMetrics } from './types/metrics'
+import type { BrowserDocumentSummary, BrowserDocumentObservation } from './types/browserDocumentEvidence'
 import type { ScenarioDataPoolBinding } from './types/dataPools'
 import type {
   RedactionRule,
@@ -1312,6 +1313,7 @@ export interface TransactionEvent {
 }
 
 export interface IntervalSummaryRecord {
+  browser_documents?: BrowserDocumentSummary | null
   timestamp: string
   test_id: string
   test_name: string
@@ -1692,6 +1694,9 @@ export interface IntegrationOutcome {
 
 export interface RunArchiveReport {
   telemetry_policy?: import('./types/telemetryPolicy').TelemetryPolicyEvidence
+  browser_documents?: BrowserDocumentSummary | null
+  browser_document_evidence?: BrowserDocumentObservation[]
+  browser_document_evidence_truncated?: boolean
   messaging_progress?: MessagingProgressSnapshot
   monitor_diagnostics?: import('./types/appdynamics').RunMonitorDiagnostic[]
   monitor_rule_results?: import('./types/appdynamics').MonitorRuleResult[]
@@ -2086,6 +2091,7 @@ export type TestStatus =
 
 export interface LiveMetrics {
   telemetry_policy?: import('./types/telemetryPolicy').TelemetryPolicyEvidence
+  browser_documents?: BrowserDocumentSummary | null
   messaging_progress?: MessagingProgressSnapshot
   messaging?: Record<string, MessagingSummary>
   observation_state?: 'historical' | 'stale'

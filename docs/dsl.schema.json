@@ -6881,6 +6881,9 @@
         "cache_enabled": {
           "type": "boolean"
         },
+        "capture_document_metrics": {
+          "type": "boolean"
+        },
         "capture_screenshots": {
           "type": "string"
         },

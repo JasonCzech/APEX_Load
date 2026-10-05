@@ -445,7 +445,8 @@ type ConsoleEntry struct {
 }
 
 type NetworkEntry struct {
-	FailureKind string `json:"failure_kind,omitempty"` // http, transport, timeout, canceled
+	BrowserEvidence *BrowserResourceEvidence `json:"browser_evidence,omitempty"`
+	FailureKind     string                   `json:"failure_kind,omitempty"` // http, transport, timeout, canceled
 
 	URL                  string            `json:"url,omitempty"`
 	Method               string            `json:"method,omitempty"`
@@ -469,6 +470,7 @@ func CloneNetworkEntries(entries []NetworkEntry) []NetworkEntry {
 		cloned[i] = entry
 		cloned[i].RequestHeaders = cloneStringMap(entry.RequestHeaders)
 		cloned[i].ResponseHeaders = cloneStringMap(entry.ResponseHeaders)
+		cloned[i].BrowserEvidence = entry.BrowserEvidence.Clone()
 	}
 	return cloned
 }
@@ -491,32 +493,34 @@ type DOMSummary struct {
 }
 
 type ClientMetrics struct {
-	DeviceProfile         string  `json:"device_profile,omitempty"`
-	DevicePlatform        string  `json:"device_platform,omitempty"`
-	DeviceTier            string  `json:"device_tier,omitempty"`
-	BrowserEngine         string  `json:"browser_engine,omitempty"`
-	ActionDurationMs      float64 `json:"action_duration_ms,omitempty"`
-	FCPMs                 float64 `json:"fcp_ms,omitempty"`
-	LCPMs                 float64 `json:"lcp_ms,omitempty"`
-	CLSScore              float64 `json:"cls_score,omitempty"`
-	INPMs                 float64 `json:"inp_ms,omitempty"`
-	TTFBMs                float64 `json:"ttfb_ms,omitempty"`
-	DOMContentLoadedMs    float64 `json:"dom_content_loaded_ms,omitempty"`
-	DOMCompleteMs         float64 `json:"dom_complete_ms,omitempty"`
-	LoadEventMs           float64 `json:"load_event_ms,omitempty"`
-	BlockingResourceCount int     `json:"blocking_resource_count,omitempty"`
-	TotalResourceCount    int     `json:"total_resource_count,omitempty"`
-	ResourceTransferKB    float64 `json:"resource_transfer_kb,omitempty"`
-	JSHeapUsedMB          float64 `json:"js_heap_used_mb,omitempty"`
-	JSHeapTotalMB         float64 `json:"js_heap_total_mb,omitempty"`
-	LayoutCount           int     `json:"layout_count,omitempty"`
-	RecalcStyleCount      int     `json:"recalc_style_count,omitempty"`
-	ScriptDurationMs      float64 `json:"script_duration_ms,omitempty"`
-	LayoutDurationMs      float64 `json:"layout_duration_ms,omitempty"`
-	TaskDurationMs        float64 `json:"task_duration_ms,omitempty"`
-	LongTaskCount         int     `json:"long_task_count,omitempty"`
-	BrowserProcessCPUPct  float64 `json:"browser_process_cpu_pct,omitempty"`
-	BrowserProcessMemMB   float64 `json:"browser_process_mem_mb,omitempty"`
+	RuntimeAvailability   *BrowserRuntimeMetricAvailability `json:"runtime_availability,omitempty"`
+	DocumentEvidence      *BrowserDocumentEvidence          `json:"document_evidence,omitempty"`
+	DeviceProfile         string                            `json:"device_profile,omitempty"`
+	DevicePlatform        string                            `json:"device_platform,omitempty"`
+	DeviceTier            string                            `json:"device_tier,omitempty"`
+	BrowserEngine         string                            `json:"browser_engine,omitempty"`
+	ActionDurationMs      float64                           `json:"action_duration_ms,omitempty"`
+	FCPMs                 float64                           `json:"fcp_ms,omitempty"`
+	LCPMs                 float64                           `json:"lcp_ms,omitempty"`
+	CLSScore              float64                           `json:"cls_score,omitempty"`
+	INPMs                 float64                           `json:"inp_ms,omitempty"`
+	TTFBMs                float64                           `json:"ttfb_ms,omitempty"`
+	DOMContentLoadedMs    float64                           `json:"dom_content_loaded_ms,omitempty"`
+	DOMCompleteMs         float64                           `json:"dom_complete_ms,omitempty"`
+	LoadEventMs           float64                           `json:"load_event_ms,omitempty"`
+	BlockingResourceCount int                               `json:"blocking_resource_count,omitempty"`
+	TotalResourceCount    int                               `json:"total_resource_count,omitempty"`
+	ResourceTransferKB    float64                           `json:"resource_transfer_kb,omitempty"`
+	JSHeapUsedMB          float64                           `json:"js_heap_used_mb,omitempty"`
+	JSHeapTotalMB         float64                           `json:"js_heap_total_mb,omitempty"`
+	LayoutCount           int                               `json:"layout_count,omitempty"`
+	RecalcStyleCount      int                               `json:"recalc_style_count,omitempty"`
+	ScriptDurationMs      float64                           `json:"script_duration_ms,omitempty"`
+	LayoutDurationMs      float64                           `json:"layout_duration_ms,omitempty"`
+	TaskDurationMs        float64                           `json:"task_duration_ms,omitempty"`
+	LongTaskCount         int                               `json:"long_task_count,omitempty"`
+	BrowserProcessCPUPct  float64                           `json:"browser_process_cpu_pct,omitempty"`
+	BrowserProcessMemMB   float64                           `json:"browser_process_mem_mb,omitempty"`
 }
 
 type ServerTelemetry struct {

@@ -60,7 +60,7 @@ func buildRunArchiveBrowserDiagnosticsContext(ctx context.Context, record *stora
 			StatusCode:    tx.StatusCode,
 			Success:       tx.Success,
 			ErrorMessage:  tx.ErrorMessage,
-			ClientMetrics: tx.ClientMetrics,
+			ClientMetrics: cloneBrowserDiagnosticClientMetrics(tx.ClientMetrics),
 		}
 		if tx.ClientMetrics != nil {
 			bundle.Overview.ClientMetricSamples++
@@ -132,6 +132,18 @@ func buildRunArchiveBrowserDiagnosticsContext(ctx context.Context, record *stora
 	bundle.DroppedEvents = bundle.TotalEvents - bundle.RetainedEvents
 	bundle.Truncated = bundle.DroppedEvents > 0
 	return bundle, nil
+}
+
+// Preserve legacy action metrics while validating and owning the independent
+// document evidence. Archive readers cannot lend mutable measurement authority.
+func cloneBrowserDiagnosticClientMetrics(metrics *protocol.ClientMetrics) *protocol.ClientMetrics {
+	if metrics == nil {
+		return nil
+	}
+	copy := *metrics
+	copy.RuntimeAvailability = metrics.RuntimeAvailability.Clone()
+	copy.DocumentEvidence = metrics.DocumentEvidence.Clone()
+	return &copy
 }
 
 func retainBoundedBrowserDiagnosticEvent(events []BrowserDiagnosticsEvent, payloadBytes int, event BrowserDiagnosticsEvent, eventBytes int, maxEvents int, maxPayloadBytes int) ([]BrowserDiagnosticsEvent, int) {
@@ -207,6 +219,11 @@ func browserDiagnosticEventPayloadBytes(event *BrowserDiagnosticsEvent) int {
 		size += len(entry.Level) + len(entry.Text) + len(entry.Source)
 	}
 	for _, entry := range event.NetworkEntries {
+		if evidence := entry.BrowserEvidence; evidence != nil {
+			if raw, err := json.Marshal(evidence); err == nil {
+				size += len(raw)
+			}
+		}
 		size += len(entry.URL) + len(entry.Method) + len(entry.ResourceType) + len(entry.RequestBody) + len(entry.RequestBodyEncoding)
 		for key, value := range entry.RequestHeaders {
 			size += len(key) + len(value)
@@ -222,6 +239,16 @@ func browserDiagnosticEventPayloadBytes(event *BrowserDiagnosticsEvent) int {
 		}
 	}
 	if event.ClientMetrics != nil {
+		if availability := event.ClientMetrics.RuntimeAvailability; availability != nil {
+			if raw, err := json.Marshal(availability); err == nil {
+				size += len(raw)
+			}
+		}
+		if evidence := event.ClientMetrics.DocumentEvidence; evidence != nil {
+			if raw, err := json.Marshal(evidence); err == nil {
+				size += len(raw)
+			}
+		}
 		size += len(event.ClientMetrics.DeviceProfile) + len(event.ClientMetrics.DevicePlatform) + len(event.ClientMetrics.DeviceTier) + len(event.ClientMetrics.BrowserEngine)
 	}
 	return size
@@ -267,16 +294,17 @@ func browserResourceTimingsFromTransaction(tx TransactionEvent) []BrowserResourc
 			continue
 		}
 		timing := BrowserResourceTiming{
-			FailureKind:   entry.FailureKind,
-			Timestamp:     tx.Timestamp,
-			ActionName:    tx.ActionName,
-			PageURL:       tx.PageURL,
-			URL:           entry.URL,
-			Method:        entry.Method,
-			StatusCode:    entry.StatusCode,
-			ResourceType:  entry.ResourceType,
-			DurationMs:    entry.DurationMs,
-			BytesReceived: entry.BytesReceived,
+			BrowserEvidence: entry.BrowserEvidence.Clone(),
+			FailureKind:     entry.FailureKind,
+			Timestamp:       tx.Timestamp,
+			ActionName:      tx.ActionName,
+			PageURL:         tx.PageURL,
+			URL:             entry.URL,
+			Method:          entry.Method,
+			StatusCode:      entry.StatusCode,
+			ResourceType:    entry.ResourceType,
+			DurationMs:      entry.DurationMs,
+			BytesReceived:   entry.BytesReceived,
 		}
 		if timing.PageURL == "" && tx.Snapshot != nil {
 			timing.PageURL = tx.Snapshot.PageURL
@@ -301,16 +329,17 @@ func appendTopBrowserResourceTimingsFromTransaction(current []BrowserResourceTim
 			continue
 		}
 		timing := BrowserResourceTiming{
-			FailureKind:   entry.FailureKind,
-			Timestamp:     tx.Timestamp,
-			ActionName:    tx.ActionName,
-			PageURL:       tx.PageURL,
-			URL:           entry.URL,
-			Method:        entry.Method,
-			StatusCode:    entry.StatusCode,
-			ResourceType:  entry.ResourceType,
-			DurationMs:    entry.DurationMs,
-			BytesReceived: entry.BytesReceived,
+			BrowserEvidence: entry.BrowserEvidence.Clone(),
+			FailureKind:     entry.FailureKind,
+			Timestamp:       tx.Timestamp,
+			ActionName:      tx.ActionName,
+			PageURL:         tx.PageURL,
+			URL:             entry.URL,
+			Method:          entry.Method,
+			StatusCode:      entry.StatusCode,
+			ResourceType:    entry.ResourceType,
+			DurationMs:      entry.DurationMs,
+			BytesReceived:   entry.BytesReceived,
 		}
 		if timing.PageURL == "" && tx.Snapshot != nil {
 			timing.PageURL = tx.Snapshot.PageURL

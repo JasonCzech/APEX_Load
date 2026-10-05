@@ -17,6 +17,7 @@ export interface IssueDetail {
   count?: number
   source?: string
   onSelect?: () => void
+  ownsDestinationFocus?: boolean
 }
 
 interface Props {
@@ -30,11 +31,12 @@ const ISSUE_PAGE_SIZE = 100
 export default function IssueDetailsDialog({ title, issues, onClose }: Props) {
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const closeRef = useRef<HTMLButtonElement | null>(null)
+  const destinationOwnsFocusRef = useRef(false)
   const titleId = useId()
   const descriptionId = useId()
   const pageStatusId = useId()
   const [page, setPage] = useState(0)
-  useModalDialog({ dialogRef, initialFocusRef: closeRef, onClose })
+  useModalDialog({ dialogRef, initialFocusRef: closeRef, onClose, shouldRestoreFocus: () => !destinationOwnsFocusRef.current })
   useEffect(() => setPage(0), [issues, title])
   const pageCount = Math.max(1, Math.ceil(issues.length / ISSUE_PAGE_SIZE))
   const safePage = Math.min(page, pageCount - 1)
@@ -87,6 +89,7 @@ export default function IssueDetailsDialog({ title, issues, onClose }: Props) {
                 type="button"
                 className="issue-details-item selectable"
                 onClick={() => {
+                  destinationOwnsFocusRef.current = issue.ownsDestinationFocus === true
                   onClose()
                   issue.onSelect?.()
                 }}

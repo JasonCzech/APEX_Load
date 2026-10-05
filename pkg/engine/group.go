@@ -82,6 +82,12 @@ type ResultSink interface {
 	RecordResult(result *protocol.Result) error
 }
 
+// BrowserDocumentEvidenceSink stores lifecycle records in a distinct durable
+// population. It must never route them through action/transaction records.
+type BrowserDocumentEvidenceSink interface {
+	RecordBrowserDocumentEvidence(*protocol.BrowserDocumentEvidence) error
+}
+
 type TransactionSink interface {
 	RecordTransaction(result *protocol.Result) error
 }
@@ -1817,7 +1823,8 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 		boundaryCtx,
 	)
 	initErr := callProtocolInit(initCtx, vuProto, protoConfig, group.RedactionConfig)
-	progress := mge.metrics.registerMessagingProgress(vuProto, group.Name, mge.runtimeResources, phase)
+	progress := mge.metrics.registerMessagingProgressWithRedaction(vuProto, group.Name, mge.runtimeResources, func() *RedactionConfig { return group.RedactionConfig }, phase)
+	progress.publishBrowser(group.ResultSink, group.Region, func() *RedactionConfig { return group.RedactionConfig })
 	if err := initErr; err != nil {
 		detachInitAdmission()
 		runProtocolTeardownWithMessagingProgress(vuProto, progress, func() *RedactionConfig { return group.RedactionConfig })
@@ -2050,7 +2057,8 @@ func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupCon
 	)
 	prepared.cancelProtocol = cancelProtocol
 	err = callProtocolInit(initCtx, vuProto, vuserProtoConfig(protoConfig, prepared.runtimeID), group.RedactionConfig)
-	prepared.progress = mge.metrics.registerMessagingProgress(vuProto, group.Name, mge.runtimeResources)
+	prepared.progress = mge.metrics.registerMessagingProgressWithRedaction(vuProto, group.Name, mge.runtimeResources, func() *RedactionConfig { return group.RedactionConfig })
+	prepared.progress.publishBrowser(group.ResultSink, group.Region, func() *RedactionConfig { return group.RedactionConfig })
 	detachInitAdmission()
 	if err != nil {
 		safeErr := err
@@ -2543,7 +2551,8 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		cancelProtocol()
 	}
 	err = callProtocolInit(initCtx, vuProto, vuserProtoConfig(protoConfig, runtimeVUserID), group.RedactionConfig)
-	progress = mge.metrics.registerMessagingProgress(vuProto, group.Name, mge.runtimeResources)
+	progress = mge.metrics.registerMessagingProgressWithRedaction(vuProto, group.Name, mge.runtimeResources, func() *RedactionConfig { return group.RedactionConfig })
+	progress.publishBrowser(group.ResultSink, group.Region, func() *RedactionConfig { return group.RedactionConfig })
 	detachInitAdmission()
 	if err != nil {
 		safeErr := err

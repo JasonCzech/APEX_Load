@@ -66,6 +66,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	sort.Strings(targets)
 	for _, target := range targets {
 		batch := batches[target]
+		protocol.MergeBrowserDocumentSummaries(&combined.BrowserDocuments, browserDocumentsForLive(batch.BrowserDocuments, batch.Browser != nil || len(batch.BrowserByDevice) > 0))
 		// Transport identity, rather than a producer-controlled label, separates
 		// cumulative partition rows emitted by different generator executions.
 		if batch.MessagingProgress != nil {
@@ -564,6 +565,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 
 	live := &LiveMetrics{
+		BrowserDocuments:           browserDocumentsForLive(batch.BrowserDocuments, batch.Browser != nil || len(batch.BrowserByDevice) > 0),
 		MessagingProgress:          batch.MessagingProgress.Clone(),
 		TransactionResponseTimeSLA: remoteTransactionResponseTimeSLAResults(test),
 		Timestamp:                  timestamp,

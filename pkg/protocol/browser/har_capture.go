@@ -127,6 +127,7 @@ func (b *Browser) startHARMonitor() {
 	if b.harWorkingPath == "" {
 		return
 	}
+	b.mu.Lock()
 	b.harMonitorStop = make(chan struct{})
 	b.harLimitExceeded = make(chan struct{})
 	b.harLimitOnce = sync.Once{}
@@ -134,6 +135,8 @@ func (b *Browser) startHARMonitor() {
 	b.harObservedEntries = 0
 	b.harMonitorWG.Add(1)
 	workingPath := b.harWorkingPath
+	stop, exceeded, generation := b.harMonitorStop, b.harLimitExceeded, b.evidence.generation
+	b.mu.Unlock()
 	go func(stop, exceeded <-chan struct{}) {
 		defer b.harMonitorWG.Done()
 		ticker := time.NewTicker(250 * time.Millisecond)
@@ -143,19 +146,27 @@ func (b *Browser) startHARMonitor() {
 			case <-stop:
 				return
 			case <-exceeded:
-				b.closeOversizedHARContext()
+				b.closeOversizedHARContext(generation)
 				return
 			case <-ticker.C:
 				if info, err := os.Stat(workingPath); err == nil && info.Size() > maxRuntimeHARBytes {
-					b.harLimitOnce.Do(func() { close(b.harLimitExceeded) })
+					b.mu.Lock()
+					if generation == b.evidence.generation && stop == b.harMonitorStop && b.harLimitExceeded != nil {
+						b.harLimitOnce.Do(func() { close(b.harLimitExceeded) })
+					}
+					b.mu.Unlock()
 				}
 			}
 		}
-	}(b.harMonitorStop, b.harLimitExceeded)
+	}(stop, exceeded)
 }
 
-func (b *Browser) closeOversizedHARContext() {
+func (b *Browser) closeOversizedHARContext(expectedGeneration ...string) {
 	b.mu.Lock()
+	if len(expectedGeneration) > 0 && expectedGeneration[0] != b.evidence.generation {
+		b.mu.Unlock()
+		return
+	}
 	b.harErrorSeen = true
 	context := b.pwContext
 	b.pwContext = nil
@@ -167,7 +178,7 @@ func (b *Browser) closeOversizedHARContext() {
 
 const maxRuntimeHAREntries = 100_000
 
-func (b *Browser) noteHARRequest(request playwright.Request) {
+func (b *Browser) noteHARRequest(request playwright.Request, expectedGeneration ...string) {
 	b.mu.Lock()
 	active := b.harLimitExceeded != nil
 	b.mu.Unlock()
@@ -178,41 +189,39 @@ func (b *Browser) noteHARRequest(request playwright.Request) {
 	// bounded diagnostics queue cannot bypass the entry limiter. The monitor
 	// independently checks the actual HAR file size without calling Playwright.
 	_ = request
-	b.noteHARNetworkUsage(0)
+	b.noteHARNetworkUsage(0, expectedGeneration...)
 }
 
-func (b *Browser) noteHARNetworkUsage(bytes int64) {
+func (b *Browser) noteHARNetworkUsage(bytes int64, expectedGeneration ...string) {
 	b.mu.Lock()
-	if b.harLimitExceeded == nil {
+	if b.harLimitExceeded == nil || len(expectedGeneration) > 0 && expectedGeneration[0] != b.evidence.generation {
 		b.mu.Unlock()
 		return
 	}
 	b.harObservedBytes += bytes
 	b.harObservedEntries++
 	exceeded := b.harObservedBytes > maxRuntimeHARBytes || b.harObservedEntries > maxRuntimeHAREntries
-	signal := b.harLimitExceeded
-	b.mu.Unlock()
 	if exceeded {
-		b.harLimitOnce.Do(func() { close(signal) })
+		b.harLimitOnce.Do(func() { close(b.harLimitExceeded) })
 	}
+	b.mu.Unlock()
 }
 
-func (b *Browser) noteHARBytes(bytes int64) {
+func (b *Browser) noteHARBytes(bytes int64, expectedGeneration ...string) {
 	if bytes <= 0 {
 		return
 	}
 	b.mu.Lock()
-	if b.harLimitExceeded == nil {
+	if b.harLimitExceeded == nil || len(expectedGeneration) > 0 && expectedGeneration[0] != b.evidence.generation {
 		b.mu.Unlock()
 		return
 	}
 	b.harObservedBytes += bytes
 	exceeded := b.harObservedBytes > maxRuntimeHARBytes
-	signal := b.harLimitExceeded
-	b.mu.Unlock()
 	if exceeded {
-		b.harLimitOnce.Do(func() { close(signal) })
+		b.harLimitOnce.Do(func() { close(b.harLimitExceeded) })
 	}
+	b.mu.Unlock()
 }
 
 // noteHARError marks the session so an on_error policy keeps the recording.

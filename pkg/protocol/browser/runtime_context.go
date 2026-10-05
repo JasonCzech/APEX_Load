@@ -41,8 +41,10 @@ const (
 )
 
 type browserNetworkTask struct {
-	request  playwright.Request
-	finished bool
+	generation string
+	request    playwright.Request
+	finished   bool
+	evidence   *protocol.BrowserResourceEvidence
 }
 
 func (b *Browser) openBrowserContext() error {
@@ -75,6 +77,12 @@ func (b *Browser) openBrowserContext() error {
 		}
 	}
 
+	if err := b.installDocumentEvidence(browserContext, pwBrowser.Version()); err != nil {
+		b.stopRequestPolicyWaiters()
+		_ = browserContext.Close()
+		b.discardHARWorkingFile()
+		return err
+	}
 	b.installBrowserContextHandlers(browserContext)
 
 	if script := b.environmentEmulationScript(); script != "" {
@@ -168,11 +176,14 @@ func (b *Browser) browserViewport() *playwright.Size {
 }
 
 func (b *Browser) installBrowserContextHandlers(browserContext playwright.BrowserContext) {
+	b.mu.Lock()
+	generation := b.evidence.generation
+	b.mu.Unlock()
 	browserContext.OnPage(func(page playwright.Page) {
 		// Popups do not auto-activate by default; a script switches explicitly
 		// with browser_switch_window. browser_auto_activate_popups restores the
 		// old auto-switch behavior for scripts recorded against it.
-		b.registerPage(page, b.autoActivatePopups)
+		b.registerPage(page, b.autoActivatePopups, generation)
 	})
 	browserContext.OnConsole(func(message playwright.ConsoleMessage) {
 		source := ""
@@ -184,15 +195,15 @@ func (b *Browser) installBrowserContextHandlers(browserContext playwright.Browse
 			Text:      strings.TrimSpace(message.Text()),
 			Source:    source,
 			Timestamp: time.Now(),
-		})
+		}, generation)
 	})
 	browserContext.OnDialog(func(dialog playwright.Dialog) {
 		// A browser_handle_dialog action arms a one-shot policy for the next
 		// dialog; without one we dismiss so the page never hangs.
-		b.dialogMu.Lock()
-		policy := b.pendingDialog
-		b.pendingDialog = nil
-		b.dialogMu.Unlock()
+		policy, admitted := b.takeDialogPolicy(generation)
+		if !admitted {
+			return
+		}
 		if policy != nil {
 			if expectedType := strings.TrimSpace(policy.expectedType); expectedType != "" && !strings.EqualFold(dialog.Type(), expectedType) {
 				b.setDialogError(fmt.Errorf("browser dialog type = %q, want %q", dialog.Type(), expectedType))
@@ -211,19 +222,27 @@ func (b *Browser) installBrowserContextHandlers(browserContext playwright.Browse
 		}
 	})
 	browserContext.OnResponse(func(response playwright.Response) {
-		b.rememberResourceValidator(response.URL(), safeResponseHeaders(response))
+		b.rememberResourceValidator(response.URL(), safeResponseHeaders(response), generation)
 	})
+	browserContext.OnFrameDetached(func(frame playwright.Frame) { b.censorFrameEvidence(frame) })
+	browserContext.OnRequest(func(request playwright.Request) { b.beginRequestEvidence(request, generation) })
 	browserContext.OnRequestFinished(func(request playwright.Request) {
-		b.noteHARRequest(request)
-		b.enqueueNetworkRequest(request, true)
+		if !b.browserEvidenceGenerationCurrent(generation) {
+			return
+		}
+		b.noteHARRequest(request, generation)
+		b.enqueueNetworkRequest(request, true, generation)
 	})
 	browserContext.OnRequestFailed(func(request playwright.Request) {
-		b.noteHARRequest(request)
-		b.enqueueNetworkRequest(request, false)
+		if !b.browserEvidenceGenerationCurrent(generation) {
+			return
+		}
+		b.noteHARRequest(request, generation)
+		b.enqueueNetworkRequest(request, false, generation)
 	})
 }
 
-func (b *Browser) appendConsoleEntry(entry protocol.ConsoleEntry) {
+func (b *Browser) appendConsoleEntry(entry protocol.ConsoleEntry, expectedGeneration ...string) {
 	if len(entry.Text) > browserConsoleTextLimitBytes {
 		entry.Text = boundedtext.TruncateUTF8(entry.Text, browserConsoleTextLimitBytes)
 	}
@@ -231,7 +250,7 @@ func (b *Browser) appendConsoleEntry(entry protocol.ConsoleEntry) {
 	entry.Level = boundedtext.TruncateUTF8(entry.Level, browserConsoleLevelLimitBytes)
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.closing {
+	if b.closing || len(expectedGeneration) > 0 && expectedGeneration[0] != b.evidence.generation {
 		return
 	}
 	b.consoleEntries = append(b.consoleEntries, entry)
@@ -260,30 +279,51 @@ func (b *Browser) startNetworkWorkers() {
 				case <-stop:
 					return
 				case task := <-tasks:
-					b.recordNetworkRequest(task.request, task.finished)
+					b.recordNetworkTask(task)
 				}
 			}
 		}()
 	}
 }
 
-func (b *Browser) enqueueNetworkRequest(request playwright.Request, finished bool) {
+func (b *Browser) enqueueNetworkRequest(request playwright.Request, finished bool, expectedGeneration ...string) {
+	evidence := b.completeRequestEvidence(request, finished, expectedGeneration...)
 	b.mu.Lock()
-	if b.closing || b.networkTasks == nil || b.networkWorkerStop == nil {
+	if b.closing || len(expectedGeneration) > 0 && expectedGeneration[0] != b.evidence.generation || b.networkTasks == nil || b.networkWorkerStop == nil {
 		b.mu.Unlock()
 		return
 	}
 	tasks := b.networkTasks
 	stop := b.networkWorkerStop
+	generation := b.evidence.generation
 	b.mu.Unlock()
 	select {
-	case tasks <- browserNetworkTask{request: request, finished: finished}:
+	case tasks <- browserNetworkTask{request: request, finished: finished, evidence: evidence, generation: generation}:
 	case <-stop:
 	default:
 		b.mu.Lock()
-		b.networkTasksDropped++
+		if !b.closing && generation == b.evidence.generation {
+			b.networkTasksDropped++
+			b.evidence.incomplete = true
+		}
 		b.mu.Unlock()
 	}
+}
+
+// Only the admitted context may consume the next action's dialog policy.
+// Lock context identity and policy together so late old-context callbacks cannot
+// steal a new iteration's one-shot policy after passing an earlier check.
+func (b *Browser) takeDialogPolicy(generation string) (*dialogPolicy, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closing || generation != b.evidence.generation {
+		return nil, false
+	}
+	b.dialogMu.Lock()
+	defer b.dialogMu.Unlock()
+	policy := b.pendingDialog
+	b.pendingDialog = nil
+	return policy, true
 }
 
 func dialogMessageMatches(actual, expected, mode string) bool {
@@ -386,11 +426,15 @@ func (b *Browser) setBrowserContext(browserContext playwright.BrowserContext) {
 	b.mu.Unlock()
 }
 
-func (b *Browser) registerPage(page playwright.Page, activate bool) {
+func (b *Browser) registerPage(page playwright.Page, activate bool, expectedGeneration ...string) {
 	if page == nil {
 		return
 	}
 	b.mu.Lock()
+	if b.closing || len(expectedGeneration) > 0 && expectedGeneration[0] != b.evidence.generation {
+		b.mu.Unlock()
+		return
+	}
 	known := false
 	for _, existing := range b.pages {
 		if existing == page {
@@ -412,7 +456,8 @@ func (b *Browser) registerPage(page playwright.Page, activate bool) {
 	b.mu.Unlock()
 	if !known {
 		b.observePageWebSockets(page)
-		page.OnClose(func(closed playwright.Page) { b.removePage(closed) })
+		page.OnClose(func(closed playwright.Page) { b.censorDocumentEvidence(closed, "context_closed"); b.removePage(closed) })
+		page.OnCrash(func(crashed playwright.Page) { b.censorDocumentEvidence(crashed, "crash") })
 	}
 	if activate {
 		b.installCDPSession(b.currentBrowserContext(), page)
@@ -421,6 +466,7 @@ func (b *Browser) registerPage(page playwright.Page, activate bool) {
 
 func (b *Browser) removePage(page playwright.Page) {
 	b.mu.Lock()
+	delete(b.evidence.shapedPages, page)
 	for i, existing := range b.pages {
 		if existing != page {
 			continue
@@ -461,26 +507,38 @@ func (b *Browser) removePage(page playwright.Page) {
 }
 
 func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool) {
+	b.recordNetworkTask(browserNetworkTask{request: request, finished: finished})
+}
+func (b *Browser) recordNetworkTask(task browserNetworkTask) {
+	request, finished := task.request, task.finished
+	if task.generation != "" && !b.browserEvidenceGenerationCurrent(task.generation) {
+		return
+	}
 	statusCode := 0
 	var responseHeaders map[string]string
+	var nativeResponse playwright.Response
 	if response, err := request.Response(); err == nil && response != nil {
+		nativeResponse = response
 		statusCode = response.Status()
 		responseHeaders = safeResponseHeaders(response)
-		b.rememberResourceValidator(request.URL(), responseHeaders)
+		b.rememberResourceValidator(request.URL(), responseHeaders, task.generation)
 	}
 	requestHeaders := safeRequestHeaders(request)
 	requestBody, requestBodyEncoding, requestBodyTruncated := browserRequestBody(request)
 	var bytesReceived int64
+	var nativeSizes *playwright.RequestSizesResult
 	if sizes, err := request.Sizes(); err == nil && sizes != nil {
+		nativeSizes = sizes
 		bytesReceived = int64(sizes.ResponseHeadersSize + sizes.ResponseBodySize)
 		rawBytes := int64(sizes.RequestHeadersSize + sizes.RequestBodySize + sizes.ResponseHeadersSize + sizes.ResponseBodySize)
-		b.noteHARBytes(rawBytes * 2)
+		b.noteHARBytes(rawBytes*2, task.generation)
 	}
 	durationMs := requestDurationMs(request.Timing())
 	if !finished && durationMs < 0 {
 		durationMs = 0
 	}
 	entry := boundBrowserNetworkEntry(protocol.NetworkEntry{
+		BrowserEvidence:      populateResourceEvidence(task.evidence, request, nativeResponse, nativeSizes),
 		FailureKind:          browserNetworkFailureKind(finished, statusCode),
 		URL:                  request.URL(),
 		Method:               request.Method(),
@@ -495,7 +553,9 @@ func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool
 		ResponseHeaders:      responseHeaders,
 	})
 	b.mu.Lock()
-	b.appendNetworkEntryLocked(entry)
+	if task.generation == "" || task.generation == b.evidence.generation && !b.closing {
+		b.appendNetworkEntryLocked(entry)
+	}
 	b.mu.Unlock()
 }
 
@@ -551,6 +611,7 @@ func (b *Browser) trimNetworkEntriesLocked() {
 }
 
 func boundBrowserNetworkEntry(entry protocol.NetworkEntry) protocol.NetworkEntry {
+	entry.BrowserEvidence = entry.BrowserEvidence.Clone()
 	entry.URL = boundedtext.TruncateUTF8(entry.URL, browserNetworkURLLimitBytes)
 	entry.Method = boundedtext.TruncateUTF8(entry.Method, 128)
 	entry.ResourceType = boundedtext.TruncateUTF8(entry.ResourceType, 128)
@@ -602,6 +663,9 @@ func boundedBrowserNetworkHeaders(headers map[string]string) map[string]string {
 
 func browserNetworkEntryMetadataBytes(entry protocol.NetworkEntry) int {
 	bytes := 256 + len(entry.URL) + len(entry.Method) + len(entry.ResourceType) + len(entry.RequestBodyEncoding)
+	if entry.BrowserEvidence != nil {
+		bytes += 4096
+	}
 	for key, value := range entry.RequestHeaders {
 		bytes += 64 + len(key) + len(value)
 	}
@@ -720,10 +784,17 @@ func (b *Browser) installCDPSession(browserContext playwright.BrowserContext, pa
 	if previous != nil && previous != cdp {
 		_ = previous.Detach()
 	}
+	applied := true
 	if b.cpuThrottleRate > 1.0 {
-		_, _ = cdp.Send("Emulation.setCPUThrottlingRate", map[string]any{"rate": b.cpuThrottleRate})
+		_, err := cdp.Send("Emulation.setCPUThrottlingRate", map[string]any{"rate": b.cpuThrottleRate})
+		applied = err == nil
 	}
-	b.applyCDPNetworkConditions(cdp)
+	applied = b.applyCDPNetworkConditions(cdp) && applied
+	b.mu.Lock()
+	if b.evidence.shapedPages != nil && b.pwCDP == cdp && b.pwCDPPage == page && b.cdpInstallGeneration == generation {
+		b.evidence.shapedPages[page] = applied
+	}
+	b.mu.Unlock()
 }
 
 func (b *Browser) supportsCDP() bool {
@@ -734,22 +805,28 @@ func (b *Browser) browserNetworkSimulationActive() bool {
 	return b.networkLatencyMS > 0 || b.networkBandwidthKB > 0
 }
 
-func (b *Browser) applyCDPNetworkConditions(cdp playwright.CDPSession) {
-	if cdp == nil || !b.browserNetworkSimulationActive() {
-		return
+func (b *Browser) applyCDPNetworkConditions(cdp playwright.CDPSession) bool {
+	if !b.browserNetworkSimulationActive() {
+		return true
 	}
-	_, _ = cdp.Send("Network.enable", map[string]any{})
+	if cdp == nil {
+		return false
+	}
+	if _, err := cdp.Send("Network.enable", map[string]any{}); err != nil {
+		return false
+	}
 	throughput := -1.0
 	if b.networkBandwidthKB > 0 {
 		throughput = float64(b.networkBandwidthKB*1024) / 8.0
 	}
-	_, _ = cdp.Send("Network.emulateNetworkConditions", map[string]any{
+	_, err := cdp.Send("Network.emulateNetworkConditions", map[string]any{
 		"offline":            false,
 		"latency":            b.networkLatencyMS,
 		"downloadThroughput": throughput,
 		"uploadThroughput":   throughput,
 		"connectionType":     browserNetworkConnectionType(b.networkPreset),
 	})
+	return err == nil
 }
 
 func browserNetworkConnectionType(preset string) string {

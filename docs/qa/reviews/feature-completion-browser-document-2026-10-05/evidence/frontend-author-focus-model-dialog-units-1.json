@@ -1,0 +1,30 @@
+{
+  "label": "author-focus-model-dialog-units-1",
+  "command": [
+    "./node_modules/.bin/vitest",
+    "run",
+    "src/components/useDeferredScriptInspectorFocus.test.tsx",
+    "src/components/IssueDetailsDialog.test.tsx",
+    "src/hooks/useModalDialog.test.tsx"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard",
+  "started_utc": "2026-10-05T11:26:35.568572+00:00",
+  "finished_utc": "2026-10-05T11:26:37.167677+00:00",
+  "duration_seconds": 1.599,
+  "exit_code": 0,
+  "profile": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "APEXLOAD_ANALYSIS_MEMORY_LIMIT": "512MiB",
+    "APEXLOAD_ANALYSIS_SPILL_LIMIT": "128MiB",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_AUTH_PORT": "18472"
+  },
+  "log_bytes": 278,
+  "log_sha256": "4a622a45093fad6d9e08a706c750fbd4d51f84246cd89cdf0627463953044086"
+}

@@ -1,0 +1,7 @@
+=== RUN   TestBrowserDocumentActualTrustedInteractionRank
+    document_actual_integration_test.go:217: pre-final native source value=304 interaction_count=1 settled_oracle_count=50
+--- PASS: TestBrowserDocumentActualTrustedInteractionRank (5.13s)
+=== RUN   TestBrowserDocumentActualCLSSessionWindows
+--- PASS: TestBrowserDocumentActualCLSSessionWindows (2.27s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/protocol/browser	7.529s

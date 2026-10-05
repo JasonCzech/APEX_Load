@@ -4312,6 +4312,97 @@ describe('ScriptEditor', () => {
     )).toBe(false)
   })
 
+  it('keeps an operator target edit focused when a selection frame is still pending', async () => {
+    const focusScript: ScriptDefinition = { ...initialScript, actions: [
+      { ...initialScript.actions[0], name: 'Health check', target: '/health' },
+      { ...initialScript.actions[0], name: 'Create order', method: 'POST', target: '/orders' },
+    ] }
+    await act(async () => { root.render(<ScriptEditor initialScript={focusScript} projectId="project-1" />) })
+    const frames = new Map<number, FrameRequestCallback>()
+    let nextId = 0
+    const requestFrame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => {
+      const id = ++nextId; frames.set(id, callback); return id
+    })
+    const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id) })
+    try {
+      const select = container.querySelector<HTMLButtonElement>('[data-outline-select][data-tooltip="Create order"]')!
+      select.focus()
+      await act(async () => { select.click() })
+      const target = container.querySelector<HTMLInputElement>('.author-main-action [data-author-field="target"]')!
+      expect(target.value).toBe('/orders')
+      expect(container.querySelector<HTMLInputElement>('.author-main-action [data-author-field="name"]')!.value).toBe('Create order')
+      target.focus(); target.select()
+      await act(async () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(1)) })
+      expect(document.activeElement).toBe(target)
+      await act(async () => { changeInputValue(document.activeElement as HTMLInputElement, '') })
+      expect(target.value).toBe('')
+      expect(container.querySelector<HTMLInputElement>('.author-main-action [data-author-field="name"]')!.value).toBe('Create order')
+      expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('script.actions[1]')
+    } finally { requestFrame.mockRestore(); cancelFrame.mockRestore() }
+  })
+
+  it('lets the latest problem repair focus its target without an earlier selection focus taking ownership', async () => {
+    const focusScript: ScriptDefinition = { ...initialScript, actions: [
+      { ...initialScript.actions[0], name: 'Health check', target: '' },
+      { ...initialScript.actions[0], name: 'Create order', method: 'POST', target: '/orders' },
+    ] }
+    await act(async () => { root.render(<ScriptEditor initialScript={focusScript} projectId="project-1" />) })
+    const problems = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!
+    await act(async () => { problems.click() })
+    const repair = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent?.includes('Action target is required'))!
+    expect(repair).toBeDefined()
+    const frames = new Map<number, FrameRequestCallback>()
+    let nextId = 0
+    const requestFrame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => {
+      const id = ++nextId; frames.set(id, callback); return id
+    })
+    const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id) })
+    try {
+      repair.focus()
+      await act(async () => { repair.click() })
+      await act(async () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(1)) })
+      const target = container.querySelector<HTMLInputElement>('.author-main-action [data-author-field="target"]')!
+      expect(document.activeElement).toBe(target)
+      expect(target.value).toBe('')
+      expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('script.actions[0]')
+    } finally { requestFrame.mockRestore(); cancelFrame.mockRestore() }
+  })
+
+  it('never lets pending repair or selection frames interrupt a newer action and operator field', async () => {
+    const focusScript: ScriptDefinition = { ...initialScript, actions: [
+      { ...initialScript.actions[0], name: 'Health check', target: '' },
+      { ...initialScript.actions[0], name: 'Create order', method: 'POST', target: '/orders' },
+    ] }
+    await act(async () => { root.render(<ScriptEditor initialScript={focusScript} projectId="project-1" />) })
+    const problems = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!
+    await act(async () => { problems.click() })
+    const repair = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent?.includes('Action target is required'))!
+    const frames = new Map<number, FrameRequestCallback>()
+    let nextId = 0
+    const requestFrame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => {
+      const id = ++nextId; frames.set(id, callback); return id
+    })
+    const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id) })
+    try {
+      repair.focus()
+      await act(async () => { repair.click() })
+      const select = container.querySelector<HTMLButtonElement>('[data-outline-select][data-tooltip="Create order"]')!
+      select.focus()
+      await act(async () => { select.click() })
+      const target = container.querySelector<HTMLInputElement>('.author-main-action [data-author-field="target"]')!
+      target.focus()
+      const focusEvents: Element[] = []
+      const recordFocus = (event: FocusEvent) => { focusEvents.push(event.target as Element) }
+      document.addEventListener('focusin', recordFocus)
+      try {
+        await act(async () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(1)) })
+        expect(document.activeElement).toBe(target)
+        expect(focusEvents).toEqual([])
+        expect(target.value).toBe('/orders')
+      } finally { document.removeEventListener('focusin', recordFocus) }
+    } finally { requestFrame.mockRestore(); cancelFrame.mockRestore() }
+  })
+
   it('preselects the requested action when a draft opens with a focus hint', async () => {
     const focusedScript: ScriptDefinition = {
       ...initialScript,

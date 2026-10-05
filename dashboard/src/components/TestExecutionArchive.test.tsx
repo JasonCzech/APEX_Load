@@ -1598,6 +1598,24 @@ describe('TestExecutionArchive', () => {
     })
   })
 
+  it('shows independent latest document states without requiring a legacy action summary', async () => {
+    await renderArchiveView('report-browser-summary', { ...archiveReport, overview: { ...archiveReport.overview, browser: undefined },
+      browser_documents: { version: 2, metrics: [], incomplete: true, dropped_observations: 2 }, browser_document_evidence: [], browser_document_evidence_truncated: true })
+    const panel = container.querySelector('[aria-label="Browser document evidence"]')!
+    expect(panel.textContent).toContain('Archived summaries retain the latest state per source and measurement identity')
+    expect(panel.textContent).toContain('Document evidence is incomplete. 2 observations were dropped')
+    expect(panel.textContent).toContain('Additional source observations are excluded from this view')
+    expect(container.querySelector('.archive-browser-section')).toBeNull()
+  })
+
+  it('keeps old archive document evidence absent instead of deriving it from legacy browser samples', async () => {
+    await renderArchiveView('report-browser-summary', archiveReport)
+    const panel = container.querySelector('[aria-label="Browser document evidence"]')!
+    expect(panel.textContent).toContain('Document summary unavailable')
+    expect(panel.textContent).toContain('Legacy action measurements do not substitute')
+    expect(panel.querySelector('table')).toBeNull()
+  })
+
   it('renders object-valued browser label metadata as unavailable scalar labels', async () => {
     const value = { samples: 1, browser_engine: {}, device_platform: {}, device_tier: {} } as unknown as NonNullable<RunArchiveReport['browser_by_device']>[string]
     await renderArchiveView('report-browser-summary', { ...archiveReport, browser_by_device: { native: value }, browser_by_engine: { native: value }, browser_by_platform: { native: value } })

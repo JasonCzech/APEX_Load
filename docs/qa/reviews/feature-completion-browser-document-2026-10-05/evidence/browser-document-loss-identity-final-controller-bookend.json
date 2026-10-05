@@ -1,0 +1,37 @@
+{
+  "captured_utc": "2026-10-05T14:03:49.334293+00:00",
+  "scope": "Final backend correction bookend after both successful corrected-controller affected browser profiles. Exact same six reviewed source/test inputs as the actual-wire final freeze; broad Go source closure is independently captured by root.",
+  "files": [
+    {
+      "path": "pkg/engine/browser_documents.go",
+      "sha256": "8fc5f9b4b562778a133d17b9d7c08e4cb1873bec2ea48941fe3e8d8c38a9c787",
+      "bytes": 10647
+    },
+    {
+      "path": "pkg/engine/browser_documents_test.go",
+      "sha256": "ac5aa27ddb4b39b9d940be6150214a7f3ddbec4fc1a8845b890a3448a5f5e819",
+      "bytes": 23295
+    },
+    {
+      "path": "pkg/api/archive_browser_documents.go",
+      "sha256": "7ee7a66528b246aeff908b872bc5e06e09b4a65de7de039bff0309442a266fa5",
+      "bytes": 15169
+    },
+    {
+      "path": "pkg/api/archive_browser_documents_test.go",
+      "sha256": "48f6d9985251076415878d65f96198c963e13190cd8dafc6678af749754e439f",
+      "bytes": 28833
+    },
+    {
+      "path": "cmd/apexctl/browser_document_evidence.go",
+      "sha256": "ef3d8fc1ab3aa0b0bd7b5edc9da77f220b57a9325d2e2887e9062a41de6041c9",
+      "bytes": 11242
+    },
+    {
+      "path": "cmd/apexctl/browser_document_evidence_test.go",
+      "sha256": "bd50e1425b59cd43ea6151cc34f98bb2f6118dc505aca23c897a5db8670c70c7",
+      "bytes": 23515
+    }
+  ],
+  "files_list_sha256": "b3af9298582e169c779629ff8a526e3f0b187442d0ca37d73f24946fc086c398"
+}

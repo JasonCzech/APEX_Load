@@ -1,0 +1,28 @@
+{
+  "label": "document-full-cycle-focus-fixed-final-1",
+  "command": [
+    "npm",
+    "run",
+    "test:cycle"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard",
+  "started_utc": "2026-10-05T11:38:30.490252+00:00",
+  "finished_utc": "2026-10-05T12:04:01.672949+00:00",
+  "duration_seconds": 1531.179,
+  "exit_code": 1,
+  "profile": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "APEXLOAD_ANALYSIS_MEMORY_LIMIT": "512MiB",
+    "APEXLOAD_ANALYSIS_SPILL_LIMIT": "128MiB",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_AUTH_PORT": "18472"
+  },
+  "log_bytes": 92300,
+  "log_sha256": "ad85ad2f84f5796472163e06635fb0fbb6a5bba96f77ab745046967f1e0591cf"
+}

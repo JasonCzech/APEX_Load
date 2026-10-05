@@ -1,0 +1,516 @@
+{
+  "config": {
+    "argv": [
+      "/Users/jasonczech/.npm/_npx/6d82ddbdd7da268b/node_modules/node/bin/node",
+      "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard/node_modules/.bin/playwright",
+      "test",
+      "workflow-author-experience.spec.ts",
+      "workflow-browser-resource-evidence.spec.ts",
+      "--reporter=list,json"
+    ],
+    "configFile": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard/playwright.config.ts",
+    "rootDir": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-author-focus-and-documents-final-1/local-auth",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/workflow-recording-review.spec.ts",
+          "**/workflow-script-editor.spec.ts",
+          "**/workflow-runtime-state.spec.ts",
+          "**/workflow-response-content.spec.ts",
+          "**/workflow-http-version.spec.ts",
+          "**/workflow-http-concurrent.spec.ts",
+          "**/workflow-aura-outcomes.spec.ts",
+          "**/workflow-archive-references.spec.ts",
+          "**/workflow-object-activity.spec.ts",
+          "**/workflow-browser-resource-evidence.spec.ts",
+          "**/workflow-analysis-preparation.spec.ts",
+          "**/workflow-protocol-diagnostics.spec.ts",
+          "**/workflow-crosscut.spec.ts",
+          "**/workflow-theme-controls.spec.ts",
+          "**/workflow-application-secrets.spec.ts",
+          "**/workflow-scenario-composition.spec.ts",
+          "**/workflow-scenario-data.spec.ts",
+          "**/workflow-local-archive-failure.spec.ts",
+          "**/workflow-baseline-comparison.spec.ts",
+          "**/workflow-jmeter-fidelity.spec.ts",
+          "**/tier0-bruno-import.spec.ts",
+          "**/workflow-library-assignments.spec.ts",
+          "**/workflow-script-folders.spec.ts",
+          "**/tier0-local-auth.spec.ts",
+          "**/workflow-local-auth.spec.ts",
+          "**/workflow-loadrunner-review.spec.ts",
+          "**/workflow-loadrunner-folder.spec.ts",
+          "**/workflow-loadrunner-collection.spec.ts",
+          "**/workflow-import-source.spec.ts",
+          "**/workflow-help.spec.ts",
+          "**/workflow-monitoring.spec.ts",
+          "**/workflow-dynatrace.spec.ts",
+          "**/workflow-prometheus-monitoring.spec.ts",
+          "**/workflow-settings-monitoring.spec.ts",
+          "**/workflow-dashboard.spec.ts",
+          "**/workflow-dashboard-analysis.spec.ts",
+          "**/workflow-command-center.spec.ts",
+          "**/workflow-new-test.spec.ts",
+          "**/workflow-script-settings.spec.ts",
+          "**/workflow-script-sidebars.spec.ts",
+          "**/workflow-debugger-experience.spec.ts",
+          "**/workflow-author-experience.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.61.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "workflow-author-experience.spec.ts",
+      "file": "workflow-author-experience.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "Author creates, reverses, validates, edits source and saves without losing context",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 12011,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-05T11:36:41.437Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "rapid-target-edit-before-frame",
+                      "contentType": "application/json",
+                      "body": "ewogICJvd25lciI6ICJBY3Rpb25zIOKAuiBDcmVhdGUgb3JkZXJzY3JpcHQuYWN0aW9uc1swXSDCtyBDdXJyZW50IGRyYWZ0IiwKICAiYWN0aXZlIjogewogICAgInRhZyI6ICJJTlBVVCIsCiAgICAiZmllbGQiOiAidGFyZ2V0IiwKICAgICJ2YWx1ZSI6ICIvb3JkZXJzIiwKICAgICJzdGFydCI6IDAsCiAgICAiZW5kIjogNwogIH0sCiAgInRhcmdldCI6ICIvb3JkZXJzIiwKICAicXVldWVkX2ZyYW1lcyI6IDEzCn0="
+                    },
+                    {
+                      "name": "rapid-target-edit-after-frame",
+                      "contentType": "application/json",
+                      "body": "ewogICJvd25lciI6ICJBY3Rpb25zIOKAuiBDcmVhdGUgb3JkZXJzY3JpcHQuYWN0aW9uc1swXSDCtyBDdXJyZW50IGRyYWZ0IiwKICAiYWN0aXZlIjogewogICAgInRhZyI6ICJJTlBVVCIsCiAgICAiZmllbGQiOiAidGFyZ2V0IiwKICAgICJ2YWx1ZSI6ICIvb3JkZXJzIiwKICAgICJzdGFydCI6IDAsCiAgICAiZW5kIjogNwogIH0sCiAgInRhcmdldCI6ICIvb3JkZXJzIiwKICAicXVldWVkX2ZyYW1lcyI6IDAKfQ=="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "5b36556e08eb2dd3d816-36d7ac1a52c1ffc26a91",
+          "file": "workflow-author-experience.spec.ts",
+          "line": 76,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "workflow-browser-resource-evidence.spec.ts",
+      "file": "workflow-browser-resource-evidence.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "browser resource evidence filters retained failures and inspects action attribution",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 7217,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-05T11:36:53.673Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "7bc46617622f6848ab02-b7620fe81d50a9e7d326",
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "line": 5,
+          "column": 1
+        },
+        {
+          "title": "live browser legacy summary refuses unavailable values and distinguishes explicit zero without standards qualification",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 13435,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-05T11:37:00.912Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "browser-live-unscored.png-scroll-position",
+                      "contentType": "application/json",
+                      "body": "eyJiZWZvcmVUb3AiOjEyOS4wNzgxMjUsImhlYWRlckJvdHRvbSI6MTQ3LCJzY3JvbGxPd25lciI6Im1haW4tY29udGVudCB0b3BiYXItdGl0bGUtbW9kZSBwYWdlLXRlc3QifQ=="
+                    },
+                    {
+                      "name": "browser-live-unscored.png-capture-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJsZWZ0IjoxMTQsInJpZ2h0Ijo3MTAsInZpZXdwb3J0Ijo3NjAsImFuY2VzdG9ycyI6W3sidGFnIjoiRElWIiwiY2xhc3NOYW1lIjoiZ29hbC1zdGF0dXMtY2FyZCBicm93c2VyLW1ldHJpY3MtY2FyZCIsImxlZnQiOjkzLCJyaWdodCI6NzMxLCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NjM2LCJjbGllbnRXaWR0aCI6NjM2LCJjbGllbnRMZWZ0IjoxLCJvdmVyZmxvd1giOiJ2aXNpYmxlIn0seyJ0YWciOiJESVYiLCJjbGFzc05hbWUiOiJkYXNoYm9hcmQtd29ya3NwYWNlLWNhcmQtYm9keSIsImxlZnQiOjgxLCJyaWdodCI6NzQzLCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NjYyLCJjbGllbnRXaWR0aCI6NjYyLCJjbGllbnRMZWZ0IjowLCJvdmVyZmxvd1giOiJ2aXNpYmxlIn0seyJ0YWciOiJTRUNUSU9OIiwiY2xhc3NOYW1lIjoiZGFzaGJvYXJkLXdvcmtzcGFjZS1jYXJkIHdpZHRoLWZ1bGwgIiwibGVmdCI6ODAsInJpZ2h0Ijo3NDQsInNjcm9sbExlZnQiOjAsInNjcm9sbFdpZHRoIjo2NjIsImNsaWVudFdpZHRoIjo2NjIsImNsaWVudExlZnQiOjEsIm92ZXJmbG93WCI6ImhpZGRlbiJ9LHsidGFnIjoiRElWIiwiY2xhc3NOYW1lIjoiZGFzaGJvYXJkLXdvcmtzcGFjZS1wYW5lbCIsImxlZnQiOjgwLCJyaWdodCI6NzQ0LCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NjY0LCJjbGllbnRXaWR0aCI6NjY0LCJjbGllbnRMZWZ0IjowLCJvdmVyZmxvd1giOiJ2aXNpYmxlIn0seyJ0YWciOiJESVYiLCJjbGFzc05hbWUiOiJkYXNoYm9hcmQtd29ya3NwYWNlLWJvZHkgIiwibGVmdCI6ODAsInJpZ2h0Ijo3NDQsInNjcm9sbExlZnQiOjAsInNjcm9sbFdpZHRoIjo2NjQsImNsaWVudFdpZHRoIjo2NjQsImNsaWVudExlZnQiOjAsIm92ZXJmbG93WCI6InZpc2libGUifSx7InRhZyI6IlNFQ1RJT04iLCJjbGFzc05hbWUiOiJkYXNoYm9hcmQtd29ya3NwYWNlIGlzLXJlYWRpbmciLCJsZWZ0Ijo4MCwicmlnaHQiOjc0NCwic2Nyb2xsTGVmdCI6MCwic2Nyb2xsV2lkdGgiOjY2NCwiY2xpZW50V2lkdGgiOjY2NCwiY2xpZW50TGVmdCI6MCwib3ZlcmZsb3dYIjoidmlzaWJsZSJ9LHsidGFnIjoiRElWIiwiY2xhc3NOYW1lIjoiZXhlY3V0aW9uIiwibGVmdCI6ODAsInJpZ2h0Ijo3NDQsInNjcm9sbExlZnQiOjAsInNjcm9sbFdpZHRoIjo2NjQsImNsaWVudFdpZHRoIjo2NjQsImNsaWVudExlZnQiOjAsIm92ZXJmbG93WCI6InZpc2libGUifSx7InRhZyI6Ik1BSU4iLCJjbGFzc05hbWUiOiJtYWluLWNvbnRlbnQgdG9wYmFyLXRpdGxlLW1vZGUgcGFnZS10ZXN0IiwibGVmdCI6NjQsInJpZ2h0Ijo3NjAsInNjcm9sbExlZnQiOjAsInNjcm9sbFdpZHRoIjo2OTYsImNsaWVudFdpZHRoIjo2OTYsImNsaWVudExlZnQiOjAsIm92ZXJmbG93WCI6ImF1dG8ifSx7InRhZyI6IkRJViIsImNsYXNzTmFtZSI6ImFwcC1sYXlvdXQiLCJsZWZ0IjowLCJyaWdodCI6NzYwLCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NzYwLCJjbGllbnRXaWR0aCI6NzYwLCJjbGllbnRMZWZ0IjowLCJvdmVyZmxvd1giOiJoaWRkZW4ifSx7InRhZyI6IkRJViIsImNsYXNzTmFtZSI6IiIsImxlZnQiOjAsInJpZ2h0Ijo3NjAsInNjcm9sbExlZnQiOjAsInNjcm9sbFdpZHRoIjo3NjAsImNsaWVudFdpZHRoIjo3NjAsImNsaWVudExlZnQiOjAsIm92ZXJmbG93WCI6InZpc2libGUifSx7InRhZyI6IkJPRFkiLCJjbGFzc05hbWUiOiIiLCJsZWZ0IjowLCJyaWdodCI6NzYwLCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NzYwLCJjbGllbnRXaWR0aCI6NzYwLCJjbGllbnRMZWZ0IjowLCJvdmVyZmxvd1giOiJoaWRkZW4ifSx7InRhZyI6IkhUTUwiLCJjbGFzc05hbWUiOiIiLCJsZWZ0IjowLCJyaWdodCI6NzYwLCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NzYwLCJjbGllbnRXaWR0aCI6NzYwLCJjbGllbnRMZWZ0IjowLCJvdmVyZmxvd1giOiJ2aXNpYmxlIn1dfQ=="
+                    },
+                    {
+                      "name": "browser-live-unscored.png-after-capture-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJsZWZ0IjoxMTQsInJpZ2h0Ijo3MTAsInZpZXdwb3J0Ijo3NjAsImFuY2VzdG9ycyI6W3sidGFnIjoiRElWIiwiY2xhc3NOYW1lIjoiZ29hbC1zdGF0dXMtY2FyZCBicm93c2VyLW1ldHJpY3MtY2FyZCIsImxlZnQiOjkzLCJyaWdodCI6NzMxLCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NjM2LCJjbGllbnRXaWR0aCI6NjM2LCJjbGllbnRMZWZ0IjoxLCJvdmVyZmxvd1giOiJ2aXNpYmxlIn0seyJ0YWciOiJESVYiLCJjbGFzc05hbWUiOiJkYXNoYm9hcmQtd29ya3NwYWNlLWNhcmQtYm9keSIsImxlZnQiOjgxLCJyaWdodCI6NzQzLCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NjYyLCJjbGllbnRXaWR0aCI6NjYyLCJjbGllbnRMZWZ0IjowLCJvdmVyZmxvd1giOiJ2aXNpYmxlIn0seyJ0YWciOiJTRUNUSU9OIiwiY2xhc3NOYW1lIjoiZGFzaGJvYXJkLXdvcmtzcGFjZS1jYXJkIHdpZHRoLWZ1bGwgIiwibGVmdCI6ODAsInJpZ2h0Ijo3NDQsInNjcm9sbExlZnQiOjAsInNjcm9sbFdpZHRoIjo2NjIsImNsaWVudFdpZHRoIjo2NjIsImNsaWVudExlZnQiOjEsIm92ZXJmbG93WCI6ImhpZGRlbiJ9LHsidGFnIjoiRElWIiwiY2xhc3NOYW1lIjoiZGFzaGJvYXJkLXdvcmtzcGFjZS1wYW5lbCIsImxlZnQiOjgwLCJyaWdodCI6NzQ0LCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NjY0LCJjbGllbnRXaWR0aCI6NjY0LCJjbGllbnRMZWZ0IjowLCJvdmVyZmxvd1giOiJ2aXNpYmxlIn0seyJ0YWciOiJESVYiLCJjbGFzc05hbWUiOiJkYXNoYm9hcmQtd29ya3NwYWNlLWJvZHkgIiwibGVmdCI6ODAsInJpZ2h0Ijo3NDQsInNjcm9sbExlZnQiOjAsInNjcm9sbFdpZHRoIjo2NjQsImNsaWVudFdpZHRoIjo2NjQsImNsaWVudExlZnQiOjAsIm92ZXJmbG93WCI6InZpc2libGUifSx7InRhZyI6IlNFQ1RJT04iLCJjbGFzc05hbWUiOiJkYXNoYm9hcmQtd29ya3NwYWNlIGlzLXJlYWRpbmciLCJsZWZ0Ijo4MCwicmlnaHQiOjc0NCwic2Nyb2xsTGVmdCI6MCwic2Nyb2xsV2lkdGgiOjY2NCwiY2xpZW50V2lkdGgiOjY2NCwiY2xpZW50TGVmdCI6MCwib3ZlcmZsb3dYIjoidmlzaWJsZSJ9LHsidGFnIjoiRElWIiwiY2xhc3NOYW1lIjoiZXhlY3V0aW9uIiwibGVmdCI6ODAsInJpZ2h0Ijo3NDQsInNjcm9sbExlZnQiOjAsInNjcm9sbFdpZHRoIjo2NjQsImNsaWVudFdpZHRoIjo2NjQsImNsaWVudExlZnQiOjAsIm92ZXJmbG93WCI6InZpc2libGUifSx7InRhZyI6Ik1BSU4iLCJjbGFzc05hbWUiOiJtYWluLWNvbnRlbnQgdG9wYmFyLXRpdGxlLW1vZGUgcGFnZS10ZXN0IiwibGVmdCI6NjQsInJpZ2h0Ijo3NjAsInNjcm9sbExlZnQiOjAsInNjcm9sbFdpZHRoIjo2OTYsImNsaWVudFdpZHRoIjo2OTYsImNsaWVudExlZnQiOjAsIm92ZXJmbG93WCI6ImF1dG8ifSx7InRhZyI6IkRJViIsImNsYXNzTmFtZSI6ImFwcC1sYXlvdXQiLCJsZWZ0IjowLCJyaWdodCI6NzYwLCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NzYwLCJjbGllbnRXaWR0aCI6NzYwLCJjbGllbnRMZWZ0IjowLCJvdmVyZmxvd1giOiJoaWRkZW4ifSx7InRhZyI6IkRJViIsImNsYXNzTmFtZSI6IiIsImxlZnQiOjAsInJpZ2h0Ijo3NjAsInNjcm9sbExlZnQiOjAsInNjcm9sbFdpZHRoIjo3NjAsImNsaWVudFdpZHRoIjo3NjAsImNsaWVudExlZnQiOjAsIm92ZXJmbG93WCI6InZpc2libGUifSx7InRhZyI6IkJPRFkiLCJjbGFzc05hbWUiOiIiLCJsZWZ0IjowLCJyaWdodCI6NzYwLCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NzYwLCJjbGllbnRXaWR0aCI6NzYwLCJjbGllbnRMZWZ0IjowLCJvdmVyZmxvd1giOiJoaWRkZW4ifSx7InRhZyI6IkhUTUwiLCJjbGFzc05hbWUiOiIiLCJsZWZ0IjowLCJyaWdodCI6NzYwLCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NzYwLCJjbGllbnRXaWR0aCI6NzYwLCJjbGllbnRMZWZ0IjowLCJvdmVyZmxvd1giOiJ2aXNpYmxlIn1dfQ=="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "7bc46617622f6848ab02-6f91a079eff90da7e667",
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "archived browser legacy summary preserves mixed-cohort gaps in engine CSV and ranks only complete devices",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 7591,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-05T11:37:14.376Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "browser-archive-unscored.png-scroll-position",
+                      "contentType": "application/json",
+                      "body": "eyJiZWZvcmVUb3AiOjgyLjUzMTI1LCJoZWFkZXJCb3R0b20iOjEyNywic2Nyb2xsT3duZXIiOiJtYWluLWNvbnRlbnQgdG9wYmFyLXRpdGxlLW1vZGUgcGFnZS1yZXBvcnQifQ=="
+                    },
+                    {
+                      "name": "browser-archive-unscored.png-capture-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJsZWZ0IjoxMTgsInJpZ2h0Ijo3MDYsInZpZXdwb3J0Ijo3NjAsImFuY2VzdG9ycyI6W3sidGFnIjoiRElWIiwiY2xhc3NOYW1lIjoiYXJjaGl2ZS1icm93c2VyLXNlY3Rpb24iLCJsZWZ0IjoxMTgsInJpZ2h0Ijo3MDYsInNjcm9sbExlZnQiOjAsInNjcm9sbFdpZHRoIjo1ODgsImNsaWVudFdpZHRoIjo1ODgsImNsaWVudExlZnQiOjAsIm92ZXJmbG93WCI6InZpc2libGUifSx7InRhZyI6IkRJViIsImNsYXNzTmFtZSI6ImFyY2hpdmUtcmVwb3J0LWNhcmQiLCJsZWZ0Ijo5NywicmlnaHQiOjcyNywic2Nyb2xsTGVmdCI6MCwic2Nyb2xsV2lkdGgiOjYyOCwiY2xpZW50V2lkdGgiOjYyOCwiY2xpZW50TGVmdCI6MSwib3ZlcmZsb3dYIjoidmlzaWJsZSJ9LHsidGFnIjoiREVUQUlMUyIsImNsYXNzTmFtZSI6IiIsImxlZnQiOjgwLCJyaWdodCI6NzQ0LCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NjYyLCJjbGllbnRXaWR0aCI6NjYyLCJjbGllbnRMZWZ0IjoxLCJvdmVyZmxvd1giOiJ2aXNpYmxlIn0seyJ0YWciOiJTRUNUSU9OIiwiY2xhc3NOYW1lIjoicnVuLXJlcG9ydC1hcmVhLWNvbnRlbnQiLCJsZWZ0Ijo4MCwicmlnaHQiOjc0NCwic2Nyb2xsTGVmdCI6MCwic2Nyb2xsV2lkdGgiOjY2NCwiY2xpZW50V2lkdGgiOjY2NCwiY2xpZW50TGVmdCI6MCwib3ZlcmZsb3dYIjoidmlzaWJsZSJ9LHsidGFnIjoiRElWIiwiY2xhc3NOYW1lIjoicGFnZSBydW4tcmVwb3J0LXBhZ2UiLCJsZWZ0Ijo4MCwicmlnaHQiOjc0NCwic2Nyb2xsTGVmdCI6MCwic2Nyb2xsV2lkdGgiOjY2NCwiY2xpZW50V2lkdGgiOjY2NCwiY2xpZW50TGVmdCI6MCwib3ZlcmZsb3dYIjoidmlzaWJsZSJ9LHsidGFnIjoiTUFJTiIsImNsYXNzTmFtZSI6Im1haW4tY29udGVudCB0b3BiYXItdGl0bGUtbW9kZSBwYWdlLXJlcG9ydCIsImxlZnQiOjY0LCJyaWdodCI6NzYwLCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6Njk2LCJjbGllbnRXaWR0aCI6Njk2LCJjbGllbnRMZWZ0IjowLCJvdmVyZmxvd1giOiJhdXRvIn0seyJ0YWciOiJESVYiLCJjbGFzc05hbWUiOiJhcHAtbGF5b3V0IiwibGVmdCI6MCwicmlnaHQiOjc2MCwic2Nyb2xsTGVmdCI6MCwic2Nyb2xsV2lkdGgiOjc2MCwiY2xpZW50V2lkdGgiOjc2MCwiY2xpZW50TGVmdCI6MCwib3ZlcmZsb3dYIjoiaGlkZGVuIn0seyJ0YWciOiJESVYiLCJjbGFzc05hbWUiOiIiLCJsZWZ0IjowLCJyaWdodCI6NzYwLCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NzYwLCJjbGllbnRXaWR0aCI6NzYwLCJjbGllbnRMZWZ0IjowLCJvdmVyZmxvd1giOiJ2aXNpYmxlIn0seyJ0YWciOiJCT0RZIiwiY2xhc3NOYW1lIjoiIiwibGVmdCI6MCwicmlnaHQiOjc2MCwic2Nyb2xsTGVmdCI6MCwic2Nyb2xsV2lkdGgiOjc2MCwiY2xpZW50V2lkdGgiOjc2MCwiY2xpZW50TGVmdCI6MCwib3ZlcmZsb3dYIjoiaGlkZGVuIn0seyJ0YWciOiJIVE1MIiwiY2xhc3NOYW1lIjoiIiwibGVmdCI6MCwicmlnaHQiOjc2MCwic2Nyb2xsTGVmdCI6MCwic2Nyb2xsV2lkdGgiOjc2MCwiY2xpZW50V2lkdGgiOjc2MCwiY2xpZW50TGVmdCI6MCwib3ZlcmZsb3dYIjoidmlzaWJsZSJ9XX0="
+                    },
+                    {
+                      "name": "browser-archive-unscored.png-after-capture-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJsZWZ0IjoxMTgsInJpZ2h0Ijo3MDYsInZpZXdwb3J0Ijo3NjAsImFuY2VzdG9ycyI6W3sidGFnIjoiRElWIiwiY2xhc3NOYW1lIjoiYXJjaGl2ZS1icm93c2VyLXNlY3Rpb24iLCJsZWZ0IjoxMTgsInJpZ2h0Ijo3MDYsInNjcm9sbExlZnQiOjAsInNjcm9sbFdpZHRoIjo1ODgsImNsaWVudFdpZHRoIjo1ODgsImNsaWVudExlZnQiOjAsIm92ZXJmbG93WCI6InZpc2libGUifSx7InRhZyI6IkRJViIsImNsYXNzTmFtZSI6ImFyY2hpdmUtcmVwb3J0LWNhcmQiLCJsZWZ0Ijo5NywicmlnaHQiOjcyNywic2Nyb2xsTGVmdCI6MCwic2Nyb2xsV2lkdGgiOjYyOCwiY2xpZW50V2lkdGgiOjYyOCwiY2xpZW50TGVmdCI6MSwib3ZlcmZsb3dYIjoidmlzaWJsZSJ9LHsidGFnIjoiREVUQUlMUyIsImNsYXNzTmFtZSI6IiIsImxlZnQiOjgwLCJyaWdodCI6NzQ0LCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NjYyLCJjbGllbnRXaWR0aCI6NjYyLCJjbGllbnRMZWZ0IjoxLCJvdmVyZmxvd1giOiJ2aXNpYmxlIn0seyJ0YWciOiJTRUNUSU9OIiwiY2xhc3NOYW1lIjoicnVuLXJlcG9ydC1hcmVhLWNvbnRlbnQiLCJsZWZ0Ijo4MCwicmlnaHQiOjc0NCwic2Nyb2xsTGVmdCI6MCwic2Nyb2xsV2lkdGgiOjY2NCwiY2xpZW50V2lkdGgiOjY2NCwiY2xpZW50TGVmdCI6MCwib3ZlcmZsb3dYIjoidmlzaWJsZSJ9LHsidGFnIjoiRElWIiwiY2xhc3NOYW1lIjoicGFnZSBydW4tcmVwb3J0LXBhZ2UiLCJsZWZ0Ijo4MCwicmlnaHQiOjc0NCwic2Nyb2xsTGVmdCI6MCwic2Nyb2xsV2lkdGgiOjY2NCwiY2xpZW50V2lkdGgiOjY2NCwiY2xpZW50TGVmdCI6MCwib3ZlcmZsb3dYIjoidmlzaWJsZSJ9LHsidGFnIjoiTUFJTiIsImNsYXNzTmFtZSI6Im1haW4tY29udGVudCB0b3BiYXItdGl0bGUtbW9kZSBwYWdlLXJlcG9ydCIsImxlZnQiOjY0LCJyaWdodCI6NzYwLCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6Njk2LCJjbGllbnRXaWR0aCI6Njk2LCJjbGllbnRMZWZ0IjowLCJvdmVyZmxvd1giOiJhdXRvIn0seyJ0YWciOiJESVYiLCJjbGFzc05hbWUiOiJhcHAtbGF5b3V0IiwibGVmdCI6MCwicmlnaHQiOjc2MCwic2Nyb2xsTGVmdCI6MCwic2Nyb2xsV2lkdGgiOjc2MCwiY2xpZW50V2lkdGgiOjc2MCwiY2xpZW50TGVmdCI6MCwib3ZlcmZsb3dYIjoiaGlkZGVuIn0seyJ0YWciOiJESVYiLCJjbGFzc05hbWUiOiIiLCJsZWZ0IjowLCJyaWdodCI6NzYwLCJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6NzYwLCJjbGllbnRXaWR0aCI6NzYwLCJjbGllbnRMZWZ0IjowLCJvdmVyZmxvd1giOiJ2aXNpYmxlIn0seyJ0YWciOiJCT0RZIiwiY2xhc3NOYW1lIjoiIiwibGVmdCI6MCwicmlnaHQiOjc2MCwic2Nyb2xsTGVmdCI6MCwic2Nyb2xsV2lkdGgiOjc2MCwiY2xpZW50V2lkdGgiOjc2MCwiY2xpZW50TGVmdCI6MCwib3ZlcmZsb3dYIjoiaGlkZGVuIn0seyJ0YWciOiJIVE1MIiwiY2xhc3NOYW1lIjoiIiwibGVmdCI6MCwicmlnaHQiOjc2MCwic2Nyb2xsTGVmdCI6MCwic2Nyb2xsV2lkdGgiOjc2MCwiY2xpZW50V2lkdGgiOjc2MCwiY2xpZW50TGVmdCI6MCwib3ZlcmZsb3dYIjoidmlzaWJsZSJ9XX0="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "7bc46617622f6848ab02-09fdd96bf10af84d9364",
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "line": 141,
+          "column": 1
+        },
+        {
+          "title": "browser results comparison cards preserve exact mixed cohorts and malformed summaries",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 7387,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-05T11:37:21.990Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "7bc46617622f6848ab02-ac2b3854db536ed012b7",
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "line": 194,
+          "column": 1
+        },
+        {
+          "title": "live document populations preserve overlapping provisional history, actual cohorts and missing-peer coverage",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9313,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-05T11:37:29.407Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "browser-document-live-overview.png-before-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJsZWZ0Ijo5MywicmlnaHQiOjczMSwidmlld3BvcnQiOjc2MCwidmlld3BvcnRIZWlnaHQiOjE2MDAsInNjcm9sbFdpZHRoIjo2MzYsImNsaWVudFdpZHRoIjo2MzYsIm93bmVyTGVmdCI6NjQsIm93bmVyUmlnaHQiOjc2MCwidG9wYmFyQm90dG9tIjoxNDcsImhlYWRpbmdMZWZ0IjoxMTQsImhlYWRpbmdSaWdodCI6NzEwLCJoZWFkaW5nVG9wIjoxMDYxLjU3ODEyNSwiaGVhZGluZ0JvdHRvbSI6MTA4NC4zNzUsImhlYWRpbmdIaXQiOnRydWV9"
+                    },
+                    {
+                      "name": "browser-document-live-overview.png-table-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJvd25lcldpZHRoIjo1OTYsInRhYmxlV2lkdGgiOjE2MDAsImhlYWRlcldpZHRoIjo4MH0="
+                    },
+                    {
+                      "name": "browser-document-live-overview.png-after-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJsZWZ0Ijo5MywicmlnaHQiOjczMSwidmlld3BvcnQiOjc2MCwidmlld3BvcnRIZWlnaHQiOjE2MDAsInNjcm9sbFdpZHRoIjo2MzYsImNsaWVudFdpZHRoIjo2MzYsIm93bmVyTGVmdCI6NjQsIm93bmVyUmlnaHQiOjc2MCwidG9wYmFyQm90dG9tIjoxNDcsImhlYWRpbmdMZWZ0IjoxMTQsImhlYWRpbmdSaWdodCI6NzEwLCJoZWFkaW5nVG9wIjoxMDYxLjU3ODEyNSwiaGVhZGluZ0JvdHRvbSI6MTA4NC4zNzUsImhlYWRpbmdIaXQiOnRydWV9"
+                    },
+                    {
+                      "name": "browser-document-live-overview.png-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJiZWZvcmUiOnsibGVmdCI6OTMsInJpZ2h0Ijo3MzEsInZpZXdwb3J0Ijo3NjAsInZpZXdwb3J0SGVpZ2h0IjoxNjAwLCJzY3JvbGxXaWR0aCI6NjM2LCJjbGllbnRXaWR0aCI6NjM2LCJvd25lckxlZnQiOjY0LCJvd25lclJpZ2h0Ijo3NjAsInRvcGJhckJvdHRvbSI6MTQ3LCJoZWFkaW5nTGVmdCI6MTE0LCJoZWFkaW5nUmlnaHQiOjcxMCwiaGVhZGluZ1RvcCI6MTA2MS41NzgxMjUsImhlYWRpbmdCb3R0b20iOjEwODQuMzc1LCJoZWFkaW5nSGl0Ijp0cnVlfSwiYWZ0ZXIiOnsibGVmdCI6OTMsInJpZ2h0Ijo3MzEsInZpZXdwb3J0Ijo3NjAsInZpZXdwb3J0SGVpZ2h0IjoxNjAwLCJzY3JvbGxXaWR0aCI6NjM2LCJjbGllbnRXaWR0aCI6NjM2LCJvd25lckxlZnQiOjY0LCJvd25lclJpZ2h0Ijo3NjAsInRvcGJhckJvdHRvbSI6MTQ3LCJoZWFkaW5nTGVmdCI6MTE0LCJoZWFkaW5nUmlnaHQiOjcxMCwiaGVhZGluZ1RvcCI6MTA2MS41NzgxMjUsImhlYWRpbmdCb3R0b20iOjEwODQuMzc1LCJoZWFkaW5nSGl0Ijp0cnVlfX0="
+                    },
+                    {
+                      "name": "browser-document-live-keyboard-before",
+                      "contentType": "application/json",
+                      "body": "eyJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6MTYwMCwiY2xpZW50V2lkdGgiOjU5NiwibWFpblNjcm9sbExlZnQiOjB9"
+                    },
+                    {
+                      "name": "browser-document-live-keyboard-after",
+                      "contentType": "application/json",
+                      "body": "eyJzY3JvbGxMZWZ0IjozNiwic2Nyb2xsV2lkdGgiOjE2MDAsImNsaWVudFdpZHRoIjo1OTYsIm1haW5TY3JvbGxMZWZ0IjowfQ=="
+                    },
+                    {
+                      "name": "browser-document-live.png-before-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJsZWZ0Ijo5MywicmlnaHQiOjczMSwidmlld3BvcnQiOjc2MCwidmlld3BvcnRIZWlnaHQiOjE2MDAsInNjcm9sbFdpZHRoIjo2MzYsImNsaWVudFdpZHRoIjo2MzYsIm93bmVyTGVmdCI6NjQsIm93bmVyUmlnaHQiOjc2MCwidG9wYmFyQm90dG9tIjoxNDcsImhlYWRpbmdMZWZ0IjoxMTQsImhlYWRpbmdSaWdodCI6NzEwLCJoZWFkaW5nVG9wIjo0ODYuNTc4MTI1LCJoZWFkaW5nQm90dG9tIjo1MDkuMzc1LCJoZWFkaW5nSGl0Ijp0cnVlfQ=="
+                    },
+                    {
+                      "name": "browser-document-live.png-table-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJvd25lcldpZHRoIjo1OTYsInRhYmxlV2lkdGgiOjE2MDAsImhlYWRlcldpZHRoIjo4MH0="
+                    },
+                    {
+                      "name": "browser-document-live.png-after-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJsZWZ0Ijo5MywicmlnaHQiOjczMSwidmlld3BvcnQiOjc2MCwidmlld3BvcnRIZWlnaHQiOjE2MDAsInNjcm9sbFdpZHRoIjo2MzYsImNsaWVudFdpZHRoIjo2MzYsIm93bmVyTGVmdCI6NjQsIm93bmVyUmlnaHQiOjc2MCwidG9wYmFyQm90dG9tIjoxNDcsImhlYWRpbmdMZWZ0IjoxMTQsImhlYWRpbmdSaWdodCI6NzEwLCJoZWFkaW5nVG9wIjo0ODYuNTc4MTI1LCJoZWFkaW5nQm90dG9tIjo1MDkuMzc1LCJoZWFkaW5nSGl0Ijp0cnVlfQ=="
+                    },
+                    {
+                      "name": "browser-document-live.png-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJiZWZvcmUiOnsibGVmdCI6OTMsInJpZ2h0Ijo3MzEsInZpZXdwb3J0Ijo3NjAsInZpZXdwb3J0SGVpZ2h0IjoxNjAwLCJzY3JvbGxXaWR0aCI6NjM2LCJjbGllbnRXaWR0aCI6NjM2LCJvd25lckxlZnQiOjY0LCJvd25lclJpZ2h0Ijo3NjAsInRvcGJhckJvdHRvbSI6MTQ3LCJoZWFkaW5nTGVmdCI6MTE0LCJoZWFkaW5nUmlnaHQiOjcxMCwiaGVhZGluZ1RvcCI6NDg2LjU3ODEyNSwiaGVhZGluZ0JvdHRvbSI6NTA5LjM3NSwiaGVhZGluZ0hpdCI6dHJ1ZX0sImFmdGVyIjp7ImxlZnQiOjkzLCJyaWdodCI6NzMxLCJ2aWV3cG9ydCI6NzYwLCJ2aWV3cG9ydEhlaWdodCI6MTYwMCwic2Nyb2xsV2lkdGgiOjYzNiwiY2xpZW50V2lkdGgiOjYzNiwib3duZXJMZWZ0Ijo2NCwib3duZXJSaWdodCI6NzYwLCJ0b3BiYXJCb3R0b20iOjE0NywiaGVhZGluZ0xlZnQiOjExNCwiaGVhZGluZ1JpZ2h0Ijo3MTAsImhlYWRpbmdUb3AiOjQ4Ni41NzgxMjUsImhlYWRpbmdCb3R0b20iOjUwOS4zNzUsImhlYWRpbmdIaXQiOnRydWV9fQ=="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "7bc46617622f6848ab02-580c712b90210e5d425a",
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "line": 358,
+          "column": 1
+        },
+        {
+          "title": "archive document evidence retains latest pending, censored and unavailable measurements independently from actions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 7823,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-05T11:37:38.744Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "browser-document-archive-overview.png-before-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJsZWZ0IjoxMTgsInJpZ2h0Ijo3MDYsInZpZXdwb3J0Ijo3NjAsInZpZXdwb3J0SGVpZ2h0IjoxNjAwLCJzY3JvbGxXaWR0aCI6NTg2LCJjbGllbnRXaWR0aCI6NTg2LCJvd25lckxlZnQiOjY0LCJvd25lclJpZ2h0Ijo3NjAsInRvcGJhckJvdHRvbSI6MTI3LCJoZWFkaW5nTGVmdCI6MTM5LCJoZWFkaW5nUmlnaHQiOjY4NSwiaGVhZGluZ1RvcCI6MTYzLjczNDM3NSwiaGVhZGluZ0JvdHRvbSI6MTg2LjUzMTI1LCJoZWFkaW5nSGl0Ijp0cnVlfQ=="
+                    },
+                    {
+                      "name": "browser-document-archive-overview.png-table-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJvd25lcldpZHRoIjo1NDYsInRhYmxlV2lkdGgiOjE2MDAsImhlYWRlcldpZHRoIjo4MH0="
+                    },
+                    {
+                      "name": "browser-document-archive-overview.png-after-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJsZWZ0IjoxMTgsInJpZ2h0Ijo3MDYsInZpZXdwb3J0Ijo3NjAsInZpZXdwb3J0SGVpZ2h0IjoxNjAwLCJzY3JvbGxXaWR0aCI6NTg2LCJjbGllbnRXaWR0aCI6NTg2LCJvd25lckxlZnQiOjY0LCJvd25lclJpZ2h0Ijo3NjAsInRvcGJhckJvdHRvbSI6MTI3LCJoZWFkaW5nTGVmdCI6MTM5LCJoZWFkaW5nUmlnaHQiOjY4NSwiaGVhZGluZ1RvcCI6MTYzLjczNDM3NSwiaGVhZGluZ0JvdHRvbSI6MTg2LjUzMTI1LCJoZWFkaW5nSGl0Ijp0cnVlfQ=="
+                    },
+                    {
+                      "name": "browser-document-archive-overview.png-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJiZWZvcmUiOnsibGVmdCI6MTE4LCJyaWdodCI6NzA2LCJ2aWV3cG9ydCI6NzYwLCJ2aWV3cG9ydEhlaWdodCI6MTYwMCwic2Nyb2xsV2lkdGgiOjU4NiwiY2xpZW50V2lkdGgiOjU4Niwib3duZXJMZWZ0Ijo2NCwib3duZXJSaWdodCI6NzYwLCJ0b3BiYXJCb3R0b20iOjEyNywiaGVhZGluZ0xlZnQiOjEzOSwiaGVhZGluZ1JpZ2h0Ijo2ODUsImhlYWRpbmdUb3AiOjE2My43MzQzNzUsImhlYWRpbmdCb3R0b20iOjE4Ni41MzEyNSwiaGVhZGluZ0hpdCI6dHJ1ZX0sImFmdGVyIjp7ImxlZnQiOjExOCwicmlnaHQiOjcwNiwidmlld3BvcnQiOjc2MCwidmlld3BvcnRIZWlnaHQiOjE2MDAsInNjcm9sbFdpZHRoIjo1ODYsImNsaWVudFdpZHRoIjo1ODYsIm93bmVyTGVmdCI6NjQsIm93bmVyUmlnaHQiOjc2MCwidG9wYmFyQm90dG9tIjoxMjcsImhlYWRpbmdMZWZ0IjoxMzksImhlYWRpbmdSaWdodCI6Njg1LCJoZWFkaW5nVG9wIjoxNjMuNzM0Mzc1LCJoZWFkaW5nQm90dG9tIjoxODYuNTMxMjUsImhlYWRpbmdIaXQiOnRydWV9fQ=="
+                    },
+                    {
+                      "name": "browser-document-archive-keyboard-before",
+                      "contentType": "application/json",
+                      "body": "eyJzY3JvbGxMZWZ0IjowLCJzY3JvbGxXaWR0aCI6MTYwMCwiY2xpZW50V2lkdGgiOjU0NiwibWFpblNjcm9sbExlZnQiOjB9"
+                    },
+                    {
+                      "name": "browser-document-archive-keyboard-after",
+                      "contentType": "application/json",
+                      "body": "eyJzY3JvbGxMZWZ0IjozNSwic2Nyb2xsV2lkdGgiOjE2MDAsImNsaWVudFdpZHRoIjo1NDYsIm1haW5TY3JvbGxMZWZ0IjowfQ=="
+                    },
+                    {
+                      "name": "browser-document-archive.png-before-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJsZWZ0IjoxMTgsInJpZ2h0Ijo3MDYsInZpZXdwb3J0Ijo3NjAsInZpZXdwb3J0SGVpZ2h0IjoxNjAwLCJzY3JvbGxXaWR0aCI6NTg2LCJjbGllbnRXaWR0aCI6NTg2LCJvd25lckxlZnQiOjY0LCJvd25lclJpZ2h0Ijo3NjAsInRvcGJhckJvdHRvbSI6MTI3LCJoZWFkaW5nTGVmdCI6MTM5LCJoZWFkaW5nUmlnaHQiOjY4NSwiaGVhZGluZ1RvcCI6MTYzLjczNDM3NSwiaGVhZGluZ0JvdHRvbSI6MTg2LjUzMTI1LCJoZWFkaW5nSGl0Ijp0cnVlfQ=="
+                    },
+                    {
+                      "name": "browser-document-archive.png-table-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJvd25lcldpZHRoIjo1NDYsInRhYmxlV2lkdGgiOjE2MDAsImhlYWRlcldpZHRoIjo4MH0="
+                    },
+                    {
+                      "name": "browser-document-archive.png-after-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJsZWZ0IjoxMTgsInJpZ2h0Ijo3MDYsInZpZXdwb3J0Ijo3NjAsInZpZXdwb3J0SGVpZ2h0IjoxNjAwLCJzY3JvbGxXaWR0aCI6NTg2LCJjbGllbnRXaWR0aCI6NTg2LCJvd25lckxlZnQiOjY0LCJvd25lclJpZ2h0Ijo3NjAsInRvcGJhckJvdHRvbSI6MTI3LCJoZWFkaW5nTGVmdCI6MTM5LCJoZWFkaW5nUmlnaHQiOjY4NSwiaGVhZGluZ1RvcCI6MTYzLjczNDM3NSwiaGVhZGluZ0JvdHRvbSI6MTg2LjUzMTI1LCJoZWFkaW5nSGl0Ijp0cnVlfQ=="
+                    },
+                    {
+                      "name": "browser-document-archive.png-geometry",
+                      "contentType": "application/json",
+                      "body": "eyJiZWZvcmUiOnsibGVmdCI6MTE4LCJyaWdodCI6NzA2LCJ2aWV3cG9ydCI6NzYwLCJ2aWV3cG9ydEhlaWdodCI6MTYwMCwic2Nyb2xsV2lkdGgiOjU4NiwiY2xpZW50V2lkdGgiOjU4Niwib3duZXJMZWZ0Ijo2NCwib3duZXJSaWdodCI6NzYwLCJ0b3BiYXJCb3R0b20iOjEyNywiaGVhZGluZ0xlZnQiOjEzOSwiaGVhZGluZ1JpZ2h0Ijo2ODUsImhlYWRpbmdUb3AiOjE2My43MzQzNzUsImhlYWRpbmdCb3R0b20iOjE4Ni41MzEyNSwiaGVhZGluZ0hpdCI6dHJ1ZX0sImFmdGVyIjp7ImxlZnQiOjExOCwicmlnaHQiOjcwNiwidmlld3BvcnQiOjc2MCwidmlld3BvcnRIZWlnaHQiOjE2MDAsInNjcm9sbFdpZHRoIjo1ODYsImNsaWVudFdpZHRoIjo1ODYsIm93bmVyTGVmdCI6NjQsIm93bmVyUmlnaHQiOjc2MCwidG9wYmFyQm90dG9tIjoxMjcsImhlYWRpbmdMZWZ0IjoxMzksImhlYWRpbmdSaWdodCI6Njg1LCJoZWFkaW5nVG9wIjoxNjMuNzM0Mzc1LCJoZWFkaW5nQm90dG9tIjoxODYuNTMxMjUsImhlYWRpbmdIaXQiOnRydWV9fQ=="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "7bc46617622f6848ab02-5f2c5b1694731df4ad9b",
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "line": 398,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-05T11:36:41.132Z",
+    "duration": 65497.609000000004,
+    "expected": 7,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

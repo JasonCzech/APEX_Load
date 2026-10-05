@@ -407,12 +407,15 @@ func verifyCollectionCacheForCleanup(ctx context.Context, source *cachedArchiveS
 	if err != nil {
 		return err
 	}
-	entries, readErr := directory.ReadDir(5)
+	entries, readErr := directory.ReadDir(6)
 	_ = directory.Close()
 	if readErr != nil && readErr != io.EOF {
 		return readErr
 	}
-	expected := map[string]bool{"receipt.json": true, "transactions.jsonl": true, "resources.jsonl": true, "interval_summaries.jsonl": true}
+	expected := map[string]bool{"receipt.json": true}
+	for _, descriptor := range source.receipt.Files {
+		expected[descriptor.Name] = true
+	}
 	if len(entries) != len(expected) {
 		return errors.New("collection cache contains unexpected files")
 	}

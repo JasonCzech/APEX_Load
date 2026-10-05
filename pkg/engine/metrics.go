@@ -13,6 +13,7 @@ import (
 )
 
 type MetricsCollector struct {
+	browserDocuments                     engineBrowserDocuments
 	messagingProgress                    engineMessagingProgress
 	timingObserver                       func(ResultTiming)
 	initializationObserver               func(int)
@@ -102,6 +103,7 @@ type MetricsSnapshot struct {
 	ByProperty                 map[string]*ActionMetrics `json:"by_property,omitempty"`
 	ByRegion                   map[string]*ActionMetrics `json:"by_region,omitempty"`
 	ByGroup                    map[string]*GroupMetrics
+	BrowserDocuments           *protocol.BrowserDocumentSummary       `json:"browser_documents,omitempty"`
 	Browser                    *BrowserMetricsSummary                 `json:"browser,omitempty"`
 	BrowserByDevice            map[string]*BrowserDeviceMetrics       `json:"browser_by_device,omitempty"`
 	MessagingProgress          *protocol.MessagingProgressSnapshot    `json:"messaging_progress,omitempty"`
@@ -429,7 +431,9 @@ func (mc *MetricsCollector) Stop() {
 			close(mc.aggregateDone)
 		})
 		if notStarted {
-			if mc.messagingProgress.sample(true) {
+			browserChanged := mc.browserDocuments.sample(true)
+			messagingChanged := mc.messagingProgress.sample(true)
+			if browserChanged || messagingChanged {
 				mc.publishSnapshot(nil, time.Nanosecond)
 			}
 			return
@@ -446,6 +450,7 @@ func (mc *MetricsCollector) LatestSnapshot() (MetricsSnapshot, bool) {
 		return MetricsSnapshot{}, false
 	}
 	snapshot := mc.snapshots[len(mc.snapshots)-1]
+	snapshot.BrowserDocuments = snapshot.BrowserDocuments.Clone()
 	snapshot.MessagingProgress = snapshot.MessagingProgress.Clone()
 	return snapshot, true
 }
@@ -557,7 +562,8 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 						publishBatch(time.Now(), false)
 					}
 				default:
-					progressChanged := mc.messagingProgress.sample(true)
+					browserChanged := mc.browserDocuments.sample(true)
+					progressChanged := mc.messagingProgress.sample(true) || browserChanged
 					publishBatch(time.Now(), mc.activeGaugeDirty.Swap(false) || progressChanged)
 					return
 				}
@@ -574,7 +580,8 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 				}
 			}
 		process:
-			progressChanged := mc.messagingProgress.sample(false)
+			browserChanged := mc.browserDocuments.sample(false)
+			progressChanged := mc.messagingProgress.sample(false) || browserChanged
 			activeGaugeChanged := mc.activeGaugeDirty.Swap(false)
 			// An empty window still gets a zero-valued, correctly-timestamped
 			// snapshot while the run is live (active VUsers) or during a
@@ -609,6 +616,7 @@ func (mc *MetricsCollector) publishSnapshot(batch []*protocol.Result, window tim
 		}
 	}
 	snap := mc.computeSnapshot(batch, window)
+	snap.BrowserDocuments = mc.browserDocuments.snapshot()
 	snap.MessagingProgress = mc.messagingProgress.snapshot()
 	if mc.resCollector != nil {
 		snap.Resources = mc.resCollector.Collect()

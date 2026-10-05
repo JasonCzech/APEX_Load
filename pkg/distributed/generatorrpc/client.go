@@ -162,6 +162,8 @@ type PauseResult struct {
 }
 
 type MetricsBatch struct {
+	BrowserDocuments           *protocol.BrowserDocumentSummary
+	BrowserDocumentsVersion    uint32
 	MessagingProgress          *protocol.MessagingProgressSnapshot
 	MessagingProgressVersion   uint32
 	TestID                     string
@@ -1546,6 +1548,8 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 	}
 
 	return MetricsBatch{
+		BrowserDocuments:           browserDocumentsFromJSON(batch.GetBrowserDocumentSummaryJson(), batch.GetBrowserDocumentSummaryVersion()),
+		BrowserDocumentsVersion:    batch.GetBrowserDocumentSummaryVersion(),
 		MessagingProgress:          messagingProgressFromJSON(batch.GetMessagingProgressJson(), batch.GetMessagingProgressVersion()),
 		MessagingProgressVersion:   batch.GetMessagingProgressVersion(),
 		TestID:                     batch.GetTestId(),

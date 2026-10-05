@@ -3,6 +3,7 @@ package browser
 import "github.com/mxschmitt/playwright-go"
 
 func (b *Browser) close() {
+	b.censorDocumentEvidence(nil, "context_closed")
 	b.mu.Lock()
 	b.closing = true
 	requestPolicyStop := b.requestPolicyStop

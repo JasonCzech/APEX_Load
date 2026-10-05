@@ -1,0 +1,7 @@
+=== RUN   TestBrowserResourceActualCompletionAcrossActions
+=== RUN   TestBrowserResourceActualCompletionAcrossActions/webkit
+    document_actual_integration_test.go:330: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+--- PASS: TestBrowserResourceActualCompletionAcrossActions (1.14s)
+    --- PASS: TestBrowserResourceActualCompletionAcrossActions/webkit (1.14s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/protocol/browser	1.251s

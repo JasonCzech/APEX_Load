@@ -1,0 +1,775 @@
+
+> apexload-dashboard@0.1.0 test:cycle
+> npm run typecheck && npm run lint && npm test && npm run build && npm run test:workflows
+
+
+> apexload-dashboard@0.1.0 typecheck
+> tsc --noEmit --pretty false -p tsconfig.json && tsc --noEmit --pretty false -p tsconfig.node.json
+
+
+> apexload-dashboard@0.1.0 lint
+> eslint . --max-warnings=0
+
+
+> apexload-dashboard@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard
+
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: Window's scrollTo() method
+Not implemented: navigation to another Document
+
+ Test Files  513 passed (513)
+      Tests  5687 passed (5687)
+   Start at  07:39:17
+   Duration  228.50s (transform 8.49s, setup 3.52s, import 18.34s, tests 81.60s, environment 91.13s)
+
+
+> apexload-dashboard@0.1.0 build
+> tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && vite build --outDir ../pkg/api/static --emptyOutDir
+
+vite v8.1.4 building client environment for production...
+[2Ktransforming...✓ 1429 modules transformed.
+rendering chunks...
+computing gzip size...
+../pkg/api/static/index.html                                               1.44 kB │ gzip:   0.51 kB
+../pkg/api/static/assets/dsl.schema-tiOIp_Tg.json                        289.31 kB │ gzip:  26.27 kB
+../pkg/api/static/assets/SeriesChartExport-DtzJwBBE.css                    0.19 kB │ gzip:   0.14 kB
+../pkg/api/static/assets/SourceCodeViewer-ItWiInDB.css                     0.36 kB │ gzip:   0.20 kB
+../pkg/api/static/assets/useLibraryPagination-B1Y_Bhrs.css                 0.49 kB │ gzip:   0.28 kB
+../pkg/api/static/assets/ConfirmRunActionModal-BX9Zdhbi.css                0.50 kB │ gzip:   0.27 kB
+../pkg/api/static/assets/ScriptsPage-BdLCWmJ_.css                          0.53 kB │ gzip:   0.26 kB
+../pkg/api/static/assets/StatusBadge-B490_RqN.css                          0.60 kB │ gzip:   0.30 kB
+../pkg/api/static/assets/RecordingEnvironmentReview-CEhy5ApB.css           0.71 kB │ gzip:   0.32 kB
+../pkg/api/static/assets/ImportIssueSeverityTag-BiEGrRpe.css               0.80 kB │ gzip:   0.36 kB
+../pkg/api/static/assets/ImportWorkflowGuide-BJLDAho0.css                  0.81 kB │ gzip:   0.36 kB
+../pkg/api/static/assets/SalesforceCorrelationReview-BKHifG9M.css          0.82 kB │ gzip:   0.31 kB
+../pkg/api/static/assets/ObjectHistory-D9eJ_IIg.css                        0.83 kB │ gzip:   0.37 kB
+../pkg/api/static/assets/ImportCoverageButton-BYNvbRJ4.css                 1.05 kB │ gzip:   0.46 kB
+../pkg/api/static/assets/ImportDropzone-CG8q9bYn.css                       1.10 kB │ gzip:   0.46 kB
+../pkg/api/static/assets/ResultsPage-DgC0LnIv.css                          1.15 kB │ gzip:   0.48 kB
+../pkg/api/static/assets/AuraOutcomeReview-UBdX_Vah.css                    1.27 kB │ gzip:   0.48 kB
+../pkg/api/static/assets/ApplicationRepositoryPage-C1WLl1n0.css            1.30 kB │ gzip:   0.49 kB
+../pkg/api/static/assets/SettingsPage-h8xGlPcr.css                         1.34 kB │ gzip:   0.50 kB
+../pkg/api/static/assets/ImportReviewTabs--_VrLDSs.css                     1.48 kB │ gzip:   0.57 kB
+../pkg/api/static/assets/DurationField-B_ub1sLA.css                        1.56 kB │ gzip:   0.58 kB
+../pkg/api/static/assets/ProtocolAssetImport-CFaFnO7b.css                  1.66 kB │ gzip:   0.58 kB
+../pkg/api/static/assets/ConfirmDestructiveModal-CxLQQ3xI.css              1.72 kB │ gzip:   0.61 kB
+../pkg/api/static/assets/ScriptSecretBindingsDialog-Cc10Y8YI.css           1.73 kB │ gzip:   0.62 kB
+../pkg/api/static/assets/CloudTestParityDashboard-4r_r3ASn.css             1.76 kB │ gzip:   0.61 kB
+../pkg/api/static/assets/ImportConversionDetails-DLyZ8JSc.css              1.82 kB │ gzip:   0.59 kB
+../pkg/api/static/assets/RunMonitoring-vXAl1K3b.css                        1.86 kB │ gzip:   0.39 kB
+../pkg/api/static/assets/IssueDetailsDialog-DQB9nOsl.css                   1.92 kB │ gzip:   0.75 kB
+../pkg/api/static/assets/ImportDestinationFolder-CK9LkLXC.css              1.98 kB │ gzip:   0.58 kB
+../pkg/api/static/assets/fleetCatalogModel-w4HN7506.css                    2.00 kB │ gzip:   0.67 kB
+../pkg/api/static/assets/ReplayPreflightCard-D0yVG4Nf.css                  2.15 kB │ gzip:   0.69 kB
+../pkg/api/static/assets/ScriptImportReview-BbAOD1v2.css                   2.48 kB │ gzip:   0.70 kB
+../pkg/api/static/assets/dropIngestFeedback-DUUA4QtW.css                   2.80 kB │ gzip:   0.95 kB
+../pkg/api/static/assets/goalConfigValidation-BE7PUXFe.css                 3.17 kB │ gzip:   0.78 kB
+../pkg/api/static/assets/TestExecution-ClZvYj3Z.css                        3.33 kB │ gzip:   0.94 kB
+../pkg/api/static/assets/NewTestPage-BNQrlDwi.css                          4.11 kB │ gzip:   1.03 kB
+../pkg/api/static/assets/ParameterizationReview-DpuvOWBY.css               4.46 kB │ gzip:   1.09 kB
+../pkg/api/static/assets/TestHub-DLU7hNkh.css                              4.53 kB │ gzip:   1.26 kB
+../pkg/api/static/assets/ResourceSnapshotList-ChyqeYnU.css                 4.70 kB │ gzip:   1.28 kB
+../pkg/api/static/assets/MonitoringPage-CStp8bo8.css                       4.79 kB │ gzip:   1.26 kB
+../pkg/api/static/assets/useApiGuideTopbarContribution-DT3vxhYt.css        6.28 kB │ gzip:   1.69 kB
+../pkg/api/static/assets/ImportReviewWorkspace-D9-buGdT.css                6.66 kB │ gzip:   1.49 kB
+../pkg/api/static/assets/parityPanels-CUViZcrB.css                         8.17 kB │ gzip:   1.91 kB
+../pkg/api/static/assets/CreateTestModal-DJV6g75s.css                      9.44 kB │ gzip:   1.94 kB
+../pkg/api/static/assets/TransactionResponseTimeSLATable-D7oEAnzg.css     10.63 kB │ gzip:   2.63 kB
+../pkg/api/static/assets/ux-4nFlWYWF.css                                  12.18 kB │ gzip:   2.77 kB
+../pkg/api/static/assets/SampleScriptImport-Bd-FtVc2.css                  12.29 kB │ gzip:   2.20 kB
+../pkg/api/static/assets/protectedImportSession-_V-PzXwU.css              12.94 kB │ gzip:   2.71 kB
+../pkg/api/static/assets/SourceMappingReview-OkUiA-bE.css                 13.84 kB │ gzip:   2.90 kB
+../pkg/api/static/assets/ScriptImportReview-D2SjkAKU.css                  13.94 kB │ gzip:   2.49 kB
+../pkg/api/static/assets/BrunoImport-B0j0fHDb.css                         20.93 kB │ gzip:   3.82 kB
+../pkg/api/static/assets/RunReportPage-BBAvd8_A.css                       21.86 kB │ gzip:   4.30 kB
+../pkg/api/static/assets/BrowserRecorderControlPanel-BgO6GJuL.css         25.17 kB │ gzip:   4.52 kB
+../pkg/api/static/assets/DashboardPage-BUJetac8.css                       34.89 kB │ gzip:   5.98 kB
+../pkg/api/static/assets/EnterpriseArchiveImport-Biyr4fMF.css             35.13 kB │ gzip:   6.30 kB
+../pkg/api/static/assets/TestHub-QIM6J8jd.css                             45.99 kB │ gzip:   7.24 kB
+../pkg/api/static/assets/CommandCenterPrototype-BVgBZLMm.css              50.56 kB │ gzip:   8.18 kB
+../pkg/api/static/assets/TestExecution-D6rN6Udo.css                       84.61 kB │ gzip:  13.21 kB
+../pkg/api/static/assets/ScriptEditor-C0zCPHev.css                       189.35 kB │ gzip:  28.49 kB
+../pkg/api/static/assets/index-DTqckkAg.css                              224.35 kB │ gzip:  36.30 kB
+../pkg/api/static/assets/archiveHistorySampling-5QnVuSSo.js                0.02 kB │ gzip:   0.04 kB
+../pkg/api/static/assets/importSaveUtils-DR2h-ndZ.js                       0.13 kB │ gzip:   0.12 kB
+../pkg/api/static/assets/chartTooltipTheme-BUAhhHiK.js                     0.23 kB │ gzip:   0.17 kB
+../pkg/api/static/assets/RepositoryGuidePage-BBnROO5r.js                   0.25 kB │ gzip:   0.20 kB
+../pkg/api/static/assets/ImportIssueSeverityTag-dXUYI9H0.js                0.26 kB │ gzip:   0.22 kB
+../pkg/api/static/assets/SortIndicator-DqNf3sEA.js                         0.28 kB │ gzip:   0.22 kB
+../pkg/api/static/assets/browserRuntimeSummary-sXEBIPbd.js                 0.33 kB │ gzip:   0.23 kB
+../pkg/api/static/assets/projectSecretsNavigation-DOhsHwme.js              0.33 kB │ gzip:   0.23 kB
+../pkg/api/static/assets/schedulingCatalogModel-BN2Hw9v1.js                0.34 kB │ gzip:   0.21 kB
+../pkg/api/static/assets/accessDestinations-DlVocFYc.js                    0.37 kB │ gzip:   0.26 kB
+../pkg/api/static/assets/ImportReviewSectionHeader-Dj73Knvp.js             0.40 kB │ gzip:   0.23 kB
+../pkg/api/static/assets/SortHeader-DPQEi_su.js                            0.44 kB │ gzip:   0.31 kB
+../pkg/api/static/assets/LibraryToolbar-BUU2RcQM.js                        0.52 kB │ gzip:   0.28 kB
+../pkg/api/static/assets/salesforceReviewSummary-CRDWwiDW.js               0.59 kB │ gzip:   0.33 kB
+../pkg/api/static/assets/catalogPagination-tWt7GjCl.js                     0.61 kB │ gzip:   0.35 kB
+../pkg/api/static/assets/SecondsFromMillisecondsInput-DSYNEPDf.js          0.61 kB │ gzip:   0.42 kB
+../pkg/api/static/assets/brunoFolderOptions-CoUowwa5.js                    0.62 kB │ gzip:   0.38 kB
+../pkg/api/static/assets/importReviewGeneration-POlL07WX.js                0.64 kB │ gzip:   0.39 kB
+../pkg/api/static/assets/StatusBadge-Dmdm5fyU.js                           0.64 kB │ gzip:   0.40 kB
+../pkg/api/static/assets/soapFaultUtils-DoAHnnnm.js                        0.64 kB │ gzip:   0.29 kB
+../pkg/api/static/assets/PageViewToggle-BkIl88-F.js                        0.68 kB │ gzip:   0.42 kB
+../pkg/api/static/assets/rolldown-runtime-QTnfLwEv.js                      0.69 kB │ gzip:   0.42 kB
+../pkg/api/static/assets/ImportSaveConfirmation-CbbnNlzb.js                0.70 kB │ gzip:   0.39 kB
+../pkg/api/static/assets/PodCapacityMeter-Bk1trSR7.js                      0.71 kB │ gzip:   0.42 kB
+../pkg/api/static/assets/apiGuideNavigation-CewZNyd0.js                    0.75 kB │ gzip:   0.35 kB
+../pkg/api/static/assets/ImportConversionDetails-v4EyrNZA.js               0.77 kB │ gzip:   0.38 kB
+../pkg/api/static/assets/AccessNavigation-oLzMzl6m.js                      0.79 kB │ gzip:   0.43 kB
+../pkg/api/static/assets/TabList-DL2DKZv0.js                               0.81 kB │ gzip:   0.49 kB
+../pkg/api/static/assets/testStatusUtils-p-ZKDSyN.js                       0.82 kB │ gzip:   0.44 kB
+../pkg/api/static/assets/codeLineWrapPreference-Bgf3iwu4.js                0.82 kB │ gzip:   0.43 kB
+../pkg/api/static/assets/ImportWorkflowGuide-B1biu1Sc.js                   0.86 kB │ gzip:   0.51 kB
+../pkg/api/static/assets/PanelToggle-DIO-xtU3.js                           0.93 kB │ gzip:   0.57 kB
+../pkg/api/static/assets/ObjectArchiveControls-DGYJ5heK.js                 0.94 kB │ gzip:   0.59 kB
+../pkg/api/static/assets/reportPresentation-BdFNY_WH.js                    0.95 kB │ gzip:   0.48 kB
+../pkg/api/static/assets/contentFingerprint-iGP11c2_.js                    0.97 kB │ gzip:   0.57 kB
+../pkg/api/static/assets/libraryFederationUtils-CWH23TFG.js                1.06 kB │ gzip:   0.58 kB
+../pkg/api/static/assets/http-version-model-CLExTfAQ.js                    1.09 kB │ gzip:   0.51 kB
+../pkg/api/static/assets/RepairSuggestionList-D-9yhRfh.js                  1.10 kB │ gzip:   0.53 kB
+../pkg/api/static/assets/desktopBridge-BkhkaRhX.js                         1.19 kB │ gzip:   0.51 kB
+../pkg/api/static/assets/SecretReferenceValueControl-CqoJ8c0B.js           1.28 kB │ gzip:   0.62 kB
+../pkg/api/static/assets/ImportCoverageButton-bg6gnFYe.js                  1.29 kB │ gzip:   0.58 kB
+../pkg/api/static/assets/credentialPreviewPolicy-BG2-ANtk.js               1.34 kB │ gzip:   0.67 kB
+../pkg/api/static/assets/useConfluenceApi-DHpDPSgh.js                      1.37 kB │ gzip:   0.45 kB
+../pkg/api/static/assets/ImportReviewTabs-DvvlzpB-.js                      1.47 kB │ gzip:   0.73 kB
+../pkg/api/static/assets/useLibraryPagination-BO-MEO-1.js                  1.48 kB │ gzip:   0.69 kB
+../pkg/api/static/assets/executionPresentation-DWyUijaC.js                 1.54 kB │ gzip:   0.70 kB
+../pkg/api/static/assets/sourceSecretSession-BnmeYFpE.js                   1.57 kB │ gzip:   0.72 kB
+../pkg/api/static/assets/sourceSecretSessionLifecycle-ByLYxMcp.js          1.57 kB │ gzip:   0.68 kB
+../pkg/api/static/assets/monitorProviderModel-Bqor7OQj.js                  1.58 kB │ gzip:   0.65 kB
+../pkg/api/static/assets/confirmAction-B9XzvIv0.js                         1.66 kB │ gzip:   0.77 kB
+../pkg/api/static/assets/testCatalogPagination-CISUYoI-.js                 1.67 kB │ gzip:   0.66 kB
+../pkg/api/static/assets/observerGroupModel-IGUhoNKX.js                    1.73 kB │ gzip:   0.75 kB
+../pkg/api/static/assets/ThinkTimeMultiplierInput-BroN8RSM.js              1.76 kB │ gzip:   0.85 kB
+../pkg/api/static/assets/DurationField-DsvqHQUm.js                         1.84 kB │ gzip:   0.91 kB
+../pkg/api/static/assets/useGitHubApi-Fu3slkCB.js                          1.84 kB │ gzip:   0.74 kB
+../pkg/api/static/assets/secretBindingUtils-B0n1oK74.js                    1.87 kB │ gzip:   0.87 kB
+../pkg/api/static/assets/dropIngestFeedback-D60WP_yV.js                    2.02 kB │ gzip:   0.95 kB
+../pkg/api/static/assets/trafficProfilePreviewModel-5QPhLZjV.js            2.09 kB │ gzip:   0.96 kB
+../pkg/api/static/assets/thinkTimeConfig-hLK8W9Iq.js                       2.11 kB │ gzip:   0.84 kB
+../pkg/api/static/assets/repositoryGuideMarkdown-DcMa8ib6.js               2.31 kB │ gzip:   1.03 kB
+../pkg/api/static/assets/monitorTimelineModel-gjPKnqqP.js                  2.37 kB │ gzip:   1.02 kB
+../pkg/api/static/assets/YAMLImportChooser-C4YXndzF.js                     2.42 kB │ gzip:   0.97 kB
+../pkg/api/static/assets/SourceCodeViewer-DBB7i_OQ.js                      2.43 kB │ gzip:   1.24 kB
+../pkg/api/static/assets/timeUtils-Df7WRUWg.js                             2.60 kB │ gzip:   1.17 kB
+../pkg/api/static/assets/UserSettingsPage-DnKwL_tO.js                      2.66 kB │ gzip:   1.24 kB
+../pkg/api/static/assets/ConfirmDestructiveModal-68H2m8BI.js               2.70 kB │ gzip:   1.07 kB
+../pkg/api/static/assets/captureConnectionModel-75-cnkGL.js                2.79 kB │ gzip:   0.94 kB
+../pkg/api/static/assets/IssueDetailsDialog-BtN_XOmF.js                    2.82 kB │ gzip:   1.17 kB
+../pkg/api/static/assets/DesktopApiResourceLink-e76_975e.js                2.85 kB │ gzip:   1.31 kB
+../pkg/api/static/assets/ImportDropzone-B1K3B7in.js                        3.26 kB │ gzip:   1.47 kB
+../pkg/api/static/assets/settingsSectionLayout-P5B6lYMx.js                 3.35 kB │ gzip:   1.19 kB
+../pkg/api/static/assets/MarkdownRenderer-D_qp978-.js                      3.37 kB │ gzip:   1.43 kB
+../pkg/api/static/assets/prometheusConnectionModel-DXHZzmvh.js             3.99 kB │ gzip:   1.56 kB
+../pkg/api/static/assets/ObjectHistory-kldVhCtD.js                         4.04 kB │ gzip:   1.57 kB
+../pkg/api/static/assets/CaptureSelectionHelp-_aIDD2V3.js                  4.04 kB │ gzip:   1.72 kB
+../pkg/api/static/assets/ActivityPage-D-N-glXY.js                          4.05 kB │ gzip:   1.43 kB
+../pkg/api/static/assets/runReportModel-qEPKAaEk.js                        4.30 kB │ gzip:   1.74 kB
+../pkg/api/static/assets/PersonalSettings-Czje413l.js                      4.59 kB │ gzip:   1.62 kB
+../pkg/api/static/assets/CloudTestParityDashboard-BGTnTJTA.js              4.65 kB │ gzip:   1.65 kB
+../pkg/api/static/assets/settingsPageFormatters-CQ_MU9wo.js                4.78 kB │ gzip:   1.83 kB
+../pkg/api/static/assets/ImportDestinationFolder-De6iUdLO.js               5.05 kB │ gzip:   1.94 kB
+../pkg/api/static/assets/SeriesChartExport-Bm-pw9oo.js                     5.14 kB │ gzip:   2.29 kB
+../pkg/api/static/assets/LinkedCodePane-C9gydrxA.js                        5.15 kB │ gzip:   2.40 kB
+../pkg/api/static/assets/loadImpactModel-D5Ccnrne.js                       5.15 kB │ gzip:   1.83 kB
+../pkg/api/static/assets/README-CExAgoH0.js                                5.43 kB │ gzip:   2.43 kB
+../pkg/api/static/assets/newTestScheduleFormat-BluT_3C1.js                 5.61 kB │ gzip:   2.32 kB
+../pkg/api/static/assets/scriptDraftFactories-Ba-auNtB.js                  6.11 kB │ gzip:   1.77 kB
+../pkg/api/static/assets/RecordingEnvironmentReview-lwEx2WTV.js            6.41 kB │ gzip:   2.06 kB
+../pkg/api/static/assets/README-BlQhA3fH.js                                6.56 kB │ gzip:   2.58 kB
+../pkg/api/static/assets/apiClient-BHO3_V36.js                             7.01 kB │ gzip:   2.86 kB
+../pkg/api/static/assets/README-DTgI1E_t.js                                7.02 kB │ gzip:   2.64 kB
+../pkg/api/static/assets/scenarioDraftUtils-PWi4pQQY.js                    7.06 kB │ gzip:   2.19 kB
+../pkg/api/static/assets/BrowserReplayProgress-2yqQCI68.js                 7.31 kB │ gzip:   2.55 kB
+../pkg/api/static/assets/ApiGuidePage-Di-DV1lA.js                          7.37 kB │ gzip:   3.27 kB
+../pkg/api/static/assets/README-Do7TAtmp.js                                7.64 kB │ gzip:   3.47 kB
+../pkg/api/static/assets/ACCESS_SURFACES-muvlJqac.js                       7.83 kB │ gzip:   3.40 kB
+../pkg/api/static/assets/OracleEBusinessReviewImport-CqwruNNx.js           8.07 kB │ gzip:   3.03 kB
+../pkg/api/static/assets/useSystemApi-CXwAx-xf.js                          8.68 kB │ gzip:   2.40 kB
+../pkg/api/static/assets/errorUtils-CAMAVZM4.js                            9.16 kB │ gzip:   3.69 kB
+../pkg/api/static/assets/README-qoqbi6C4.js                                9.17 kB │ gzip:   3.31 kB
+../pkg/api/static/assets/AuraOutcomeReview-Bq3GTBak.js                     9.38 kB │ gzip:   2.85 kB
+../pkg/api/static/assets/NewTestReadiness-DSReVagH.js                      9.62 kB │ gzip:   3.36 kB
+../pkg/api/static/assets/TransactionResponseTimeSLASettings-ByotOBhU.js    9.66 kB │ gzip:   2.28 kB
+../pkg/api/static/assets/apexDslSemanticHighlighting-CSRikr1m.js          10.31 kB │ gzip:   3.18 kB
+../pkg/api/static/assets/AuditEventTable-BzdF53u7.js                      11.29 kB │ gzip:   3.86 kB
+../pkg/api/static/assets/PrometheusRunEvidence-DO3P0E6A.js                11.29 kB │ gzip:   4.02 kB
+../pkg/api/static/assets/recording-agent-BwInhde1.js                      11.39 kB │ gzip:   4.84 kB
+../pkg/api/static/assets/SalesforceCorrelationReview-CrsAgPH2.js          11.40 kB │ gzip:   3.34 kB
+../pkg/api/static/assets/BrowserBreakdownChart-DhdhOyHA.js                11.47 kB │ gzip:   4.31 kB
+../pkg/api/static/assets/ScriptSecretBindingsDialog-D3x6lwyU.js           11.55 kB │ gzip:   4.20 kB
+../pkg/api/static/assets/ImportIssueWorkspace-B73WZKnz.js                 11.83 kB │ gzip:   4.13 kB
+../pkg/api/static/assets/README-DKI4WiOz.js                               11.85 kB │ gzip:   4.94 kB
+../pkg/api/static/assets/LoadImpact3DHeatmap-Bq3jgTBE.js                  12.18 kB │ gzip:   4.48 kB
+../pkg/api/static/assets/commandCenterPrototypeFixtures-B4_yEMbZ.js       12.30 kB │ gzip:   4.04 kB
+../pkg/api/static/assets/ParameterizationReview-CjcIccMl.js               12.50 kB │ gzip:   4.10 kB
+../pkg/api/static/assets/scriptEditorUtils-DroaRJVo.js                    12.61 kB │ gzip:   4.80 kB
+../pkg/api/static/assets/GitHubSyncModal-hO2DUiav.js                      12.66 kB │ gzip:   4.44 kB
+../pkg/api/static/assets/RUNTIME_SETTINGS_PARITY-DK6-x-UZ.js              12.72 kB │ gzip:   5.21 kB
+../pkg/api/static/assets/scriptEditorImportModel-O8K3pxyf.js              12.81 kB │ gzip:   4.57 kB
+../pkg/api/static/assets/ReplayPreflightCard-CWYpS09K.js                  12.94 kB │ gzip:   4.29 kB
+../pkg/api/static/assets/boundedAllSettled-CZMR3NtK.js                    13.47 kB │ gzip:   4.56 kB
+../pkg/api/static/assets/ScriptsAuthoringSurface-X3tWn7Pd.js              13.52 kB │ gzip:   4.31 kB
+../pkg/api/static/assets/SwaggerDocsPage-C2kCKFTf.js                      17.65 kB │ gzip:   5.64 kB
+../pkg/api/static/assets/newTestRunModel-DPA24YZ9.js                      18.70 kB │ gzip:   5.74 kB
+../pkg/api/static/assets/ResourceSnapshotList-DLBVKsvX.js                 18.96 kB │ gzip:   5.80 kB
+../pkg/api/static/assets/scriptEditorRuntimeSettingsModel-DVaNSo9M.js     19.83 kB │ gzip:   6.51 kB
+../pkg/api/static/assets/SCRIPT_DEBUGGER_GUIDE--5Pujxrv.js                20.79 kB │ gzip:   8.37 kB
+../pkg/api/static/assets/ENTERPRISE_PLATFORM_RUNBOOK-Dme5KFBw.js          21.36 kB │ gzip:   7.93 kB
+../pkg/api/static/assets/PrometheusSourceFields-COfRgRh4.js               22.25 kB │ gzip:   6.60 kB
+../pkg/api/static/assets/HELP_CENTER-B-RkdVxh.js                          22.54 kB │ gzip:   9.11 kB
+../pkg/api/static/assets/HELP_DSL_OPERATOR_GUIDE-Dd1bgXCB.js              23.61 kB │ gzip:   9.35 kB
+../pkg/api/static/assets/CreateTestModal-DiBYMH77.js                      24.05 kB │ gzip:   7.67 kB
+../pkg/api/static/assets/CICD_INTEGRATION-BNx7y9AD.js                     24.32 kB │ gzip:   9.33 kB
+../pkg/api/static/assets/AUTH_RBAC_OPERATIONS_RUNBOOK-D2xvKMcd.js         26.63 kB │ gzip:  10.65 kB
+../pkg/api/static/assets/useApiGuideTopbarContribution-jeIrY1sc.js        27.82 kB │ gzip:   7.54 kB
+../pkg/api/static/assets/ADMIN_USER_GUIDE-1kiS30LD.js                     28.12 kB │ gzip:  10.84 kB
+../pkg/api/static/assets/README-Bs5T7Kk4.js                               28.17 kB │ gzip:  10.52 kB
+../pkg/api/static/assets/useApi-BxoGGra4.js                               29.05 kB │ gzip:   5.98 kB
+../pkg/api/static/assets/TestExecution-Jw1ykYFr.js                        29.12 kB │ gzip:   8.82 kB
+../pkg/api/static/assets/OBSERVABILITY_INTEGRATIONS-Df5oAz28.js           33.69 kB │ gzip:  12.64 kB
+../pkg/api/static/assets/SampleScriptImport-HA869KIN.js                   34.05 kB │ gzip:  10.71 kB
+../pkg/api/static/assets/PrometheusPanelCard-D1a3yCy5.js                  35.96 kB │ gzip:  11.36 kB
+../pkg/api/static/assets/CLUSTERS_AND_CLOUD-BeECwoD3.js                   36.84 kB │ gzip:  14.16 kB
+../pkg/api/static/assets/protectedImportSession-B6O7f_VB.js               37.23 kB │ gzip:  11.78 kB
+../pkg/api/static/assets/JMeterImport-D11Bkmt6.js                         39.00 kB │ gzip:  11.95 kB
+../pkg/api/static/assets/goalConfigValidation-DoSoQUt8.js                 41.53 kB │ gzip:  11.11 kB
+../pkg/api/static/assets/HttpRequestDefaultsEditor-CPOlO_BF.js            42.69 kB │ gzip:  11.45 kB
+../pkg/api/static/assets/LOADRUNNER_COVERAGE-DIXr1WEk.js                  44.48 kB │ gzip:   9.83 kB
+../pkg/api/static/assets/BrowserRecorderControlPanel-DOW3wNZt.js          45.66 kB │ gzip:  12.95 kB
+../pkg/api/static/assets/ResultsPage-Dc8g2GPW.js                          46.59 kB │ gzip:  13.87 kB
+../pkg/api/static/assets/ApplicationRepositoryPage-lbG80PMc.js            46.95 kB │ gzip:  13.32 kB
+../pkg/api/static/assets/API_USER_GUIDE-trnJ5kUi.js                       50.24 kB │ gzip:  17.12 kB
+../pkg/api/static/assets/useTestApi-C3RFN6WX.js                           51.47 kB │ gzip:  11.28 kB
+../pkg/api/static/assets/APPLICATION_USER_GUIDE-DPOCt8hH.js               57.36 kB │ gzip:  22.00 kB
+../pkg/api/static/assets/fleetCatalogModel-BRpXXigT.js                    66.89 kB │ gzip:  13.44 kB
+../pkg/api/static/assets/PROTOCOL_SUPPORT-ClZiS6fY.js                     70.71 kB │ gzip:  25.77 kB
+../pkg/api/static/assets/ScriptImportReview-fDCBTnHG.js                   71.15 kB │ gzip:  22.34 kB
+../pkg/api/static/assets/ConfirmRunActionModal-DcSGCO_E.js                72.31 kB │ gzip:  20.97 kB
+../pkg/api/static/assets/ProtocolAssetImport-DrbJsCGS.js                  72.34 kB │ gzip:  19.31 kB
+../pkg/api/static/assets/SourceMappingReview-BJ0DyWgL.js                  72.56 kB │ gzip:  21.40 kB
+../pkg/api/static/assets/RunMonitoring-BaQjt-pW.js                        82.43 kB │ gzip:  19.83 kB
+../pkg/api/static/assets/ScriptEditor-CmLNJQvQ.js                         85.10 kB │ gzip:  20.61 kB
+../pkg/api/static/assets/scenarioPayloadUtils-BOubVLGc.js                 88.43 kB │ gzip:  17.76 kB
+../pkg/api/static/assets/AccessPage-DaIVSVRo.js                           88.56 kB │ gzip:  20.74 kB
+../pkg/api/static/assets/BrunoImport-Clo8eQq-.js                          92.85 kB │ gzip:  23.98 kB
+../pkg/api/static/assets/DashboardPage-CYtjJ4gg.js                       100.99 kB │ gzip:  28.39 kB
+../pkg/api/static/assets/RecordingStudio-CtNM-hpd.js                     102.98 kB │ gzip:  24.42 kB
+../pkg/api/static/assets/RunReportPage-D6eqUPBG.js                       112.43 kB │ gzip:  30.82 kB
+../pkg/api/static/assets/CommandCenterPrototype-aGVFjZ5Q.js              127.46 kB │ gzip:  35.11 kB
+../pkg/api/static/assets/DSL_ACTION_REFERENCE-5Vdb4gBL.js                127.60 kB │ gzip:  17.07 kB
+../pkg/api/static/assets/ScriptsPage-KMUgOs7x.js                         132.20 kB │ gzip:  34.55 kB
+../pkg/api/static/assets/NewTestPage-Dej0Ps9W.js                         132.85 kB │ gzip:  31.89 kB
+../pkg/api/static/assets/TestExecution-hBvRCVZp.js                       137.11 kB │ gzip:  35.67 kB
+../pkg/api/static/assets/EnterpriseArchiveImport-C6PIGCzB.js             157.16 kB │ gzip:  44.36 kB
+../pkg/api/static/assets/MonitoringPage-BPFQlmbA.js                      170.16 kB │ gzip:  43.11 kB
+../pkg/api/static/assets/TransactionResponseTimeSLATable-XkwBYj0m.js     171.92 kB │ gzip:  40.84 kB
+../pkg/api/static/assets/index-TgMrNRLi.js                               223.81 kB │ gzip:  66.13 kB
+../pkg/api/static/assets/vendor-codemirror-languages-V5gjv77_.js         231.03 kB │ gzip:  83.34 kB
+../pkg/api/static/assets/vendor-recharts-Ct527rIF.js                     281.12 kB │ gzip:  69.84 kB
+../pkg/api/static/assets/vendor-B_Qv7o7Q.js                              291.51 kB │ gzip:  96.96 kB
+../pkg/api/static/assets/TestHub-CP-TtoMP.js                             307.78 kB │ gzip:  76.44 kB
+../pkg/api/static/assets/vendor-codemirror-core-BpTKujrK.js              392.02 kB │ gzip: 125.81 kB
+../pkg/api/static/assets/SettingsPage-BK-G2_r5.js                        440.39 kB │ gzip:  95.76 kB
+../pkg/api/static/assets/vendor-three-B5Sef2aV.js                        530.51 kB │ gzip: 132.09 kB
+../pkg/api/static/assets/ScriptEditor-DZs9cGtZ.js                        639.05 kB │ gzip: 163.05 kB
+
+✓ built in 472ms
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 550 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+
+> apexload-dashboard@0.1.0 test:workflows
+> ../scripts/run-dashboard-workflows.sh
+
+Building controller...
+Starting controller on http://127.0.0.1:18471 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.miPJmQVCMd)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 243 tests using 1 worker
+
+(node:33551) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓    1 e2e/command-center-details.spec.ts:3:1 › advanced details returns to the same run without losing cockpit edits or graph mode (4.1s)
+  ✓    2 e2e/command-center-details.spec.ts:33:1 › runtime workspace keeps essential metrics readable and settings in an opaque drawer (3.8s)
+  ✓    3 e2e/command-center-hero-metrics.spec.ts:5:1 › [U12 U20] live run summary shows readable averaged throughput and observed/target load (3.1s)
+  ✓    4 e2e/controller-smoke.spec.ts:3:1 › serves the dashboard, an SPA route, and healthy controller endpoints (785ms)
+  ✓    5 e2e/debugger-layout.spec.ts:3:1 › keeps the debug parameter list below the action list when the bottom dock is maximized (1.1s)
+  ✓    6 e2e/tier0-auth.spec.ts:6:1 › lands in the explicit dev-admin workspace with a live connection (442ms)
+  ✓    7 e2e/tier0-bruno-import.spec.ts:68:1 › [U23] Bruno native collection inspection, acknowledgements, and atomic save work on the host platform (1.1s)
+  ✓    8 e2e/tier0-live-metrics.spec.ts:33:1 › [U12] live metrics advance while a run is executing (3.6s)
+  ✓    9 e2e/tier0-live-metrics.spec.ts:57:1 › [U12] the run view renders live metrics for an executing run (2.8s)
+  ✓   10 e2e/tier0-report-results.spec.ts:64:1 › [U16] a finished run produces a report and stays findable in results (4.1s)
+  ✓   11 e2e/tier0-report-results.spec.ts:165:1 › [U16] every report lens renders the same run (2.9s)
+  ✓   12 e2e/tier0-routes.spec.ts:25:1 › [U22] every top-level view renders under a real workspace scope (932ms)
+  ✓   13 e2e/tier0-run-launch.spec.ts:47:1 › [U10] preflight and estimate lead to an immediate launch that reaches RUNNING (1.3s)
+  ✓   14 e2e/tier0-run-lifecycle.spec.ts:57:1 › [U13 U14] a run dismisses confirmation, pauses, resumes, scales, extends, stops, and downloads evidence (6.3s)
+  ✓   15 e2e/tier0-run-lifecycle.spec.ts:157:1 › [U13 U14] abort force-cancels a live run with exact terminal semantics (3.9s)
+  ✓   16 e2e/tier0-scenario-builder.spec.ts:44:1 › [U09] the five-step scenario builder preserves the draft and reviews the saved values (2.3s)
+  ✓   17 e2e/tier0-scenario-builder.spec.ts:132:1 › [U09] canceling unsaved navigation keeps the scenario draft in the builder (1.3s)
+  ✓   18 e2e/tier0-scenario-builder.spec.ts:151:1 › [U09] source switching, runtime scope and save recovery keep the scenario honest (1.5s)
+  ✓   19 e2e/tier0-scenario-builder.spec.ts:225:1 › [U09] script groups fill horizontal rows and stack on narrow screens (2.9s)
+  ✓   20 e2e/tier0-scenario-builder.spec.ts:258:1 › [U09] incomplete browser drafts survive reload without creating scenarios (600ms)
+  ✓   21 e2e/tier0-scenario-builder.spec.ts:279:1 › [U09] CSV schedule suggestions round-trip through preview and scenario storage (836ms)
+  ✓   22 e2e/tier0-scenario-builder.spec.ts:308:1 › [U09] data pools support CSV preview, import and multiple editable bindings (2.0s)
+  ✓   23 e2e/tier0-scenario-builder.spec.ts:337:1 › [U09] narrow picker keeps actions visible and bulk-adds filtered scripts (1.4s)
+  ✓   24 e2e/tier0-script-editor.spec.ts:44:1 › [U21] the imported script editor preserves tab state and saved changes across reopen (1.2s)
+  ✓   25 e2e/tier0-script-editor.spec.ts:144:1 › [U21] a large script renders a usable virtualized action list within a bounded interval (728ms)
+  ✓   26 e2e/tier0-script-import.spec.ts:22:1 › [U05] OpenAPI validation stays dry-run until the reviewed script is committed to the library (972ms)
+  ✓   27 e2e/tier0-workspace.spec.ts:40:1 › the API-created workspace hierarchy is coherent and scoped (9ms)
+  ✓   28 e2e/tier0-workspace.spec.ts:67:1 › the repository view renders a freshly created project (227ms)
+  ✓   29 e2e/tier0-workspace.spec.ts:80:1 › the UI creates and scopes the complete workspace hierarchy (1.5s)
+  ✓   30 e2e/workflow-access.spec.ts:4:1 › Access policy navigation keeps the requested body through links and reloads (2.2s)
+  ✓   31 e2e/workflow-access.spec.ts:58:1 › Access history pages beyond 50 and downloads all matching events (1.0s)
+  ✓   32 e2e/workflow-access.spec.ts:110:1 › Access review opens remediation and renders long identities at narrow widths (1.3s)
+  ✓   33 e2e/workflow-analysis-preparation.spec.ts:89:1 › Parquet upload, mapping, query and deletion remain in project scope (1.7s)
+  ✓   34 e2e/workflow-analysis-preparation.spec.ts:200:1 › preparation readiness can renew and Start sends its immutable revision (563ms)
+  ✓   35 e2e/workflow-analysis-preparation.spec.ts:232:1 › dependency evidence selects the same UTC interval for the monitor overlay (525ms)
+  ✓   36 e2e/workflow-analysis-preparation.spec.ts:257:1 › native project panel saves and reopens through the real dashboard API (692ms)
+  ✓   37 e2e/workflow-analysis-preparation.spec.ts:287:1 › filtered archive panels save, reopen, compare, and inspect an exact time bucket (893ms)
+  ✓   38 e2e/workflow-analysis-preparation.spec.ts:334:1 › grouped archive overlays and filtered live selections save and reopen (1.5s)
+  ✓   39 e2e/workflow-analysis-preparation.spec.ts:395:1 › timestamped run annotations save, reopen and retain delete history (2.5s)
+  ✓   40 e2e/workflow-analysis-preparation.spec.ts:420:1 › retained observation rates save and reopen with elapsed-time units (594ms)
+  ✓   41 e2e/workflow-analysis-preparation.spec.ts:444:1 › messaging management retains exact counts, denied coverage and reload (1.1s)
+  ✓   42 e2e/workflow-analysis-preparation.spec.ts:501:1 › imported comparison preserves both exact identity selectors across save and reopen (1.3s)
+  ✓   43 e2e/workflow-analysis-preparation.spec.ts:592:1 › older analytical peers keep v1 imports usable and refuse v2 identity work without downgrade (586ms)
+  ✓   44 e2e/workflow-application-secrets.spec.ts:5:1 › application settings show the shared secret vault in both auth profiles (326ms)
+  ✓   45 e2e/workflow-archive-references.spec.ts:4:1 › scenario drafts retain archived script references through read-only review (612ms)
+  ✓   46 e2e/workflow-aura-outcomes.spec.ts:35:1 › Aura HAR review exposes HTTP200 failures and missing responses with safe source navigation (887ms)
+  ✓   47 e2e/workflow-aura-outcomes.spec.ts:93:1 › Aura parameter review applies one nested field without changing repeated sibling values (1.2s)
+  ✓   48 e2e/workflow-aura-outcomes.spec.ts:151:1 › native correlation review preserves exact original source navigation through save and reopen (2.7s)
+  ✓   49 e2e/workflow-aura-outcomes.spec.ts:287:1 › correlation diagnosis retains missing-consumer evidence and independent HTTP200 failures (1.4s)
+  ✓   50 e2e/workflow-author-experience.spec.ts:76:1 › Author creates, reverses, validates, edits source and saves without losing context (5.8s)
+  ✓   51 e2e/workflow-authoring.spec.ts:6:1 › [U03 U08] empty setup explains prerequisites and invalid saves do not persist (2.3s)
+  ✓   52 e2e/workflow-authoring.spec.ts:30:3 › [U07] script navigation: Keep editing has exact persistence semantics (1.4s)
+  ✓   53 e2e/workflow-authoring.spec.ts:30:3 › [U07] script navigation: Discard changes has exact persistence semantics (1.5s)
+  ✓   54 e2e/workflow-authoring.spec.ts:30:3 › [U07] script navigation: Save changes has exact persistence semantics (1.4s)
+  ✓   55 e2e/workflow-authoring.spec.ts:51:3 › [U07 U18] failed script save (500) preserves edits and cannot overwrite stored content (789ms)
+  ✓   56 e2e/workflow-authoring.spec.ts:51:3 › [U07 U18] failed script save (409) preserves edits and cannot overwrite stored content (824ms)
+  ✓   57 e2e/workflow-authoring.spec.ts:51:3 › [U07 U18] failed script save (401) preserves edits and cannot overwrite stored content (810ms)
+  ✓   58 e2e/workflow-authoring.spec.ts:75:1 › [U04] project scope and browser history never substitute a similarly named script (781ms)
+  ✓   59 e2e/workflow-authoring.spec.ts:94:1 › [U06] malformed OpenAPI can be replaced and validated without creating a library entry (750ms)
+  ✓   60 e2e/workflow-baseline-comparison.spec.ts:9:1 › baseline workspace selects pins, investigates resources, shares and preserves comparison context (2.8s)
+  ✓   61 e2e/workflow-browser-resource-evidence.spec.ts:5:1 › browser resource evidence filters retained failures and inspects action attribution (570ms)
+  ✓   62 e2e/workflow-browser-resource-evidence.spec.ts:96:1 › live browser legacy summary refuses unavailable values and distinguishes explicit zero without standards qualification (6.7s)
+  ✓   63 e2e/workflow-browser-resource-evidence.spec.ts:141:1 › archived browser legacy summary preserves mixed-cohort gaps in engine CSV and ranks only complete devices (919ms)
+  ✓   64 e2e/workflow-browser-resource-evidence.spec.ts:194:1 › browser results comparison cards preserve exact mixed cohorts and malformed summaries (662ms)
+  ✓   65 e2e/workflow-browser-resource-evidence.spec.ts:358:1 › live document populations preserve overlapping provisional history, actual cohorts and missing-peer coverage (2.6s)
+  ✓   66 e2e/workflow-browser-resource-evidence.spec.ts:398:1 › archive document evidence retains latest pending, censored and unavailable measurements independently from actions (1.2s)
+  ✓   67 e2e/workflow-command-center.spec.ts:6:1 › Command Center supports empty actions, run triage, persistent switching and catalog recovery (1.4s)
+  ✓   68 e2e/workflow-command-center.spec.ts:92:1 › active load observations expire without updates and fresh telemetry clears the warning (814ms)
+  ✓   69 e2e/workflow-command-center.spec.ts:154:1 › analysis load exports retain run identity and distinguish resampled observations (2.4s)
+  ✓   70 e2e/workflow-command-center.spec.ts:190:1 › pause waits for controller confirmation and preserves running state when proof is rejected (3.5s)
+  ✓   71 e2e/workflow-crosscut.spec.ts:8:1 › missing Base URL is a local problem with a focused repair path (1.5s)
+  ✓   72 e2e/workflow-crosscut.spec.ts:30:3 › script catalog retry clears the error and its notice stays below the header at 1440px (424ms)
+  ✓   73 e2e/workflow-crosscut.spec.ts:30:3 › script catalog retry clears the error and its notice stays below the header at 932px (411ms)
+  ✓   74 e2e/workflow-crosscut.spec.ts:51:1 › stopped outcomes and report drill-down agree across populations (2.8s)
+  ✓   75 e2e/workflow-crosscut.spec.ts:93:1 › nested script editor owns title and help and returns the scenario context (619ms)
+  ✓   76 e2e/workflow-dashboard-analysis.spec.ts:4:1 › analysis preserves evidence gaps, saved baselines, filtered deltas and report context (1.1s)
+  ✓   77 e2e/workflow-dashboard-analysis.spec.ts:262:1 › run results labels terminal samples as historical evidence (484ms)
+  ✓   78 e2e/workflow-dashboard-analysis.spec.ts:294:1 › run results distinguishes recorded archive failure and refreshes availability (1.8s)
+  ✓   79 e2e/workflow-dashboard-analysis.spec.ts:373:1 › partial archive sources remain visible beside retained measurements and terminal outcome (478ms)
+  ✓   80 e2e/workflow-dashboard.spec.ts:4:1 › Dashboard preserves queue routing, evidence truth, filters and narrow run details (1.1s)
+  ✓   81 e2e/workflow-dashboard.spec.ts:83:1 › Dashboard labels failed health refreshes stale and recovers independently of run data (20.5s)
+  ✓   82 e2e/workflow-debugger-experience.spec.ts:23:1 › debugger captures successful evidence, diagnoses runtime failure, repairs a draft and retains protocol-correct history (2.3s)
+  ✓   83 e2e/workflow-debugger-experience.spec.ts:113:1 › run-to starts at the beginning and consumes its temporary breakpoint without deleting a permanent breakpoint (890ms)
+  ✓   84 e2e/workflow-debugger-experience.spec.ts:140:1 › failures-only debugger capture preserves fetched resource evidence (1.9s)
+  ✓   85 e2e/workflow-dynatrace.spec.ts:10:1 › Dynatrace native connection verification, collector assignment and discovery show bounded capability results (4.8s)
+  ✓   86 e2e/workflow-dynatrace.spec.ts:72:1 › Dynatrace source editing preserves Classic, Grail and Smartscape selections across executor modes (732ms)
+  ✓   87 e2e/workflow-dynatrace.spec.ts:121:1 › Dynatrace canonical live and archived evidence retain zeros, units, resolution and delayed finalization (3.0s)
+  ✓   88 e2e/workflow-dynatrace.spec.ts:156:1 › Dynatrace terminal criteria preview approved sources and clear superseded series choices (689ms)
+  ✓   89 e2e/workflow-execution-results.spec.ts:6:3 › ended FAILED run preserves Results navigation without an archive (417ms)
+  ✓   90 e2e/workflow-execution-results.spec.ts:6:3 › ended COMPLETE run preserves Results navigation without an archive (411ms)
+  ✓   91 e2e/workflow-execution-results.spec.ts:6:3 › ended ABORTED run preserves Results navigation without an archive (409ms)
+  ✓   92 e2e/workflow-execution.spec.ts:9:1 › [U10 U11] unavailable preflight blocks launch; recovery creates only one run (2.2s)
+  ✓   93 e2e/workflow-execution.spec.ts:40:1 › [U15] held run stays reserved across reload and starts only on explicit action (3.0s)
+  ✓   94 e2e/workflow-execution.spec.ts:61:1 › [U12] disconnect is visible and reconnect resumes the same run (5.1s)
+  ✓   95 e2e/workflow-execution.spec.ts:88:1 › [U17 U16] archive read failure is visible and retry restores the same run evidence (873ms)
+  ✓   96 e2e/workflow-execution.spec.ts:115:1 › [U15] scheduled run preserves its future start across reload without traffic (2.0s)
+  ✓   97 e2e/workflow-http-concurrent.spec.ts:182:1 › HTTP sequence authoring preserves children and steps a concurrent parent-session group through its join barrier (1.6s)
+  ✓   98 e2e/workflow-http-concurrent.spec.ts:223:3 › HTTP sequence controls review and preserve manual execution settings for http/1.1 (728ms)
+  ✓   99 e2e/workflow-http-concurrent.spec.ts:223:3 › HTTP sequence controls review and preserve manual execution settings for http/2 (727ms)
+
+  ✓  100 e2e/workflow-http-concurrent.spec.ts:271:1 › LoadRunner concurrent markers import exact child mappings and replay on the inherited HTTP session (1.6s)
+  ✓  101 e2e/workflow-http-concurrent.spec.ts:318:1 › runtime evidence unavailability hides stale DTO detail, history and exported session JSON (828ms)
+  ✓  102 e2e/workflow-http-version.spec.ts:129:1 › mixed HTTP versions retain request policy, share sessions and expose measured replay versions (2.7s)
+  ✓  103 e2e/workflow-import-labels.spec.ts:7:1 › transaction names survive archive import without requiring secret bindings (1.1s)
+  ✓  104 e2e/workflow-import-source.spec.ts:7:1 › source catalog search and importer guidance stay consistent across formats (2.4s)
+  ✓  105 e2e/workflow-import-source.spec.ts:52:1 › Oracle review clears obsolete findings and never offers a script destination (510ms)
+  ✓  106 e2e/workflow-import-source.spec.ts:82:1 › Postman inspection sends project scope before collection bytes (478ms)
+  ✓  107 e2e/workflow-import-source.spec.ts:104:1 › HAR comparison can be removed and upload errors recover accessibly (554ms)
+  ✓  108 e2e/workflow-import-source.spec.ts:131:1 › JMeter review uses the shared six tabs and retains project scope during upload (2.7s)
+  ✓  109 e2e/workflow-import-source.spec.ts:213:1 › HAR picker accepts captures above 50 MiB and rejects files above 100 MiB (423ms)
+  ✓  110 e2e/workflow-jmeter-fidelity.spec.ts:9:1 › JMeter fidelity review retains blockers and regenerates explicit timestamp and name repairs (1.3s)
+  ✓  111 e2e/workflow-jmeter-fidelity.spec.ts:50:1 › JMeter repaired import saves finite workload and downloads native per-run CSV (3.0s)
+  ✓  112 e2e/workflow-jmeter-fidelity.spec.ts:101:1 › JMeter messaging preview preserves three blocked drafts and workload curves (1.3s)
+  ✓  113 e2e/workflow-library-assignments.spec.ts:4:1 › Library assignments persist, bulk failures recover, and launches require an explicit release (6.3s)
+  -  114 e2e/workflow-library-assignments.spec.ts:96:1 › Viewer cannot change script or scenario assignments
+  ✓  115 e2e/workflow-loadrunner-collection.spec.ts:5:1 › reviews and saves nested VuGen projects independently, retaining failed and Java reviews (2.3s)
+  ✓  116 e2e/workflow-loadrunner-folder.spec.ts:5:1 › imports an unpacked VuGen project folder (690ms)
+  ✓  117 e2e/workflow-loadrunner-review.spec.ts:14:3 › LoadRunner review renders real transaction-labels.zip response (1.8s)
+  ✓  118 e2e/workflow-loadrunner-review.spec.ts:14:3 › LoadRunner review renders real credential-groups.zip response (1.4s)
+  ✓  119 e2e/workflow-loadrunner-review.spec.ts:14:3 › LoadRunner review renders real java-lifecycle.zip response (1.2s)
+  ✓  120 e2e/workflow-loadrunner-review.spec.ts:14:3 › LoadRunner review renders real sap-review.zip response (1.2s)
+  ✓  121 e2e/workflow-loadrunner-review.spec.ts:14:3 › LoadRunner review renders real truclient-review.zip response (1.1s)
+  ✓  122 e2e/workflow-loadrunner-review.spec.ts:166:1 › LoadRunner batch saves ready scripts, stays on import, and accepts another ZIP (2.1s)
+  ✓  123 e2e/workflow-loadrunner-review.spec.ts:232:1 › LoadRunner guided repair previews redacted changes before applying (1.6s)
+  -  124 e2e/workflow-loadrunner-review.spec.ts:303:1 › LoadRunner private acceptance archive groups repeated findings without hiding source locations
+  ✓  125 e2e/workflow-loadrunner-review.spec.ts:346:1 › LoadRunner settings apply inline, retain source evidence, and survive draft save (2.6s)
+  ✓  126 e2e/workflow-loadrunner-review.spec.ts:502:1 › LoadRunner credentials edit and apply in place while preserving protected values (1.5s)
+  ✓  127 e2e/workflow-loadrunner-review.spec.ts:560:1 › LoadRunner percentage think time shows source bounds and saves edited percentages (2.3s)
+  ✓  128 e2e/workflow-loadrunner-review.spec.ts:605:1 › LoadRunner runtime context explains inactive settings and repairs an oversized idle timeout (2.0s)
+  ✓  129 e2e/workflow-loadrunner-review.spec.ts:698:1 › LoadRunner run-logic sections share one category and retain searchable source sections (821ms)
+  ✓  130 e2e/workflow-loadrunner-review.spec.ts:722:1 › unique allocation preview appears only when relevant and explains unavailable protected storage (1.2s)
+  ✓  131 e2e/workflow-loadrunner-review.spec.ts:754:1 › fresh runtime diagnostic import separates capture from dormant source values (1.0s)
+  ✓  132 e2e/workflow-loadrunner-review.spec.ts:784:1 › issue details retain concrete evidence, focus source and apply runtime changes without leaving Review (1.8s)
+  ✓  133 e2e/workflow-loadrunner-review.spec.ts:860:1 › LoadRunner Java JAR attachment follows policy and survives review-session reopen (1.2s)
+  ✓  134 e2e/workflow-local-archive-failure.spec.ts:4:1 › local archive failure preserves completed Results and survives checking again (534ms)
+  ✓  135 e2e/workflow-monitoring.spec.ts:10:1 › AppDynamics connection drafts, saved checks, and discovery preserve credential privacy (5.2s)
+  ✓  136 e2e/workflow-monitoring.spec.ts:56:1 › AppDynamics source editing preserves typed selections for direct and collector collection (2.5s)
+  ✓  137 e2e/workflow-monitoring.spec.ts:106:1 › AppDynamics live and archived evidence preserve delayed state, units and correlation (3.1s)
+  ✓  138 e2e/workflow-monitoring.spec.ts:161:1 › Confluence connection setup follows saved project connection workflow (943ms)
+  ✓  139 e2e/workflow-monitoring.spec.ts:191:1 › archived run report publishes to a selected Confluence connection (2.9s)
+  ✓  140 e2e/workflow-monitoring.spec.ts:219:1 › Monitoring preserves repeated keyboard navigation and calendar context (701ms)
+  ✓  141 e2e/workflow-monitoring.spec.ts:254:1 › Collectors receive a heartbeat while Monitoring remains open (5.7s)
+  ✓  142 e2e/workflow-monitoring.spec.ts:278:1 › ELK connection plumbing is manageable without exposing secret references (1.2s)
+  ✓  143 e2e/workflow-monitoring.spec.ts:336:1 › Dynatrace SaaS connection plumbing is manageable without exposing secret references (1.1s)
+  ✓  144 e2e/workflow-monitoring.spec.ts:376:1 › Kafka management authoring retains scope, sealed-secret policy and revision conflicts through reload (1.5s)
+  ✓  145 e2e/workflow-monitoring.spec.ts:455:1 › Service Bus authoring preserves explicit queue and subscription approval, revisions and narrow layout (1.6s)
+  ✓  146 e2e/workflow-monitoring.spec.ts:562:1 › Solace authoring preserves explicit VPN queue and topic-endpoint approval, revisions and narrow layout (1.7s)
+  ✓  147 e2e/workflow-new-test.spec.ts:5:3 › Scenario builder gates weighted placement for missing infrastructure (613ms)
+  ✓  148 e2e/workflow-new-test.spec.ts:5:3 › Scenario builder gates weighted placement for single-region infrastructure (640ms)
+  ✓  149 e2e/workflow-new-test.spec.ts:5:3 › Scenario builder gates weighted placement for multi-zone infrastructure (1.6s)
+  ✓  150 e2e/workflow-new-test.spec.ts:5:3 › Scenario builder gates weighted placement for multi-region infrastructure (691ms)
+  ✓  151 e2e/workflow-new-test.spec.ts:60:1 › Scenario builder preserves controller continuity and the recovery spare budget (1.9s)
+  ✓  152 e2e/workflow-new-test.spec.ts:99:1 › New Test saves drafts without execution, retains both tabs and validates recurring triggers (2.6s)
+  ✓  153 e2e/workflow-new-test.spec.ts:152:1 › New Test restores the default name after clearing and reselecting the same scenario (516ms)
+  ✓  154 e2e/workflow-new-test.spec.ts:168:1 › New Test exposes editable groups and saves a paused recurring schedule with visible policies (854ms)
+  ✓  155 e2e/workflow-new-test.spec.ts:207:1 › Java group profile survives placement edits and scenario persistence (facade ledger: false) (2.0s)
+  ✓  156 e2e/workflow-new-test.spec.ts:207:1 › Java group profile survives placement edits and scenario persistence (facade ledger: true) (2.1s)
+  ✓  157 e2e/workflow-new-test.spec.ts:277:1 › Live configuration reports prepared Java reservations without opening raw JSON (447ms)
+  ✓  158 e2e/workflow-new-test.spec.ts:302:1 › prepared Event Hubs run displays processor admission and starts with the pinned revision (386ms)
+  ✓  159 e2e/workflow-object-activity.spec.ts:4:1 › archive, restore, dependency admission and retained deleted history (1.4s)
+  ✓  160 e2e/workflow-object-activity.spec.ts:54:1 › saved changes show audit warnings without implying failure (438ms)
+  -  161 e2e/workflow-object-activity.spec.ts:68:1 › project viewers can inspect deleted history but cannot archive or restore
+  ✓  162 e2e/workflow-pod-capacity.spec.ts:5:3 › peak capacity remains distinct from live utilization at 390px (464ms)
+  ✓  163 e2e/workflow-pod-capacity.spec.ts:5:3 › peak capacity remains distinct from live utilization at 1440px (531ms)
+  ✓  164 e2e/workflow-prometheus-monitoring.spec.ts:10:1 › Prometheus target connection drafts keep credentials write-only and expose bounded discovery (5.0s)
+  ✓  165 e2e/workflow-prometheus-monitoring.spec.ts:59:1 › Prometheus target sources preserve labelled typed queries and assigned collection locations (1.2s)
+  ✓  166 e2e/workflow-prometheus-monitoring.spec.ts:127:1 › Prometheus live and archived evidence preserve delayed collection, freshness and gaps (3.1s)
+  ✓  167 e2e/workflow-prometheus-monitoring.spec.ts:178:1 › Grafana adoption resolves variables explicitly and saves a disabled reviewed source (802ms)
+  ✓  168 e2e/workflow-protocol-diagnostics.spec.ts:12:1 › gRPC diagnostics distinguishes unavailable and measured-zero responses in the active run view (3.1s)
+  ✓  169 e2e/workflow-protocol-diagnostics.spec.ts:64:1 › WebSocket diagnostics preserves unavailable ping RTT and matched zero RTT (2.7s)
+  ✓  170 e2e/workflow-protocol-diagnostics.spec.ts:85:1 › messaging diagnostics preserves observed zero, missing acknowledgement and partial coverage (393ms)
+  ✓  171 e2e/workflow-protocol-diagnostics.spec.ts:117:1 › Event Hubs progress preserves exact cursors and unavailable lag during idle windows (2.8s)
+  ✓  172 e2e/workflow-recording-review.spec.ts:8:1 › recording review scopes verification to outputs and invalidates changed conversions (604ms)
+  ✓  173 e2e/workflow-recording-review.spec.ts:46:1 › a narrow browser cockpit keeps assertion evidence and the captured viewport readable (596ms)
+  ✓  174 e2e/workflow-recovery.spec.ts:4:1 › [U22] creation capability failure has an actionable retry that recovers (347ms)
+  ✓  175 e2e/workflow-recovery.spec.ts:16:1 › [U19] unavailable readiness is explicit and real monitoring recovers (527ms)
+  ✓  176 e2e/workflow-recovery.spec.ts:30:3 › [U20] keyboard draft guard and wizard remain reachable at 1440x900 (540ms)
+  ✓  177 e2e/workflow-recovery.spec.ts:30:3 › [U20] keyboard draft guard and wizard remain reachable at 932x1096 (523ms)
+  ✓  178 e2e/workflow-recovery.spec.ts:30:3 › [U20] keyboard draft guard and wizard remain reachable at 1280x720 (511ms)
+  ✓  179 e2e/workflow-recovery.spec.ts:63:1 › [U24] recorder startup failure preserves the target and exposes recovery (1.3s)
+  ✓  180 e2e/workflow-response-content.spec.ts:293:1 › HAR decoded base64 content retains its correlations and real gzip replay extracts a fresh value (1.8s)
+  ✓  181 e2e/workflow-response-content.spec.ts:335:1 › incomplete recorder response source remains a visible execution blocker through save and reopen (1.8s)
+  ✓  182 e2e/workflow-response-content.spec.ts:397:1 › gzip SSE collection extracts sampled events and visibly qualifies the partial response (1.3s)
+  ✓  183 e2e/workflow-runtime-state.spec.ts:176:1 › current paused values and parameter receipts survive inspection without consuming references (3.0s)
+  ✓  184 e2e/workflow-runtime-state.spec.ts:263:1 › foreach receipts retain original row ordinals and restore enclosing bindings after stepping (1.0s)
+  ✓  185 e2e/workflow-runtime-state.spec.ts:310:1 › Run To continues after its breakpoint socket precedes the HTTP acknowledgement (1.0s)
+  ✓  186 e2e/workflow-scenario-composition.spec.ts:4:1 › scenario composition combines group editing with a live preview (955ms)
+  ✓  187 e2e/workflow-scenario-composition.spec.ts:72:1 › guided stepped ramp keeps its pattern editor within the four scenario tabs (656ms)
+  ✓  188 e2e/workflow-scenario-data.spec.ts:4:1 › scenario Data step previews script parameters and restores them after removing a shared pool (852ms)
+  ✓  189 e2e/workflow-scenario-data.spec.ts:54:1 › scenario save and reopen preserves both bindings and attaching another pool appends it (996ms)
+  ✓  190 e2e/workflow-scenario-data.spec.ts:93:1 › legacy browser checkpoint migrates a first-pool replacement through save and reopen (987ms)
+  ✓  191 e2e/workflow-script-editor.spec.ts:7:1 › operator edits the failed nested browser assertion and reruns without losing source fields (869ms)
+  ✓  192 e2e/workflow-script-editor.spec.ts:60:1 › authored script goals survive an unrelated editor save and canonical reopen (1.0s)
+  ✓  193 e2e/workflow-script-folders.spec.ts:4:1 › Operators move scripts individually and in bulk, recover failures, and retain assignments after reload (2.8s)
+  -  194 e2e/workflow-script-folders.spec.ts:66:1 › Viewers cannot move scripts through the library or API
+  ✓  195 e2e/workflow-script-settings.spec.ts:4:1 › runtime evidence uses the imported source treatment and keeps checkbox controls left aligned (1.5s)
+  ✓  196 e2e/workflow-script-settings.spec.ts:98:1 › parameter workspace preserves 4000 rows, references, masked values and runtime settings (4.1s)
+  ✓  197 e2e/workflow-script-settings.spec.ts:216:1 › older imported draft retains its saved snapshot classification until re-import (596ms)
+  ✓  198 e2e/workflow-script-settings.spec.ts:242:1 › property promotion survives capture changes and script save reopen (930ms)
+  ✓  199 e2e/workflow-script-sidebars.spec.ts:4:1 › script sidebars preserve selection, source scope, body editing and Debug options across narrow layouts (1.9s)
+  ✓  200 e2e/workflow-script-sidebars.spec.ts:75:3 › Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 1800px (1.4s)
+  ✓  201 e2e/workflow-script-sidebars.spec.ts:75:3 › Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 1100px (1.4s)
+  ✓  202 e2e/workflow-script-sidebars.spec.ts:75:3 › Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 900px (1.3s)
+  ✓  203 e2e/workflow-script-sidebars.spec.ts:75:3 › Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 700px (1.6s)
+  ✓  204 e2e/workflow-script-sidebars.spec.ts:165:1 › source mapping review decisions survive saving and moved or edited destinations require verified identity (1.7s)
+  ✓  205 e2e/workflow-settings-monitoring.spec.ts:9:3 › Settings navigation and canonical editors at 1024px (1.3s)
+  ✓  206 e2e/workflow-settings-monitoring.spec.ts:9:3 › Settings navigation and canonical editors at 1280px (1.3s)
+  ✓  207 e2e/workflow-settings-monitoring.spec.ts:9:3 › Settings navigation and canonical editors at 1440px (1.3s)
+  ✓  208 e2e/workflow-settings-monitoring.spec.ts:51:1 › settings destination navigation preserves unsaved edits until explicitly discarded (2.5s)
+  ✓  209 e2e/workflow-settings-monitoring.spec.ts:67:1 › infrastructure guide, saved commitments and independent cancel work with keyboard navigation (607ms)
+  ✓  210 e2e/workflow-settings-monitoring.spec.ts:89:1 › project catalog edits, cancels and confirms deletion against persisted workspace data (2.8s)
+  ✓  211 e2e/workflow-settings-monitoring.spec.ts:123:1 › Settings search reveals and focuses each matching personal control (1.4s)
+  ✓  212 e2e/workflow-theme-controls.spec.ts:5:3 › shared controls follow dark including focus and help (1.4s)
+  ✓  213 e2e/workflow-theme-controls.spec.ts:5:3 › shared controls follow light including focus and help (1.4s)
+  ✓  214 e2e/workflow-theme-controls.spec.ts:5:3 › shared controls follow solarized-dark including focus and help (1.4s)
+  ✓  215 e2e/workflow-theme-controls.spec.ts:5:3 › shared controls follow solarized-light including focus and help (1.4s)
+  ✓  216 e2e/workflow-theme-controls.spec.ts:5:3 › shared controls follow monokai-dimmed including focus and help (1.5s)
+  ✓  217 e2e/workflow-usability.spec.ts:5:1 › HTTP method edits preserve action type through save and reload (839ms)
+  ✓  218 e2e/workflow-usability.spec.ts:26:1 › an operator-stopped run without SLAs never produces a passing executive report (2.3s)
+  ✓  219 e2e/workflow-usability.spec.ts:52:1 › missing-script detour preserves the scenario draft on cancellation (1.6s)
+  ✓  220 e2e/workflow-usability.spec.ts:70:1 › guided setup creates the full hierarchy across scope changes (1.6s)
+  ✓  221 e2e/workflow-usability.spec.ts:88:1 › OpenAPI prerequisite import returns the saved script to the original group (1.0s)
+  ✓  222 e2e/workflow-usability.spec.ts:110:1 › data pool row failure retains the scenario and retries without creating a second pool (795ms)
+  ✓  223 e2e/workflow-usability.spec.ts:133:1 › debugger keeps request details readable at narrow width and browser zoom equivalent (608ms)
+  ✓  224 e2e/workflow-usability.spec.ts:154:2 › debug 200 shows response evidence without weakening the contract (731ms)
+  ✓  225 e2e/workflow-usability.spec.ts:154:2 › debug 503 shows response evidence without weakening the contract (736ms)
+  ✓  226 e2e/workflow-usability.spec.ts:175:1 › first-use screens meet automated WCAG AA checks in dark and light themes (1.2s)
+  ✓  227 e2e/workflow-usability.spec.ts:196:1 › shared dialogs stay above app chrome and preserve nested discard decisions (743ms)
+  ✓  228 e2e/workflow-ux-consistency.spec.ts:6:3 › UX structure remains usable in dark at 923px (2.2s)
+  ✓  229 e2e/workflow-ux-consistency.spec.ts:6:3 › UX structure remains usable in dark at 1440px (2.4s)
+  ✓  230 e2e/workflow-ux-consistency.spec.ts:6:3 › UX structure remains usable in light at 923px (2.2s)
+  ✓  231 e2e/workflow-ux-consistency.spec.ts:6:3 › UX structure remains usable in light at 1440px (2.4s)
+  ✓  232 e2e/workflow-ux-consistency.spec.ts:6:3 › UX structure remains usable in solarized-dark at 923px (2.1s)
+  ✓  233 e2e/workflow-ux-consistency.spec.ts:6:3 › UX structure remains usable in solarized-dark at 1440px (2.5s)
+  ✓  234 e2e/workflow-ux-consistency.spec.ts:6:3 › UX structure remains usable in solarized-light at 923px (2.3s)
+  ✓  235 e2e/workflow-ux-consistency.spec.ts:6:3 › UX structure remains usable in solarized-light at 1440px (2.6s)
+  ✓  236 e2e/workflow-ux-consistency.spec.ts:6:3 › UX structure remains usable in monokai-dimmed at 923px (2.3s)
+  ✓  237 e2e/workflow-ux-consistency.spec.ts:6:3 › UX structure remains usable in monokai-dimmed at 1440px (2.3s)
+(node:39222) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  238 e2e/workflow-help.spec.ts:27:1 › Help tasks, search and section links survive navigation and validate the first-test example (798ms)
+  ✓  239 e2e/workflow-help.spec.ts:69:1 › DSL operators can discover the guide, validate its example, and follow reference links (1.5s)
+  ✓  240 e2e/workflow-help.spec.ts:110:1 › legacy URLs, generated API search and contextual guidance reach the right articles (838ms)
+  ✓  241 e2e/workflow-help.spec.ts:127:1 › Help is readable at narrow widths and exposes accessible navigation (689ms)
+  -  242 e2e/workflow-help.spec.ts:148:1 › non-administrators cannot open or search Administration articles
+  ✓  243 e2e/workflow-help.spec.ts:163:1 › Help maintains readable contrast across the supported themes (935ms)
+
+  5 skipped
+  238 passed (6.9m)
+Building controller...
+Starting controller on http://127.0.0.1:18472 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.c9onebKa42)...
+Controller healthy.
+Starting controller on http://127.0.0.1:18472 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.c9onebKa42)...
+Controller healthy.
+Auth profile verified: local-auth.
+
+Running 170 tests using 1 worker
+
+(node:39612) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓    1 e2e/tier0-bruno-import.spec.ts:68:1 › [U23] Bruno native collection inspection, acknowledgements, and atomic save work on the host platform (7.8s)
+  ✓    2 e2e/tier0-local-auth.spec.ts:7:1 › rejects invalid local credentials without opening the workspace (337ms)
+  ✓    3 e2e/tier0-local-auth.spec.ts:17:1 › signs in as the seeded local administrator and lands in the live workspace (491ms)
+  ✓    4 e2e/workflow-analysis-preparation.spec.ts:89:1 › Parquet upload, mapping, query and deletion remain in project scope (8.5s)
+  ✓    5 e2e/workflow-analysis-preparation.spec.ts:200:1 › preparation readiness can renew and Start sends its immutable revision (7.2s)
+  ✓    6 e2e/workflow-analysis-preparation.spec.ts:232:1 › dependency evidence selects the same UTC interval for the monitor overlay (7.1s)
+  ✓    7 e2e/workflow-analysis-preparation.spec.ts:257:1 › native project panel saves and reopens through the real dashboard API (7.3s)
+  ✓    8 e2e/workflow-analysis-preparation.spec.ts:287:1 › filtered archive panels save, reopen, compare, and inspect an exact time bucket (7.5s)
+  ✓    9 e2e/workflow-analysis-preparation.spec.ts:334:1 › grouped archive overlays and filtered live selections save and reopen (8.1s)
+  ✓   10 e2e/workflow-analysis-preparation.spec.ts:395:1 › timestamped run annotations save, reopen and retain delete history (9.2s)
+  ✓   11 e2e/workflow-analysis-preparation.spec.ts:420:1 › retained observation rates save and reopen with elapsed-time units (7.2s)
+  ✓   12 e2e/workflow-analysis-preparation.spec.ts:444:1 › messaging management retains exact counts, denied coverage and reload (7.9s)
+  ✘   13 e2e/workflow-analysis-preparation.spec.ts:501:1 › imported comparison preserves both exact identity selectors across save and reopen (22.3s)
+(node:41176) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   14 e2e/workflow-analysis-preparation.spec.ts:592:1 › older analytical peers keep v1 imports usable and refuse v2 identity work without downgrade (7.3s)
+  ✓   15 e2e/workflow-application-secrets.spec.ts:5:1 › application settings show the shared secret vault in both auth profiles (7.1s)
+  ✓   16 e2e/workflow-archive-references.spec.ts:4:1 › scenario drafts retain archived script references through read-only review (7.4s)
+  ✓   17 e2e/workflow-aura-outcomes.spec.ts:35:1 › Aura HAR review exposes HTTP200 failures and missing responses with safe source navigation (7.7s)
+  ✓   18 e2e/workflow-aura-outcomes.spec.ts:93:1 › Aura parameter review applies one nested field without changing repeated sibling values (7.9s)
+  ✓   19 e2e/workflow-aura-outcomes.spec.ts:151:1 › native correlation review preserves exact original source navigation through save and reopen (9.7s)
+  ✓   20 e2e/workflow-aura-outcomes.spec.ts:287:1 › correlation diagnosis retains missing-consumer evidence and independent HTTP200 failures (8.3s)
+  ✓   21 e2e/workflow-author-experience.spec.ts:76:1 › Author creates, reverses, validates, edits source and saves without losing context (10.3s)
+  ✓   22 e2e/workflow-baseline-comparison.spec.ts:9:1 › baseline workspace selects pins, investigates resources, shares and preserves comparison context (9.9s)
+  ✓   23 e2e/workflow-browser-resource-evidence.spec.ts:5:1 › browser resource evidence filters retained failures and inspects action attribution (7.3s)
+  ✓   24 e2e/workflow-browser-resource-evidence.spec.ts:96:1 › live browser legacy summary refuses unavailable values and distinguishes explicit zero without standards qualification (13.6s)
+  ✓   25 e2e/workflow-browser-resource-evidence.spec.ts:141:1 › archived browser legacy summary preserves mixed-cohort gaps in engine CSV and ranks only complete devices (7.7s)
+  ✓   26 e2e/workflow-browser-resource-evidence.spec.ts:194:1 › browser results comparison cards preserve exact mixed cohorts and malformed summaries (7.6s)
+  ✓   27 e2e/workflow-browser-resource-evidence.spec.ts:358:1 › live document populations preserve overlapping provisional history, actual cohorts and missing-peer coverage (9.4s)
+  ✓   28 e2e/workflow-browser-resource-evidence.spec.ts:398:1 › archive document evidence retains latest pending, censored and unavailable measurements independently from actions (8.0s)
+  ✓   29 e2e/workflow-command-center.spec.ts:6:1 › Command Center supports empty actions, run triage, persistent switching and catalog recovery (8.2s)
+  ✓   30 e2e/workflow-command-center.spec.ts:92:1 › active load observations expire without updates and fresh telemetry clears the warning (7.7s)
+  ✓   31 e2e/workflow-command-center.spec.ts:154:1 › analysis load exports retain run identity and distinguish resampled observations (1.4s)
+  ✓   32 e2e/workflow-command-center.spec.ts:190:1 › pause waits for controller confirmation and preserves running state when proof is rejected (2.5s)
+  ✓   33 e2e/workflow-crosscut.spec.ts:8:1 › missing Base URL is a local problem with a focused repair path (8.3s)
+  ✓   34 e2e/workflow-crosscut.spec.ts:30:3 › script catalog retry clears the error and its notice stays below the header at 1440px (7.1s)
+  ✓   35 e2e/workflow-crosscut.spec.ts:30:3 › script catalog retry clears the error and its notice stays below the header at 932px (7.1s)
+  ✓   36 e2e/workflow-crosscut.spec.ts:51:1 › stopped outcomes and report drill-down agree across populations (9.5s)
+  ✓   37 e2e/workflow-crosscut.spec.ts:93:1 › nested script editor owns title and help and returns the scenario context (8.2s)
+  ✓   38 e2e/workflow-dashboard-analysis.spec.ts:4:1 › analysis preserves evidence gaps, saved baselines, filtered deltas and report context (7.8s)
+  ✓   39 e2e/workflow-dashboard-analysis.spec.ts:262:1 › run results labels terminal samples as historical evidence (7.1s)
+  ✓   40 e2e/workflow-dashboard-analysis.spec.ts:294:1 › run results distinguishes recorded archive failure and refreshes availability (8.7s)
+  ✓   41 e2e/workflow-dashboard-analysis.spec.ts:373:1 › partial archive sources remain visible beside retained measurements and terminal outcome (7.2s)
+  ✓   42 e2e/workflow-dashboard.spec.ts:4:1 › Dashboard preserves queue routing, evidence truth, filters and narrow run details (7.7s)
+  ✓   43 e2e/workflow-dashboard.spec.ts:83:1 › Dashboard labels failed health refreshes stale and recovers independently of run data (27.2s)
+  ✓   44 e2e/workflow-debugger-experience.spec.ts:23:1 › debugger captures successful evidence, diagnoses runtime failure, repairs a draft and retains protocol-correct history (9.1s)
+  ✓   45 e2e/workflow-debugger-experience.spec.ts:113:1 › run-to starts at the beginning and consumes its temporary breakpoint without deleting a permanent breakpoint (7.7s)
+  ✓   46 e2e/workflow-debugger-experience.spec.ts:140:1 › failures-only debugger capture preserves fetched resource evidence (8.5s)
+  ✓   47 e2e/workflow-dynatrace.spec.ts:10:1 › Dynatrace native connection verification, collector assignment and discovery show bounded capability results (11.5s)
+  ✓   48 e2e/workflow-dynatrace.spec.ts:72:1 › Dynatrace source editing preserves Classic, Grail and Smartscape selections across executor modes (7.3s)
+  ✓   49 e2e/workflow-dynatrace.spec.ts:121:1 › Dynatrace canonical live and archived evidence retain zeros, units, resolution and delayed finalization (9.6s)
+  ✓   50 e2e/workflow-dynatrace.spec.ts:156:1 › Dynatrace terminal criteria preview approved sources and clear superseded series choices (7.3s)
+  ✓   51 e2e/workflow-http-concurrent.spec.ts:182:1 › HTTP sequence authoring preserves children and steps a concurrent parent-session group through its join barrier (8.8s)
+  ✓   52 e2e/workflow-http-concurrent.spec.ts:223:3 › HTTP sequence controls review and preserve manual execution settings for http/1.1 (7.7s)
+  ✓   53 e2e/workflow-http-concurrent.spec.ts:223:3 › HTTP sequence controls review and preserve manual execution settings for http/2 (7.6s)
+
+  ✓   54 e2e/workflow-http-concurrent.spec.ts:271:1 › LoadRunner concurrent markers import exact child mappings and replay on the inherited HTTP session (8.5s)
+  ✓   55 e2e/workflow-http-concurrent.spec.ts:318:1 › runtime evidence unavailability hides stale DTO detail, history and exported session JSON (7.6s)
+  ✓   56 e2e/workflow-http-version.spec.ts:129:1 › mixed HTTP versions retain request policy, share sessions and expose measured replay versions (9.7s)
+  ✓   57 e2e/workflow-import-source.spec.ts:7:1 › source catalog search and importer guidance stay consistent across formats (9.0s)
+  ✓   58 e2e/workflow-import-source.spec.ts:52:1 › Oracle review clears obsolete findings and never offers a script destination (7.2s)
+  ✓   59 e2e/workflow-import-source.spec.ts:82:1 › Postman inspection sends project scope before collection bytes (7.3s)
+  ✓   60 e2e/workflow-import-source.spec.ts:104:1 › HAR comparison can be removed and upload errors recover accessibly (7.2s)
+  ✓   61 e2e/workflow-import-source.spec.ts:131:1 › JMeter review uses the shared six tabs and retains project scope during upload (9.5s)
+  ✓   62 e2e/workflow-import-source.spec.ts:213:1 › HAR picker accepts captures above 50 MiB and rejects files above 100 MiB (7.2s)
+  ✓   63 e2e/workflow-jmeter-fidelity.spec.ts:9:1 › JMeter fidelity review retains blockers and regenerates explicit timestamp and name repairs (7.9s)
+  ✓   64 e2e/workflow-jmeter-fidelity.spec.ts:50:1 › JMeter repaired import saves finite workload and downloads native per-run CSV (8.8s)
+  ✓   65 e2e/workflow-jmeter-fidelity.spec.ts:101:1 › JMeter messaging preview preserves three blocked drafts and workload curves (8.0s)
+  ✓   66 e2e/workflow-library-assignments.spec.ts:4:1 › Library assignments persist, bulk failures recover, and launches require an explicit release (13.5s)
+  ✓   67 e2e/workflow-library-assignments.spec.ts:96:1 › Viewer cannot change script or scenario assignments (13.9s)
+  ✓   68 e2e/workflow-loadrunner-collection.spec.ts:5:1 › reviews and saves nested VuGen projects independently, retaining failed and Java reviews (9.0s)
+  ✓   69 e2e/workflow-loadrunner-folder.spec.ts:5:1 › imports an unpacked VuGen project folder (7.4s)
+  ✓   70 e2e/workflow-loadrunner-review.spec.ts:14:3 › LoadRunner review renders real transaction-labels.zip response (8.4s)
+  ✓   71 e2e/workflow-loadrunner-review.spec.ts:14:3 › LoadRunner review renders real credential-groups.zip response (8.2s)
+  ✓   72 e2e/workflow-loadrunner-review.spec.ts:14:3 › LoadRunner review renders real java-lifecycle.zip response (7.9s)
+  ✓   73 e2e/workflow-loadrunner-review.spec.ts:14:3 › LoadRunner review renders real sap-review.zip response (7.8s)
+  ✓   74 e2e/workflow-loadrunner-review.spec.ts:14:3 › LoadRunner review renders real truclient-review.zip response (7.8s)
+  ✓   75 e2e/workflow-loadrunner-review.spec.ts:166:1 › LoadRunner batch saves ready scripts, stays on import, and accepts another ZIP (8.8s)
+  ✓   76 e2e/workflow-loadrunner-review.spec.ts:232:1 › LoadRunner guided repair previews redacted changes before applying (8.4s)
+  -   77 e2e/workflow-loadrunner-review.spec.ts:303:1 › LoadRunner private acceptance archive groups repeated findings without hiding source locations
+  ✓   78 e2e/workflow-loadrunner-review.spec.ts:346:1 › LoadRunner settings apply inline, retain source evidence, and survive draft save (9.5s)
+  ✓   79 e2e/workflow-loadrunner-review.spec.ts:502:1 › LoadRunner credentials edit and apply in place while preserving protected values (8.2s)
+  ✓   80 e2e/workflow-loadrunner-review.spec.ts:560:1 › LoadRunner percentage think time shows source bounds and saves edited percentages (9.0s)
+  ✓   81 e2e/workflow-loadrunner-review.spec.ts:605:1 › LoadRunner runtime context explains inactive settings and repairs an oversized idle timeout (8.7s)
+  ✓   82 e2e/workflow-loadrunner-review.spec.ts:698:1 › LoadRunner run-logic sections share one category and retain searchable source sections (7.5s)
+  ✓   83 e2e/workflow-loadrunner-review.spec.ts:722:1 › unique allocation preview appears only when relevant and explains unavailable protected storage (7.7s)
+  ✓   84 e2e/workflow-loadrunner-review.spec.ts:754:1 › fresh runtime diagnostic import separates capture from dormant source values (7.7s)
+  ✓   85 e2e/workflow-loadrunner-review.spec.ts:784:1 › issue details retain concrete evidence, focus source and apply runtime changes without leaving Review (8.4s)
+  ✓   86 e2e/workflow-loadrunner-review.spec.ts:860:1 › LoadRunner Java JAR attachment follows policy and survives review-session reopen (7.8s)
+  ✓   87 e2e/workflow-local-archive-failure.spec.ts:4:1 › local archive failure preserves completed Results and survives checking again (7.2s)
+  ✓   88 e2e/workflow-local-auth.spec.ts:7:1 › [U01] sign in, build workspace, import, edit, launch, stop and retrieve the same run (20.7s)
+  ✘   89 e2e/workflow-local-auth.spec.ts:76:1 › [U02] viewer cannot launch and sign-out does not reopen a protected workspace (1.0s)
+
+
+  1) e2e/workflow-analysis-preparation.spec.ts:501:1 › imported comparison preserves both exact identity selectors across save and reopen 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+    Call Log:
+    - Timeout 15000ms exceeded while waiting on the predicate
+
+      64 |         return bounds.width > 0 && bounds.height > 0 && bounds.left >= box.left && bounds.right <= box.right && hit !== null && (control === hit || control.contains(hit))
+      65 |       })
+    > 66 |     })).toBe(true)
+         |         ^
+      67 |   } catch (error) {
+      68 |     const geometry = await filters.evaluate(element => {
+      69 |       const bounds = (node: Element) => {
+        at captureIdentityFilters (/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard/e2e/workflow-analysis-preparation.spec.ts:66:9)
+        at /Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard/e2e/workflow-analysis-preparation.spec.ts:588:3
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-full-cycle-focus-fixed-final-1/local-auth/workflow-analysis-preparat-0fe44-tors-across-save-and-reopen/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-full-cycle-focus-fixed-final-1/local-auth/workflow-analysis-preparat-0fe44-tors-across-save-and-reopen/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-full-cycle-focus-fixed-final-1/local-auth/workflow-analysis-preparat-0fe44-tors-across-save-and-reopen/trace.zip
+    Usage:
+
+        npx playwright show-trace ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-full-cycle-focus-fixed-final-1/local-auth/workflow-analysis-preparat-0fe44-tors-across-save-and-reopen/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    e2e/workflow-analysis-preparation.spec.ts:501:1 › imported comparison preserves both exact identity selectors across save and reopen 
+  1 interrupted
+    e2e/workflow-local-auth.spec.ts:76:1 › [U02] viewer cannot launch and sign-out does not reopen a protected workspace 
+  1 skipped
+  81 did not run
+  86 passed (12.8m)
+--- controller log (last 60 lines) ---
+{"time":"2026-10-05T08:03:51.162362-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/monitoring/prometheus/graphs","status":200,"duration_ms":0,"remote":"127.0.0.1:55365"}
+{"time":"2026-10-05T08:03:51.162412-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/monitoring/dashboards/graphs","status":200,"duration_ms":0,"remote":"127.0.0.1:55367"}
+{"time":"2026-10-05T08:03:51.314346-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/stream","status":200,"duration_ms":0,"remote":"127.0.0.1:55401"}
+{"time":"2026-10-05T08:03:51.314347-04:00","level":"INFO","msg":"websocket client connected","test_filter":"989427d7-13b3-49b4-82a6-2060f0f77f8d","project_filter":"","clients":2}
+{"time":"2026-10-05T08:03:51.315482-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d","status":200,"duration_ms":0,"remote":"127.0.0.1:55367"}
+{"time":"2026-10-05T08:03:52.097912-04:00","level":"INFO","msg":"vuser count adjusted","group":"Orders_1791201826545","from":0,"to":1}
+{"time":"2026-10-05T08:03:53.126513-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d","status":200,"duration_ms":0,"remote":"127.0.0.1:58217"}
+{"time":"2026-10-05T08:03:53.149415-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d","status":200,"duration_ms":0,"remote":"127.0.0.1:55367"}
+{"time":"2026-10-05T08:03:54.09497-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/stop","status":200,"duration_ms":3,"remote":"127.0.0.1:55367"}
+{"time":"2026-10-05T08:03:54.120278-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d","status":200,"duration_ms":15,"remote":"127.0.0.1:58217"}
+{"time":"2026-10-05T08:03:54.127124-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/monitoring/dashboards/graphs","status":200,"duration_ms":3,"remote":"127.0.0.1:55365"}
+{"time":"2026-10-05T08:03:54.128037-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/monitoring/prometheus/graphs","status":200,"duration_ms":1,"remote":"127.0.0.1:55367"}
+{"time":"2026-10-05T08:03:54.239803-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d","status":200,"duration_ms":13,"remote":"127.0.0.1:58217"}
+{"time":"2026-10-05T08:03:54.501137-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d","status":200,"duration_ms":4,"remote":"127.0.0.1:58217"}
+{"time":"2026-10-05T08:03:55.011151-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d","status":200,"duration_ms":5,"remote":"127.0.0.1:58217"}
+{"time":"2026-10-05T08:03:55.157293-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d","status":200,"duration_ms":6,"remote":"127.0.0.1:55367"}
+{"time":"2026-10-05T08:03:55.199617-04:00","level":"INFO","msg":"test finished","id":"989427d7-13b3-49b4-82a6-2060f0f77f8d","status":"COMPLETE","groups":1,"transactions":11167,"errors":0,"duration":2997405416}
+{"time":"2026-10-05T08:03:55.204142-04:00","level":"INFO","msg":"websocket client disconnected","clients":1}
+{"time":"2026-10-05T08:03:55.207293-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/monitoring/prometheus/graphs","status":200,"duration_ms":1,"remote":"127.0.0.1:55365"}
+{"time":"2026-10-05T08:03:55.209336-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/monitoring/dashboards/graphs","status":200,"duration_ms":3,"remote":"127.0.0.1:55363"}
+{"time":"2026-10-05T08:03:55.229856-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d","status":200,"duration_ms":3,"remote":"127.0.0.1:55364"}
+{"time":"2026-10-05T08:03:55.231625-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/report/annotations","status":200,"duration_ms":1,"remote":"127.0.0.1:55366"}
+{"time":"2026-10-05T08:03:55.232512-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d","status":200,"duration_ms":26,"remote":"127.0.0.1:55367"}
+{"time":"2026-10-05T08:03:55.238322-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/manifest","status":200,"duration_ms":5,"remote":"127.0.0.1:55368"}
+{"time":"2026-10-05T08:03:55.239682-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/report","status":200,"duration_ms":6,"remote":"127.0.0.1:55366"}
+{"time":"2026-10-05T08:03:55.243698-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/analysis/annotations","status":200,"duration_ms":11,"remote":"127.0.0.1:55364"}
+{"time":"2026-10-05T08:03:55.245751-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/resources","status":200,"duration_ms":12,"remote":"127.0.0.1:55365"}
+{"time":"2026-10-05T08:03:55.248334-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/summaries","status":200,"duration_ms":15,"remote":"127.0.0.1:55363"}
+{"time":"2026-10-05T08:03:55.910996-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/transactions","status":200,"duration_ms":662,"remote":"127.0.0.1:55366"}
+{"time":"2026-10-05T08:03:55.953789-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/analysis","status":200,"duration_ms":708,"remote":"127.0.0.1:55368"}
+{"time":"2026-10-05T08:03:56.020038-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d","status":200,"duration_ms":3,"remote":"127.0.0.1:58217"}
+{"time":"2026-10-05T08:03:56.378427-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:55368"}
+{"time":"2026-10-05T08:03:56.498833-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/manifest","status":200,"duration_ms":473,"remote":"127.0.0.1:58217"}
+{"time":"2026-10-05T08:03:56.559316-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":1,"remote":"127.0.0.1:55368"}
+{"time":"2026-10-05T08:03:56.559759-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/results/imports","status":200,"duration_ms":1,"remote":"127.0.0.1:55366"}
+{"time":"2026-10-05T08:03:56.560108-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/remotes","status":200,"duration_ms":1,"remote":"127.0.0.1:55365"}
+{"time":"2026-10-05T08:03:56.560151-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/catalog","status":200,"duration_ms":1,"remote":"127.0.0.1:55363"}
+{"time":"2026-10-05T08:03:56.575294-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/report","status":200,"duration_ms":1,"remote":"127.0.0.1:55363"}
+{"time":"2026-10-05T08:03:56.610423-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d","status":200,"duration_ms":3,"remote":"127.0.0.1:55363"}
+{"time":"2026-10-05T08:03:56.624178-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/report/annotations","status":200,"duration_ms":1,"remote":"127.0.0.1:55365"}
+{"time":"2026-10-05T08:03:56.626831-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d","status":200,"duration_ms":3,"remote":"127.0.0.1:55363"}
+{"time":"2026-10-05T08:03:56.630065-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/analysis/annotations","status":200,"duration_ms":1,"remote":"127.0.0.1:55363"}
+{"time":"2026-10-05T08:03:56.630859-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/report","status":200,"duration_ms":1,"remote":"127.0.0.1:55366"}
+{"time":"2026-10-05T08:03:56.632227-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/manifest","status":200,"duration_ms":3,"remote":"127.0.0.1:55365"}
+{"time":"2026-10-05T08:03:56.639563-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/summaries","status":200,"duration_ms":10,"remote":"127.0.0.1:55368"}
+{"time":"2026-10-05T08:03:56.643424-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/resources","status":200,"duration_ms":14,"remote":"127.0.0.1:55364"}
+{"time":"2026-10-05T08:03:56.683916-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/publish/powerbi","status":200,"duration_ms":0,"remote":"127.0.0.1:55364"}
+{"time":"2026-10-05T08:03:56.68474-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/publish/confluence","status":200,"duration_ms":0,"remote":"127.0.0.1:55368"}
+{"time":"2026-10-05T08:03:56.758726-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/report","status":200,"duration_ms":2,"remote":"127.0.0.1:55368"}
+{"time":"2026-10-05T08:03:56.802626-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/report","status":200,"duration_ms":17,"remote":"127.0.0.1:55368"}
+{"time":"2026-10-05T08:03:57.444587-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/transactions","status":200,"duration_ms":810,"remote":"127.0.0.1:55366"}
+{"time":"2026-10-05T08:03:57.492672-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/analysis","status":200,"duration_ms":859,"remote":"127.0.0.1:55363"}
+{"time":"2026-10-05T08:03:57.857211-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/files/transactions.jsonl","status":200,"duration_ms":957,"remote":"127.0.0.1:55368"}
+{"time":"2026-10-05T08:03:57.870253-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/manifest","status":200,"duration_ms":1,"remote":"127.0.0.1:58217"}
+{"time":"2026-10-05T08:03:59.002345-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/files/transactions.jsonl","status":200,"duration_ms":1144,"remote":"127.0.0.1:55368"}
+{"time":"2026-10-05T08:03:59.036504-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d/archive/files/transactions.jsonl","status":200,"duration_ms":1163,"remote":"127.0.0.1:58217"}
+{"time":"2026-10-05T08:03:59.106515-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/989427d7-13b3-49b4-82a6-2060f0f77f8d","status":200,"duration_ms":5,"remote":"127.0.0.1:58217"}
+{"time":"2026-10-05T08:03:59.167278-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-05T08:04:01.502571-04:00","level":"INFO","msg":"shutting down"}
+2026/10/05 08:04:01 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"
