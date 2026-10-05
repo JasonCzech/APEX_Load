@@ -62,6 +62,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 35, Name: "dynatrace-saas-durable-run-monitoring", Fingerprint: "de996ade9928b95fa97e6ede0c811d2ee20ee73e0f44d1e26945547814066d7a"},
 	{Version: 36, Name: "durable-script-goal-config", Fingerprint: "2d937708f297ade2cdcdc224678c7f25689d3f5f923124549963014c38e0b29e"},
 	{Version: 37, Name: "durable-script-content-revision", Fingerprint: "d741b8384d281d84172d60b888a72228892173bbbc96d4f04a0e480cc1e9b745"},
+	{Version: 38, Name: "durable-scenario-content-revision", Fingerprint: "185b01e0a6e99c3a5d43a668d2113d7258b5cd89aa0f30e45f094bb2f9c7f5d4"},
 }
 
 type SchemaMigrationRecord struct {
@@ -135,6 +136,7 @@ func schemaConvergenceFingerprint() string {
 		"timescaledb",
 		"object-activity-legacy-backfill",
 		"durable-script-content-revision-immediate-tracking",
+		"durable-scenario-content-revision-immediate-tracking",
 	} {
 		write("phase", phase, "")
 	}
@@ -146,6 +148,16 @@ func schemaConvergenceFingerprint() string {
 	}
 	for _, trigger := range postgresScriptRevisionTriggers() {
 		write("script-revision-postgres-trigger", trigger.name, postgresScriptRevisionTriggerSQL(trigger))
+	}
+
+	for _, trigger := range sqliteScenarioRevisionTriggers() {
+		write("scenario-revision-sqlite-trigger", trigger.name, trigger.sql)
+	}
+	for _, function := range postgresScenarioRevisionFunctions() {
+		write("scenario-revision-postgres-function", function.name, postgresScenarioRevisionFunctionSQL(function))
+	}
+	for _, trigger := range postgresScenarioRevisionTriggers() {
+		write("scenario-revision-postgres-trigger", trigger.name, postgresScenarioRevisionTriggerSQL(trigger))
 	}
 	return fmt.Sprintf("%x", hash.Sum(nil))
 }

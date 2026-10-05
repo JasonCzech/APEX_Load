@@ -99,6 +99,9 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "scenario not found")
 		return
 	}
+	if !s.requireScenarioSavePolicyAvailable(w, r, existing) {
+		return
+	}
 	requestProjectID, err := s.scenarioRequestProjectID(req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

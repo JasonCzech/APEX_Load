@@ -166,6 +166,9 @@ func validateScenarioScriptJSON(scenarioID string, scripts []ScenarioScript) err
 }
 
 func saveScenarioTx(tx *storeTx, scenario *Scenario, scripts []ScenarioScript, assignmentJSON, goalJSON, runtimeJSON, trafficJSON []byte) error {
+	if _, err := lockScenarioMutationProjectTx(tx, scenario.ID, scripts); err != nil {
+		return err
+	}
 	if err := ensureObjectActiveTx(tx, "scenario", scenario.ID); err != nil {
 		return err
 	}
@@ -230,6 +233,17 @@ func (s *SQLiteStore) CreateScenarioWithDataPoolBindingsIfAbsent(scenario *Scena
 		return false, err
 	}
 	defer tx.Rollback()
+	if _, err := lockScenarioCreateProjectTx(tx, scenario.ID, scripts); err != nil {
+		return false, err
+	}
+	applied, err := createScenarioWithBindingsTx(tx, scenario, scripts, bindings, assignmentJSON, goalJSON, runtimeJSON, trafficJSON)
+	if err != nil || !applied {
+		return applied, err
+	}
+	return true, tx.Commit()
+}
+
+func createScenarioWithBindingsTx(tx *storeTx, scenario *Scenario, scripts []ScenarioScript, bindings []ScenarioDataPoolBinding, assignmentJSON, goalJSON, runtimeJSON, trafficJSON []byte) (bool, error) {
 	if err := validateScenarioScriptJSON(scenario.ID, scripts); err != nil {
 		return false, err
 	}
@@ -253,7 +267,7 @@ func (s *SQLiteStore) CreateScenarioWithDataPoolBindingsIfAbsent(scenario *Scena
 	if err := saveScenarioDataPoolBindingsTx(tx, scenario.ID, bindings); err != nil {
 		return false, err
 	}
-	return true, tx.Commit()
+	return true, nil
 }
 
 // UpdateScenarioWithDataPoolBindingsIfUnchanged replaces the scenario and all
@@ -271,6 +285,9 @@ func (s *SQLiteStore) UpdateScenarioWithDataPoolBindingsIfUnchanged(scenario *Sc
 		return false, err
 	}
 	defer tx.Rollback()
+	if _, err := lockScenarioMutationProjectTx(tx, scenario.ID, scripts); err != nil {
+		return false, err
+	}
 	if err := validateScenarioScriptJSON(scenario.ID, scripts); err != nil {
 		return false, err
 	}
@@ -394,7 +411,11 @@ func decodeScenarioJSON(scenario *Scenario, assignmentJSON, goalJSON, runtimeJSO
 }
 
 func (s *SQLiteStore) listScenarioScripts(scenarioID string) ([]ScenarioScript, error) {
-	rows, err := s.db.Query(`SELECT scenario_id, sort_order, COALESCE(name, ''), script_id, COALESCE(vusers, 0), COALESCE(ramp_up, ''), COALESCE(ramp_down, ''), COALESCE(start_offset, ''), COALESCE(stages_json, ''), iterations, COALESCE(initialization, ''), COALESCE(role, ''), COALESCE(runtime_settings_json, ''), COALESCE(assignment_json, ''), transaction_response_time_sla_ms FROM scenario_scripts WHERE scenario_id = ? ORDER BY sort_order ASC`, scenarioID)
+	return listScenarioScriptsReader(s.db, scenarioID)
+}
+
+func listScenarioScriptsReader(reader libraryAssignmentReader, scenarioID string) ([]ScenarioScript, error) {
+	rows, err := reader.Query(`SELECT scenario_id, sort_order, COALESCE(name, ''), script_id, COALESCE(vusers, 0), COALESCE(ramp_up, ''), COALESCE(ramp_down, ''), COALESCE(start_offset, ''), COALESCE(stages_json, ''), iterations, COALESCE(initialization, ''), COALESCE(role, ''), COALESCE(runtime_settings_json, ''), COALESCE(assignment_json, ''), transaction_response_time_sla_ms FROM scenario_scripts WHERE scenario_id = ? ORDER BY sort_order ASC`, scenarioID)
 	if err != nil {
 		return nil, err
 	}
@@ -437,6 +458,9 @@ func (s *SQLiteStore) DeleteScenario(id string) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := lockScenarioExistingProjectTx(tx, id); err != nil {
+		return err
+	}
 	locked, err := tx.Exec(`UPDATE scenarios SET updated_at = updated_at WHERE id = ?`, id)
 	if err != nil {
 		return err
@@ -499,6 +523,9 @@ func (s *SQLiteStore) DeleteScenarioIfUnchanged(id string, expectedUpdatedAt tim
 		return false, err
 	}
 	defer tx.Rollback()
+	if err := lockScenarioExistingProjectTx(tx, id); err != nil {
+		return false, err
+	}
 	locked, err := tx.Exec(`UPDATE scenarios SET updated_at = updated_at WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, id, currentUpdatedRaw)
 	if err != nil {
 		return false, err
@@ -542,6 +569,9 @@ func (s *SQLiteStore) SaveScenarioDataPoolBindings(scenarioID string, bindings [
 		return err
 	}
 	defer tx.Rollback()
+	if err := lockScenarioExistingProjectTx(tx, scenarioID); err != nil {
+		return err
+	}
 	if err := ensureObjectActiveTx(tx, "scenario", scenarioID); err != nil {
 		return err
 	}
@@ -567,6 +597,9 @@ func (s *SQLiteStore) UpdateScenarioDataPoolBindingsIfUnchanged(scenarioID strin
 		return time.Time{}, false, err
 	}
 	defer tx.Rollback()
+	if err := lockScenarioExistingProjectTx(tx, scenarioID); err != nil {
+		return time.Time{}, false, err
+	}
 	var currentUpdatedAt time.Time
 	var currentUpdatedRaw string
 	if err := tx.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT) FROM scenarios WHERE id = ?`, scenarioID).Scan(&currentUpdatedAt, &currentUpdatedRaw); err != nil {
@@ -693,6 +726,29 @@ func (s *SQLiteStore) ListScenarioDataPoolBindings(scenarioID string) ([]Scenari
 }
 
 func (s *SQLiteStore) DeleteScenarioDataPoolBinding(id string) error {
-	_, err := s.db.Exec(`DELETE FROM scenario_data_pool_bindings WHERE id = ?`, id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := lockScenarioSQLiteWriterTx(tx, ""); err != nil {
+		return err
+	}
+	var scenarioID string
+	if err := tx.QueryRow(`SELECT scenario_id FROM scenario_data_pool_bindings WHERE id=?`, id).Scan(&scenarioID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if err := lockScenarioExistingProjectTx(tx, scenarioID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE scenarios SET updated_at=updated_at WHERE id=?`, scenarioID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM scenario_data_pool_bindings WHERE id=? AND scenario_id=?`, id, scenarioID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

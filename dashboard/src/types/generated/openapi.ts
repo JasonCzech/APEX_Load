@@ -29893,6 +29893,7 @@ export interface operations {
           "name"?: string;
           "settings"?: {
             "authoring"?: ({
+              "require_scenario_save_if_match"?: boolean;
               "require_script_save_if_match"?: boolean;
             }) | null;
             "features"?: {
@@ -144110,6 +144111,7 @@ export interface operations {
           "name"?: string;
           "settings"?: {
             "authoring"?: ({
+              "require_scenario_save_if_match"?: boolean;
               "require_script_save_if_match"?: boolean;
             }) | null;
             "features"?: {
@@ -144691,6 +144693,9 @@ export interface operations {
     parameters: {
       "path": {
         "id": string;
+      };
+      "header"?: {
+        "If-Match"?: string;
       };
     };
     requestBody: {
@@ -146325,7 +146330,11 @@ export interface operations {
       };
       "503": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            "code"?: "scenario_save_if_match_unavailable" | "scenario_save_strict_policy_unavailable";
+            "error": string;
+            "ref"?: string;
+          };
         };
       };
       "default": {

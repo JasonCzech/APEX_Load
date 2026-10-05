@@ -1,0 +1,24 @@
+{
+  "scope": "Source-only final correction including requested If-Match refusal, tests pending compiler slot",
+  "recorded_utc": "2026-10-05T17:37:34.661650+00:00",
+  "sources": [
+    {
+      "path": "pkg/api/handlers_projects.go",
+      "sha256": "8a45203a3b0d1b3cb66d8408141d0259852781311f03ab787bfb66b0b1dcb6bd"
+    },
+    {
+      "path": "pkg/api/handlers_scenarios.go",
+      "sha256": "047a552bae9a5d3890e0190b75b06b17b580596beca9a3e2c342fc0581a106cc"
+    },
+    {
+      "path": "pkg/api/scenario_save_policy_availability.go",
+      "sha256": "8e62c92408125814d2a8e358a0d9fcdd3edb1676e11f474246f6f9e3822d2cc8"
+    },
+    {
+      "path": "pkg/api/scenario_save_policy_availability_test.go",
+      "sha256": "3a33137b566429cbce5b270148aefe3ab6927fc940403a9d7533187cbd9e93d2"
+    }
+  ],
+  "storage_inventory": "scenario-revision-final-source-inventory.json",
+  "storage_sources_match": true
+}

@@ -117,7 +117,7 @@ func TestPostgresScriptContentRevisionIntegration(t *testing.T) {
 		}
 		store = opened.SQLiteStore
 		after, err := store.SchemaStatus()
-		if err != nil || after.AppliedVersion != 37 || !reflect.DeepEqual(before.Applied[:36], after.Applied[:36]) {
+		if err != nil || after.AppliedVersion != currentSchemaRelease().Version || !reflect.DeepEqual(before.Applied[:36], after.Applied[:36]) {
 			t.Fatalf("published ledger %#v %v", after, err)
 		}
 		snapshot := requireScriptAuthoring(t, store, script.ID)
@@ -227,7 +227,7 @@ func TestPostgresScriptContentRevisionIntegration(t *testing.T) {
 			}
 			nonce = snapshot.ContentRevision
 			status, err := reopened.SchemaStatus()
-			if err != nil || status.AppliedVersion != 37 || len(status.Pending) != 0 {
+			if err != nil || status.AppliedVersion != currentSchemaRelease().Version || len(status.Pending) != 0 {
 				t.Fatalf("concurrent ledger%#v %v", status, err)
 			}
 			reopened.Close()

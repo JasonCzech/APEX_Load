@@ -1,0 +1,50 @@
+{
+  "scope": "Independent root read-only final seven-file corrective API/OpenAPI review; executed acceptance remains pending",
+  "recorded_utc": "2026-10-05T17:53:15.065680+00:00",
+  "reviewer": "/root",
+  "source_inventory": "scenario-revision-policy-guard-openapi-final-source-inventory.json",
+  "source_inventory_sha256": "808fe3bb36588053dd7818acc43e072ec65e792f66eb8921e146ac63b3f75507",
+  "all_seven_current_sources_match": true,
+  "reviewed": [
+    {
+      "path": "pkg/api/handlers_projects.go",
+      "sha256": "8a45203a3b0d1b3cb66d8408141d0259852781311f03ab787bfb66b0b1dcb6bd"
+    },
+    {
+      "path": "pkg/api/handlers_scenarios.go",
+      "sha256": "047a552bae9a5d3890e0190b75b06b17b580596beca9a3e2c342fc0581a106cc"
+    },
+    {
+      "path": "pkg/api/scenario_save_policy_availability.go",
+      "sha256": "b48bbc318ed06da21ff75806036fbca3fad15e0ab8ce8acdf1b43df6876da780"
+    },
+    {
+      "path": "pkg/api/scenario_save_policy_availability_test.go",
+      "sha256": "972c6adb6ac51af933250c6ff5b4897c53292bd90fe79618a3d2a7aab16a18ce"
+    },
+    {
+      "path": "pkg/api/openapi_contract_infer.go",
+      "sha256": "542ebad61f2bae81349bf5a3916913158b749678f5a30cf69049ada7ab970478"
+    },
+    {
+      "path": "pkg/api/openapi_scenario_save_policy.go",
+      "sha256": "d29f612de67ccb7ac094f57417860c39a01cc29fa54099fe0bdc58e002063aad"
+    },
+    {
+      "path": "pkg/api/openapi_scenario_save_policy_test.go",
+      "sha256": "a182b5cd15806095fd9817ce845db684dbd8ce81be187ada4ba3b16e29d4153b"
+    }
+  ],
+  "review_result": "No additional actionable finding",
+  "review_points": [
+    "Previously clean runtime guard: canonical ID/owned scope first, explicit unsupported feature/header and externally seeded strict-policy refusal, safe fixed Error/Code/Ref only, private errors remain generic, no-secret/no-journal/no-write regressions",
+    "Registered narrow OpenAPI hook preserves optional unsupported header and error-required/code-ref-optional generic503 compatibility",
+    "Project request property explicitly documents true enablement rejection",
+    "Actual generated-document unit forbids unimplemented scenario authoring GET query or strong ETag claim"
+  ],
+  "qualification_pending": [
+    "Targeted API normal/race",
+    "Corrected v2 exact-five-artifact generation/freshness",
+    "Full composed Go merge gate"
+  ]
+}

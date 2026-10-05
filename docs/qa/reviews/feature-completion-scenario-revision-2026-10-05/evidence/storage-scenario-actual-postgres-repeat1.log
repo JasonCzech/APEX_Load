@@ -1,0 +1,60 @@
+=== RUN   TestPostgresScenarioContentRevisionIntegration
+=== RUN   TestPostgresScenarioContentRevisionIntegration/root_group_pool_triggers
+    scenario_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218966413071000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/opaque_cas_receipts
+    scenario_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218968240103000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/placement_monitor
+    scenario_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218970199742000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/reference_owner_source_boundary
+    scenario_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218971989410000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/reparent_rollback
+    scenario_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218975280599000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/active_dependencies_context
+    scenario_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218978548801000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/monitor_corruption
+    scenario_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218979962140000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/blank_source_repair
+    scenario_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218981693282000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/repeatable_read_and_single_creation
+    scenario_content_revision_postgres_integration_test.go:86: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218983524274000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/migration38_backfill_verified_functions
+    scenario_content_revision_postgres_integration_test.go:135: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218985641383000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/project_first_legacy_and_conditioned_writers
+=== RUN   TestPostgresScenarioContentRevisionIntegration/project_first_legacy_and_conditioned_writers/legacy_save
+    scenario_content_revision_postgres_integration_test.go:246: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218989074232000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/project_first_legacy_and_conditioned_writers/opaque_save
+    scenario_content_revision_postgres_integration_test.go:246: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218990644466000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/project_first_legacy_and_conditioned_writers/replace_pools
+    scenario_content_revision_postgres_integration_test.go:246: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218991893647000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/project_first_legacy_and_conditioned_writers/delete_binding
+    scenario_content_revision_postgres_integration_test.go:246: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218993275773000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/project_first_legacy_and_conditioned_writers/delete_scenario
+    scenario_content_revision_postgres_integration_test.go:246: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218994215870000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/project_first_legacy_and_conditioned_writers/legacy_timestamp_save
+    scenario_content_revision_postgres_integration_test.go:246: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218995124765000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/child_commit_fences_old_nonce
+    scenario_content_revision_postgres_integration_test.go:322: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218996223332000
+=== RUN   TestPostgresScenarioContentRevisionIntegration/policy_enable_race
+    scenario_content_revision_postgres_integration_test.go:385: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_scenario_revision_1791218997230959000
+--- PASS: TestPostgresScenarioContentRevisionIntegration (31.61s)
+    --- PASS: TestPostgresScenarioContentRevisionIntegration/root_group_pool_triggers (1.83s)
+    --- PASS: TestPostgresScenarioContentRevisionIntegration/opaque_cas_receipts (1.96s)
+    --- PASS: TestPostgresScenarioContentRevisionIntegration/placement_monitor (1.79s)
+    --- PASS: TestPostgresScenarioContentRevisionIntegration/reference_owner_source_boundary (3.29s)
+    --- PASS: TestPostgresScenarioContentRevisionIntegration/reparent_rollback (3.27s)
+    --- PASS: TestPostgresScenarioContentRevisionIntegration/active_dependencies_context (1.41s)
+    --- PASS: TestPostgresScenarioContentRevisionIntegration/monitor_corruption (1.73s)
+    --- PASS: TestPostgresScenarioContentRevisionIntegration/blank_source_repair (1.83s)
+    --- PASS: TestPostgresScenarioContentRevisionIntegration/repeatable_read_and_single_creation (2.12s)
+    --- PASS: TestPostgresScenarioContentRevisionIntegration/migration38_backfill_verified_functions (3.43s)
+    --- PASS: TestPostgresScenarioContentRevisionIntegration/project_first_legacy_and_conditioned_writers (7.15s)
+        --- PASS: TestPostgresScenarioContentRevisionIntegration/project_first_legacy_and_conditioned_writers/legacy_save (1.57s)
+        --- PASS: TestPostgresScenarioContentRevisionIntegration/project_first_legacy_and_conditioned_writers/opaque_save (1.25s)
+        --- PASS: TestPostgresScenarioContentRevisionIntegration/project_first_legacy_and_conditioned_writers/replace_pools (1.38s)
+        --- PASS: TestPostgresScenarioContentRevisionIntegration/project_first_legacy_and_conditioned_writers/delete_binding (0.94s)
+        --- PASS: TestPostgresScenarioContentRevisionIntegration/project_first_legacy_and_conditioned_writers/delete_scenario (0.91s)
+        --- PASS: TestPostgresScenarioContentRevisionIntegration/project_first_legacy_and_conditioned_writers/legacy_timestamp_save (1.10s)
+    --- PASS: TestPostgresScenarioContentRevisionIntegration/child_commit_fences_old_nonce (1.01s)
+    --- PASS: TestPostgresScenarioContentRevisionIntegration/policy_enable_race (0.79s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/storage	32.194s

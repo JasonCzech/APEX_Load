@@ -1102,10 +1102,11 @@ type Project struct {
 	UpdatedAt  time.Time       `json:"updated_at"`
 }
 
-// ProjectAuthoringPolicy applies only to ordinary PUT script saves. Other
+// ProjectAuthoringPolicy applies only to ordinary PUT script/scenario saves. Other
 // authored mutations retain their independently declared compatibility policy.
 type ProjectAuthoringPolicy struct {
-	RequireScriptSaveIfMatch bool `json:"require_script_save_if_match,omitempty"`
+	RequireScriptSaveIfMatch   bool `json:"require_script_save_if_match,omitempty"`
+	RequireScenarioSaveIfMatch bool `json:"require_scenario_save_if_match,omitempty"`
 }
 
 type ProjectSettings struct {

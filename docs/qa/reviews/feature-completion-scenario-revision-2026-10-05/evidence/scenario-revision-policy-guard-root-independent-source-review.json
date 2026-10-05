@@ -1,0 +1,40 @@
+{
+  "scope": "Independent root read-only review of corrective API source; no executed acceptance claim",
+  "recorded_utc": "2026-10-05T17:42:54.131178+00:00",
+  "reviewer": "/root",
+  "source_inventory": "scenario-revision-policy-guard-safe-response-final-source-inventory.json",
+  "source_inventory_sha256": "647e5019ed03978790d9e2eef095d4d8d7ae6a39978798f04f6405c3675466d3",
+  "all_four_current_sources_match": true,
+  "reviewed": [
+    {
+      "path": "pkg/api/handlers_projects.go",
+      "sha256": "8a45203a3b0d1b3cb66d8408141d0259852781311f03ab787bfb66b0b1dcb6bd"
+    },
+    {
+      "path": "pkg/api/handlers_scenarios.go",
+      "sha256": "047a552bae9a5d3890e0190b75b06b17b580596beca9a3e2c342fc0581a106cc"
+    },
+    {
+      "path": "pkg/api/scenario_save_policy_availability.go",
+      "sha256": "b48bbc318ed06da21ff75806036fbca3fad15e0ab8ce8acdf1b43df6876da780"
+    },
+    {
+      "path": "pkg/api/scenario_save_policy_availability_test.go",
+      "sha256": "972c6adb6ac51af933250c6ff5b4897c53292bd90fe79618a3d2a7aab16a18ce"
+    }
+  ],
+  "review_result": "No additional actionable finding",
+  "review_points": [
+    "Durable selected canonical ID and scoped/cached owner admission precede capability refusal",
+    "Public project enablement is explicitly refused until HTTP vertical is available",
+    "Externally seeded strict policy and every presented If-Match header fail visibly",
+    "Only fixed safe known capability message/code/reference are exposed; private failures remain generic and presented tag/ID are omitted",
+    "Exact per-case response reasons plus no credential/journal/authored-state writes are asserted",
+    "Unconditioned false/omitted scenario policy and supported script policy preserve compatibility"
+  ],
+  "qualification_pending": [
+    "Targeted API normal/race",
+    "Corrected v2 five-artifact generation/freshness closure",
+    "Full composed Go merge gate"
+  ]
+}

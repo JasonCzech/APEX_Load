@@ -1,0 +1,36 @@
+{
+  "scope": "Final API refusal/runtime and truthful unavailable-contract source freeze; executed qualification pending compiler slot",
+  "recorded_utc": "2026-10-05T17:50:51.624921+00:00",
+  "sources": [
+    {
+      "path": "pkg/api/handlers_projects.go",
+      "sha256": "8a45203a3b0d1b3cb66d8408141d0259852781311f03ab787bfb66b0b1dcb6bd"
+    },
+    {
+      "path": "pkg/api/handlers_scenarios.go",
+      "sha256": "047a552bae9a5d3890e0190b75b06b17b580596beca9a3e2c342fc0581a106cc"
+    },
+    {
+      "path": "pkg/api/scenario_save_policy_availability.go",
+      "sha256": "b48bbc318ed06da21ff75806036fbca3fad15e0ab8ce8acdf1b43df6876da780"
+    },
+    {
+      "path": "pkg/api/scenario_save_policy_availability_test.go",
+      "sha256": "972c6adb6ac51af933250c6ff5b4897c53292bd90fe79618a3d2a7aab16a18ce"
+    },
+    {
+      "path": "pkg/api/openapi_contract_infer.go",
+      "sha256": "542ebad61f2bae81349bf5a3916913158b749678f5a30cf69049ada7ab970478"
+    },
+    {
+      "path": "pkg/api/openapi_scenario_save_policy.go",
+      "sha256": "d29f612de67ccb7ac094f57417860c39a01cc29fa54099fe0bdc58e002063aad"
+    },
+    {
+      "path": "pkg/api/openapi_scenario_save_policy_test.go",
+      "sha256": "a182b5cd15806095fd9817ce845db684dbd8ce81be187ada4ba3b16e29d4153b"
+    }
+  ],
+  "storage_inventory": "scenario-revision-final-source-inventory.json",
+  "storage_sources_match": true
+}

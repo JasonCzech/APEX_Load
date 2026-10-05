@@ -1,0 +1,56 @@
+{
+  "scope": "Read-only generated diff inventory for the qualified source guard; freshness gate still running at observation",
+  "recorded_at": "2026-10-05T18:59:15.717932+00:00",
+  "reviewer": "/root/scenario_foundation_resume",
+  "source_inventory": "scenario-revision-policy-guard-openapi-final-source-inventory.json",
+  "source_inventory_sha256": "808fe3bb36588053dd7818acc43e072ec65e792f66eb8921e146ac63b3f75507",
+  "generated_artifacts": [
+    {
+      "path": "docs/swagger.yaml",
+      "bytes": 17577420,
+      "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f",
+      "head_sha256": "7d1086a1878f2a8492f3aa69f655d1f3d25f3a5cc9d757ee3b314893c045a03d",
+      "changed_from_head": true
+    },
+    {
+      "path": "docs/api-endpoint-catalog.json",
+      "bytes": 291895,
+      "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7",
+      "head_sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7",
+      "changed_from_head": false
+    },
+    {
+      "path": "pkg/api/apidocs/swagger.yaml",
+      "bytes": 17577420,
+      "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f",
+      "head_sha256": "7d1086a1878f2a8492f3aa69f655d1f3d25f3a5cc9d757ee3b314893c045a03d",
+      "changed_from_head": true
+    },
+    {
+      "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+      "bytes": 291895,
+      "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7",
+      "head_sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7",
+      "changed_from_head": false
+    },
+    {
+      "path": "dashboard/src/types/generated/openapi.ts",
+      "bytes": 5913483,
+      "sha256": "f5c1608228714cb60a440ab39685ade9249ebf24cad430c82df76a74337a0ed9",
+      "head_sha256": "913fead7b25d9da346e9141e80ce90b2b24298c4cfbe0ecc57a3ffa17248a165",
+      "changed_from_head": true
+    }
+  ],
+  "swagger_embed_identical": true,
+  "catalog_embed_identical": true,
+  "reviewed_generated_diff": [
+    "Optional scenario strict policy field on project create/update request with explicit true-rejected-400 description.",
+    "Scenario PUT optional If-Match header with explicit unsupported/owned-503 description.",
+    "Scenario PUT503 error-required/code-ref-optional fixed capability-code union preserving generic private-error compatibility.",
+    "No endpoint catalog route change; both repository/embedded catalog bytes remain at HEAD.",
+    "No canonical scenario authoring view or strong GET ETag advertised."
+  ],
+  "source_review_result": "No additional actionable generated-contract source finding",
+  "executed_freshness_result_pending": true,
+  "old_receipt_inventory_limitation_preserved": "Generation-1 receipts enumerated only three actual artifact paths; current v2 receipts and this inventory explicitly cover all five."
+}
