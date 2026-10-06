@@ -204,6 +204,11 @@ func (tr *TestRunner) GetScenarioAuthoringDurable(id string) (*ScenarioAuthoring
 	if cached == nil {
 		return nil, false, nil
 	}
+	// A pending direct-import publication stays invisible, as on the
+	// ordinary read; global readers bypass the RBAC lookup that hides it.
+	if tr.importPublicationConfigured() && !tr.importAssetPublished("scenario", resolved) {
+		return nil, false, nil
+	}
 	if !supported {
 		return nil, false, errScenarioAuthoringUnsupported
 	}

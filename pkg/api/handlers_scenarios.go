@@ -76,7 +76,17 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		receipt.complete(s.scenarioContentRevision(scenario.ID))
 	}
 	s.recordAuditEvent(r, "scenario.create", "success", "scenario", scenario.ID, scenario.ProjectID, map[string]any{"name": scenario.Name, "duration": scenario.Duration})
-	writeJSON(w, http.StatusCreated, maskStoredScenario(scenario))
+	response := maskStoredScenario(scenario)
+	// The created baseline and its strong tag let an editor save next without
+	// a separate authoring read.
+	if projection, found, err := s.runner.GetScenarioAuthoringDurable(scenario.ID); err == nil && found {
+		if tag, tagErr := scenarioAuthoringETag(projection.ContentRevision); tagErr == nil {
+			response.ContentRevision = projection.ContentRevision
+			response.AuthoringProjection = projection
+			w.Header().Set("ETag", tag)
+		}
+	}
+	writeJSON(w, http.StatusCreated, response)
 }
 
 func (s *Server) handleListScenarios(w http.ResponseWriter, r *http.Request) {

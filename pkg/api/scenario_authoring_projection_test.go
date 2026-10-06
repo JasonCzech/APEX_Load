@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -155,5 +156,137 @@ func TestParseScenarioAuthoringIfMatch(t *testing.T) {
 		if _, present, err := parseScenarioAuthoringIfMatch(header); !present || err == nil {
 			t.Fatalf("accepted %#v", header)
 		}
+	}
+}
+
+// The authoring view is a fixed strong-ETag body: object activity
+// (creator, modifier, archive state) has its own lifecycle and never enters
+// it, even for scenarios created and archived through the API.
+func TestScenarioAuthoringViewIgnoresActivityAndArchiveLifecycle(t *testing.T) {
+	server, _, _, _ := newScenarioPolicyAvailabilityFixture(t)
+	created := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scenarios", scenarioSaveRequest("Lifecycle", 1), "")
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	var scenario StoredScenario
+	if err := json.Unmarshal(created.Body.Bytes(), &scenario); err != nil {
+		t.Fatal(err)
+	}
+	_, firstTag, firstBody := requireScenarioAuthoringView(t, server, scenario.ID)
+	// The create response already carries the baseline and its tag.
+	if created.Header().Get("ETag") != firstTag || scenario.AuthoringProjection == nil || scenario.AuthoringProjection.ContentRevision != scenario.ContentRevision {
+		t.Fatalf("create response baseline: tag %q want %q, projection %#v", created.Header().Get("ETag"), firstTag, scenario.AuthoringProjection)
+	}
+	if strings.Contains(firstBody, `"activity"`) {
+		t.Fatalf("authoring view carried activity: %s", firstBody)
+	}
+	for _, action := range []string{"archive", "restore"} {
+		current, ok := server.runner.GetScenario(scenario.ID)
+		if !ok {
+			t.Fatal("scenario vanished")
+		}
+		if response := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/"+action, map[string]any{"updated_at": current.UpdatedAt}, ""); response.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", action, response.Code, response.Body.String())
+		}
+		_, tag, body := requireScenarioAuthoringView(t, server, scenario.ID)
+		if tag != firstTag || body != firstBody {
+			t.Fatalf("%s changed the authoring representation:\n%s\n%s", action, firstBody, body)
+		}
+	}
+}
+
+// Every authored part rotates the strong tag: pool bindings, library
+// placement and monitor selection, not only the root and groups.
+func TestScenarioAuthoringViewRotatesForEveryAuthoredPart(t *testing.T) {
+	server, store, _, scenario := newScenarioPolicyAvailabilityFixture(t)
+	now := time.Now().UTC()
+	if err := store.SaveDataPool(&storage.SharedDataPool{ID: "authoring-pool", Name: "Customers", ProjectID: storage.DefaultProjectID, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveApplication(&storage.Application{ID: "authoring-app", Name: "Application", ProjectID: storage.DefaultProjectID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveRelease(&storage.Release{ID: "authoring-release", Name: "Release", ApplicationID: "authoring-app"}); err != nil {
+		t.Fatal(err)
+	}
+	_, tag, _ := requireScenarioAuthoringView(t, server, scenario.ID)
+	rotate := func(part string, mutate func()) {
+		t.Helper()
+		mutate()
+		next, nextTag, _ := requireScenarioAuthoringView(t, server, scenario.ID)
+		if nextTag == tag {
+			t.Fatalf("%s change did not rotate the tag", part)
+		}
+		tag = nextTag
+		_ = next
+	}
+	rotate("data pool binding", func() {
+		body := map[string]any{"data_pools": []map[string]any{{"pool_id": "authoring-pool", "alias": "customers", "access_mode": "read_only", "selection_strategy": "sequential"}}}
+		if response := authoringAPIRequest(t, server, http.MethodPut, "/api/v1/scenarios/"+scenario.ID+"/data-pools", body, ""); response.Code != http.StatusOK {
+			t.Fatalf("data pools: %d %s", response.Code, response.Body.String())
+		}
+	})
+	rotate("library placement", func() {
+		body := map[string]any{"application_id": "authoring-app", "release_ids": []string{"authoring-release"}, "expected_revision": 0}
+		if response := authoringAPIRequest(t, server, http.MethodPut, "/api/v1/scenarios/"+scenario.ID+"/library-assignment", body, ""); response.Code != http.StatusOK {
+			t.Fatalf("library assignment: %d %s", response.Code, response.Body.String())
+		}
+	})
+	rotate("monitor selection", func() {
+		if err := store.SaveMonitoringCollector(&storage.MonitoringCollector{ID: "authoring-collector", Name: "collector", ProjectID: storage.DefaultProjectID, TokenHash: hashAPIKey("authoring-token"), Health: "healthy", LastSeenAt: &now, AllowedMetricPacks: []string{"go-runtime"}}); err != nil {
+			t.Fatal(err)
+		}
+		source, err := store.SaveMonitorSource(storage.MonitorSource{ID: "authoring-source", ProjectID: storage.DefaultProjectID, Name: "runtime", Service: "orders", CollectorID: "authoring-collector", Pack: "go-runtime", IntervalSeconds: 15, Enabled: true}, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.SaveMonitorBindings(storage.MonitorBindings{ScenarioID: scenario.ID, ProjectID: storage.DefaultProjectID, Sources: []storage.MonitorBinding{{SourceID: source.ID, Required: true}}}, 0); err != nil {
+			t.Fatal(err)
+		}
+	})
+	view, _, _ := requireScenarioAuthoringView(t, server, scenario.ID)
+	if len(view.Scenario.DataPools) != 1 || len(view.LibraryPlacement.ReleaseIDs) != 1 || len(view.MonitorSelection.Sources) != 1 {
+		t.Fatalf("projection missing authored parts: %#v", view)
+	}
+}
+
+// Through the real route, a caller with roles only in another project gets
+// no representation and no tag for the scenario.
+func TestScenarioAuthoringViewRefusesForeignProjectCallerOnRealRoute(t *testing.T) {
+	server, store, _, scenario := newScenarioPolicyAvailabilityFixture(t)
+	if err := store.SaveProject(&storage.Project{ID: "foreign-project", Name: "Foreign"}); err != nil {
+		t.Fatal(err)
+	}
+	enableTrustedHeaderAuth(t, server)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID+"?view=authoring", nil)
+	request.Header.Set("X-Auth-Request-User", "foreign-viewer")
+	request.Header.Set("X-APEXLoad-Project-Roles", "foreign-project="+RoleViewer)
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden && response.Code != http.StatusNotFound || response.Header().Get("ETag") != "" || strings.Contains(response.Body.String(), scenario.Name) {
+		t.Fatalf("foreign caller: %d etag=%q %s", response.Code, response.Header().Get("ETag"), response.Body.String())
+	}
+	member := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID+"?view=authoring", nil)
+	member.Header.Set("X-Auth-Request-User", "member-viewer")
+	member.Header.Set("X-APEXLoad-Project-Roles", storage.DefaultProjectID+"="+RoleViewer)
+	allowed := httptest.NewRecorder()
+	server.mux.ServeHTTP(allowed, member)
+	if allowed.Code != http.StatusOK || allowed.Header().Get("ETag") == "" {
+		t.Fatalf("member viewer: %d %s", allowed.Code, allowed.Body.String())
+	}
+}
+
+// A scenario whose direct-import publication is still pending stays
+// invisible to the authoring view, as on the ordinary read.
+func TestScenarioAuthoringViewHidesPendingImportPublication(t *testing.T) {
+	server, _, _, scenario := newScenarioPolicyAvailabilityFixture(t)
+	server.runner.importPublicationMu.Lock()
+	server.runner.importPublicationSnapshot = func() (map[string]struct{}, error) {
+		return map[string]struct{}{importPublicationAssetKey("scenario", scenario.ID): {}}, nil
+	}
+	server.runner.importPublicationMu.Unlock()
+	response := authoringAPIRequest(t, server, http.MethodGet, "/api/v1/scenarios/"+scenario.ID+"?view=authoring", nil, "")
+	if response.Code != http.StatusNotFound || response.Header().Get("ETag") != "" {
+		t.Fatalf("pending publication: %d %s", response.Code, response.Body.String())
 	}
 }

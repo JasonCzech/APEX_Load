@@ -312,7 +312,7 @@ func (s *Server) objectActivityMiddleware(next http.Handler) http.Handler {
 		// The authored document and placement form a fixed strong-ETag body.
 		// Activity has its own lifecycle, so this representation must pass
 		// through without display-cache reads or JSON activity enrichment.
-		if r.Method == http.MethodGet && kind == "script" && len(parts) == 2 {
+		if r.Method == http.MethodGet && (kind == "script" || kind == "scenario") && len(parts) == 2 {
 			views := r.URL.Query()["view"]
 			if len(views) == 1 && views[0] == "authoring" {
 				next.ServeHTTP(w, r)
