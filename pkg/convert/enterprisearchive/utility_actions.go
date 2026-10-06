@@ -914,3 +914,60 @@ func sourceSaveVarOffset(expression string) (string, int, bool) {
 	}
 	return base, offset, true
 }
+
+// sourceFileOutputWarning explains how scripts that write load-generator files
+// replay.
+const sourceFileOutputWarning = "The script writes lines to a file on the load generator (fopen/fprintf/fclose). APEX Load does not write generator files; each fprintf line is replayed as an output message tagged with its stream, so it appears with the run's other output messages."
+
+func noteSourceFileOutput(result *ConvertResult) {
+	for _, warning := range result.Warnings {
+		if warning == sourceFileOutputWarning {
+			return
+		}
+	}
+	result.Warnings = append(result.Warnings, sourceFileOutputWarning)
+}
+
+// isSourceFileOutputFunction reports the C file functions the converter maps
+// (fprintf to an output message, the rest to no-ops).
+func isSourceFileOutputFunction(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "fprintf", "fopen", "fclose", "fflush":
+		return true
+	}
+	return false
+}
+
+// convertSourceFileOutputAction turns fprintf(stream, format, values...) into
+// an output message carrying the same format and values.
+func convertSourceFileOutputAction(fn ParsedFunction) dsl.Action {
+	stream := ""
+	message := fn
+	if len(fn.CallArgs) > 0 {
+		stream = strings.TrimSpace(fn.CallArgs[0].Raw)
+		message.CallArgs = append([]ParsedArgument(nil), fn.CallArgs[1:]...)
+	}
+	if len(fn.RawArgs) > 0 {
+		if stream == "" {
+			stream = strings.TrimSpace(fn.RawArgs[0])
+		}
+		message.RawArgs = append([]string(nil), fn.RawArgs[1:]...)
+	}
+	if len(fn.Args) > 0 {
+		// Positional arguments are keyed arg1..argN; drop the stream.
+		message.Args = make(map[string]string, len(fn.Args))
+		for key, value := range fn.Args {
+			index, err := strconv.Atoi(strings.TrimPrefix(key, "arg"))
+			if !strings.HasPrefix(key, "arg") || err != nil {
+				message.Args[key] = value
+				continue
+			}
+			if index > 1 {
+				message.Args[fmt.Sprintf("arg%d", index-1)] = value
+			}
+		}
+	}
+	action := convertSourceMessageAction(message, SourceFunctionDefinition{Name: "fprintf", Family: "message", SupportMode: SourceFunctionSupportExecutable})
+	action.Params["output_stream"] = stream
+	return action
+}

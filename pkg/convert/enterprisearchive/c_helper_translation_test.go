@@ -143,3 +143,39 @@ void splitCode()
 		t.Fatalf("targets = %v, warnings = %v, want the sliced code", recorder.targets, result.Warnings)
 	}
 }
+
+// A script that appends lines to a load-generator file replays each line as
+// an output message instead.
+func TestFileOutputReplaysAsOutputMessages(t *testing.T) {
+	result := importHelperArchive(t, `Action()
+{
+	long handle;
+	handle = fopen("C:\\temp\\users.txt", "a+");
+	fprintf(handle, "%s %s \n", lr_eval_string("{user}"), lr_eval_string("{pin}"));
+	fclose(handle);
+	return 0;
+}
+`)
+	var message *dslActionView
+	for _, action := range result.Script.Actions {
+		if action.Type == "custom_call" {
+			t.Fatalf("custom_call %q, want fprintf/fclose mapped", action.Name)
+		}
+		if action.Type == "source_message" {
+			message = &dslActionView{format: action.Params["format"], args: action.Params["args"], stream: action.Params["output_stream"]}
+		}
+	}
+	if message == nil || message.format != "%s %s" || message.stream != "handle" {
+		t.Fatalf("message = %+v, want the fprintf format with its stream", message)
+	}
+	if args, _ := message.args.([]any); len(args) != 2 || args[0] != "{{var.user}}" {
+		t.Fatalf("args = %#v, want the two values", message.args)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "APEX Load does not write generator files") {
+		t.Fatalf("warnings = %#v, want the file-output note", result.Warnings)
+	}
+}
+
+type dslActionView struct {
+	format, args, stream any
+}

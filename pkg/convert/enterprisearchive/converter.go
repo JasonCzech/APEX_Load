@@ -522,6 +522,19 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
+		case "fprintf":
+			// Generators do not write files on the load generator; the line
+			// goes to the run's output messages, as lr_output_message would.
+			action := convertSourceFileOutputAction(fn)
+			appendTrackedSourceAction(fn, action, SourceFunctionSupportExecutable, "A line written to a load-generator file is replayed as an output message tagged with its stream.")
+			noteSourceFileOutput(result)
+
+		case "fopen", "fclose", "fflush":
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "", fn.Name, "config", "converted", "Load-generator file handles are not opened; fprintf lines go to output messages instead.", SourceFunctionSupportNativeNoop))
+			result.Stats.ContributorFunctions++
+			recordSourceFunctionSupport(result, SourceFunctionSupportNativeNoop)
+			noteSourceFileOutput(result)
+
 		case "lr_error_message":
 			action := convertLRErrorMessageAction(fn)
 			if def, ok := lookupSourceFunction(fn.Name); ok {

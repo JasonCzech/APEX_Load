@@ -234,6 +234,10 @@ func (vu *VUser) handleSourceMessageAction(ctx context.Context, action dsl.Actio
 		"function", sourceActionFunction(action),
 		"message", message,
 	}
+	if stream, _ := actionParamString(action.Params, "output_stream"); stream != "" {
+		// An imported fprintf line names the file stream it was written to.
+		attrs = append(attrs, "output_stream", stream)
+	}
 	if status, _ := actionParamBool(action.Params, "status_message"); status {
 		vu.ensureVariables()
 		vu.Variables["vuser_status"] = message

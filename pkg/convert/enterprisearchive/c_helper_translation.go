@@ -80,7 +80,7 @@ func (table sourceHelperTable) translateHelperCall(call ParsedFunction, definiti
 		emit(fmt.Sprintf("lr_save_string(%s, %q);", value, locals[param]), call.LineNumber)
 	}
 	known := func(name string) bool {
-		if _, ok := lookupSourceFunction(name); ok {
+		if _, ok := lookupSourceFunction(name); ok || isSourceFileOutputFunction(name) {
 			return true
 		}
 		return table.definesHelper(name)
