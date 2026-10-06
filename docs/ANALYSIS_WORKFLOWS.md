@@ -152,11 +152,18 @@ explicit error instead of a misleading chart.
 A declared summary measure names the statistic and window the source computed;
 the editor never guesses either. A bucket spanning several source windows is
 missing for a percentile, and for an average without sample counts, whatever
-number of rows it happens to hold. The workspace and comparison panel start
-buckets on the source window grid and widen them to whole windows. A cumulative
-histogram is differenced per series across every file of an import; a bucket is
-missing as `partial_histogram_window` when a window ends past it or a window of
-an earlier bucket ends inside it, so buckets must cover whole scrape intervals.
+number of rows it happens to hold. The workspace and comparison panel widen
+buckets to whole source windows (in a comparison, to a common multiple of both
+sides' windows) and start them on the metric's own window grid, read from the
+first window of its imported partitions; windows anchored at a test start or a
+local midnight keep their phase. When that grid is unknown or inconsistent the
+range is left as entered. A cumulative histogram is differenced per series across
+every file of an import; an instant several files report is one sample when they
+agree and `duplicate_histogram_window` when they disagree. Its windows run between
+consecutive scrapes, so a bucket is missing as `partial_histogram_window` when a
+window ends past it or a window of an earlier bucket (or from before `from`) ends
+inside it: choose a `from` at a scrape time and a bucket that is a whole multiple
+of the scrape interval.
 Histogram bounds that differ within a selection are refused, and a FLOAT bound
 column is matched at its own precision. Summary rows rejected only for their
 sample count or sum are recorded as `invalid_summary_sample`.
@@ -925,7 +932,7 @@ The analysis capabilities response includes `metric_catalog` even when native im
 
 The retained action/transaction catalog describes response time in milliseconds, error rate in percent, observation count, and observation/error/success rates in counts per elapsed second. Each metric also identifies its existing native wire unit: `ms`, `%`, `observations` or `observations/s`. Those response units remain unchanged; shared normalization maps them to the canonical catalog units without treating message or byte populations as transaction observations. Query profiles enumerate currently executable population, archive/live mode, grouping, filters, property selection, bounds and required evidence. They do not claim protocol/group intersections that have not been captured. Existing saved definitions retain their behavior.
 
-Shared typed operations implement eligible count ratios, epoch-aware counter deltas/rates, comparable absolute/percentage baseline changes, and bounded moving mean/standard deviation. Existing raw counter bucket rates retain their reset-only display behavior and explicitly unknown epoch lineage. They cannot qualify the new baseline or moving operations simply because a metric version/population is supplied; qualified counter operations require the explicit epoch-aware input. A complete observed window with zero events has a measured count/rate of zero. Missing windows, incompatible semantics, unknown/reset epochs and empty denominators remain unscored. Derived points retain bounded operation, algorithm and elapsed-bucket lineage, so a P95 series cannot be compared as an average series. Legacy derived points with unknown parent statistics remain readable but unqualified for these new operations. Histogram and precomputed-summary reaggregation remain unavailable pending explicit typed import executors.
+Shared typed operations implement eligible count ratios, epoch-aware counter deltas/rates, comparable absolute/percentage baseline changes, and bounded moving mean/standard deviation. Existing raw counter bucket rates retain their reset-only display behavior and explicitly unknown epoch lineage. They cannot qualify the new baseline or moving operations simply because a metric version/population is supplied; qualified counter operations require the explicit epoch-aware input. A complete observed window with zero events has a measured count/rate of zero. Missing windows, incompatible semantics, unknown/reset epochs and empty denominators remain unscored. Derived points retain bounded operation, algorithm and elapsed-bucket lineage, so a P95 series cannot be compared as an average series. Legacy derived points with unknown parent statistics remain readable but unqualified for these new operations. Imported precomputed summaries and histograms are re-bucketed by their own typed rules (see the summary and histogram section above); the typed derived operations here do not accept them as inputs yet.
 
 ## Event Hubs processor progress analysis
 

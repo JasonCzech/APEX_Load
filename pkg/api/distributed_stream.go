@@ -704,9 +704,7 @@ receiveLoop:
 		// duplicates and late arrivals the live view rejects, and never the
 		// controller's own retries of the same publication below.
 		tr.mu.Lock()
-		if distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fence, terminal) {
-			telemetrySourceLedgerLocked(test).observe(target, batch, time.Now())
-		}
+		observeTelemetryPublicationLocked(tr, test, target, fence, terminal, batch, time.Now())
 		tr.mu.Unlock()
 		var (
 			live        *LiveMetrics
@@ -1765,7 +1763,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 	tr.mu.Lock()
 	live := buildLiveMetricsFromDistributedBatch(test, aggregated, fleetTPS, groupTPS)
 	if live.Telemetry != nil {
-		live.Telemetry.Sources = test.telemetrySources.summary(test.continuityFailovers...)
+		live.Telemetry.Sources = telemetrySourceSummaryLocked(test)
 	}
 	qualifyExpectedMessagingProgress(test, live, batches)
 	if live.Telemetry != nil {

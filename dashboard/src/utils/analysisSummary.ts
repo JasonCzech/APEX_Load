@@ -1,4 +1,4 @@
-import type { AnalysisMapping, AnalysisMeasure } from '../types/analysis'
+import type { AnalysisImport, AnalysisMapping, AnalysisMeasure } from '../types/analysis'
 
 // A summary measure is a statistic the source already computed over a fixed
 // window. The server re-buckets it only where that is exact; these helpers
@@ -83,7 +83,9 @@ export function analysisMetricAggregations(mapping: AnalysisMapping | undefined,
   const summaries = analysisSummaryDeclarations(mapping, metric)
   if (summaries.length) return { options: summaries.map(d => d.statistic), windowSeconds: aggregation => summaries.find(d => d.statistic === aggregation)?.window_seconds }
   const named = analysisNameColumnHistograms(mapping)
-  if (named.length) {
+  // A fixed-name measure is never one of the name-column histograms.
+  const fixedName = (mapping?.measures ?? []).some(m => !m.name_column?.length && m.name === metric)
+  if (named.length && !fixedName) {
     const windows = Array.from(new Set(named.map(h => h.window_seconds).filter((w): w is number => !!w)))
     return { options: allAnalysisAggregations, windowSeconds: aggregation => analysisHistogramStatistics.includes(aggregation) && windows.length === 1 ? windows[0] : undefined }
   }
@@ -116,11 +118,53 @@ export function analysisBucketSeconds(rangeSeconds: number, windowSeconds?: numb
   return Math.ceil(target / windowSeconds) * windowSeconds
 }
 
-/** Snaps a UTC range outward onto the source window grid (multiples of the window since the
- * epoch), so every bucket starts where a source window starts. Without a window the range is
- * unchanged. */
-export function analysisWindowAlignedRange(fromMs: number, toMs: number, windowSeconds?: number): { fromMs: number; toMs: number } {
-  if (!windowSeconds || windowSeconds < 1) return { fromMs, toMs }
+/** Snaps a UTC range outward onto a source window grid that passes through anchorMs, so every
+ * bucket starts where a source window starts. Without a window or a known grid the range is
+ * unchanged: windows anchored at a test start or a local midnight are not on the epoch grid. */
+export function analysisWindowAlignedRange(fromMs: number, toMs: number, windowSeconds?: number, anchorMs?: number): { fromMs: number; toMs: number } {
+  if (!windowSeconds || windowSeconds < 1 || anchorMs === undefined || !Number.isFinite(anchorMs)) return { fromMs, toMs }
   const step = windowSeconds * 1000
-  return { fromMs: Math.floor(fromMs / step) * step, toMs: Math.ceil(toMs / step) * step }
+  return { fromMs: anchorMs + Math.floor((fromMs - anchorMs) / step) * step, toMs: anchorMs + Math.ceil((toMs - anchorMs) / step) * step }
+}
+
+const positiveModulo = (value: number, step: number) => ((value % step) + step) % step
+
+/** A start of metric's source window grid in a dataset: the earliest normalized partition start
+ * of that metric, provided every partition of it starts on the same grid. Undefined when the grid
+ * is unknown or inconsistent. */
+export function analysisWindowAnchor(dataset: AnalysisImport | undefined, metric: string, windowSeconds?: number): number | undefined {
+  if (!windowSeconds || windowSeconds < 1) return
+  const step = windowSeconds * 1000
+  const partitions = dataset?.partition_manifest?.partitions ?? []
+  const named = partitions.filter(p => p.stats?.metric === metric)
+  // Partitions of name-column measures may mix metrics and carry no single name.
+  const candidates = named.length ? named : partitions.filter(p => p.stats?.metric === undefined && (p.stats?.kind === 'summary' || p.stats?.kind === 'histogram'))
+  const starts = candidates.map(p => p.stats?.min_time ? Date.parse(p.stats.min_time) : NaN).filter(Number.isFinite)
+  if (!starts.length) return
+  const anchor = Math.min(...starts)
+  return starts.every(start => positiveModulo(start - anchor, step) === 0) ? anchor : undefined
+}
+
+const greatestCommonDivisor = (a: number, b: number): number => b ? greatestCommonDivisor(b, a % b) : a
+
+/** The smallest bucket that covers whole source windows of every side (their least common
+ * multiple), within the 86400-second bucket limit. */
+export function analysisCommonWindow(windows: number[]): number | undefined {
+  const valid = windows.filter(w => Number.isSafeInteger(w) && w > 0)
+  if (!valid.length) return
+  const common = valid.reduce((a, b) => a / greatestCommonDivisor(a, b) * b)
+  return common <= 86400 ? common : undefined
+}
+
+/** A start shared by every side's window grid, so buckets of the common window start a window on
+ * each side. Undefined when a side's grid is unknown or no shared start exists. */
+export function analysisCommonWindowAnchor(sides: { windowSeconds: number; anchorMs?: number }[], commonSeconds: number): number | undefined {
+  if (!sides.length || sides.some(side => side.anchorMs === undefined)) return
+  const [first, ...rest] = sides
+  const firstStep = first.windowSeconds * 1000
+  for (let k = 0; k * first.windowSeconds < commonSeconds; k++) {
+    const candidate = (first.anchorMs as number) + k * firstStep
+    if (rest.every(side => positiveModulo(candidate - (side.anchorMs as number), side.windowSeconds * 1000) === 0)) return candidate
+  }
+  return
 }

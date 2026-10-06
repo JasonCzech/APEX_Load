@@ -3,7 +3,10 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -188,10 +191,68 @@ func TestPendingPromotionFailsARunRefusedByItsPolicies(t *testing.T) {
 	if err := store.SaveTest(record); err != nil {
 		t.Fatal(err)
 	}
+	// A second queued run behind it is still considered in the same pass:
+	// the refusal does not leave the queue stuck at its head.
+	behind, err := runner.CreateTest(CreateTestRequest{Name: "behind", ScriptID: "policy-pending-script", VUsers: 1, Duration: "1m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	laterPending := pendingSince.Add(time.Second)
+	runner.mu.Lock()
+	second := runner.tests[behind.ID]
+	second.Status, second.PendingSince, second.PendingReason = "PENDING", &laterPending, "waiting for capacity"
+	secondRecord := buildManagedTestRecord(second)
+	runner.mu.Unlock()
+	if err := store.SaveTest(secondRecord); err != nil {
+		t.Fatal(err)
+	}
 	runner.promotePendingTests()
 	got, ok := runner.GetTest(test.ID)
 	if !ok || got.Status != "FAILED" || !strings.Contains(got.Error, "more than one") {
 		t.Fatalf("pending run with ambiguous policies: %#v", got)
+	}
+	if next, ok := runner.GetTest(behind.ID); !ok || next.Status == "PENDING" {
+		t.Fatalf("the run behind the refused one was not considered: %#v", next)
+	}
+}
+
+// Policy save failures map to fixed statuses and messages; storage detail
+// never reaches the response.
+func TestAnalysisPolicySaveErrorsAreMappedWithoutStorageDetail(t *testing.T) {
+	for _, tc := range []struct {
+		err    error
+		status int
+	}{
+		{storage.ErrAnalysisRevision, http.StatusConflict},
+		{storage.ErrAnalysisDefinitionLimit, http.StatusConflict},
+		{storage.ErrAnalysisDefinitionInvalid, http.StatusBadRequest},
+		{fmt.Errorf("lock project: %w", storage.ErrOwnedProjectNotFound), http.StatusNotFound},
+		{errors.New("pq: connection reset by secret-host"), http.StatusInternalServerError},
+	} {
+		response := httptest.NewRecorder()
+		if !writeAnalysisPolicySaveError(response, tc.err) || response.Code != tc.status || strings.Contains(response.Body.String(), "secret-host") {
+			t.Fatalf("%v: %d %s", tc.err, response.Code, response.Body.String())
+		}
+	}
+}
+
+type failingPolicyBody struct{}
+
+func (failingPolicyBody) Read([]byte) (int, error) { return 0, errors.New("connection reset") }
+
+// Only an oversized body is 413; any other read failure is a 400.
+func TestAnalysisPolicyBodyErrors(t *testing.T) {
+	server, store := newAuditTestServer(t)
+	t.Cleanup(func() { store.Close() })
+	oversized := authoringAPIRequest(t, server, http.MethodPost, policiesPath, map[string]string{"pad": strings.Repeat("x", 2<<20)}, "")
+	if oversized.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized policy: %d %s", oversized.Code, oversized.Body.String())
+	}
+	request := httptest.NewRequest(http.MethodPost, policiesPath, failingPolicyBody{})
+	response := httptest.NewRecorder()
+	server.handleAnalysisPolicies(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("failed body read: %d %s", response.Code, response.Body.String())
 	}
 }
 
@@ -213,6 +274,19 @@ func TestRunPolicyPinsSurviveControllerRestart(t *testing.T) {
 	runner.mu.RUnlock()
 	if len(want) != 1 || want[0].Applied {
 		t.Fatalf("started pins %#v", want)
+	}
+	// Editing the default after Start must not change what the run pinned.
+	if _, err := store.SaveAnalysisDefinition(storage.AnalysisDefinition{ID: "gate", ProjectID: normalizeProjectID(test.ProjectID), Kind: storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, Name: "gate", Definition: json.RawMessage(`{"version":1,"apply_by_default":true,"mode":"advisory","max_loss_ratio":0.5}`)}, want[0].Revision); err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.GetTest(test.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged := &ManagedTest{ID: test.ID}
+	applyStoredManagedTestSnapshot(merged, managedTestFromRecord(record))
+	if merged.initialArchiveProvenance == nil || !reflect.DeepEqual(merged.initialArchiveProvenance.PolicyPins, want) {
+		t.Fatalf("HA refresh re-resolved pins: %#v", merged.initialArchiveProvenance)
 	}
 	restarted := NewTestRunner(2, NewHub(), store)
 	restarted.mu.RLock()
@@ -283,4 +357,67 @@ func FuzzDecodeAnalysisPolicy(f *testing.F) {
 			t.Fatalf("decode is not stable: %v", err)
 		}
 	})
+}
+
+// Over HTTP a policy store failure at Start is a retryable 503, not a 400.
+func TestPolicyStoreFailureAtStartIsAServiceUnavailableResponse(t *testing.T) {
+	t.Setenv(config.EnvArchiveDir, t.TempDir())
+	db, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	server := NewServer(ServerConfig{Store: &failingPolicyListStore{SQLiteStore: db}, MaxConcurrent: 10, Addr: ":8080"})
+	storePreflightScript(server.runner, "policy-store-http", "")
+	run, err := server.runner.CreateTest(CreateTestRequest{Name: "Policy outage", ScriptID: "policy-store-http", VUsers: 1, Duration: "1m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+run.ID+"/start", nil))
+	if response.Code != http.StatusServiceUnavailable || response.Header().Get("Retry-After") != "1" || !strings.Contains(response.Body.String(), "start_admission_temporarily_unavailable") {
+		t.Fatalf("policy store failure at Start: %d %s", response.Code, response.Body.String())
+	}
+}
+
+// pagedPolicyStore pages like a store without a single-statement read, and a
+// concurrent save shifts the second page so one policy is listed twice.
+type pagedPolicyStore struct {
+	pages [][]storage.AnalysisDefinition
+}
+
+func (s *pagedPolicyStore) SaveAnalysisDefinition(storage.AnalysisDefinition, int64) (*storage.AnalysisDefinition, error) {
+	return nil, errors.New("read only")
+}
+
+func (s *pagedPolicyStore) GetAnalysisDefinition(string, string, int64) (*storage.AnalysisDefinition, error) {
+	return nil, errors.New("read only")
+}
+
+func (s *pagedPolicyStore) ListAnalysisDefinitions(_, _ string, _, offset int) ([]storage.AnalysisDefinition, error) {
+	if index := offset / 100; index < len(s.pages) {
+		return s.pages[index], nil
+	}
+	return nil, nil
+}
+
+func TestPagedPolicyReadDeduplicatesAPolicyShiftedAcrossPages(t *testing.T) {
+	full := make([]storage.AnalysisDefinition, 100)
+	for i := range full {
+		full[i] = storage.AnalysisDefinition{ID: fmt.Sprintf("policy-%03d", i)}
+	}
+	// The last policy of page one reappears first on page two, and a deleted
+	// policy is dropped.
+	second := []storage.AnalysisDefinition{full[99], {ID: "policy-100"}, {ID: "policy-101", Deleted: true}}
+	live, err := liveAnalysisPolicies(&pagedPolicyStore{pages: [][]storage.AnalysisDefinition{full, second}}, storage.DefaultProjectID, storage.AnalysisDefinitionKindTelemetryPolicy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]int{}
+	for _, item := range live {
+		seen[item.ID]++
+	}
+	if len(live) != 101 || seen["policy-099"] != 1 || seen["policy-101"] != 0 {
+		t.Fatalf("paged read listed %d policies: %v", len(live), seen)
+	}
 }

@@ -465,7 +465,13 @@ the same truncate-and-mark behaviour, as do `clock_observations.jsonl`
 default 4 MiB). `telemetry_sources.jsonl` records each generator process's
 publication coverage per execution generation; loss is exact only for an
 epoch observed from its first publication to its terminal one, and an
-adopted run carries an `unobserved` record for each earlier generation.
+adopted run carries an `unobserved` record for each earlier generation. The
+epoch travels on `MetricsBatch` as `source_epoch` and
+`source_epoch_started_unix_ms` (fields 31 and 32). A generator that predates
+source epochs sends neither; its publications are recorded under an empty
+epoch, counted as `legacy_epochs` in the summary, and their loss is only a
+lower bound. That count stands in for the specification's `legacy_unknown`
+label. Gap ranges and observation windows are not persisted per interval yet.
 
 `interval_distributions.jsonl` has its own allowance,
 `APEXLOAD_ARCHIVE_INTERVAL_DISTRIBUTIONS_MAX_BYTES` (default 256 MiB, positive

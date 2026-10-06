@@ -61,7 +61,7 @@ func TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire(t *testing.T) {
 	}
 	replacements := map[string]map[string]json.RawMessage{
 		"null_scalar": {"redirect_hop": json.RawMessage("null")}, "null_bytes": {"bytes": json.RawMessage("null")}, "wrong_boolean": {"service_worker": json.RawMessage(`"false"`)},
-		"future": {"version": json.RawMessage("4")}, "v2_with_association": {"document_association": json.RawMessage(`"cdp_loader_join"`), "document_id": json.RawMessage(`"0123456789abcdef0123456789abcdef-d1"`)}, "subnanosecond": {"observed_at": json.RawMessage(`"2023-11-14T22:13:20.1234567891Z"`)}, "offset": {"observed_at": json.RawMessage(`"2023-11-14T22:13:20+00:00"`)},
+		"future": {"version": json.RawMessage("4")}, "v2_with_association": {"document_association": json.RawMessage(`"cdp_loader_join"`), "document_id": json.RawMessage(`"0123456789abcdef0123456789abcdef-d1"`)}, "v2_with_association_reason": {"identity_unavailable_reason": json.RawMessage(`"ambiguous_cdp_join"`)}, "subnanosecond": {"observed_at": json.RawMessage(`"2023-11-14T22:13:20.1234567891Z"`)}, "offset": {"observed_at": json.RawMessage(`"2023-11-14T22:13:20+00:00"`)},
 		"invalid_date": {"observed_at": json.RawMessage(`"2023-02-30T22:13:20Z"`)}, "wrong_generation": {"request_id": json.RawMessage(`"fedcba9876543210fedcba9876543210-request-1"`)},
 		"unsafe_origin": {"origin": json.RawMessage(`"https://secret@example.test"`)}, "unknown": {"server_time_ms": json.RawMessage("0")},
 		"duplicate_phase":      {"phases": json.RawMessage(`[{"name":"response","start_ms":0,"end_ms":0},{"name":"response","start_ms":0,"end_ms":0}]`)},

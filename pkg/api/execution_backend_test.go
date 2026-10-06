@@ -2635,6 +2635,11 @@ func TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion(t *testing.T
 	if err := json.Unmarshal(bytes.SplitN(sources, []byte("\n"), 2)[0], &epoch); err != nil || epoch.Source == "" || epoch.Epoch == "" || epoch.FirstSequence == 0 || epoch.Received == 0 {
 		t.Fatalf("archived source epoch %s: %v", sources, err)
 	}
+	// The consumer observed the terminal publication, so a run watched from
+	// its first publication knows its loss exactly.
+	if epoch.TerminalSequence == 0 || epoch.TerminalSequence != epoch.LastSequence || !epoch.LossExact {
+		t.Fatalf("archived source epoch is not exact after a complete run: %s", sources)
+	}
 }
 
 func TestDistributedExecutionBackendPropagatesRemoteFailure(t *testing.T) {

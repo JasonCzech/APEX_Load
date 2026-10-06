@@ -5,7 +5,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { request } from '../hooks/apiClient'
 import type { AnalysisImport, AnalysisPoint } from '../types/analysis'
 import AnalysisIdentityFilters from './AnalysisIdentityFilters'
-import { allAnalysisAggregations, analysisMetricAggregations, analysisWindowAlignedRange, defaultAnalysisAggregations } from '../utils/analysisSummary'
+import { allAnalysisAggregations, analysisCommonWindow, analysisCommonWindowAnchor, analysisMetricAggregations, analysisWindowAlignedRange, analysisWindowAnchor, defaultAnalysisAggregations } from '../utils/analysisSummary'
 import { analysisIdentityFilterError, analysisMappingDisclosureError, analysisIdentityTextError, analysisImportedIdentityAvailable, analysisImportedSelectorsRequested, analysisMappingRequiresImportedIdentity, buildAnalysisIdentitySelection, emptyAnalysisIdentityFilters, restoreAnalysisIdentityFilters, restoreAnalysisImportedIdentityFilters } from '../utils/analysisIdentity'
 
 interface Score { lag_seconds: number; pairs: number; expected_buckets: number; coverage: number; coefficient?: number }
@@ -99,11 +99,16 @@ export default function AnalysisComparison({ projectId, dataset, datasets, canEd
   // statistics, over whole source windows.
   const leftAggregations = analysisMetricAggregations(dataset.mapping, leftMetric)
   const rightAggregations = target && target !== 'run' ? analysisMetricAggregations(datasets.find(item => item.id === target)?.mapping, rightMetric) : { options: defaultAnalysisAggregations }
-  const sourceWindows = [leftAggregations.windowSeconds?.(aggregation), rightAggregations.windowSeconds?.(rightAggregation)].filter((w): w is number => !!w)
-  const sourceWindow = sourceWindows.length ? Math.max(...sourceWindows) : undefined
+  const rightDataset = target && target !== 'run' ? datasets.find(item => item.id === target) : undefined
+  const windowSides = [
+    { windowSeconds: leftAggregations.windowSeconds?.(aggregation), dataset: dataset as AnalysisImport | undefined, metric: leftMetric },
+    { windowSeconds: rightAggregations.windowSeconds?.(rightAggregation), dataset: rightDataset, metric: rightMetric },
+  ].flatMap(side => side.windowSeconds ? [{ windowSeconds: side.windowSeconds, anchorMs: analysisWindowAnchor(side.dataset, side.metric, side.windowSeconds) }] : [])
+  // One bucket must cover whole source windows on both sides, starting where both grids start.
+  const sourceWindow = analysisCommonWindow(windowSides.map(side => side.windowSeconds))
   const effectiveBucket = sourceWindow ? Math.ceil(bucket / sourceWindow) * sourceWindow : bucket
   const definition = (): Definition => {
-    const range = analysisWindowAlignedRange(Date.parse(`${from}Z`), Date.parse(`${to}Z`), sourceWindow)
+    const range = analysisWindowAlignedRange(Date.parse(`${from}Z`), Date.parse(`${to}Z`), sourceWindow, sourceWindow ? analysisCommonWindowAnchor(windowSides, sourceWindow) : undefined)
     return {
       left: { dataset_id: dataset.id, ...buildAnalysisIdentitySelection(leftFilters), metric: leftMetric, aggregation },
       right: target === 'run' ? { run_id: runId, source_id: sourceId, transaction, host, service, dimensions: JSON.parse(dimensions), ...(!sourceId ? { protocol, group } : {}), metric: sourceId ? rightMetric : 'transaction.duration', aggregation: rightAggregation } : { dataset_id: target, ...buildAnalysisIdentitySelection(rightFilters), metric: rightMetric, aggregation: rightAggregation },

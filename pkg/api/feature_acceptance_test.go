@@ -135,6 +135,23 @@ func TestFeatureAcceptanceStatusSemantics(t *testing.T) {
 			t.Fatalf("after a newer pass: %#v", status)
 		}
 	}
+	// A later broad pass clears the broad subject but never restores a
+	// platform whose pass the broad revoke withdrew.
+	broadPass := acceptanceBody("passed", true)
+	delete(broadPass, "platform")
+	recordAcceptance(t, server, broadPass)
+	for _, status := range acceptanceStatus(t, server, "requirement=BE-4").Statuses {
+		switch status.Platform {
+		case "darwin-arm64":
+			if status.Supported || status.Reason != "withdrawn_by_broader_record" {
+				t.Fatalf("a broad pass restored a revoked platform: %#v", status)
+			}
+		default:
+			if !status.Supported {
+				t.Fatalf("after a broad pass: %#v", status)
+			}
+		}
+	}
 	// failed and pending withdraw a claim like revoked.
 	for _, result := range []string{"failed", "pending"} {
 		recordAcceptance(t, server, pass("linux-amd64", "ddddddd4444"))
@@ -161,5 +178,48 @@ func TestFeatureAcceptanceStatusSemantics(t *testing.T) {
 	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "feature_acceptance.record"})
 	if err != nil || len(events) == 0 {
 		t.Fatalf("acceptance records are not audited: %v", err)
+	}
+}
+
+// Support follows the database sequence even when record times disagree
+// with it (a controller whose clock runs ahead wrote the earlier record).
+func TestFeatureSupportOrdersBySequenceNotTime(t *testing.T) {
+	now := time.Now().UTC()
+	record := func(id, platform, result string, seq int64, at time.Time) *storage.FeatureAcceptanceRecord {
+		return &storage.FeatureAcceptanceRecord{ID: id, RequirementID: "BE-4", Feature: "browser-har", Platform: platform, CommitSHA: "abcdef1", Result: result, Seq: seq, RecordedAt: at}
+	}
+	pass := record("pass", "linux", storage.AcceptancePassed, 2, now.Add(-time.Minute))
+	// The broad revoke has the newer time but the older sequence.
+	revoke := record("revoke", "", storage.AcceptanceRevoked, 1, now)
+	statuses := resolveFeatureSupport([]*storage.FeatureAcceptanceRecord{pass, revoke}, []*storage.FeatureAcceptanceRecord{revoke}, "", "")
+	for _, status := range statuses {
+		if status.Platform == "linux" && !status.Supported {
+			t.Fatalf("a revoke with an older sequence withdrew a newer pass: %#v", status)
+		}
+	}
+	// With the sequences swapped the revoke is newer and withdraws it.
+	pass.Seq, revoke.Seq = 1, 2
+	for _, status := range resolveFeatureSupport([]*storage.FeatureAcceptanceRecord{pass, revoke}, []*storage.FeatureAcceptanceRecord{revoke}, "", "") {
+		if status.Platform == "linux" && status.Supported {
+			t.Fatalf("a newer revoke left the pass supported: %#v", status)
+		}
+	}
+}
+
+// A status read that hits the subject bound says so.
+func TestFeatureAcceptanceStatusReportsTruncation(t *testing.T) {
+	server, store := newAuditTestServer(t)
+	t.Cleanup(func() { store.Close() })
+	previous := maxAcceptanceSubjects
+	maxAcceptanceSubjects = 2
+	t.Cleanup(func() { maxAcceptanceSubjects = previous })
+	for _, platform := range []string{"linux-amd64", "darwin-arm64", "windows-amd64"} {
+		body := acceptanceBody("failed", false)
+		body["platform"] = platform
+		recordAcceptance(t, server, body)
+	}
+	status := acceptanceStatus(t, server, "requirement=BE-4")
+	if !status.Truncated || len(status.Statuses) != 2 {
+		t.Fatalf("truncated status: %#v", status)
 	}
 }

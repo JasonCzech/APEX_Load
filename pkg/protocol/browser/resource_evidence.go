@@ -42,7 +42,9 @@ func (b *Browser) beginRequestEvidence(request playwright.Request, expectedGener
 		s.incomplete = true
 		return
 	}
-	evidence := protocol.BrowserResourceEvidence{Version: protocol.BrowserResourceEvidenceVersion, SourceGeneration: s.generation, RequestID: s.nextID("r"), FrameID: b.frameIdentityLocked(frame), InitiatingActionID: s.currentAction, IdentityUnavailableReason: "document_unavailable", TimingSource: "playwright", CacheUnavailableReason: "not_exposed", InitiatorUnavailableReason: "not_exposed", ServiceWorkerUnavailableReason: "no_observation"}
+	// Records start at the version older readers accept; association raises
+	// a record to version 3 only when it adds association evidence.
+	evidence := protocol.BrowserResourceEvidence{Version: protocol.BrowserEvidenceVersion, SourceGeneration: s.generation, RequestID: s.nextID("r"), FrameID: b.frameIdentityLocked(frame), InitiatingActionID: s.currentAction, IdentityUnavailableReason: "document_unavailable", TimingSource: "playwright", CacheUnavailableReason: "not_exposed", InitiatorUnavailableReason: "not_exposed", ServiceWorkerUnavailableReason: "no_observation"}
 	// Playwright's native request/frame relation cannot prove the initiating
 	// document through a concurrent navigation. Preserve that absence instead
 	// of joining a request to the frame's current URL or document at completion.

@@ -138,10 +138,16 @@ func nativeSummaryProjection(measure Measure, scale string) (projection, canonic
 	projection = sample("sample_count", measure.SampleCountColumn, false) + sample("sample_sum", measure.SampleSumColumn, true)
 	canonical = ", " + literal(measure.Statistic) + " AS summary_statistic, CAST(" + strconv.Itoa(measure.WindowSeconds) + " AS INTEGER) AS summary_window_seconds, CASE WHEN was_null THEN NULL ELSE sample_count END AS summary_sample_count, CASE WHEN was_null THEN NULL ELSE sample_sum END AS summary_sample_sum"
 	valid = " AND (sample_count_was_null OR (sample_count IS NOT NULL AND isfinite(sample_count) AND sample_count>=0)) AND (sample_sum_was_null OR (sample_sum IS NOT NULL AND isfinite(sample_sum)))"
-	if measure.Statistic == "count" {
-		valid += " AND (was_null OR value>=0)"
-	}
 	return projection, canonical, valid
+}
+
+// nativeSummaryValueValid is a summary's rule on its value itself: a count
+// is never negative. It belongs to the row's value, not to its samples.
+func nativeSummaryValueValid(measure Measure) string {
+	if measure.Kind == analysis.KindSummary && measure.Statistic == "count" {
+		return " AND (was_null OR value>=0)"
+	}
+	return ""
 }
 
 // nativeSummarySamplesValid admits canonical summary sample columns.

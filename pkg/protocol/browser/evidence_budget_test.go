@@ -126,7 +126,9 @@ func TestMemoryWatchdogClosesTheLargestRecordingAsAResourceLimit(t *testing.T) {
 	budget := useTestEvidenceBudget(t, 64<<30, func() (int64, error) { return usage.Load(), nil }, 1<<30)
 	var smallClosed, largeClosed atomic.Bool
 	small := &Browser{pwContext: &harCloseFixtureContext{close: func() error { smallClosed.Store(true); return nil }}, harObservedBytes: 10 << 20, harMonitorStop: make(chan struct{})}
-	large := &Browser{pwContext: &harCloseFixtureContext{close: func() error { largeClosed.Store(true); return nil }}, harObservedBytes: 90 << 20, harMonitorStop: make(chan struct{}), evidence: browserEvidenceState{documents: map[string]*browserDocumentState{
+	// Closing the large recording frees its memory, so the watchdog's next
+	// tick must not close the small one too.
+	large := &Browser{pwContext: &harCloseFixtureContext{close: func() error { usage.Store(100 << 20); largeClosed.Store(true); return nil }}, harObservedBytes: 90 << 20, harMonitorStop: make(chan struct{}), evidence: browserEvidenceState{documents: map[string]*browserDocumentState{
 		"doc": {observations: map[string]protocol.BrowserDocumentObservation{"lcp": {State: "provisional"}}},
 	}}}
 	for _, b := range []*Browser{small, large} {
@@ -141,8 +143,9 @@ func TestMemoryWatchdogClosesTheLargestRecordingAsAResourceLimit(t *testing.T) {
 	usage.Store(2 << 30)
 	for deadline := time.Now().Add(2 * time.Second); !largeClosed.Load() && time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
 	}
-	if !largeClosed.Load() || smallClosed.Load() || budget.counters.watchdog.Load() < 1 {
-		t.Fatalf("watchdog closed large=%v small=%v", largeClosed.Load(), smallClosed.Load())
+	time.Sleep(50 * time.Millisecond)
+	if !largeClosed.Load() || smallClosed.Load() || budget.counters.watchdog.Load() != 1 {
+		t.Fatalf("watchdog closed large=%v small=%v closures=%d", largeClosed.Load(), smallClosed.Load(), budget.counters.watchdog.Load())
 	}
 	if large.resourceLimitReason() != resourceLimitBrowserMemory {
 		t.Fatalf("reason %q", large.resourceLimitReason())
@@ -305,6 +308,7 @@ func TestMemoryWatchdogSkipsClosedAndOpeningSessions(t *testing.T) {
 // action fails as a resource-limit result.
 func TestRefusedContextFailsActionsAsResourceLimit(t *testing.T) {
 	useTestEvidenceBudget(t, 64<<30, func() (int64, error) { return 2 << 30, nil }, 1<<30)
+	shortenReadmissionBackoff(t, time.Millisecond)
 	b := &Browser{}
 	if err := b.openBrowserContext(); err != nil {
 		t.Fatalf("an admission refusal failed the session: %v", err)
@@ -372,5 +376,107 @@ func TestHARScratchUnavailableIsNotHeadroom(t *testing.T) {
 	budget.scratchAvailable = func(string) (int64, error) { return 0, errors.New("no such directory") }
 	if reason := budget.reserveHARWriter(&Browser{}, "/does/not/exist"); reason != "har_scratch_unavailable" || budget.counters.harScratchUnavailable.Load() != 1 || budget.counters.harScratch.Load() != 0 {
 		t.Fatalf("missing scratch directory reported as %q", reason)
+	}
+}
+
+func shortenReadmissionBackoff(t *testing.T, backoff time.Duration) {
+	t.Helper()
+	previous := browserContextReadmissionBackoff
+	browserContextReadmissionBackoff = backoff
+	t.Cleanup(func() { browserContextReadmissionBackoff = previous })
+}
+
+// A refused session retries admission before its actions, but only after the
+// backoff: its actions neither spin nor fail without a new attempt.
+func TestRefusedContextRetriesAdmissionAfterTheBackoff(t *testing.T) {
+	budget := useTestEvidenceBudget(t, 64<<30, func() (int64, error) { return 2 << 30, nil }, 1<<30)
+	shortenReadmissionBackoff(t, 60*time.Millisecond)
+	b := &Browser{}
+	if err := b.openBrowserContext(); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	for range 2 {
+		result, err := b.Execute(context.Background(), &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"})
+		if err != nil || result.Success || !strings.HasPrefix(result.ErrorMessage, "browser resource limit ("+resourceLimitAdmission+")") {
+			t.Fatalf("refused session action: %+v %v", result, err)
+		}
+	}
+	if elapsed := time.Since(started); elapsed < 110*time.Millisecond {
+		t.Fatalf("two refused actions took %s; the backoff was not honoured", elapsed)
+	}
+	if refused := budget.counters.contextsRefused.Load(); refused != 3 {
+		t.Fatalf("admission attempts = %d, want the open plus one retry per action", refused)
+	}
+	// A cancelled action does not wait out the backoff.
+	shortenReadmissionBackoff(t, time.Hour)
+	b.mu.Lock()
+	b.admissionRetryAt = time.Now().Add(time.Hour)
+	b.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if result, _ := b.Execute(ctx, &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"}); result.Success {
+		t.Fatal("a cancelled action on a refused session succeeded")
+	}
+}
+
+// Without a usable measurement the live-context floor still applies.
+func TestUnmeasuredAdmissionKeepsTheLiveContextFloor(t *testing.T) {
+	budget := useTestEvidenceBudget(t, 64<<30, noUsage, 3*browserContextMarginalBytes)
+	for i := range 3 {
+		if err := budget.admitBrowserContext(context.Background(), &Browser{}); err != nil {
+			t.Fatalf("context %d refused below the floor: %v", i, err)
+		}
+	}
+	if err := budget.admitBrowserContext(context.Background(), &Browser{}); !errors.Is(err, errBrowserResourceLimit) {
+		t.Fatalf("an unmeasured admission ignored the live-context floor: %v", err)
+	}
+}
+
+// Waiters woken by a finished measurement find its sample, not an empty
+// budget they would admit unmeasured.
+func TestMeasurementIsRecordedBeforeWaitersWake(t *testing.T) {
+	release := make(chan struct{})
+	var calls atomic.Int64
+	budget := useTestEvidenceBudget(t, 64<<30, func() (int64, error) {
+		if calls.Add(1) == 1 {
+			<-release
+		}
+		return 100 << 20, nil
+	}, 4<<30)
+	done := make(chan error, 8)
+	for range 8 {
+		go func() { done <- budget.admitBrowserContext(context.Background(), &Browser{}) }()
+	}
+	for deadline := time.Now().Add(time.Second); calls.Load() == 0 && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+	}
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+	for range 8 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if unmeasured := budget.counters.contextsUnmeasured.Load(); unmeasured != 0 {
+		t.Fatalf("%d admissions woke before the sample was stored", unmeasured)
+	}
+}
+
+// The browser footprint is the root process plus every descendant (driver,
+// browser, renderers), and nothing outside its tree.
+func TestProcessTreeRSSSumsTheRootAndEveryDescendant(t *testing.T) {
+	samples := []processSample{
+		{PID: 10, PPID: 1, RSSKB: 1000},  // generator
+		{PID: 11, PPID: 10, RSSKB: 2000}, // driver
+		{PID: 12, PPID: 11, RSSKB: 3000}, // browser
+		{PID: 13, PPID: 12, RSSKB: 4000}, // renderer
+		{PID: 20, PPID: 1, RSSKB: 9000},  // unrelated
+		{PID: 21, PPID: 20, RSSKB: 9000}, // unrelated child
+	}
+	if got, want := processTreeRSS(samples, 10), int64(10000*1024); got != want {
+		t.Fatalf("tree RSS = %d, want %d", got, want)
+	}
+	if got := processTreeRSS(samples, 99); got != 0 {
+		t.Fatalf("absent root RSS = %d", got)
 	}
 }

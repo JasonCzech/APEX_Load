@@ -29,9 +29,8 @@ type browserDocumentState struct {
 	restored, ended                                bool
 	cohort                                         *protocol.BrowserRuntimeCohort
 	observations                                   map[string]protocol.BrowserDocumentObservation
-	// beginSeq orders the document's begin against frame commits; resources
-	// holds its Resource Timing entries by URL hash (WebKit association).
-	beginSeq  uint64
+	// resources holds its Resource Timing entries by URL hash (WebKit
+	// association).
 	resources map[string]resourceTimingEntry
 }
 type browserRequestIdentity struct {
@@ -40,10 +39,13 @@ type browserRequestIdentity struct {
 	join     resourceJoin
 }
 type browserEvidenceState struct {
-	lifecycleContext                                       context.Context
-	generation                                             string
-	sequence                                               uint64
-	binding, finalizer                                     string
+	lifecycleContext   context.Context
+	generation         string
+	sequence           uint64
+	binding, finalizer string
+	// loaderBinding is the evidence CDP session's binding through which a
+	// document reports its token from its own context (Chromium).
+	loaderBinding                                          string
 	currentAction                                          string
 	frames                                                 map[playwright.Frame]string
 	documents                                              map[string]*browserDocumentState
@@ -58,7 +60,6 @@ type browserEvidenceState struct {
 	pwFrameCDP      map[playwright.Frame]string
 	cdpFramePW      map[string]playwright.Frame
 	loaderDocuments map[string]loaderDocument
-	associationSeq  uint64
 	timingRequests  map[resourceTimingKey]int
 }
 type browserDocumentPayload struct {
@@ -108,7 +109,7 @@ func (b *Browser) resetBrowserEvidence(version string) error {
 		cohort.UnavailableReason = "shaping_unavailable"
 	}
 	b.mu.Lock()
-	b.evidence = browserEvidenceState{generation: generation, binding: "__apexEvidence_" + generation, finalizer: "__apexFinalize_" + generation, frames: make(map[playwright.Frame]string), documents: make(map[string]*browserDocumentState), requests: make(map[playwright.Request]*browserRequestIdentity), cohort: cohort, shapedPages: make(map[playwright.Page]bool),
+	b.evidence = browserEvidenceState{generation: generation, binding: "__apexEvidence_" + generation, finalizer: "__apexFinalize_" + generation, loaderBinding: "__apexLoader_" + generation, frames: make(map[playwright.Frame]string), documents: make(map[string]*browserDocumentState), requests: make(map[playwright.Request]*browserRequestIdentity), cohort: cohort, shapedPages: make(map[playwright.Page]bool),
 		cdpPages: make(map[playwright.Page]*cdpEvidencePage), pwFrameCDP: make(map[playwright.Frame]string), cdpFramePW: make(map[string]playwright.Frame), loaderDocuments: make(map[string]loaderDocument), timingRequests: make(map[resourceTimingKey]int)}
 	b.mu.Unlock()
 	return nil
@@ -123,7 +124,7 @@ func (b *Browser) installDocumentEvidence(ctx playwright.BrowserContext, version
 		return nil
 	}
 	b.mu.Lock()
-	binding, finalizer, generation := b.evidence.binding, b.evidence.finalizer, b.evidence.generation
+	binding, finalizer, loaderBinding, generation := b.evidence.binding, b.evidence.finalizer, b.evidence.loaderBinding, b.evidence.generation
 	b.mu.Unlock()
 	if err := ctx.ExposeBinding(binding, func(source *playwright.BindingSource, args ...any) any {
 		if source == nil || len(args) != 1 {
@@ -133,7 +134,7 @@ func (b *Browser) installDocumentEvidence(ctx playwright.BrowserContext, version
 	}); err != nil {
 		return err
 	}
-	return ctx.AddInitScript(playwright.Script{Content: playwright.String(browserDocumentBootstrap(binding, finalizer, b.documentMetricsEnabled, b.engine == "webkit"))})
+	return ctx.AddInitScript(playwright.Script{Content: playwright.String(browserDocumentBootstrap(binding, finalizer, loaderBinding, b.documentMetricsEnabled, b.engine == "webkit"))})
 }
 func (b *Browser) frameIdentityLocked(frame playwright.Frame) string {
 	if frame == nil {
@@ -265,8 +266,7 @@ func (b *Browser) receiveDocumentEvidence(source *playwright.BindingSource, raw 
 				docCohort.UnavailableReason = ""
 			}
 		}
-		s.associationSeq++
-		d = &browserDocumentState{cohort: docCohort, frame: source.Frame, page: source.Page, token: p.DocumentToken, lifecycleToken: p.LifecycleToken, documentID: documentID, lifecycleID: s.nextID("l"), frameID: frameID, navigationID: s.nextID("n"), start: start, timeOrigin: p.TimeOrigin, restored: p.Restored, observations: make(map[string]protocol.BrowserDocumentObservation), beginSeq: s.associationSeq}
+		d = &browserDocumentState{cohort: docCohort, frame: source.Frame, page: source.Page, token: p.DocumentToken, lifecycleToken: p.LifecycleToken, documentID: documentID, lifecycleID: s.nextID("l"), frameID: frameID, navigationID: s.nextID("n"), start: start, timeOrigin: p.TimeOrigin, restored: p.Restored, observations: make(map[string]protocol.BrowserDocumentObservation)}
 		s.documents[key] = d
 		if b.documentMetricsEnabled {
 			for _, metric := range []string{"fcp", "lcp", "cls", "inp", "ttfb"} {

@@ -2,9 +2,12 @@ package browser
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"os/exec"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -56,13 +59,12 @@ func cdpRequest(b *Browser, state *cdpEvidencePage, id, loader, frame, method, u
 	b.observeCDPRequest(state, params, b.evidence.generation)
 }
 
-func beginDocument(b *Browser, frame playwright.Frame, page playwright.Page, timeOrigin float64) string {
+func beginDocument(b *Browser, frame playwright.Frame, page playwright.Page, timeOrigin float64, token string) string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	s := &b.evidence
-	s.associationSeq++
 	id := s.nextID("d")
-	s.documents[id] = &browserDocumentState{frame: frame, page: page, documentID: id, timeOrigin: timeOrigin, beginSeq: s.associationSeq, observations: map[string]protocol.BrowserDocumentObservation{}}
+	s.documents[id] = &browserDocumentState{frame: frame, page: page, token: token, documentID: id, timeOrigin: timeOrigin, observations: map[string]protocol.BrowserDocumentObservation{}}
 	return id
 }
 
@@ -70,17 +72,34 @@ func commitFrame(b *Browser, state *cdpEvidencePage, frame, loader string) {
 	b.observeCDPCommit(state, map[string]any{"frame": map[string]any{"id": frame, "loaderId": loader}}, b.evidence.generation)
 }
 
+func createContext(b *Browser, state *cdpEvidencePage, id int, frame string) {
+	b.observeCDPContextCreated(state, map[string]any{"context": map[string]any{"id": float64(id), "auxData": map[string]any{"frameId": frame, "isDefault": true, "type": "default"}}}, b.evidence.generation)
+}
+
+func documentToken(n int) string { return fmt.Sprintf("%032x", n) }
+
+func reportDocument(b *Browser, state *cdpEvidencePage, context int, token string) {
+	b.observeCDPDocumentReport(state, map[string]any{"name": b.evidence.loaderBinding, "payload": token, "executionContextId": float64(context)}, b.evidence.loaderBinding, b.evidence.generation)
+}
+
+// loadDocument replays one document load in the order the evidence session
+// delivers it: commit, the new default context, then the document's report.
+func loadDocument(b *Browser, state *cdpEvidencePage, frameID, loader string, context int, frame playwright.Frame, page playwright.Page, timeOrigin float64) string {
+	commitFrame(b, state, frameID, loader)
+	createContext(b, state, context, frameID)
+	reportDocument(b, state, context, documentToken(context))
+	return beginDocument(b, frame, page, timeOrigin, documentToken(context))
+}
+
 func TestCDPJoinAssociatesDocumentsCacheAndInitiators(t *testing.T) {
 	b, state, page, main, child := associationBrowser(t)
 	origin := 1_800_000_000_000.0
 	cdpRequest(b, state, "L1", "L1", "F", "GET", "http://a.test/", origin+1, map[string]any{"type": "other"})
-	commitFrame(b, state, "F", "L1")
-	mainDoc := beginDocument(b, main, page, origin)
+	mainDoc := loadDocument(b, state, "F", "L1", 1, main, page, origin)
 	cdpRequest(b, state, "R2", "L1", "F", "GET", "http://a.test/app.css", origin+10, map[string]any{"type": "parser", "url": "http://a.test/index?token=secret", "stack": "never"})
 	b.observeCDPResponse(state, map[string]any{"requestId": "R2", "response": map[string]any{"fromDiskCache": true}}, b.evidence.generation)
 	cdpRequest(b, state, "L3", "L3", "C", "GET", "http://b.test/frame", origin+20, map[string]any{"type": "parser", "url": "http://a.test/"})
-	commitFrame(b, state, "C", "L3")
-	childDoc := beginDocument(b, child, page, origin+21)
+	childDoc := loadDocument(b, state, "C", "L3", 2, child, page, origin+21)
 	cdpRequest(b, state, "R4", "L3", "C", "GET", "http://b.test/data", origin+30, map[string]any{"type": "script"})
 	b.observeCDPResponse(state, map[string]any{"requestId": "R4", "response": map[string]any{}}, b.evidence.generation)
 
@@ -124,25 +143,68 @@ func TestLoaderBindingRefusesUnprovenDocuments(t *testing.T) {
 	b, state, page, main, _ := associationBrowser(t)
 	origin := 1_800_000_000_000.0
 	gen := b.evidence.generation
-	join := resourceJoin{page: page, frame: main, key: resourceKey("GET", "http://a.test/x.js"), ordinal: 1}
-	// A loader committed but no document began after it.
-	commitFrame(b, state, "F", "L1")
-	cdpRequest(b, state, "R1", "L1", "F", "GET", "http://a.test/x.js", origin, nil)
-	if v := b.associateResourceEvidence(associationEvidence(t, b, origin), join, gen); v.IdentityUnavailableReason != "document_not_observed" || v.DocumentID != "" {
-		t.Fatalf("no document %+v", v)
+	request := func(id, loader, url string) resourceJoin {
+		cdpRequest(b, state, id, loader, "F", "GET", url, origin, nil)
+		return resourceJoin{page: page, frame: main, key: resourceKey("GET", url), ordinal: 1}
 	}
-	// Two documents began in the frame between this commit and the next.
-	beginDocument(b, main, page, origin)
-	beginDocument(b, main, page, origin+5)
-	join.ordinal = 1
-	if v := b.associateResourceEvidence(associationEvidence(t, b, origin), join, gen); v.IdentityUnavailableReason != "ambiguous_document_commit" {
-		t.Fatalf("two documents %+v", v)
+	reason := func(join resourceJoin) (string, string) {
+		v := b.associateResourceEvidence(associationEvidence(t, b, origin), join, gen)
+		return v.DocumentID, v.IdentityUnavailableReason
+	}
+	// A loader committed, but no document reported from one of its contexts.
+	commitFrame(b, state, "F", "L1")
+	createContext(b, state, 1, "F")
+	if id, why := reason(request("R1", "L1", "http://a.test/one.js")); id != "" || why != "document_not_observed" {
+		t.Fatalf("no report: %q %s", id, why)
+	}
+	// The report arrived but the document's begin has not: not observed yet,
+	// and not cached, so the begin's later arrival is still found.
+	reportDocument(b, state, 1, documentToken(1))
+	if id, why := reason(request("R2", "L1", "http://a.test/two.js")); id != "" || why != "document_not_observed" {
+		t.Fatalf("report before begin: %q %s", id, why)
+	}
+	first := beginDocument(b, main, page, origin, documentToken(1))
+	if id, why := reason(request("R3", "L1", "http://a.test/three.js")); id != first || why != "" {
+		t.Fatalf("after the begin: %q %s", id, why)
+	}
+	// A late report from the replaced document's context, after the next
+	// commit, proves nothing about the new loader.
+	commitFrame(b, state, "F", "L2")
+	reportDocument(b, state, 1, documentToken(99))
+	beginDocument(b, main, page, origin, documentToken(99))
+	if id, why := reason(request("R4", "L2", "http://a.test/four.js")); id != "" || why != "document_not_observed" {
+		t.Fatalf("stale context report: %q %s", id, why)
+	}
+	// A context created before its frame's latest commit is stale too.
+	createContext(b, state, 2, "F")
+	commitFrame(b, state, "F", "L3")
+	reportDocument(b, state, 2, documentToken(2))
+	if id, why := reason(request("R5", "L3", "http://a.test/five.js")); id != "" || why != "document_not_observed" {
+		t.Fatalf("context from before the commit: %q %s", id, why)
+	}
+	// One loader reporting two documents is ambiguous.
+	createContext(b, state, 3, "F")
+	reportDocument(b, state, 3, documentToken(3))
+	createContext(b, state, 4, "F")
+	reportDocument(b, state, 4, documentToken(4))
+	beginDocument(b, main, page, origin, documentToken(3))
+	if id, why := reason(request("R6", "L3", "http://a.test/six.js")); id != "" || why != "ambiguous_document_commit" {
+		t.Fatalf("two reports: %q %s", id, why)
+	}
+	// A destroyed context and a malformed or foreign report record nothing.
+	commitFrame(b, state, "F", "L4")
+	createContext(b, state, 5, "F")
+	b.observeCDPContextDestroyed(state, map[string]any{"executionContextId": float64(5)}, gen)
+	reportDocument(b, state, 5, documentToken(5))
+	createContext(b, state, 6, "F")
+	reportDocument(b, state, 6, "not-a-token")
+	b.observeCDPDocumentReport(state, map[string]any{"name": "pageBinding", "payload": documentToken(6), "executionContextId": float64(6)}, b.evidence.loaderBinding, gen)
+	if _, reported := state.loaderTokens["L4"]; reported {
+		t.Fatalf("an unproven report bound loader L4 to %s", state.loaderTokens["L4"])
 	}
 	// A loader that never committed (an aborted navigation) proves nothing.
-	cdpRequest(b, state, "L9", "L9", "F", "GET", "http://a.test/aborted", origin+70, nil)
-	aborted := resourceJoin{page: page, frame: main, key: resourceKey("GET", "http://a.test/aborted"), ordinal: 1}
-	if v := b.associateResourceEvidence(associationEvidence(t, b, origin+70), aborted, gen); v.IdentityUnavailableReason != "document_not_observed" {
-		t.Fatalf("uncommitted loader %+v", v)
+	if id, why := reason(request("L9", "L9", "http://a.test/aborted")); id != "" || why != "document_not_observed" {
+		t.Fatalf("uncommitted loader: %q %s", id, why)
 	}
 }
 
@@ -153,9 +215,9 @@ func TestResourceTimingJoinNeedsOneUniqueEntry(t *testing.T) {
 	}
 	page, frame, other := &browserFinalityCurrentPage{}, &associationFrame{}, &associationFrame{}
 	unique, repeated := resourceTimingHash("http://a.test/a.css"), resourceTimingHash("http://a.test/poll")
-	first := beginDocument(b, frame, page, 1)
+	first := beginDocument(b, frame, page, 1, "")
 	b.evidence.documents[first].resources = map[string]resourceTimingEntry{unique: {count: 1, start: 12.5}, repeated: {count: 2, start: 30}}
-	second := beginDocument(b, other, page, 2)
+	second := beginDocument(b, other, page, 2, "")
 	b.evidence.documents[second].resources = map[string]resourceTimingEntry{unique: {count: 1, start: 3}}
 	gen := b.evidence.generation
 	b.evidence.timingRequests[resourceTimingKey{frame: frame, hash: unique}] = 1
@@ -173,7 +235,7 @@ func TestResourceTimingJoinNeedsOneUniqueEntry(t *testing.T) {
 		t.Fatalf("twice-requested URL %+v", v)
 	}
 	b.evidence.timingRequests[resourceTimingKey{frame: frame, hash: unique}] = 1
-	third := beginDocument(b, frame, page, 3)
+	third := beginDocument(b, frame, page, 3, "")
 	b.evidence.documents[third].resources = map[string]resourceTimingEntry{unique: {count: 1, start: 7}}
 	if v := b.associateResourceEvidence(associationEvidence(t, b, 100), resourceJoin{page: page, frame: frame, urlHash: unique}, gen); v.IdentityUnavailableReason != "ambiguous_resource_timing" {
 		t.Fatalf("two documents %+v", v)
@@ -212,11 +274,14 @@ func TestResourceTimingHashMatchesTheEmbeddedBootstrap(t *testing.T) {
 	if err != nil {
 		t.Skip("node is not installed")
 	}
-	script := browserDocumentBootstrap("__binding", "__finalizer", true, true)
+	script := browserDocumentBootstrap("__binding", "__finalizer", "__loader", true, true)
 	start := strings.Index(script, "const resourceHash=")
-	end := strings.Index(script[start:], "};")
-	if start < 0 || end < 0 {
+	if start < 0 {
 		t.Fatal("bootstrap no longer defines resourceHash")
+	}
+	end := strings.Index(script[start:], "};")
+	if end < 0 {
+		t.Fatal("bootstrap resourceHash has no end")
 	}
 	inputs := []string{"https://example.test/app.css", "https://example.test/ä/ñ?q=ü", "https://example.test/😀/x", "", strings.Repeat("a/", 300)}
 	encoded, err := json.Marshal(inputs)
@@ -236,5 +301,165 @@ func TestResourceTimingHashMatchesTheEmbeddedBootstrap(t *testing.T) {
 		if got := resourceTimingHash(input); got != hashes[i] {
 			t.Fatalf("hash of %q: Go %s, bootstrap %s", input, got, hashes[i])
 		}
+	}
+}
+
+// recordingCDPSession records the evidence session's subscriptions and
+// commands in order.
+type recordingCDPSession struct {
+	playwright.CDPSession
+	mu    sync.Mutex
+	calls []string
+	sends []map[string]any
+}
+
+func (s *recordingCDPSession) On(event string, _ interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, "on "+event)
+}
+
+func (s *recordingCDPSession) Send(method string, params map[string]interface{}) (interface{}, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, "send "+method)
+	s.sends = append(s.sends, params)
+	return nil, nil
+}
+
+func (s *recordingCDPSession) Detach() error { return nil }
+
+// The evidence session subscribes before it enables anything, keeps no
+// network buffers, and installs its own document binding.
+func TestResourceAssociationSessionSubscribesFirstAndKeepsNoBuffers(t *testing.T) {
+	session := &recordingCDPSession{}
+	b := &Browser{engine: "chromium", documentMetricsEnabled: true, createCDPSession: func(playwright.BrowserContext, playwright.Page) (playwright.CDPSession, error) { return session, nil }}
+	if err := b.resetBrowserEvidence("test"); err != nil {
+		t.Fatal(err)
+	}
+	page := &browserFinalityCurrentPage{}
+	b.installResourceAssociation(&cdpTestContext{}, page, b.evidence.generation)
+	if b.evidence.cdpPages[page] == nil {
+		t.Fatal("the evidence session was not kept")
+	}
+	want := []string{"on Network.requestWillBeSent", "on Network.responseReceived", "on Network.requestServedFromCache", "on Page.frameNavigated", "on Runtime.executionContextCreated", "on Runtime.executionContextDestroyed", "on Runtime.executionContextsCleared", "on Runtime.bindingCalled", "send Page.enable", "send Network.enable", "send Runtime.enable", "send Runtime.addBinding"}
+	if !slices.Equal(session.calls, want) {
+		t.Fatalf("session calls %v, want %v", session.calls, want)
+	}
+	if network := session.sends[1]; network["maxTotalBufferSize"] != 0 || network["maxResourceBufferSize"] != 0 || network["maxPostDataSize"] != 0 {
+		t.Fatalf("Network.enable kept buffers: %v", network)
+	}
+	if binding := session.sends[3]; binding["name"] != b.evidence.loaderBinding || !strings.HasPrefix(b.evidence.loaderBinding, "__apexLoader_") {
+		t.Fatalf("binding %v", binding)
+	}
+}
+
+// A closed page drops its evidence session state.
+func TestRemovedPageDropsItsEvidenceSession(t *testing.T) {
+	b, _, page, _, _ := associationBrowser(t)
+	b.removePage(page)
+	if _, kept := b.evidence.cdpPages[page]; kept {
+		t.Fatal("a closed page kept its evidence session state")
+	}
+}
+
+// A page keeps commits for a bounded number of frames.
+func TestEvidenceSessionBoundsItsFrames(t *testing.T) {
+	b, state, _, _, _ := associationBrowser(t)
+	for i := range cdpCommitFrameLimit + 1 {
+		commitFrame(b, state, fmt.Sprintf("F%d", i), "L")
+	}
+	if len(state.frames) != cdpCommitFrameLimit || !state.truncated {
+		t.Fatalf("frames %d truncated %v", len(state.frames), state.truncated)
+	}
+}
+
+// The CDP start reproduces Playwright's: queueing time counts, and a memory
+// cache hit or a response without timing starts at the wall time.
+func TestCDPStartMatchesPlaywright(t *testing.T) {
+	record := &cdpRequestRecord{wallMS: 1_000_000, timestampS: 50}
+	queued := map[string]any{"timing": map[string]any{"requestTime": 50.25}}
+	if got := cdpStartMS(record, queued, false); math.Abs(got-1_000_250) > 1e-6 {
+		t.Fatalf("queued start %f", got)
+	}
+	if got := cdpStartMS(record, queued, true); got != record.wallMS {
+		t.Fatalf("memory cache start %f", got)
+	}
+	if got := cdpStartMS(record, map[string]any{}, false); got != record.wallMS {
+		t.Fatalf("no timing start %f", got)
+	}
+	// A request that failed before its response has no Playwright start.
+	b, state, page, main, _ := associationBrowser(t)
+	cdpRequest(b, state, "R1", "L1", "F", "GET", "http://a.test/x", 1_000_000, nil)
+	evidence := associationEvidence(t, b, 1_000_000)
+	evidence.EpochStartMS = nil
+	v := b.associateResourceEvidence(evidence, resourceJoin{page: page, frame: main, key: resourceKey("GET", "http://a.test/x"), ordinal: 1}, b.evidence.generation)
+	if v.IdentityUnavailableReason != "request_start_unavailable" || v.DocumentID != "" {
+		t.Fatalf("failed request %+v", v)
+	}
+}
+
+// orderingPage records which page handlers were registered, in order.
+type orderingPage struct {
+	playwright.Page
+	log *[]string
+}
+
+func (p *orderingPage) OnClose(func(playwright.Page))          { *p.log = append(*p.log, "on close") }
+func (p *orderingPage) OnCrash(func(playwright.Page))          { *p.log = append(*p.log, "on crash") }
+func (p *orderingPage) OnWebSocket(func(playwright.WebSocket)) {}
+
+// Close and crash handlers are registered before the evidence session is
+// installed: installing makes blocking calls, and a popup can close meanwhile.
+func TestPageCloseHandlersPrecedeTheEvidenceSession(t *testing.T) {
+	var log []string
+	b := &Browser{engine: "chromium", documentMetricsEnabled: true, pwContext: &cdpTestContext{}, createCDPSession: func(playwright.BrowserContext, playwright.Page) (playwright.CDPSession, error) {
+		log = append(log, "install")
+		return &recordingCDPSession{}, nil
+	}}
+	if err := b.resetBrowserEvidence("test"); err != nil {
+		t.Fatal(err)
+	}
+	b.registerPage(&orderingPage{log: &log}, false)
+	if !slices.Equal(log, []string{"on close", "on crash", "install"}) {
+		t.Fatalf("registration order %v", log)
+	}
+}
+
+type joinTestFrame struct {
+	playwright.Frame
+	page playwright.Page
+}
+
+func (f *joinTestFrame) Page() playwright.Page { return f.page }
+
+type joinTestRequest struct {
+	playwright.Request
+	url        string
+	navigation bool
+}
+
+func (r *joinTestRequest) URL() string               { return r.url }
+func (r *joinTestRequest) Method() string            { return "GET" }
+func (r *joinTestRequest) IsNavigationRequest() bool { return r.navigation }
+
+// On WebKit a navigation request never takes a Resource Timing join: the
+// document it loads has no entry for it, so a main-frame navigation to a URL
+// the frame already loaded as an iframe cannot borrow the iframe's entry.
+func TestWebKitNavigationRequestsNeverTakeAResourceTimingJoin(t *testing.T) {
+	b := &Browser{engine: "webkit", documentMetricsEnabled: true}
+	if err := b.resetBrowserEvidence("test"); err != nil {
+		t.Fatal(err)
+	}
+	frame := &joinTestFrame{page: &browserFinalityCurrentPage{}}
+	b.mu.Lock()
+	navigation := b.resourceJoinLocked(&joinTestRequest{url: "http://a.test/frame", navigation: true}, frame)
+	subresource := b.resourceJoinLocked(&joinTestRequest{url: "http://a.test/frame"}, frame)
+	b.mu.Unlock()
+	if navigation.urlHash != "" {
+		t.Fatal("a WebKit navigation request took a Resource Timing join")
+	}
+	if subresource.urlHash == "" || b.evidence.timingRequests[resourceTimingKey{frame: frame, hash: subresource.urlHash}] != 1 {
+		t.Fatalf("a subresource was not counted for its join: %+v", subresource)
 	}
 }

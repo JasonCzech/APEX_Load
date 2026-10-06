@@ -15,10 +15,12 @@ var browserVitalsLibrary string
 
 // resources reports each Resource Timing entry's name hash and start, the
 // only document association WebKit exposes; it never sends the URL itself.
-func browserDocumentBootstrap(binding, finalizer string, metrics, resources bool) string {
+// loader names the evidence CDP session's binding: a new document reports its
+// token there once, from its own context, and removes the binding.
+func browserDocumentBootstrap(binding, finalizer, loader string, metrics, resources bool) string {
 	return fmt.Sprintf(`(() => {
  "use strict";
- const binding=%s, finalizer=%s, enabled=%t, resources=%t;
+ const binding=%s, finalizer=%s, loader=%s, enabled=%t, resources=%t;
  const token=()=>{const a=new Uint8Array(16);crypto.getRandomValues(a);return Array.from(a,x=>x.toString(16).padStart(2,'0')).join('')};
  const documentToken=token(); let lifecycleToken=token(), restored=false, terminal=false, boundary='progress', beginReceipt=null, finishReceipt=null;
  const values=new Map(), observers=new Set(), idle=new Set(); let firstInput=false;
@@ -40,6 +42,7 @@ func browserDocumentBootstrap(binding, finalizer string, metrics, resources bool
   send('metric',metric,state);
  };
  beginReceipt=send('begin','','provisional');
+ try{const reportLoader=globalThis[loader];if(typeof reportLoader==='function'){reportLoader(documentToken);delete globalThis[loader]}}catch{}
  const resourceHash=s=>{let h1=0xdeadbeef,h2=0x41c6ce57;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677)}h1=Math.imul(h1^(h1>>>16),2246822507);h1^=Math.imul(h2^(h2>>>13),3266489909);h2=Math.imul(h2^(h2>>>16),2246822507);h2^=Math.imul(h1^(h1>>>13),3266489909);return(4294967296*(2097151&h2)+(h1>>>0)).toString(16)};
  if(resources&&globalThis.PerformanceObserver&&supported.has('resource')){
   let sentResources=0;
@@ -108,5 +111,5 @@ func browserDocumentBootstrap(binding, finalizer string, metrics, resources bool
  addEventListener('click',event=>{if(event.isTrusted){firstInput=true;boundary='first_input'}},{capture:true});
  addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){boundary='hidden';queueMicrotask(()=>{if(!terminal&&enabled)for(const metric of ['cls','inp'])if(values.has(metric))send('metric',metric,'provisional')})}else boundary='progress'},{capture:true});
  addEventListener('pagehide',()=>{void finish('pagehide')},{capture:true});
-})()`, strconv.Quote(binding), strconv.Quote(finalizer), metrics, resources, browserVitalsLibrary)
+})()`, strconv.Quote(binding), strconv.Quote(finalizer), strconv.Quote(loader), metrics, resources, browserVitalsLibrary)
 }

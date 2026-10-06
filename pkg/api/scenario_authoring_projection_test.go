@@ -263,7 +263,7 @@ func TestScenarioAuthoringViewRefusesForeignProjectCallerOnRealRoute(t *testing.
 	request.Header.Set("X-APEXLoad-Project-Roles", "foreign-project="+RoleViewer)
 	response := httptest.NewRecorder()
 	server.mux.ServeHTTP(response, request)
-	if response.Code != http.StatusForbidden && response.Code != http.StatusNotFound || response.Header().Get("ETag") != "" || strings.Contains(response.Body.String(), scenario.Name) {
+	if response.Code != http.StatusForbidden || response.Header().Get("ETag") != "" || strings.Contains(response.Body.String(), scenario.Name) {
 		t.Fatalf("foreign caller: %d etag=%q %s", response.Code, response.Header().Get("ETag"), response.Body.String())
 	}
 	member := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID+"?view=authoring", nil)

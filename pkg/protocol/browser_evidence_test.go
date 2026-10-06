@@ -301,3 +301,15 @@ func TestBrowserDocumentCohortAdmitsActuallyAppliedFractionalScale(t *testing.T)
 		t.Fatal("absent native scale qualified")
 	}
 }
+
+// Association reasons describe requests; a document observation never
+// carries one.
+func TestBrowserDocumentObservationRefusesAssociationReasons(t *testing.T) {
+	for _, reason := range []string{"ambiguous_cdp_join", "cdp_unobserved", "document_not_observed", "ambiguous_document_commit", "resource_timing_unobserved", "ambiguous_resource_timing", "request_start_unavailable"} {
+		o := browserTestObservation()
+		o.UnavailableReason = reason
+		if o.Valid() {
+			t.Fatalf("a document observation admitted %s", reason)
+		}
+	}
+}

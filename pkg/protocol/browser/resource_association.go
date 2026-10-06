@@ -16,19 +16,22 @@ import (
 // names it, and anything ambiguous stays unavailable with its reason.
 //
 // Chromium: a dedicated CDP session per page observes requests, responses,
-// memory-cache hits and frame commits. A Playwright request joins the CDP
-// request of the same page, method and URL at the same ordinal, checked
-// against its start time and the frame mapping learned so far. The join gives
-// the issuing document's loader, cache and initiator provenance. A loader
-// becomes a document when exactly one document of that frame began between
-// the loader's commit and the frame's next commit and its time origin lies
-// after the previous loader's navigation request and no later than this
-// loader's own. Begins are stamped on binding goroutines, so the clock check
-// keeps a late-stamped earlier document out of a newer loader's window, and a
-// result from a window still open to later begins is never cached.
+// memory-cache hits, frame commits and execution contexts. A Playwright
+// request joins the CDP request of the same page, method and URL at the same
+// ordinal, checked against its start time and the frame mapping learned so
+// far. The join gives the issuing document's loader, cache and initiator
+// provenance. A loader becomes a document through the document itself: the
+// bootstrap reports its document token to a binding of the evidence session,
+// and the binding call names the execution context it ran in. Commits,
+// context creation and binding calls arrive in order on that one session, so
+// the context belongs to the loader its frame had committed when the context
+// was created; a context that predates its frame's latest commit (a late call
+// from a replaced document) proves nothing. No clock is compared across the
+// renderer and browser processes.
 //
 // WebKit: a request joins the one document of its frame holding exactly one
-// Resource Timing entry for its URL (page_resource_timing_join). Navigation
+// Resource Timing entry for its URL (page_resource_timing_join); its document
+// offset is that entry's startTime. Navigation
 // requests never join: a document has no entry for its own navigation, and
 // an iframe navigation's entry sits in the parent document. The join runs
 // when the request completes, and an entry that reaches the controller later
@@ -43,9 +46,6 @@ const (
 	resourceTimingPerDocument = 512
 	// cdpCommitFrameLimit bounds the frames whose commits a page keeps.
 	cdpCommitFrameLimit = 256
-	// documentClockToleranceMS absorbs rounding between the renderer's time
-	// origin and the network wall time; both come from the system clock.
-	documentClockToleranceMS = 1.0
 )
 
 type resourceJoinKey [32]byte
@@ -75,20 +75,32 @@ type cdpRequestRecord struct {
 	cacheKnown, cached             bool
 }
 
-type cdpCommit struct {
+// cdpFrameCommit is a frame's latest committed loader; commit counts the
+// frame's commits, so a context created before the latest one is stale.
+type cdpFrameCommit struct {
 	loaderID string
-	seq      uint64
+	commit   uint64
+}
+
+// cdpContextLoader is the loader a frame had committed when one of its
+// default execution contexts was created.
+type cdpContextLoader struct {
+	frameID, loaderID string
+	commit            uint64
 }
 
 type cdpEvidencePage struct {
 	records  map[resourceJoinKey][]*cdpRequestRecord
 	latest   map[string]*cdpRequestRecord
 	served   map[string]bool
-	commits  map[string][]cdpCommit
-	ordinals map[resourceJoinKey]int
-	// navigationWallMS is each loader's navigation request wall time (its
-	// first hop), which bounds the time origin of the document it commits.
-	navigationWallMS map[string]float64
+	frames   map[string]cdpFrameCommit
+	contexts map[int64]cdpContextLoader
+	// loaderTokens is the document token each loader's document reported
+	// from its own context; a loader reporting two different tokens is
+	// ambiguous.
+	loaderTokens     map[string]string
+	ambiguousLoaders map[string]bool
+	ordinals         map[resourceJoinKey]int
 	count            int
 	truncated        bool
 }
@@ -97,6 +109,10 @@ type loaderDocument struct {
 	id         string
 	timeOrigin float64
 }
+
+// cdpDocumentTokenLength is the bootstrap's document token: 16 random bytes
+// as lowercase hex.
+const cdpDocumentTokenLength = 32
 
 type resourceTimingEntry struct {
 	count int
@@ -111,7 +127,7 @@ type resourceTimingKey struct {
 }
 
 func newCDPEvidencePage() *cdpEvidencePage {
-	return &cdpEvidencePage{records: map[resourceJoinKey][]*cdpRequestRecord{}, latest: map[string]*cdpRequestRecord{}, served: map[string]bool{}, commits: map[string][]cdpCommit{}, ordinals: map[resourceJoinKey]int{}, navigationWallMS: map[string]float64{}}
+	return &cdpEvidencePage{records: map[resourceJoinKey][]*cdpRequestRecord{}, latest: map[string]*cdpRequestRecord{}, served: map[string]bool{}, frames: map[string]cdpFrameCommit{}, contexts: map[int64]cdpContextLoader{}, loaderTokens: map[string]string{}, ambiguousLoaders: map[string]bool{}, ordinals: map[resourceJoinKey]int{}}
 }
 
 // installResourceAssociation attaches the evidence CDP session to a newly
@@ -128,6 +144,7 @@ func (b *Browser) installResourceAssociation(browserContext playwright.BrowserCo
 	}
 	// A nil entry reserves the page against a concurrent second install.
 	b.evidence.cdpPages[page] = nil
+	loaderBinding := b.evidence.loaderBinding
 	b.mu.Unlock()
 	var cdp playwright.CDPSession
 	var err error
@@ -144,6 +161,10 @@ func (b *Browser) installResourceAssociation(browserContext playwright.BrowserCo
 	cdp.On("Network.responseReceived", func(params map[string]any) { b.observeCDPResponse(state, params, generation) })
 	cdp.On("Network.requestServedFromCache", func(params map[string]any) { b.observeCDPCacheHit(state, params, generation) })
 	cdp.On("Page.frameNavigated", func(params map[string]any) { b.observeCDPCommit(state, params, generation) })
+	cdp.On("Runtime.executionContextCreated", func(params map[string]any) { b.observeCDPContextCreated(state, params, generation) })
+	cdp.On("Runtime.executionContextDestroyed", func(params map[string]any) { b.observeCDPContextDestroyed(state, params, generation) })
+	cdp.On("Runtime.executionContextsCleared", func(map[string]any) { b.observeCDPContextsCleared(state, generation) })
+	cdp.On("Runtime.bindingCalled", func(params map[string]any) { b.observeCDPDocumentReport(state, params, loaderBinding, generation) })
 	b.mu.Lock()
 	if b.closing || b.evidence.generation != generation {
 		b.mu.Unlock()
@@ -154,8 +175,17 @@ func (b *Browser) installResourceAssociation(browserContext playwright.BrowserCo
 	b.mu.Unlock()
 	// This session only reads request metadata: zero buffers keep a second
 	// network agent from retaining bodies in the renderer.
-	if _, err := cdp.Send("Page.enable", map[string]any{}); err == nil {
+	_, err = cdp.Send("Page.enable", map[string]any{})
+	if err == nil {
 		_, err = cdp.Send("Network.enable", map[string]any{"maxTotalBufferSize": 0, "maxResourceBufferSize": 0, "maxPostDataSize": 0})
+	}
+	// Runtime reports contexts and this session's own binding, which every
+	// later document's bootstrap calls once with its token.
+	if err == nil {
+		_, err = cdp.Send("Runtime.enable", map[string]any{})
+	}
+	if err == nil {
+		_, err = cdp.Send("Runtime.addBinding", map[string]any{"name": loaderBinding})
 	}
 	if err != nil {
 		b.mu.Lock()
@@ -206,12 +236,6 @@ func (b *Browser) observeCDPRequest(state *cdpEvidencePage, params map[string]an
 	if previous := state.latest[requestID]; previous != nil && redirect != nil {
 		previous.cacheKnown, previous.cached = true, cdpCached(redirect)
 		previous.startMS = cdpStartMS(previous, redirect, state.served[requestID])
-	}
-	// A document's navigation request carries its loader's ID.
-	if requestID == record.loaderID && wall > 0 {
-		if _, known := state.navigationWallMS[requestID]; !known && len(state.navigationWallMS) < resourceAssociationLimit {
-			state.navigationWallMS[requestID] = record.wallMS
-		}
 	}
 	if state.count >= resourceAssociationLimit {
 		state.truncated = true
@@ -278,21 +302,102 @@ func (b *Browser) observeCDPCommit(state *cdpEvidencePage, params map[string]any
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	s := &b.evidence
-	if s.generation != generation {
+	if b.evidence.generation != generation {
 		return
 	}
-	commits, known := state.commits[frameID]
-	if !known && len(state.commits) >= cdpCommitFrameLimit {
+	previous, known := state.frames[frameID]
+	if !known && len(state.frames) >= cdpCommitFrameLimit {
 		state.truncated = true
 		return
 	}
-	if len(commits) >= 64 {
-		// Keep the most recent commits of a frame that navigates repeatedly.
-		commits = append(commits[:0], commits[len(commits)-63:]...)
+	state.frames[frameID] = cdpFrameCommit{loaderID: loaderID, commit: previous.commit + 1}
+}
+
+func cdpContextID(value any) (int64, bool) {
+	id, ok := value.(float64)
+	if !ok || id != math.Trunc(id) || math.Abs(id) > 1<<53 {
+		return 0, false
 	}
-	s.associationSeq++
-	state.commits[frameID] = append(commits, cdpCommit{loaderID: loaderID, seq: s.associationSeq})
+	return int64(id), true
+}
+
+// observeCDPContextCreated binds a frame's new default context to the loader
+// the frame committed last.
+func (b *Browser) observeCDPContextCreated(state *cdpEvidencePage, params map[string]any, generation string) {
+	context, _ := params["context"].(map[string]any)
+	aux, _ := context["auxData"].(map[string]any)
+	id, valid := cdpContextID(context["id"])
+	isDefault, _ := aux["isDefault"].(bool)
+	frameID := cdpText(aux, "frameId")
+	if !valid || !isDefault || frameID == "" {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.evidence.generation != generation {
+		return
+	}
+	frame, known := state.frames[frameID]
+	if !known {
+		// A document from before this session observed its frame's commit.
+		return
+	}
+	if len(state.contexts) >= resourceAssociationLimit {
+		state.truncated = true
+		return
+	}
+	state.contexts[id] = cdpContextLoader{frameID: frameID, loaderID: frame.loaderID, commit: frame.commit}
+}
+
+func (b *Browser) observeCDPContextDestroyed(state *cdpEvidencePage, params map[string]any, generation string) {
+	id, valid := cdpContextID(params["executionContextId"])
+	if !valid {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.evidence.generation == generation {
+		delete(state.contexts, id)
+	}
+}
+
+func (b *Browser) observeCDPContextsCleared(state *cdpEvidencePage, generation string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.evidence.generation == generation {
+		clear(state.contexts)
+	}
+}
+
+// observeCDPDocumentReport records which document a loader produced: the
+// token the bootstrap reported from a context created after the loader's
+// commit, while that commit is still its frame's latest.
+func (b *Browser) observeCDPDocumentReport(state *cdpEvidencePage, params map[string]any, binding, generation string) {
+	token := cdpText(params, "payload")
+	id, valid := cdpContextID(params["executionContextId"])
+	if binding == "" || cdpText(params, "name") != binding || !valid || len(token) != cdpDocumentTokenLength || strings.Trim(token, "0123456789abcdef") != "" {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.evidence.generation != generation {
+		return
+	}
+	context, known := state.contexts[id]
+	if !known || state.frames[context.frameID].commit != context.commit {
+		return
+	}
+	if previous, reported := state.loaderTokens[context.loaderID]; reported {
+		if previous != token {
+			state.ambiguousLoaders[context.loaderID] = true
+		}
+		return
+	}
+	if len(state.loaderTokens) >= resourceAssociationLimit {
+		state.truncated = true
+		return
+	}
+	state.loaderTokens[context.loaderID] = token
 }
 
 // resourceJoinLocked assigns a starting request its join identity: the page
@@ -353,12 +458,16 @@ func (b *Browser) associateResourceEvidence(v *protocol.BrowserResourceEvidence,
 		return v
 	}
 	out := *v
-	// Association fields and reasons exist only in version 3 records.
-	out.Version = protocol.BrowserResourceEvidenceVersion
+	// Association fields and reasons exist only in version 3 records, so only
+	// a record an association pass examined is raised to it.
 	if join.urlHash != "" {
+		out.Version = protocol.BrowserResourceEvidenceVersion
 		b.associateResourceTimingLocked(&out, join)
 	} else if state := s.cdpPages[join.page]; state != nil && join.ordinal > 0 {
+		out.Version = protocol.BrowserResourceEvidenceVersion
 		b.associateCDPLocked(&out, join, state)
+	} else {
+		return v
 	}
 	if cloned := out.Clone(); cloned != nil {
 		return cloned
@@ -414,43 +523,24 @@ func (b *Browser) associateCDPLocked(v *protocol.BrowserResourceEvidence, join r
 	}
 }
 
-// loaderDocumentLocked proves which document a loader produced: exactly one
-// document of the frame began between that commit and the frame's next one.
+// loaderDocumentLocked proves which document a loader produced: the one
+// document of the frame whose token the loader's own context reported.
 func (b *Browser) loaderDocumentLocked(state *cdpEvidencePage, record *cdpRequestRecord, frame playwright.Frame) (loaderDocument, string) {
 	s := &b.evidence
 	if document, ok := s.loaderDocuments[record.loaderID]; ok {
 		return document, ""
 	}
-	commits := state.commits[record.frameID]
-	index := -1
-	for i, commit := range commits {
-		if commit.loaderID == record.loaderID {
-			index = i
-		}
+	if state.ambiguousLoaders[record.loaderID] {
+		return loaderDocument{}, "ambiguous_document_commit"
 	}
-	if index < 0 {
+	token, reported := state.loaderTokens[record.loaderID]
+	if !reported {
 		return loaderDocument{}, "document_not_observed"
 	}
-	low, high := commits[index].seq, uint64(math.MaxUint64)
-	open := index+1 == len(commits)
-	if !open {
-		high = commits[index+1].seq
-	}
-	// A loader's document began after the previous loader's navigation
-	// request (that loader had committed before this navigation started) and
-	// no later than this loader's own navigation request.
-	lowerWall, hasLower := 0.0, false
-	if index > 0 {
-		lowerWall, hasLower = state.navigationWallMS[commits[index-1].loaderID]
-	}
-	upperWall, hasUpper := state.navigationWallMS[record.loaderID]
 	var found loaderDocument
 	matches := 0
 	for _, d := range s.documents {
-		if d.frame != frame || d.beginSeq <= low || d.beginSeq >= high || d.restored {
-			continue
-		}
-		if hasLower && d.timeOrigin <= lowerWall-documentClockToleranceMS || hasUpper && d.timeOrigin > upperWall+documentClockToleranceMS {
+		if d.frame != frame || d.token != token || d.restored {
 			continue
 		}
 		if matches == 0 || found.id != d.documentID {
@@ -460,12 +550,13 @@ func (b *Browser) loaderDocumentLocked(state *cdpEvidencePage, record *cdpReques
 	}
 	switch {
 	case matches == 0:
+		// The begin reaches the controller on another channel and may
+		// still arrive, so this result is not cached.
 		return loaderDocument{}, "document_not_observed"
 	case matches > 1:
 		return loaderDocument{}, "ambiguous_document_commit"
 	}
-	// A window still open to later begins may yet gain the true document.
-	if !open && len(s.loaderDocuments) < resourceAssociationLimit {
+	if len(s.loaderDocuments) < resourceAssociationLimit {
 		s.loaderDocuments[record.loaderID] = found
 	}
 	return found, ""

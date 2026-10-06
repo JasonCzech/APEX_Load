@@ -163,7 +163,9 @@ func exerciseEvaluationJobReviewFixes(t *testing.T, store *SQLiteStore) {
 	if _, err := store.CompleteEvaluationJobFenced("ready", "owner-r", EvaluationJobFailed, "", "", "", "no code", later, "", "", 0); err == nil {
 		t.Fatal("a failure without a code was accepted")
 	}
-	if done, err := store.CompleteEvaluationJobFenced("ready", "owner-r", EvaluationJobReady, `{"big":"`+strings.Repeat("x", 1000)+`"}`, "sha", "", "", later, "", "", 0); err != nil || !done {
+	// Multi-byte text: the stored size counts bytes, not characters.
+	readyResult := `{"big":"` + strings.Repeat("é", 500) + `"}`
+	if done, err := store.CompleteEvaluationJobFenced("ready", "owner-r", EvaluationJobReady, readyResult, "sha", "", "", later, "", "", 0); err != nil || !done {
 		t.Fatalf("complete: %v %v", done, err)
 	}
 	listed, err := store.ListEvaluationJobs(DefaultProjectID, "test_kind", 10, 0)
@@ -174,7 +176,7 @@ func exerciseEvaluationJobReviewFixes(t *testing.T, store *SQLiteStore) {
 		if job.Result != "" || job.Request != "" {
 			t.Fatalf("a listing carried bodies: %#v", job)
 		}
-		if job.ID == "ready" && job.ResultBytes < 1000 {
+		if job.ID == "ready" && job.ResultBytes != int64(len(readyResult)) {
 			t.Fatalf("listing result size %d", job.ResultBytes)
 		}
 	}
@@ -185,4 +187,51 @@ func exerciseEvaluationJobReviewFixes(t *testing.T, store *SQLiteStore) {
 
 func TestEvaluationJobReviewFixes(t *testing.T) {
 	exerciseEvaluationJobReviewFixes(t, newAuthoringReceiptTestStore(t))
+}
+
+// A completion records only under the current execution term, and a job
+// whose project was deleted while it ran records nothing.
+func TestEvaluationJobCompletionIsFencedByTermAndProjectDeletion(t *testing.T) {
+	store := newAuthoringReceiptTestStore(t)
+	if _, _, err := store.CreateEvaluationJob(evaluationJob("fenced", "", "fp-fenced"), 10); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Add(time.Second)
+	if claimed, err := store.ClaimEvaluationJob("job-owner", now, time.Hour, testEvaluationKinds, 3); err != nil || claimed == nil {
+		t.Fatalf("claim: %#v %v", claimed, err)
+	}
+	ok, lease, err := store.TryAcquireSchedulerLeaseTerm("controller-execution-leader", "leader-1", time.Now(), time.Minute)
+	if err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if done, err := store.CompleteEvaluationJobFenced("fenced", "job-owner", EvaluationJobReady, `{}`, "sha", "", "", now, "controller-execution-leader", "leader-1", lease.Generation+1); err != nil || done {
+		t.Fatalf("a deposed term completed the job: %v %v", done, err)
+	}
+	if job, _ := store.GetEvaluationJob(DefaultProjectID, "fenced"); job.State != EvaluationJobRunning {
+		t.Fatalf("a refused completion changed the job: %#v", job)
+	}
+	if done, err := store.CompleteEvaluationJobFenced("fenced", "job-owner", EvaluationJobReady, `{}`, "sha", "", "", now, "controller-execution-leader", "leader-1", lease.Generation); err != nil || !done {
+		t.Fatalf("the current term: %v %v", done, err)
+	}
+
+	if err := store.SaveProject(&Project{ID: "eval-deleted", Name: "Deleted during evaluation"}); err != nil {
+		t.Fatal(err)
+	}
+	doomed := evaluationJob("doomed", "", "fp-doomed")
+	doomed.ProjectID = "eval-deleted"
+	if _, _, err := store.CreateEvaluationJob(doomed, 10); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := store.ClaimEvaluationJob("doomed-owner", now, time.Hour, testEvaluationKinds, 3); err != nil || claimed == nil || claimed.ID != "doomed" {
+		t.Fatalf("claim: %#v %v", claimed, err)
+	}
+	if err := store.DeleteProject("eval-deleted"); err != nil {
+		t.Fatal(err)
+	}
+	if done, err := store.CompleteEvaluationJobFenced("doomed", "doomed-owner", EvaluationJobReady, `{}`, "sha", "", "", now, "", "", 0); err != nil || done {
+		t.Fatalf("a job of a deleted project completed: %v %v", done, err)
+	}
+	if _, err := store.GetEvaluationJob("eval-deleted", "doomed"); err == nil {
+		t.Fatal("the deleted project's job survived")
+	}
 }

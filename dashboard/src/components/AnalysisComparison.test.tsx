@@ -298,7 +298,9 @@ for (const side of ['left', 'right']) for (const source of ['timestamp', 'value'
 
 it('restores a saved histogram statistic and widens buckets to whole source windows', async () => {
   let executed: { bucket_seconds: number; from: string; to: string; left: { aggregation: string } } | undefined
-  const summaryDataset: AnalysisImport = { ...dataset, mapping: { version: 1, timestamp: ['ts'], timestamp_encoding: 'unix_s', timezone: 'UTC', measures: [{ value: ['p90'], name: 'latency', kind: 'summary', unit: 'ms', statistic: 'p90', window_seconds: 300 }] } }
+  // Its windows start two minutes past each five-minute mark (a test-start anchored grid).
+  const gridStart = Date.parse('2026-01-01T00:02:00Z')
+  const summaryDataset: AnalysisImport = { ...dataset, mapping: { version: 1, timestamp: ['ts'], timestamp_encoding: 'unix_s', timezone: 'UTC', measures: [{ value: ['p90'], name: 'latency', kind: 'summary', unit: 'ms', statistic: 'p90', window_seconds: 300 }] }, partition_manifest: { partitions: [{ stats: { kind: 'summary', metric: 'latency', min_time: '2026-01-01T00:02:00Z' } }] } }
   const p90 = { ...saved, definition: { ...definition, left: { dataset_id: 'a', metric: 'latency', aggregation: 'p90' }, mode: 'overlay', max_lag_seconds: 0 } }
   request.mockImplementation(async (path: string, opts?: RequestInit) => {
     if (path.startsWith('/analysis/compare?')) { executed = JSON.parse(String(opts?.body)); return { request: executed, left: [], right: [] } }
@@ -312,5 +314,7 @@ it('restores a saved histogram statistic and widens buckets to whole source wind
   await act(async () => [...container.querySelectorAll('button')].find(x => x.textContent === 'Analyze comparison')!.click())
   expect(executed?.bucket_seconds).toBe(300)
   expect(executed?.left.aggregation).toBe('p90')
-  expect(Date.parse(executed!.to) % 300000).toBe(0)
+  const onGrid = (iso: string) => (((Date.parse(iso) - gridStart) % 300000) + 300000) % 300000
+  expect(onGrid(executed!.from)).toBe(0)
+  expect(onGrid(executed!.to)).toBe(0)
 })

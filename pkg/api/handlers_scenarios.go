@@ -54,12 +54,13 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var scenario *StoredScenario
+	var committed *storage.ScenarioAuthoringSnapshot
 	var err error
 	if receipt != nil {
 		// The receipt fixes the scenario ID, so a retry after a lost response
 		// finds the scenario this request created instead of making another.
 		receipt.markAttempted()
-		scenario, err = s.runner.StoreScenarioWithIDCreateOnly(receipt.resourceID(), req)
+		scenario, committed, err = s.runner.CreateScenarioAuthoringDurable(receipt.resourceID(), req)
 		receipt.fail(err)
 		// errScenarioConcurrentChange covers both "the ID already exists" and a
 		// concurrent content change during compilation. Only a durable read can
@@ -76,7 +77,7 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
-		scenario, err = s.runner.StoreScenario(req)
+		scenario, committed, err = s.runner.CreateScenarioAuthoringDurable("", req)
 	}
 	if err != nil {
 		if errors.Is(err, errServiceAccountRuntimeSecretWrite) || errors.Is(err, errUnattributedRuntimeSecretWrite) {
@@ -95,19 +96,18 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if receipt != nil {
-		receipt.complete(s.scenarioContentRevision(scenario.ID))
+		revision := ""
+		if committed != nil {
+			revision = committed.ContentRevision
+		}
+		receipt.complete(revision)
 	}
 	s.recordAuditEvent(r, "scenario.create", "success", "scenario", scenario.ID, scenario.ProjectID, map[string]any{"name": scenario.Name, "duration": scenario.Duration})
 	response := maskStoredScenario(scenario)
 	// The created baseline and its strong tag let an editor save next without
-	// a separate authoring read.
-	if projection, found, err := s.runner.GetScenarioAuthoringDurable(scenario.ID); err == nil && found {
-		if tag, tagErr := scenarioAuthoringETag(projection.ContentRevision); tagErr == nil {
-			response.ContentRevision = projection.ContentRevision
-			response.AuthoringProjection = projection
-			w.Header().Set("ETag", tag)
-		}
-	}
+	// a separate authoring read. Both come from the snapshot read inside the
+	// create transaction, so a later writer cannot pair this body with its tag.
+	attachScenarioAuthoringValidator(w, response, scenario, committed)
 	writeJSON(w, http.StatusCreated, response)
 }
 
@@ -221,6 +221,12 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 		scenario, ok, err = s.runner.UpdateScenario(existing.ID, req)
 	}
 	unknown := errors.Is(err, storage.ErrScenarioAuthoringOutcomeUnknown)
+	if unknown {
+		// The cache still describes the pre-save state; reload it so the next
+		// save is judged against whatever actually committed, whatever the
+		// audit completion below does.
+		s.runner.refreshScenariosAfterDurableMismatch()
+	}
 	if operationID != "" {
 		status, outcome := "failure", "not_committed"
 		if err == nil && ok {
@@ -234,9 +240,6 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if unknown {
-		// The cache still describes the pre-save state; reload it so the next
-		// save is judged against whatever actually committed.
-		s.runner.refreshScenariosAfterDurableMismatch()
 		writeScenarioAuthoringSaveOutcomeUnavailable(w, true)
 		return
 	}
@@ -397,11 +400,14 @@ func goalSizingNeedsBaseline(req GoalSizingRequest) bool {
 
 func (s *Server) handleDeleteScenario(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	projectID := ""
-	if scenario, ok := s.runner.GetScenario(id); ok {
-		projectID = scenario.ProjectID
-		id = scenario.ID
+	scenario, ok := s.runner.GetScenario(id)
+	if !ok {
+		// Ownership is resolved before any condition is parsed, as on PUT.
+		writeError(w, http.StatusNotFound, "scenario not found")
+		return
 	}
+	projectID := scenario.ProjectID
+	id = scenario.ID
 	admission, admitted := s.admitScenarioWriter(w, r, id, projectID)
 	if !admitted {
 		return

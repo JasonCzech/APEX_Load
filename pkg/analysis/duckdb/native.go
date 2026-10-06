@@ -294,7 +294,7 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 					return err
 				}
 				valid := "timestamp_utc IS NOT NULL AND isfinite(timestamp_utc) AND timestamp_utc>=TIMESTAMPTZ '0001-01-01 00:00:00+00' AND timestamp_utc<TIMESTAMPTZ '10000-01-01 00:00:00+00' AND " + nativeRequiredIdentityText("metric_name", 256) + " AND (was_null OR (value IS NOT NULL AND isfinite(value)))"
-				valid += " AND " + identityValid
+				valid += " AND " + identityValid + nativeSummaryValueValid(measure)
 				// A row rejected only for its sample count or sum says so.
 				reason := literal("invalid_timestamp_name_or_value")
 				if summaryValid != "" {
@@ -321,8 +321,15 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 			}
 		}
 		// Every file is read, so a cumulative series can be differenced
-		// across file boundaries.
+		// across file boundaries: once per measure, then written per file.
+		differenced := map[int]bool{}
 		for _, slot := range cumulative {
+			if !differenced[slot.measure] {
+				if err := nativeHistogramMaterializeDeltas(ctx, db, request, slot.measure); err != nil {
+					return err
+				}
+				differenced[slot.measure] = true
+			}
 			if err := nativeHistogramEmitCumulative(ctx, db, request, slot, dir, &result); err != nil {
 				return err
 			}

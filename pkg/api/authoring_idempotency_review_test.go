@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -288,5 +289,72 @@ func TestIdempotentCreateRefusesAnExpiredKey(t *testing.T) {
 	response := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
 	if response.Code != http.StatusConflict || idempotencyErrorCode(t, response) != "idempotency_key_expired" || countScenariosNamed(server, "Expired key") != 0 {
 		t.Fatalf("expired key: %d %s", response.Code, response.Body.String())
+	}
+}
+
+// A delete refused inside the runner (the scenario has results) withdraws its
+// tombstone, so the create key keeps replaying the live scenario.
+func TestDeleteRefusedForResultsKeepsTheCreateKeyReplaying(t *testing.T) {
+	server, _, _, _ := newScenarioPolicyAvailabilityFixture(t)
+	body := scenarioSaveRequest("Has results", 1)
+	first := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", first.Code, first.Body.String())
+	}
+	id := decodeScenarioID(t, first)
+	server.runner.mu.Lock()
+	server.runner.tests["result-run"] = &ManagedTest{ID: "result-run", ScenarioID: id, Status: "COMPLETED"}
+	server.runner.mu.Unlock()
+	if response := authoringAPIRequest(t, server, http.MethodDelete, "/api/v1/scenarios/"+id, nil, ""); response.Code != http.StatusBadRequest {
+		t.Fatalf("delete of a scenario with results: %d %s", response.Code, response.Body.String())
+	}
+	replay := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
+	if replay.Code != http.StatusCreated || replay.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("create key after a refused delete: %d %s", replay.Code, replay.Body.String())
+	}
+}
+
+// concurrentDeleteAfterTombstoneStore lets a second delete of the same
+// scenario win right after the first delete wrote its tombstone.
+type concurrentDeleteAfterTombstoneStore struct {
+	*storage.SQLiteStore
+	winner func()
+}
+
+func (s *concurrentDeleteAfterTombstoneStore) TombstoneAuthoringMutationReceipts(resourceType, resourceID, reason string, now time.Time) error {
+	if err := s.SQLiteStore.TombstoneAuthoringMutationReceipts(resourceType, resourceID, reason, now); err != nil {
+		return err
+	}
+	if s.winner != nil {
+		winner := s.winner
+		s.winner = nil
+		winner()
+	}
+	return nil
+}
+
+// A delete that loses to a concurrent delete keeps its tombstone: the
+// scenario is gone, so a resumed create must not recreate it.
+func TestDeleteThatLostToAConcurrentDeleteKeepsItsTombstone(t *testing.T) {
+	server, store, _, _ := newScenarioPolicyAvailabilityFixture(t)
+	body := scenarioSaveRequest("Deleted concurrently", 1)
+	id := claimCrashedScenarioCreate(t, server, store, body, true)
+	server.store = &concurrentDeleteAfterTombstoneStore{SQLiteStore: store, winner: func() {
+		// The winner's own tombstone is a no-op; only its delete matters.
+		if deleted, err := server.runner.DeleteScenarioDurable(id); err != nil || !deleted {
+			t.Errorf("concurrent delete: %v %v", deleted, err)
+		}
+	}}
+	response := authoringAPIRequest(t, server, http.MethodDelete, "/api/v1/scenarios/"+id, nil, "")
+	server.store = store
+	if response.Code == http.StatusOK {
+		t.Fatalf("the losing delete reported success: %s", response.Body.String())
+	}
+	retry := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
+	if retry.Code != http.StatusGone {
+		t.Fatalf("a resumed create after the delete: %d %s", retry.Code, retry.Body.String())
+	}
+	if _, err := store.GetScenarioAuthoringSnapshot(id); !errors.Is(err, storage.ErrScenarioAuthoringNotFound) {
+		t.Fatalf("the deleted scenario was recreated: %v", err)
 	}
 }

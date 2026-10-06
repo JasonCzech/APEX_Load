@@ -149,9 +149,11 @@ func admitScenarioSourcesTx(tx *storeTx, admission *ScenarioSourceAdmission, poo
 	if err != nil {
 		return ErrScenarioSourceAdmissionUnavailable
 	}
-	if snapshot.State != admission.Publication {
-		return ErrScenarioSourceAdmissionConflict
-	}
+	// Under the publication lock the current facts are authoritative for this
+	// scenario's own sources. A publication change that leaves them published
+	// (another project's import, a claim heartbeat, a cleared claim) does not
+	// invalidate the admission: a source that was replaced or archived since
+	// fails its incarnation, content or activity check above.
 	return scenarioSourcesPublished(snapshot, ids)
 }
 

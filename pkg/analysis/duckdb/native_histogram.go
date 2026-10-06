@@ -182,21 +182,42 @@ func nativeHistogramNormalize(ctx context.Context, db *sql.DB, request Normalize
 	return nil, nativeWriteDistribution(ctx, db, request, measure, artifact, filepath.Join(dir, fmt.Sprintf("part-%04d-%02d.parquet", i, j)), accepted, result)
 }
 
-// nativeHistogramEmitCumulative writes each input file's slot of a cumulative
-// histogram measure: the windows whose closing sample came from that file,
-// differenced against the previous sample of the series in any file. Each
-// window runs from one present sample to the next; a series' first sample
-// only opens the first window, and two samples at one instant open none.
-func nativeHistogramEmitCumulative(ctx context.Context, db *sql.DB, request NormalizeRequest, slot nativeCumulativeSlot, dir string, result *NormalizeResult) error {
-	measure := request.Mapping.Measures[slot.measure]
-	declared, scaled, unit, err := nativeHistogramBounds(measure)
+func nativeCumulativeDeltaTable(j int) string {
+	return "histogram_cumulative_deltas_" + strconv.Itoa(j)
+}
+
+// nativeHistogramMaterializeDeltas differences every series of one
+// cumulative measure once, across all of its files. Each window runs from one
+// sample to the next; a series' first sample only opens the first window. An
+// instant several files report is one sample when they agree on its bins (an
+// overlapping export); when they disagree, the instant is a duplicate and
+// both windows touching it are missing.
+func nativeHistogramMaterializeDeltas(ctx context.Context, db *sql.DB, request NormalizeRequest, j int) error {
+	declared, _, _, err := nativeHistogramBounds(request.Mapping.Measures[j])
 	if err != nil {
 		return err
 	}
 	n := strconv.Itoa(len(declared))
-	series := "PARTITION BY source, host, service, dimensions_json, metric_name ORDER BY timestamp_utc, source_file"
-	deltas := "SELECT *, list_transform(range(1," + n + "+1), k -> bins[k]-prev[k]) AS delta, epoch_us(timestamp_utc)-epoch_us(prev_ts) AS span_us FROM (SELECT *, lag(bins) OVER (" + series + ") AS prev, lag(timestamp_utc) OVER (" + series + ") AS prev_ts FROM " + nativeCumulativeTable(slot.measure) + ") WHERE prev IS NOT NULL AND source_file=" + strconv.Itoa(slot.file) + " AND epoch_us(timestamp_utc)>epoch_us(prev_ts)"
-	artifact := "SELECT " + literal(analysis.DistributionSchemaVersion) + " AS schema_version, " + literal(request.ProjectID) + " AS project_id, " + literal(request.DatasetID) + " AS dataset_id, identity_version, source, host, service, dimensions_json, prev_ts AS timestamp_utc, metric_name, 'histogram' AS kind, " + literal(unit) + " AS unit, CASE WHEN list_min(delta)<0 THEN 'missing' ELSE 'valid' END AS quality, CASE WHEN list_min(delta)<0 THEN " + literal(analysis.MissingHistogramCounterReset) + " ELSE '' END AS missing_reason, span_us AS window_us, CAST(0 AS BIGINT) AS source_window_us, " + nativeDoubleList(scaled) + " AS bounds, CASE WHEN list_min(delta)<0 THEN NULL ELSE delta END AS counts FROM (" + deltas + ")"
+	key := "identity_version, source, host, service, dimensions_json, metric_name"
+	instants := "SELECT " + key + ", timestamp_utc, min(source_file) AS source_file, count(DISTINCT bins) AS variants, any_value(bins) AS bins FROM " + nativeCumulativeTable(j) + " GROUP BY " + key + ", timestamp_utc"
+	series := "PARTITION BY source, host, service, dimensions_json, metric_name ORDER BY timestamp_utc"
+	ordered := "SELECT *, lag(bins) OVER (" + series + ") AS prev, lag(timestamp_utc) OVER (" + series + ") AS prev_ts, lag(variants) OVER (" + series + ") AS prev_variants FROM (" + instants + ")"
+	deltas := "SELECT *, list_transform(range(1," + n + "+1), k -> bins[k]-prev[k]) AS delta, epoch_us(timestamp_utc)-epoch_us(prev_ts) AS span_us, variants>1 OR prev_variants>1 AS duplicate FROM (" + ordered + ") WHERE prev IS NOT NULL"
+	_, err = db.ExecContext(ctx, "CREATE OR REPLACE TEMP TABLE "+nativeCumulativeDeltaTable(j)+" AS "+deltas)
+	return err
+}
+
+// nativeHistogramEmitCumulative writes one input file's slot of a cumulative
+// histogram measure: the materialized windows whose closing sample came from
+// that file.
+func nativeHistogramEmitCumulative(ctx context.Context, db *sql.DB, request NormalizeRequest, slot nativeCumulativeSlot, dir string, result *NormalizeResult) error {
+	measure := request.Mapping.Measures[slot.measure]
+	_, scaled, unit, err := nativeHistogramBounds(measure)
+	if err != nil {
+		return err
+	}
+	missing := "duplicate OR list_min(delta)<0"
+	artifact := "SELECT " + literal(analysis.DistributionSchemaVersion) + " AS schema_version, " + literal(request.ProjectID) + " AS project_id, " + literal(request.DatasetID) + " AS dataset_id, identity_version, source, host, service, dimensions_json, prev_ts AS timestamp_utc, metric_name, 'histogram' AS kind, " + literal(unit) + " AS unit, CASE WHEN " + missing + " THEN 'missing' ELSE 'valid' END AS quality, CASE WHEN duplicate THEN " + literal(analysis.MissingDuplicateHistogramRow) + " WHEN list_min(delta)<0 THEN " + literal(analysis.MissingHistogramCounterReset) + " ELSE '' END AS missing_reason, span_us AS window_us, CAST(0 AS BIGINT) AS source_window_us, " + nativeDoubleList(scaled) + " AS bounds, CASE WHEN " + missing + " THEN NULL ELSE delta END AS counts FROM " + nativeCumulativeDeltaTable(slot.measure) + " WHERE source_file=" + strconv.Itoa(slot.file)
 	return nativeWriteDistribution(ctx, db, request, measure, artifact, filepath.Join(dir, fmt.Sprintf("part-%04d-%02d.parquet", slot.file, slot.measure)), slot.accepted, result)
 }
 
@@ -221,7 +242,7 @@ func nativeWriteDistribution(ctx context.Context, db *sql.DB, request NormalizeR
 // nativeDistributionValid admits one canonical distribution row with n bins.
 func nativeDistributionValid(n int) string {
 	size := strconv.Itoa(n)
-	return "len(bounds)=" + size + " AND window_us>0 AND source_window_us>=0 AND ((quality='valid' AND missing_reason='' AND counts IS NOT NULL AND len(counts)=" + size + " AND list_count(counts)=" + size + " AND list_min(counts)>=0 AND isfinite(list_max(counts))) OR (quality='missing' AND counts IS NULL AND missing_reason IN (''," + literal(analysis.MissingHistogramCounterReset) + ")))"
+	return "len(bounds)=" + size + " AND window_us>0 AND source_window_us>=0 AND ((quality='valid' AND missing_reason='' AND counts IS NOT NULL AND len(counts)=" + size + " AND list_count(counts)=" + size + " AND list_min(counts)>=0 AND isfinite(list_max(counts))) OR (quality='missing' AND counts IS NULL AND missing_reason IN (''," + literal(analysis.MissingHistogramCounterReset) + "," + literal(analysis.MissingDuplicateHistogramRow) + ")))"
 }
 
 func nativeDistributionPartitionStats(ctx context.Context, db *sql.DB, path string, request NormalizeRequest, measure Measure, sourceRows int64) (analysis.NormalizedPartitionStats, error) {
@@ -361,7 +382,8 @@ func nativeHistogramSeries(ctx context.Context, db *sql.DB, paths []string, q Se
 		unit = "count"
 	}
 	template = analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: source, Host: host, Service: service, Dimensions: dimensions, MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: analysis.KindHistogram, Derivation: lineage, Unit: unit, Quality: analysis.QualityMissing}
-	rows, err := db.QueryContext(ctx, nativeHistogramMergeSQL(table, q, len(bounds)))
+	identity := "source=" + literal(source) + " AND host=" + literal(host) + " AND service=" + literal(service) + " AND dimensions_json=" + literal(dimensionsJSON)
+	rows, err := db.QueryContext(ctx, nativeHistogramMergeSQL(table, q, len(bounds), identity))
 	if err != nil {
 		return nil, template, true, err
 	}
@@ -415,12 +437,15 @@ func nativeHistogramSeries(ctx context.Context, db *sql.DB, paths []string, q Se
 // windows ends past the bucket's end, or when a window from an earlier bucket
 // (or from before the query start) ends inside it: either way part of the
 // bucket's observations sit in a window it cannot split.
-func nativeHistogramMergeSQL(table string, q SeriesQuery, bins int) string {
+//
+// identity restricts the lead-in to the one series the query validated: a
+// different series ending just after From says nothing about this one.
+func nativeHistogramMergeSQL(table string, q SeriesQuery, bins int, identity string) string {
 	origin := "TIMESTAMPTZ " + literal(q.From.UTC().Format(time.RFC3339Nano))
 	seconds := strconv.Itoa(q.BucketSeconds)
 	end := "timestamp_utc+window_us*INTERVAL '1 microsecond'"
 	rows := "SELECT (" + origin + " + floor(epoch(timestamp_utc-" + origin + ")/" + seconds + ")*" + seconds + "*INTERVAL '1 second') AS bucket, timestamp_utc, window_us, quality, missing_reason, counts FROM " + table + " WHERE " + nativeSeriesFilter(q)
-	leadIn := "(SELECT max(" + end + ") FROM " + table + " WHERE " + nativeSeriesLeadInFilter(q) + ")"
+	leadIn := "(SELECT max(" + end + ") FROM " + table + " WHERE " + nativeSeriesLeadInFilter(q) + " AND " + identity + ")"
 	stats := "SELECT bucket, count(*) AS n, count(*) FILTER(WHERE quality='valid') AS nv, count(DISTINCT timestamp_utc) AS nt, bool_or(" + end + " > bucket+" + seconds + "*INTERVAL '1 second') AS crossing, max(" + end + ") AS max_end, coalesce(min(missing_reason) FILTER(WHERE quality='missing'),'') AS reason FROM histogram_rows GROUP BY bucket"
 	earlier := "SELECT *, coalesce(max(max_end) OVER (ORDER BY bucket ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), " + leadIn + ") AS earlier_end FROM (" + stats + ")"
 	sums := "SELECT bucket, list(total ORDER BY i) AS merged FROM (SELECT bucket, i, sum(counts[i]) AS total FROM histogram_rows, range(1," + strconv.Itoa(bins) + "+1) t(i) WHERE quality='valid' GROUP BY bucket, i) GROUP BY bucket"

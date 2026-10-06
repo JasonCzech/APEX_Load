@@ -71,12 +71,12 @@ func TestQAAcceptanceGateAndFilters(t *testing.T) {
 	if err := os.WriteFile(binary, []byte("binary"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	args := []string{"acceptance", "--api", server.URL, "--feature", "browser-har", "--platform", "linux-amd64", "--commit", "ABCDEF1", "--binary", binary, "--require-supported"}
+	args := []string{"acceptance", "--api", server.URL, "--feature", "browser-har", "--profile", "local-auth", "--provider", "chromium", "--platform", "linux-amd64", "--commit", "ABCDEF1", "--binary", binary, "--require-supported"}
 	if err := executeQACommand(context.Background(), args, io.Discard); !errors.Is(err, errAcceptanceUnsupported) {
 		t.Fatalf("gate with an unsupported subject: %v", err)
 	}
 	sum := sha256.Sum256([]byte("binary"))
-	for _, want := range []string{"feature=browser-har", "platform=linux-amd64", "commit_sha=abcdef1", "binary_sha256=" + hex.EncodeToString(sum[:])} {
+	for _, want := range []string{"feature=browser-har", "profile=local-auth", "provider=chromium", "platform=linux-amd64", "commit_sha=abcdef1", "binary_sha256=" + hex.EncodeToString(sum[:])} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("query %q lacks %s", query, want)
 		}
@@ -88,6 +88,11 @@ func TestQAAcceptanceGateAndFilters(t *testing.T) {
 	body = `{"statuses":[],"truncated":false}`
 	if err := executeQACommand(context.Background(), args, io.Discard); !errors.Is(err, errAcceptanceUnsupported) {
 		t.Fatalf("gate with no matching subject: %v", err)
+	}
+	// A truncated status cannot prove every subject is supported.
+	body = `{"statuses":[{"supported":true}],"truncated":true}`
+	if err := executeQACommand(context.Background(), args, io.Discard); !errors.Is(err, errAcceptanceUnsupported) {
+		t.Fatalf("gate over a truncated status: %v", err)
 	}
 	if err := executeQACommand(context.Background(), []string{"acceptance", "--api", server.URL, "--result", "passed"}, io.Discard); err == nil || !strings.Contains(err.Error(), "--result") {
 		t.Fatalf("a record-only flag was accepted on a read: %v", err)

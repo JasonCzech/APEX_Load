@@ -227,7 +227,7 @@ func TestEvaluationJobOnlyCreatorOrEditorMayCancel(t *testing.T) {
 		req.SetPathValue("id", job.ID)
 		req = withAuthenticatedContext(req, authResolution{User: user})
 		response := httptest.NewRecorder()
-		server.handleEvaluationJobs(response, req)
+		serveEvaluationJobs(server, response, req)
 		return response.Code
 	}
 	if code := cancelAs(viewer); code != http.StatusForbidden {
@@ -235,5 +235,20 @@ func TestEvaluationJobOnlyCreatorOrEditorMayCancel(t *testing.T) {
 	}
 	if code := cancelAs(editor); code != http.StatusOK {
 		t.Fatalf("editor could not cancel: %d", code)
+	}
+}
+
+// serveEvaluationJobs dispatches a test request to the evaluation handler its
+// route registers.
+func serveEvaluationJobs(server *Server, w http.ResponseWriter, r *http.Request) {
+	switch {
+	case r.Method == http.MethodPost:
+		server.handleCreateEvaluationJob(w, r)
+	case r.Method == http.MethodDelete:
+		server.handleDeleteEvaluationJob(w, r)
+	case r.PathValue("id") != "":
+		server.handleGetEvaluationJob(w, r)
+	default:
+		server.handleListEvaluationJobs(w, r)
 	}
 }

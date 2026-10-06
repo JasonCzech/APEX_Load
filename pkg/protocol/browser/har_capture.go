@@ -124,6 +124,7 @@ func (b *Browser) applyHARCaptureOptions(contextOptions *playwright.BrowserNewCo
 		b.mu.Lock()
 		b.harUnavailableReason = reason
 		b.mu.Unlock()
+		logEvidenceEvent("browser HAR writer refused; the session runs without HAR", "reason", reason)
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), runtimeHARCloseWait)
@@ -207,6 +208,7 @@ func (b *Browser) closeOwnedOversizedHARContext(owner *harCaptureOwner, expected
 	b.mu.Unlock()
 	if overflow {
 		browserEvidenceBudget.counters.harOverflow.Add(1)
+		logEvidenceEvent("browser HAR recording closed at its size limit")
 	}
 	// Unfinished observations end at the limit, not at an ordinary close.
 	b.censorDocumentEvidence(nil, "resource_limit")

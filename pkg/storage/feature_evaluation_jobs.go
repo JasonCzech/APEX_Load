@@ -93,12 +93,12 @@ type EvaluationJobStore interface {
 var _ EvaluationJobStore = (*SQLiteStore)(nil)
 
 const evaluationJobColumns = `id, project_id, actor, kind, idempotency_key_hash, request_digest, request, input_fingerprint, state, revision, owner,
-	lease_expires_at, progress, result, result_sha256, failure, failure_code, attempts, hidden_at, created_at, updated_at, completed_at, LENGTH(result)`
+	lease_expires_at, progress, result, result_sha256, failure, failure_code, attempts, hidden_at, created_at, updated_at, completed_at, result_bytes`
 
 // evaluationJobSummaryColumns leave the request and result bodies out; a
 // listing returns their size and hash only.
 const evaluationJobSummaryColumns = `id, project_id, actor, kind, idempotency_key_hash, request_digest, '' AS request, input_fingerprint, state, revision, owner,
-	lease_expires_at, progress, '' AS result, result_sha256, failure, failure_code, attempts, hidden_at, created_at, updated_at, completed_at, LENGTH(result)`
+	lease_expires_at, progress, '' AS result, result_sha256, failure, failure_code, attempts, hidden_at, created_at, updated_at, completed_at, result_bytes`
 
 func scanEvaluationJob(row interface{ Scan(...any) error }) (*EvaluationJob, error) {
 	var job EvaluationJob
@@ -314,9 +314,11 @@ func (s *SQLiteStore) CompleteEvaluationJobFenced(id, owner, state, result, resu
 		return false, err
 	}
 	defer tx.Rollback()
-	update, err := tx.Exec(`UPDATE feature_evaluation_jobs SET state = ?, result = ?, result_sha256 = ?, failure = ?, failure_code = ?, completed_at = ?, updated_at = ?,
+	// result_bytes is stored rather than computed so a listing never reads
+	// the result body, and it counts bytes where LENGTH counts characters.
+	update, err := tx.Exec(`UPDATE feature_evaluation_jobs SET state = ?, result = ?, result_sha256 = ?, result_bytes = ?, failure = ?, failure_code = ?, completed_at = ?, updated_at = ?,
 		lease_expires_at = NULL, revision = revision + 1 WHERE id = ? AND state = ? AND owner = ?`,
-		state, result, resultSHA256, failure, failureCode, now.UTC(), now.UTC(), id, EvaluationJobRunning, owner)
+		state, result, resultSHA256, len(result), failure, failureCode, now.UTC(), now.UTC(), id, EvaluationJobRunning, owner)
 	if err != nil {
 		return false, err
 	}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -30,7 +31,7 @@ var scenarioAuthoredWriterMethods = map[string]bool{
 	"ReplaceLibraryAssignment": true, "ReplaceScenarioLibraryAssignmentGuarded": true,
 	"UpdateScenarioAuthoringIfCurrent": true, "UpdateScenarioAuthoringWithSourcesIfCurrent": true,
 	"DeleteProject": true,
-	"StoreScenario": true, "UpdateScenario": true, "UpdateScenarioIfUnchanged": true,
+	"StoreScenario": true, "CreateScenarioAuthoringDurable": true, "UpdateScenario": true, "UpdateScenarioIfUnchanged": true,
 	"UpdateScenarioAuthoringDurable": true, "DeleteScenarioDurable": true, "ApplyScenarioRuntimeToGroups": true,
 }
 
@@ -396,4 +397,37 @@ func TestScenarioSaveAdmitsDurableSources(t *testing.T) {
 		}
 		requireNoScenarioSaveSideEffects(t, store, secrets, before)
 	})
+}
+
+// A secondary writer admitted with a current tag still compares it inside its
+// own transaction: another writer committing in between makes it stale.
+func TestGuardedScenarioWriterComparesItsTagInTransaction(t *testing.T) {
+	server, store, _, scenario := newScenarioPolicyAvailabilityFixture(t)
+	_, tag, _ := requireScenarioAuthoringView(t, server, scenario.ID)
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/scenarios/"+scenario.ID+"/data-pools", nil)
+	request.Header.Set("If-Match", tag)
+	admission, admitted := server.admitScenarioWriter(httptest.NewRecorder(), request, scenario.ID, scenario.ProjectID)
+	if !admitted || !admission.guarded() || admission.guard.Expected == nil {
+		t.Fatalf("conditioned admission %#v %v", admission, admitted)
+	}
+	snapshot, err := store.GetScenarioAuthoringSnapshot(scenario.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := *snapshot.Scenario
+	edited.Name = "Saved between admission and write"
+	if _, err := store.UpdateScenarioAuthoringIfCurrent(&edited, snapshot.Scripts, snapshot.DataPools, storage.ScenarioAuthoringPrecondition{ProjectID: snapshot.ProjectID, ContentRevision: snapshot.ContentRevision, CreatedAt: snapshot.Scenario.CreatedAt}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.GetScenarioAuthoringSnapshot(scenario.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err = admission.store.UpdateScenarioDataPoolBindingsGuarded(scenario.ID, nil, before.Scenario.UpdatedAt, admission.guard)
+	if !errors.Is(err, storage.ErrScenarioAuthoringConflict) {
+		t.Fatalf("a stale tag was not refused in the write transaction: %v", err)
+	}
+	if after, err := store.GetScenarioAuthoringSnapshot(scenario.ID); err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatalf("refused write mutated the scenario: %v", err)
+	}
 }

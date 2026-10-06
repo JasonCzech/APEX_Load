@@ -72,6 +72,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 45, Name: "feature-acceptance-records", Fingerprint: "6e18988c1ecd91779b20dd7d0176c5676e1ca8d85b17b7f4bb95ee808f693aac"},
 	{Version: 46, Name: "evaluation-job-request-digest-attempts", Fingerprint: "e0a9875257c2eec52d7e3db93e37e93337696235d5cd1a3df62ab7077dd692be"},
 	{Version: 47, Name: "feature-acceptance-record-sequence", Fingerprint: "97e0b12e5e5f458ee14262ff22bba3876a8128ff73cdd02cbd6c96fdfd495244"},
+	{Version: 48, Name: "evaluation-job-result-bytes", Fingerprint: "be98302163e49efb45a5d716d080b4f48f413493aab1bf3c426864a34f8efaad"},
 }
 
 type SchemaMigrationRecord struct {

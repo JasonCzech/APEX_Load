@@ -554,8 +554,10 @@ func (r serviceAccountScopeRule) matches(method string, path string) bool {
 }
 
 var serviceAccountScopeRules = []serviceAccountScopeRule{
-	// Evaluations are read-only analyses of results: a results:read account
-	// may queue, read and cancel its own.
+	// Every evaluation kind registered so far only reads results, so a
+	// results:read account may queue, read and cancel its own. A kind that
+	// writes or exports (bounded export) must add its own per-kind permission
+	// before it registers.
 	{prefix: "/api/v1/analysis/evaluations", scope: "results:read"},
 	{prefix: "/api/v1/auth/service-accounts", scope: "service_accounts:manage"},
 	{prefix: "/api/v1/auth/users", scope: "service_accounts:manage"},

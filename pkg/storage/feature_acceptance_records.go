@@ -24,7 +24,7 @@ type FeatureAcceptanceArtifact struct {
 }
 
 // FeatureAcceptanceRecord is one append-only qualification result: which
-// commit and binaries ran which suite, with hashes of the sanitized evidence.
+// commit and binary ran which suite, with hashes of the sanitized evidence.
 type FeatureAcceptanceRecord struct {
 	ID string `json:"id"`
 	// Seq orders records by insertion. Records written before it existed
@@ -51,6 +51,10 @@ type FeatureAcceptanceStore interface {
 	// LatestFeatureAcceptanceRecords returns the newest record of every
 	// subject, at most limit subjects, and whether more existed.
 	LatestFeatureAcceptanceRecords(requirementID, feature string, limit int) ([]*FeatureAcceptanceRecord, bool, error)
+	// LatestFeatureAcceptanceWithdrawals returns the newest failed, pending
+	// or revoked record of every subject. A broad subject's withdrawal stands
+	// against older narrower passes even after the broad subject passes again.
+	LatestFeatureAcceptanceWithdrawals(requirementID, feature string, limit int) ([]*FeatureAcceptanceRecord, bool, error)
 }
 
 var _ FeatureAcceptanceStore = (*SQLiteStore)(nil)
@@ -73,14 +77,12 @@ func (s *SQLiteStore) AppendFeatureAcceptanceRecord(record *FeatureAcceptanceRec
 	if err != nil {
 		return err
 	}
-	// One statement takes the next sequence: SQLite serializes it, and a
-	// concurrent PostgreSQL insert that took the same value retries.
+	// One statement takes the next sequence. SQLite serializes writers; on
+	// PostgreSQL appends serialize on an advisory lock, so a burst of
+	// concurrent appends queues instead of colliding on the same value. The
+	// unique index remains the backstop.
 	for attempt := 0; ; attempt++ {
-		var seq int64
-		err = s.db.QueryRow(`INSERT INTO feature_acceptance_records (id, requirement_id, feature, profile, provider, platform, commit_sha, binary_sha256, suite, result, artifacts, notes, recorded_at, recorded_by, seq)
-			SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(MAX(seq), 0) + 1 FROM feature_acceptance_records RETURNING seq`,
-			record.ID, record.RequirementID, record.Feature, record.Profile, record.Provider, record.Platform, record.CommitSHA, record.BinarySHA256,
-			record.Suite, record.Result, string(body), record.Notes, record.RecordedAt.UTC(), record.RecordedBy).Scan(&seq)
+		seq, err := s.appendFeatureAcceptanceRecord(record, string(body))
 		if err == nil {
 			record.Seq, record.Artifacts = seq, artifacts
 			return nil
@@ -89,6 +91,29 @@ func (s *SQLiteStore) AppendFeatureAcceptanceRecord(record *FeatureAcceptanceRec
 			return err
 		}
 	}
+}
+
+const featureAcceptanceSequenceLock = `SELECT pg_advisory_xact_lock(7241801551050296690)`
+
+func (s *SQLiteStore) appendFeatureAcceptanceRecord(record *FeatureAcceptanceRecord, artifacts string) (int64, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if tx.dialect == storeDialectPostgres {
+		if _, err := tx.Exec(featureAcceptanceSequenceLock); err != nil {
+			return 0, err
+		}
+	}
+	var seq int64
+	if err := tx.QueryRow(`INSERT INTO feature_acceptance_records (id, requirement_id, feature, profile, provider, platform, commit_sha, binary_sha256, suite, result, artifacts, notes, recorded_at, recorded_by, seq)
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(MAX(seq), 0) + 1 FROM feature_acceptance_records RETURNING seq`,
+		record.ID, record.RequirementID, record.Feature, record.Profile, record.Provider, record.Platform, record.CommitSHA, record.BinarySHA256,
+		record.Suite, record.Result, artifacts, record.Notes, record.RecordedAt.UTC(), record.RecordedBy).Scan(&seq); err != nil {
+		return 0, err
+	}
+	return seq, tx.Commit()
 }
 
 // ListFeatureAcceptanceRecords returns records newest first, optionally for
@@ -145,11 +170,23 @@ func scanFeatureAcceptanceRecords(rows *sql.Rows) ([]*FeatureAcceptanceRecord, e
 // LatestFeatureAcceptanceRecords picks each subject's newest record in SQL,
 // so a status read is one bounded statement however many records exist.
 func (s *SQLiteStore) LatestFeatureAcceptanceRecords(requirementID, feature string, limit int) ([]*FeatureAcceptanceRecord, bool, error) {
+	return s.latestFeatureAcceptance(requirementID, feature, limit, false)
+}
+
+func (s *SQLiteStore) LatestFeatureAcceptanceWithdrawals(requirementID, feature string, limit int) ([]*FeatureAcceptanceRecord, bool, error) {
+	return s.latestFeatureAcceptance(requirementID, feature, limit, true)
+}
+
+func (s *SQLiteStore) latestFeatureAcceptance(requirementID, feature string, limit int, withdrawalsOnly bool) ([]*FeatureAcceptanceRecord, bool, error) {
 	if limit < 1 || limit > 10000 {
 		return nil, false, errors.New("invalid feature acceptance subject limit")
 	}
 	filter := ``
 	args := []any{}
+	if withdrawalsOnly {
+		filter += ` AND result <> ?`
+		args = append(args, AcceptancePassed)
+	}
 	if requirementID != "" {
 		filter += ` AND requirement_id = ?`
 		args = append(args, requirementID)

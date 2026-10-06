@@ -253,6 +253,8 @@ func markAuthoringReplay(w http.ResponseWriter, attempt *authoringCreateAttempt)
 // so a retry of the request that created it cannot recreate it. The returned
 // restore withdraws exactly these tombstones; handlers call it when the delete
 // was definitely refused, so a live resource is never reported as deleted.
+// The restore first proves the resource still exists: a delete that lost to a
+// concurrent delete is refused too, and that resource is gone.
 func (s *Server) tombstoneAuthoringReceipts(resourceType, resourceID string) (func(), error) {
 	store, supported := s.store.(storage.AuthoringMutationReceiptStore)
 	if s.store == nil || !supported {
@@ -263,6 +265,9 @@ func (s *Server) tombstoneAuthoringReceipts(resourceType, resourceID string) (fu
 		return nil, err
 	}
 	return func() {
+		if !s.durableAuthoredResourceExists(resourceType, resourceID) {
+			return
+		}
 		if err := store.RestoreAuthoringMutationReceiptTombstones(resourceType, resourceID, "deleted", at); err != nil {
 			slog.Warn("authoring receipt tombstone not withdrawn after a refused delete", "resource_type", resourceType, "resource_id", resourceID, "error", err)
 		}
@@ -319,7 +324,15 @@ func (s *Server) replayScenarioCreate(w http.ResponseWriter, r *http.Request, at
 	}
 	attempt.complete("")
 	markAuthoringReplay(w, attempt)
-	writeJSON(w, http.StatusCreated, maskStoredScenario(scenario))
+	response := maskStoredScenario(scenario)
+	// The replay carries the current validator only when this replica's copy
+	// is the durable state; otherwise the client reads view=authoring first.
+	if reader, supported := s.store.(storage.ScenarioAuthoringStore); s.store != nil && supported {
+		if snapshot, readErr := reader.GetScenarioAuthoringSnapshot(scenario.ID); readErr == nil {
+			attachScenarioAuthoringValidator(w, response, scenario, snapshot)
+		}
+	}
+	writeJSON(w, http.StatusCreated, response)
 }
 
 // durableScenarioExists reads the store, not this replica's cache. Stores
@@ -341,6 +354,20 @@ func (s *Server) durableScenarioExists(id string) (bool, error) {
 	}
 }
 
+// durableAuthoredResourceExists reports true only when the store proves the
+// script or scenario still exists.
+func (s *Server) durableAuthoredResourceExists(resourceType, resourceID string) bool {
+	switch resourceType {
+	case "scenario":
+		exists, err := s.durableScenarioExists(resourceID)
+		return err == nil && exists
+	case "script":
+		stored, found, err := s.runner.GetScriptAuthoringDurable(resourceID)
+		return err == nil && found && stored != nil
+	}
+	return false
+}
+
 // durableScenarioAbsent reports true only when the store proves the scenario
 // does not exist.
 func (s *Server) durableScenarioAbsent(id string) bool {
@@ -353,14 +380,4 @@ func (s *Server) durableScenarioAbsent(id string) bool {
 func (s *Server) durableScriptAbsent(id string) bool {
 	stored, found, err := s.runner.GetScriptAuthoringDurable(id)
 	return err == nil && (!found || stored == nil)
-}
-
-// scenarioContentRevision returns the durable authored revision, or "" when
-// the store has none. It is informational on receipts.
-func (s *Server) scenarioContentRevision(id string) string {
-	projection, found, err := s.runner.GetScenarioAuthoringDurable(id)
-	if err != nil || !found || projection == nil {
-		return ""
-	}
-	return projection.ContentRevision
 }

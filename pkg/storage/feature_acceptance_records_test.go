@@ -36,10 +36,24 @@ func exerciseFeatureAcceptanceSequence(t *testing.T, store *SQLiteStore) {
 	if err != nil || len(listed) != 2 || listed[0].ID != "revoke" {
 		t.Fatalf("newest first by sequence: %#v %v", listed, err)
 	}
+	// A newer pass does not hide the subject's newest withdrawal: broader
+	// withdrawals are judged against narrower passes by sequence.
+	if err := store.AppendFeatureAcceptanceRecord(acceptanceRecord("repass", "linux", AcceptancePassed, now)); err != nil {
+		t.Fatal(err)
+	}
+	withdrawals, truncated, err := store.LatestFeatureAcceptanceWithdrawals("BE-4", "browser-har", 10)
+	if err != nil || truncated || len(withdrawals) != 1 || withdrawals[0].ID != "revoke" {
+		t.Fatalf("newest withdrawal per subject: %#v %v %v", withdrawals, truncated, err)
+	}
+	if latest, _, err := store.LatestFeatureAcceptanceRecords("BE-4", "browser-har", 10); err != nil || len(latest) != 1 || latest[0].ID != "repass" {
+		t.Fatalf("latest after a new pass: %#v %v", latest, err)
+	}
 
 	var wg sync.WaitGroup
-	errs := make(chan error, 12)
-	for i := range 12 {
+	// More concurrent appends than the retry budget: PostgreSQL appends
+	// queue on the sequence lock instead of colliding.
+	errs := make(chan error, 24)
+	for i := range 24 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

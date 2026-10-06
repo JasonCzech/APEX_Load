@@ -9200,6 +9200,7 @@ paths:
                                 type: object
                                 description: 'Go type: RunPolicyPin'
                                 additionalProperties: true
+                              nullable: true
                             project_id:
                               type: string
                             release_id:
@@ -9532,6 +9533,7 @@ paths:
                                 type: object
                                 description: 'Go type: RunPolicyPin'
                                 additionalProperties: true
+                              nullable: true
                             project_id:
                               type: string
                             release_id:
@@ -23018,9 +23020,9 @@ paths:
       x-handler: handleAnalysisDatasetSeries
   /api/v1/analysis/evaluations:
     get:
-      summary: Evaluation Jobs
+      summary: List Evaluation Jobs
       description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
-      operationId: handleEvaluationJobs
+      operationId: handleListEvaluationJobs
       responses:
         "200":
           description: OK
@@ -23029,58 +23031,70 @@ paths:
               schema:
                 type: object
                 properties:
-                  actor:
-                    type: string
-                  attempts:
-                    type: integer
-                    format: int64
-                  completed_at:
-                    type: string
-                    format: date-time
-                    nullable: true
-                  created_at:
-                    type: string
-                    format: date-time
-                  failure:
-                    type: string
-                  failure_code:
-                    type: string
-                  hidden:
-                    type: boolean
-                  id:
-                    type: string
-                  input_fingerprint:
-                    type: string
-                  kind:
-                    type: string
-                  project_id:
-                    type: string
-                  request: {}
-                  result: {}
-                  result_bytes:
-                    type: integer
-                    format: int64
-                  result_sha256:
-                    type: string
-                  revision:
-                    type: integer
-                    format: int64
-                  state:
-                    type: string
-                  updated_at:
-                    type: string
-                    format: date-time
+                  jobs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        actor:
+                          type: string
+                        attempts:
+                          type: integer
+                          format: int64
+                        completed_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        created_at:
+                          type: string
+                          format: date-time
+                        failure:
+                          type: string
+                        failure_code:
+                          type: string
+                        hidden:
+                          type: boolean
+                        id:
+                          type: string
+                        input_fingerprint:
+                          type: string
+                        kind:
+                          type: string
+                        project_id:
+                          type: string
+                        request: {}
+                        result: {}
+                        result_bytes:
+                          type: integer
+                          format: int64
+                        result_sha256:
+                          type: string
+                        revision:
+                          type: integer
+                          format: int64
+                        state:
+                          type: string
+                        updated_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - actor
+                        - attempts
+                        - created_at
+                        - id
+                        - input_fingerprint
+                        - kind
+                        - project_id
+                        - revision
+                        - state
+                        - updated_at
+                  kinds:
+                    type: array
+                    items:
+                      type: string
                 required:
-                  - actor
-                  - attempts
-                  - created_at
-                  - id
-                  - input_fingerprint
-                  - kind
-                  - project_id
-                  - revision
-                  - state
-                  - updated_at
+                  - jobs
+                  - kinds
         "401":
           description: Authentication required or invalid.
           content:
@@ -23089,18 +23103,6 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Not Found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "405":
-          description: Method Not Allowed
           content:
             application/json:
               schema:
@@ -23143,14 +23145,24 @@ paths:
             type: string
       tags:
         - Analysis
-      x-handler: handleEvaluationJobs
+      x-handler: handleListEvaluationJobs
     post:
-      summary: Evaluation Jobs
+      summary: Create Evaluation Job
       description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
-      operationId: handleEvaluationJobs_2
+      operationId: handleCreateEvaluationJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind:
+                  type: string
+                request: {}
       responses:
-        "200":
-          description: OK
+        "202":
+          description: Accepted
           content:
             application/json:
               schema:
@@ -23208,6 +23220,12 @@ paths:
                   - revision
                   - state
                   - updated_at
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -23226,8 +23244,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "405":
-          description: Method Not Allowed
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
           content:
             application/json:
               schema:
@@ -23238,44 +23262,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
       parameters:
-        - name: kind
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: limit
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: offset
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
         - name: project_id
           in: query
           description: Handler-defined query parameter.
           required: false
           schema:
             type: string
+        - name: Idempotency-Key
+          in: header
+          description: Handler-read request header; whether it is required can depend on authentication mode or operation state.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
       tags:
         - Analysis
-      x-handler: handleEvaluationJobs
+      x-handler: handleCreateEvaluationJob
   /api/v1/analysis/evaluations/{id}:
     delete:
-      summary: Evaluation Jobs
+      summary: Delete Evaluation Job
       description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
-      operationId: handleEvaluationJobs_3
+      operationId: handleDeleteEvaluationJob
       responses:
         "200":
           description: OK
@@ -23336,6 +23354,12 @@ paths:
                   - revision
                   - state
                   - updated_at
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -23354,14 +23378,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "405":
-          description: Method Not Allowed
+        "409":
+          description: Conflict
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "500":
-          description: Internal Server Error
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:
@@ -23375,26 +23399,12 @@ paths:
           required: true
           schema:
             type: string
-        - name: kind
+        - name: hide
           in: query
           description: Handler-defined query parameter.
           required: false
           schema:
             type: string
-        - name: limit
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: offset
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
         - name: project_id
           in: query
           description: Handler-defined query parameter.
@@ -23403,11 +23413,11 @@ paths:
             type: string
       tags:
         - Analysis
-      x-handler: handleEvaluationJobs
+      x-handler: handleDeleteEvaluationJob
     get:
-      summary: Evaluation Jobs
+      summary: Get Evaluation Job
       description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
-      operationId: handleEvaluationJobs_4
+      operationId: handleGetEvaluationJob
       responses:
         "200":
           description: OK
@@ -23486,18 +23496,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "405":
-          description: Method Not Allowed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "500":
-          description: Internal Server Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
@@ -23507,26 +23505,6 @@ paths:
           required: true
           schema:
             type: string
-        - name: kind
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: limit
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: offset
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
         - name: project_id
           in: query
           description: Handler-defined query parameter.
@@ -23535,7 +23513,7 @@ paths:
             type: string
       tags:
         - Analysis
-      x-handler: handleEvaluationJobs
+      x-handler: handleGetEvaluationJob
   /api/v1/analysis/imports:
     get:
       summary: Analysis Imports
@@ -138136,6 +138114,10 @@ paths:
                   - updated_at
                 nullable: true
           headers:
+            ETag:
+              description: The created scenario's scenario-authoring-v1 validator, read inside the create transaction, when the controller has durable scenario revisions; it matches authoring_projection.content_revision in the body. An Idempotency-Key replay carries the current validator only while the returned scenario is the durable state; otherwise read view=authoring before a conditioned save.
+              schema:
+                type: string
             Idempotent-Replayed:
               description: true when the response returns the resource an earlier request with the same Idempotency-Key created. The body is the resource as it is now.
               schema:
@@ -138253,11 +138235,6 @@ paths:
                 type: object
                 additionalProperties:
                   type: string
-          headers:
-            ETag:
-              description: The scenario-authoring-v1 validator committed by this write's own transaction, when the controller has durable scenario revisions.
-              schema:
-                type: string
         "400":
           description: Bad Request
           content:
@@ -138281,12 +138258,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                required:
-                  - error
+                $ref: '#/components/schemas/ErrorResponse'
         "412":
           description: Precondition Failed
           content:
@@ -344541,6 +344513,7 @@ paths:
                             - revision
                             - sha256
                             - source
+                        nullable: true
                       project_id:
                         type: string
                       release_id:
@@ -347088,6 +347061,7 @@ paths:
                             - revision
                             - sha256
                             - source
+                        nullable: true
                       project_id:
                         type: string
                       release_id:
@@ -357003,6 +356977,7 @@ paths:
                                 - revision
                                 - sha256
                                 - source
+                            nullable: true
                           project_id:
                             type: string
                           release_id:
@@ -358283,6 +358258,7 @@ paths:
                                 - revision
                                 - sha256
                                 - source
+                            nullable: true
                           project_id:
                             type: string
                           release_id:

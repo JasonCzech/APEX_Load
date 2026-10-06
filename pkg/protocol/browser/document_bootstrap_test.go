@@ -51,7 +51,7 @@ func TestBrowserDocumentBootstrapOfficialSessionWindowAndInteractionRank(t *test
  assert.equal(latest('ttfb').value,0,'native restored TTFB zero must be observed');assert.equal(latest('ttfb').restored,true);assert.notEqual(latest('ttfb').lifecycle_token,oldLife,'restored callback must receive new lifecycle before synchronous metric');assert.equal(latest('ttfb').document_token,oldDocument,'BFCache retains its physical document identity');
  await context.__finalizer('graceful_end');assert.equal(latest('inp').reason,'no_interaction','new lifecycle cannot inherit old interaction count');
  console.log('official-algorithm-adapter-unit PASS');})().catch(error=>{console.error(error);process.exitCode=1});`
-	encoded := strings.ReplaceAll(harness, "SCRIPT", javascriptSourceQuote(browserDocumentBootstrap("__binding", "__finalizer", true, false)))
+	encoded := strings.ReplaceAll(harness, "SCRIPT", javascriptSourceQuote(browserDocumentBootstrap("__binding", "__finalizer", "__loader", true, false)))
 	output, err := exec.Command(node, "-e", encoded).CombinedOutput()
 	if err != nil {
 		t.Fatalf("algorithm adapter unit: %v\n%s", err, output)

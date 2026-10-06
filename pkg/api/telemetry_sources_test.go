@@ -83,8 +83,9 @@ func TestTelemetrySourceTailLossIsNotExactWithoutTheTerminalPublication(t *testi
 }
 
 func TestTelemetrySourceLossIsALowerBoundWithoutAKnownOrigin(t *testing.T) {
-	// Observed from sequence 40 (for example after controller takeover):
-	// publications 1-39 are unknown, so the count is only a lower bound.
+	// Observed from sequence 40 (a stream joined midway, as a generator that
+	// reconnects to a restarted controller does): publications 1-39 are
+	// unknown, so the count is only a lower bound.
 	midstream := newTelemetrySourceLedger()
 	observeSequences(midstream, "gen-a", "epoch-1", 1000, 40, 41, 43)
 	if epoch := onlyEpoch(t, midstream); epoch.LostPublications != 1 || epoch.LossExact {
@@ -219,5 +220,110 @@ func TestTelemetrySourceArchiveSurvivesAFinalizationRetry(t *testing.T) {
 	retried := &RunArchiveManifest{}
 	if err := runner.persistTelemetrySourceArchive(context.Background(), test, record, retried); err != nil || retried.TelemetrySourcesFile != telemetrySourcesFileName || retried.TelemetrySourceEpochCount != 1 {
 		t.Fatalf("finalization retry lost the ledger: %+v %v", retried, err)
+	}
+}
+
+// A publication received while another target's evacuation bumps the
+// topology generation is still counted: the consumer re-fences its store
+// loop and stores it, so coverage must not report it lost. A stream that no
+// longer owns its target counts nothing.
+func TestTelemetryPublicationIsCountedWhileTheStreamOwnsItsTarget(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	stream := &generatorrpc.MetricsStream{}
+	test := &ManagedTest{
+		ID: "observe-run", Status: "RUNNING", executionGeneration: 7, remoteControlGeneration: 1,
+		remoteMetricsStreamsByTarget: map[string]*generatorrpc.MetricsStream{"gen-a": stream},
+	}
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	fence := distributedMetricsConsumerFence{ctx: ctx, executionGeneration: 7, topologyGeneration: 1, target: "gen-a", stream: stream, enforced: true}
+
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	test.remoteControlGeneration = 2 // another target was evacuated
+	if distributedMetricsConsumerFenceCurrentLocked(runner, test, "gen-a", fence, false) {
+		t.Fatal("fixture: the topology change did not stale the fence")
+	}
+	if !observeTelemetryPublicationLocked(runner, test, "gen-a", fence, false, sourceBatch("epoch-1", 1000, 1), time.Now()) {
+		t.Fatal("a publication the stream still owns was not counted")
+	}
+	test.remoteMetricsStreamsByTarget["gen-a"] = &generatorrpc.MetricsStream{} // replaced by a newer stream
+	if observeTelemetryPublicationLocked(runner, test, "gen-a", fence, false, sourceBatch("epoch-1", 1000, 2), time.Now()) {
+		t.Fatal("a retired stream's publication was counted")
+	}
+	if epoch := onlyEpoch(t, test.telemetrySources); epoch.Received != 1 {
+		t.Fatalf("received = %d, want 1", epoch.Received)
+	}
+}
+
+// The live summary and the archived sidecar both count generations adopted
+// from a failed-over controller as unobserved.
+func TestTelemetrySourceRollupsCountTheRunFailovers(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	test := &ManagedTest{ID: "adopted-run", continuityFailovers: []RunFailover{{PriorGeneration: 6, Generation: 7, AdoptedAt: time.Unix(1_799_999_999, 0)}}}
+	ledger := telemetrySourceLedgerLocked(test)
+	observeSequences(ledger, "gen-a", "epoch-1", 1000, 1, 2)
+	finishEpoch(ledger, "gen-a", "epoch-1", 1000, 3)
+	if summary := telemetrySourceSummaryLocked(test); summary.UnobservedGenerations != 1 || summary.LossExact {
+		t.Fatalf("live summary ignored the failover: %#v", summary)
+	}
+	archive := t.TempDir()
+	record := &storage.RunArchiveRecord{TestID: test.ID, ArchivePath: archive, ManifestPath: archive + "/manifest.json"}
+	admitArchiveForTest(t, record)
+	manifest := &RunArchiveManifest{}
+	if err := runner.persistTelemetrySourceArchive(context.Background(), test, record, manifest); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(archive, telemetrySourcesFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unobserved := 0
+	for _, line := range bytes.Split(bytes.TrimSpace(body), []byte("\n")) {
+		var epoch TelemetrySourceEpoch
+		if err := json.Unmarshal(line, &epoch); err != nil {
+			t.Fatal(err)
+		}
+		if epoch.Unobserved && epoch.ExecutionGeneration == 6 {
+			unobserved++
+		}
+	}
+	if unobserved != 1 || manifest.TelemetrySourceEpochCount != 2 {
+		t.Fatalf("archived sidecar ignored the failover (count %d): %s", manifest.TelemetrySourceEpochCount, body)
+	}
+}
+
+// Sequences restart with each source epoch, so the live missing-window count
+// measures gaps within one epoch only: a restarted generator's first window
+// is not a gap from the old epoch's last sequence.
+func TestMissingMetricWindowsAreCountedWithinOneSourceEpoch(t *testing.T) {
+	runner, run, backend := newDistributedThresholdTestRunner(t)
+	store := func(epoch string, sequence uint64, at int64) int64 {
+		t.Helper()
+		batch := distributedP99Batch(run.ID, at, 100)
+		batch.SourceEpoch, batch.SourceEpochStartedUnixMs, batch.BatchSequence = epoch, 1000, sequence
+		if epoch == "epoch-2" {
+			batch.SourceEpochStartedUnixMs = 2000
+		}
+		if !backend.storeRemoteMetricsBatchOnly(runner, run, "generator-a", batch) {
+			t.Fatalf("batch %s/%d rejected", epoch, sequence)
+		}
+		stored := run.remoteMetricsBatchesByTarget["generator-a"]
+		if stored.Telemetry == nil {
+			return 0
+		}
+		return stored.Telemetry.MissingMetricWindows
+	}
+	store("epoch-1", 1, 1000)
+	if missing := store("epoch-1", 4, 4000); missing != 2 {
+		t.Fatalf("gap within an epoch: missing = %d, want 2", missing)
+	}
+	// The new epoch is first seen at sequence 7 (its earlier windows went to a
+	// stream that was replaced); 7 is not a gap after the old epoch's 4.
+	if missing := store("epoch-2", 7, 5000); missing != 2 {
+		t.Fatalf("a new epoch's first window added a gap: missing = %d, want 2", missing)
 	}
 }

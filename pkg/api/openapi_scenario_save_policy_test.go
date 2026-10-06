@@ -66,8 +66,9 @@ func TestScenarioAuthoringOpenAPIContract(t *testing.T) {
 			}
 		}
 		if saved, exists := operation.Responses["200"]; exists {
-			if _, tagged := saved.Headers["ETag"]; !tagged {
-				t.Fatalf("%s does not document its committed ETag", key)
+			// A deleted scenario has no revision, so DELETE sends no ETag.
+			if _, tagged := saved.Headers["ETag"]; tagged == strings.HasPrefix(key, "DELETE ") {
+				t.Fatalf("%s documents an ETag it does not send, or omits its committed one", key)
 			}
 		}
 	}

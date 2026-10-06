@@ -601,7 +601,7 @@
     {
       "method": "GET",
       "path": "/api/v1/analysis/evaluations",
-      "operation_id": "handleEvaluationJobs",
+      "operation_id": "handleListEvaluationJobs",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -628,7 +628,7 @@
     {
       "method": "POST",
       "path": "/api/v1/analysis/evaluations",
-      "operation_id": "handleEvaluationJobs_2",
+      "operation_id": "handleCreateEvaluationJob",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -655,7 +655,7 @@
     {
       "method": "DELETE",
       "path": "/api/v1/analysis/evaluations/{id}",
-      "operation_id": "handleEvaluationJobs_3",
+      "operation_id": "handleDeleteEvaluationJob",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -682,7 +682,7 @@
     {
       "method": "GET",
       "path": "/api/v1/analysis/evaluations/{id}",
-      "operation_id": "handleEvaluationJobs_4",
+      "operation_id": "handleGetEvaluationJob",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

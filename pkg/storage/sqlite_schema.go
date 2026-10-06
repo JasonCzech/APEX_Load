@@ -2128,6 +2128,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "feature_evaluation_jobs.request_digest", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN request_digest TEXT NOT NULL DEFAULT ''`},
 		{name: "feature_evaluation_jobs.attempts", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`},
 		{name: "feature_evaluation_jobs.failure_code", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN failure_code TEXT NOT NULL DEFAULT ''`},
+		{name: "feature_evaluation_jobs.result_bytes", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN result_bytes INTEGER NOT NULL DEFAULT 0`},
 		{name: "feature_acceptance_records.seq", query: `ALTER TABLE feature_acceptance_records ADD COLUMN seq BIGINT NOT NULL DEFAULT 0`},
 	}
 }

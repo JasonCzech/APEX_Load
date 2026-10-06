@@ -108,6 +108,13 @@ type EvaluationJobResponse struct {
 	CompletedAt      *time.Time      `json:"completed_at,omitempty"`
 }
 
+// EvaluationJobListResponse lists job summaries (no request or result
+// bodies) and the kinds this controller can run.
+type EvaluationJobListResponse struct {
+	Jobs  []EvaluationJobResponse `json:"jobs"`
+	Kinds []string                `json:"kinds"`
+}
+
 // evaluationJobResponse is the full job, request and result included; a
 // listing uses evaluationJobSummary.
 func evaluationJobResponse(job *storage.EvaluationJob) EvaluationJobResponse {
@@ -161,44 +168,45 @@ func (s *Server) callerManagesProjectEvaluations(r *http.Request, projectID stri
 	return granted
 }
 
-func (s *Server) handleEvaluationJobs(w http.ResponseWriter, r *http.Request) {
-	project := normalizeProjectID(r.URL.Query().Get("project_id"))
+func (s *Server) handleListEvaluationJobs(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.evaluationJobStore(w)
 	if !ok {
 		return
 	}
-	id := r.PathValue("id")
-	switch {
-	case r.Method == http.MethodGet && id == "":
-		kind := r.URL.Query().Get("kind")
-		limit, offset := parseLimitOffsetQuery(r, 50)
-		jobs, err := store.ListEvaluationJobs(project, kind, min(limit, 100), offset)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "cannot list evaluation jobs")
-			return
-		}
-		responses := make([]EvaluationJobResponse, 0, len(jobs))
-		for _, job := range jobs {
-			responses = append(responses, evaluationJobSummary(job))
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"jobs": responses, "kinds": registeredEvaluationKinds()})
-	case r.Method == http.MethodGet:
-		job, err := store.GetEvaluationJob(project, id)
-		if err != nil {
-			writeError(w, http.StatusNotFound, "evaluation job not found")
-			return
-		}
-		writeJSON(w, http.StatusOK, evaluationJobResponse(job))
-	case r.Method == http.MethodDelete:
-		s.deleteEvaluationJob(w, r, store, project, id)
-	case r.Method == http.MethodPost:
-		s.createEvaluationJob(w, r, store, project)
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	project := normalizeProjectID(r.URL.Query().Get("project_id"))
+	kind := r.URL.Query().Get("kind")
+	limit, offset := parseLimitOffsetQuery(r, 50)
+	jobs, err := store.ListEvaluationJobs(project, kind, min(limit, 100), offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "cannot list evaluation jobs")
+		return
 	}
+	response := EvaluationJobListResponse{Jobs: make([]EvaluationJobResponse, 0, len(jobs)), Kinds: registeredEvaluationKinds()}
+	for _, job := range jobs {
+		response.Jobs = append(response.Jobs, evaluationJobSummary(job))
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
-func (s *Server) createEvaluationJob(w http.ResponseWriter, r *http.Request, store storage.EvaluationJobStore, project string) {
+func (s *Server) handleGetEvaluationJob(w http.ResponseWriter, r *http.Request) {
+	store, ok := s.evaluationJobStore(w)
+	if !ok {
+		return
+	}
+	job, err := store.GetEvaluationJob(normalizeProjectID(r.URL.Query().Get("project_id")), r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "evaluation job not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, evaluationJobResponse(job))
+}
+
+func (s *Server) handleCreateEvaluationJob(w http.ResponseWriter, r *http.Request) {
+	store, ok := s.evaluationJobStore(w)
+	if !ok {
+		return
+	}
+	project := normalizeProjectID(r.URL.Query().Get("project_id"))
 	r.Body = http.MaxBytesReader(w, r.Body, storage.MaxEvaluationJobRequestBytes+1024)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -286,12 +294,18 @@ func (s *Server) createEvaluationJob(w http.ResponseWriter, r *http.Request, sto
 	writeJSON(w, http.StatusAccepted, evaluationJobResponse(job))
 }
 
-// deleteEvaluationJob cancels an evaluation; with hide=true it hides a
-// finished one from listings. Both are idempotent: a job already in the
-// requested end state is returned unchanged, so a retried cancel never hides
-// the job and a retried hide never fails. The row stays as the audit record;
-// input runs and datasets are never deleted.
-func (s *Server) deleteEvaluationJob(w http.ResponseWriter, r *http.Request, store storage.EvaluationJobStore, project, id string) {
+// handleDeleteEvaluationJob cancels a queued or running evaluation; with
+// hide=true it hides a finished one from listings. Both are idempotent: a job
+// already in the requested end state (a finished job for a cancel, a hidden
+// one for a hide) is returned unchanged with 200, so a retried cancel never
+// hides the job and a retried hide never fails. The row stays as the audit
+// record; input runs and datasets are never deleted.
+func (s *Server) handleDeleteEvaluationJob(w http.ResponseWriter, r *http.Request) {
+	store, ok := s.evaluationJobStore(w)
+	if !ok {
+		return
+	}
+	project, id := normalizeProjectID(r.URL.Query().Get("project_id")), r.PathValue("id")
 	hide := false
 	switch r.URL.Query().Get("hide") {
 	case "", "false":

@@ -148,20 +148,22 @@ func exerciseScenarioSourcePublication(t *testing.T, store *SQLiteStore) {
 		t.Fatal("committed source unavailable", err)
 	}
 	old = requireScenarioAuthoring(t, store, old.Scenario.ID)
+	// Publication changes that leave this scenario's sources published do not
+	// invalidate a captured admission: the final transaction rechecks the
+	// sources themselves under the publication lock.
 	if applied, err := store.CompareAndSwapLibraryImportClaims(committed, "[]"); err != nil || !applied {
 		t.Fatal(applied, err)
 	}
-	assertSourceMutationRefused(t, store, old, fresh.Admission)
-	fresh = requireScenarioSources(t, store, old.Scripts)
-	// Heartbeats and unrelated claims conservatively invalidate captured bytes.
+	if _, err := trySourceMutation(store, old, false, fresh.Admission); err != nil {
+		t.Fatal("a cleared claim invalidated the admission", err)
+	}
+	old = requireScenarioAuthoring(t, store, old.Scenario.ID)
 	unrelated := `[{"kind":"result","prepared":true,"local_item_id":"other","remote_id":"direct-import:unrelated","owner":"takeover"}]`
 	if applied, err := store.CompareAndSwapLibraryImportClaims("[]", unrelated); err != nil || !applied {
 		t.Fatal(applied, err)
 	}
-	assertSourceMutationRefused(t, store, old, fresh.Admission)
-	fresh = requireScenarioSources(t, store, old.Scripts)
 	if _, err := trySourceMutation(store, old, true, fresh.Admission); err != nil {
-		t.Fatal("unrelated pending claim blocked fresh source", err)
+		t.Fatal("an unrelated pending claim invalidated the admission", err)
 	}
 }
 func TestScenarioSourcePublication(t *testing.T) {
@@ -181,7 +183,7 @@ func TestScenarioSourceAdmissionBoundedEvidence(t *testing.T) {
 		func(a *ScenarioSourceAdmission) { a.Sources[0].ContentRevision = "invalid" },
 		func(a *ScenarioSourceAdmission) { a.ProjectID = " scn-project " },
 		func(a *ScenarioSourceAdmission) { a.Publication.SHA256 = strings.Repeat("A", 64) },
-		func(a *ScenarioSourceAdmission) { a.Publication.SHA256 = strings.Repeat("a", 64) },
+		func(a *ScenarioSourceAdmission) { a.Publication.SHA256 = "short" },
 	} {
 		a := initial.Admission
 		a.Sources = append([]ScenarioSourceCondition(nil), a.Sources...)
@@ -258,7 +260,11 @@ func TestScenarioSourcePublicationMalformedAndPresence(t *testing.T) {
 	if err := store.SaveSetting(LibraryImportClaimsSettingKey, ""); err != nil {
 		t.Fatal(err)
 	}
-	assertSourceMutationRefused(t, store, old, initial.Admission)
+	// Row presence alone does not unpublish a source, so the admission
+	// captured before it still stands.
+	if _, err := trySourceMutation(store, old, false, initial.Admission); err != nil {
+		t.Fatal("a presence-only publication change invalidated the admission", err)
+	}
 	current := requireScenarioSources(t, store, old.Scripts)
 	if current.Admission.Publication.SHA256 != initial.Admission.Publication.SHA256 || !current.Admission.Publication.Exists {
 		t.Fatal("row presence collapsed")

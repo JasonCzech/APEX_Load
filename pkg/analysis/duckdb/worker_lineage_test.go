@@ -18,11 +18,11 @@ func TestWorkerSeriesLineageRefusesInconsistentChildren(t *testing.T) {
 		t.Fatalf("consistent summary lineage refused: %v", err)
 	}
 	for name, point := range map[string]analysis.MetricPoint{
-		"statistic other than the aggregation": summary("p50", 60),
+		"statistic other than the aggregation":   summary("p50", 60),
 		"window that does not divide the bucket": summary("p95", 70),
-		"lineage without a source window":       {InputKind: analysis.KindSummary, Derivation: []analysis.DerivationStep{{Operation: "p95", Algorithm: "native_bucket.v1", BucketSeconds: 300}}},
-		"missing reason on a raw point":         {InputKind: analysis.KindObservation, MissingReason: analysis.MissingPercentileNotMergeable},
-		"histogram lineage without its window":  {InputKind: analysis.KindHistogram},
+		"lineage without a source window":        {InputKind: analysis.KindSummary, Derivation: []analysis.DerivationStep{{Operation: "p95", Algorithm: "native_bucket.v1", BucketSeconds: 300}}},
+		"missing reason on a raw point":          {InputKind: analysis.KindObservation, MissingReason: analysis.MissingPercentileNotMergeable},
+		"histogram lineage without its window":   {InputKind: analysis.KindHistogram},
 	} {
 		if _, err := workerSeriesLineage(point, q); err == nil {
 			t.Errorf("%s: admitted", name)

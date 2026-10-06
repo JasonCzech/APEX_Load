@@ -5,7 +5,20 @@ package api
 // fields; fixed-size distributions and unrelated model slices retain their
 // existing schema. Required-field presence remains independent of nullability.
 func applyBrowserEvidenceWireNullability(pkg, name string, schema *oasSchema) {
-	if pkg != "protocol" || schema == nil {
+	if schema == nil {
+		return
+	}
+	if (pkg == "" || pkg == "api") && name == "RunArchiveProvenance" {
+		// null marks a run admitted before analysis policies existed; [] means
+		// no default policy was configured. Both are valid, so the always
+		// present array is nullable.
+		if property, ok := schema.Properties["policy_pins"]; ok && property.Type == "array" {
+			property.Nullable = true
+			schema.Properties["policy_pins"] = property
+		}
+		return
+	}
+	if pkg != "protocol" {
 		return
 	}
 	field := ""

@@ -305,7 +305,10 @@ func (m *NormalizedPartitionManifest) Select(q PartitionSelection) ([]int, error
 		if s.Rows == 0 || s.Metric != nil && *s.Metric != q.Metric {
 			continue
 		}
-		if timeKnown && (s.MaxTime.Before(q.From) || !s.MinTime.Before(q.To)) {
+		// A histogram window can start before From and end inside the range:
+		// its earlier partition stays selected so the query sees the lead-in
+		// and marks the bucket partial rather than complete.
+		if timeKnown && (s.Kind != KindHistogram && s.MaxTime.Before(q.From) || !s.MinTime.Before(q.To)) {
 			continue
 		}
 		if i := s.Identity; i != nil {

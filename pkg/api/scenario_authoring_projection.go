@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -331,6 +332,85 @@ func (tr *TestRunner) UpdateScenarioAuthoringDurable(id string, req CreateScenar
 		return nil
 	})
 	return cloneStoredScenarioForReadLocked(scenario), committed, true, err
+}
+
+// attachScenarioAuthoringValidator adds the authoring projection and its
+// strong tag to a scenario response, but only when the snapshot describes the
+// same saved state as the response body (equal updated_at). A client that
+// edits from the body and presents the tag can then never overwrite a change
+// it did not see; when the two differ the response simply carries no tag.
+func attachScenarioAuthoringValidator(w http.ResponseWriter, response, scenario *StoredScenario, snapshot *storage.ScenarioAuthoringSnapshot) {
+	if response == nil || scenario == nil || snapshot == nil || snapshot.Scenario == nil || !snapshot.Scenario.UpdatedAt.Equal(scenario.UpdatedAt) {
+		return
+	}
+	projection, err := buildScenarioAuthoringProjection(snapshot)
+	if err != nil {
+		return
+	}
+	tag, err := scenarioAuthoringETag(snapshot.ContentRevision)
+	if err != nil {
+		return
+	}
+	response.ContentRevision = snapshot.ContentRevision
+	response.AuthoringProjection = projection
+	w.Header().Set("ETag", tag)
+}
+
+// CreateScenarioAuthoringDurable creates a scenario and returns the snapshot
+// read inside the create transaction, so the created baseline and its strong
+// tag describe exactly what was committed. An empty id mints a new one; a
+// supplied id (an idempotent create) refuses an existing scenario with
+// errScenarioConcurrentChange. Stores without durable revisions keep the
+// ordinary create and return no snapshot.
+func (tr *TestRunner) CreateScenarioAuthoringDurable(id string, req CreateScenarioRequest) (*StoredScenario, *storage.ScenarioAuthoringSnapshot, error) {
+	tr.scenarioMutationMu.Lock()
+	defer tr.scenarioMutationMu.Unlock()
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	id = strings.TrimSpace(id)
+	createOnly := id != ""
+	if !createOnly {
+		id = uuid.New().String()
+	}
+	store, supported := tr.scenarioStore.(storage.ScenarioAuthoringStore)
+	if !supported {
+		if !createOnly {
+			stored, err := tr.storeScenarioLocked(id, req)
+			return cloneStoredScenarioForReadLocked(stored), nil, err
+		}
+		stored, err := tr.storeScenarioLockedWithWriter(id, req, tr.createOnlyScenarioWriterLocked(id))
+		return cloneStoredScenarioForReadLocked(stored), nil, err
+	}
+	var committed *storage.ScenarioAuthoringSnapshot
+	// The writer runs with tr.mu released, like every scenario persistence.
+	stored, err := tr.storeScenarioLockedWithWriter(id, req, func(scenario *storage.Scenario, scripts []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding) error {
+		snapshot, writeErr := createScenarioAuthoringAggregate(store, scenario, scripts, pools)
+		if writeErr != nil {
+			return writeErr
+		}
+		// As on a conditioned update, the cache takes the committed clocks so
+		// cached and durable updated_at stay equal.
+		scenario.CreatedAt, scenario.UpdatedAt = snapshot.Scenario.CreatedAt, snapshot.Scenario.UpdatedAt
+		committed = snapshot
+		return nil
+	})
+	return cloneStoredScenarioForReadLocked(stored), committed, err
+}
+
+// createScenarioAuthoringAggregate creates a scenario and returns the
+// snapshot its transaction read. An existing ID is a concurrent change.
+func createScenarioAuthoringAggregate(store storage.ScenarioAuthoringStore, scenario *storage.Scenario, scripts []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding) (*storage.ScenarioAuthoringSnapshot, error) {
+	result, err := store.CreateScenarioAuthoringIfAbsent(scenario, scripts, pools)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || !result.Applied {
+		return nil, errScenarioConcurrentChange
+	}
+	if result.Snapshot == nil || result.Snapshot.Scenario == nil {
+		return nil, storage.ErrScenarioAuthoringOutcomeUnknown
+	}
+	return result.Snapshot, nil
 }
 
 // scenarioDurableSources binds one conditioned save to durable group sources.

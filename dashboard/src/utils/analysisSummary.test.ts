@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AnalysisMeasure } from '../types/analysis'
-import { analysisBucketSeconds, analysisHistogramDeclaration, analysisHistogramMeasureError, analysisSummaryDeclarations, analysisSummaryMeasureError, parseAnalysisHistogramBounds, withAnalysisMeasureKind, analysisWindowAlignedRange, analysisMetricNames, analysisMetricAggregations } from './analysisSummary'
+import { analysisBucketSeconds, analysisHistogramDeclaration, analysisHistogramMeasureError, analysisSummaryDeclarations, analysisSummaryMeasureError, parseAnalysisHistogramBounds, withAnalysisMeasureKind, analysisWindowAlignedRange, analysisWindowAnchor, analysisCommonWindow, analysisCommonWindowAnchor, analysisMetricNames, analysisMetricAggregations } from './analysisSummary'
 
 const statistics = ['avg', 'count', 'p95']
 const summary: AnalysisMeasure = { value: ['v'], name: 'latency', kind: 'summary', unit: 'ms', statistic: 'p95', window_seconds: 60 }
@@ -59,7 +59,11 @@ describe('analysis summary helpers', () => {
   })
 
   it('snaps ranges to the source window grid and lists each metric name once', () => {
-    expect(analysisWindowAlignedRange(Date.parse('2026-01-01T10:01:00Z'), Date.parse('2026-01-01T11:01:00Z'), 300)).toEqual({ fromMs: Date.parse('2026-01-01T10:00:00Z'), toMs: Date.parse('2026-01-01T11:05:00Z') })
+    // The grid passes through the dataset's own window starts, not the epoch.
+    const anchor = Date.parse('2026-01-01T09:02:00Z')
+    expect(analysisWindowAlignedRange(Date.parse('2026-01-01T10:01:00Z'), Date.parse('2026-01-01T11:01:00Z'), 300, anchor)).toEqual({ fromMs: Date.parse('2026-01-01T09:57:00Z'), toMs: Date.parse('2026-01-01T11:02:00Z') })
+    // Without a known grid the range is the user's.
+    expect(analysisWindowAlignedRange(Date.parse('2026-01-01T10:01:00Z'), Date.parse('2026-01-01T11:01:00Z'), 300)).toEqual({ fromMs: Date.parse('2026-01-01T10:01:00Z'), toMs: Date.parse('2026-01-01T11:01:00Z') })
     expect(analysisWindowAlignedRange(5, 7)).toEqual({ fromMs: 5, toMs: 7 })
     const mapping = { version: 1, timestamp: ['ts'], timestamp_encoding: 'unix_s', timezone: 'UTC', measures: [summary, { ...summary, value: ['w'], statistic: 'avg' }, { ...summary, value: ['x'], statistic: 'p50' }] }
     expect(analysisMetricNames(mapping)).toEqual(['latency'])
@@ -69,5 +73,28 @@ describe('analysis summary helpers', () => {
     expect(aggregations.options).toEqual(expect.arrayContaining(['p75', 'p90', 'p999', 'avg']))
     expect(aggregations.windowSeconds?.('p90')).toBe(30)
     expect(aggregations.windowSeconds?.('avg')).toBeUndefined()
+    // A fixed-name metric beside name-column histograms keeps its own aggregations.
+    const mixed = { ...named, measures: [...named.measures, { value: ['rt'], name: 'response', kind: 'observation', unit: 'ms' }] }
+    expect(analysisMetricAggregations(mixed, 'response').options).not.toContain('p999')
+  })
+
+  it('finds each metric\'s window grid from its partitions and a grid both sides share', () => {
+    const at = (iso: string) => ({ stats: { kind: 'summary', metric: 'latency', min_time: iso } })
+    const dataset = { id: 'd', project_id: 'p', name: 'd', revision: 1, state: 'ready', files: [], accepted: 1, rejected: 0, partition_manifest: { partitions: [at('2026-01-01T09:02:00Z'), at('2026-01-01T09:12:00Z')] } }
+    expect(analysisWindowAnchor(dataset, 'latency', 300)).toBe(Date.parse('2026-01-01T09:02:00Z'))
+    // Partitions on different grids leave the grid unknown.
+    const skewed = { ...dataset, partition_manifest: { partitions: [at('2026-01-01T09:02:00Z'), at('2026-01-01T09:13:00Z')] } }
+    expect(analysisWindowAnchor(skewed, 'latency', 300)).toBeUndefined()
+    expect(analysisWindowAnchor(dataset, 'other', 300)).toBeUndefined()
+    // Windows of 120 and 300 seconds share 600-second buckets where both grids start.
+    expect(analysisCommonWindow([120, 300])).toBe(600)
+    expect(analysisCommonWindow([86400, 7])).toBeUndefined()
+    const left = Date.parse('2026-01-01T00:00:00Z')
+    const right = Date.parse('2026-01-01T00:01:00Z')
+    const shared = analysisCommonWindowAnchor([{ windowSeconds: 120, anchorMs: left }, { windowSeconds: 300, anchorMs: right }], 600)
+    expect(shared).toBeDefined()
+    expect((shared! - left) % 120000).toBe(0)
+    expect((((shared! - right) % 300000) + 300000) % 300000).toBe(0)
+    expect(analysisCommonWindowAnchor([{ windowSeconds: 120, anchorMs: left }, { windowSeconds: 300 }], 600)).toBeUndefined()
   })
 })

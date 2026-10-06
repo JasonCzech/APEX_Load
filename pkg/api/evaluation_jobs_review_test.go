@@ -33,7 +33,7 @@ func TestEvaluationJobReviewContract(t *testing.T) {
 		}
 		req = withAuthenticatedContext(req, authResolution{User: viewer})
 		response := httptest.NewRecorder()
-		server.handleEvaluationJobs(response, req)
+		serveEvaluationJobs(server, response, req)
 		return response
 	}
 	created := asViewer(http.MethodPost, evaluationsPath, map[string]any{"kind": "test_echo", "request": testEvaluationInput{Value: 7}})

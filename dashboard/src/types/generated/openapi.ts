@@ -3265,7 +3265,7 @@ export interface operations {
                 "goal_config"?: (Record<string, unknown>) | null;
                 "governance"?: (Record<string, unknown>) | null;
                 "groups"?: Array<Record<string, unknown>>;
-                "policy_pins"?: Array<Record<string, unknown>>;
+                "policy_pins"?: (Array<Record<string, unknown>>) | null;
                 "project_id"?: string;
                 "release_id"?: string;
                 "requested_at"?: string;
@@ -3380,7 +3380,7 @@ export interface operations {
                 "goal_config"?: (Record<string, unknown>) | null;
                 "governance"?: (Record<string, unknown>) | null;
                 "groups"?: Array<Record<string, unknown>>;
-                "policy_pins"?: Array<Record<string, unknown>>;
+                "policy_pins"?: (Array<Record<string, unknown>>) | null;
                 "project_id"?: string;
                 "release_id"?: string;
                 "requested_at"?: string;
@@ -31290,6 +31290,93 @@ export interface operations {
       };
     };
   };
+  "handleCreateEvaluationJob": {
+    parameters: {
+      "query"?: {
+        "project_id"?: string;
+      };
+      "header"?: {
+        "Idempotency-Key"?: Array<string>;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "kind"?: string;
+          "request"?: unknown;
+        };
+      };
+    };
+    responses: {
+      "202": {
+        content: {
+          "application/json": {
+            "actor": string;
+            "attempts": number;
+            "completed_at"?: (string) | null;
+            "created_at": string;
+            "failure"?: string;
+            "failure_code"?: string;
+            "hidden"?: boolean;
+            "id": string;
+            "input_fingerprint": string;
+            "kind": string;
+            "project_id": string;
+            "request"?: unknown;
+            "result"?: unknown;
+            "result_bytes"?: number;
+            "result_sha256"?: string;
+            "revision": number;
+            "state": string;
+            "updated_at": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleCreateExecutionPlan": {
     parameters?: never;
     requestBody: {
@@ -36629,6 +36716,7 @@ export interface operations {
     responses: {
       "201": {
         headers: {
+          "ETag"?: string;
           "Idempotent-Replayed"?: "true";
           "X-APEX-Original-Content-Revision"?: string;
         };
@@ -45336,6 +45424,77 @@ export interface operations {
       };
     };
   };
+  "handleDeleteEvaluationJob": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "hide"?: string;
+        "project_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "actor": string;
+            "attempts": number;
+            "completed_at"?: (string) | null;
+            "created_at": string;
+            "failure"?: string;
+            "failure_code"?: string;
+            "hidden"?: boolean;
+            "id": string;
+            "input_fingerprint": string;
+            "kind": string;
+            "project_id": string;
+            "request"?: unknown;
+            "result"?: unknown;
+            "result_bytes"?: number;
+            "result_sha256"?: string;
+            "revision": number;
+            "state": string;
+            "updated_at": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleDeleteExecutionPlan": {
     parameters: {
       "path": {
@@ -46022,9 +46181,6 @@ export interface operations {
     requestBody?: never;
     responses: {
       "200": {
-        headers: {
-          "ETag"?: string;
-        };
         content: {
           "application/json": Record<string, string>;
         };
@@ -46046,9 +46202,7 @@ export interface operations {
       };
       "404": {
         content: {
-          "application/json": {
-            "error": string;
-          };
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "412": {
@@ -51940,272 +52094,6 @@ export interface operations {
       };
     };
   };
-  "handleEvaluationJobs": {
-    parameters: {
-      "query"?: {
-        "kind"?: string;
-        "limit"?: number;
-        "offset"?: number;
-        "project_id"?: string;
-      };
-    };
-    requestBody?: never;
-    responses: {
-      "200": {
-        content: {
-          "application/json": {
-            "actor": string;
-            "attempts": number;
-            "completed_at"?: (string) | null;
-            "created_at": string;
-            "failure"?: string;
-            "failure_code"?: string;
-            "hidden"?: boolean;
-            "id": string;
-            "input_fingerprint": string;
-            "kind": string;
-            "project_id": string;
-            "request"?: unknown;
-            "result"?: unknown;
-            "result_bytes"?: number;
-            "result_sha256"?: string;
-            "revision": number;
-            "state": string;
-            "updated_at": string;
-          };
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "405": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
-  "handleEvaluationJobs_2": {
-    parameters: {
-      "query"?: {
-        "kind"?: string;
-        "limit"?: number;
-        "offset"?: number;
-        "project_id"?: string;
-      };
-    };
-    requestBody?: never;
-    responses: {
-      "200": {
-        content: {
-          "application/json": {
-            "actor": string;
-            "attempts": number;
-            "completed_at"?: (string) | null;
-            "created_at": string;
-            "failure"?: string;
-            "failure_code"?: string;
-            "hidden"?: boolean;
-            "id": string;
-            "input_fingerprint": string;
-            "kind": string;
-            "project_id": string;
-            "request"?: unknown;
-            "result"?: unknown;
-            "result_bytes"?: number;
-            "result_sha256"?: string;
-            "revision": number;
-            "state": string;
-            "updated_at": string;
-          };
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "405": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
-  "handleEvaluationJobs_3": {
-    parameters: {
-      "path": {
-        "id": string;
-      };
-      "query"?: {
-        "kind"?: string;
-        "limit"?: number;
-        "offset"?: number;
-        "project_id"?: string;
-      };
-    };
-    requestBody?: never;
-    responses: {
-      "200": {
-        content: {
-          "application/json": {
-            "actor": string;
-            "attempts": number;
-            "completed_at"?: (string) | null;
-            "created_at": string;
-            "failure"?: string;
-            "failure_code"?: string;
-            "hidden"?: boolean;
-            "id": string;
-            "input_fingerprint": string;
-            "kind": string;
-            "project_id": string;
-            "request"?: unknown;
-            "result"?: unknown;
-            "result_bytes"?: number;
-            "result_sha256"?: string;
-            "revision": number;
-            "state": string;
-            "updated_at": string;
-          };
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "405": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
-  "handleEvaluationJobs_4": {
-    parameters: {
-      "path": {
-        "id": string;
-      };
-      "query"?: {
-        "kind"?: string;
-        "limit"?: number;
-        "offset"?: number;
-        "project_id"?: string;
-      };
-    };
-    requestBody?: never;
-    responses: {
-      "200": {
-        content: {
-          "application/json": {
-            "actor": string;
-            "attempts": number;
-            "completed_at"?: (string) | null;
-            "created_at": string;
-            "failure"?: string;
-            "failure_code"?: string;
-            "hidden"?: boolean;
-            "id": string;
-            "input_fingerprint": string;
-            "kind": string;
-            "project_id": string;
-            "request"?: unknown;
-            "result"?: unknown;
-            "result_bytes"?: number;
-            "result_sha256"?: string;
-            "revision": number;
-            "state": string;
-            "updated_at": string;
-          };
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "405": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
   "handleEventHubsCaptureSupportMatrix": {
     parameters?: never;
     requestBody?: never;
@@ -57657,6 +57545,61 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetEvaluationJob": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "project_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "actor": string;
+            "attempts": number;
+            "completed_at"?: (string) | null;
+            "created_at": string;
+            "failure"?: string;
+            "failure_code"?: string;
+            "hidden"?: boolean;
+            "id": string;
+            "input_fingerprint": string;
+            "kind": string;
+            "project_id": string;
+            "request"?: unknown;
+            "result"?: unknown;
+            "result_bytes"?: number;
+            "result_sha256"?: string;
+            "revision": number;
+            "state": string;
+            "updated_at": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -64743,7 +64686,7 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
-              "policy_pins": Array<{
+              "policy_pins": (Array<{
                 "applied": boolean;
                 "id": string;
                 "kind": string;
@@ -64751,7 +64694,7 @@ export interface operations {
                 "revision": number;
                 "sha256": string;
                 "source": string;
-              }>;
+              }>) | null;
               "project_id"?: string;
               "release_id"?: string;
               "requested_at"?: string;
@@ -65596,7 +65539,7 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
-              "policy_pins": Array<{
+              "policy_pins": (Array<{
                 "applied": boolean;
                 "id": string;
                 "kind": string;
@@ -65604,7 +65547,7 @@ export interface operations {
                 "revision": number;
                 "sha256": string;
                 "source": string;
-              }>;
+              }>) | null;
               "project_id"?: string;
               "release_id"?: string;
               "requested_at"?: string;
@@ -68448,7 +68391,7 @@ export interface operations {
                   "transaction_response_time_sla_ms"?: (number) | null;
                   "vusers": number;
                 }>;
-                "policy_pins": Array<{
+                "policy_pins": (Array<{
                   "applied": boolean;
                   "id": string;
                   "kind": string;
@@ -68456,7 +68399,7 @@ export interface operations {
                   "revision": number;
                   "sha256": string;
                   "source": string;
-                }>;
+                }>) | null;
                 "project_id"?: string;
                 "release_id"?: string;
                 "requested_at"?: string;
@@ -68851,7 +68794,7 @@ export interface operations {
                   "transaction_response_time_sla_ms"?: (number) | null;
                   "vusers": number;
                 }>;
-                "policy_pins": Array<{
+                "policy_pins": (Array<{
                   "applied": boolean;
                   "id": string;
                   "kind": string;
@@ -68859,7 +68802,7 @@ export interface operations {
                   "revision": number;
                   "sha256": string;
                   "source": string;
-                }>;
+                }>) | null;
                 "project_id"?: string;
                 "release_id"?: string;
                 "requested_at"?: string;
@@ -87781,6 +87724,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListEvaluationJobs": {
+    parameters: {
+      "query"?: {
+        "kind"?: string;
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "jobs": Array<{
+              "actor": string;
+              "attempts": number;
+              "completed_at"?: (string) | null;
+              "created_at": string;
+              "failure"?: string;
+              "failure_code"?: string;
+              "hidden"?: boolean;
+              "id": string;
+              "input_fingerprint": string;
+              "kind": string;
+              "project_id": string;
+              "request"?: unknown;
+              "result"?: unknown;
+              "result_bytes"?: number;
+              "result_sha256"?: string;
+              "revision": number;
+              "state": string;
+              "updated_at": string;
+            }>;
+            "kinds": Array<string>;
+          };
         };
       };
       "401": {
@@ -161453,12 +161454,12 @@ export interface paths {
     "post": operations["handleAnalysisDatasetSeries"];
   };
   "/api/v1/analysis/evaluations": {
-    "get": operations["handleEvaluationJobs"];
-    "post": operations["handleEvaluationJobs_2"];
+    "get": operations["handleListEvaluationJobs"];
+    "post": operations["handleCreateEvaluationJob"];
   };
   "/api/v1/analysis/evaluations/{id}": {
-    "get": operations["handleEvaluationJobs_4"];
-    "delete": operations["handleEvaluationJobs_3"];
+    "get": operations["handleGetEvaluationJob"];
+    "delete": operations["handleDeleteEvaluationJob"];
   };
   "/api/v1/analysis/imports": {
     "get": operations["handleAnalysisImports"];

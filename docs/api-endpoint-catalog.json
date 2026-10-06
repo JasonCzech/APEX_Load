@@ -235,8 +235,8 @@
     {
       "method": "GET",
       "path": "/api/v1/analysis/evaluations",
-      "operationId": "handleEvaluationJobs",
-      "summary": "Evaluation Jobs",
+      "operationId": "handleListEvaluationJobs",
+      "summary": "List Evaluation Jobs",
       "category": "Analysis",
       "public": false,
       "authenticated": true,
@@ -245,8 +245,8 @@
     {
       "method": "POST",
       "path": "/api/v1/analysis/evaluations",
-      "operationId": "handleEvaluationJobs_2",
-      "summary": "Evaluation Jobs",
+      "operationId": "handleCreateEvaluationJob",
+      "summary": "Create Evaluation Job",
       "category": "Analysis",
       "public": false,
       "authenticated": true,
@@ -255,8 +255,8 @@
     {
       "method": "DELETE",
       "path": "/api/v1/analysis/evaluations/{id}",
-      "operationId": "handleEvaluationJobs_3",
-      "summary": "Evaluation Jobs",
+      "operationId": "handleDeleteEvaluationJob",
+      "summary": "Delete Evaluation Job",
       "category": "Analysis",
       "public": false,
       "authenticated": true,
@@ -265,8 +265,8 @@
     {
       "method": "GET",
       "path": "/api/v1/analysis/evaluations/{id}",
-      "operationId": "handleEvaluationJobs_4",
-      "summary": "Evaluation Jobs",
+      "operationId": "handleGetEvaluationJob",
+      "summary": "Get Evaluation Job",
       "category": "Analysis",
       "public": false,
       "authenticated": true,

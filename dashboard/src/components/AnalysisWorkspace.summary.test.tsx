@@ -120,6 +120,8 @@ it('declares a long cumulative histogram by its bound column', async () => {
   await choose(labelled<HTMLSelectElement>('Counting')!, 'cumulative')
   expect(labelled('Window (seconds)')).toBeNull()
   await choose(labelled<HTMLSelectElement>('Table shape')!, 'long')
+  // A long table starts with no bound column picked rather than a guessed one.
+  expect(labelled<HTMLSelectElement>('Bound column')!.value).toBe('[]')
   await choose(labelled<HTMLSelectElement>('Bound column')!, JSON.stringify(['b10']))
   await act(async () => button('Validate and import').click())
   const histogram = (submitted?.mapping as { measures: { histogram: Record<string, unknown> }[] }).measures[0].histogram

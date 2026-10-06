@@ -67,6 +67,24 @@ func TestPartitionManifestConservativeSelection(t *testing.T) {
 	if got, err := missing.Select(base); err != nil || len(got) != 1 {
 		t.Fatal("all-missing population was discarded", got, err)
 	}
+	// A histogram partition that ends before From can hold the window that
+	// crosses into the range, so only histograms escape lower-bound pruning.
+	histogram := m.Clone()
+	histogram.Partitions[0].Stats.Kind, histogram.Partitions[0].Stats.SchemaVersion, histogram.Partitions[0].Stats.SourceRows = KindHistogram, DistributionSchemaVersion, 1
+	histogram.Digest, _ = histogram.canonicalDigest()
+	later := base
+	later.From, later.To = at.Add(time.Minute), at.Add(2*time.Minute)
+	if got, err := histogram.Select(later); err != nil || len(got) != 1 {
+		t.Fatal("an earlier histogram partition was pruned", got, err)
+	}
+	if got, err := m.Select(later); err != nil || len(got) != 0 {
+		t.Fatal("an earlier scalar partition was kept", got, err)
+	}
+	before := base
+	before.From, before.To = at.Add(-2*time.Minute), at.Add(-time.Minute)
+	if got, err := histogram.Select(before); err != nil || len(got) != 0 {
+		t.Fatal("a histogram partition after the range was kept", got, err)
+	}
 	empty := m.Clone()
 	empty.Partitions[0].Stats = NormalizedPartitionStats{Version: 1, SchemaVersion: SchemaVersion, IdentityVersion: 2, Kind: KindObservation, Unit: "ms"}
 	empty.Digest, _ = empty.canonicalDigest()

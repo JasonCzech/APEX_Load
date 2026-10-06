@@ -14,8 +14,13 @@ func TestImportedHistogramQueriesExplainUnanswerableRequests(t *testing.T) {
 	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "proj-a")
 	r := timeslotRequest(t, s, "GET", "/api/v1/analysis/capabilities?project_id=proj-a", nil)
 	var capabilities AnalysisCapabilitiesResponse
-	if err := json.Unmarshal(r.Body.Bytes(), &capabilities); err != nil || capabilities.HistogramBoundLimit != analysis.MaxHistogramBounds {
-		t.Fatalf("capabilities %s %v", r.Body.String(), err)
+	// The bound limit is advertised only by a build with the analytics engine.
+	wantBounds := 0
+	if analytics.Available() {
+		wantBounds = analysis.MaxHistogramBounds
+	}
+	if err := json.Unmarshal(r.Body.Bytes(), &capabilities); err != nil || capabilities.HistogramBoundLimit != wantBounds {
+		t.Fatalf("capabilities (want bound limit %d) %s %v", wantBounds, r.Body.String(), err)
 	}
 	mapping := analysis.ParquetMapping{Version: 1, Measures: []analysis.ParquetMeasure{{
 		Value: []string{"inf"}, Name: "latency", Kind: analysis.KindHistogram, Unit: "ms",

@@ -64,6 +64,7 @@ func (b *Browser) openBrowserContext() error {
 	if errors.Is(err, errBrowserResourceLimit) {
 		b.mu.Lock()
 		b.resourceLimit = resourceLimitAdmission
+		b.admissionRetryAt = time.Now().Add(browserContextReadmissionBackoff)
 		b.mu.Unlock()
 		logEvidenceEvent("browser context refused to protect the generator", "error", err)
 		return nil
@@ -76,6 +77,37 @@ func (b *Browser) openBrowserContext() error {
 		return err
 	}
 	return nil
+}
+
+// browserContextReadmissionBackoff is how long a refused session waits
+// before its context is admitted again; several memory samples fit inside it.
+var browserContextReadmissionBackoff = 5 * time.Second
+
+// readmitRefusedContext retries the admission of a context refused at open.
+// Each attempt first waits out the backoff, so a refused VUser's actions
+// neither spin nor flood the results while the generator is short of memory,
+// and the VUser rejoins the run once memory recovers. It reports whether the
+// context is now open.
+func (b *Browser) readmitRefusedContext(ctx context.Context) (bool, error) {
+	b.mu.Lock()
+	refused, retryAt := b.resourceLimit == resourceLimitAdmission, b.admissionRetryAt
+	b.mu.Unlock()
+	if !refused {
+		return false, nil
+	}
+	if wait := time.Until(retryAt); wait > 0 {
+		timer := time.NewTimer(wait)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return false, nil
+		}
+	}
+	if err := b.openBrowserContext(); err != nil {
+		return false, err
+	}
+	return b.currentPage() != nil, nil
 }
 
 func (b *Browser) openAdmittedBrowserContext() error {

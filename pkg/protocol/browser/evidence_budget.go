@@ -87,7 +87,10 @@ type evidenceBudget struct {
 	// nearly blank when sampled, so live contexts keep a footprint floor.
 	live            map[*Browser]struct{}
 	watchdogRunning bool
-	counters        evidenceBudgetCounters
+	// sampleFailing is set while measurements fail, so each run of failures
+	// is logged once rather than once per process.
+	sampleFailing bool
+	counters      evidenceBudgetCounters
 
 	// Measurements; tests replace them on their own budget.
 	scratchAvailable func(string) (int64, error)
@@ -195,8 +198,8 @@ func (e *evidenceBudget) retireHARWriter(b *Browser, owner *harCaptureOwner) {
 // one context's marginal footprint would exceed the generator's browser
 // memory limit. The projection is the larger of the latest sample plus every
 // context admitted since that measurement started, and the footprint floor of
-// every live context. Without a usable measurement the context is admitted,
-// counted and logged.
+// every live context. Without a usable measurement only the floor applies;
+// such admissions are counted and the measurement failure is logged.
 func (e *evidenceBudget) admitBrowserContext(ctx context.Context, b *Browser) error {
 	limit := e.memoryLimit()
 	if limit <= 0 {
@@ -208,18 +211,23 @@ func (e *evidenceBudget) admitBrowserContext(ctx context.Context, b *Browser) er
 	e.refreshSample(ctx)
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.sampledAt.IsZero() || time.Since(e.sampledAt) > browserMemorySampleMaxAge {
+	live := int64(len(e.live))
+	if _, already := e.live[b]; already {
+		live--
+	}
+	projected := live * browserContextMarginalBytes
+	measured := !e.sampledAt.IsZero() && time.Since(e.sampledAt) <= browserMemorySampleMaxAge
+	if measured {
+		pending := e.admissions - e.sampledAdmissions
+		projected = max(e.sampledBytes+pending*browserContextMarginalBytes, projected)
+	}
+	projected += browserContextMarginalBytes
+	if !measured && projected <= limit {
 		e.counters.contextsUnmeasured.Add(1)
 		e.admissions++
 		e.live[b] = struct{}{}
 		return nil
 	}
-	pending := e.admissions - e.sampledAdmissions
-	live := int64(len(e.live))
-	if _, already := e.live[b]; already {
-		live--
-	}
-	projected := max(e.sampledBytes+pending*browserContextMarginalBytes, live*browserContextMarginalBytes) + browserContextMarginalBytes
 	if projected > limit {
 		e.counters.contextsRefused.Add(1)
 		return fmt.Errorf("%w: projected browser and generator memory %d MiB plus a new context would exceed %d MiB", errBrowserResourceLimit, (projected-browserContextMarginalBytes)>>20, limit>>20)
@@ -263,21 +271,40 @@ func (e *evidenceBudget) refreshSample(ctx context.Context) {
 	e.mu.Unlock()
 	usage, err := e.memoryUsage(ctx)
 	e.mu.Lock()
+	// The sample is stored before waiters wake, so none of them finds the
+	// budget still unmeasured.
+	logFailure := e.recordSampleLocked(usage, started, err)
 	e.measuring = false
 	close(e.measured)
 	e.mu.Unlock()
-	e.recordSample(usage, started, err)
+	if logFailure {
+		logEvidenceEvent("browser memory measurement failed; admission falls back to the last sample until it ages out", "error", err)
+	}
 }
 
 func (e *evidenceBudget) recordSample(usage, admissionsAtStart int64, err error) {
 	e.mu.Lock()
-	if err == nil && admissionsAtStart >= e.sampledAdmissions {
+	logFailure := e.recordSampleLocked(usage, admissionsAtStart, err)
+	e.mu.Unlock()
+	if logFailure {
+		logEvidenceEvent("browser memory measurement failed; admission falls back to the last sample until it ages out", "error", err)
+	}
+}
+
+// recordSampleLocked keeps the newer of the stored and the new measurement.
+// It reports whether this failure starts a new run of failures to log.
+func (e *evidenceBudget) recordSampleLocked(usage, admissionsAtStart int64, err error) bool {
+	if err != nil {
+		e.counters.sampleFailures.Add(1)
+		first := !e.sampleFailing
+		e.sampleFailing = true
+		return first
+	}
+	e.sampleFailing = false
+	if admissionsAtStart >= e.sampledAdmissions {
 		e.sampledAt, e.sampledBytes, e.sampledAdmissions = time.Now(), usage, admissionsAtStart
 	}
-	e.mu.Unlock()
-	if err != nil && e.counters.sampleFailures.Add(1) == 1 {
-		slog.Warn("browser memory measurement failed; admission falls back to the last sample until it ages out", "error", err)
-	}
+	return false
 }
 
 // watch samples memory while HAR writers are active and closes the writer
@@ -416,9 +443,14 @@ func processTreeRSSBytes(ctx context.Context, rootPID int) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	return processTreeRSS(parseProcessSamples(string(out)), rootPID), nil
+}
+
+// processTreeRSS sums the resident memory of rootPID and every descendant.
+func processTreeRSS(samples []processSample, rootPID int) int64 {
 	children := map[int][]processSample{}
 	var root *processSample
-	for _, sample := range parseProcessSamples(string(out)) {
+	for _, sample := range samples {
 		if sample.PID == rootPID {
 			s := sample
 			root = &s
@@ -426,7 +458,7 @@ func processTreeRSSBytes(ctx context.Context, rootPID int) (int64, error) {
 		children[sample.PPID] = append(children[sample.PPID], sample)
 	}
 	if root == nil {
-		return 0, nil
+		return 0
 	}
 	total, queue, seen := 0.0, []processSample{*root}, map[int]bool{}
 	for len(queue) > 0 {
@@ -439,7 +471,7 @@ func processTreeRSSBytes(ctx context.Context, rootPID int) (int64, error) {
 		total += sample.RSSKB
 		queue = append(queue, children[sample.PID]...)
 	}
-	return int64(total * 1024), nil
+	return int64(total * 1024)
 }
 
 var browserMemoryLimitOnce struct {

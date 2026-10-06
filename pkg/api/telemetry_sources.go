@@ -271,8 +271,29 @@ func telemetrySourceLedgerLocked(test *ManagedTest) *telemetrySourceLedger {
 	return test.telemetrySources
 }
 
-// persistTelemetrySourceArchive writes telemetry_sources.jsonl once after
-// finalize, with its own byte allowance, then releases the run's ledger.
+// observeTelemetryPublicationLocked counts one received publication in the
+// run's source ledger while this stream still owns the target. Ownership, not
+// the topology generation, decides: a topology change elsewhere re-fences the
+// consumer's store loop, but the publication still arrived and is still
+// stored, so it must still be counted.
+func observeTelemetryPublicationLocked(tr *TestRunner, test *ManagedTest, target string, fence distributedMetricsConsumerFence, terminal bool, batch generatorrpc.MetricsBatch, now time.Time) bool {
+	if !distributedMetricsConsumerStillOwnedLocked(tr, test, target, fence, terminal) {
+		return false
+	}
+	telemetrySourceLedgerLocked(test).observe(target, batch, now)
+	return true
+}
+
+// telemetrySourceSummaryLocked is the run's live source summary; generations
+// adopted from a failed-over controller count as unobserved.
+func telemetrySourceSummaryLocked(test *ManagedTest) *TelemetrySourceSummary {
+	return test.telemetrySources.summary(test.continuityFailovers...)
+}
+
+// persistTelemetrySourceArchive writes telemetry_sources.jsonl after
+// finalize, with its own byte allowance. The ledger stays with the run, so a
+// finalization retry rewrites the same sidecar; a manifest that already
+// declares it is left alone.
 func (tr *TestRunner) persistTelemetrySourceArchive(ctx context.Context, test *ManagedTest, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) error {
 	if test == nil || manifest.TelemetrySourcesFile != "" {
 		return nil

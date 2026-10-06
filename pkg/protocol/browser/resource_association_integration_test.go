@@ -40,8 +40,16 @@ func associationFixture(t *testing.T) (*httptest.Server, *httptest.Server) {
 			_, _ = fmt.Fprintf(w, `<!doctype html><html><head><link rel=stylesheet href="/app.css"></head><body><img src="/logo.png"><iframe src="%s"></iframe><script>fetch('/data.json');fetch('/data.json');fetch('/r1')</script></body></html>`, frameURL)
 		case "/race":
 			w.Header().Set("Content-Type", "text/html")
-			// The image is still loading when the page navigates away.
-			_, _ = fmt.Fprint(w, `<!doctype html><html><body><img src="/slow.png"><script>setTimeout(()=>{location.href='/'},50)</script></body></html>`)
+			// The image and a fetch are still loading when the page navigates
+			// away. The fetch already has its response headers, so it ends
+			// with a known start while the landing page loads.
+			_, _ = fmt.Fprint(w, `<!doctype html><html><body><img src="/slow.png"><script>fetch('/slow.json').then(r=>r.text()).catch(()=>{});setTimeout(()=>{location.href='/'},150)</script></body></html>`)
+		case "/slow.json":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"part":`)
+			w.(http.Flusher).Flush()
+			time.Sleep(600 * time.Millisecond)
+			_, _ = fmt.Fprint(w, `1}`)
 		case "/slow.png":
 			slowRequested.Store(true)
 			time.Sleep(400 * time.Millisecond)
@@ -196,6 +204,15 @@ func TestChromiumNavigationRaceKeepsResourcesWithTheirDocument(t *testing.T) {
 			t.Fatalf("the abandoned document's image joined %q (%s)", v.DocumentID, v.IdentityUnavailableReason)
 		}
 	}
+	// The keepalive fetch completed after the navigation; it must join the
+	// document that issued it, never the landing page that was loading.
+	slow := entriesFor(entries, "/slow.json")
+	if len(slow) != 1 {
+		t.Fatalf("keepalive fetch rows: %d", len(slow))
+	}
+	if v := slow[0].BrowserEvidence; v.DocumentID != raceDoc || v.DocumentAssociation != "cdp_loader_join" {
+		t.Fatalf("the abandoned document's keepalive fetch joined %q (%s, %s), want %s", v.DocumentID, v.DocumentAssociation, v.IdentityUnavailableReason, raceDoc)
+	}
 	css := entriesFor(entries, "/app.css")
 	if len(css) == 0 {
 		t.Fatal("the landing page's stylesheet was not observed")
@@ -212,7 +229,21 @@ func TestWebKitAssociatesOnlyThroughUniqueResourceTiming(t *testing.T) {
 		t.Skip("skipping browser integration test in -short mode")
 	}
 	outer, _ := associationFixture(t)
-	b := associationSession(t, "webkit", outer.URL)
+	// Every visit checks that nothing joins wrongly. Whether a Resource
+	// Timing entry beats its request's completion is a race, so a fresh
+	// session is tried a few times until at least one resource joins.
+	for attempt := 1; ; attempt++ {
+		if joined := webKitAssociationVisit(t, outer.URL); joined > 0 {
+			return
+		} else if attempt == 3 {
+			t.Fatal("no WebKit resource joined its document in three visits")
+		}
+	}
+}
+
+func webKitAssociationVisit(t *testing.T, baseURL string) int {
+	t.Helper()
+	b := associationSession(t, "webkit", baseURL)
 	entries := associationVisit(t, b, "/")
 	docs := documentsByScope(b)
 	if len(docs["main_frame"]) == 0 || len(docs["child_frame"]) != 1 {
@@ -266,7 +297,5 @@ func TestWebKitAssociatesOnlyThroughUniqueResourceTiming(t *testing.T) {
 	expect("/app.css", mainDoc)
 	expect("/logo.png", mainDoc)
 	expect("/inner.json", frameDoc)
-	if joined == 0 {
-		t.Fatal("no WebKit resource joined its document")
-	}
+	return joined
 }

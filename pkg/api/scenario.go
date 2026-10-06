@@ -167,7 +167,13 @@ func (tr *TestRunner) StoreScenarioWithIDCreateOnly(id string, req CreateScenari
 	if id == "" {
 		return nil, fmt.Errorf("scenario id is required")
 	}
-	return tr.storeScenarioLockedWithWriter(id, req, func(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) error {
+	return tr.storeScenarioLockedWithWriter(id, req, tr.createOnlyScenarioWriterLocked(id))
+}
+
+// createOnlyScenarioWriterLocked persists a new scenario and refuses an
+// existing ID instead of overwriting it.
+func (tr *TestRunner) createOnlyScenarioWriterLocked(id string) func(*storage.Scenario, []storage.ScenarioScript, []storage.ScenarioDataPoolBinding) error {
+	return func(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) error {
 		if store, ok := tr.scenarioStore.(conditionalScenarioPersistence); ok {
 			return createScenarioAggregateIfAbsent(store, scenario, scripts, bindings)
 		}
@@ -178,7 +184,7 @@ func (tr *TestRunner) StoreScenarioWithIDCreateOnly(id string, req CreateScenari
 			return errScenarioConcurrentChange
 		}
 		return nil
-	})
+	}
 }
 
 // UpdateScenarioIfUnchanged applies a library synchronization update only when

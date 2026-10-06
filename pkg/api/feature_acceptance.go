@@ -110,7 +110,7 @@ const (
 )
 
 // maxAcceptanceSubjects bounds one status response.
-const maxAcceptanceSubjects = 5000
+var maxAcceptanceSubjects = 5000
 
 func (s *Server) handleFeatureAcceptanceRecords(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.store.(storage.FeatureAcceptanceStore)
@@ -184,7 +184,13 @@ func (s *Server) handleFeatureAcceptanceStatus(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusInternalServerError, "cannot read feature acceptance records")
 		return
 	}
-	statuses := resolveFeatureSupport(latest, commit, binary)
+	withdrawals, withdrawalsTruncated, err := store.LatestFeatureAcceptanceWithdrawals(query.Get("requirement"), query.Get("feature"), maxAcceptanceSubjects)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "cannot read feature acceptance records")
+		return
+	}
+	truncated = truncated || withdrawalsTruncated
+	statuses := resolveFeatureSupport(latest, withdrawals, commit, binary)
 	filtered := statuses[:0]
 	for _, status := range statuses {
 		if dimensionMatches(query.Get("profile"), status.Profile) && dimensionMatches(query.Get("provider"), status.Provider) && dimensionMatches(query.Get("platform"), status.Platform) {
@@ -223,7 +229,15 @@ func commitMatches(recorded, queried string) bool {
 	return strings.HasPrefix(recorded, queried) || strings.HasPrefix(queried, recorded)
 }
 
-func resolveFeatureSupport(latest []*storage.FeatureAcceptanceRecord, commit, binary string) []FeatureSupportStatus {
+func sameAcceptanceSubject(a, b *storage.FeatureAcceptanceRecord) bool {
+	return a.RequirementID == b.RequirementID && a.Feature == b.Feature && a.Profile == b.Profile && a.Provider == b.Provider && a.Platform == b.Platform
+}
+
+// resolveFeatureSupport judges each subject by its latest record. A passed
+// subject is withdrawn by any broader subject's newest failed, pending or
+// revoked record that came after the pass; a later broad pass does not
+// restore it, because only a new pass of the subject itself re-qualifies it.
+func resolveFeatureSupport(latest, withdrawals []*storage.FeatureAcceptanceRecord, commit, binary string) []FeatureSupportStatus {
 	statuses := make([]FeatureSupportStatus, 0, len(latest))
 	for _, record := range latest {
 		status := FeatureSupportStatus{
@@ -233,11 +247,11 @@ func resolveFeatureSupport(latest []*storage.FeatureAcceptanceRecord, commit, bi
 		if !status.Supported {
 			status.Reason = acceptanceReasonLatestNotPassed
 		}
-		for _, broader := range latest {
+		for _, broader := range withdrawals {
 			if !status.Supported {
 				break
 			}
-			if broader == record || broader.Result == storage.AcceptancePassed || !acceptanceSubjectCovers(broader, record) || !acceptanceRecordNewer(broader, record) {
+			if broader.Result == storage.AcceptancePassed || sameAcceptanceSubject(broader, record) || !acceptanceSubjectCovers(broader, record) || !acceptanceRecordNewer(broader, record) {
 				continue
 			}
 			status.Supported, status.Reason, status.WithdrawnBy = false, acceptanceReasonWithdrawn, broader

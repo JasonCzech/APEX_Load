@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"regexp"
@@ -663,7 +664,10 @@ func writeAnalysisPolicySaveError(w http.ResponseWriter, err error) bool {
 		writeError(w, http.StatusConflict, "analysis policy limit reached")
 	case errors.Is(err, storage.ErrAnalysisDefinitionInvalid):
 		writeError(w, http.StatusBadRequest, "invalid analysis policy")
+	case errors.Is(err, storage.ErrOwnedProjectNotFound):
+		writeError(w, http.StatusNotFound, "project not found")
 	default:
+		slog.Warn("analysis policy save failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "cannot save analysis policy")
 	}
 	return true
