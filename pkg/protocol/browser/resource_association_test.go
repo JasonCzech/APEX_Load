@@ -1,7 +1,10 @@
 package browser
 
 import (
+	"encoding/json"
 	"math"
+	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -198,6 +201,40 @@ func TestResourceEvidenceRefusesUnprovenAssociation(t *testing.T) {
 		change(&bad)
 		if bad.Clone() != nil {
 			t.Errorf("%s admitted", name)
+		}
+	}
+}
+
+// The Go join hash must equal the hash the embedded bootstrap computes in the
+// page, for the same URL, including non-ASCII and surrogate-pair URLs.
+func TestResourceTimingHashMatchesTheEmbeddedBootstrap(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	script := browserDocumentBootstrap("__binding", "__finalizer", true, true)
+	start := strings.Index(script, "const resourceHash=")
+	end := strings.Index(script[start:], "};")
+	if start < 0 || end < 0 {
+		t.Fatal("bootstrap no longer defines resourceHash")
+	}
+	inputs := []string{"https://example.test/app.css", "https://example.test/ä/ñ?q=ü", "https://example.test/😀/x", "", strings.Repeat("a/", 300)}
+	encoded, err := json.Marshal(inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program := script[start:start+end+2] + "\nconsole.log(JSON.stringify(" + string(encoded) + ".map(resourceHash)))"
+	output, err := exec.Command(node, "-e", program).CombinedOutput()
+	if err != nil {
+		t.Fatalf("node: %v %s", err, output)
+	}
+	var hashes []string
+	if err := json.Unmarshal(output, &hashes); err != nil {
+		t.Fatalf("node output %s: %v", output, err)
+	}
+	for i, input := range inputs {
+		if got := resourceTimingHash(input); got != hashes[i] {
+			t.Fatalf("hash of %q: Go %s, bootstrap %s", input, got, hashes[i])
 		}
 	}
 }

@@ -13,8 +13,9 @@ export interface BrowserResourceBytes {
   response_encoded_body?: number | null
   unavailable_reason?: string
 }
+/** Version 2 records carry no association fields; version 3 adds them. */
 export interface BrowserResourceEvidenceV2 {
-  version: 2
+  version: 2 | 3
   source_generation: string
   request_id: string
   frame_id?: string

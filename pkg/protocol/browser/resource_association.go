@@ -21,18 +21,31 @@ import (
 // against its start time and the frame mapping learned so far. The join gives
 // the issuing document's loader, cache and initiator provenance. A loader
 // becomes a document when exactly one document of that frame began between
-// the loader's commit and the frame's next commit.
+// the loader's commit and the frame's next commit and its time origin lies
+// after the previous loader's navigation request and no later than this
+// loader's own. Begins are stamped on binding goroutines, so the clock check
+// keeps a late-stamped earlier document out of a newer loader's window, and a
+// result from a window still open to later begins is never cached.
 //
 // WebKit: a request joins the one document of its frame holding exactly one
-// Resource Timing entry for its URL (page_resource_timing_join). Cache and
-// initiator remain not_exposed.
+// Resource Timing entry for its URL (page_resource_timing_join). Navigation
+// requests never join: a document has no entry for its own navigation, and
+// an iframe navigation's entry sits in the parent document. The join runs
+// when the request completes, and an entry that reaches the controller later
+// leaves the request resource_timing_unobserved. Cache and initiator remain
+// not_exposed.
 
 const (
 	resourceAssociationLimit = 4096
-	// Playwright derives request start from the same CDP wall time; probes
-	// show differences under 1 ms. A larger gap means a misaligned ordinal.
+	// The CDP start is reproduced with Playwright's own formula, so the two
+	// agree to rounding; a larger gap means a misaligned ordinal.
 	cdpJoinToleranceMS        = 5.0
 	resourceTimingPerDocument = 512
+	// cdpCommitFrameLimit bounds the frames whose commits a page keeps.
+	cdpCommitFrameLimit = 256
+	// documentClockToleranceMS absorbs rounding between the renderer's time
+	// origin and the network wall time; both come from the system clock.
+	documentClockToleranceMS = 1.0
 )
 
 type resourceJoinKey [32]byte
@@ -52,8 +65,12 @@ type resourceJoin struct {
 }
 
 type cdpRequestRecord struct {
-	requestID, loaderID, frameID   string
-	wallMS                         float64
+	requestID, loaderID, frameID string
+	wallMS                       float64
+	// timestampS is the monotonic request time; startMS is Playwright's
+	// start (wall time shifted by the response's requestTime) once known.
+	timestampS                     float64
+	startMS                        float64
 	initiatorType, initiatorOrigin string
 	cacheKnown, cached             bool
 }
@@ -64,13 +81,16 @@ type cdpCommit struct {
 }
 
 type cdpEvidencePage struct {
-	records   map[resourceJoinKey][]*cdpRequestRecord
-	latest    map[string]*cdpRequestRecord
-	served    map[string]bool
-	commits   map[string][]cdpCommit
-	ordinals  map[resourceJoinKey]int
-	count     int
-	truncated bool
+	records  map[resourceJoinKey][]*cdpRequestRecord
+	latest   map[string]*cdpRequestRecord
+	served   map[string]bool
+	commits  map[string][]cdpCommit
+	ordinals map[resourceJoinKey]int
+	// navigationWallMS is each loader's navigation request wall time (its
+	// first hop), which bounds the time origin of the document it commits.
+	navigationWallMS map[string]float64
+	count            int
+	truncated        bool
 }
 
 type loaderDocument struct {
@@ -91,7 +111,7 @@ type resourceTimingKey struct {
 }
 
 func newCDPEvidencePage() *cdpEvidencePage {
-	return &cdpEvidencePage{records: map[resourceJoinKey][]*cdpRequestRecord{}, latest: map[string]*cdpRequestRecord{}, served: map[string]bool{}, commits: map[string][]cdpCommit{}, ordinals: map[resourceJoinKey]int{}}
+	return &cdpEvidencePage{records: map[resourceJoinKey][]*cdpRequestRecord{}, latest: map[string]*cdpRequestRecord{}, served: map[string]bool{}, commits: map[string][]cdpCommit{}, ordinals: map[resourceJoinKey]int{}, navigationWallMS: map[string]float64{}}
 }
 
 // installResourceAssociation attaches the evidence CDP session to a newly
@@ -132,8 +152,10 @@ func (b *Browser) installResourceAssociation(browserContext playwright.BrowserCo
 	}
 	b.evidence.cdpPages[page] = state
 	b.mu.Unlock()
+	// This session only reads request metadata: zero buffers keep a second
+	// network agent from retaining bodies in the renderer.
 	if _, err := cdp.Send("Page.enable", map[string]any{}); err == nil {
-		_, err = cdp.Send("Network.enable", map[string]any{})
+		_, err = cdp.Send("Network.enable", map[string]any{"maxTotalBufferSize": 0, "maxResourceBufferSize": 0, "maxPostDataSize": 0})
 	}
 	if err != nil {
 		b.mu.Lock()
@@ -163,11 +185,12 @@ func cdpInitiatorType(raw string) string {
 func (b *Browser) observeCDPRequest(state *cdpEvidencePage, params map[string]any, generation string) {
 	request, _ := params["request"].(map[string]any)
 	wall, _ := params["wallTime"].(float64)
+	timestamp, _ := params["timestamp"].(float64)
 	requestID, url, method := cdpText(params, "requestId"), cdpText(request, "url"), cdpText(request, "method")
 	if requestID == "" || url == "" || method == "" {
 		return
 	}
-	record := &cdpRequestRecord{requestID: requestID, loaderID: cdpText(params, "loaderId"), frameID: cdpText(params, "frameId"), wallMS: wall * 1000}
+	record := &cdpRequestRecord{requestID: requestID, loaderID: cdpText(params, "loaderId"), frameID: cdpText(params, "frameId"), wallMS: wall * 1000, timestampS: timestamp}
 	if initiator, ok := params["initiator"].(map[string]any); ok {
 		record.initiatorType = cdpInitiatorType(cdpText(initiator, "type"))
 		record.initiatorOrigin = browserResourceOrigin(cdpText(initiator, "url"))
@@ -182,6 +205,13 @@ func (b *Browser) observeCDPRequest(state *cdpEvidencePage, params map[string]an
 	// A redirect ends the previous hop of the same CDP request.
 	if previous := state.latest[requestID]; previous != nil && redirect != nil {
 		previous.cacheKnown, previous.cached = true, cdpCached(redirect)
+		previous.startMS = cdpStartMS(previous, redirect, state.served[requestID])
+	}
+	// A document's navigation request carries its loader's ID.
+	if requestID == record.loaderID && wall > 0 {
+		if _, known := state.navigationWallMS[requestID]; !known && len(state.navigationWallMS) < resourceAssociationLimit {
+			state.navigationWallMS[requestID] = record.wallMS
+		}
 	}
 	if state.count >= resourceAssociationLimit {
 		state.truncated = true
@@ -198,6 +228,20 @@ func cdpCached(response map[string]any) bool {
 	return disk || prefetch
 }
 
+// cdpStartMS reproduces Playwright's request start: the wall time shifted
+// by the network timing's requestTime relative to the request's monotonic
+// timestamp, so time spent queued in the browser is included. A request
+// served from the memory cache, or one without network timing, starts at its
+// wall time.
+func cdpStartMS(record *cdpRequestRecord, response map[string]any, servedFromCache bool) float64 {
+	timing, _ := response["timing"].(map[string]any)
+	requestTime, _ := timing["requestTime"].(float64)
+	if servedFromCache || requestTime <= 0 || record.timestampS <= 0 {
+		return record.wallMS
+	}
+	return (requestTime - record.timestampS + record.wallMS/1000) * 1000
+}
+
 func (b *Browser) observeCDPResponse(state *cdpEvidencePage, params map[string]any, generation string) {
 	response, _ := params["response"].(map[string]any)
 	requestID := cdpText(params, "requestId")
@@ -208,6 +252,7 @@ func (b *Browser) observeCDPResponse(state *cdpEvidencePage, params map[string]a
 	}
 	if record := state.latest[requestID]; record != nil && response != nil {
 		record.cacheKnown, record.cached = true, cdpCached(response) || state.served[requestID]
+		record.startMS = cdpStartMS(record, response, state.served[requestID])
 	}
 }
 
@@ -221,6 +266,7 @@ func (b *Browser) observeCDPCacheHit(state *cdpEvidencePage, params map[string]a
 	state.served[requestID] = true
 	if record := state.latest[requestID]; record != nil {
 		record.cacheKnown, record.cached = true, true
+		record.startMS = record.wallMS
 	}
 }
 
@@ -236,7 +282,11 @@ func (b *Browser) observeCDPCommit(state *cdpEvidencePage, params map[string]any
 	if s.generation != generation {
 		return
 	}
-	commits := state.commits[frameID]
+	commits, known := state.commits[frameID]
+	if !known && len(state.commits) >= cdpCommitFrameLimit {
+		state.truncated = true
+		return
+	}
 	if len(commits) >= 64 {
 		// Keep the most recent commits of a frame that navigates repeatedly.
 		commits = append(commits[:0], commits[len(commits)-63:]...)
@@ -259,6 +309,9 @@ func (b *Browser) resourceJoinLocked(request playwright.Request, frame playwrigh
 	join.page = page
 	url := request.URL()
 	if b.engine == "webkit" {
+		if request.IsNavigationRequest() {
+			return join
+		}
 		join.urlHash = resourceTimingHash(url)
 		key := resourceTimingKey{frame: frame, hash: join.urlHash}
 		if _, known := b.evidence.timingRequests[key]; known || len(b.evidence.timingRequests) < resourceAssociationLimit {
@@ -300,6 +353,8 @@ func (b *Browser) associateResourceEvidence(v *protocol.BrowserResourceEvidence,
 		return v
 	}
 	out := *v
+	// Association fields and reasons exist only in version 3 records.
+	out.Version = protocol.BrowserResourceEvidenceVersion
 	if join.urlHash != "" {
 		b.associateResourceTimingLocked(&out, join)
 	} else if state := s.cdpPages[join.page]; state != nil && join.ordinal > 0 {
@@ -324,7 +379,16 @@ func (b *Browser) associateCDPLocked(v *protocol.BrowserResourceEvidence, join r
 	record := records[join.ordinal-1]
 	mapped, pwKnown := s.pwFrameCDP[join.frame]
 	reverse, cdpKnown := s.cdpFramePW[record.frameID]
-	if v.EpochStartMS == nil || math.Abs(*v.EpochStartMS-record.wallMS) > cdpJoinToleranceMS || pwKnown && mapped != record.frameID || cdpKnown && reverse != join.frame {
+	if v.EpochStartMS == nil {
+		// A request that failed before any response has no Playwright start.
+		v.IdentityUnavailableReason = "request_start_unavailable"
+		return
+	}
+	start := record.startMS
+	if start == 0 {
+		start = record.wallMS
+	}
+	if math.Abs(*v.EpochStartMS-start) > cdpJoinToleranceMS || pwKnown && mapped != record.frameID || cdpKnown && reverse != join.frame {
 		v.IdentityUnavailableReason = "ambiguous_cdp_join"
 		return
 	}
@@ -368,13 +432,25 @@ func (b *Browser) loaderDocumentLocked(state *cdpEvidencePage, record *cdpReques
 		return loaderDocument{}, "document_not_observed"
 	}
 	low, high := commits[index].seq, uint64(math.MaxUint64)
-	if index+1 < len(commits) {
+	open := index+1 == len(commits)
+	if !open {
 		high = commits[index+1].seq
 	}
+	// A loader's document began after the previous loader's navigation
+	// request (that loader had committed before this navigation started) and
+	// no later than this loader's own navigation request.
+	lowerWall, hasLower := 0.0, false
+	if index > 0 {
+		lowerWall, hasLower = state.navigationWallMS[commits[index-1].loaderID]
+	}
+	upperWall, hasUpper := state.navigationWallMS[record.loaderID]
 	var found loaderDocument
 	matches := 0
 	for _, d := range s.documents {
 		if d.frame != frame || d.beginSeq <= low || d.beginSeq >= high || d.restored {
+			continue
+		}
+		if hasLower && d.timeOrigin <= lowerWall-documentClockToleranceMS || hasUpper && d.timeOrigin > upperWall+documentClockToleranceMS {
 			continue
 		}
 		if matches == 0 || found.id != d.documentID {
@@ -388,7 +464,8 @@ func (b *Browser) loaderDocumentLocked(state *cdpEvidencePage, record *cdpReques
 	case matches > 1:
 		return loaderDocument{}, "ambiguous_document_commit"
 	}
-	if len(s.loaderDocuments) < resourceAssociationLimit {
+	// A window still open to later begins may yet gain the true document.
+	if !open && len(s.loaderDocuments) < resourceAssociationLimit {
 		s.loaderDocuments[record.loaderID] = found
 	}
 	return found, ""

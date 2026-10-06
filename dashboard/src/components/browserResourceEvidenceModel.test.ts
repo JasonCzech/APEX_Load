@@ -42,7 +42,7 @@ describe('typed retained browser request evidence', () => {
       bytes: {}, document_offset_ms: -1 }).evidence).toMatchObject({ epoch_start_ms: null, service_worker: null, cache: false, bytes: {}, document_offset_ms: -1 })
   })
   it('treats missing or unsupported evidence as a gap without a native identity', () => {
-    for (const input of [undefined, null, {}, { version: 3 }]) {
+    for (const input of [undefined, null, {}, { version: 3 }, { ...fixture(), version: 4 }]) {
       const view = browserResourceEvidenceView(input)
       expect(view.evidence).toBeNull()
       expect(view.issue).toBeTruthy()
@@ -54,7 +54,7 @@ describe('typed retained browser request evidence', () => {
     expect(browserResourceEvidenceView(input).evidence).toBeNull()
   })
   it.each([
-    ['version', 3], ['source_generation', generation.toUpperCase()], ['source_generation', 'a'.repeat(31)],
+    ['version', 4], ['source_generation', generation.toUpperCase()], ['source_generation', 'a'.repeat(31)],
     ['request_id', `${'a'.repeat(32)}-r1`], ['request_id', `${generation}-secret\n`], ['request_id', `${generation}-${'a'.repeat(128)}`],
     ['request_id', `${generation}-bad\0id`],
     ['frame_id', null], ['document_id', `${'a'.repeat(32)}-d1`], ['redirect_hop', -1], ['redirect_hop', 0.5], ['redirect_hop', 65],
@@ -105,10 +105,14 @@ describe('typed retained browser request evidence', () => {
   })
 
   it('admits proven document association and bounded initiator provenance only', () => {
-    const associated = { ...fixture(), document_id: `${generation}-d1`, document_association: 'cdp_loader_join', identity_unavailable_reason: undefined,
+    const associated = { ...fixture(), version: 3, document_id: `${generation}-d1`, document_association: 'cdp_loader_join', identity_unavailable_reason: undefined,
       initiator_type: 'parser', initiator_origin: 'https://example.test', initiator_unavailable_reason: undefined, cache: true, document_offset_ms: -0.5 }
     expect(browserResourceEvidenceView(associated).issue).toBeNull()
-    expect(browserResourceEvidenceView({ ...fixture(), identity_unavailable_reason: 'ambiguous_cdp_join' }).issue).toBeNull()
+    expect(browserResourceEvidenceView({ ...fixture(), version: 3, identity_unavailable_reason: 'ambiguous_cdp_join' }).issue).toBeNull()
+    expect(browserResourceEvidenceView({ ...fixture(), version: 3, identity_unavailable_reason: 'request_start_unavailable' }).issue).toBeNull()
+    // Version 2 predates association: neither its fields nor its reasons.
+    expect(browserResourceEvidenceView({ ...associated, version: 2 }).evidence).toBeNull()
+    expect(browserResourceEvidenceView({ ...fixture(), version: 2, identity_unavailable_reason: 'ambiguous_cdp_join' }).evidence).toBeNull()
     for (const bad of [
       { ...associated, document_id: undefined },
       { ...associated, document_association: 'frame_guess' },

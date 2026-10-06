@@ -17,6 +17,20 @@ import (
 )
 
 const BrowserEvidenceVersion = 2
+
+// BrowserResourceEvidenceVersion is the version of native request evidence.
+// Version 3 adds document_association, initiator_type, initiator_origin and
+// the resource identity reasons; version 2 records stay readable. A reader
+// that knows only version 2 reports a version 3 record as unsupported rather
+// than malformed.
+const BrowserResourceEvidenceVersion = 3
+
+// SupportedBrowserResourceEvidenceVersion reports whether this build reads
+// request evidence of version v.
+func SupportedBrowserResourceEvidenceVersion(v int) bool {
+	return v == BrowserEvidenceVersion || v == BrowserResourceEvidenceVersion
+}
+
 const MaxBrowserDocumentEvidenceBytes = 512 * 1024
 const BrowserVitalsAlgorithm = "web-vitals/5.1.0"
 const BrowserVitalsAlgorithmSHA256 = "8890ec954757ea8e4801f49958afb76e2b8837c47fec5b16598fc20cbd49c220"
@@ -330,11 +344,21 @@ func browserEvidenceID(v, generation string, optional bool) bool {
 }
 func browserEvidenceReason(v string) bool {
 	switch v {
-	case "", "not_exposed", "unsupported", "no_observation", "no_interaction", "hidden_before_paint", "not_loaded", "frame_unavailable", "document_unavailable", "identity_capacity", "source_censored", "source_incomplete", "measurement_capacity", "malformed", "cohort_unavailable", "shaping_unavailable", "new_user_policy_unavailable", "scope_unqualified",
-		"cdp_unobserved", "ambiguous_cdp_join", "document_not_observed", "ambiguous_document_commit", "resource_timing_unobserved", "ambiguous_resource_timing":
+	case "", "not_exposed", "unsupported", "no_observation", "no_interaction", "hidden_before_paint", "not_loaded", "frame_unavailable", "document_unavailable", "identity_capacity", "source_censored", "source_incomplete", "measurement_capacity", "malformed", "cohort_unavailable", "shaping_unavailable", "new_user_policy_unavailable", "scope_unqualified":
 		return true
 	}
 	return false
+}
+
+// browserResourceIdentityReason admits a version 3 request's identity reason:
+// the shared reasons plus those of resource-to-document association, which
+// never apply to document metric observations.
+func browserResourceIdentityReason(v string) bool {
+	switch v {
+	case "cdp_unobserved", "ambiguous_cdp_join", "document_not_observed", "ambiguous_document_commit", "resource_timing_unobserved", "ambiguous_resource_timing", "request_start_unavailable":
+		return true
+	}
+	return browserEvidenceReason(v)
 }
 func browserMetricUnit(metric string) string {
 	switch metric {
@@ -489,7 +513,19 @@ func (e *BrowserResourceEvidence) Clone() *BrowserResourceEvidence {
 		return nil
 	}
 	v := *e
-	if v.Version != BrowserEvidenceVersion || !BrowserEvidenceGeneration(v.SourceGeneration) || !browserEvidenceID(v.RequestID, v.SourceGeneration, false) || v.RedirectHop < 0 || v.RedirectHop > 64 || v.ObservedAt.IsZero() || v.ObservedAt.Location() != time.UTC || v.TimingSource != "playwright" || len(v.Phases) > 5 || !browserEvidenceOrigin(v.Origin) || !browserEvidenceReason(v.IdentityUnavailableReason) || !browserEvidenceReason(v.CacheUnavailableReason) || !browserEvidenceReason(v.ServiceWorkerUnavailableReason) || !browserEvidenceReason(v.InitiatorUnavailableReason) {
+	identityReason := browserEvidenceReason
+	switch v.Version {
+	case BrowserEvidenceVersion:
+		// Version 2 predates association; it carries none of its fields.
+		if v.DocumentAssociation != "" || v.InitiatorType != "" || v.InitiatorOrigin != "" {
+			return nil
+		}
+	case BrowserResourceEvidenceVersion:
+		identityReason = browserResourceIdentityReason
+	default:
+		return nil
+	}
+	if !BrowserEvidenceGeneration(v.SourceGeneration) || !browserEvidenceID(v.RequestID, v.SourceGeneration, false) || v.RedirectHop < 0 || v.RedirectHop > 64 || v.ObservedAt.IsZero() || v.ObservedAt.Location() != time.UTC || v.TimingSource != "playwright" || len(v.Phases) > 5 || !browserEvidenceOrigin(v.Origin) || !identityReason(v.IdentityUnavailableReason) || !browserEvidenceReason(v.CacheUnavailableReason) || !browserEvidenceReason(v.ServiceWorkerUnavailableReason) || !browserEvidenceReason(v.InitiatorUnavailableReason) {
 		return nil
 	}
 	for _, id := range []string{v.FrameID, v.DocumentID, v.NavigationID, v.RedirectChainID, v.RedirectFromRequestID, v.InitiatingActionID, v.ObservationActionID} {

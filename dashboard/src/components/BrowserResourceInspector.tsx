@@ -39,9 +39,11 @@ function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = r
   }
   const first = () => { const firstQuery = { ...query }; delete firstQuery.cursor; setQuery(firstQuery); setPageNumber(1); setRefreshRevision(value => value + 1) }
   // Document → resources: filter the archive to one document's requests.
+  // Filters naming a single request or redirect chain would hide the rest of
+  // the document, so the drill-down clears them.
   const selectDocument = (document: string) => {
-    setDraft(value => ({ ...value, document_id: document }))
-    setQuery(value => { const next = { ...value, document_id: document }; delete next.cursor; return next })
+    setDraft(value => { const next: Record<string, string> = { ...value, document_id: document }; delete next.request_id; delete next.redirect_chain_id; return next })
+    setQuery(value => { const next: BrowserResourcePageQuery = { ...value, document_id: document }; delete next.cursor; delete next.request_id; delete next.redirect_chain_id; return next })
     setPageNumber(1); setRefreshRevision(value => value + 1)
   }
   const waterfall = query.document_id && page ? browserDocumentWaterfall(page.items.map((row, index) => ({ key: browserResourceRowKey(JSON.stringify(row.locator), row.browser_evidence), label: row.url || `Resource ${index + 1}`, evidence: row.browser_evidence })), query.document_id) : []

@@ -75,7 +75,7 @@ describe('retained browser resource inspector', () => {
     const documentID = `${RESOURCE_GENERATION}-d1`
     const associated = () => {
       const page = resourcePageFixture()
-      page.items[0].browser_evidence = { ...page.items[0].browser_evidence!, document_id: documentID, document_association: 'cdp_loader_join', document_offset_ms: 12, initiator_type: 'parser', initiator_origin: 'https://example.test' }
+      page.items[0].browser_evidence = { ...page.items[0].browser_evidence!, version: 3, document_id: documentID, document_association: 'cdp_loader_join', document_offset_ms: 12, initiator_type: 'parser', initiator_origin: 'https://example.test' }
       return page
     }
     const loader = vi.fn(async () => associated()) as BrowserResourcePageLoader
@@ -92,6 +92,34 @@ describe('retained browser resource inspector', () => {
       expect(waterfall.textContent).toContain(documentID)
       expect(waterfall.querySelectorAll('.browser-document-waterfall-phase').length).toBe(3)
       expect(waterfall.querySelector('[aria-label*="starts 12.0 ms"]')).not.toBeNull()
+    } finally { await act(async () => root.unmount()) }
+  })
+  it('clears request-scoped filters when drilling into a document', async () => {
+    const node = document.createElement('div'); const root = createRoot(node)
+    const documentID = `${RESOURCE_GENERATION}-d1`
+    const associated = () => {
+      const page = resourcePageFixture()
+      page.items[0].browser_evidence = { ...page.items[0].browser_evidence!, version: 3, document_id: documentID, document_association: 'cdp_loader_join', document_offset_ms: 12 }
+      return page
+    }
+    const loader = vi.fn(async () => associated()) as BrowserResourcePageLoader
+    const setInput = (label: string, value: string) => {
+      const input = Array.from(node.querySelectorAll('label')).find(element => element.textContent?.startsWith(label))!.querySelector('input')!
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+    try {
+      await act(async () => root.render(<BrowserResourceInspector {...props} loadPage={loader} />))
+      await act(async () => { setInput('Native request identity', `${RESOURCE_GENERATION}-r1`); setInput('Redirect chain identity', `${RESOURCE_GENERATION}-c1`) })
+      await act(async () => { node.querySelector('form[aria-label="Archive resource filters"]')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+      let calls = vi.mocked(loader).mock.calls
+      expect(calls[calls.length - 1][2]).toMatchObject({ request_id: `${RESOURCE_GENERATION}-r1`, redirect_chain_id: `${RESOURCE_GENERATION}-c1` })
+      await act(async () => button(node, "Show this document's resources").click())
+      calls = vi.mocked(loader).mock.calls
+      expect(calls[calls.length - 1][2]).toMatchObject({ document_id: documentID })
+      expect(calls[calls.length - 1][2]).not.toHaveProperty('request_id')
+      expect(calls[calls.length - 1][2]).not.toHaveProperty('redirect_chain_id')
     } finally { await act(async () => root.unmount()) }
   })
 })

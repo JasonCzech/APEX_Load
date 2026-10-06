@@ -489,15 +489,17 @@ func (b *Browser) registerPage(page playwright.Page, activate bool, expectedGene
 	b.mu.Unlock()
 	// The context's page event can register a page before the context is
 	// stored; the association installs on the first registration that has it.
-	b.mu.Lock()
-	generation := b.evidence.generation
-	b.mu.Unlock()
-	b.installResourceAssociation(b.currentBrowserContext(), page, generation)
+	// Close and crash handlers come first: installing the association makes
+	// blocking protocol calls, and a popup can close while they run.
 	if !known {
 		b.observePageWebSockets(page)
 		page.OnClose(func(closed playwright.Page) { b.censorDocumentEvidence(closed, "context_closed"); b.removePage(closed) })
 		page.OnCrash(func(crashed playwright.Page) { b.censorDocumentEvidence(crashed, "crash") })
 	}
+	b.mu.Lock()
+	generation := b.evidence.generation
+	b.mu.Unlock()
+	b.installResourceAssociation(b.currentBrowserContext(), page, generation)
 	if activate {
 		b.installCDPSession(b.currentBrowserContext(), page)
 	}
@@ -506,6 +508,7 @@ func (b *Browser) registerPage(page playwright.Page, activate bool, expectedGene
 func (b *Browser) removePage(page playwright.Page) {
 	b.mu.Lock()
 	delete(b.evidence.shapedPages, page)
+	delete(b.evidence.cdpPages, page)
 	for i, existing := range b.pages {
 		if existing != page {
 			continue

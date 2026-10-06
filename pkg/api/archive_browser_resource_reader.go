@@ -366,7 +366,7 @@ func browserResourceTransactionRows(raw []byte, ordinal int64, testID string) ([
 			var version struct {
 				Version int `json:"version"`
 			}
-			if json.Unmarshal(raw, &version) == nil && version.Version > 0 && version.Version != protocol.BrowserEvidenceVersion {
+			if json.Unmarshal(raw, &version) == nil && version.Version > 0 && !protocol.SupportedBrowserResourceEvidenceVersion(version.Version) {
 				item.EvidenceState = "unsupported_version"
 			} else if evidence, err := protocol.DecodeBrowserResourceEvidence(raw); err == nil {
 				item.BrowserEvidence = evidence

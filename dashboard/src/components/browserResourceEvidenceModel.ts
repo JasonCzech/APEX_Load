@@ -11,8 +11,10 @@ const byteFields = ['request_headers', 'request_body', 'response_headers', 'resp
 const phases = new Set(['dns', 'connect', 'tls', 'request_wait', 'response'])
 const reasons = new Set(['', 'not_exposed', 'unsupported', 'no_observation', 'no_interaction', 'hidden_before_paint', 'not_loaded',
   'frame_unavailable', 'document_unavailable', 'identity_capacity', 'source_censored', 'source_incomplete', 'measurement_capacity',
-  'malformed', 'cohort_unavailable', 'shaping_unavailable', 'new_user_policy_unavailable', 'scope_unqualified',
-  'cdp_unobserved', 'ambiguous_cdp_join', 'document_not_observed', 'ambiguous_document_commit', 'resource_timing_unobserved', 'ambiguous_resource_timing'])
+  'malformed', 'cohort_unavailable', 'shaping_unavailable', 'new_user_policy_unavailable', 'scope_unqualified'])
+/** Version 3 identity reasons of resource-to-document association. */
+const associationReasons = new Set([...reasons, 'cdp_unobserved', 'ambiguous_cdp_join', 'document_not_observed', 'ambiguous_document_commit',
+  'resource_timing_unobserved', 'ambiguous_resource_timing', 'request_start_unavailable'])
 const associations = new Set(['cdp_loader_join', 'page_resource_timing_join'])
 const initiators = new Set(['parser', 'script', 'preload', 'preflight', 'signed_exchange', 'other'])
 function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) }
@@ -54,12 +56,15 @@ export function browserResourceEvidenceView(value: unknown): BrowserResourceEvid
   const invalid = { evidence: null, issue: 'Retained request evidence is malformed or unsupported.' }
   if (value === undefined || value === null) return { evidence: null, issue: 'No typed native request evidence was retained.' }
   try {
-    if (!object(value) || !keys(value, fields, required) || value.version !== 2 || typeof value.source_generation !== 'string'
+    if (!object(value) || !keys(value, fields, required) || value.version !== 2 && value.version !== 3 || typeof value.source_generation !== 'string'
       || !/^[a-f0-9]{32}$/.test(value.source_generation) || !id(value.request_id, value.source_generation, false)
       || !number(value.redirect_hop, 64) || !Number.isSafeInteger(value.redirect_hop) || !utc(value.observed_at)
       || value.timing_source !== 'playwright' || typeof value.state !== 'string' || !['finished', 'failed', 'censored'].includes(value.state) || !origin(value.origin)) return invalid
     for (const key of ids) if (!id(value[key], value.source_generation)) return invalid
-    for (const key of ['identity_unavailable_reason', 'service_worker_unavailable_reason', 'cache_unavailable_reason', 'initiator_unavailable_reason']) if (!reason(value[key])) return invalid
+    for (const key of ['service_worker_unavailable_reason', 'cache_unavailable_reason', 'initiator_unavailable_reason']) if (!reason(value[key])) return invalid
+    // Version 2 predates association: none of its fields or reasons.
+    if (value.version === 2 && (value.document_association !== undefined || value.initiator_type !== undefined || value.initiator_origin !== undefined || !reason(value.identity_unavailable_reason))) return invalid
+    if (value.version === 3 && value.identity_unavailable_reason !== undefined && (typeof value.identity_unavailable_reason !== 'string' || !associationReasons.has(value.identity_unavailable_reason))) return invalid
     for (const key of ['service_worker', 'cache']) if (value[key] !== undefined && value[key] !== null && typeof value[key] !== 'boolean') return invalid
     if (!optionalNumber(value.epoch_start_ms, 253402300799999) || !optionalNumber(value.document_offset_ms, 86400000, true)) return invalid
     if (value.document_association !== undefined && (typeof value.document_association !== 'string' || !associations.has(value.document_association) || !value.document_id)) return invalid
