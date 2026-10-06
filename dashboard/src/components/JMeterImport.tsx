@@ -214,8 +214,8 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
     if (sourceMutationLockedRef.current) return false
     if (!nextFile) return false
     const lowerName = nextFile.name.toLowerCase()
-    if (!lowerName.endsWith('.jmx') && !lowerName.endsWith('.zip')) {
-      setError('Please upload a JMeter .jmx test plan or a .zip archive containing JMX plans.')
+    if (!lowerName.endsWith('.jmx') && !lowerName.endsWith('.zip') && !lowerName.endsWith('.usz')) {
+      setError('Please upload a JMeter .jmx test plan, a .zip archive containing JMX plans, or a LoadRunner Enterprise JMeter .usz.')
       return false
     }
     invalidateReview()
@@ -237,7 +237,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
     beginIngest()
     void filesFromDroppedPaths(paths).then(files => {
       setDragOver(false)
-      const picked = files.find(next => /\.(?:jmx|zip)$/i.test(next.name)) || files[0]
+      const picked = files.find(next => /\.(?:jmx|zip|usz)$/i.test(next.name)) || files[0]
       if (acceptFile(picked)) succeedIngest(`Added ${picked.name}`)
       else failIngest()
     }).catch(error => {
@@ -252,8 +252,8 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   const handleBrowse = useCallback(() => {
     if (sourceMutationLockedRef.current) return
     if (nativeDialogs) {
-      void pickFilesViaBridge('.jmx,.xml,.zip').then(files => {
-        acceptFile(files.find(next => /\.(?:jmx|zip)$/i.test(next.name)) || files[0])
+      void pickFilesViaBridge('.jmx,.xml,.zip,.usz').then(files => {
+        acceptFile(files.find(next => /\.(?:jmx|zip|usz)$/i.test(next.name)) || files[0])
       }).catch(error => {
         setError(nativeFileReadErrorMessage(error))
         if (shouldUseBrowserFileFallback(error)) {
@@ -566,7 +566,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
         <div>
           <h2>Import JMeter Test Plan</h2>
           <p className="lr-subtitle">
-            Upload a <code>.jmx</code> plan or a ZIP containing multiple JMX plans and convert their thread groups into APEX Load reusable scripts. The importer preserves variables, CSV data sources, headers, timers, and review notes where possible.
+            Upload a <code>.jmx</code> plan, a ZIP containing multiple JMX plans, or a LoadRunner Enterprise JMeter <code>.usz</code> and convert their thread groups into APEX Load reusable scripts. The importer preserves variables, CSV data sources, headers, timers, and review notes where possible.
           </p>
         </div>
         {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
@@ -599,7 +599,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
         }}
       >
         <DropIngestOverlay phase={ingestPhase} label={ingestLabel} />
-        <input ref={fileRef} type="file" accept=".jmx,.xml,.zip,application/zip" disabled={sourceMutationLocked} onClick={event => event.stopPropagation()} onChange={event => { acceptFile(event.target.files?.[0]); event.target.value = '' }} hidden />
+        <input ref={fileRef} type="file" accept=".jmx,.xml,.zip,.usz,application/zip" disabled={sourceMutationLocked} onClick={event => event.stopPropagation()} onChange={event => { acceptFile(event.target.files?.[0]); event.target.value = '' }} hidden />
         {file ? (
           <div className="lr-file-info">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -612,7 +612,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
         ) : (
           <div className="lr-drop-content">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <p>Drop a JMeter <code>.jmx</code> file or multi-plan <code>.zip</code> archive here</p>
+            <p>Drop a JMeter <code>.jmx</code> file, a multi-plan <code>.zip</code> archive, or a JMeter <code>.usz</code> here</p>
             <span className="lr-drop-hint">or click to browse</span>
           </div>
         )}

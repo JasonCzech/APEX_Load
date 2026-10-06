@@ -163,14 +163,19 @@ var javaLRRunnerOverrides = map[string]javaLRRunnerOverride{
 // operator-provisioned Actions.class files were compiled against OpenText's
 // lrapi jar and link by exact JVM descriptor.
 var javaLRRunnerABIDescriptors = map[string]string{
+	"lr_debug_message":               "(ILjava/lang/String;)I",
 	"lr_end_sub_trans":               "(Ljava/lang/String;I)I",
 	"lr_end_sub_transaction":         "(Ljava/lang/String;I)I",
 	"lr_end_transaction":             "(Ljava/lang/String;I)I",
+	"lr_error_message":               "(Ljava/lang/String;)I",
 	"lr_eval_string":                 "(Ljava/lang/String;)Ljava/lang/String;",
 	"lr_get_transaction_duration":    "(Ljava/lang/String;)D",
 	"lr_get_transaction_status":      "(Ljava/lang/String;)I",
 	"lr_get_transaction_think_time":  "(Ljava/lang/String;)D",
 	"lr_get_transaction_wasted_time": "(Ljava/lang/String;)D",
+	"lr_log_message":                 "(Ljava/lang/String;)I",
+	"lr_message":                     "(Ljava/lang/String;)I",
+	"lr_output_message":              "(Ljava/lang/String;)I",
 	"lr_save_int":                    "(ILjava/lang/String;)I",
 	"lr_save_string":                 "(Ljava/lang/String;Ljava/lang/String;)I",
 	"lr_set_transaction":             "(Ljava/lang/String;DI)I",
@@ -178,6 +183,7 @@ var javaLRRunnerABIDescriptors = map[string]string{
 	"lr_start_sub_transaction":       "(Ljava/lang/String;Ljava/lang/String;)I",
 	"lr_start_transaction":           "(Ljava/lang/String;)I",
 	"lr_think_time":                  "(D)V",
+	"lr_vuser_status_message":        "(Ljava/lang/String;)I",
 	"lr_wasted_time":                 "(I)I",
 }
 

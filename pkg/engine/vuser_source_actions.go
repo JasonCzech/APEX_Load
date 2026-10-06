@@ -235,6 +235,10 @@ func (vu *VUser) handleSourceMessageAction(ctx context.Context, action dsl.Actio
 		"function", sourceActionFunction(action),
 		"message", message,
 	}
+	if stream, _ := actionParamString(action.Params, "output_stream"); stream != "" {
+		// An imported fprintf line names the file stream it was written to.
+		attrs = append(attrs, "output_stream", stream)
+	}
 	if status, _ := actionParamBool(action.Params, "status_message"); status {
 		vu.ensureVariables()
 		vu.Variables["vuser_status"] = message
@@ -1021,6 +1025,9 @@ func (vu *VUser) handleSourceStateAction(ctx context.Context, action dsl.Action)
 
 func (vu *VUser) handleSourceParameterAction(function string, action dsl.Action) {
 	args := sourceActionArgs(action)
+	// Values keep their exact text (a saved " " or a "%s " format); names and
+	// numbers use the trimmed args.
+	values := sourceActionValueArgs(action)
 	vu.ensureVariables()
 	switch function {
 	case "lr_save_string", "lr_save_int":
@@ -1030,20 +1037,20 @@ func (vu *VUser) handleSourceParameterAction(function string, action dsl.Action)
 				// entry again would treat template-looking response bytes as source.
 				vu.setResolvedSourceVariable(args[1], vu.sourceParameterArrayValue(array))
 			} else {
-				vu.setSourceVariable(args[1], args[0])
+				vu.setSourceVariable(args[1], values[0])
 			}
 		}
 	case "lr_save_var":
 		if len(args) >= 4 {
-			vu.setSourceVariable(args[3], args[0])
+			vu.setResolvedSourceVariable(args[3], sourceSaveVarValue(vu.interpolate(values[0]), action.Params["source_offset"], args[1]))
 		}
 	case "lr_param_sprintf":
 		if len(args) >= 2 {
-			values := make([]any, 0, len(args)-2)
-			for _, arg := range args[2:] {
-				values = append(values, arg)
+			formatted := make([]any, 0, len(values)-2)
+			for _, arg := range values[2:] {
+				formatted = append(formatted, arg)
 			}
-			vu.setSourceVariable(args[0], renderPrintfLikeMessage(args[1], values))
+			vu.setSourceVariable(args[0], renderPrintfLikeMessage(values[1], formatted))
 		}
 	case "lr_param_increment":
 		if len(args) >= 1 {
@@ -1224,6 +1231,39 @@ func (vu *VUser) ensureVariables() {
 	}
 }
 
+// sourceSaveVarValue applies lr_save_var's byte semantics to a resolved value:
+// the source pointer may be offset into the string (lr_eval_string("{p}") + 3,
+// as a translated strncpy produces), and at most length bytes are saved.
+func sourceSaveVarValue(value string, offset any, length string) string {
+	if start, ok := sourceIntegerParam(offset); ok && start > 0 {
+		if start >= len(value) {
+			return ""
+		}
+		value = value[start:]
+	}
+	if limit, err := strconv.Atoi(strings.TrimSpace(length)); err == nil && limit >= 0 && limit < len(value) {
+		value = value[:limit]
+	}
+	return value
+}
+
+func sourceIntegerParam(value any) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		if typed == math.Trunc(typed) {
+			return int(typed), true
+		}
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		return parsed, err == nil
+	}
+	return 0, false
+}
+
 func (vu *VUser) setSourceVariable(name string, value string) {
 	if strings.TrimSpace(name) == "" {
 		return
@@ -1324,6 +1364,19 @@ func sourceActionArgs(action dsl.Action) []string {
 	args := make([]string, 0, len(values))
 	for _, value := range values {
 		args = append(args, strings.TrimSpace(fmt.Sprint(value)))
+	}
+	return args
+}
+
+// sourceActionValueArgs returns the action's arguments without trimming.
+func sourceActionValueArgs(action dsl.Action) []string {
+	if action.Params == nil {
+		return nil
+	}
+	values := anySlice(action.Params["args"])
+	args := make([]string, 0, len(values))
+	for _, value := range values {
+		args = append(args, fmt.Sprint(value))
 	}
 	return args
 }

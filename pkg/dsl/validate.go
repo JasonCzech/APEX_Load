@@ -1760,8 +1760,11 @@ func validateParameterIssues(script *Script) []string {
 				issues = append(issues, fmt.Sprintf("%s %q: same_line_as cannot reference itself", label, name))
 			} else if paramType != "file" && paramType != "list" {
 				issues = append(issues, fmt.Sprintf("%s %q: same_line_as requires a file or list parameter", label, name))
-			} else if strings.TrimSpace(param.DataSource) == "" || strings.TrimSpace(reference.DataSource) == "" || !strings.EqualFold(strings.TrimSpace(param.DataSource), strings.TrimSpace(reference.DataSource)) {
-				issues = append(issues, fmt.Sprintf("%s %q: same_line_as must reference a parameter in the same data_source", label, name))
+			} else if referenceType := strings.ToLower(strings.TrimSpace(reference.Type)); referenceType != "file" && referenceType != "list" {
+				// same_line_as uses the row number the referenced parameter
+				// picked, so it must reference a row-based parameter. Like
+				// LoadRunner, the row number may index another data file.
+				issues = append(issues, fmt.Sprintf("%s %q: same_line_as must reference a file or list parameter", label, name))
 			}
 		}
 
@@ -2032,7 +2035,7 @@ func validateWebRuntimeIssues(script *Script) []string {
 	}
 	if err := httpprotocol.ValidateReplayCompatibilityConfig(map[string]any{
 		"receive_buffer_bytes": httpCfg.ReceiveBufferBytes, "max_meta_refresh": httpCfg.MaxMetaRefresh, "content_check_error_limit": httpCfg.ContentCheckErrorLimit,
-		"ip_version": httpCfg.IPVersion, "html_parse_mode": httpCfg.HTMLParseMode,
+		"ip_version": httpCfg.IPVersion, "html_parse_mode": httpCfg.HTMLParseMode, "aura_recorded_failures": httpCfg.AuraRecordedFailures,
 		"cache_max_unused_iterations": httpCfg.CacheMaxUnusedIterations,
 		"cache_excluded_mime_types":   httpCfg.CacheExcludedMIMETypes,
 		"html_excluded_mime_types":    httpCfg.HTMLExcludedMIMETypes,

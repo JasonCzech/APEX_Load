@@ -191,7 +191,10 @@ func TestJMeterDynamicCounterWithPunctuationCreatesMatchingParameter(t *testing.
 	t.Fatalf("parameters = %#v, want matching %s counter", script.Parameters, name)
 }
 
-func TestJMeterCrossThreadCounterIsDurablyReviewGated(t *testing.T) {
+// __counter(FALSE, ...) is one sequence shared by every thread. It maps to a
+// unique-number counter, so values stay distinct across VUsers and the request
+// runs.
+func TestJMeterCrossThreadCounterMapsToUniqueNumberBlocks(t *testing.T) {
 	const plan = `<?xml version="1.0"?>
 <jmeterTestPlan><hashTree><TestPlan testname="Plan"/><hashTree><ThreadGroup testname="Users"/><hashTree>
   <HTTPSamplerProxy testname="Request"><stringProp name="HTTPSampler.protocol">https</stringProp><stringProp name="HTTPSampler.domain">example.test</stringProp><stringProp name="HTTPSampler.path">/${__counter(FALSE,shared)}</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/>
@@ -201,33 +204,37 @@ func TestJMeterCrossThreadCounterIsDurablyReviewGated(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := result.Scripts[0]
-	if !strings.Contains(script.Actions[0].Target, "{{param.jmeter_global_counter_shared}}") {
-		t.Fatalf("target = %q, want preserved global-counter identity", script.Actions[0].Target)
+	if len(script.Actions) != 1 || !strings.Contains(script.Actions[0].Target, "{{param.jmeter_global_counter_shared}}") {
+		t.Fatalf("actions = %#v, want the request alone with the global-counter identity", script.Actions)
 	}
-	if len(script.Actions) != 2 || script.Actions[1].Type != "review_required" || script.Actions[1].Metadata["execution_blocker"] != "import_review_required" {
-		t.Fatalf("actions = %#v, want durable global-counter review gate", script.Actions)
+	if script.Actions[0].Metadata["execution_blocker"] != nil {
+		t.Fatalf("request is still gated: %#v", script.Actions[0].Metadata)
 	}
 	parity, _ := script.Metadata.Import.Preserved["runtime_parity"].(map[string]string)
-	if parity["dynamicFunctions.globalCounter"] != "review_required" {
+	if parity["dynamicFunctions.globalCounter"] != "partial" {
 		t.Fatalf("runtime parity = %#v", parity)
 	}
-	parameterFound := false
-	for _, parameter := range script.Parameters {
-		if parameter.Name == "jmeter_global_counter_shared" && parameter.Type == "counter" {
-			parameterFound = true
+	var counter *dsl.Parameter
+	for index := range script.Parameters {
+		if script.Parameters[index].Name == "jmeter_global_counter_shared" {
+			counter = &script.Parameters[index]
 		}
 	}
-	if !parameterFound {
-		t.Fatalf("parameters = %#v, want preserved global counter", script.Parameters)
+	if counter == nil || counter.Type != "counter" || counter.Selection != "unique" || counter.BlockSize != defaultJMeterSharedCounterBlock ||
+		counter.Start != 1 || counter.Step != 1 || counter.Update != "each_occurrence" {
+		t.Fatalf("parameters = %#v, want a unique-number global counter", script.Parameters)
 	}
-	blockerFound := false
-	for _, item := range result.Unsupported {
+	noted := false
+	for _, item := range append(append(diag.Diagnostics(nil), result.Diagnostics...), result.Unsupported...) {
 		if item.Severity == diag.Blocker && strings.Contains(item.Detail, "cross-thread") {
-			blockerFound = true
+			t.Fatalf("cross-thread counter still blocks: %+v", item)
+		}
+		if strings.Contains(item.Detail, "became a unique-number counter") && strings.Contains(item.Detail, "1000000 values") {
+			noted = true
 		}
 	}
-	if !blockerFound {
-		t.Fatalf("diagnostics = %#v, want cross-thread counter blocker", result.Unsupported)
+	if !noted {
+		t.Fatalf("diagnostics lack the unique-block note: %+v", result.Diagnostics)
 	}
 }
 

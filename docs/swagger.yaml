@@ -2026,6 +2026,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -2351,6 +2353,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -2522,6 +2526,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -2869,6 +2877,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -3257,6 +3267,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -3603,6 +3615,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -11049,6 +11063,8 @@ paths:
                           type: string
                         accept_language:
                           type: string
+                        aura_recorded_failures:
+                          type: string
                         auth:
                           type: object
                           properties:
@@ -11369,6 +11385,8 @@ paths:
                     think_time:
                       type: object
                       properties:
+                        force:
+                          type: boolean
                         ignore:
                           type: boolean
                         limit_ms:
@@ -12109,6 +12127,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -12361,6 +12381,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -12782,6 +12804,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -13100,6 +13124,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -13271,6 +13297,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -13609,6 +13639,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -13982,6 +14014,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -14318,6 +14352,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -14830,6 +14866,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -15148,6 +15186,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -15319,6 +15359,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -15657,6 +15701,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -16030,6 +16076,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -16366,6 +16414,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -16677,6 +16727,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -17002,6 +17054,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -17173,6 +17227,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -17520,6 +17578,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -17908,6 +17968,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -18254,6 +18316,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -42437,6 +42501,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -42658,6 +42724,10 @@ paths:
                           max_processes:
                             type: integer
                             format: int64
+                          param_left_brace:
+                            type: string
+                          param_right_brace:
+                            type: string
                           runner_command:
                             type: string
                           skip_parameter_evaluation:
@@ -43134,6 +43204,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -71126,6 +71198,8 @@ paths:
                           type: string
                         accept_language:
                           type: string
+                        aura_recorded_failures:
+                          type: string
                         auth:
                           type: object
                           additionalProperties: true
@@ -71378,6 +71452,8 @@ paths:
                     think_time:
                       type: object
                       properties:
+                        force:
+                          type: boolean
                         ignore:
                           type: boolean
                         limit_ms:
@@ -72133,6 +72209,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -72385,6 +72463,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -76740,6 +76820,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -76996,6 +77078,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -81550,6 +81634,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -81806,6 +81892,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -86361,6 +86449,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -86617,6 +86707,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -91184,6 +91276,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -91440,6 +91534,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -96007,6 +96103,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -96263,6 +96361,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -100830,6 +100930,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -101086,6 +101188,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -105653,6 +105757,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -105909,6 +106015,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -117755,6 +117863,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -118005,6 +118115,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -118831,6 +118943,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -119079,6 +119193,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -119437,6 +119553,8 @@ paths:
                           type: string
                         accept_language:
                           type: string
+                        aura_recorded_failures:
+                          type: string
                         auth:
                           type: object
                           properties:
@@ -119757,6 +119875,8 @@ paths:
                     think_time:
                       type: object
                       properties:
+                        force:
+                          type: boolean
                         ignore:
                           type: boolean
                         limit_ms:
@@ -120953,6 +121073,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -121288,6 +121410,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -121930,6 +122054,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -122180,6 +122306,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -123506,6 +123634,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -123841,6 +123971,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -124483,6 +124615,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -124733,6 +124867,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -125756,6 +125892,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -126004,6 +126142,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -126362,6 +126502,8 @@ paths:
                           type: string
                         accept_language:
                           type: string
+                        aura_recorded_failures:
+                          type: string
                         auth:
                           type: object
                           properties:
@@ -126682,6 +126824,8 @@ paths:
                     think_time:
                       type: object
                       properties:
+                        force:
+                          type: boolean
                         ignore:
                           type: boolean
                         limit_ms:
@@ -127878,6 +128022,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -128213,6 +128359,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -128855,6 +129003,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -129105,6 +129255,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -130404,6 +130556,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -130739,6 +130893,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -131381,6 +131537,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -131631,6 +131789,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -133641,6 +133801,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -133976,6 +134138,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -134618,6 +134782,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -134868,6 +135034,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -136215,6 +136383,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -136471,6 +136641,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -139689,6 +139861,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -139941,6 +140115,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -141532,6 +141708,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -141788,6 +141966,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -143584,6 +143764,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -143840,6 +144022,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -145238,6 +145422,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -145490,6 +145676,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -147081,6 +147269,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -147337,6 +147527,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -148576,6 +148768,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -148824,6 +149018,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -149182,6 +149378,8 @@ paths:
                           type: string
                         accept_language:
                           type: string
+                        aura_recorded_failures:
+                          type: string
                         auth:
                           type: object
                           properties:
@@ -149502,6 +149700,8 @@ paths:
                     think_time:
                       type: object
                       properties:
+                        force:
+                          type: boolean
                         ignore:
                           type: boolean
                         limit_ms:
@@ -161017,6 +161217,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -161218,6 +161420,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -161609,6 +161813,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               properties:
@@ -161813,6 +162019,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -162235,6 +162445,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -162478,6 +162690,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -162679,6 +162893,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -162847,6 +163063,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -163048,6 +163266,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -163575,6 +163795,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -163900,6 +164122,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -164071,6 +164295,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -164418,6 +164646,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -164806,6 +165036,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -165152,6 +165384,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -165810,6 +166044,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -166135,6 +166371,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -166306,6 +166544,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -166653,6 +166895,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -167041,6 +167285,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -167387,6 +167633,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -167519,6 +167767,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -167720,6 +167970,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -168111,6 +168363,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               properties:
@@ -168315,6 +168569,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -168737,6 +168995,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -168980,6 +169240,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -169181,6 +169443,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -169349,6 +169613,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -169550,6 +169816,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -170075,6 +170343,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -170400,6 +170670,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -170571,6 +170843,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -170918,6 +171194,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -171306,6 +171584,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -171652,6 +171932,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -172271,6 +172553,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -172596,6 +172880,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -172767,6 +173053,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -173114,6 +173404,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -173502,6 +173794,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -173848,6 +174142,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -174332,6 +174628,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -174650,6 +174948,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -174821,6 +175121,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -175159,6 +175463,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -175532,6 +175838,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -175868,6 +176176,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -178052,6 +178362,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -178370,6 +178682,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -178541,6 +178855,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -178879,6 +179197,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -179252,6 +179572,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -179588,6 +179910,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -182360,6 +182684,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -182678,6 +183004,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -182849,6 +183177,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -183187,6 +183519,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -183560,6 +183894,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -183896,6 +184232,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -184419,6 +184757,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -184737,6 +185077,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -184908,6 +185250,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -185246,6 +185592,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -185619,6 +185967,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -185955,6 +186305,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -188086,6 +188438,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -188411,6 +188765,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -188582,6 +188938,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -188929,6 +189289,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -189317,6 +189679,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -189663,6 +190027,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -190682,6 +191048,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -190946,6 +191314,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -191267,6 +191637,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -191688,6 +192060,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -192013,6 +192387,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -192184,6 +192560,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -192531,6 +192911,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -192919,6 +193301,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -193265,6 +193649,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -193563,6 +193949,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -193888,6 +194276,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -194059,6 +194449,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -194406,6 +194800,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -194794,6 +195190,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -195140,6 +195538,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -195529,6 +195929,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -195854,6 +196256,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -196025,6 +196429,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -196372,6 +196780,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -196760,6 +197170,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -197106,6 +197518,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -197423,6 +197837,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -197741,6 +198157,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -197912,6 +198330,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -198250,6 +198672,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -198623,6 +199047,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -198959,6 +199385,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -199229,6 +199657,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -199554,6 +199984,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -199725,6 +200157,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -200072,6 +200508,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -200460,6 +200898,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -200806,6 +201246,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -202976,6 +203418,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -203301,6 +203745,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -203472,6 +203918,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -203819,6 +204269,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -204207,6 +204659,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -204553,6 +205007,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -205181,6 +205637,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -205499,6 +205957,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -205670,6 +206130,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -206008,6 +206472,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -206381,6 +206847,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -206717,6 +207185,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -208386,6 +208856,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -208704,6 +209176,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -208875,6 +209349,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -209213,6 +209691,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -209586,6 +210066,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -209922,6 +210404,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -210204,6 +210688,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -210529,6 +211015,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -210700,6 +211188,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -211047,6 +211539,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -211435,6 +211929,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -211781,6 +212277,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -212277,6 +212775,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -212602,6 +213102,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -212773,6 +213275,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -213120,6 +213626,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -213508,6 +214016,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -213854,6 +214364,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -214383,6 +214895,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -214701,6 +215215,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -214872,6 +215388,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -215210,6 +215730,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -215583,6 +216105,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -215919,6 +216443,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -217749,6 +218275,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -218067,6 +218595,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -218238,6 +218768,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -218576,6 +219110,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -218949,6 +219485,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -219285,6 +219823,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -220828,6 +221368,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -221000,6 +221542,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -221337,6 +221883,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -222246,6 +222794,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -222564,6 +223114,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -222735,6 +223287,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -223073,6 +223629,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -223446,6 +224004,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -223782,6 +224342,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -224752,6 +225314,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -224924,6 +225488,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -225261,6 +225829,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -226470,6 +227040,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -226642,6 +227214,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -226979,6 +227555,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -227886,6 +228464,8 @@ paths:
                   type: string
                 retention_days:
                   type: string
+                salvage_truncated:
+                  type: string
               additionalProperties: true
       responses:
         2XX:
@@ -227971,6 +228551,12 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: salvage_truncated
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
       tags:
         - Scripts
       x-handler: handleImportHAR
@@ -228260,6 +228846,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -228578,6 +229166,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -228749,6 +229339,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -229087,6 +229681,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -229460,6 +230056,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -229796,6 +230394,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -231212,6 +231812,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -231530,6 +232132,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -231701,6 +232305,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -232039,6 +232647,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -232412,6 +233022,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -232748,6 +233360,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -233540,6 +234154,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -233858,6 +234474,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -234029,6 +234647,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -234367,6 +234989,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -234740,6 +235364,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -235076,6 +235702,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -236946,6 +237574,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -237271,6 +237901,8 @@ paths:
                                     type: string
                                   accept_language:
                                     type: string
+                                  aura_recorded_failures:
+                                    type: string
                                   auth:
                                     type: object
                                     additionalProperties: true
@@ -237442,6 +238074,10 @@ paths:
                                   max_processes:
                                     type: integer
                                     format: int64
+                                  param_left_brace:
+                                    type: string
+                                  param_right_brace:
+                                    type: string
                                   runner_command:
                                     type: string
                                   skip_parameter_evaluation:
@@ -237789,6 +238425,8 @@ paths:
                               think_time:
                                 type: object
                                 properties:
+                                  force:
+                                    type: boolean
                                   ignore:
                                     type: boolean
                                   limit_ms:
@@ -238177,6 +238815,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -238523,6 +239163,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -238792,6 +239434,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -239117,6 +239761,8 @@ paths:
                                     type: string
                                   accept_language:
                                     type: string
+                                  aura_recorded_failures:
+                                    type: string
                                   auth:
                                     type: object
                                     additionalProperties: true
@@ -239288,6 +239934,10 @@ paths:
                                   max_processes:
                                     type: integer
                                     format: int64
+                                  param_left_brace:
+                                    type: string
+                                  param_right_brace:
+                                    type: string
                                   runner_command:
                                     type: string
                                   skip_parameter_evaluation:
@@ -239635,6 +240285,8 @@ paths:
                               think_time:
                                 type: object
                                 properties:
+                                  force:
+                                    type: boolean
                                   ignore:
                                     type: boolean
                                   limit_ms:
@@ -240023,6 +240675,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -240369,6 +241023,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -240902,6 +241558,8 @@ paths:
                                       type: string
                                     accept_language:
                                       type: string
+                                    aura_recorded_failures:
+                                      type: string
                                     auth:
                                       type: object
                                       description: 'Go type: AuthConfig'
@@ -241074,6 +241732,10 @@ paths:
                                     max_processes:
                                       type: integer
                                       format: int64
+                                    param_left_brace:
+                                      type: string
+                                    param_right_brace:
+                                      type: string
                                     runner_command:
                                       type: string
                                     skip_parameter_evaluation:
@@ -241417,6 +242079,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -242442,6 +243106,8 @@ paths:
                                       type: string
                                     accept_language:
                                       type: string
+                                    aura_recorded_failures:
+                                      type: string
                                     auth:
                                       type: object
                                       description: 'Go type: AuthConfig'
@@ -242614,6 +243280,10 @@ paths:
                                     max_processes:
                                       type: integer
                                       format: int64
+                                    param_left_brace:
+                                      type: string
+                                    param_right_brace:
+                                      type: string
                                     runner_command:
                                       type: string
                                     skip_parameter_evaluation:
@@ -242957,6 +243627,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -244072,6 +244744,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -244397,6 +245071,8 @@ paths:
                                     type: string
                                   accept_language:
                                     type: string
+                                  aura_recorded_failures:
+                                    type: string
                                   auth:
                                     type: object
                                     additionalProperties: true
@@ -244568,6 +245244,10 @@ paths:
                                   max_processes:
                                     type: integer
                                     format: int64
+                                  param_left_brace:
+                                    type: string
+                                  param_right_brace:
+                                    type: string
                                   runner_command:
                                     type: string
                                   skip_parameter_evaluation:
@@ -244915,6 +245595,8 @@ paths:
                               think_time:
                                 type: object
                                 properties:
+                                  force:
+                                    type: boolean
                                   ignore:
                                     type: boolean
                                   limit_ms:
@@ -245303,6 +245985,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -245649,6 +246333,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -245918,6 +246604,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -246243,6 +246931,8 @@ paths:
                                     type: string
                                   accept_language:
                                     type: string
+                                  aura_recorded_failures:
+                                    type: string
                                   auth:
                                     type: object
                                     additionalProperties: true
@@ -246414,6 +247104,10 @@ paths:
                                   max_processes:
                                     type: integer
                                     format: int64
+                                  param_left_brace:
+                                    type: string
+                                  param_right_brace:
+                                    type: string
                                   runner_command:
                                     type: string
                                   skip_parameter_evaluation:
@@ -246761,6 +247455,8 @@ paths:
                               think_time:
                                 type: object
                                 properties:
+                                  force:
+                                    type: boolean
                                   ignore:
                                     type: boolean
                                   limit_ms:
@@ -247149,6 +247845,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -247495,6 +248193,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -248028,6 +248728,8 @@ paths:
                                       type: string
                                     accept_language:
                                       type: string
+                                    aura_recorded_failures:
+                                      type: string
                                     auth:
                                       type: object
                                       description: 'Go type: AuthConfig'
@@ -248200,6 +248902,10 @@ paths:
                                     max_processes:
                                       type: integer
                                       format: int64
+                                    param_left_brace:
+                                      type: string
+                                    param_right_brace:
+                                      type: string
                                     runner_command:
                                       type: string
                                     skip_parameter_evaluation:
@@ -248543,6 +249249,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -249568,6 +250276,8 @@ paths:
                                       type: string
                                     accept_language:
                                       type: string
+                                    aura_recorded_failures:
+                                      type: string
                                     auth:
                                       type: object
                                       description: 'Go type: AuthConfig'
@@ -249740,6 +250450,10 @@ paths:
                                     max_processes:
                                       type: integer
                                       format: int64
+                                    param_left_brace:
+                                      type: string
+                                    param_right_brace:
+                                      type: string
                                     runner_command:
                                       type: string
                                     skip_parameter_evaluation:
@@ -250083,6 +250797,8 @@ paths:
                                 think_time:
                                   type: object
                                   properties:
+                                    force:
+                                      type: boolean
                                     ignore:
                                       type: boolean
                                     limit_ms:
@@ -250742,6 +251458,8 @@ paths:
                   type: string
                 retention_days:
                   type: string
+                salvage_truncated:
+                  type: string
               additionalProperties: true
       responses:
         2XX:
@@ -250827,6 +251545,12 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: salvage_truncated
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
       tags:
         - Scripts
       x-handler: handleImportSalesforce
@@ -251232,6 +251956,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -251550,6 +252276,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -251721,6 +252449,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -252059,6 +252791,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -252432,6 +253166,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -252768,6 +253504,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -253025,6 +253763,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -253350,6 +254090,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -253521,6 +254263,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -253868,6 +254614,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -254256,6 +255004,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -254602,6 +255352,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -254968,6 +255720,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -255286,6 +256040,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -255457,6 +256213,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -255795,6 +256555,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -256168,6 +256930,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -256504,6 +257268,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -256944,6 +257710,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -257116,6 +257884,10 @@ paths:
                               max_processes:
                                 type: integer
                                 format: int64
+                              param_left_brace:
+                                type: string
+                              param_right_brace:
+                                type: string
                               runner_command:
                                 type: string
                               skip_parameter_evaluation:
@@ -257453,6 +258225,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -258296,6 +259070,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -258614,6 +259390,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -258785,6 +259563,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -259123,6 +259905,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -259496,6 +260280,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -259832,6 +260618,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -260337,6 +261125,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -260655,6 +261445,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -260826,6 +261618,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -261164,6 +261960,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -261537,6 +262335,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -261873,6 +262673,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -263707,6 +264509,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -264025,6 +264829,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -264196,6 +265002,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -264534,6 +265344,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -264907,6 +265719,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -265243,6 +266057,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -265542,6 +266358,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -265860,6 +266678,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               additionalProperties: true
@@ -266031,6 +266851,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -266369,6 +267193,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -266742,6 +267568,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -267078,6 +267906,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -267211,6 +268041,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -267412,6 +268244,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -267803,6 +268637,8 @@ paths:
                               type: string
                             accept_language:
                               type: string
+                            aura_recorded_failures:
+                              type: string
                             auth:
                               type: object
                               properties:
@@ -268007,6 +268843,10 @@ paths:
                             max_processes:
                               type: integer
                               format: int64
+                            param_left_brace:
+                              type: string
+                            param_right_brace:
+                              type: string
                             runner_command:
                               type: string
                             skip_parameter_evaluation:
@@ -268429,6 +269269,8 @@ paths:
                         think_time:
                           type: object
                           properties:
+                            force:
+                              type: boolean
                             ignore:
                               type: boolean
                             limit_ms:
@@ -268672,6 +269514,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -268873,6 +269717,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -269041,6 +269887,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -269242,6 +270090,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -278525,6 +279375,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -278773,6 +279625,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -279151,6 +280005,8 @@ paths:
                           type: string
                         accept_language:
                           type: string
+                        aura_recorded_failures:
+                          type: string
                         auth:
                           type: object
                           properties:
@@ -279471,6 +280327,8 @@ paths:
                     think_time:
                       type: object
                       properties:
+                        force:
+                          type: boolean
                         ignore:
                           type: boolean
                         limit_ms:
@@ -282635,6 +283493,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -282885,6 +283745,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -290419,6 +291281,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -290754,6 +291618,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -294334,6 +295200,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -294584,6 +295452,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -302118,6 +302988,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -302453,6 +303325,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -306210,6 +307084,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -306466,6 +307342,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -308660,6 +309538,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -308916,6 +309796,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -329737,6 +330619,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -329987,6 +330871,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -337521,6 +338407,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -337856,6 +338744,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -341380,6 +342270,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -341630,6 +342522,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -349164,6 +350058,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -349499,6 +350395,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -351471,6 +352369,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -351806,6 +352706,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -352233,6 +353135,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -352568,6 +353472,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -352953,6 +353859,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -353288,6 +354196,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -353673,6 +354583,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -354008,6 +354920,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -354452,6 +355366,8 @@ paths:
                           type: string
                         accept_language:
                           type: string
+                        aura_recorded_failures:
+                          type: string
                         auth:
                           type: object
                           properties:
@@ -354768,6 +355684,8 @@ paths:
                     think_time:
                       type: object
                       properties:
+                        force:
+                          type: boolean
                         ignore:
                           type: boolean
                         limit_ms:
@@ -355168,6 +356086,8 @@ paths:
                             type: string
                           accept_language:
                             type: string
+                          aura_recorded_failures:
+                            type: string
                           auth:
                             type: object
                             properties:
@@ -355503,6 +356423,8 @@ paths:
                       think_time:
                         type: object
                         properties:
+                          force:
+                            type: boolean
                           ignore:
                             type: boolean
                           limit_ms:
@@ -356591,6 +357513,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -356847,6 +357771,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -358061,6 +358987,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 additionalProperties: true
@@ -358317,6 +359245,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -359619,6 +360549,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -359869,6 +360801,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -367487,6 +368421,8 @@ paths:
                                 type: string
                               accept_language:
                                 type: string
+                              aura_recorded_failures:
+                                type: string
                               auth:
                                 type: object
                                 description: 'Go type: AuthConfig'
@@ -367735,6 +368671,8 @@ paths:
                           think_time:
                             type: object
                             properties:
+                              force:
+                                type: boolean
                               ignore:
                                 type: boolean
                               limit_ms:
@@ -368113,6 +369051,8 @@ paths:
                           type: string
                         accept_language:
                           type: string
+                        aura_recorded_failures:
+                          type: string
                         auth:
                           type: object
                           properties:
@@ -368433,6 +369373,8 @@ paths:
                     think_time:
                       type: object
                       properties:
+                        force:
+                          type: boolean
                         ignore:
                           type: boolean
                         limit_ms:
@@ -369494,6 +370436,8 @@ paths:
                                   type: string
                                 accept_language:
                                   type: string
+                                aura_recorded_failures:
+                                  type: string
                                 auth:
                                   type: object
                                   description: 'Go type: AuthConfig'
@@ -369744,6 +370688,8 @@ paths:
                             think_time:
                               type: object
                               properties:
+                                force:
+                                  type: boolean
                                 ignore:
                                   type: boolean
                                 limit_ms:
@@ -370943,6 +371889,8 @@ paths:
                           type: string
                         accept_language:
                           type: string
+                        aura_recorded_failures:
+                          type: string
                         auth:
                           type: object
                           additionalProperties: true
@@ -371195,6 +372143,8 @@ paths:
                     think_time:
                       type: object
                       properties:
+                        force:
+                          type: boolean
                         ignore:
                           type: boolean
                         limit_ms:

@@ -30,7 +30,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_cleanup_auto_headers` | web | `executable` | Request headers | Clears all persistent auto headers. |
 | `web_cleanup_cookies` | web | `executable` | cookie_clear action | Executable positional cookie clear. |
 | `web_concurrent_end` | web | `executable` | Concurrent http_sequence boundary | Closes a validated explicit source group; unsupported spans remain execution-gated review cases. |
-| `web_concurrent_start` | web | `executable` | Concurrent http_sequence boundary | Only matched same-scope groups of 1–256 independent HTTP requests; barriers, conflicts, waits and malformed boundaries require review. |
+| `web_concurrent_start` | web | `executable` | Concurrent http_sequence boundary | Only matched same-scope groups of 1–256 independent HTTP requests; a request wrapped in its own LR_AUTO transaction records that transaction, timed by the request; barriers, conflicts, waits and malformed boundaries require review. |
 | `web_convert_date_param` | parameter | `review_only` | Import review | Date conversion is preserved for review; no APEX runtime equivalent yet. |
 | `web_convert_from_formatted` | parameter | `review_only` | Import review | Formatted-string parse is preserved for review; no APEX runtime equivalent yet. |
 | `web_convert_param` | parameter | `executable` | source_parameter action | Encoding/format conversion. |
@@ -54,7 +54,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_reg_async_attributes` | web | `review_only` | Import review | Async polling/push has no APEX runtime equivalent. |
 | `web_reg_find` | web | `executable` | Assertion / count extractor | Text= + optional SaveCount extractor; SaveCount without Fail is non-failing. |
 | `web_reg_save_param` | web | `executable` | Extractor (boundary/regex) | LB=/RB= + ORD= on the next request. |
-| `web_reg_save_param_attrib` | web | `executable` | Extractor (xpath) | Tag=+Attribute= → //tag/@attr; element predicates warned. |
+| `web_reg_save_param_attrib` | web | `executable` | Extractor (xpath) | TagName=+Extract= (or Tag=/Attribute=) → //tag/@attr; element attributes before SEARCH_FILTERS become [@name='value'] predicates. |
 | `web_reg_save_param_ex` | web | `executable` | Extractor (boundary) | Extended boundary form. |
 | `web_reg_save_param_json` | web | `executable` | Extractor (jsonpath) | QueryString=/JSONPath=. |
 | `web_reg_save_param_regexp` | web | `executable` | Extractor (regex) | RegExp= + ordinal. |
@@ -112,9 +112,9 @@ A Java Vuser script is arbitrary Java, not a closed library — so this matrix c
 
 | Disposition | Count | Meaning |
 |---|---|---|
-| `executable` | 16 | The persistent Java runner/shim has a meaningful runtime implementation for the call. |
+| `executable` | 22 | The persistent Java runner/shim has a meaningful runtime implementation for the call. |
 | `native_noop` | 0 | The call reaches the shim but is intentionally a no-op in APEX Load; the source mapping states that explicitly. |
-| `review_only` | 43 | Source and any bounded diagnostic event are preserved, but faithful LoadRunner semantics are not verified; a reachable call blocks promotion. |
+| `review_only` | 37 | Source and any bounded diagnostic event are preserved, but faithful LoadRunner semantics are not verified; a reachable call blocks promotion. |
 | `external_required` | 0 | Needs an external provider (secret manager) before replay. |
 
 Every published lr method resolves to one of the dispositions above — none falls through to a `custom_call` review stub. These are Java-runner dispositions, including explicit overrides where the shared native-conversion registry would overstate sidecar behavior. A reachable `review_only` call is a fidelity blocker, while an unused helper remains review evidence only.
@@ -125,7 +125,7 @@ Every published lr method resolves to one of the dispositions above — none fal
 | `lr.advance_param` | `lr_advance_param` | parameter | `review_only` | import review | Parameter cursor advancement is preserved for review; the native replay engine does not advance VuGen parameter tables. |
 | `lr.aws_get_secret` | `lr_aws_get_secret` | secret | `review_only` | source_external action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
 | `lr.cyberark_get_vault` | `lr_cyberark_get_vault` | secret | `review_only` | source_external action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.debug_message` | `lr_debug_message` | message | `review_only` | source_message action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.debug_message` | `lr_debug_message` | message | `executable` | source_message action | Conditional debug log message. |
 | `lr.decrypt` | `lr_decrypt` | parameter | `review_only` | import review | Machine-key-bound ciphertext; not recoverable at import. |
 | `lr.decrypt_ex` | `lr_decrypt_ex` | parameter | `review_only` | import review | Machine-key-bound ciphertext; not recoverable at import. |
 | `lr.deserialize` | `lr_deserialize` | parameter | `review_only` | import review | Java object deserialization has no DSL equivalent. |
@@ -135,7 +135,7 @@ Every published lr method resolves to one of the dispositions above — none fal
 | `lr.end_sub_transaction` | `lr_end_sub_transaction` | transaction | `executable` | source_transaction action | Closes a sub-transaction; feeds transaction markers. |
 | `lr.end_timer` | `lr_end_timer` | timer | `review_only` | source_timer action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
 | `lr.end_transaction` | `lr_end_transaction` | transaction | `executable` | source_transaction action | Closes a transaction; feeds Stats.Transactions. |
-| `lr.error_message` | `lr_error_message` | message | `review_only` | error_message action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.error_message` | `lr_error_message` | message | `executable` | error_message action | Native error-message action. |
 | `lr.eval_data` | `lr_eval_data` | parameter | `review_only` | import review | Returns byte[]; no DSL equivalent. |
 | `lr.eval_int` | `lr_eval_int` | parameter | `review_only` | import review | Java typed parameter evaluation returns a value to user code; native replay does not model that return channel. |
 | `lr.eval_string` | `lr_eval_string` | parameter | `executable` | source_parameter action | Evaluates {param} → {{var.*}}. |
@@ -155,10 +155,10 @@ Every published lr method resolves to one of the dispositions above — none fal
 | `lr.get_transaction_wasted_time` | `lr_get_transaction_wasted_time` | transaction | `executable` | source_transaction action | The combined Java runner returns tracked transaction wasted time through the verified lrapi descriptor. |
 | `lr.get_vuser_id` | `lr_get_vuser_id` | info | `review_only` | import review | Java informational getter returns a value to user code; native replay does not model that return channel. |
 | `lr.log` | `lr_log` | message | `review_only` | source_message action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.log_message` | `lr_log_message` | message | `review_only` | source_message action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.message` | `lr_message` | message | `review_only` | source_message action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.log_message` | `lr_log_message` | message | `executable` | source_message action | Log-only message. |
+| `lr.message` | `lr_message` | message | `executable` | source_message action | Output-window message. |
 | `lr.next_row` | `lr_next_row` | parameter | `review_only` | import review | Data-file row advancement is preserved for review; the native replay engine does not advance VuGen data cursors. |
-| `lr.output_message` | `lr_output_message` | message | `review_only` | source_message action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.output_message` | `lr_output_message` | message | `executable` | source_message action | Output message with location. |
 | `lr.peek_events` | `lr_peek_events` | runtime | `review_only` | native no-op | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
 | `lr.read_file` | `lr_read_file` | parameter | `review_only` | import review | Local file read; preserved for review. |
 | `lr.read_xml` | `lr_read_xml` | xml | `review_only` | import review | XML file read; preserved for review. |
@@ -178,7 +178,7 @@ Every published lr method resolves to one of the dispositions above — none fal
 | `lr.unmask` | `lr_unmask` | parameter | `review_only` | import review | Machine-key-bound masked value; not recoverable at import. |
 | `lr.user_data_point` | `lr_user_data_point` | metric | `review_only` | source_metric action | The shim records a bounded metric event in protocol evidence, but the runner does not yet publish it as an engine or telemetry metric sample. |
 | `lr.value_check` | `lr_value_check` | parameter | `review_only` | import review | Value verification has no positional DSL assertion target. |
-| `lr.vuser_status_message` | `lr_vuser_status_message` | message | `review_only` | source_message action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.vuser_status_message` | `lr_vuser_status_message` | message | `executable` | source_message action | Vuser status-area message. |
 | `lr.wasted_time` | `lr_wasted_time` | transaction | `executable` | source_transaction action | The combined Java runner records wasted time on open transactions through the verified lrapi descriptor. |
 
 ## TruClient step coverage

@@ -137,7 +137,7 @@ func TestConcurrentHTTPBuiltinRejectedSensitiveOutputClosesPublication(t *testin
 	vu := newConcurrentVU(t, server.URL)
 	sink := &concurrentCaptureSink{}
 	vu.ResultSink = sink
-	result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{})
+	result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{}, nil)
 	if err != nil || result.Success || vu.runtimeCredentialRedactionErr == nil || vu.replayFinalVariables() != nil {
 		t.Fatal("built-in rejected extraction failed to invalidate classification")
 	}
@@ -335,7 +335,7 @@ func TestConcurrentHTTPDiagnosticResultErrorClosesGroupAndSerialPublication(t *t
 					vu.Script.Config.Log = dsl.LogConfig{Level: "extended", ExtendedOptions: []string{"data_returned"}}
 					sink := &concurrentCaptureSink{}
 					vu.ResultSink = sink
-					result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{MaxRetries: 2})
+					result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{MaxRetries: 2}, nil)
 					if err != nil || result.Success || vu.runtimeCredentialRedactionErr == nil || vu.replayFinalVariables() != nil || vu.Variables["access_token"] != "" {
 						t.Fatal("discarded diagnostic extraction did not close load publication without merging it")
 					}

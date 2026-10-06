@@ -5,6 +5,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"strings"
 )
 
@@ -57,7 +58,7 @@ func applyExtraResources(fn ParsedFunction, action *dsl.Action) {
 		}
 		current[key] = convertParamReferences(arg.Value)
 	}
-	if len(resources) > 64 || active {
+	if len(resources) > httpprotocol.MaxPageResources || active {
 		invalid = true
 	}
 	if len(resources) > 0 {

@@ -1,10 +1,12 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -14,7 +16,14 @@ import (
 
 type replayOutcomePolicy struct {
 	httpWarnings, failResources, resourceTimeoutWarning, timeoutConfigured, legacyChecks, resourcesConfigured bool
+	// acceptRecordedAura accepts Aura actions that end in the same
+	// unsuccessful state as in the recording.
+	acceptRecordedAura bool
 }
+
+// AuraRecordedFailurePolicies are the config.http.aura_recorded_failures
+// values; empty means require_success.
+var AuraRecordedFailurePolicies = []string{"", "require_success", "accept_recorded"}
 
 func parseReplayOutcomePolicy(config map[string]any) replayOutcomePolicy {
 	p := replayOutcomePolicy{legacyChecks: true}
@@ -24,8 +33,46 @@ func parseReplayOutcomePolicy(config map[string]any) replayOutcomePolicy {
 	if value, ok := config["legacy_html_checks"].(bool); ok {
 		p.legacyChecks = value
 	}
+	policy, _ := config["aura_recorded_failures"].(string)
+	p.acceptRecordedAura = strings.EqualFold(strings.TrimSpace(policy), "accept_recorded")
 	return p
 }
+
+var unresolvedVariablePattern = regexp.MustCompile(`\{\{\s*var\.([A-Za-z_][A-Za-z0-9_.]{0,127})\s*\}\}`)
+
+// noteUnresolvedVariables records variables a request sends as placeholder
+// text because nothing produced them. Like LoadRunner, which sends an
+// undefined {param} literally and warns that it "is not a parameter", the
+// request still goes out; the warning names the variables (script names, never
+// values) so a missing producer is visible in run results.
+func noteUnresolvedVariables(result *protocol.Result, target string, body []byte, headers protocol.HeaderList) {
+	var names []string
+	seen := map[string]bool{}
+	collect := func(text string) {
+		if !strings.Contains(text, "{{") {
+			return
+		}
+		for _, match := range unresolvedVariablePattern.FindAllStringSubmatch(text, -1) {
+			if !seen[match[1]] && len(names) < 8 {
+				seen[match[1]] = true
+				names = append(names, match[1])
+			}
+		}
+	}
+	collect(target)
+	if bytes.Contains(body, []byte("{{")) {
+		collect(string(body))
+	}
+	for _, header := range headers {
+		collect(header.Value)
+	}
+	if len(names) == 0 {
+		return
+	}
+	addReplayWarning(result, "unresolved_variable_sent")
+	result.ProtocolEvidence["unresolved_variables"] = names
+}
+
 func addReplayWarning(result *protocol.Result, code string) {
 	if result.ProtocolEvidence == nil {
 		result.ProtocolEvidence = map[string]any{}

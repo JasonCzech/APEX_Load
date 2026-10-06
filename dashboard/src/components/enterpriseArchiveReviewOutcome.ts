@@ -29,7 +29,8 @@ export function archiveReviewOutcome(item: ReviewState, optionsIdentity: string,
   if (fidelity?.promotion_status === 'blocked' || result.summary?.migration_readiness?.blocked) return 'Blocker'
   if (scripts.some(script => {
     const preflight = (script.metadata?.import?.preserved?.replay_preflight ?? result.preflight) as ReplayPreflight | undefined
-    return preflight?.valid === false || Boolean(preflight?.missing_secrets?.length || preflight?.missing_variables?.length) || preflight?.checks?.some(check => check.status === 'fail')
+    // Missing variables block only through valid/checks: replay sends most as placeholder text.
+    return preflight?.valid === false || Boolean(preflight?.missing_secrets?.length) || preflight?.checks?.some(check => check.status === 'fail')
   })) return 'Blocker'
   const browserIndex = scripts.findIndex(script => script.protocol === 'browser')
   if (browserIndex >= 0) {

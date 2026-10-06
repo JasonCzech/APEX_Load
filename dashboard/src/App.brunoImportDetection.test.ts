@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   archiveContainsOpenCollectionMarker,
+  archiveIsJMeterProject,
   filesContainNativeBrunoSource,
   nativeImportTargetForFile,
   nativeImportTargetForFileName,
@@ -46,6 +47,21 @@ describe('Bruno source auto-detection', () => {
   it('routes VuGen USZ archives to enterprise review', async () => {
     expect(nativeImportTargetForFileName('Project.USZ')).toEqual({ launcher: 'enterprise_archive' })
     await expect(nativeImportTargetForFile(new File(['archive'], 'Project.USZ'))).resolves.toEqual({ launcher: 'enterprise_archive' })
+  })
+
+  it('routes LoadRunner Enterprise JMeter USZ and plan-only ZIP archives to the JMeter importer', async () => {
+    const members = ['Plan.jmx', 'Plan.usr', 'ScriptUploadMetadata.xml', 'default.cfg', 'default.usp']
+    for (const name of ['LoadPlan.usz', 'plans.zip']) {
+      const archive = new File([storedZipFixture(members)], name, { type: 'application/zip' })
+      await expect(archiveIsJMeterProject(archive)).resolves.toBe(true)
+      await expect(nativeImportTargetForFile(archive)).resolves.toEqual({ launcher: 'jmeter' })
+    }
+  })
+
+  it('keeps VuGen archives that carry a JMX beside their sources on the enterprise archive path', async () => {
+    const archive = new File([storedZipFixture(['Plan.jmx', 'Action.c', 'globals.h', 'Project.usr'])], 'Project.usz', { type: 'application/zip' })
+    await expect(archiveIsJMeterProject(archive)).resolves.toBe(false)
+    await expect(nativeImportTargetForFile(archive)).resolves.toEqual({ launcher: 'enterprise_archive' })
   })
 
   it('keeps unrelated generic ZIP archives on the enterprise archive path', async () => {

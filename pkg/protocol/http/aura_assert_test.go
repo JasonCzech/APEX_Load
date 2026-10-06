@@ -24,8 +24,13 @@ func TestAuraAssertionDefinitionAndInputBudget(t *testing.T) {
 	if !assertionNeedsResponseBody(valid) {
 		t.Fatal("Aura assertion must require captured response bytes")
 	}
+	withBaseline := protocol.Assertion{Type: valid.Type, Expected: aura.Baseline{Recorded: []aura.RecordedOutcome{{Ordinal: 1, State: aura.Error}}}}
+	if err := ValidateAssertionDefinition(withBaseline); err != nil {
+		t.Fatalf("recorded baseline rejected: %v", err)
+	}
 	for _, invalid := range []protocol.Assertion{
 		{Type: valid.Type, Value: "captured-id"}, {Type: valid.Type, Expected: "SUCCESS"},
+		{Type: valid.Type, Expected: aura.Baseline{Recorded: []aura.RecordedOutcome{{Ordinal: 1, State: aura.Success}}}},
 		{Type: valid.Type, Min: 1}, {Type: valid.Type, Max: 1}, {Type: valid.Type, LegacyHTMLCheck: true},
 	} {
 		if err := ValidateAssertionDefinition(invalid); err == nil {
@@ -134,5 +139,38 @@ func TestHTTPAuraInvalidAssertionIsRejectedBeforeTraffic(t *testing.T) {
 	result, err := h.Execute(context.Background(), &protocol.Action{Type: "POST", Target: "/aura", Assertions: []protocol.Assertion{{Type: "aura_actions_success", Expected: "captured-secret"}}})
 	if err != nil || result.Success || calls.Load() != 0 || strings.Contains(result.ErrorMessage, "captured-secret") {
 		t.Fatalf("definition admission: calls=%d result=%+v err=%v", calls.Load(), result, err)
+	}
+}
+
+// The script policy decides whether an action that failed in the recording may
+// fail the same way at replay; either way the result says it failed before.
+func TestAuraAssertionRecordedBaselinePolicy(t *testing.T) {
+	request := []byte(`{"actions":[{"id":"1;a","descriptor":"apex://Synthetic/ACTION$one"},{"id":"2;a","descriptor":"apex://Synthetic/ACTION$two"}]}`)
+	response := []byte(`{"actions":[{"id":"1;a","state":"SUCCESS"},{"id":"2;a","state":"ERROR"}]}`)
+	assertion := protocol.Assertion{Type: "aura_actions_success", Expected: aura.Baseline{Recorded: []aura.RecordedOutcome{{Ordinal: 2, State: aura.Error}}}}
+
+	required := &protocol.Result{}
+	err := evaluateAuraAssertion(assertion, false, required, request, response)
+	if err == nil || !strings.Contains(err.Error(), "also failed in the recording") {
+		t.Fatalf("require success error = %v", err)
+	}
+
+	accepted := &protocol.Result{}
+	if err := evaluateAuraAssertion(assertion, true, accepted, request, response); err != nil {
+		t.Fatalf("accept recorded error = %v", err)
+	}
+	if len(accepted.WarningCodes) != 1 || accepted.WarningCodes[0] != "aura_recorded_failure_accepted" {
+		t.Fatalf("warning codes = %v", accepted.WarningCodes)
+	}
+	if report, ok := accepted.ProtocolEvidence["aura"].(aura.Report); !ok || report.AcceptedRecordedFailures != 1 {
+		t.Fatalf("evidence = %#v", accepted.ProtocolEvidence["aura"])
+	}
+
+	policy := parseReplayOutcomePolicy(map[string]any{"aura_recorded_failures": "accept_recorded"})
+	if !policy.acceptRecordedAura || parseReplayOutcomePolicy(map[string]any{}).acceptRecordedAura {
+		t.Fatal("aura_recorded_failures policy not parsed")
+	}
+	if err := ValidateReplayCompatibilityConfig(map[string]any{"aura_recorded_failures": "ignore"}); err == nil {
+		t.Fatal("unknown aura_recorded_failures value accepted")
 	}
 }

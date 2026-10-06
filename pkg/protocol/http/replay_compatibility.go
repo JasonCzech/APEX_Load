@@ -32,6 +32,7 @@ func ValidateReplayCompatibilityConfig(config map[string]any) error {
 	}{
 		{"ip_version", []string{"", "auto", "ipv4", "ipv6"}},
 		{"html_parse_mode", []string{"", "html", "text", "any"}},
+		{"aura_recorded_failures", AuraRecordedFailurePolicies},
 	} {
 		raw := config[field.name]
 		if raw == nil {

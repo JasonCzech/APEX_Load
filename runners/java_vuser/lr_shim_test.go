@@ -385,15 +385,20 @@ public final class lr {
   public static final int FAIL = 1;
   public static final int AUTO = 2;
   public static final int EXIT_ITERATION_AND_CONTINUE = 2;
+  public static int debug_message(int level, String message) { return 0; }
   public static int end_sub_trans(String name, int status) { return 0; }
   public static int end_sub_transaction(String name, int status) { return 0; }
   public static int end_transaction(String name, int status) { return 0; }
+  public static int error_message(String message) { return 0; }
   public static void exit(int continuation, int status) {}
   public static String eval_string(String value) { return value; }
   public static double get_transaction_duration(String name) { return 0; }
   public static int get_transaction_status(String name) { return 0; }
   public static double get_transaction_think_time(String name) { return 0; }
   public static double get_transaction_wasted_time(String name) { return 0; }
+  public static int log_message(String message) { return 0; }
+  public static int message(String message) { return 0; }
+  public static int output_message(String message) { return 0; }
   public static int save_int(int value, String name) { return 0; }
   public static int save_string(String value, String name) { return 0; }
   public static int set_transaction(String name, double duration, int status) { return 0; }
@@ -401,6 +406,7 @@ public final class lr {
   public static int start_sub_transaction(String name, String parent) { return 0; }
   public static int start_transaction(String name) { return 0; }
   public static void think_time(double seconds) {}
+  public static int vuser_status_message(String message) { return 0; }
   public static int wasted_time(int millis) { return 0; }
 }`
 	stubPath := filepath.Join(stubSourceDir, "lr.java")
@@ -431,6 +437,12 @@ public class Actions {
     if (lr.wasted_time(0) != 0) return 99;
     if (lr.end_transaction("Outer", lr.PASS) != 0) return 100;
     if (lr.set_transaction("Manual", 0.001, lr.FAIL) != 0) return 101;
+    if (lr.debug_message(16, "debug") != 0) return 102;
+    if (lr.log_message("log") != 0) return 103;
+    if (lr.message("message") != 0) return 104;
+    if (lr.output_message("output") != 0) return 105;
+    if (lr.vuser_status_message("status") != 0) return 106;
+    if (lr.error_message("error") < 0) return 107;
     return lr.PASS;
   }
 }`
@@ -1333,3 +1345,53 @@ public class Actions {
   }
 }
 `
+
+// Imported .prm parameters arrive under canonical lowercase names while the
+// Java source keeps the recorded spelling, and a script may use custom
+// parameter delimiters (.usr ParamLeftBrace/ParamRightBrace).
+func TestLREvalStringResolvesCanonicalNamesAndCustomBraces(t *testing.T) {
+	source := `import lrapi.lr;
+
+public class Actions {
+  public int action() {
+    System.out.println("url:" + lr.eval_string("<dbUrl>"));
+    System.out.println("mixed:" + lr.eval_string("{connectionFactoryJNDI}|<Missing>|<dbUrl"));
+    System.out.println("xml:" + lr.eval_string("<root><ban></ban></root>"));
+    return lr.PASS;
+  }
+}`
+	braced := `{"class_name":"Actions","method":"full_lifecycle","params":{"lr_parameters":{"dburl":"jdbc:test","ban":"<dburl>","connectionfactoryjndi":"cf","__apexload_param_left_brace":"<","__apexload_param_right_brace":">"}}}` + "\n"
+	stdout, stderr, _, err := runHarnessFixtureWithInputTimed(t, source, braced)
+	if err != nil {
+		t.Fatalf("Harness failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+	for _, want := range []string{
+		"url:jdbc:test",
+		// With <> delimiters, {name} is literal text and an undefined <Missing> stays as written.
+		"mixed:{connectionFactoryJNDI}|<Missing>|<dbUrl",
+		// A substituted value is not rescanned, and a closing tag names no parameter.
+		"xml:<root><dburl></ban></root>",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout = %s, want %q", stdout, want)
+		}
+	}
+	defaults := `{"class_name":"Actions","method":"full_lifecycle","params":{"lr_parameters":{"connectionfactoryjndi":"cf"}}}` + "\n"
+	stdout, stderr, _, err = runHarnessFixtureWithInputTimed(t, `import lrapi.lr;
+
+public class Actions {
+  public int action() {
+    System.out.println("jndi:" + lr.eval_string("{connectionFactoryJNDI}/{CONNECTIONFACTORYJNDI}/{connection-factory.jndi}"));
+    return lr.PASS;
+  }
+}`, defaults)
+	if err != nil {
+		t.Fatalf("Harness failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "jndi:cf/cf/{connection-factory.jndi}") {
+		t.Fatalf("stdout = %s, want canonical-name resolution with default braces", stdout)
+	}
+	if strings.Contains(stdout+stderr, "__apexload_param") {
+		t.Fatalf("reserved brace keys leaked as parameters: %s %s", stdout, stderr)
+	}
+}

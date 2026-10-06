@@ -669,6 +669,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -803,6 +804,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -863,6 +865,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -1003,6 +1007,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -1138,6 +1143,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -1265,6 +1271,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -3937,6 +3944,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
                 "password"?: string;
@@ -4060,6 +4068,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
               "max_ms"?: number;
@@ -4335,6 +4344,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -4423,6 +4433,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -4575,6 +4586,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -4709,6 +4721,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -4769,6 +4782,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -4909,6 +4924,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -5044,6 +5060,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -5171,6 +5188,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -5383,6 +5401,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -5517,6 +5536,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -5577,6 +5597,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -5717,6 +5739,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -5852,6 +5875,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -5979,6 +6003,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -6093,6 +6118,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -6227,6 +6253,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -6287,6 +6314,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -6427,6 +6456,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -6562,6 +6592,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -6689,6 +6720,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -10781,6 +10813,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -10915,6 +10948,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -10975,6 +11009,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -11115,6 +11151,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -11250,6 +11287,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -11377,6 +11415,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -11643,6 +11682,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -11777,6 +11817,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -11837,6 +11878,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -11977,6 +12020,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -12112,6 +12156,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -12239,6 +12284,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -12330,6 +12376,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -12464,6 +12511,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -12524,6 +12572,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -12664,6 +12714,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -12799,6 +12850,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -12926,6 +12978,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -13120,6 +13173,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -13180,6 +13234,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -13317,6 +13373,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -13666,6 +13723,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -13726,6 +13784,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -13863,6 +13923,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -14151,6 +14212,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -14285,6 +14347,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -14345,6 +14408,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -14485,6 +14550,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -14620,6 +14686,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -14747,6 +14814,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -14916,6 +14984,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -14976,6 +15045,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -15113,6 +15184,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -15695,6 +15767,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -15783,6 +15856,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -16089,6 +16163,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -16223,6 +16298,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -16283,6 +16359,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -16423,6 +16501,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -16558,6 +16637,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -16685,6 +16765,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -17707,6 +17788,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -17830,6 +17912,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -18068,6 +18151,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -18152,6 +18236,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -18642,6 +18727,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -18765,6 +18851,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -19003,6 +19090,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -19087,6 +19175,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -19452,6 +19541,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -19586,6 +19676,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -19646,6 +19737,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -19786,6 +19879,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -19921,6 +20015,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -20048,6 +20143,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -20291,6 +20387,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -20425,6 +20522,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -20485,6 +20583,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -20625,6 +20725,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -20760,6 +20861,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -20887,6 +20989,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -21094,6 +21197,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -21228,6 +21332,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -21288,6 +21393,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -21428,6 +21535,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -21563,6 +21671,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -21690,6 +21799,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -23076,6 +23186,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -23136,6 +23247,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -23273,6 +23386,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -23748,6 +23862,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -23808,6 +23923,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -23945,6 +24062,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -24669,6 +24787,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -24756,6 +24875,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -24949,6 +25070,7 @@ export interface operations {
                 }) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -25706,6 +25828,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -25840,6 +25963,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -25900,6 +26024,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -26040,6 +26166,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -26175,6 +26302,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -26302,6 +26430,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -26405,6 +26534,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -26539,6 +26669,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -26599,6 +26730,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -26739,6 +26872,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -26874,6 +27008,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -27001,6 +27136,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -30773,6 +30909,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: Record<string, unknown>;
               "cache_enabled"?: (boolean) | null;
               "cache_excluded_mime_types"?: Array<string>;
@@ -30861,6 +30998,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
               "max_ms"?: number;
@@ -31141,6 +31279,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -31229,6 +31368,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -32633,6 +32773,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -32721,6 +32862,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -33075,6 +33217,7 @@ export interface operations {
             }) | null;
             "target"?: string;
             "think_time"?: {
+              "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
               "max_ms"?: number;
@@ -33173,6 +33316,7 @@ export interface operations {
             }) | null;
             "target"?: string;
             "think_time"?: {
+              "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
               "max_ms"?: number;
@@ -33292,6 +33436,7 @@ export interface operations {
             }) | null;
             "target"?: string;
             "think_time"?: {
+              "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
               "max_ms"?: number;
@@ -33624,6 +33769,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -33708,6 +33854,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -33853,6 +34000,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
                 "password"?: string;
@@ -33976,6 +34124,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
               "max_ms"?: number;
@@ -34429,6 +34578,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -34552,6 +34702,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -34790,6 +34941,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -34874,6 +35026,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -35222,6 +35375,7 @@ export interface operations {
           "script"?: {
             "actions"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -35298,6 +35452,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -35466,6 +35621,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -35545,6 +35701,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -35723,6 +35881,7 @@ export interface operations {
                 }) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -35818,6 +35977,7 @@ export interface operations {
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -35894,6 +36054,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -35963,6 +36124,7 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -36039,6 +36201,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -36229,6 +36392,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -36363,6 +36527,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -36423,6 +36588,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -36563,6 +36730,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -36698,6 +36866,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -36825,6 +36994,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -37188,6 +37358,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -37272,6 +37443,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -37426,6 +37598,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
                 "password"?: string;
@@ -37549,6 +37722,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
               "max_ms"?: number;
@@ -38571,6 +38745,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -38655,6 +38830,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -40894,6 +41070,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -41017,6 +41194,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -43678,6 +43856,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -43766,6 +43945,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -44338,6 +44518,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -44426,6 +44607,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -44920,6 +45102,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -45008,6 +45191,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -45580,6 +45764,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -45668,6 +45853,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -47675,6 +47861,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -47759,6 +47946,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -47913,6 +48101,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
                 "password"?: string;
@@ -48036,6 +48225,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
               "max_ms"?: number;
@@ -48431,6 +48621,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -48515,6 +48706,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -49119,6 +49311,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -49253,6 +49446,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -49313,6 +49507,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -49453,6 +49649,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -49588,6 +49785,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -49715,6 +49913,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -50994,6 +51193,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -51128,6 +51328,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -51188,6 +51389,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -51328,6 +51531,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -51463,6 +51667,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -51590,6 +51795,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -57058,6 +57264,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -57146,6 +57353,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -58327,6 +58535,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -58415,6 +58624,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -59149,6 +59359,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -59237,6 +59448,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -63594,6 +63806,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -63717,6 +63930,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -63955,6 +64169,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -64039,6 +64254,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -64425,6 +64641,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -64559,6 +64776,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -64619,6 +64837,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -64759,6 +64979,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -64894,6 +65115,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -65021,6 +65243,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -67490,6 +67713,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -67574,6 +67798,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -69813,6 +70038,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -69936,6 +70162,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -70423,6 +70650,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -70546,6 +70774,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -70720,6 +70949,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -70843,6 +71073,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -71003,6 +71234,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -71126,6 +71358,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -71286,6 +71519,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -71409,6 +71643,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -71844,6 +72079,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -71932,6 +72168,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -72349,6 +72586,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -72437,6 +72675,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -72872,6 +73111,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -72956,6 +73196,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -74550,6 +74791,7 @@ export interface operations {
         "project_id"?: string;
         "redact_sensitive"?: boolean;
         "retention_days"?: number;
+        "salvage_truncated"?: boolean;
       };
     };
     requestBody: {
@@ -74562,6 +74804,7 @@ export interface operations {
           "name"?: string;
           "redact_sensitive"?: string;
           "retention_days"?: string;
+          "salvage_truncated"?: string;
           [key: string]: unknown;
         };
       };
@@ -74918,6 +75161,7 @@ export interface operations {
         "project_id"?: string;
         "redact_sensitive"?: boolean;
         "retention_days"?: number;
+        "salvage_truncated"?: boolean;
       };
     };
     requestBody: {
@@ -74930,6 +75174,7 @@ export interface operations {
           "name"?: string;
           "redact_sensitive"?: string;
           "retention_days"?: string;
+          "salvage_truncated"?: string;
           [key: string]: unknown;
         };
       };
@@ -75088,6 +75333,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -75222,6 +75468,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -75282,6 +75529,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -75422,6 +75671,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -75557,6 +75807,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -75684,6 +75935,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -75779,6 +76031,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -75913,6 +76166,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -75973,6 +76227,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -76113,6 +76369,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -76248,6 +76505,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -76375,6 +76633,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -86749,6 +87008,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -86833,6 +87093,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -89072,6 +89333,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -89195,6 +89457,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -89954,6 +90217,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: Record<string, unknown>;
               "cache_enabled"?: (boolean) | null;
               "cache_excluded_mime_types"?: Array<string>;
@@ -90042,6 +90306,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
               "max_ms"?: number;
@@ -91622,6 +91887,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -91756,6 +92022,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -91816,6 +92083,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -91956,6 +92225,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -92091,6 +92361,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -92218,6 +92489,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -92479,6 +92751,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -92613,6 +92886,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -92673,6 +92947,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -92813,6 +93089,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -92948,6 +93225,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -93075,6 +93353,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -93179,6 +93458,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -93313,6 +93593,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -93373,6 +93654,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -93513,6 +93796,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -93648,6 +93932,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -93775,6 +94060,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -93948,6 +94234,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -94082,6 +94369,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -94142,6 +94430,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -94282,6 +94572,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -94417,6 +94708,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -94544,6 +94836,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -94926,6 +95219,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -95060,6 +95354,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -95120,6 +95415,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -95260,6 +95557,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -95395,6 +95693,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -95522,6 +95821,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -95613,6 +95913,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -95747,6 +96048,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -95807,6 +96109,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -95947,6 +96251,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -96082,6 +96387,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -96209,6 +96515,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -96403,6 +96710,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -96463,6 +96771,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -96600,6 +96910,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -96949,6 +97260,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -97009,6 +97321,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -97146,6 +97460,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -98641,6 +98956,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -98775,6 +99091,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -98835,6 +99152,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -98975,6 +99294,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -99110,6 +99430,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -99237,6 +99558,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -100878,6 +101200,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -100966,6 +101289,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -102452,6 +102776,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -102540,6 +102865,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -104026,6 +104352,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -104114,6 +104441,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -105600,6 +105928,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -105688,6 +106017,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -107174,6 +107504,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -107262,6 +107593,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -107639,6 +107971,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -107773,6 +108106,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -107833,6 +108167,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -107973,6 +108309,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -108108,6 +108445,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -108235,6 +108573,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -108424,6 +108763,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -108558,6 +108898,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -108618,6 +108959,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -108758,6 +109101,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -108893,6 +109237,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -109020,6 +109365,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -110970,6 +111316,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -111104,6 +111451,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -111164,6 +111512,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -111304,6 +111654,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -111439,6 +111790,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -111566,6 +111918,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -112719,6 +113072,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -112803,6 +113157,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -113038,6 +113393,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -113098,6 +113454,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -113235,6 +113593,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -113527,6 +113886,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -113661,6 +114021,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -113721,6 +114082,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -113861,6 +114224,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -113996,6 +114360,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -114123,6 +114488,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -115502,6 +115868,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -115590,6 +115957,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -115979,6 +116347,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -116113,6 +116482,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -116173,6 +116543,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -116313,6 +116685,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -116448,6 +116821,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -116575,6 +116949,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -117224,6 +117599,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -117358,6 +117734,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -117418,6 +117795,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -117558,6 +117937,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -117693,6 +118073,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -117820,6 +118201,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -118546,6 +118928,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -118680,6 +119063,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -118740,6 +119124,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -118880,6 +119266,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -119015,6 +119402,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -119142,6 +119530,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -119891,6 +120280,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -120025,6 +120415,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -120085,6 +120476,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -120225,6 +120618,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -120360,6 +120754,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -120487,6 +120882,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -121237,6 +121633,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -121371,6 +121768,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -121431,6 +121829,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -121571,6 +121971,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -121706,6 +122107,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -121833,6 +122235,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -122582,6 +122985,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -122716,6 +123120,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -122776,6 +123181,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -122916,6 +123323,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -123051,6 +123459,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -123178,6 +123587,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -128149,6 +128559,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -128233,6 +128644,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -130472,6 +130884,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -130595,6 +131008,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -131217,6 +131631,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -131351,6 +131766,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -131411,6 +131827,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -131551,6 +131969,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -131686,6 +132105,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -131813,6 +132233,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -131915,6 +132336,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -132049,6 +132471,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -132109,6 +132532,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -132249,6 +132674,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -132384,6 +132810,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -132511,6 +132938,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -135430,6 +135858,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -135514,6 +135943,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -135659,6 +136089,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
                 "password"?: string;
@@ -135782,6 +136213,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
               "max_ms"?: number;
@@ -136235,6 +136667,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -136358,6 +136791,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -136596,6 +137030,7 @@ export interface operations {
                 "http"?: ({
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -136680,6 +137115,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -137128,6 +137564,7 @@ export interface operations {
           "script"?: {
             "actions"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -137204,6 +137641,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -137372,6 +137810,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -137451,6 +137890,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -137629,6 +138070,7 @@ export interface operations {
                 }) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -137724,6 +138166,7 @@ export interface operations {
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -137800,6 +138243,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -137869,6 +138313,7 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -137945,6 +138390,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -138134,6 +138580,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -138268,6 +138715,7 @@ export interface operations {
                 "http"?: {
                   "accept_encoding"?: string;
                   "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
                   "auth"?: Record<string, unknown>;
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
@@ -138328,6 +138776,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -138468,6 +138918,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -138603,6 +139054,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -138730,6 +139182,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
                   "max_ms"?: number;
@@ -141651,6 +142104,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
                 "password"?: string;
@@ -141773,6 +142227,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
               "max_ms"?: number;
@@ -141944,6 +142399,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -142067,6 +142523,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -142479,6 +142936,7 @@ export interface operations {
           "script"?: {
             "actions"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -142555,6 +143013,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -142723,6 +143182,7 @@ export interface operations {
               "http"?: {
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
                   "password"?: string;
@@ -142802,6 +143262,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -142980,6 +143442,7 @@ export interface operations {
                 }) | null;
               };
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -143075,6 +143538,7 @@ export interface operations {
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -143151,6 +143615,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -143220,6 +143685,7 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -143296,6 +143762,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -143835,6 +144302,7 @@ export interface operations {
               "http"?: ({
                 "accept_encoding"?: string;
                 "accept_language"?: string;
+                "aura_recorded_failures"?: string;
                 "auth"?: Record<string, unknown>;
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
@@ -143919,6 +144387,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
                 "max_ms"?: number;
@@ -144064,6 +144533,7 @@ export interface operations {
             "http"?: ({
               "accept_encoding"?: string;
               "accept_language"?: string;
+              "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
                 "password"?: string;
@@ -144187,6 +144657,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
               "max_ms"?: number;

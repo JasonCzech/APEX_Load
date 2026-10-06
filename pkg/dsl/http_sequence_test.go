@@ -102,3 +102,44 @@ func TestConcurrentHTTPSourceAdmissionBoundsAndAccounting(t *testing.T) {
 		t.Fatal("unrelated suffix treated as output")
 	}
 }
+
+func TestHTTPSequenceRequestTransactionsReadsTypedAndStoredGroups(t *testing.T) {
+	children := []Action{
+		{Name: "a", Type: "GET", Target: "/a", Metadata: map[string]any{HTTPConcurrentRequestTransactionMetadataKey: "first"}},
+		{Name: "b", Type: "GET", Target: "/b", Metadata: map[string]any{HTTPConcurrentRequestTransactionMetadataKey: "second"}},
+	}
+	group := Action{Name: "group", Type: "http_sequence", Params: map[string]any{"execution_mode": HTTPSequenceConcurrent, "requests": children}}
+	want := []string{"first", "second"}
+	if got := HTTPSequenceRequestTransactions(group); !reflect.DeepEqual(got, want) {
+		t.Fatalf("typed group = %v", got)
+	}
+	wire, err := json.Marshal(group)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored Action
+	if err := json.Unmarshal(wire, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if got := HTTPSequenceRequestTransactions(stored); !reflect.DeepEqual(got, want) {
+		t.Fatalf("stored group = %v", got)
+	}
+	sequential := stored
+	sequential.Params = map[string]any{"requests": stored.Params["requests"]}
+	if got := HTTPSequenceRequestTransactions(sequential); got != nil {
+		t.Fatalf("sequential group = %v", got)
+	}
+	partial := append([]Action(nil), children...)
+	partial[1].Metadata = nil
+	group.Params["requests"] = partial
+	if got := HTTPSequenceRequestTransactions(group); got != nil {
+		t.Fatalf("partly named group = %v", got)
+	}
+	if _, err := ValidateHTTPConcurrentChildrenWithWorkLimit(partial, MaxHTTPConcurrentPreparationWork); err == nil || !strings.Contains(err.Error(), "every child or none") {
+		t.Fatalf("partly named group admitted: %v", err)
+	}
+	partial[1].Metadata = map[string]any{HTTPConcurrentRequestTransactionMetadataKey: 7}
+	if _, err := ValidateHTTPConcurrentChildrenWithWorkLimit(partial, MaxHTTPConcurrentPreparationWork); err == nil {
+		t.Fatal("non-text transaction name admitted")
+	}
+}

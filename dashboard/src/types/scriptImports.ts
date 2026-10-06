@@ -613,6 +613,8 @@ export interface AuraOutcomeReport {
   matched_actions: number
   state_counts?: Partial<Record<AuraActionState, number>>
   issue_counts?: Record<string, number>
+  recorded_failure_actions?: number
+  recorded_failure_batches?: number
   batches?: AuraOutcomeBatch[]
 }
 

@@ -402,7 +402,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					continue
 				}
 				cookie.Value = convertParamReferences(cookie.Value)
-				persistentCookies = append(persistentCookies, cookie)
+				persistentCookies = upsertPersistentCookie(persistentCookies, cookie)
 			}
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "actions[].headers.Cookie", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "headers", "converted", "Mapped to Cookie headers on matching downstream HTTP requests.", SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
@@ -426,6 +426,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if action, mode, ok := convertSourceFunctionAction(fn); ok {
 				action = labelSourceTransactionMarker(action, fn, "Start")
 				appendTrackedSourceAction(fn, action, mode, "Started an executable source transaction at the original source position.")
+				tagSourceConcurrentTransaction(result, fn, functionIndex, concurrentPlan)
 			}
 			recordSourceTransactionName(result, convertutil.FirstNonEmpty(sourceControlArgAt(fn, 0), fn.StepName))
 			currentTransaction = fn.StepName
@@ -437,6 +438,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if action, mode, ok := convertSourceFunctionAction(fn); ok {
 				action = labelSourceTransactionMarker(action, fn, "End")
 				appendTrackedSourceAction(fn, action, mode, "Ended the executable source transaction with the source PASS/FAIL status.")
+				tagSourceConcurrentTransaction(result, fn, functionIndex, concurrentPlan)
 			}
 			result.Stats.TransactionMarkers++
 			currentTransaction = ""
@@ -475,7 +477,10 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				result.Stats.Transactions++
 			}
 
-		case "lr_think_time":
+		case "lr_think_time", "lr_force_think_time":
+			// lr_force_think_time waits whatever the think-time settings say,
+			// so it always keeps its own action with a forced delay.
+			force := fn.Name == "lr_force_think_time"
 			sec, ok := ExtractThinkTimeSeconds(fn)
 			prev := actionAtPhaseIndex(result.Script, lastExecutablePhase, lastExecutableIndex)
 			adjacent := prev != nil &&
@@ -488,9 +493,9 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			// is selected only after import. A single adjacent wait can stay on its
 			// predecessor; leading and consecutive waits need their own markers.
 			if ok && sec >= 0 && !math.IsNaN(waitMs) && !math.IsInf(waitMs, 0) && waitMs <= dsl.MaxConfiguredProtocolTimeoutMS &&
-				(!adjacent || prev.ThinkTimeAfter || (opts.RuntimeSettings != nil && opts.RuntimeSettings.ThinkTime.Type == "random_percentage")) {
+				(force || !adjacent || prev.ThinkTimeAfter || (opts.RuntimeSettings != nil && opts.RuntimeSettings.ThinkTime.Type == "random_percentage")) {
 				action, mode, _ := convertSourceFunctionAction(fn)
-				action.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: waitMs}
+				action.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: waitMs, Force: force}
 				action.ThinkTimeAfter = true
 				appendTrackedSourceAction(fn, action, mode, "Preserved this recorded delay separately so percentage sampling and caps remain independent after runtime settings change.")
 				result.Stats.ThinkTimes++
@@ -505,7 +510,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				result.Stats.ContributorFunctions++
 				recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 			} else {
-				result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d lr_think_time could not be placed as an exact wait; using zero delay and requiring review", fn.Filename, fn.LineNumber))
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d %s could not be placed as an exact wait; using zero delay and requiring review", fn.Filename, fn.LineNumber, fn.Name))
 				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.unplaced_think_times", "Think Time", "config", "review_only", "Dynamic, malformed, or unplaceable think time; zero-delay fallback requires review.", SourceFunctionSupportReviewOnly))
 				recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
 			}
@@ -516,6 +521,19 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.error_handling.continue_on_error", "Continue On Error", "config", "converted", "Mapped from source runtime control.", SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+
+		case "fprintf":
+			// Generators do not write files on the load generator; the line
+			// goes to the run's output messages, as lr_output_message would.
+			action := convertSourceFileOutputAction(fn)
+			appendTrackedSourceAction(fn, action, SourceFunctionSupportExecutable, "A line written to a load-generator file is replayed as an output message tagged with its stream.")
+			noteSourceFileOutput(result)
+
+		case "fopen", "fclose", "fflush":
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "", fn.Name, "config", "converted", "Load-generator file handles are not opened; fprintf lines go to output messages instead.", SourceFunctionSupportNativeNoop))
+			result.Stats.ContributorFunctions++
+			recordSourceFunctionSupport(result, SourceFunctionSupportNativeNoop)
+			noteSourceFileOutput(result)
 
 		case "lr_error_message":
 			action := convertLRErrorMessageAction(fn)
@@ -825,6 +843,9 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	)
 
 	appendCSourceParseFailureGates(result, actions)
+	if !opts.deferArchiveFinalization {
+		appendSplicedCommentWarnings(result, actions) // ConvertZip reports them for every protocol
+	}
 	structureSourceConcurrentGroups(result, concurrentPlan)
 	structureSourceControlFlow(result)
 	compactSourceHTTPActions(result)

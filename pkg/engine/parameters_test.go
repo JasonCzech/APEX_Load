@@ -409,3 +409,52 @@ func TestJMeterFormattedTimestampMidnightAndTimezone(t *testing.T) {
 		}
 	}
 }
+
+// LoadRunner's "Same line as" uses the referenced parameter's row number even
+// when that parameter reads another data file.
+func TestParameterRuntime_SameLineAcrossDataSourcesUsesRowNumber(t *testing.T) {
+	provider, err := NewDataProvider([]dsl.DataSource{
+		{Name: "accounts", Type: "csv", InlineData: "market\nm1\nm2\nm3\n", FirstRowHeader: true},
+		{Name: "addresses", Type: "csv", InlineData: "zip\nz1\nz2\n", FirstRowHeader: true},
+	})
+	if err != nil {
+		t.Fatalf("NewDataProvider: %v", err)
+	}
+	runtime := NewParameterRuntime([]dsl.Parameter{
+		{Name: "market", Type: "file", DataSource: "accounts", Column: "market", Selection: "sequential", Update: "each_iteration"},
+		{Name: "zip_wrap", Type: "file", DataSource: "addresses", Column: "zip", SameLineAs: "market", Update: "each_iteration", OnExhaustion: "wrap"},
+		{Name: "zip_last", Type: "file", DataSource: "addresses", Column: "zip", SameLineAs: "market", Update: "each_iteration", OnExhaustion: "last"},
+	}, provider, 0)
+	runtime.Prime()
+	for iteration, want := range []struct{ market, wrap, last string }{{"m1", "z1", "z1"}, {"m2", "z2", "z2"}, {"m3", "z1", "z2"}} {
+		market, _ := runtime.ResolveNamed("market")
+		wrapped, wrapOK := runtime.ResolveNamed("zip_wrap")
+		last, lastOK := runtime.ResolveNamed("zip_last")
+		if market != want.market || wrapped != want.wrap || last != want.last || !wrapOK || !lastOK {
+			t.Fatalf("iteration %d = %q/%q/%q, want %+v", iteration, market, wrapped, last, want)
+		}
+		runtime.RefreshIteration()
+	}
+}
+
+// A same-line parameter follows its master's row whatever its own update
+// setting says; VuGen ignores that setting for same-line parameters.
+func TestParameterRuntime_SameLineFollowsMasterUpdate(t *testing.T) {
+	provider, err := NewDataProvider([]dsl.DataSource{{
+		Name: "servers", Type: "csv", InlineData: "url,user\nu1,a\nu2,b\n", FirstRowHeader: true,
+	}})
+	if err != nil {
+		t.Fatalf("NewDataProvider: %v", err)
+	}
+	runtime := NewParameterRuntime([]dsl.Parameter{
+		{Name: "url", Type: "file", DataSource: "servers", Column: "url", Selection: "sequential", Update: "each_iteration"},
+		{Name: "user", Type: "file", DataSource: "servers", Column: "user", SameLineAs: "url", Update: "once"},
+	}, provider, 0)
+	runtime.Prime()
+	for iteration, want := range []string{"a", "b"} {
+		if user, _ := runtime.ResolveNamed("user"); user != want {
+			t.Fatalf("iteration %d user = %q, want %q", iteration, user, want)
+		}
+		runtime.RefreshIteration()
+	}
+}

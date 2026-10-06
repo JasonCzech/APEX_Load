@@ -234,3 +234,24 @@ func TestBrowserStorageStateIsCredentialMaterial(t *testing.T) {
 		t.Fatal("browser session snapshot must be treated as credentials")
 	}
 }
+
+func TestMatchableNamedValue(t *testing.T) {
+	for _, tc := range []struct {
+		name, value string
+		want        bool
+	}{
+		{"cookie", "1", false},
+		{"session", "en", false},
+		{"token", "0:1", false},
+		{"token", "abcd", true},
+		{"pin", "12", true},
+		{"userPin", "7", true},
+		{"new_password", "x", true},
+		{"passcode", "1", true},
+		{"otp", "42", true},
+	} {
+		if got := MatchableNamedValue(tc.name, tc.value); got != tc.want {
+			t.Errorf("MatchableNamedValue(%q, %q) = %t, want %t", tc.name, tc.value, got, tc.want)
+		}
+	}
+}

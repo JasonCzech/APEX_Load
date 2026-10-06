@@ -61,9 +61,15 @@ func TestAuraBaselineReportsReorderedKnownOutcomesAndAttachesNativeAssertion(t *
 	if !reflect.DeepEqual(batch.Analysis.Outcomes, want) {
 		t.Fatalf("outcomes = %#v, want %#v", batch.Analysis.Outcomes, want)
 	}
+	// The action that failed in the recording becomes the replay baseline, so
+	// a repeat failure is labelled rather than chased as a correlation fault.
 	assertions := review.NativePreview.Script.Actions[0].Assertions
-	if len(assertions) != 1 || assertions[0].Type != "aura_actions_success" || assertions[0].Value != "" || assertions[0].Expected != nil {
+	wantBaseline := aura.Baseline{Recorded: []aura.RecordedOutcome{{Ordinal: 2, State: aura.Error}}}
+	if len(assertions) != 1 || assertions[0].Type != "aura_actions_success" || assertions[0].Value != "" || !reflect.DeepEqual(assertions[0].Expected, wantBaseline) {
 		t.Fatalf("native assertions = %#v", assertions)
+	}
+	if outcomes.RecordedFailureActions != 1 || outcomes.RecordedFailureBatches != 1 || !strings.Contains(strings.Join(review.Warnings, "\n"), "1 Aura action(s) in 1 request(s) already failed in the recording") {
+		t.Fatalf("recorded failure decision missing: actions=%d batches=%d warnings=%v", outcomes.RecordedFailureActions, outcomes.RecordedFailureBatches, review.Warnings)
 	}
 	if len(script.Actions[0].Assertions) != 0 || script.Actions[0].Metadata != nil {
 		t.Fatal("native analysis mutated source script")
@@ -704,5 +710,23 @@ func TestAuraWireBodyDecoderBoundsDecodedEnvelopeSeparately(t *testing.T) {
 	large := &dsl.Action{Body: strings.Repeat("A", base64.StdEncoding.EncodedLen(aura.MaxEnvelopeBytes)), BodyEncoding: "base64"}
 	if boundedAuraActionWorkBytes(large) <= len(large.Body) {
 		t.Fatal("wire-body decode work was not charged in the review budget")
+	}
+}
+
+// A recorded framework error is a known failure of the whole batch: the batch
+// counts as complete evidence, and the review says the recording failed there.
+func TestAuraBaselineReportsRecordedFrameworkErrors(t *testing.T) {
+	body := "message=" + url.QueryEscape(syntheticAuraRequest)
+	response := `*/{"exceptionEvent":true,"event":{"descriptor":"markup://aura:invalidSession"}}/*ERROR*/`
+	review, err := Analyze(auraTestScript(body), AnalyzeOptions{BuildNative: true, HARData: auraTestHAR(t, body, response)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcomes := review.AuraOutcomes
+	if outcomes == nil || outcomes.CompleteBatches != 1 || outcomes.IssueCounts[aura.InvalidSession] != 1 || outcomes.RecordedFailureActions != 0 {
+		t.Fatalf("outcomes = %#v", outcomes)
+	}
+	if !strings.Contains(strings.Join(review.Warnings, "\n"), "1 captured Aura response(s) were framework errors (invalid session: 1") {
+		t.Fatalf("warnings = %v", review.Warnings)
 	}
 }

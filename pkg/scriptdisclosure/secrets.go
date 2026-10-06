@@ -88,7 +88,7 @@ func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
 		if ctx.headerList {
 			name, _ := typed["name"].(string)
 			if credential.SensitiveHeader(name) || isSensitiveKey(name) {
-				c.addNode(typed["value"])
+				c.addNamedNode(name, typed["value"])
 			}
 		}
 		if ctx.dataSource {
@@ -120,7 +120,7 @@ func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
 					c.collectBody(text, typed)
 				}
 			case ctx.headers && (credential.SensitiveHeader(key) || isSensitiveKey(key)):
-				c.addNode(child)
+				c.addNamedNode(key, child)
 			case isSensitiveKey(key) && !isSecretReferenceKey(key):
 				switch child.(type) {
 				case map[string]any, []any:
@@ -134,7 +134,7 @@ func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
 						untypedMap: ctx.untypedMap || isUntypedDisclosureMapKey(key),
 					}, depth+1)
 				default:
-					c.addNode(child)
+					c.addNamedNode(key, child)
 				}
 			case isURLKey(key):
 				if text, ok := child.(string); ok {
@@ -173,6 +173,16 @@ func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
 
 func (c *secretCollector) addNode(value any) {
 	c.addSensitiveNode(value, 0)
+}
+
+// addNamedNode adds a value that is a credential because of its field name,
+// unless it is too short to tell apart from ordinary text (see
+// credential.MatchableNamedValue).
+func (c *secretCollector) addNamedNode(name string, value any) {
+	if text, ok := value.(string); ok && !credential.MatchableNamedValue(name, text) {
+		return
+	}
+	c.addNode(value)
 }
 
 func (c *secretCollector) addSensitiveNode(value any, depth int) {
@@ -234,7 +244,9 @@ func (c *secretCollector) collectURL(value string) {
 			continue
 		}
 		for _, value := range values {
-			c.add(value)
+			if credential.MatchableNamedValue(key, value) {
+				c.add(value)
+			}
 		}
 	}
 }
@@ -325,9 +337,11 @@ func (c *secretCollector) collectURLTarget(
 		if target.Index < 0 || target.Index >= len(pairs) {
 			return
 		}
-		_, encoded, _ := strings.Cut(pairs[target.Index], "=")
+		rawName, encoded, _ := strings.Cut(pairs[target.Index], "=")
 		if value, err := url.QueryUnescape(encoded); err == nil {
-			c.add(value)
+			if name, _ := url.QueryUnescape(rawName); credential.MatchableNamedValue(name, value) {
+				c.add(value)
+			}
 		}
 	case strings.HasSuffix(field, ".userinfo"):
 		parsed, err := url.Parse(raw)
@@ -501,7 +515,7 @@ func (c *secretCollector) collectStructuredBody(payload []byte, contentType stri
 				continue
 			}
 			sensitive := isSensitiveKey(name)
-			if sensitive {
+			if sensitive && credential.MatchableNamedValue(name, value) {
 				c.add(value)
 			}
 			nested := bytes.TrimSpace([]byte(value))
@@ -742,7 +756,7 @@ func (c *secretCollector) collectJSONValue(decoder *json.Decoder, sensitive bool
 			return err == io.EOF
 		}
 	case string:
-		if sensitive {
+		if sensitive && credential.MatchableNamedValue(name, value) {
 			c.add(value)
 		}
 		nested := bytes.TrimSpace([]byte(value))
@@ -792,6 +806,14 @@ func requestBodyContentType(owner map[string]any) string {
 func (c *secretCollector) collectXMLBody(payload []byte) {
 	decoder := xml.NewDecoder(bytes.NewReader(payload))
 	sensitiveStack := make([]bool, 0, 16)
+	nameStack := make([]string, 0, 16)
+	// addText adds text found under the current element's sensitive name.
+	addText := func(text string) {
+		if len(sensitiveStack) > 0 && sensitiveStack[len(sensitiveStack)-1] &&
+			credential.MatchableNamedValue(nameStack[len(nameStack)-1], text) {
+			c.add(text)
+		}
+	}
 	for {
 		token, err := decoder.Token()
 		if err != nil {
@@ -804,7 +826,7 @@ func (c *secretCollector) collectXMLBody(payload []byte) {
 			elementSensitive := parentSensitive ||
 				credential.SensitiveName(typed.Name.Local)
 			for _, attr := range typed.Attr {
-				if credential.SensitiveName(attr.Name.Local) {
+				if credential.SensitiveName(attr.Name.Local) && credential.MatchableNamedValue(attr.Name.Local, attr.Value) {
 					c.add(attr.Value)
 				}
 				switch normalizeName(attr.Name.Local) {
@@ -818,7 +840,9 @@ func (c *secretCollector) collectXMLBody(payload []byte) {
 				for _, attr := range typed.Attr {
 					switch normalizeName(attr.Name.Local) {
 					case "value", "fixed", "default", "token", "secret", "password":
-						c.add(attr.Value)
+						if credential.MatchableNamedValue(typed.Name.Local, attr.Value) || credential.PasswordLikeName(attr.Name.Local) {
+							c.add(attr.Value)
+						}
 					}
 				}
 			}
@@ -826,27 +850,21 @@ func (c *secretCollector) collectXMLBody(payload []byte) {
 				return
 			}
 			sensitiveStack = append(sensitiveStack, elementSensitive)
+			nameStack = append(nameStack, typed.Name.Local)
 		case xml.EndElement:
 			if len(sensitiveStack) == 0 {
 				return
 			}
 			sensitiveStack = sensitiveStack[:len(sensitiveStack)-1]
+			nameStack = nameStack[:len(nameStack)-1]
 		case xml.CharData:
-			if len(sensitiveStack) > 0 && sensitiveStack[len(sensitiveStack)-1] {
-				c.add(string(typed))
-			}
+			addText(string(typed))
 		case xml.Comment:
-			if len(sensitiveStack) > 0 && sensitiveStack[len(sensitiveStack)-1] {
-				c.add(string(typed))
-			}
+			addText(string(typed))
 		case xml.Directive:
-			if len(sensitiveStack) > 0 && sensitiveStack[len(sensitiveStack)-1] {
-				c.add(string(typed))
-			}
+			addText(string(typed))
 		case xml.ProcInst:
-			if len(sensitiveStack) > 0 && sensitiveStack[len(sensitiveStack)-1] {
-				c.add(string(typed.Inst))
-			}
+			addText(string(typed.Inst))
 		}
 	}
 }
@@ -869,13 +887,15 @@ func (c *secretCollector) collectMultipartBody(payload []byte, boundary string) 
 		if readErr != nil || len(body) > len(payload) {
 			return
 		}
-		if credential.SensitiveName(part.FormName()) {
+		if credential.SensitiveName(part.FormName()) && credential.MatchableNamedValue(part.FormName(), string(body)) {
 			c.add(string(body))
 		}
 		for name, values := range part.Header {
 			if credential.SensitiveHeader(name) || credential.SensitiveName(name) {
 				for _, value := range values {
-					c.add(value)
+					if credential.MatchableNamedValue(name, value) {
+						c.add(value)
+					}
 				}
 			}
 		}
@@ -925,6 +945,7 @@ func (c *secretCollector) collectQueryBody(value string, sensitive bool, layers 
 }
 
 func (c *secretCollector) collectGraphQLBody(payload []byte) {
+	var pendingName string
 	var pendingSensitive bool
 	var awaitingValue bool
 	for index := 0; index < len(payload); {
@@ -938,7 +959,8 @@ func (c *secretCollector) collectGraphQLBody(payload []byte) {
 			for index < len(payload) && isGraphQLNameContinue(payload[index]) {
 				index++
 			}
-			pendingSensitive = credential.SensitiveName(string(payload[start:index]))
+			pendingName = string(payload[start:index])
+			pendingSensitive = credential.SensitiveName(pendingName)
 			awaitingValue = false
 		case payload[index] == ':':
 			awaitingValue = pendingSensitive
@@ -951,7 +973,7 @@ func (c *secretCollector) collectGraphQLBody(payload []byte) {
 			if !ok {
 				return
 			}
-			if awaitingValue {
+			if awaitingValue && credential.MatchableNamedValue(pendingName, value) {
 				c.add(value)
 			}
 			awaitingValue = false

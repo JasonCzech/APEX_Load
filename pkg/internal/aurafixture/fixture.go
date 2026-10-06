@@ -309,9 +309,10 @@ func (f *Fixture) aura(w http.ResponseWriter, r *http.Request) {
 	var context Context
 	contextJSON := values.Get("aura.context")
 	// Apply the shared strict JSON checks to context as nested synthetic data,
-	// so duplicate members cannot make session binding depend on decoder order.
+	// and reject duplicate context members, so session binding cannot depend
+	// on decoder order.
 	contextEnvelope := []byte(`{"actions":[{"id":"context","descriptor":"synthetic","params":` + contextJSON + `}]}`)
-	if json.Unmarshal([]byte(values.Get("message")), &envelope) != nil || len(envelope.Actions) > maxActions || !aura.ValidateRequest(contextEnvelope).Success || json.Unmarshal([]byte(contextJSON), &context) != nil {
+	if json.Unmarshal([]byte(values.Get("message")), &envelope) != nil || len(envelope.Actions) > maxActions || !aura.ValidateRequest(contextEnvelope).Success || !uniqueMembers(contextJSON) || json.Unmarshal([]byte(contextJSON), &context) != nil {
 		f.reject(w, http.StatusBadRequest, "invalid_envelope", false, false)
 		return
 	}
@@ -444,4 +445,32 @@ func LoadReactDependencies(dashboardDir string) ([]byte, []byte, error) {
 	}
 	dom, err := read("react-dom/umd/react-dom.production.min.js")
 	return react, dom, err
+}
+
+// uniqueMembers reports whether a JSON object names each top-level member
+// once, ignoring case as encoding/json does when it matches struct fields.
+func uniqueMembers(object string) bool {
+	decoder := json.NewDecoder(strings.NewReader(object))
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		return false
+	}
+	var seen []string
+	for decoder.More() {
+		token, err := decoder.Token()
+		key, ok := token.(string)
+		if err != nil || !ok {
+			return false
+		}
+		for _, prior := range seen {
+			if strings.EqualFold(prior, key) {
+				return false
+			}
+		}
+		seen = append(seen, key)
+		var value json.RawMessage
+		if decoder.Decode(&value) != nil {
+			return false
+		}
+	}
+	return true
 }

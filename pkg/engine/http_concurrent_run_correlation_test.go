@@ -93,7 +93,7 @@ func TestConcurrentHTTPManagedRunConflictRejectsBeforeTraffic(t *testing.T) {
 				vu := managedNativeVUser(t, script, []string{one.URL, two.URL}, map[string]string{"other_run": "another-run"})
 				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 				defer cancel()
-				result, err := vu.executeHTTPSequenceAction(ctx, group, dsl.ErrorHandlingConfig{})
+				result, err := vu.executeHTTPSequenceAction(ctx, group, dsl.ErrorHandlingConfig{}, nil)
 				if err != nil || result == nil || result.Success || result.ErrorMessage != "concurrent HTTP child 2: request validation failed" {
 					t.Fatalf("expected whole-group preflight rejection: result=%+v err=%v", result, err)
 				}

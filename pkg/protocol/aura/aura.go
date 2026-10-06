@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"strings"
 	"unicode/utf8"
@@ -54,16 +55,34 @@ const (
 	InvalidForm        Code = "invalid_form"
 	MissingMessage     Code = "missing_message"
 	DuplicateMessage   Code = "duplicate_message"
+	// Framework errors answer the whole batch instead of its actions: the
+	// session is invalid, the client is out of sync with the server, or
+	// another Aura exception event.
+	InvalidSession  Code = "invalid_session"
+	ClientOutOfSync Code = "client_out_of_sync"
+	FrameworkError  Code = "framework_error"
 )
+
+// IsFrameworkError reports a response-level Aura framework error, a known
+// failure rather than an ambiguous envelope.
+func IsFrameworkError(code Code) bool {
+	return code == InvalidSession || code == ClientOutOfSync || code == FrameworkError
+}
 
 type Outcome struct {
 	Ordinal int   `json:"ordinal"`
 	State   State `json:"state"`
+	// Recorded is the action's unsuccessful state in the recording, when the
+	// import captured one.
+	Recorded State `json:"recorded,omitempty"`
 }
 
 type Issue struct {
 	Code    Code `json:"code"`
 	Ordinal int  `json:"ordinal,omitempty"`
+	// RecordedFailure marks a non_success_state on an action that also failed
+	// in the recording, so it is not mistaken for a correlation problem.
+	RecordedFailure bool `json:"recorded_failure,omitempty"`
 }
 
 // Report is deliberately value-free. Request-only Success means structural
@@ -79,10 +98,13 @@ type Report struct {
 	MatchedActions  int  `json:"matched_actions"`
 	// Nonzero omission counts describe retained runtime diagnostics only.
 	// Validation still evaluates every action permitted by the parser bounds.
-	OutcomesOmitted int       `json:"outcomes_omitted,omitempty"`
-	IssuesOmitted   int       `json:"issues_omitted,omitempty"`
-	Outcomes        []Outcome `json:"outcomes,omitempty"`
-	Issues          []Issue   `json:"issues,omitempty"`
+	OutcomesOmitted int `json:"outcomes_omitted,omitempty"`
+	IssuesOmitted   int `json:"issues_omitted,omitempty"`
+	// AcceptedRecordedFailures counts actions that ended in the same
+	// unsuccessful state as the recording and were accepted by policy.
+	AcceptedRecordedFailures int       `json:"accepted_recorded_failures,omitempty"`
+	Outcomes                 []Outcome `json:"outcomes,omitempty"`
+	Issues                   []Issue   `json:"issues,omitempty"`
 }
 
 // Err provides only an enum and ordinal, never parser errors or source values.
@@ -94,10 +116,165 @@ func (r Report) Err() error {
 		return fmt.Errorf("Aura validation failed")
 	}
 	issue := r.Issues[0]
-	if issue.Ordinal > 0 {
-		return fmt.Errorf("Aura validation failed: %s at action %d", issue.Code, issue.Ordinal)
+	recorded := ""
+	if issue.RecordedFailure {
+		recorded = " (also failed in the recording)"
 	}
-	return fmt.Errorf("Aura validation failed: %s", issue.Code)
+	if issue.Ordinal > 0 {
+		return fmt.Errorf("Aura validation failed: %s at action %d%s", issue.Code, issue.Ordinal, recorded)
+	}
+	return fmt.Errorf("Aura validation failed: %s%s", issue.Code, recorded)
+}
+
+// RecordedOutcome is an action's unsuccessful state in the recording, by its
+// position in the request envelope.
+type RecordedOutcome struct {
+	Ordinal int   `json:"ordinal"`
+	State   State `json:"state"`
+}
+
+// Baseline is the recorded outcome of a batch's actions that did not succeed.
+type Baseline struct {
+	Recorded []RecordedOutcome `json:"recorded"`
+}
+
+// ParseBaseline reads a baseline from an assertion's expected value (nil means
+// none). It runs for every Aura request at replay, so the forms it meets
+// there, a Baseline or its decoded JSON, are read directly; anything else
+// goes through JSON.
+func ParseBaseline(expected any) (map[int]State, error) {
+	var outcomes []RecordedOutcome
+	switch typed := expected.(type) {
+	case nil:
+		return nil, nil
+	case Baseline:
+		outcomes = typed.Recorded
+	case *Baseline:
+		if typed == nil {
+			return nil, nil
+		}
+		outcomes = typed.Recorded
+	case map[string]any:
+		decoded, err := decodedBaseline(typed)
+		if err != nil {
+			return nil, err
+		}
+		outcomes = decoded
+	default:
+		encoded, err := json.Marshal(expected)
+		if err != nil {
+			return nil, errInvalidBaseline
+		}
+		var value any
+		if err := json.Unmarshal(encoded, &value); err != nil {
+			return nil, errInvalidBaseline
+		}
+		object, ok := value.(map[string]any)
+		if !ok {
+			return nil, errInvalidBaseline
+		}
+		decoded, err := decodedBaseline(object)
+		if err != nil {
+			return nil, err
+		}
+		outcomes = decoded
+	}
+	if len(outcomes) == 0 || len(outcomes) > MaxActions {
+		return nil, fmt.Errorf("recorded baseline must list 1 to %d actions", MaxActions)
+	}
+	recorded := make(map[int]State, len(outcomes))
+	for _, outcome := range outcomes {
+		if outcome.Ordinal < 1 || outcome.Ordinal > MaxActions {
+			return nil, fmt.Errorf("recorded baseline ordinal must be between 1 and %d", MaxActions)
+		}
+		switch outcome.State {
+		case Error, Incomplete, Aborted:
+		default:
+			return nil, fmt.Errorf("recorded baseline state must be ERROR, INCOMPLETE or ABORTED")
+		}
+		if _, duplicate := recorded[outcome.Ordinal]; duplicate {
+			return nil, fmt.Errorf("recorded baseline repeats action %d", outcome.Ordinal)
+		}
+		recorded[outcome.Ordinal] = outcome.State
+	}
+	return recorded, nil
+}
+
+var errInvalidBaseline = fmt.Errorf("recorded baseline must be {\"recorded\": [{\"ordinal\", \"state\"}]}")
+
+// decodedBaseline reads the decoded JSON form, rejecting unknown members and
+// non-integer ordinals.
+func decodedBaseline(object map[string]any) ([]RecordedOutcome, error) {
+	if len(object) != 1 {
+		return nil, errInvalidBaseline
+	}
+	items, ok := object["recorded"].([]any)
+	if !ok {
+		return nil, errInvalidBaseline
+	}
+	outcomes := make([]RecordedOutcome, 0, len(items))
+	for _, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok || len(entry) != 2 {
+			return nil, errInvalidBaseline
+		}
+		ordinal, ok := baselineOrdinal(entry["ordinal"])
+		state, isString := entry["state"].(string)
+		if !ok || !isString {
+			return nil, errInvalidBaseline
+		}
+		outcomes = append(outcomes, RecordedOutcome{Ordinal: ordinal, State: State(state)})
+	}
+	return outcomes, nil
+}
+
+func baselineOrdinal(value any) (int, bool) {
+	switch typed := value.(type) {
+	case float64:
+		if typed != math.Trunc(typed) || typed < math.MinInt32 || typed > math.MaxInt32 {
+			return 0, false
+		}
+		return int(typed), true
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil || parsed < math.MinInt32 || parsed > math.MaxInt32 {
+			return 0, false
+		}
+		return int(parsed), true
+	case int:
+		return typed, true
+	default:
+		return 0, false
+	}
+}
+
+// ApplyRecordedBaseline relates a validated replay to the recording: actions
+// that failed again are marked as recorded failures, and with accept an
+// action that ended in the same unsuccessful state as the recording is
+// accepted rather than reported. Structural issues are never affected.
+func (r *Report) ApplyRecordedBaseline(recorded map[int]State, accept bool) {
+	if len(recorded) == 0 {
+		return
+	}
+	replayed := make(map[int]State, len(r.Outcomes))
+	for index := range r.Outcomes {
+		outcome := &r.Outcomes[index]
+		replayed[outcome.Ordinal] = outcome.State
+		outcome.Recorded = recorded[outcome.Ordinal]
+	}
+	issues := make([]Issue, 0, len(r.Issues))
+	for _, issue := range r.Issues {
+		if state, ok := recorded[issue.Ordinal]; ok && issue.Code == NonSuccessState {
+			if accept && replayed[issue.Ordinal] == state {
+				r.AcceptedRecordedFailures++
+				continue
+			}
+			issue.RecordedFailure = true
+		}
+		issues = append(issues, issue)
+	}
+	r.Issues = issues
+	r.Success = r.Complete && len(r.Issues) == 0
 }
 
 func ValidateRequest(body []byte) Report {
@@ -107,7 +284,7 @@ func ValidateRequest(body []byte) Report {
 
 func InspectResponse(body []byte) Report {
 	actions, issues := parseEnvelope(body, false)
-	report := Report{Complete: len(issues) == 0, HasResponse: true, ResponseActions: len(actions), Issues: issues}
+	report := Report{Complete: len(issues) == 0 || IsFrameworkError(issues[0].Code), HasResponse: true, ResponseActions: len(actions), Issues: issues}
 	for i, action := range actions {
 		report.addOutcome(i+1, action.state)
 	}
@@ -120,10 +297,13 @@ func InspectResponse(body []byte) Report {
 func Validate(requestBody, responseBody []byte) Report {
 	requests, requestIssues := parseRequest(requestBody)
 	responses, responseIssues := parseEnvelope(responseBody, false)
-	report := Report{Complete: len(requestIssues) == 0 && len(responseIssues) == 0, HasResponse: true,
+	// A framework error is a known failure of the whole batch, so the report is
+	// complete although no action has an outcome.
+	frameworkError := len(responseIssues) > 0 && IsFrameworkError(responseIssues[0].Code)
+	report := Report{Complete: len(requestIssues) == 0 && (len(responseIssues) == 0 || frameworkError), HasResponse: true,
 		RequestActions: len(requests), ResponseActions: len(responses)}
 	report.Issues = append(requestIssues, responseIssues...)
-	if !report.Complete {
+	if !report.Complete || frameworkError {
 		return report
 	}
 	byID := make(map[string]action, len(responses))
@@ -200,6 +380,11 @@ func parseEnvelope(body []byte, request bool) ([]action, []Issue) {
 	if len(body) > MaxEnvelopeBytes {
 		return fail(ByteLimit, 0)
 	}
+	if !request {
+		if inner, wrapped := unwrapFrameworkError(body); wrapped {
+			return fail(frameworkErrorCode(inner), 0)
+		}
+	}
 	if !utf8.Valid(body) || !validStringEscapes(body) {
 		return fail(InvalidJSON, 0)
 	}
@@ -219,6 +404,11 @@ func parseEnvelope(body []byte, request bool) ([]action, []Issue) {
 	}
 	items, ok := envelope["actions"].([]any)
 	if !ok {
+		// The client decodes a non-200 body directly and treats an exception
+		// event there as a framework error too.
+		if !request && envelope["exceptionEvent"] == true {
+			return fail(frameworkErrorCode(body), 0)
+		}
 		return fail(InvalidEnvelope, 0)
 	}
 	if len(items) == 0 {
@@ -270,6 +460,8 @@ const (
 	actionsMode
 	actionMode
 	scalarMode
+	frameworkErrorMode
+	eventMode
 )
 
 type scanner struct {
@@ -290,9 +482,11 @@ func (s *scanner) token() (json.Token, Code) {
 }
 
 // read validates all JSON (including ignored payloads), but retains only the
-// envelope/actions/id/descriptor/state structure needed for matching. Object
-// key sets detect duplicates, including escaped aliases, without retaining
-// payload values. Both token count and nesting are bounded before recursion.
+// envelope/actions/id/descriptor/state structure needed for matching. A member
+// the validator reads may appear once per object, escaped aliases included, so
+// its value cannot depend on which duplicate a decoder keeps; duplicates
+// elsewhere (payloads, unread fields) do not change the result and are
+// accepted. Both token count and nesting are bounded before recursion.
 func (s *scanner) read(depth int, retain mode) (any, Code) {
 	token, code := s.token()
 	if code != "" {
@@ -310,9 +504,8 @@ func (s *scanner) read(depth int, retain mode) (any, Code) {
 	}
 	switch delimiter {
 	case '{':
-		seen := make(map[string]bool)
 		var object map[string]any
-		if retain == envelopeMode || retain == actionMode {
+		if retain == envelopeMode || retain == actionMode || retain == frameworkErrorMode || retain == eventMode {
 			object = make(map[string]any)
 		}
 		for s.decoder.More() {
@@ -324,24 +517,31 @@ func (s *scanner) read(depth int, retain mode) (any, Code) {
 			if !ok {
 				return nil, InvalidJSON
 			}
-			if seen[key] {
-				return nil, DuplicateMember
-			}
-			seen[key] = true
 			childMode := discardMode
-			if retain == envelopeMode && key == "actions" {
+			switch {
+			case retain == envelopeMode && key == "actions":
 				childMode = actionsMode
-			}
-			if retain == actionMode && (key == "id" || key == "descriptor" || key == "state") {
+			case retain == actionMode && (key == "id" || key == "descriptor" || key == "state"),
+				(retain == envelopeMode || retain == frameworkErrorMode) && key == "exceptionEvent",
+				retain == eventMode && key == "descriptor":
 				childMode = scalarMode
+			case retain == frameworkErrorMode && key == "event":
+				childMode = eventMode
+			}
+			if childMode == discardMode {
+				if _, code := s.read(depth+1, discardMode); code != "" {
+					return nil, code
+				}
+				continue
+			}
+			if _, repeated := object[key]; repeated {
+				return nil, DuplicateMember
 			}
 			value, code := s.read(depth+1, childMode)
 			if code != "" {
 				return nil, code
 			}
-			if childMode != discardMode && object != nil {
-				object[key] = value
-			}
+			object[key] = value
 		}
 		close, code := s.token()
 		if code != "" {
@@ -388,6 +588,53 @@ func (s *scanner) read(depth int, retain mode) (any, Code) {
 		return nil, ""
 	default:
 		return nil, InvalidJSON
+	}
+}
+
+// unwrapFrameworkError mirrors the Aura client's decode of a response that
+// ends in "/*ERROR*/": the JSON lies between the first "*/" and the last "/*".
+func unwrapFrameworkError(body []byte) ([]byte, bool) {
+	trimmed := bytes.TrimRight(body, " \t\r\n")
+	if !bytes.HasSuffix(trimmed, []byte("/*ERROR*/")) {
+		return nil, false
+	}
+	start, end := bytes.Index(trimmed, []byte("*/")), bytes.LastIndex(trimmed, []byte("/*"))
+	if start < 0 || end < start+2 {
+		return nil, true
+	}
+	return trimmed[start+2 : end], true
+}
+
+// frameworkErrorCode classifies a framework error body the way the Aura client
+// does: an exception event for aura:invalidSession or aura:clientOutOfSync, or
+// any other error. Only the enum is reported, never the event or its message.
+func frameworkErrorCode(body []byte) Code {
+	if len(body) == 0 || !utf8.Valid(body) || !validStringEscapes(body) {
+		return FrameworkError
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	scanner := scanner{decoder: decoder}
+	value, code := scanner.read(0, frameworkErrorMode)
+	if code != "" {
+		return FrameworkError
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return FrameworkError
+	}
+	object, _ := value.(map[string]any)
+	if object["exceptionEvent"] != true {
+		return FrameworkError
+	}
+	event, _ := object["event"].(map[string]any)
+	descriptor, _ := event["descriptor"].(string)
+	switch strings.TrimPrefix(descriptor, "markup://") {
+	case "aura:invalidSession":
+		return InvalidSession
+	case "aura:clientOutOfSync":
+		return ClientOutOfSync
+	default:
+		return FrameworkError
 	}
 }
 

@@ -342,6 +342,9 @@ function sequenceChildExtractors(action: ScriptActionDefinition) {
 type ReadinessVarContext = {
   available: Set<string>
   missing: Set<string>
+  // Missing references replay cannot carry as placeholder text (see the API preflight).
+  blocking: Set<string>
+  placeholders: boolean
   secrets: Set<string>
   loopDepth: number
   foreachVars: Set<string>
@@ -379,8 +382,12 @@ function collectReadinessRefs(actions: ScriptActionDefinition[], ctx: ReadinessV
     // A control_loop's own while-condition is evaluated each pass with loop_index
     // already set, so scan the shell with the loop scope applied.
     const refCtx: ReadinessVarContext = isLoop ? { ...ctx, loopDepth: ctx.loopDepth + 1 } : ctx
+    // A JSON helper fails its step on an unresolved buffer instead of parsing placeholder text.
+    const keepsPlaceholders = ctx.placeholders && type?.replace(/^loadrunner_/, 'source_') !== 'source_json'
     collectTemplateRefs(refSource, 'var').forEach(name => {
-      if (!isReadinessVarAvailable(name, refCtx)) ctx.missing.add(name)
+      if (isReadinessVarAvailable(name, refCtx)) return
+      ctx.missing.add(name)
+      if (!keepsPlaceholders) ctx.blocking.add(name)
     })
     collectTemplateRefs(refSource, 'secret').forEach(name => ctx.secrets.add(name))
     ;(action.extractors || []).forEach(extractor => {
@@ -390,6 +397,8 @@ function collectReadinessRefs(actions: ScriptActionDefinition[], ctx: ReadinessV
       const childCtx: ReadinessVarContext = {
         available: ctx.available,
         missing: ctx.missing,
+        blocking: ctx.blocking,
+        placeholders: ctx.placeholders,
         secrets: ctx.secrets,
         loopDepth: isLoop ? ctx.loopDepth + 1 : ctx.loopDepth,
         foreachVars: ctx.foreachVars,
@@ -469,12 +478,16 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
     ...(script.parameters || []).map(parameter => parameter.name).filter(Boolean),
   ])
   const missingVariables = new Set<string>()
+  const blockingVariables = new Set<string>()
   const requiredSecrets = new Set<string>(collectTemplateRefs(script.config, 'secret'))
   collectDedicatedProjectSecretRefs(script, requiredSecrets, true)
 
   collectReadinessRefs(phaseActions, {
     available: availableVariables,
     missing: missingVariables,
+    blocking: blockingVariables,
+    // HTTP replay sends a missing variable as its placeholder text and warns, as LoadRunner does.
+    placeholders: ['http', 'http/1.1', 'http/2'].includes(script.protocol?.trim() || ''),
     secrets: requiredSecrets,
     loopDepth: 0,
     foreachVars: new Set<string>(),
@@ -482,6 +495,8 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
 
   const dataWarnings = buildDataWarnings(script)
   const missingVariableList = sortedValues(missingVariables)
+  const blockingVariableList = sortedValues(blockingVariables)
+  const placeholderVariableList = missingVariableList.filter(name => !blockingVariables.has(name))
   const requiredSecretList = sortedValues(requiredSecrets)
   const browserRequired = script.protocol === 'browser'
   const prerequisites = runtimePrerequisites(script, browserRequired)
@@ -504,8 +519,10 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
     {
       id: 'variables',
       label: 'Variable readiness',
-      status: missingVariableList.length > 0 ? 'fail' : 'pass',
-      detail: missingVariableList.length > 0 ? missingVariableList.join(', ') : 'All replay variables are seeded or extracted before use.',
+      status: blockingVariableList.length > 0 ? 'fail' : (missingVariableList.length > 0 ? 'warn' : 'pass'),
+      detail: missingVariableList.length > 0
+        ? [blockingVariableList.length > 0 ? `Unresolved: ${blockingVariableList.join(', ')}` : '', placeholderVariableList.length > 0 ? `Sent as placeholder text: ${placeholderVariableList.join(', ')}` : ''].filter(Boolean).join('; ')
+        : 'All replay variables are seeded or extracted before use.',
     },
     {
       id: 'secrets',
@@ -529,7 +546,7 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
   if (browserRequired) checks.push(browserEvidenceCaptureCheck(script))
 
   return {
-    valid: hasRequiredFields && gateIssues.length === 0 && missingVariableList.length === 0 && dataWarnings.length === 0,
+    valid: hasRequiredFields && gateIssues.length === 0 && blockingVariableList.length === 0 && dataWarnings.length === 0,
     action_count: definitionCount,
     expected_action_count: expectedCount,
     data_source_count: script.data_sources?.length || 0,
@@ -540,7 +557,9 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
     missing_secrets: requiredSecretList,
     runtime_prerequisites: prerequisites,
     issues: gateIssues,
-    warnings: dataWarnings,
+    warnings: placeholderVariableList.length > 0
+      ? [...dataWarnings, `variable(s) with no seed or preceding extractor are sent as placeholder text: ${placeholderVariableList.join(', ')}`]
+      : dataWarnings,
     checks,
   }
 }

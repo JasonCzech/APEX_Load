@@ -34,6 +34,9 @@ type ConvertOptions struct {
 	SanitizeSensitive   *bool  `json:"sanitize_sensitive,omitempty"`
 	IncludeStaticAssets *bool  `json:"include_static_assets,omitempty"`
 	DefaultThinkTimeMs  int    `json:"default_think_time_ms,omitempty"`
+	// SalvageTruncated imports the complete entries of a HAR file that was cut
+	// off partway through (see SalvageTruncated); the import warns what is lost.
+	SalvageTruncated *bool `json:"salvage_truncated,omitempty"`
 }
 
 type ArtifactGovernance struct {

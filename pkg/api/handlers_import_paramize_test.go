@@ -417,13 +417,15 @@ func TestImportParameterizationPreservesMisclassifiedCredentialSuggestion(t *tes
 		Config: dsl.ScriptConfig{BaseURL: "https://api.example.com"},
 		Actions: []dsl.Action{{
 			Name: "login", Type: "http_request", Method: http.MethodPost, Target: "/login",
-			Body: `{"user_password":"credential-never-on-wire","customer_id":"customer-93847"}`,
+			// A credential-shaped name that the business-name heuristic still
+			// reads as per-user data (its last word is id).
+			Body: `{"user_password_id":"credential-never-on-wire","customer_id":"customer-93847"}`,
 		}},
 	}
 	raw := buildImportParameterization(script, nil)
 	foundMisclassified := false
 	for _, suggestion := range raw.Suggestions {
-		if suggestion.Kind == paramize.KindDataParam && suggestion.VarName == "user_password" {
+		if suggestion.Kind == paramize.KindDataParam && suggestion.VarName == "user_password_id" {
 			foundMisclassified = true
 		}
 	}
@@ -435,7 +437,7 @@ func TestImportParameterizationPreservesMisclassifiedCredentialSuggestion(t *tes
 	block := response["parameterization"].(*paramize.Result)
 	foundPreserved := false
 	for _, suggestion := range block.Suggestions {
-		if suggestion.VarName == "user_password" {
+		if suggestion.VarName == "user_password_id" {
 			foundPreserved = suggestion.LiteralValue == "credential-never-on-wire"
 		}
 	}

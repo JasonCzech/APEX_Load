@@ -1435,7 +1435,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     || result?.summary?.migration_readiness?.blocked
     || (replayPreflight?.valid === false
     || replayPreflight?.checks?.some(check => check.status === 'fail')
-    || replayPreflight?.missing_secrets?.length || replayPreflight?.missing_variables?.length)
+    || replayPreflight?.missing_secrets?.length)
     || reviewSections.some(section => section.severity === 'blocker'))
   const readinessMessage = needsExecutionRepair
     ? 'Imported — repairs needed before replay.'
@@ -1453,8 +1453,10 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     const diagnosticSections = currentRepairReview ? reviewSections.filter(section => ['warnings', 'conversion_warnings'].includes(section.key)) : reviewSections
     const warningFallback = result?.warnings?.length ? [{ key: 'warnings', title: 'Conversion warnings', severity: 'warning', summary: '', items: result.warnings }] : []
     extra.push(...reviewSectionFindings([...diagnosticSections, ...warningFallback], sourceReview || undefined).filter(finding => finding.gate !== 'execution' || !canonical.length))
+    // Replay sends a missing variable as placeholder text unless the variable-readiness check fails.
+    const variablesBlocked = replayPreflight?.checks?.some(check => check.id === 'variables' && check.status === 'fail')
     if (!currentRepairReview) for (const variable of replayPreflight?.missing_variables || []) {
-      if (!codes.has(`missing_producer:${variable}`)) extra.push({ code: `missing_producer:${variable}`, detail: `Missing variable: ${variable}`, gate: 'execution' })
+      if (!codes.has(`missing_producer:${variable}`)) extra.push({ code: `missing_producer:${variable}`, detail: `Missing variable: ${variable}`, gate: variablesBlocked ? 'execution' : 'promotion' })
     }
     const bindings = currentRepairReview?.readiness.unresolved_bindings ?? replayPreflight?.missing_secrets?.length ?? 0
     if (bindings) extra.push({ code: 'diagnostic:credential_bindings', detail: `${bindings} credential requirements remain unresolved. Review project secret bindings and protected body requirements. Counts may include several requirements for one request.`, gate: 'execution' })

@@ -21,8 +21,12 @@ function isZipArchiveFile(file: File): boolean {
   return file.name.toLowerCase().endsWith('.zip')
 }
 
-export async function archiveContainsOpenCollectionMarker(file: File): Promise<boolean> {
-  if (!isZipArchiveFile(file) || file.size === 0) return false
+// visitZipMemberNames walks the member names of a ZIP's central directory with
+// bounded reads, calling visit for each until it returns true. It resolves true
+// when every member was visited or the visitor stopped the walk, and false when
+// the archive cannot be read.
+async function visitZipMemberNames(file: File, visit: (memberName: string) => boolean): Promise<boolean> {
+  if (file.size === 0) return false
   try {
     // The end record gives the exact central-directory range. Reading from that
     // offset avoids false negatives when a large directory pushes an early
@@ -87,14 +91,45 @@ export async function archiveContainsOpenCollectionMarker(file: File): Promise<b
       if (nextEntryOffset > directoryEnd) return false
       const name = await readDirectoryRange(nameStart, nameLength)
       if (!name) return false
-      const memberName = decoder.decode(name).replace(/\\/g, '/')
-      if (memberName.split('/').pop()?.toLowerCase().match(/^opencollection\.ya?ml$/)) return true
+      if (visit(decoder.decode(name).replace(/\\/g, '/'))) return true
       entryOffset = nextEntryOffset
     }
-    return false
+    return true
   } catch {
     return false
   }
+}
+
+function zipMemberBase(memberName: string): string {
+  return (memberName.split('/').pop() || '').toLowerCase()
+}
+
+export async function archiveContainsOpenCollectionMarker(file: File): Promise<boolean> {
+  if (!isZipArchiveFile(file)) return false
+  let found = false
+  await visitZipMemberNames(file, memberName => {
+    found = /^opencollection\.ya?ml$/.test(zipMemberBase(memberName))
+    return found
+  })
+  return found
+}
+
+// archiveIsJMeterProject recognizes a ZIP or LoadRunner Enterprise USZ whose
+// only scripts are JMeter plans: a .jmx and no VuGen C, Java or JavaScript
+// sources. Those archives belong to the JMeter importer, which reads the plan
+// inside directly; the enterprise archive importer can only review them.
+export async function archiveIsJMeterProject(file: File): Promise<boolean> {
+  const name = file.name.toLowerCase()
+  if (!name.endsWith('.zip') && !name.endsWith('.usz')) return false
+  let plans = false
+  let sources = false
+  const complete = await visitZipMemberNames(file, memberName => {
+    const base = zipMemberBase(memberName)
+    if (base.endsWith('.jmx')) plans = true
+    sources = /\.(?:c|h|java|js|ts)$/.test(base)
+    return sources
+  })
+  return complete && plans && !sources
 }
 
 export function nativeImportTargetForFileName(fileName: string): NativeImportTarget {
@@ -194,6 +229,7 @@ export async function nativeImportTargetForFile(file: File): Promise<NativeImpor
   if (name.endsWith('.zip') && await archiveContainsOpenCollectionMarker(file)) {
     return { launcher: 'bruno', mode: 'native_requests' }
   }
+  if (await archiveIsJMeterProject(file)) return { launcher: 'jmeter' }
   const namedTarget = nativeImportTargetForFileName(name)
   if (name.endsWith('.js') || name.endsWith('.ts')) {
     const content = await file.slice(0, 128 * 1024).text()

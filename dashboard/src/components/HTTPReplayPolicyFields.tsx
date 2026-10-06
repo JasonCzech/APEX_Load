@@ -38,6 +38,11 @@ export function HTTPReplayPolicyFields({ value = {}, inherited, onChange, sectio
     {toggle('legacy_html_checks', 'Legacy HTML checks')}
     {toggle('dns_cache', 'Per-VUser DNS cache')}
     <div className="form-hint">Warnings preserve explicit assertion failures. Legacy checks affect imported HTML checks only. DNS entries expire after 60 seconds; system resolver caches remain independent.</div>
+    <label><span>Aura actions that failed in the recording</span><select className="settings-input" value={value.aura_recorded_failures ?? ''}
+      onChange={event => onChange({ aura_recorded_failures: (event.target.value || undefined) as HTTPConfig['aura_recorded_failures'] })}>
+      <option value="">{inherited ? `Inherit (${inherited.aura_recorded_failures === 'accept_recorded' ? 'accept the recorded outcome' : 'require success'})` : 'Default (require success)'}</option>
+      <option value="require_success">Require success</option><option value="accept_recorded">Accept the recorded outcome</option>
+    </select><small>Applies to imported Aura actions that already failed in the recording. Require success fails them and labels the failure as recorded; accepting passes an action that ends in the same state as the recording.</small></label>
     {number('cache_max_unused_iterations', 'Unused iterations before cache eviction', 1000000)}
     {list('cache_excluded_mime_types', 'Do not cache MIME types')}
     <label><span>Discover HTML resources in</span><select className="settings-input" value={value.html_parse_mode ?? ''}

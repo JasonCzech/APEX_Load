@@ -2,6 +2,7 @@ package enterprisearchive
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
@@ -502,9 +503,42 @@ func annotateSourceParameterAssignment(action *dsl.Action, fn ParsedFunction) {
 	case "lr_save_var":
 		saveIndex = 3
 		if len(args) > 0 {
+			expression := args[0]
+			if len(fn.CallArgs) > 0 && fn.CallArgs[0].Raw != "" {
+				expression = fn.CallArgs[0].Raw
+			}
+			// A pointer offset into the value (lr_eval_string("{p}") + 3, as a
+			// translated strncpy produces) saves from that byte on.
+			if base, offset, ok := sourceSaveVarOffset(expression); ok {
+				value := convertSourceMessageExpression(base)
+				action.Params["source_offset"] = offset
+				if executable, ok := action.Params["args"].([]any); ok && len(executable) > 0 {
+					executable[0] = value
+				}
+				action.Params["source_string"] = value
+				break
+			}
 			action.Params["source_string"] = convertSourceMessageExpression(args[0])
 		}
-	case "lr_save_timestamp", "lr_param_sprintf":
+	case "lr_param_sprintf":
+		saveIndex = 0
+		// The format and literal values keep their exact text: leading or
+		// trailing spaces are part of the built string.
+		// Rebuild from the structured call so a whitespace-only literal (" ")
+		// is not dropped with the cleaned arguments.
+		if len(fn.CallArgs) >= 2 {
+			executable := make([]any, 0, len(fn.CallArgs))
+			for index, arg := range fn.CallArgs {
+				raw := strings.TrimSpace(arg.Raw)
+				if literal, ok := decodeAdjacentCStringLiterals(raw); ok && index > 0 {
+					executable = append(executable, convertParamReferences(literal))
+					continue
+				}
+				executable = append(executable, convertSourceMessageExpression(convertutil.FirstNonEmpty(raw, arg.Value)))
+			}
+			action.Params["args"] = executable
+		}
+	case "lr_save_timestamp":
 		saveIndex = 0
 	}
 	if saveIndex >= 0 && saveIndex < len(args) && strings.TrimSpace(args[saveIndex]) != "" {
@@ -879,4 +913,79 @@ func sourceSupportNotes(fn ParsedFunction, mode SourceFunctionSupportMode) strin
 		}
 	}
 	return "Parsed source function converted to a native action."
+}
+
+// sourceSaveVarOffset splits "value + N" when value is a string literal or an
+// lr_eval_string call, the forms a pointer offset into a parameter takes.
+func sourceSaveVarOffset(expression string) (string, int, bool) {
+	match := cOffsetOperandPattern.FindStringSubmatch(strings.TrimSpace(expression))
+	if match == nil {
+		return "", 0, false
+	}
+	base := strings.TrimSpace(match[1])
+	if _, ok := helperOperand(base, nil); !ok {
+		return "", 0, false
+	}
+	offset, err := strconv.Atoi(match[2])
+	if err != nil || offset < 0 {
+		return "", 0, false
+	}
+	return base, offset, true
+}
+
+// sourceFileOutputWarning explains how scripts that write load-generator files
+// replay.
+const sourceFileOutputWarning = "The script writes lines to a file on the load generator (fopen/fprintf/fclose). APEX Load does not write generator files; each fprintf line is replayed as an output message tagged with its stream, so it appears with the run's other output messages."
+
+func noteSourceFileOutput(result *ConvertResult) {
+	for _, warning := range result.Warnings {
+		if warning == sourceFileOutputWarning {
+			return
+		}
+	}
+	result.Warnings = append(result.Warnings, sourceFileOutputWarning)
+}
+
+// isSourceFileOutputFunction reports the C file functions the converter maps
+// (fprintf to an output message, the rest to no-ops).
+func isSourceFileOutputFunction(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "fprintf", "fopen", "fclose", "fflush":
+		return true
+	}
+	return false
+}
+
+// convertSourceFileOutputAction turns fprintf(stream, format, values...) into
+// an output message carrying the same format and values.
+func convertSourceFileOutputAction(fn ParsedFunction) dsl.Action {
+	stream := ""
+	message := fn
+	if len(fn.CallArgs) > 0 {
+		stream = strings.TrimSpace(fn.CallArgs[0].Raw)
+		message.CallArgs = append([]ParsedArgument(nil), fn.CallArgs[1:]...)
+	}
+	if len(fn.RawArgs) > 0 {
+		if stream == "" {
+			stream = strings.TrimSpace(fn.RawArgs[0])
+		}
+		message.RawArgs = append([]string(nil), fn.RawArgs[1:]...)
+	}
+	if len(fn.Args) > 0 {
+		// Positional arguments are keyed arg1..argN; drop the stream.
+		message.Args = make(map[string]string, len(fn.Args))
+		for key, value := range fn.Args {
+			index, err := strconv.Atoi(strings.TrimPrefix(key, "arg"))
+			if !strings.HasPrefix(key, "arg") || err != nil {
+				message.Args[key] = value
+				continue
+			}
+			if index > 1 {
+				message.Args[fmt.Sprintf("arg%d", index-1)] = value
+			}
+		}
+	}
+	action := convertSourceMessageAction(message, SourceFunctionDefinition{Name: "fprintf", Family: "message", SupportMode: SourceFunctionSupportExecutable})
+	action.Params["output_stream"] = stream
+	return action
 }

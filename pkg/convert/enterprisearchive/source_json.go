@@ -63,7 +63,7 @@ func annotateSourceJSONAction(action *dsl.Action, fn ParsedFunction) (string, st
 		if !strings.Contains(query, "{{") {
 			if _, err := jsonquery.Parse(query); err != nil {
 				if errors.Is(err, jsonquery.ErrUnsupported) {
-					return "source_json_query_unsupported", fmt.Sprintf("lr_json_get_values QueryString %q uses JSONPath filters, slices or unions that APEX does not evaluate", query)
+					return "source_json_query_unsupported", fmt.Sprintf("lr_json_get_values QueryString %q uses JSONPath slices, unions or script expressions that APEX does not evaluate", query)
 				}
 				return "source_json_query_invalid", fmt.Sprintf("lr_json_get_values QueryString %q is not valid JSONPath: %v", query, err)
 			}

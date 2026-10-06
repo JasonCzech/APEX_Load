@@ -444,7 +444,7 @@ func TestAuraRecognitionUsesConcreteAPIPrecedenceAndBoundedStreaming(t *testing.
 }
 
 func TestAuraTerminalPathKeysRejectIdentifierShapedPrivateSuffixes(t *testing.T) {
-	for _, key := range []string{"user_jane_example_com", "record" + strings.Repeat("_", 100) + "id", "account_private_capture"} {
+	for _, key := range []string{"user_jane_example_com_id", "record" + strings.Repeat("_", 100) + "id", "account_private_capture_id"} {
 		result := auraOnlyAdvice(syntheticAuraScript(syntheticAuraBody(map[string]any{key: "private"}), ""))
 		if result.AuraPayload == nil || result.AuraPayload.UnsafePathFields != 1 || result.AuraPayload.Complete || len(result.Suggestions) != 0 {
 			t.Fatalf("unsafe terminal disclosure not counted for key length%d", len(key))

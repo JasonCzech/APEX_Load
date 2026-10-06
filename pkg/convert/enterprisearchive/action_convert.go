@@ -383,6 +383,33 @@ func removePersistentCookie(cookies *[]ParsedCookie, fn ParsedFunction) bool {
 	return removed
 }
 
+// upsertPersistentCookie mirrors the source cookie jar: adding a cookie whose
+// name, domain and path match an earlier one replaces its value instead of
+// sending both. Scripts that refresh RUM cookies before every request
+// otherwise grow a Cookie header with dozens of stale copies.
+func upsertPersistentCookie(cookies []ParsedCookie, cookie ParsedCookie) []ParsedCookie {
+	for index := range cookies {
+		if cookies[index].Name == cookie.Name &&
+			normalizedCookieDomain(cookies[index].Domain) == normalizedCookieDomain(cookie.Domain) &&
+			normalizedCookiePath(cookies[index].Path) == normalizedCookiePath(cookie.Path) {
+			cookies[index] = cookie
+			return cookies
+		}
+	}
+	return append(cookies, cookie)
+}
+
+func normalizedCookieDomain(domain string) string {
+	return strings.TrimPrefix(strings.ToLower(strings.TrimSpace(domain)), ".")
+}
+
+func normalizedCookiePath(path string) string {
+	if path = strings.TrimSpace(path); path == "" {
+		return "/"
+	}
+	return path
+}
+
 func cookieMatchesURL(cookie ParsedCookie, rawURL string) bool {
 	if strings.TrimSpace(cookie.Domain) == "" && strings.TrimSpace(cookie.Path) == "" {
 		return true

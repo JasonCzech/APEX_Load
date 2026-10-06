@@ -29,6 +29,7 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
+	importReq.noteSalvage(result)
 	protectedRequirements := result.ProtectedRequirements.Take()
 	defer clearCredentialRequirementValues(protectedRequirements)
 	if result.Script != nil {
@@ -37,6 +38,7 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 
 	agentforceTransform := agentforceTransformRequested(r)
 	salesforceAugmentation := augmentHARImportWithSalesforce(result, importReq.Data, importReq.ProjectID, importReq.Opts.ScriptName, "salesforce_har", true, agentforceTransform, false)
+	applyClientGeneratedUUIDs(salesforceAugmentation.Script, importReq.Data, result)
 
 	draft := importDraft{
 		Source:           salesforceAugmentation.Source,

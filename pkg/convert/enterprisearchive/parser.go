@@ -49,6 +49,10 @@ type ParsedFunction struct {
 	javaJDBCConnection                  *javaJDBCConnection
 	itemDataReviewReason                string
 	itemDataURLForm                     bool
+	// embeddedCall marks a call to a script-defined C function made inside
+	// an expression rather than as its own statement (see
+	// embeddedHelperCallKind). It runs only through helper inlining.
+	embeddedCall string
 }
 
 type ParsedCookie struct {
@@ -74,6 +78,13 @@ type ParsedAction struct {
 	Phase         string
 	Functions     []ParsedFunction
 	ParseFailures []CSourceParseFailure
+	// SplicedCommentLines are code lines a backslash-continued // comment
+	// swallows; they are reported, not imported.
+	SplicedCommentLines []CSplicedCommentLine
+	// embeddedCalls are calls made inside expressions (see
+	// embeddedHelperCallKind), in source order. Only helper inlining reads
+	// them.
+	embeddedCalls []ParsedFunction
 }
 
 // CSourceParseFailure is value-free evidence that a C lifecycle/action file
@@ -113,6 +124,10 @@ type ProjectConfig struct {
 	BaseURL           string
 	ThinkTimeMin      float64
 	ThinkTimeMax      float64
+	// ParamLeftBrace and ParamRightBrace are the .usr parameter delimiters
+	// ("{" and "}" unless the script changed them, as Java scripts often do).
+	ParamLeftBrace  string
+	ParamRightBrace string
 	// Transactions are the transaction names the project declares in
 	// [TransactionsOrder]/[Transactions], in declared order. They let the
 	// importer cross-check that every declared transaction survived
@@ -177,12 +192,15 @@ var (
 // surrounding C validity, so it recovers the valid steps the AST parser drops.
 func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 	analysis := analyzeCTransactionSource(filename, content)
+	spliced := findSplicedCommentLines(content)
 	astParsed, astErr := parseActionFileASTWithAnalysis(filename, content, analysis)
 	if astErr == nil && len(astParsed.Functions) > 0 {
+		astParsed.SplicedCommentLines = spliced
 		return astParsed, nil
 	}
 
-	legacyParsed, legacyErr := parseActionFileLegacy(filename, content)
+	legacyParsed, legacyErr := parseActionFileLegacy(filename, content, splicedCommentLineSet(spliced))
+	legacyParsed.SplicedCommentLines = spliced
 	if astParsed != nil {
 		legacyParsed.ParseFailures = appendUniqueCSourceParseFailures(
 			legacyParsed.ParseFailures,
@@ -212,6 +230,7 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 	// otherwise-empty file; otherwise surface the richer AST diagnostic so the
 	// caller can flag the archive for review.
 	if astErr == nil {
+		astParsed.SplicedCommentLines = spliced
 		return astParsed, nil
 	}
 	return legacyParsed, astErr
@@ -239,7 +258,10 @@ func appendUniqueCSourceParseFailures(
 	return failures
 }
 
-func parseActionFileLegacy(filename string, content string) (*ParsedAction, error) {
+// parseActionFileLegacy scans content line by line. Lines in splicedComments
+// belong to a backslash-continued // comment and are skipped, as the C parser
+// skips them.
+func parseActionFileLegacy(filename string, content string, splicedComments map[int]bool) (*ParsedAction, error) {
 	parsed := &ParsedAction{
 		Filename:  filename,
 		Functions: make([]ParsedFunction, 0),
@@ -258,7 +280,10 @@ func parseActionFileLegacy(filename string, content string) (*ParsedAction, erro
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
-		parseLine := stripCComments(line, &inComment)
+		parseLine := ""
+		if !splicedComments[lineNum] {
+			parseLine = stripCComments(line, &inComment)
+		}
 		trimmed := strings.TrimSpace(parseLine)
 
 		// Skip empty lines, comments
@@ -472,7 +497,7 @@ func parseFunctionBlock(block string, filename string, lineNum int, endLine int,
 		parseWebRegFind(&fn, inner)
 	case "web_link", "web_image", "web_image_check":
 		parseWebLinkImage(&fn, inner)
-	case "lr_think_time":
+	case "lr_think_time", "lr_force_think_time":
 		parseLRThinkTime(&fn, inner)
 	case "lr_start_transaction", "lr_end_transaction":
 		if len(fn.RawArgs) > 0 {
@@ -1220,6 +1245,10 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 				cfg.ScriptLanguage = value
 			case "runtype":
 				cfg.RunType = value
+			case "paramleftbrace":
+				cfg.ParamLeftBrace = value
+			case "paramrightbrace":
+				cfg.ParamRightBrace = value
 			case "defaultcfg":
 				cfg.DefaultCfg = pathValue
 				cfg.RuntimeFile = pathValue
@@ -1496,7 +1525,11 @@ func cleanINIConfigValue(section, key, value string) string {
 		strings.EqualFold(strings.TrimSpace(section), "RunLogicFiles") {
 		return cleanRuntimePathValue(value)
 	}
-	return cleanConfigValue(value)
+	cleaned := cleanConfigValue(value)
+	if cleaned == "" && strings.EqualFold(strings.TrimSpace(key), "Delimiter") {
+		return whitespaceParameterDelimiter(value)
+	}
+	return cleaned
 }
 
 // cleanRuntimePathValue removes INI quoting without interpreting backslashes
@@ -1582,7 +1615,7 @@ func isASCIIWhitespace(ch byte) bool {
 
 // extractThinkTime extracts think time value in seconds from an lr_think_time call.
 func ExtractThinkTimeSeconds(fn ParsedFunction) (float64, bool) {
-	if fn.Name != "lr_think_time" {
+	if fn.Name != "lr_think_time" && fn.Name != "lr_force_think_time" {
 		return 0, false
 	}
 	secStr, ok := fn.Args["seconds"]

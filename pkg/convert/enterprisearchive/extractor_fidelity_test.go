@@ -360,3 +360,67 @@ func TestPruneUnusedWholeBodyExtractors(t *testing.T) {
 		t.Fatalf("referenced prune = %#v actions=%#v", removed, referenced.Actions)
 	}
 }
+
+// VuGen's Text/IC= is a case-insensitive web_reg_find.
+func TestConvertFindAssertionHonorsTextFlags(t *testing.T) {
+	source := `Action()
+{
+	web_reg_find("Search=Body", "SaveCount=error_count", "Text/IC=Tuxedo", LAST);
+	web_url("count", "URL=https://example.com/count", LAST);
+	web_reg_find("Fail=NotFound", "Search=Body", "Text/IC=Shipping", LAST);
+	web_url("check", "URL=https://example.com/check", LAST);
+	web_reg_find("Text/BIN=\\x00", LAST);
+	web_url("binary", "URL=https://example.com/binary", LAST);
+	return 0;
+}
+`
+	parsed, err := ParseActionFile("Action.c", source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{ScriptName: "Flags"})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	actions := result.Script.Actions
+	if got := actions[0].Extractors; len(got) != 1 || got[0].Expression != "(?i)Tuxedo" {
+		t.Fatalf("count extractor = %+v, want a case-insensitive count", got)
+	}
+	if got := actions[1].Assertions; len(got) != 1 || got[0].Type != "body_contains" || got[0].Value != "Shipping" || !got[0].CaseInsensitive {
+		t.Fatalf("assertion = %+v, want case-insensitive body_contains", got)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "Text/BIN has no DSL equivalent") {
+		t.Fatalf("warnings = %#v, want the unsupported-flag warning", result.Warnings)
+	}
+	// A literal check of wildcard or binary text would fail where LoadRunner
+	// passes, so the unsupported flag imports no check at all.
+	if got := actions[2].Assertions; len(got) != 0 {
+		t.Fatalf("binary assertions = %+v, want none", got)
+	}
+}
+
+// lr_force_think_time waits whatever the think-time settings say.
+func TestConvertForceThinkTimeKeepsAForcedDelay(t *testing.T) {
+	source := `Action()
+{
+	web_url("home", "URL=https://example.com/", LAST);
+	lr_force_think_time(2);
+	return 0;
+}
+`
+	parsed, err := ParseActionFile("Action.c", source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{ScriptName: "Forced"})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	actions := result.Script.Actions
+	if len(actions) != 2 || actions[0].ThinkTimeAfter {
+		t.Fatalf("actions = %#v, want the forced wait kept as its own action", actions)
+	}
+	if got := actions[1].ThinkTime; !actions[1].ThinkTimeAfter || got.Type != "fixed" || got.MeanMs != 2000 || !got.Force {
+		t.Fatalf("think time = %+v, want a forced 2000 ms fixed delay", got)
+	}
+}

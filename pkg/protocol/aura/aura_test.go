@@ -82,11 +82,34 @@ func TestDuplicateMembersAndStrictUnicode(t *testing.T) {
 		`{"actions":[],"actions":[]}`,
 		`{"actions":[{"id":"x","id":"y","descriptor":"synthetic"}]}`,
 		`{"actions":[{"id":"x","\u0069d":"y","descriptor":"synthetic"}]}`,
-		`{"actions":[{"id":"x","descriptor":"synthetic","params":{"a":1,"a":2}}]}`,
+		`{"actions":[{"id":"x","descriptor":"synthetic","\u0064escriptor":"other"}]}`,
 	} {
 		report := ValidateRequest([]byte(body))
 		if report.Complete || len(report.Issues) == 0 || report.Issues[0].Code != DuplicateMember {
 			t.Fatalf("duplicate accepted: %+v", report)
+		}
+	}
+	// Members the validator does not read cannot change its result, so their
+	// duplicates (common in captured component payloads) are accepted.
+	if report := ValidateRequest([]byte(`{"actions":[{"id":"x","descriptor":"synthetic","params":{"a":1,"a":2},"params":{}}],"actions_count":1,"actions_count":2}`)); !report.Success {
+		t.Fatalf("unread duplicate rejected: %+v", report)
+	}
+	for _, body := range []string{
+		`{"actions":[{"id":"x","state":"SUCCESS","returnValue":{"icon":1,"icon":2}}]}`,
+		`{"actions":[{"id":"x","state":"SUCCESS","error":[],"error":[]}],"context":{"loaded":{"a":1,"a":1}},"context":{}}`,
+		`{"actions":[{"id":"x","state":"SUCCESS","returnValue":[{"\u0073tate":"ERROR","state":"ERROR"}]}]}`,
+	} {
+		if report := InspectResponse([]byte(body)); !report.Success || !report.Complete {
+			t.Fatalf("unread duplicate rejected: %s %+v", body, report)
+		}
+	}
+	for _, body := range []string{
+		`{"actions":[{"id":"x","state":"SUCCESS"}],"actions":[{"id":"x","state":"SUCCESS"}]}`,
+		`{"actions":[{"id":"x","state":"SUCCESS","id":"x"}]}`,
+		`{"exceptionEvent":false,"exceptionEvent":false,"actions":[{"id":"x","state":"SUCCESS"}]}`,
+	} {
+		if report := InspectResponse([]byte(body)); report.Complete || len(report.Issues) == 0 || report.Issues[0].Code != DuplicateMember {
+			t.Fatalf("read duplicate accepted: %s %+v", body, report)
 		}
 	}
 	for _, body := range []string{
@@ -162,5 +185,126 @@ func TestReportsAndErrorsNeverDiscloseSourceValues(t *testing.T) {
 				t.Fatalf("report disclosed source value %q", secret)
 			}
 		}
+	}
+}
+
+func TestParseBaseline(t *testing.T) {
+	if recorded, err := ParseBaseline(nil); recorded != nil || err != nil {
+		t.Fatalf("nil baseline = %v, %v", recorded, err)
+	}
+	typed := Baseline{Recorded: []RecordedOutcome{{Ordinal: 2, State: Error}, {Ordinal: 3, State: Aborted}}}
+	var decoded any
+	if err := json.Unmarshal([]byte(`{"recorded":[{"ordinal":2,"state":"ERROR"},{"ordinal":3,"state":"ABORTED"}]}`), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	for _, form := range []any{typed, &typed, decoded, map[string][]RecordedOutcome{"recorded": typed.Recorded}} {
+		recorded, err := ParseBaseline(form)
+		if err != nil || len(recorded) != 2 || recorded[2] != Error || recorded[3] != Aborted {
+			t.Fatalf("ParseBaseline(%#v) = %v, %v", form, recorded, err)
+		}
+	}
+	for _, invalid := range []string{
+		`"SUCCESS"`, `{}`, `{"recorded":[]}`, `{"recorded":[{"ordinal":0,"state":"ERROR"}]}`,
+		`{"recorded":[{"ordinal":1,"state":"SUCCESS"}]}`, `{"recorded":[{"ordinal":1,"state":"ERROR"},{"ordinal":1,"state":"ERROR"}]}`,
+		`{"recorded":[{"ordinal":1,"state":"ERROR"}],"extra":true}`, `{"recorded":[{"ordinal":1.5,"state":"ERROR"}]}`,
+		`{"recorded":[{"ordinal":1,"state":"ERROR","note":"x"}]}`, `{"recorded":[{"ordinal":"1","state":"ERROR"}]}`,
+	} {
+		var value any
+		if err := json.Unmarshal([]byte(invalid), &value); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ParseBaseline(value); err == nil {
+			t.Errorf("ParseBaseline(%s) accepted", invalid)
+		}
+	}
+}
+
+// An action that failed in the recording fails again labelled as such; with
+// accept it passes when it ends in the same state, but a new failure, a
+// different failure state and structural problems are never excused.
+func TestApplyRecordedBaseline(t *testing.T) {
+	failedSecond := strings.Replace(response, `"2;a","state":"SUCCESS"`, `"2;a","state":"ERROR"`, 1)
+	recorded := map[int]State{2: Error}
+
+	report := Validate([]byte(request), []byte(failedSecond))
+	report.ApplyRecordedBaseline(recorded, false)
+	if report.Success || len(report.Issues) != 1 || !report.Issues[0].RecordedFailure || report.Outcomes[1].Recorded != Error ||
+		!strings.Contains(report.Err().Error(), "non_success_state at action 2 (also failed in the recording)") {
+		t.Fatalf("require success: %+v err=%v", report, report.Err())
+	}
+
+	report = Validate([]byte(request), []byte(failedSecond))
+	report.ApplyRecordedBaseline(recorded, true)
+	if !report.Success || report.AcceptedRecordedFailures != 1 || len(report.Issues) != 0 {
+		t.Fatalf("accept recorded: %+v", report)
+	}
+
+	for name, tc := range map[string]struct {
+		response string
+		recorded map[int]State
+	}{
+		"new failure":         {strings.Replace(response, `"1;a","state":"SUCCESS"`, `"1;a","state":"ERROR"`, 1), recorded},
+		"other failure state": {strings.Replace(response, `"2;a","state":"SUCCESS"`, `"2;a","state":"INCOMPLETE"`, 1), recorded},
+		"missing response":    {`{"actions":[{"id":"1;a","state":"SUCCESS"}]}`, recorded},
+	} {
+		report := Validate([]byte(request), []byte(tc.response))
+		report.ApplyRecordedBaseline(tc.recorded, true)
+		if report.Success || report.AcceptedRecordedFailures != 0 {
+			t.Errorf("%s accepted: %+v", name, report)
+		}
+	}
+
+	recovered := Validate([]byte(request), []byte(response))
+	recovered.ApplyRecordedBaseline(recorded, false)
+	if !recovered.Success {
+		t.Fatalf("a replay that succeeds where the recording failed must pass: %+v", recovered)
+	}
+}
+
+// The Aura client unwraps a response ending in /*ERROR*/ (the JSON between the
+// first */ and the last /*) and treats an exception event as a framework
+// error; it reads a non-200 exception body the same way without the wrapper.
+func TestFrameworkErrorResponses(t *testing.T) {
+	event := func(descriptor string) string {
+		return `{"exceptionEvent":true,"event":{"descriptor":"` + descriptor + `","attributes":{"values":{"newToken":"private-token"}}},"message":"private-message"}`
+	}
+	for name, tc := range map[string]struct {
+		response string
+		want     Code
+	}{
+		"invalid session":         {"*/" + event("markup://aura:invalidSession") + "/*ERROR*/", InvalidSession},
+		"client out of sync":      {"*/" + event("markup://aura:clientOutOfSync") + "/*ERROR*/\n", ClientOutOfSync},
+		"other event":             {"*/" + event("markup://c:privateEvent") + "/*ERROR*/", FrameworkError},
+		"exception without event": {`*/{"exceptionEvent":true,"message":"private-message"}/*ERROR*/`, FrameworkError},
+		"not an exception event":  {`*/{"message":"private-message"}/*ERROR*/`, FrameworkError},
+		"malformed JSON":          {"*/{not json/*ERROR*/", FrameworkError},
+		"no opening marker":       {`{"exceptionEvent":true}/*ERROR*/`, FrameworkError},
+		"unwrapped exception":     {event("markup://aura:invalidSession"), InvalidSession},
+		"unread duplicate":        {`*/{"exceptionEvent":true,"event":{"descriptor":"markup://aura:invalidSession","attributes":{},"attributes":{}},"message":"private-message"}/*ERROR*/`, InvalidSession},
+		"duplicate descriptor":    {`*/{"exceptionEvent":true,"event":{"descriptor":"markup://aura:invalidSession","descriptor":"markup://aura:clientOutOfSync"}}/*ERROR*/`, FrameworkError},
+	} {
+		report := Validate([]byte(request), []byte(tc.response))
+		if !report.Complete || report.Success || len(report.Issues) != 1 || report.Issues[0].Code != tc.want || len(report.Outcomes) != 0 {
+			t.Errorf("%s: report = %+v, want complete failure %s", name, report, tc.want)
+			continue
+		}
+		if got := report.Err().Error(); got != "Aura validation failed: "+string(tc.want) {
+			t.Errorf("%s: error = %q", name, got)
+		}
+		encoded, _ := json.Marshal(report)
+		for _, private := range []string{"private-token", "private-message", "privateEvent", "invalidSession", "clientOutOfSync"} {
+			if strings.Contains(string(encoded)+report.Err().Error(), private) {
+				t.Errorf("%s: report discloses %q: %s", name, private, encoded)
+			}
+		}
+		if inspected := InspectResponse([]byte(tc.response)); !inspected.Complete || inspected.Issues[0].Code != tc.want {
+			t.Errorf("%s: InspectResponse = %+v", name, inspected)
+		}
+	}
+
+	// A successful envelope that merely contains the marker is not an error.
+	marker := `{"actions":[{"id":"1;a","state":"SUCCESS","returnValue":"/*ERROR*/"},{"id":"2;a","state":"SUCCESS"}]}`
+	if report := Validate([]byte(request), []byte(marker)); !report.Success {
+		t.Fatalf("marker inside a value treated as an error: %+v", report)
 	}
 }

@@ -17,6 +17,13 @@ describe('import issue queue', () => {
     expect(groups.map(g => g.findings.length).sort()).toEqual([1, 1, 2])
     expect(groups[0].title).toBe('Missing value: token')
   })
+  it('blocks a missing producer only when the server gates execution', () => {
+    const groups = groupImportFindings([
+      { code: 'missing_producer:storeId', action_path: 'actions[0]', detail: '', gate: 'promotion', severity: 'warning' },
+      { code: 'missing_producer:document', action_path: 'actions[1]', detail: '', gate: 'execution', severity: 'blocker' },
+    ], script)
+    expect(Object.fromEntries(groups.map(g => [g.title, g.blocking]))).toEqual({ 'Missing value: storeId': false, 'Missing value: document': true })
+  })
   it('merges generic body evidence but retains independent bodies and blockers', () => {
     const findings = ['actions[0]', 'actions[1]'].flatMap(action_path => [
       { code: 'restored_body_required', action_path, detail: '', gate: 'execution' },

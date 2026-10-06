@@ -130,8 +130,21 @@ func AnalyzeDependencies(script *dsl.Script) ([]Finding, error) {
 				continue
 			}
 			seen[string(match[1])+"."+key] = true
-			code, level, gate := "missing_producer:"+name, diag.Blocker, GateExecution
-			detail := "No preceding producer supplies " + name + ". Bind a producer, parameter, or response extractor."
+			// Like LoadRunner, which sends an undefined {param} literally and
+			// warns that it "is not a parameter", replay sends a {{var.*}}
+			// placeholder unchanged and warns; promotion still requires a
+			// reviewed producer. An unresolved {{param.*}} is never sent, and a
+			// JSON helper fails its step rather than parse placeholder text.
+			code, level, gate := "missing_producer:"+name, diag.Warning, GatePromotion
+			detail := "No preceding producer supplies " + name + ". Replay sends its placeholder text unchanged and warns, as LoadRunner does; bind a producer, parameter, or response extractor if the server needs a real value."
+			switch {
+			case parameterOnly:
+				level, gate = diag.Blocker, GateExecution
+				detail = "No parameter supplies " + name + ", and replay refuses a request with an unresolved parameter. Bind a parameter or data source."
+			case a.Type == "source_json":
+				level, gate = diag.Blocker, GateExecution
+				detail = "No preceding producer supplies " + name + ", and the JSON helper fails its step without a value. Bind a producer, parameter, or response extractor."
+			}
 			arrayValue := false
 			if idx := strings.LastIndex(key, "_"); idx > 0 && arrayProducers[key[:idx]] {
 				n, err := strconv.Atoi(key[idx+1:])

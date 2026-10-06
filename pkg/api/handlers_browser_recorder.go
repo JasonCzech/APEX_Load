@@ -2003,6 +2003,7 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 	salesforceDraft := augmentHARImportWithSalesforce(result, artifact.HAR,
 		normalizeProjectID(info.ProjectID), httpName, "browser_recording_har", true, false, true)
 	result.Script = salesforceDraft.Script
+	applyClientGeneratedUUIDs(result.Script, artifact.HAR, result)
 
 	// Run the shared augmentation over the generated HTTP draft and hand its
 	// sections back. Before this the detectors ran here with their return value

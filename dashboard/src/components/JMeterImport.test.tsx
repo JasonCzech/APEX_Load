@@ -1031,6 +1031,23 @@ describe('JMeterImport', () => {
     )
   })
 
+  it('accepts a LoadRunner Enterprise JMeter USZ', async () => {
+    await act(async () => {
+      root.render(<JMeterImport projectId="project-1" />)
+    })
+    await flushPromises()
+
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    expect(fileInput.accept).toContain('.usz')
+    const archive = new File(['PK\u0003\u0004'], 'LoadPlan.usz')
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [archive] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('LoadPlan.usz')
+    expect(container.textContent).not.toContain('Please upload a JMeter')
+  })
+
   it('returns the first persisted script through the import save handoff', async () => {
     const onImported = vi.fn()
     apiMock.saveJMeterImport.mockResolvedValueOnce({

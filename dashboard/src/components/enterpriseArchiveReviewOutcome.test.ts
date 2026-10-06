@@ -34,6 +34,12 @@ describe('archive queue review outcome', () => {
     expect(outcome(item)).toBe('Blocker')
   })
 
+  it('does not block on variables replay sends as placeholder text', () => {
+    const item = state()
+    item.result!.preflight = { valid: true, action_count: 1, expected_action_count: 1, data_source_count: 0, parameter_count: 0, missing_variables: ['store_ref'], checks: [{ id: 'variables', label: 'Variable readiness', status: 'warn' }] }
+    expect(outcome(item)).toBe('Ready to save')
+  })
+
   it.each([
     ['queued', 'Replay in progress'], ['running', 'Replay in progress'], ['paused', 'Replay in progress'],
     ['failed', 'Needs replay retry'], ['stopped', 'Needs replay retry'], ['completed', 'Review replay results'],

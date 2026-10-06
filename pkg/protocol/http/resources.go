@@ -27,10 +27,16 @@ import (
 // bounded concurrency. Every fetch flows through the same simulated browser
 // cache as the main request, so "Simulate browser cache" is meaningful across
 // pages and iterations. Resource failures follow the configured replay outcome policy.
+// MaxPageResources is the most resources one page fetches, explicit
+// (params.resources) and discovered together. Importers apply the same bound.
+const MaxPageResources = 256
+
 const (
-	// maxPageResources bounds the resources fetched per page (LR-comparable),
-	// including URLs discovered inside fetched CSS.
-	maxPageResources = 64
+	// maxPageResources bounds the resources fetched per page, including URLs
+	// discovered inside fetched CSS. LoadRunner has no per-page limit and
+	// recorded pages routinely list 100+ EXTRARES entries; a page that reaches
+	// the bound reports resource_cap_reached instead of truncating silently.
+	maxPageResources = MaxPageResources
 	// maxPrefetchResources bounds the low-priority prefetch/prerender wave.
 	maxPrefetchResources = 16
 	// maxResourceCSSRefs bounds url(...) extraction per fetched stylesheet.
@@ -195,12 +201,12 @@ func (f *resourceFetcher) fetchPageResources(
 		resources = append(resources, resourceRef{url: pageURL.ResolveReference(u).String(), resourceType: "other", referer: r.Referer})
 	}
 	resources = append(resources, discovered...)
-	resources = f.filterResourceRefs(resources, pageURL, maxPageResources, nil)
+	resources, capped := f.filterResourceRefs(resources, pageURL, maxPageResources, nil)
 	if len(resources) == 0 && len(prefetch) == 0 {
 		return
 	}
 
-	stats := &resourceFetchStats{}
+	stats := &resourceFetchStats{capped: capped}
 	cssBodies := f.fetchResourceWave(ctx, resources, pageURL.String(), stats, true, pageHeaders)
 
 	// Second bounded wave: url(...) references discovered in fetched CSS.
@@ -216,14 +222,16 @@ func (f *resourceFetcher) fetchPageResources(
 			cssRefs = append(cssRefs, extractCSSResourceRefs(css.body, cssBase)...)
 		}
 		seen := stats.seenURLs()
-		cssRefs = f.filterResourceRefs(cssRefs, pageURL, maxPageResources-stats.requested(), seen)
+		var cssCapped bool
+		cssRefs, cssCapped = f.filterResourceRefs(cssRefs, pageURL, maxPageResources-stats.requested(), seen)
+		stats.markCapped(cssCapped)
 		f.fetchResourceWave(ctx, cssRefs, pageURL.String(), stats, false, pageHeaders)
 	}
 
 	// Low-priority prefetch/prerender wave, after all page resources. Skipped
 	// when the action context is already done.
 	if len(prefetch) > 0 && ctx.Err() == nil {
-		prefetch = f.filterResourceRefs(prefetch, pageURL, maxPrefetchResources, stats.seenURLs())
+		prefetch, _ = f.filterResourceRefs(prefetch, pageURL, maxPrefetchResources, stats.seenURLs())
 		f.fetchResourceWave(ctx, prefetch, pageURL.String(), stats, false, pageHeaders)
 	}
 
@@ -233,19 +241,18 @@ func (f *resourceFetcher) fetchPageResources(
 
 // filterResourceRefs resolves, dedupes, scheme-checks, filter-checks, and caps
 // a wave of refs. seen (may be nil) carries URLs already fetched this page.
-func (f *resourceFetcher) filterResourceRefs(refs []resourceRef, pageURL *neturl.URL, limit int, seen map[string]struct{}) []resourceRef {
-	if limit <= 0 || len(refs) == 0 {
-		return nil
+// capped reports that a fetchable ref remained when the limit was reached;
+// leftover duplicates and filtered refs do not count.
+func (f *resourceFetcher) filterResourceRefs(refs []resourceRef, pageURL *neturl.URL, limit int, seen map[string]struct{}) (filtered []resourceRef, capped bool) {
+	if len(refs) == 0 {
+		return nil, false
 	}
 	if seen == nil {
 		seen = make(map[string]struct{}, len(refs))
 	}
 	page := pageURL.String()
-	filtered := make([]resourceRef, 0, len(refs))
+	filtered = make([]resourceRef, 0, max(0, min(len(refs), limit)))
 	for _, ref := range refs {
-		if len(filtered) >= limit {
-			break
-		}
 		if ref.url == "" || ref.url == page {
 			continue
 		}
@@ -259,10 +266,13 @@ func (f *resourceFetcher) filterResourceRefs(refs []resourceRef, pageURL *neturl
 		if f.blockedByDownloadFilters(ref.url) {
 			continue
 		}
+		if len(filtered) >= limit {
+			return filtered, true
+		}
 		seen[ref.url] = struct{}{}
 		filtered = append(filtered, ref)
 	}
-	return filtered
+	return filtered, false
 }
 
 // resourceFetchStats accumulates one page's resource-phase outcome.
@@ -274,6 +284,7 @@ type resourceFetchStats struct {
 	failures  int
 	cacheHits int
 	seen      map[string]struct{}
+	capped    bool // the page offered more resources than maxPageResources
 }
 
 func (s *resourceFetchStats) record(entry protocol.NetworkEntry, bytes int64, failed, cacheHit bool) {
@@ -325,6 +336,18 @@ func (s *resourceFetchStats) applyTo(result *protocol.Result) {
 	result.ProtocolEvidence["resource_failures"] = s.failures
 	result.ProtocolEvidence["resource_cache_hits"] = s.cacheHits
 	result.ProtocolEvidence["resource_bytes"] = s.bytes
+	if s.capped {
+		result.ProtocolEvidence["resource_cap_reached"] = true
+	}
+}
+
+func (s *resourceFetchStats) markCapped(capped bool) {
+	if !capped {
+		return
+	}
+	s.mu.Lock()
+	s.capped = true
+	s.mu.Unlock()
 }
 
 // fetchResourceWave fetches one wave with browser-like concurrency bounds and

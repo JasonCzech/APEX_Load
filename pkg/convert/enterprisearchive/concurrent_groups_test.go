@@ -120,7 +120,13 @@ func TestSourceConcurrentGroupsStayExplicitForUnsafeSourceSpans(t *testing.T) {
 		{"nested", `web_concurrent_start(NULL);` + request + `web_concurrent_start(NULL);` + request + `web_concurrent_end(NULL);web_concurrent_end(NULL);`},
 		{"marker arguments", `web_concurrent_start("synthetic");` + request + `web_concurrent_end(NULL);`},
 		{"runtime barrier", `web_concurrent_start(NULL);web_set_timeout("CONNECT","4",LAST);` + request + `web_concurrent_end(NULL);`},
-		{"transaction crossing", `web_concurrent_start(NULL);lr_start_transaction("inside");` + request + `lr_end_transaction("inside",LR_AUTO);web_concurrent_end(NULL);`},
+		{"transaction around group members", `web_concurrent_start(NULL);lr_start_transaction("inside");` + request + request + `lr_end_transaction("inside",LR_AUTO);web_concurrent_end(NULL);`},
+		{"explicit transaction status", `web_concurrent_start(NULL);lr_start_transaction("inside");` + request + `lr_end_transaction("inside",LR_PASS);web_concurrent_end(NULL);`},
+		{"partial transaction wrappers", `web_concurrent_start(NULL);lr_start_transaction("inside");` + request + `lr_end_transaction("inside",LR_AUTO);` + request + `web_concurrent_end(NULL);`},
+		{"nested transaction wrappers", `web_concurrent_start(NULL);lr_start_transaction("outer");lr_start_transaction("inner");` + request + `lr_end_transaction("inner",LR_AUTO);lr_end_transaction("outer",LR_AUTO);web_concurrent_end(NULL);`},
+		{"mismatched transaction wrapper", `web_concurrent_start(NULL);lr_start_transaction("first");` + request + `lr_end_transaction("second",LR_AUTO);web_concurrent_end(NULL);`},
+		{"transaction left open", `web_concurrent_start(NULL);lr_start_transaction("inside");` + request + `web_concurrent_end(NULL);lr_end_transaction("inside",LR_AUTO);`},
+		{"registration after wrapped request", `web_concurrent_start(NULL);lr_start_transaction("inside");` + request + `web_reg_find("Text=ready",LAST);lr_end_transaction("inside",LR_AUTO);web_concurrent_end(NULL);`},
 		{"think time", `web_concurrent_start(NULL);` + request + `lr_think_time(0.1);` + request + `web_concurrent_end(NULL);`},
 		{"previous response", `web_concurrent_start(NULL);` + request + `web_find("old", "What=ready",LAST);` + request + `web_concurrent_end(NULL);`},
 		{"non HTTP", `web_concurrent_start(NULL);web_stream_open("stream");` + request + `web_concurrent_end(NULL);`},
@@ -244,6 +250,56 @@ func TestSourceConcurrentGroupPreservesEnclosingTransaction(t *testing.T) {
 	}
 	if starts != 1 || ends != 1 {
 		t.Fatalf("transaction lifecycle lost starts=%d ends=%d", starts, ends)
+	}
+}
+
+func TestSourceConcurrentGroupFoldsPerRequestTransactions(t *testing.T) {
+	result := concurrentSourceResult(t, `Action(){web_url("Before","URL=https://example.test/before",LAST);
+ web_concurrent_start(NULL);
+ lr_start_transaction("first.json");
+ web_reg_save_param_json("ParamName=first_id", "QueryString=$.id", LAST);
+ web_url("first","URL=https://example.test/first.json",LAST);
+ lr_end_transaction("first.json",LR_AUTO);
+ lr_start_transaction("second.woff2");
+ web_url("second","URL=https://example.test/second.woff2",LAST);
+ lr_end_transaction("second.woff2",LR_AUTO);
+ web_concurrent_end(NULL);
+ web_url("After","URL=https://example.test/after",LAST);return 0;}`, ConvertOptions{PreserveTransactions: true})
+	groups := concurrentSourceGroups(t, result.Script)
+	group, ok := groups["actions[1]"]
+	if len(groups) != 1 || !ok {
+		t.Fatalf("wrapped group not converted: %v", reflect.ValueOf(groups).MapKeys())
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("wrapper transactions were not folded: %d actions", len(result.Script.Actions))
+	}
+	if _, exists := group.Metadata["source_transaction"]; exists {
+		t.Fatal("group took its first request's transaction")
+	}
+	children := concurrentSourceRequests(t, group)
+	if got := dsl.HTTPConcurrentRequestTransactions(children); !reflect.DeepEqual(got, []string{"first.json", "second.woff2"}) {
+		t.Fatalf("request transactions = %v", got)
+	}
+	if len(children[0].Extractors) != 1 {
+		t.Fatal("registration inside the wrapper did not reach its request")
+	}
+	for _, action := range result.Script.Actions {
+		if action.Type == "source_transaction" {
+			t.Fatal("folded transaction marker left in the script")
+		}
+		if _, leaked := action.Metadata[sourceConcurrentTransactionKey]; leaked {
+			t.Fatal("private wrapper marker leaked")
+		}
+	}
+	for _, fn := range []string{"lr_start_transaction", "lr_end_transaction"} {
+		assertConcurrentSourceMapping(t, result, fn, "actions[1].params.requests[0]", SourceFunctionSupportExecutable)
+		assertConcurrentSourceMapping(t, result, fn, "actions[1].params.requests[1]", SourceFunctionSupportExecutable)
+	}
+	if summary := concurrentSourceSummary(t, result.Script); summary["native_groups"] != 1 || summary["review_groups"] != 0 {
+		t.Fatalf("summary = %v", summary)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "times each transaction by its own request") {
+		t.Fatalf("timing difference not explained: %v", result.Warnings)
 	}
 }
 

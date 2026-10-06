@@ -59,10 +59,10 @@ func TestIterationNotificationLoadAndReplayLifecycle(t *testing.T) {
 }
 
 func TestHTTPCompatibilityEngineConfiguration(t *testing.T) {
-	script := &dsl.Script{Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{PageTimeoutMs: 500000, IPVersion: "ipv6", CacheMaxUnusedIterations: 1, CacheExcludedMIMETypes: []string{"text/xml"}, HTMLParseMode: "text", HTMLExcludedMIMETypes: []string{"text/plain"}}}}
+	script := &dsl.Script{Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{PageTimeoutMs: 500000, IPVersion: "ipv6", CacheMaxUnusedIterations: 1, CacheExcludedMIMETypes: []string{"text/xml"}, HTMLParseMode: "text", HTMLExcludedMIMETypes: []string{"text/plain"}, AuraRecordedFailures: "accept_recorded"}}}
 	config := map[string]any{}
 	appendHTTPConfig(config, script)
-	for key, want := range map[string]any{"page_timeout_ms": float64(500000), "ip_version": "ipv6", "cache_max_unused_iterations": float64(1), "cache_excluded_mime_types": []string{"text/xml"}, "html_parse_mode": "text", "html_excluded_mime_types": []string{"text/plain"}} {
+	for key, want := range map[string]any{"page_timeout_ms": float64(500000), "ip_version": "ipv6", "cache_max_unused_iterations": float64(1), "cache_excluded_mime_types": []string{"text/xml"}, "html_parse_mode": "text", "html_excluded_mime_types": []string{"text/plain"}, "aura_recorded_failures": "accept_recorded"} {
 		if !reflect.DeepEqual(config[key], want) {
 			t.Fatalf("%s=%v want %v", key, config[key], want)
 		}

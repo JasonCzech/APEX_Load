@@ -180,3 +180,50 @@ func TestCreateScriptDurableStillRejectsForeignScriptID(t *testing.T) {
 		t.Fatal("a different script reusing the id was accepted as a replay")
 	}
 }
+
+// Engine actions (imported source_* steps, custom_call) never send metadata,
+// so a long descriptive source file name that the scrubber masks as
+// token-shaped must not become a secret-binding requirement.
+func TestEngineActionProvenanceMetadataIsNotABindingRequirement(t *testing.T) {
+	const tokenShapedFile = "Action_Store_QA_08_Newactivation_Phone17Esim.c"
+	metadata := func() map[string]any {
+		return map[string]any{"source_file": tokenShapedFile, "source_line": 4}
+	}
+	script := &dsl.Script{
+		Name: "provenance", Version: "1.0.0", Protocol: "http",
+		Config: dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{
+			{Name: "message", Type: "source_message", Value: "hello", Params: map[string]any{"function": "lr_output_message"}, Metadata: metadata()},
+			{Name: "step", Type: "custom_call", Params: map[string]any{"function": "FormatValue"}, Metadata: metadata()},
+			{Name: "page", Type: "GET", Method: "GET", Target: "/", Metadata: metadata()},
+		},
+	}
+	masked := maskScriptSecrets(script)
+	if masked == nil {
+		t.Fatal("mask failed")
+	}
+	if requirements := discoverSecretBindingRequirements(masked, 0); len(requirements) != 0 {
+		t.Fatalf("requirements = %+v, want none for engine-action provenance metadata", requirements)
+	}
+}
+
+// Long descriptive source names look token-shaped to the bare-token scrubber;
+// a value shaped like a file or C identifier under a source-location key
+// stays readable, while token-shaped values elsewhere stay masked.
+func TestSourceLocationProvenanceIsNotMaskedAsAToken(t *testing.T) {
+	const fileName = "Action_Store_QA_08_Newactivation_Phone17Esim.c"
+	const function = "Select_Device_And_Continue_Activation_Step17"
+	const token = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3z"
+	node := map[string]any{"actions": []any{map[string]any{
+		"name": "a", "type": "GET", "target": "/",
+		"metadata": map[string]any{"source_file": fileName, "source_function": function, "note": token},
+	}}}
+	projected := projectScriptNode(node, scriptProjectionContext{}).(map[string]any)
+	metadata := projected["actions"].([]any)[0].(map[string]any)["metadata"].(map[string]any)
+	if metadata["source_file"] != fileName || metadata["source_function"] != function {
+		t.Fatalf("metadata = %#v, want source names unmasked", metadata)
+	}
+	if metadata["note"] == token {
+		t.Fatalf("metadata = %#v, want a token-shaped value elsewhere still masked", metadata)
+	}
+}

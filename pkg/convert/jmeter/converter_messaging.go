@@ -69,18 +69,29 @@ func rawMessagingProp(n *xmlNode, key string) (string, bool) {
 
 func handleJMeterMessagingSampler(node *treeNode, ctx *convertContext, script *dsl.Script, result *ConvertResult, diagnostics *diag.Collector, file string, mappings *[]sourceview.Mapping) {
 	e := node.Element
-	a := dsl.Action{Name: attrOr(e, "testname", "Messaging producer"), Type: "kafka_produce", Params: map[string]interface{}{}, Metadata: map[string]interface{}{"source_node_id": messagingNodeID(script.Metadata.Import.Preserved["source_plan_id"].(string), e)}}
 	expected := "kafka"
 	if e.Name == pnopEventHubsSampler {
 		expected = "eventhubs"
+	}
+	// A messaging sampler in a group converted under another protocol is
+	// review-gated like a non-dominant JDBC or network sampler; emitting it into
+	// that script would fail the script's own validation and the whole import.
+	if ctx.scriptProtocol != expected {
+		label := jmeterElementLocation(e)
+		diagnostics.Add(diag.Warning, "JMeter "+e.Name, label, "messaging sampler appears in a thread group that is not "+expected+"-homogeneous; it was review-gated. Move it into its own thread group to convert it natively.")
+		*mappings = append(*mappings, jmeterSourceMapping(file, e, e.Name, "", label, "sampler", "review_only", "Messaging sampler was not converted because the thread group mixes protocols."))
+		// Like a review-only JMS sampler, it is still the positional target of
+		// a preceding TestAction pause, which must not leak to a later sampler.
+		applyJMeterNativeSamplerTiming(node, nil, ctx, result, diagnostics)
+		return
+	}
+	a := dsl.Action{Name: attrOr(e, "testname", "Messaging producer"), Type: "kafka_produce", Params: map[string]interface{}{}, Metadata: map[string]interface{}{"source_node_id": messagingNodeID(script.Metadata.Import.Preserved["source_plan_id"].(string), e)}}
+	if expected == "eventhubs" {
 		a.Type = "eventhubs_produce"
 	}
 	block := func(reason string) {
 		gateJMeterAction(&a, reason, jmeterElementLocation(e))
 		diagnostics.Add(diag.Blocker, "JMeter "+e.Name, jmeterElementLocation(e), reason)
-	}
-	if script.Protocol != expected {
-		block("jmeter_mixed_messaging_protocol")
 	}
 	plan := script.Metadata.Import.Preserved["source_plan_id"].(string)
 	if script.Config.JMeter == nil {

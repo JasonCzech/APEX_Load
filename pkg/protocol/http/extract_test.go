@@ -710,6 +710,19 @@ func TestExtractXPath_XMLAttributeLocalName(t *testing.T) {
 	}
 }
 
+// The importer maps LoadRunner's web_reg_save_param_attrib onto attribute
+// predicates; on HTML they must pick the matching element, not the first one.
+func TestExtractXPathHTMLAttributePredicates(t *testing.T) {
+	body := []byte(`<html><body><form>
+<input name="sid" id="other" type="text" value="decoy">
+<INPUT NAME="sid" ID="sid" TYPE="hidden" VALUE="00D!session">
+</form></body></html>`)
+	got, err := extractXPath("//input[@name='sid'][@id='sid'][@type='hidden']/@value", body)
+	if err != nil || got != "00D!session" {
+		t.Fatalf("extractXPath = %q, %v; want the hidden sid value", got, err)
+	}
+}
+
 func TestExtractXPath_HTMLFallback(t *testing.T) {
 	val, err := extractFromBody(protocol.Extractor{Type: "xpath", Expression: "//a[@class='login']/@href"}, []byte(`<html><body><a class="login" href="/signin">Sign in`))
 	if err != nil {
