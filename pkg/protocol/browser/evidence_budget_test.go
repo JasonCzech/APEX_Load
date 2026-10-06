@@ -102,18 +102,21 @@ func TestBrowserContextAdmissionCountsMeasuredMemoryAndBursts(t *testing.T) {
 	budget := useTestEvidenceBudget(t, 64<<30, func() (int64, error) { return usage, nil }, limit)
 	// 700 MiB measured: two more 128 MiB contexts fit, a third would not.
 	for i := range 2 {
-		if err := budget.admitBrowserContext(context.Background()); err != nil {
+		if err := budget.admitBrowserContext(context.Background(), &Browser{}); err != nil {
 			t.Fatalf("context %d refused: %v", i, err)
 		}
 	}
-	err := budget.admitBrowserContext(context.Background())
+	err := budget.admitBrowserContext(context.Background(), &Browser{})
 	if !errors.Is(err, errBrowserResourceLimit) || !strings.HasPrefix(err.Error(), "browser resource limit") || budget.counters.contextsRefused.Load() != 1 {
 		t.Fatalf("burst admitted past the limit: %v", err)
 	}
 	// Unmeasurable memory admits rather than refusing every session.
 	unmeasured := useTestEvidenceBudget(t, 64<<30, noUsage, limit)
-	if err := unmeasured.admitBrowserContext(context.Background()); err != nil {
+	if err := unmeasured.admitBrowserContext(context.Background(), &Browser{}); err != nil {
 		t.Fatal(err)
+	}
+	if unmeasured.counters.contextsUnmeasured.Load() != 1 || unmeasured.counters.sampleFailures.Load() != 1 {
+		t.Fatalf("an unmeasured admission was not counted: %+v", BrowserEvidenceStats{ContextsUnmeasured: unmeasured.counters.contextsUnmeasured.Load(), MemorySampleFailures: unmeasured.counters.sampleFailures.Load()})
 	}
 }
 
@@ -122,8 +125,8 @@ func TestMemoryWatchdogClosesTheLargestRecordingAsAResourceLimit(t *testing.T) {
 	usage.Store(100 << 20)
 	budget := useTestEvidenceBudget(t, 64<<30, func() (int64, error) { return usage.Load(), nil }, 1<<30)
 	var smallClosed, largeClosed atomic.Bool
-	small := &Browser{pwContext: &harCloseFixtureContext{close: func() error { smallClosed.Store(true); return nil }}, harObservedBytes: 10 << 20}
-	large := &Browser{pwContext: &harCloseFixtureContext{close: func() error { largeClosed.Store(true); return nil }}, harObservedBytes: 90 << 20, evidence: browserEvidenceState{documents: map[string]*browserDocumentState{
+	small := &Browser{pwContext: &harCloseFixtureContext{close: func() error { smallClosed.Store(true); return nil }}, harObservedBytes: 10 << 20, harMonitorStop: make(chan struct{})}
+	large := &Browser{pwContext: &harCloseFixtureContext{close: func() error { largeClosed.Store(true); return nil }}, harObservedBytes: 90 << 20, harMonitorStop: make(chan struct{}), evidence: browserEvidenceState{documents: map[string]*browserDocumentState{
 		"doc": {observations: map[string]protocol.BrowserDocumentObservation{"lcp": {State: "provisional"}}},
 	}}}
 	for _, b := range []*Browser{small, large} {
@@ -190,5 +193,184 @@ func TestProcessTreeRSSIncludesTheRootAndDescendants(t *testing.T) {
 	}
 	if missing, err := processTreeRSSBytes(context.Background(), 1<<30); err != nil || missing != 0 {
 		t.Fatalf("absent root %d %v", missing, err)
+	}
+}
+
+// Concurrent admitters must not erase each other's admissions when one of
+// them refreshes the sample.
+func TestConcurrentContextAdmissionsKeepEveryAdmission(t *testing.T) {
+	var measuring atomic.Int32
+	budget := useTestEvidenceBudget(t, 64<<30, func() (int64, error) {
+		measuring.Add(1)
+		time.Sleep(20 * time.Millisecond)
+		return 700 << 20, nil
+	}, 1000<<20)
+	results := make(chan error, 16)
+	for range 16 {
+		go func() { results <- budget.admitBrowserContext(context.Background(), &Browser{}) }()
+	}
+	admitted := 0
+	for range 16 {
+		if <-results == nil {
+			admitted++
+		}
+	}
+	// 700 MiB measured: at most two more 128 MiB contexts fit, however the
+	// admissions interleave with the measurement.
+	if admitted > 2 {
+		t.Fatalf("%d concurrent contexts admitted against one sample", admitted)
+	}
+	if measuring.Load() > 1 {
+		t.Fatalf("%d measurements ran concurrently for one stale sample", measuring.Load())
+	}
+}
+
+// A live context keeps its marginal footprint after the sample that admitted
+// it expires, so blank contexts sampled one at a time cannot overcommit.
+func TestLiveContextsKeepAFootprintFloor(t *testing.T) {
+	budget := useTestEvidenceBudget(t, 64<<30, func() (int64, error) { return 100 << 20, nil }, 1000<<20)
+	live := make([]*Browser, 0, 8)
+	for i := range 8 {
+		budget.mu.Lock()
+		budget.sampledAt = time.Time{} // every admission sees a fresh, blank sample
+		budget.mu.Unlock()
+		b := &Browser{}
+		err := budget.admitBrowserContext(context.Background(), b)
+		if i < 6 && err != nil {
+			t.Fatalf("context %d refused: %v", i, err)
+		}
+		if i >= 7 && !errors.Is(err, errBrowserResourceLimit) {
+			t.Fatalf("context %d admitted past the live floor", i)
+		}
+		if err == nil {
+			live = append(live, b)
+		}
+	}
+	budget.releaseBrowserContext(live[0])
+	budget.mu.Lock()
+	budget.sampledAt = time.Time{}
+	budget.mu.Unlock()
+	if err := budget.admitBrowserContext(context.Background(), &Browser{}); err != nil {
+		t.Fatalf("a released context still held its floor: %v", err)
+	}
+}
+
+// A failed measurement keeps the last sample only until it ages out.
+func TestStaleMemorySampleExpires(t *testing.T) {
+	var fail atomic.Bool
+	budget := useTestEvidenceBudget(t, 64<<30, func() (int64, error) {
+		if fail.Load() {
+			return 0, errors.New("ps: resource temporarily unavailable")
+		}
+		return 900 << 20, nil
+	}, 1000<<20)
+	if err := budget.admitBrowserContext(context.Background(), &Browser{}); !errors.Is(err, errBrowserResourceLimit) {
+		t.Fatalf("over-limit admission: %v", err)
+	}
+	fail.Store(true)
+	budget.mu.Lock()
+	budget.sampledAt = time.Now().Add(-browserMemorySampleMaxAge - time.Second)
+	budget.mu.Unlock()
+	if err := budget.admitBrowserContext(context.Background(), &Browser{}); err != nil {
+		t.Fatalf("an expired sample still refused: %v", err)
+	}
+	if budget.counters.contextsUnmeasured.Load() != 1 || budget.counters.sampleFailures.Load() < 1 {
+		t.Fatalf("unmeasured=%d failures=%d", budget.counters.contextsUnmeasured.Load(), budget.counters.sampleFailures.Load())
+	}
+}
+
+// Only fully open sessions are watchdog victims: one already closed for a
+// limit, or still opening, is skipped even when it holds the most bytes.
+func TestMemoryWatchdogSkipsClosedAndOpeningSessions(t *testing.T) {
+	var usage atomic.Int64
+	usage.Store(2 << 30)
+	budget := useTestEvidenceBudget(t, 64<<30, func() (int64, error) { return usage.Load(), nil }, 1<<30)
+	var closedClosed, openingClosed, liveClosed atomic.Bool
+	alreadyClosed := &Browser{pwContext: &harCloseFixtureContext{close: func() error { closedClosed.Store(true); return nil }}, harObservedBytes: 200 << 20, harMonitorStop: make(chan struct{}), resourceLimit: resourceLimitHARCapture}
+	opening := &Browser{pwContext: &harCloseFixtureContext{close: func() error { openingClosed.Store(true); return nil }}, harObservedBytes: 150 << 20}
+	live := &Browser{pwContext: &harCloseFixtureContext{close: func() error { liveClosed.Store(true); return nil }}, harObservedBytes: 10 << 20, harMonitorStop: make(chan struct{})}
+	for _, b := range []*Browser{alreadyClosed, opening, live} {
+		if reason := budget.reserveHARWriter(b, t.TempDir()); reason != "" {
+			t.Fatal(reason)
+		}
+	}
+	for deadline := time.Now().Add(2 * time.Second); !liveClosed.Load() && time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+	}
+	if !liveClosed.Load() || closedClosed.Load() || openingClosed.Load() {
+		t.Fatalf("watchdog closed live=%v alreadyClosed=%v opening=%v", liveClosed.Load(), closedClosed.Load(), openingClosed.Load())
+	}
+}
+
+// A context refused at open is not an Init error: the session runs and every
+// action fails as a resource-limit result.
+func TestRefusedContextFailsActionsAsResourceLimit(t *testing.T) {
+	useTestEvidenceBudget(t, 64<<30, func() (int64, error) { return 2 << 30, nil }, 1<<30)
+	b := &Browser{}
+	if err := b.openBrowserContext(); err != nil {
+		t.Fatalf("an admission refusal failed the session: %v", err)
+	}
+	result, err := b.Execute(context.Background(), &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || !strings.HasPrefix(result.ErrorMessage, "browser resource limit ("+resourceLimitAdmission+")") || !strings.Contains(result.ErrorMessage, "refused") {
+		t.Fatalf("refused session action: %+v", result)
+	}
+}
+
+// A writer whose finish outlived the close wait keeps its reservation until
+// the finish completes.
+func TestHARReservationOutlivesAnUnfinishedOwner(t *testing.T) {
+	budget := useTestEvidenceBudget(t, 64<<30, noUsage, 0)
+	b := &Browser{}
+	if reason := budget.reserveHARWriter(b, t.TempDir()); reason != "" {
+		t.Fatal(reason)
+	}
+	owner, err := reserveHAROwner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(owner.releaseReservation)
+	budget.retireHARWriter(b, owner)
+	reserved := func() int64 { budget.mu.Lock(); defer budget.mu.Unlock(); return budget.reserved }
+	if reserved() != maxRuntimeHARBytes {
+		t.Fatalf("reservation released before the owner retired: %d", reserved())
+	}
+	close(owner.finishDone)
+	for deadline := time.Now().Add(time.Second); reserved() != 0 && time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+	}
+	if reserved() != 0 {
+		t.Fatalf("reservation not released after the owner finished: %d", reserved())
+	}
+}
+
+// A close requested while the context is still opening waits for the writer
+// to be bound and then closes it, instead of losing the close.
+func TestHAROwnerHonoursACloseRequestedBeforeBind(t *testing.T) {
+	owner, err := reserveHAROwner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(owner.releaseReservation)
+	owner.beginWriter()
+	owner.startClose()
+	var closed atomic.Bool
+	time.Sleep(20 * time.Millisecond)
+	owner.bindWriter(func() error { closed.Store(true); return nil })
+	select {
+	case <-owner.closeDone:
+	case <-time.After(runtimeHARCloseWait + time.Second):
+		t.Fatal("close never completed")
+	}
+	if !closed.Load() {
+		t.Fatal("the writer bound after the close request was never closed")
+	}
+}
+
+func TestHARScratchUnavailableIsNotHeadroom(t *testing.T) {
+	budget := useTestEvidenceBudget(t, 64<<30, noUsage, 0)
+	budget.scratchAvailable = func(string) (int64, error) { return 0, errors.New("no such directory") }
+	if reason := budget.reserveHARWriter(&Browser{}, "/does/not/exist"); reason != "har_scratch_unavailable" || budget.counters.harScratchUnavailable.Load() != 1 || budget.counters.harScratch.Load() != 0 {
+		t.Fatalf("missing scratch directory reported as %q", reason)
 	}
 }

@@ -47,18 +47,22 @@ type harCaptureOwner struct {
 	release                        func() error
 	writerEntered                  bool
 	closer                         func() error
-	closeOnce, finishOnce          sync.Once
-	descriptorOnce                 sync.Once
-	descriptorErr                  error
-	closeDone, finishDone          chan struct{}
-	closeErr, finishErr            error
-	retired                        bool
-	runtimeJoinOnce                sync.Once
-	runtimeDone                    chan struct{}
-	runtimeErr                     error
-	documentJoinOnce               sync.Once
-	documentDone                   chan struct{}
-	documentErr                    error
+	// bound closes when the writer's closer is bound or the writer was
+	// abandoned, so a close requested while the context opens waits for it.
+	bound                 chan struct{}
+	boundOnce             sync.Once
+	closeOnce, finishOnce sync.Once
+	descriptorOnce        sync.Once
+	descriptorErr         error
+	closeDone, finishDone chan struct{}
+	closeErr, finishErr   error
+	retired               bool
+	runtimeJoinOnce       sync.Once
+	runtimeDone           chan struct{}
+	runtimeErr            error
+	documentJoinOnce      sync.Once
+	documentDone          chan struct{}
+	documentErr           error
 }
 
 func reserveHAROwner() (*harCaptureOwner, error) {
@@ -67,7 +71,7 @@ func reserveHAROwner() (*harCaptureOwner, error) {
 	if len(runtimeHAROwners.owners) >= maxRuntimeHARPendingOwners {
 		return nil, fmt.Errorf("browser HAR pending-owner limit reached")
 	}
-	o := &harCaptureOwner{closeDone: make(chan struct{}), finishDone: make(chan struct{})}
+	o := &harCaptureOwner{closeDone: make(chan struct{}), finishDone: make(chan struct{}), bound: make(chan struct{})}
 	runtimeHAROwners.owners[o] = true
 	return o, nil
 }
@@ -249,6 +253,12 @@ func (o *harCaptureOwner) bindWriter(closer func() error) {
 	o.mu.Lock()
 	o.closer = closer
 	o.mu.Unlock()
+	o.boundOnce.Do(func() { close(o.bound) })
+}
+
+// abandonWriter records that the writer's context never opened.
+func (o *harCaptureOwner) abandonWriter() {
+	o.boundOnce.Do(func() { close(o.bound) })
 }
 
 func (o *harCaptureOwner) startClose() {
@@ -272,6 +282,17 @@ func (o *harCaptureOwner) startClose() {
 			o.mu.Lock()
 			closer, entered := o.closer, o.writerEntered
 			o.mu.Unlock()
+			if closer == nil && entered {
+				// The context is still opening: wait for its writer to be bound
+				// (or abandoned) rather than declaring the owner unproven.
+				select {
+				case <-o.bound:
+				case <-time.After(runtimeHARCloseWait):
+				}
+				o.mu.Lock()
+				closer = o.closer
+				o.mu.Unlock()
+			}
 			if closer != nil {
 				err = closer()
 			} else if entered {

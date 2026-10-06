@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
@@ -35,10 +36,16 @@ const (
 	browserContextMarginalBytes = int64(128 << 20)
 	browserMemoryLimitFraction  = 0.9
 	browserMemorySampleTTL      = time.Second
-	envBrowserMemoryLimitMB     = "APEXLOAD_BROWSER_MEMORY_LIMIT_MB"
+	// browserMemorySampleMaxAge is how long a sample may stand in when new
+	// measurements fail; past it the budget has no measurement at all.
+	browserMemorySampleMaxAge = 10 * browserMemorySampleTTL
+	envBrowserMemoryLimitMB   = "APEXLOAD_BROWSER_MEMORY_LIMIT_MB"
 
 	resourceLimitHARCapture    = "har_capture"
 	resourceLimitBrowserMemory = "browser_memory"
+	// resourceLimitAdmission marks a session whose context was refused at
+	// open; every action of it fails as a resource-limit result.
+	resourceLimitAdmission = "browser_memory_admission"
 )
 
 // errBrowserResourceLimit marks a session refused or closed to protect the
@@ -50,25 +57,37 @@ type BrowserEvidenceStats struct {
 	HARWritersAdmitted      int64 `json:"har_writers_admitted"`
 	HARWritersRefused       int64 `json:"har_writers_refused"`
 	HARScratchRefusals      int64 `json:"har_scratch_refusals"`
+	HARScratchUnavailable   int64 `json:"har_scratch_unavailable"`
 	HAROverflowClosures     int64 `json:"har_overflow_closures"`
 	MemoryWatchdogClosures  int64 `json:"memory_watchdog_closures"`
 	ContextsRefusedByMemory int64 `json:"contexts_refused_by_memory"`
+	ContextsUnmeasured      int64 `json:"contexts_admitted_unmeasured"`
+	MemorySampleFailures    int64 `json:"memory_sample_failures"`
 	NetworkTasksDropped     int64 `json:"network_tasks_dropped"`
 }
 
 type evidenceBudgetCounters struct {
-	harAdmitted, harRefused, harScratch, harOverflow, watchdog, contextsRefused, networkDropped atomic.Int64
+	harAdmitted, harRefused, harScratch, harScratchUnavailable, harOverflow, watchdog, contextsRefused, contextsUnmeasured, sampleFailures, networkDropped atomic.Int64
 }
 
 type evidenceBudget struct {
-	mu                  sync.Mutex
-	writers             map[*Browser]struct{}
-	reserved            int64
-	sampledAt           time.Time
-	sampledBytes        int64
-	admittedSinceSample int64
-	watchdogRunning     bool
-	counters            evidenceBudgetCounters
+	mu       sync.Mutex
+	writers  map[*Browser]struct{}
+	reserved int64
+	// A sample is the measured memory and the admission count when its
+	// measurement started: contexts admitted after that start are not in
+	// it, and only one measurement runs at a time.
+	sampledAt         time.Time
+	sampledBytes      int64
+	admissions        int64
+	sampledAdmissions int64
+	measuring         bool
+	measured          chan struct{}
+	// live holds every admitted context until it closes. A fresh context is
+	// nearly blank when sampled, so live contexts keep a footprint floor.
+	live            map[*Browser]struct{}
+	watchdogRunning bool
+	counters        evidenceBudgetCounters
 
 	// Measurements; tests replace them on their own budget.
 	scratchAvailable func(string) (int64, error)
@@ -80,7 +99,7 @@ type evidenceBudget struct {
 var browserEvidenceBudget = newEvidenceBudget()
 
 func newEvidenceBudget() *evidenceBudget {
-	return &evidenceBudget{writers: map[*Browser]struct{}{}, scratchAvailable: diskspace.AvailablePath, memoryUsage: measureBrowserMemoryUsage, memoryLimit: resolvedBrowserMemoryLimit, watchdogInterval: time.Second}
+	return &evidenceBudget{writers: map[*Browser]struct{}{}, live: map[*Browser]struct{}{}, scratchAvailable: diskspace.AvailablePath, memoryUsage: measureBrowserMemoryUsage, memoryLimit: resolvedBrowserMemoryLimit, watchdogInterval: time.Second}
 }
 
 // BrowserEvidenceStatsSnapshot returns the process-wide evidence counters.
@@ -88,9 +107,17 @@ func BrowserEvidenceStatsSnapshot() BrowserEvidenceStats {
 	c := &browserEvidenceBudget.counters
 	return BrowserEvidenceStats{
 		HARWritersAdmitted: c.harAdmitted.Load(), HARWritersRefused: c.harRefused.Load(), HARScratchRefusals: c.harScratch.Load(),
-		HAROverflowClosures: c.harOverflow.Load(), MemoryWatchdogClosures: c.watchdog.Load(), ContextsRefusedByMemory: c.contextsRefused.Load(),
+		HARScratchUnavailable: c.harScratchUnavailable.Load(), HAROverflowClosures: c.harOverflow.Load(), MemoryWatchdogClosures: c.watchdog.Load(),
+		ContextsRefusedByMemory: c.contextsRefused.Load(), ContextsUnmeasured: c.contextsUnmeasured.Load(), MemorySampleFailures: c.sampleFailures.Load(),
 		NetworkTasksDropped: c.networkDropped.Load(),
 	}
+}
+
+// logEvidenceEvent reports a refusal or closure with the generator-wide
+// counters, so an operator can see evidence pressure in generator logs.
+func logEvidenceEvent(message string, attrs ...any) {
+	stats := BrowserEvidenceStatsSnapshot()
+	slog.Warn(message, append(attrs, "stats", stats)...)
 }
 
 // reserveHARWriter reserves one full per-HAR allowance for b. It returns the
@@ -105,11 +132,20 @@ func (e *evidenceBudget) reserveHARWriter(b *Browser, dir string) string {
 	if _, held := e.writers[b]; held {
 		return ""
 	}
+	// The aggregate allowance admits harAggregateReservationBytes /
+	// maxRuntimeHARBytes concurrent writers (10 by default), well below the
+	// artifact cap.
 	if len(e.writers) >= maxRetainedRuntimeHARArtifacts || e.reserved+maxRuntimeHARBytes > harAggregateReservationBytes {
 		e.counters.harRefused.Add(1)
 		return "har_budget_exhausted"
 	}
-	if freeErr != nil || free < e.reserved+maxRuntimeHARBytes+harScratchHeadroomBytes {
+	if freeErr != nil {
+		// A missing or unreadable scratch directory is a configuration fault,
+		// not a lack of headroom.
+		e.counters.harScratchUnavailable.Add(1)
+		return "har_scratch_unavailable"
+	}
+	if free < e.reserved+maxRuntimeHARBytes+harScratchHeadroomBytes {
 		e.counters.harScratch.Add(1)
 		return "har_scratch_headroom"
 	}
@@ -132,42 +168,116 @@ func (e *evidenceBudget) releaseHARWriter(b *Browser) {
 	}
 }
 
-// admitBrowserContext refuses a new context when measured memory plus one
-// context's marginal footprint would exceed the generator's browser memory
-// limit. Contexts admitted since the last sample count as already used, so a
-// burst cannot pass on one stale measurement.
-func (e *evidenceBudget) admitBrowserContext(ctx context.Context) error {
+// retireHARWriter releases b's reservation once its HAR owner has retired.
+// A writer whose finish outlived the close wait is still producing its raw
+// and scrubbed copies, so its bytes stay reserved until the finish completes.
+func (e *evidenceBudget) retireHARWriter(b *Browser, owner *harCaptureOwner) {
+	if owner == nil || owner.retiredSuccessfully() {
+		e.releaseHARWriter(b)
+		return
+	}
+	e.mu.Lock()
+	_, held := e.writers[b]
+	delete(e.writers, b)
+	e.mu.Unlock()
+	if !held {
+		return
+	}
+	go func() {
+		<-owner.finishDone
+		e.mu.Lock()
+		e.reserved -= maxRuntimeHARBytes
+		e.mu.Unlock()
+	}()
+}
+
+// admitBrowserContext refuses a new context for b when projected memory plus
+// one context's marginal footprint would exceed the generator's browser
+// memory limit. The projection is the larger of the latest sample plus every
+// context admitted since that measurement started, and the footprint floor of
+// every live context. Without a usable measurement the context is admitted,
+// counted and logged.
+func (e *evidenceBudget) admitBrowserContext(ctx context.Context, b *Browser) error {
 	limit := e.memoryLimit()
 	if limit <= 0 {
+		e.mu.Lock()
+		e.live[b] = struct{}{}
+		e.mu.Unlock()
 		return nil
 	}
-	e.mu.Lock()
-	stale := time.Since(e.sampledAt) > browserMemorySampleTTL
-	e.mu.Unlock()
-	if stale {
-		if usage, err := e.memoryUsage(ctx); err == nil {
-			e.recordSample(usage)
-		}
-	}
+	e.refreshSample(ctx)
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.sampledAt.IsZero() {
-		// Without a measurement there is nothing to admit against.
+	if e.sampledAt.IsZero() || time.Since(e.sampledAt) > browserMemorySampleMaxAge {
+		e.counters.contextsUnmeasured.Add(1)
+		e.admissions++
+		e.live[b] = struct{}{}
 		return nil
 	}
-	projected := e.sampledBytes + (e.admittedSinceSample+1)*browserContextMarginalBytes
+	pending := e.admissions - e.sampledAdmissions
+	live := int64(len(e.live))
+	if _, already := e.live[b]; already {
+		live--
+	}
+	projected := max(e.sampledBytes+pending*browserContextMarginalBytes, live*browserContextMarginalBytes) + browserContextMarginalBytes
 	if projected > limit {
 		e.counters.contextsRefused.Add(1)
-		return fmt.Errorf("%w: measured browser and generator memory %d MiB plus a new context would exceed %d MiB", errBrowserResourceLimit, e.sampledBytes>>20, limit>>20)
+		return fmt.Errorf("%w: projected browser and generator memory %d MiB plus a new context would exceed %d MiB", errBrowserResourceLimit, (projected-browserContextMarginalBytes)>>20, limit>>20)
 	}
-	e.admittedSinceSample++
+	e.admissions++
+	e.live[b] = struct{}{}
 	return nil
 }
 
-func (e *evidenceBudget) recordSample(usage int64) {
+// releaseBrowserContext ends b's live-context floor.
+func (e *evidenceBudget) releaseBrowserContext(b *Browser) {
 	e.mu.Lock()
-	e.sampledAt, e.sampledBytes, e.admittedSinceSample = time.Now(), usage, 0
+	delete(e.live, b)
 	e.mu.Unlock()
+}
+
+// refreshSample measures when the sample is stale; only one measurement runs
+// at a time. Admitters that find no usable sample while another measures
+// wait for it rather than being admitted unmeasured. A failed measurement
+// keeps the previous sample until it ages out.
+func (e *evidenceBudget) refreshSample(ctx context.Context) {
+	e.mu.Lock()
+	if time.Since(e.sampledAt) <= browserMemorySampleTTL {
+		e.mu.Unlock()
+		return
+	}
+	if e.measuring {
+		done := e.measured
+		usable := !e.sampledAt.IsZero() && time.Since(e.sampledAt) <= browserMemorySampleMaxAge
+		e.mu.Unlock()
+		if !usable {
+			select {
+			case <-done:
+			case <-ctx.Done():
+			}
+		}
+		return
+	}
+	e.measuring, e.measured = true, make(chan struct{})
+	started := e.admissions
+	e.mu.Unlock()
+	usage, err := e.memoryUsage(ctx)
+	e.mu.Lock()
+	e.measuring = false
+	close(e.measured)
+	e.mu.Unlock()
+	e.recordSample(usage, started, err)
+}
+
+func (e *evidenceBudget) recordSample(usage, admissionsAtStart int64, err error) {
+	e.mu.Lock()
+	if err == nil && admissionsAtStart >= e.sampledAdmissions {
+		e.sampledAt, e.sampledBytes, e.sampledAdmissions = time.Now(), usage, admissionsAtStart
+	}
+	e.mu.Unlock()
+	if err != nil && e.counters.sampleFailures.Add(1) == 1 {
+		slog.Warn("browser memory measurement failed; admission falls back to the last sample until it ages out", "error", err)
+	}
 }
 
 // watch samples memory while HAR writers are active and closes the writer
@@ -186,6 +296,7 @@ func (e *evidenceBudget) watch() {
 		for b := range e.writers {
 			writers = append(writers, b)
 		}
+		started := e.admissions
 		e.mu.Unlock()
 		limit := e.memoryLimit()
 		if limit <= 0 {
@@ -194,39 +305,44 @@ func (e *evidenceBudget) watch() {
 		ctx, cancel := context.WithTimeout(context.Background(), e.watchdogInterval)
 		usage, err := e.memoryUsage(ctx)
 		cancel()
-		if err != nil {
+		e.recordSample(usage, started, err)
+		if err != nil || usage <= limit {
 			continue
 		}
-		e.recordSample(usage)
-		if usage <= limit {
-			continue
-		}
+		// Only fully open recording sessions are candidates: a closed one
+		// keeps its observed bytes until Teardown, and one still opening has
+		// no bound writer to close.
 		var victim *Browser
 		most := int64(-1)
 		for _, b := range writers {
-			if observed := b.harObservedBytesSnapshot(); observed > most {
+			if observed, eligible := b.watchdogCandidate(); eligible && observed > most {
 				victim, most = b, observed
 			}
 		}
 		if victim != nil && victim.closeForResourceLimit(resourceLimitBrowserMemory) {
 			e.counters.watchdog.Add(1)
+			logEvidenceEvent("browser memory watchdog closed the largest recording session", "usage_mib", usage>>20, "limit_mib", limit>>20)
 		}
 	}
 }
 
-func (b *Browser) harObservedBytesSnapshot() int64 {
+// watchdogCandidate reports the session's observed HAR bytes and whether it
+// is fully open: its context and HAR monitor are running and nothing has
+// closed it for a resource limit.
+func (b *Browser) watchdogCandidate() (int64, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.harObservedBytes
+	return b.harObservedBytes, b.resourceLimit == "" && b.pwContext != nil && b.harMonitorStop != nil
 }
 
 // closeForResourceLimit records why the session is being closed, censors its
 // unfinished document observations as resource_limit and closes the context.
-// It reports whether this call closed a recording session.
+// It reports whether this call closed a recording session; a session that
+// is not fully open is left alone.
 func (b *Browser) closeForResourceLimit(reason string) bool {
 	b.mu.Lock()
-	owner, active := b.harOwner, b.pwContext != nil || b.harOwner != nil
-	if !active || b.resourceLimit != "" {
+	owner := b.harOwner
+	if b.resourceLimit != "" || b.pwContext == nil || b.harMonitorStop == nil {
 		b.mu.Unlock()
 		return false
 	}
@@ -263,7 +379,11 @@ func (b *Browser) applyEvidenceOutcome(result *protocol.Result) {
 	}
 	if reason != "" {
 		result.Success = false
-		result.ErrorMessage = fmt.Sprintf("%v (%s): the browser context was closed to protect the generator", errBrowserResourceLimit, reason)
+		effect := "the browser context was closed to protect the generator"
+		if reason == resourceLimitAdmission {
+			effect = "the browser context was refused to protect the generator"
+		}
+		result.ErrorMessage = fmt.Sprintf("%v (%s): %s", errBrowserResourceLimit, reason, effect)
 		result.WarningCodes = append(result.WarningCodes, "browser_resource_limit_"+reason)
 	}
 }
@@ -337,6 +457,7 @@ func resolvedBrowserMemoryLimit() int64 {
 				browserMemoryLimitOnce.value = mb << 20
 				return
 			}
+			slog.Warn("ignoring invalid browser memory limit; using 90% of the memory limit", "env", envBrowserMemoryLimitMB, "value", text)
 		}
 		limit := cgroupMemoryLimit()
 		if limit <= 0 {

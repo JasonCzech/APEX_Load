@@ -50,16 +50,35 @@ type browserNetworkTask struct {
 	receipt    *browserNetworkTaskReceipt
 }
 
+// openBrowserContext admits and opens the session's context. A memory
+// refusal is not an Init error: the session stays open without a context and
+// every action fails as a resource-limit result, so a refused VUser is
+// reported instead of aborting the run.
 func (b *Browser) openBrowserContext() error {
 	b.mu.Lock()
 	b.resourceLimit, b.harUnavailableReason, b.harUnavailableReported = "", "", false
 	b.mu.Unlock()
 	admission, cancel := context.WithTimeout(context.Background(), runtimeHARCloseWait)
-	err := browserEvidenceBudget.admitBrowserContext(admission)
+	err := browserEvidenceBudget.admitBrowserContext(admission, b)
 	cancel()
+	if errors.Is(err, errBrowserResourceLimit) {
+		b.mu.Lock()
+		b.resourceLimit = resourceLimitAdmission
+		b.mu.Unlock()
+		logEvidenceEvent("browser context refused to protect the generator", "error", err)
+		return nil
+	}
 	if err != nil {
 		return err
 	}
+	if err := b.openAdmittedBrowserContext(); err != nil {
+		browserEvidenceBudget.releaseBrowserContext(b)
+		return err
+	}
+	return nil
+}
+
+func (b *Browser) openAdmittedBrowserContext() error {
 	options := b.browserContextOptions()
 	if err := b.applyHARCaptureOptions(&options); err != nil {
 		return err
@@ -76,6 +95,9 @@ func (b *Browser) openBrowserContext() error {
 	}
 	browserContext, err := pwBrowser.NewContext(options)
 	if err != nil {
+		if owner != nil {
+			owner.abandonWriter()
+		}
 		return errors.Join(err, b.discardHARWorkingFile())
 	}
 	if owner != nil {

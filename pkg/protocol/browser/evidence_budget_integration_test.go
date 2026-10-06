@@ -26,7 +26,9 @@ func startRecordingSession(t *testing.T, server *httptest.Server) *Browser {
 
 // A response that never finishes is buffered by the driver, never by the HAR
 // file; the memory watchdog closes the recording as an explicit resource-limit
-// failure, censors its document and gives back its reservation at close.
+// failure, censors its document and gives back its reservation at close. The
+// measured memory is stubbed: the test proves the close path on a real
+// session, not the driver's actual growth.
 func TestNeverEndingChunkedBodyIsStoppedByTheMemoryWatchdog(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping browser integration test in -short mode")
@@ -95,8 +97,9 @@ func TestNeverEndingChunkedBodyIsStoppedByTheMemoryWatchdog(t *testing.T) {
 	}
 }
 
-// A flood of requests that never finish keeps request evidence bounded and
-// counted, and the recording session still closes and releases its budget.
+// A flood of requests that never finish keeps request evidence within the
+// request identity bound, and the recording session still closes and
+// releases its HAR reservation. Memory admission is disabled here (limit 0).
 func TestNeverFinishingRequestFloodStaysBoundedAndCloses(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping browser integration test in -short mode")
