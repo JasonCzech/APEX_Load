@@ -290,7 +290,11 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	sourceConstants := collectSourceStringConstants(files)
 	var parsedActions []*ParsedAction
 	var parseErrors []string
-	sourceDeclarations := orderedSourceActionFileDeclarations(projectConfig, files)
+	sourceDeclarations, unscheduledActions := withoutUnscheduledRunActions(
+		orderedSourceActionFileDeclarations(projectConfig, files),
+		runtimeCfg,
+		files,
+	)
 	declarationsByResolvedFile := sourceDeclarationsByResolvedFile(sourceDeclarations, files)
 	type parsedCSource struct {
 		action *ParsedAction
@@ -383,6 +387,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			RuntimeConfig:      runtimeCfg,
 			ParameterFileNames: parameterFileNames,
 			ParsedActions:      parsedActions,
+			UnscheduledActions: unscheduledActions,
 		}); err != nil {
 			return nil, err
 		}
@@ -425,6 +430,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		RuntimeConfig:      runtimeCfg,
 		ParameterFileNames: parameterFileNames,
 		ParsedActions:      parsedActions,
+		UnscheduledActions: unscheduledActions,
 	}); err != nil {
 		return nil, err
 	}
@@ -557,6 +563,9 @@ type archiveFinalizationContext struct {
 	ParameterFileNames   []string
 	TrueClientInspection *trueclient.ArchiveInspection
 	ParsedActions        []*ParsedAction
+	// UnscheduledActions are run actions the project declares but its run
+	// logic never runs; they were not imported (see withoutUnscheduledRunActions).
+	UnscheduledActions []string
 }
 
 func finalizeEnterpriseArchiveImportResult(
@@ -569,6 +578,9 @@ func finalizeEnterpriseArchiveImportResult(
 	appendCSourceParseFailureGates(result, ctx.ParsedActions)
 	appendSplicedCommentWarnings(result, ctx.ParsedActions)
 	applySourceParamBraces(result, ctx.ProjectConfig)
+	if len(ctx.UnscheduledActions) > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("The run logic never runs %s, so %s not imported; LoadRunner skips them too. Add them to the run logic in VuGen and re-import if they should run.", strings.Join(ctx.UnscheduledActions, ", "), map[bool]string{true: "it was", false: "they were"}[len(ctx.UnscheduledActions) == 1]))
+	}
 	applyBrowserEmulationRuntimeSettingsReview(result, ctx.RuntimeConfig)
 	parameterSections := make(map[string]map[string]map[string]string)
 	scripts := result.effectiveScripts()

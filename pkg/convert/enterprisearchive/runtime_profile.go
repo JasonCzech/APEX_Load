@@ -3,6 +3,7 @@ package enterprisearchive
 import (
 	"fmt"
 	"math"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -897,4 +898,84 @@ func applyRuntimeSemanticStatuses(parity []RuntimeSettingParityEntry, rc *Runtim
 		}
 	}
 	return parity
+}
+
+// runLogicRunActionNames returns the lowercased names of every action the
+// run-logic file's Run tree refers to, at any block depth. ok is false when the
+// file has no [RunLogicRunRoot] or names no action, so callers keep every
+// declared action.
+func runLogicRunActionNames(content string) (map[string]struct{}, bool) {
+	names := make(map[string]struct{})
+	rootSeen := false
+	for sectionName, section := range ParseConfigSections(content) {
+		lower := strings.ToLower(strings.TrimSpace(sectionName))
+		if lower != "runlogicrunroot" && !strings.HasPrefix(lower, "runlogicrunroot:") {
+			continue
+		}
+		rootSeen = rootSeen || lower == "runlogicrunroot"
+		if order, ok := sectionValueCaseInsensitive(section, "RunLogicActionOrder"); ok {
+			for _, name := range splitSourceActionNames(order) {
+				names[strings.ToLower(name)] = struct{}{}
+			}
+		}
+		if kind, _ := sectionValueCaseInsensitive(section, "RunLogicObjectKind"); strings.EqualFold(strings.TrimSpace(kind), "Action") {
+			if name, ok := sectionValueCaseInsensitive(section, "Name"); ok && strings.TrimSpace(name) != "" {
+				names[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
+			}
+		}
+	}
+	return names, rootSeen && len(names) > 0
+}
+
+// withoutUnscheduledRunActions drops run-phase action files the selected run
+// logic never runs. VuGen lists every action file in the .usr [Actions] block,
+// but only actions placed in the Run tree execute; importing the rest sent
+// requests LoadRunner never sends. Their functions stay parseable for calls
+// from executed actions. Without a readable run logic every action is kept.
+func withoutUnscheduledRunActions(declarations []SourceActionFile, rc *RuntimeConfig, files map[string]string) ([]SourceActionFile, []string) {
+	if rc == nil || strings.TrimSpace(rc.selectedRunLogicFile) == "" {
+		return declarations, nil
+	}
+	name, content, ambiguous := findSourceArchiveFile(files, rc.selectedRunLogicFile)
+	if name == "" || len(ambiguous) > 0 {
+		return declarations, nil
+	}
+	scheduled, ok := runLogicRunActionNames(content)
+	if !ok {
+		return declarations, nil
+	}
+	kept := make([]SourceActionFile, 0, len(declarations))
+	var skipped []string
+	for _, declaration := range declarations {
+		if normalizeSourcePhase(declaration.Phase) != "action" {
+			kept = append(kept, declaration)
+			continue
+		}
+		actionName := strings.TrimSpace(declaration.Function)
+		if actionName == "" {
+			actionName = strings.TrimSuffix(path.Base(declaration.Name), path.Ext(declaration.Name))
+		}
+		if _, runs := scheduled[strings.ToLower(actionName)]; runs {
+			kept = append(kept, declaration)
+			continue
+		}
+		skipped = append(skipped, actionName)
+	}
+	if len(skipped) > 0 && len(kept) == countNonRunDeclarations(declarations) {
+		// A run logic naming none of the declared actions is a mismatch, not
+		// a schedule; keep the declared order for review instead of importing
+		// nothing.
+		return declarations, nil
+	}
+	return kept, skipped
+}
+
+func countNonRunDeclarations(declarations []SourceActionFile) int {
+	count := 0
+	for _, declaration := range declarations {
+		if normalizeSourcePhase(declaration.Phase) != "action" {
+			count++
+		}
+	}
+	return count
 }
