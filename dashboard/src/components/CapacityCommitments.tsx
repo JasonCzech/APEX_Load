@@ -1,3 +1,4 @@
+import './Access.css'
 import { useEffect, useState } from 'react'
 import { useCapacityApi } from '../hooks/api/useCapacityApi'
 import type { CapacityReservation, CapacityTimeslot } from '../types'

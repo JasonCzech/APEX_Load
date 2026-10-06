@@ -9,9 +9,8 @@ import {
   AuthoringSession,
   TestSummary,
 } from '../../types'
-import type { GoalConfig, ScenarioMode } from '../../types/goals'
-import type { LibraryAssignment, StoredScenario, StoredScript } from '../../types/storedContent'
-import type { GeneratorAssignmentSettings } from '../../types/testConfiguration'
+import type { LibraryAssignment, ScriptAuthoringBaseline, StoredScenario, StoredScript } from '../../types/storedContent'
+import type { ScenarioGroupPayload, ScenarioUpsertPayload } from '../../components/scenarioPayloadUtils'
 import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
 import type {
   ScenarioDataPoolBinding,
@@ -49,7 +48,9 @@ export interface ScriptRecordingStatus {
 }
 import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type ApplySharedValuesRequest, type ApplySharedValuesResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixResponse, type CommitAsyncAPIImportBatchRequest, type CommitAsyncAPIImportBatchResponse, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitGenericImportBatchRequest, type CommitGenericImportBatchResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JavaClasspathAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveEnterpriseArchiveImportRequest, type SaveEnterpriseArchiveImportResponse, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { type JsonRequestBody } from '../../types/generated/openapi'
-import { ApiError, apiFetch, request } from '../apiClient'
+import { ApiError, apiFetch, request, requestWithResponse } from '../apiClient'
+
+import { admitScriptAuthoringBaseline, baselineFromSavedScript, ScriptSaveOutcomeUnknown, withoutScriptAuthoringReadContext } from '../../utils/scriptAuthoringRevision'
 
 type StoredScriptDebugStartRequestBody = JsonRequestBody<'handleStartScriptDebugScript'>
 type DraftScriptDebugStartRequestBody = JsonRequestBody<'handleStartScriptDebugDraftScript'>
@@ -107,35 +108,16 @@ type ScenarioResultsResponse = {
   count: number
 }
 
-type ScenarioGroupPayload = {
-  name?: string
-  script_id: string
-  role?: 'load' | 'observer'
-  vusers: number
-  ramp_up?: string
-	ramp_down?: string
-	start_offset?: string
-  stages?: Array<{
-    name?: string
-    type: string
-    duration: string
-    target_vusers?: number
-    target_tps?: number
-  }>
-  initialization?: 'at_runtime' | 'at_once'
-}
-
-type ScenarioUpsertRequest = {
+// Share the serialized scenario fields with the authoring/run builders while
+// preserving optional API defaults and the existing request runtime contract.
+type ScenarioUpsertRequest = Omit<Partial<ScenarioUpsertPayload>, 'name' | 'duration' | 'groups' | 'runtime_settings'> & {
   name: string
   duration: string
-  scenario_mode?: ScenarioMode
-  script_shakeout?: boolean
-  resource_baseline?: boolean
-  assignment?: GeneratorAssignmentSettings
-  goal_config?: GoalConfig
   runtime_settings?: RuntimeSettingsOverride
-  groups: ScenarioGroupPayload[]
-  data_pools?: ScenarioDataPoolBinding[]
+  groups: Array<Omit<ScenarioGroupPayload, 'initialization' | 'runtime_settings'> & {
+    initialization?: ScenarioGroupPayload['initialization']
+    runtime_settings?: RuntimeSettingsOverride
+  }>
 }
 
 type DataPoolListResponse = {
@@ -394,11 +376,23 @@ export function useScriptApi() {
 
   const getScript = useCallback((id: string) => request<StoredScript>(`/scripts/${id}`), [])
 
-  const updateScript = useCallback(
-    (id: string, script: ScriptDefinition) =>
-      request<StoredScript>(`/scripts/${id}`, { method: 'PUT', body: JSON.stringify({ script }) }),
-    [],
-  )
+  const getScriptAuthoring = useCallback(async (id: string, projectId?: string, signal?: AbortSignal): Promise<ScriptAuthoringBaseline> => {
+    const response = await requestWithResponse<unknown>(`/scripts/${encodeURIComponent(id)}?view=authoring`, {
+      timeoutMs: 30_000, maxResponseBytes: 12 << 20, signal,
+    })
+    return admitScriptAuthoringBaseline(response.body, response.headers.get('ETag'), id, projectId)
+  }, [])
+
+  const updateScript = useCallback(async (id: string, script: ScriptDefinition, baseline: ScriptAuthoringBaseline): Promise<StoredScript> => {
+    const admitted = admitScriptAuthoringBaseline(baseline?.projection, baseline?.etag ?? null, id, script.project_id || undefined)
+    const response = await requestWithResponse<StoredScript>(`/scripts/${encodeURIComponent(id)}`, {
+      method: 'PUT', headers: { 'If-Match': admitted.etag }, body: JSON.stringify({ script }),
+      timeoutMs: 30_000, maxResponseBytes: 12 << 20,
+    })
+    if (response.headers.get('X-APEX-Script-Save-Mode') !== 'conditioned' || response.body?.id !== id) throw new ScriptSaveOutcomeUnknown()
+    baselineFromSavedScript(response.body, admitted.projection.project_id)
+    return response.body
+  }, [])
 
   const deleteScript = useCallback((id: string) => request<DeleteScriptResponse>(`/scripts/${id}`, { method: 'DELETE' }), [])
 
@@ -423,11 +417,23 @@ export function useScriptApi() {
   )
 
   const rebindScriptSecretReference = useCallback(
-    (script: ScriptDefinition, oldName: string, newName: string) =>
-      request<RebindScriptSecretReferenceResponse>('/scripts/secret-references/rebind', {
+    (script: ScriptDefinition, oldName: string, newName: string, baseline?: ScriptAuthoringBaseline) => {
+      const observed = baseline ? admitScriptAuthoringBaseline(baseline.projection, baseline.etag, script.id || '', script.project_id) : null
+      return request<RebindScriptSecretReferenceResponse>('/scripts/secret-references/rebind', {
         method: 'POST',
+        ...(observed ? { headers: { 'If-Match': observed.etag } } : {}),
+        timeoutMs: 30_000,
+        maxResponseBytes: 12 << 20,
         body: JSON.stringify({ script, old_name: oldName, new_name: newName }),
-      }),
+      }).then(response => {
+        if (!observed) return response
+        const authored = withoutScriptAuthoringReadContext(response.script)
+        if (authored.id !== observed.projection.id || authored.project_id !== observed.projection.project_id) {
+          throw new Error('The helper returned a different script or project. Your original draft is retained.')
+        }
+        return { ...response, script: authored }
+      })
+    },
     [],
   )
 
@@ -1588,6 +1594,7 @@ export function useScriptApi() {
       listScripts,
       createScript,
       getScript,
+      getScriptAuthoring,
       updateScript,
       deleteScript,
       moveScript,
@@ -1712,6 +1719,7 @@ export function useScriptApi() {
       listScripts,
       createScript,
       getScript,
+      getScriptAuthoring,
       updateScript,
       deleteScript,
       moveScript,

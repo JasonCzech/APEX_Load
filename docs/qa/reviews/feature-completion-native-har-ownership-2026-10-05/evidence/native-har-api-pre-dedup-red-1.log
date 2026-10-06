@@ -1,0 +1,13 @@
+# github.com/shoenig/go-m1cpu
+../../../../go/pkg/mod/github.com/shoenig/go-m1cpu@v0.1.6/cpu.go:75:17: warning: variable length array folded to constant array as an extension [-Wgnu-folding-constant]
+../../../../go/pkg/mod/github.com/shoenig/go-m1cpu@v0.1.6/cpu.go:77:16: warning: variable length array folded to constant array as an extension [-Wgnu-folding-constant]
+=== RUN   TestHARArtifactOwnershipRetiresEntireRecordedCompletedBatch
+=== RUN   TestHARArtifactOwnershipRetiresEntireRecordedCompletedBatch/before_rename
+    har_artifact_ownership_test.go:279: controller did not plan both recorded completed terminal payloads 4
+=== RUN   TestHARArtifactOwnershipRetiresEntireRecordedCompletedBatch/after_rename
+--- FAIL: TestHARArtifactOwnershipRetiresEntireRecordedCompletedBatch (0.07s)
+    --- FAIL: TestHARArtifactOwnershipRetiresEntireRecordedCompletedBatch/before_rename (0.03s)
+    --- PASS: TestHARArtifactOwnershipRetiresEntireRecordedCompletedBatch/after_rename (0.04s)
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/api	1.621s
+FAIL

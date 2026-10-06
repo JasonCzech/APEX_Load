@@ -2,6 +2,7 @@ package browser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -18,10 +19,13 @@ func init() {
 }
 
 type Browser struct {
-	storageState          *playwright.OptionalStorageState
-	systemLanguage        string
-	availableScreenWidth  int
-	availableScreenHeight int
+	evidence               browserEvidenceState
+	newUserPolicy          string
+	documentMetricsEnabled bool
+	storageState           *playwright.OptionalStorageState
+	systemLanguage         string
+	availableScreenWidth   int
+	availableScreenHeight  int
 
 	engine                     string
 	baseURL                    string
@@ -68,6 +72,7 @@ type Browser struct {
 	harCapturePolicy      string
 	harDir                string
 	harWorkingPath        string
+	harOwner              *harCaptureOwner
 	harErrorSeen          bool
 	harSLABreachSeen      bool
 	harManualSeen         bool
@@ -128,6 +133,7 @@ type Browser struct {
 	networkTasks          chan browserNetworkTask
 	networkWorkerStop     chan struct{}
 	networkWorkerWG       sync.WaitGroup
+	networkWorkers        *browserNetworkWorkerState
 	networkTasksDropped   int64
 	requestPolicyStop     chan struct{}
 
@@ -209,6 +215,22 @@ type browserProcessSnapshot struct {
 func (b *Browser) Name() string { return "browser" }
 
 func (b *Browser) Init(ctx context.Context, config map[string]any) error {
+	b.mu.Lock()
+	owner := b.harOwner
+	b.mu.Unlock()
+	if owner != nil && !owner.retiredSuccessfully() {
+		return errHAROwnershipUnproven
+	}
+	if owner != nil {
+		b.mu.Lock()
+		if b.harOwner == owner {
+			b.harOwner = nil
+			b.harWorkingPath = ""
+			b.pwContext = nil
+			unregisterRuntimeHARWorkingPath(owner.path)
+		}
+		b.mu.Unlock()
+	}
 	if err := b.applyConfig(config); err != nil {
 		return err
 	}
@@ -219,7 +241,13 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 		// would provide a bypassable security boundary. Fail closed before launch.
 		return fmt.Errorf("browser execution is disabled while the CI target-host policy is active")
 	}
-	return b.openBrowserContext()
+	if err := b.openBrowserContext(); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	b.evidence.lifecycleContext = ctx
+	b.mu.Unlock()
+	return nil
 }
 
 func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
@@ -246,7 +274,9 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		return result, nil
 	}
 
-	consoleStart, networkStart := b.eventOffsets()
+	b.beginEvidenceAction()
+	defer func() { b.endEvidenceAction(ctx.Err() != nil) }()
+	consoleStart, networkStart, networkOwner := b.actionEvidenceOffsets()
 	// Remember the previous action's network start so a browser_wait_response
 	// here scans from the trigger action rather than from its own start.
 	b.mu.Lock()
@@ -287,7 +317,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	if actionErr == nil {
 		actionErr = b.afterActionDelay(actionCtx)
 	}
-	b.finalizeActionResult(actionCtx, action, result, actionErr, consoleStart, networkStart, processBefore, actionDuration)
+	b.finalizeActionResult(actionCtx, action, result, actionErr, consoleStart, networkStart, networkOwner, processBefore, actionDuration)
 	if b.harSLABreachThreshold > 0 && result.Duration > b.harSLABreachThreshold {
 		b.noteHARSLABreach()
 	}
@@ -300,9 +330,20 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	return result, nil
 }
 
-func (b *Browser) Teardown(_ context.Context) error {
-	b.close()
-	return nil
+func (b *Browser) Teardown(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	b.mu.Lock()
+	owned := b.harOwner != nil
+	b.mu.Unlock()
+	if owned {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, runtimeHARCloseWait)
+		defer cancel()
+	}
+	documentErr := b.finalizeDocumentEvidenceContext(ctx)
+	return errors.Join(documentErr, b.closeWithContext(ctx))
 }
 
 func (b *Browser) HealthCheck(_ context.Context) error {

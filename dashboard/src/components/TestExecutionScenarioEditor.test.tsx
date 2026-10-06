@@ -108,6 +108,8 @@ describe('TestExecutionScenarioEditor', () => {
 
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(onSelectTest).toHaveBeenCalledWith('revised-test-1')
+    // Parent admission must see the owned completion before close retires it.
+    expect(onSelectTest.mock.invocationCallOrder[0]).toBeLessThan(onClose.mock.invocationCallOrder[0])
   })
 })
 

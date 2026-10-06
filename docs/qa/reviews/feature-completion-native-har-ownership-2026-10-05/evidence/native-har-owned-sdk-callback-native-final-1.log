@@ -1,0 +1,8 @@
+=== RUN   TestHAROwnershipNativeOnCloseRepeatCannotBlockOwnedFlush
+=== RUN   TestHAROwnershipNativeOnCloseRepeatCannotBlockOwnedFlush/chromium
+=== RUN   TestHAROwnershipNativeOnCloseRepeatCannotBlockOwnedFlush/webkit
+--- PASS: TestHAROwnershipNativeOnCloseRepeatCannotBlockOwnedFlush (2.12s)
+    --- PASS: TestHAROwnershipNativeOnCloseRepeatCannotBlockOwnedFlush/chromium (0.62s)
+    --- PASS: TestHAROwnershipNativeOnCloseRepeatCannotBlockOwnedFlush/webkit (1.50s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/protocol/browser	2.405s

@@ -1,0 +1,21 @@
+{
+  "created_utc": "2026-10-05T21:01:18.614573+00:00",
+  "scope": "Parent focused v8 repeat review: one settled-screenshot fixture option; all 62 inventoried product/fixture/dependency hashes verified. Supplements prior full-source and corrected-fixture reviews; no claim of new broad execution until its gates join.",
+  "source_inventory_sha256": "172c65d5abb410e83f08130f8ad631bf452b4f3b142389d375add02779a14dea",
+  "only_delta": [
+    "dashboard/e2e/workflow-new-test.spec.ts"
+  ],
+  "findings": [],
+  "settled_runtime_probe_raw_sha256": "832452c54e048c3288d33040700b60a4058756f5697223dc8a7cb01788ab55c9",
+  "parent_actual_pixel_inspection": [
+    "settled-dialog-viewport.png",
+    "settled-dialog-submit-visible.png",
+    "earlier composition desktop/narrow and fidelity guide images"
+  ],
+  "visual_result": "Actual settled dialog is opaque/readable with visible enabled submit. Earlier translucent image is retained as animation-timing evidence. Existing product styles did not change.",
+  "remaining_gates": [
+    "Final full Go repository gate",
+    "Final full dashboard cycle with both actual authentication profiles",
+    "Exact final source/embed bookends and documented commit"
+  ]
+}

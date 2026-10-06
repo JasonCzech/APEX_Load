@@ -1,0 +1,5 @@
+--- FAIL: TestScriptAuthoringProjectionExcludesIndependentContextAndPreservesGoalsAndSource (0.00s)
+    script_authoring_projection_test.go:81: non-authored field content_revision entered canonical script
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/api	1.466s
+FAIL

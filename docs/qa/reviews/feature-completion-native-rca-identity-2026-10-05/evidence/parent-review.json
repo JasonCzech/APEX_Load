@@ -1,0 +1,62 @@
+{
+  "reviewed_at_utc": "2026-10-05T21:32:42.586630+00:00",
+  "candidate_inventory_sha256": "5975b3b01948a1308b3ccb27dddba07b3f299bf1ec05c63b58394696fc9e02b1",
+  "source_files": [
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/native-rca-identity/Project_Stormrunner/pkg/analysis/points.go",
+      "repository_path": "pkg/analysis/points.go",
+      "bytes": 19974,
+      "sha256": "9414093d0babb468176f19db34ebcf6d89fe7afa1f5d572e371065ae02ee3cd8"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/native-rca-identity/Project_Stormrunner/pkg/analysis/prometheus_buckets.go",
+      "repository_path": "pkg/analysis/prometheus_buckets.go",
+      "bytes": 5272,
+      "sha256": "5c1b2e7c1f871a92d9eb19f050a0f374364ad3cf3f8a8f0737633188b7b6174f"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/native-rca-identity/Project_Stormrunner/pkg/analysis/series_identity.go",
+      "repository_path": "pkg/analysis/series_identity.go",
+      "bytes": 8822,
+      "sha256": "d5a859bf467da52af4748a88ddfc01e3c3101e574c86fcdf2fcca13a36c7098d"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/native-rca-identity/Project_Stormrunner/pkg/analysis/series_identity_test.go",
+      "repository_path": "pkg/analysis/series_identity_test.go",
+      "bytes": 20299,
+      "sha256": "d13e2100b94d1fa3845f467318baa4f826f40ea8b037a797e643d7b5f60d4355"
+    }
+  ],
+  "scope": "Complete new identity helper/test and the two factored comparator diffs; existing equality and semantic validation seams inspected. All four candidate hashes and both portable raw logs independently verified. This does not review or adopt the in-progress protected RCA implementation.",
+  "reviewed": [
+    "exact provider/general/Prometheus comparator parity and ignored-field behavior",
+    "cheap scalar/map/slice comparison with no hash/clone/encoding in hot path",
+    "versioned full SHA256 structured encoding; input validation, UTF8/NUL boundaries, byte limits and nil/empty consistency",
+    "observation modes/exact grid bounds, unit spelling, complete derivation, project/population/metric identity",
+    "qualification remains separate; no new runtime eligibility or native worker/engine wiring",
+    "independent legacy comparator parity oracle, bounded escaped fields, concurrency/immutability and zero-alloc checks"
+  ],
+  "findings": [],
+  "normal_and_race_logs": [
+    {
+      "command": "go test ./pkg/analysis",
+      "exit_code": 0,
+      "log": "/private/tmp/apexload-native-rca-identity-normal-20261005.txt",
+      "sha256": "ef847855c014d696ebfb35cf3efdce8469daebd8270f4408f403749f2da6d5ef",
+      "output": "ok  \tgithub.com/jasonczech/apexload/pkg/analysis\t0.269s"
+    },
+    {
+      "command": "go test -race ./pkg/analysis",
+      "exit_code": 0,
+      "log": "/private/tmp/apexload-native-rca-identity-race-20261005.txt",
+      "sha256": "0b6ffbab495073ff981807ad8bd5b589150066e7ed79f1e1a083260eaec4f894",
+      "output": "ok  \tgithub.com/jasonczech/apexload/pkg/analysis\t1.625s"
+    }
+  ],
+  "status": "no-additional-findings-in-portable-helper-scope",
+  "remaining_gates": [
+    "composed full Go before merge",
+    "authoritative RCA adoption and real native adapter integration",
+    "native 1GiB/platform/restart/HA acceptance; only10GB waived"
+  ]
+}

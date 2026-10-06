@@ -1,0 +1,7 @@
+
+> apexload-dashboard@0.1.0 build
+> tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && vite build --outDir ../pkg/api/static --emptyOutDir
+
+e2e/workflow-scenario-composition.spec.ts(172,10): error TS18046: 'reopened.goal_config' is of type 'unknown'.
+e2e/workflow-scenario-composition.spec.ts(173,10): error TS18046: 'reopened.goal_config' is of type 'unknown'.
+e2e/workflow-scenario-composition.spec.ts(174,10): error TS18046: 'reopened.scripts' is of type 'unknown'.

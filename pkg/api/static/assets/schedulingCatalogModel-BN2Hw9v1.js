@@ -1,0 +1,1 @@
+import{t as e}from"./catalogPagination-tWt7GjCl.js";function t(t,n){return e(async(e,r)=>({items:(await t({project_id:n,limit:e,offset:r})).timeslots||[]}),e=>e.id,`Capacity timeslot catalog`)}function n(t,n){return e(async(e,r)=>({items:(await t({project_id:n,limit:e,offset:r})).execution_plans||[]}),e=>e.id,`Execution plan catalog`)}export{n,t};

@@ -1,0 +1,12 @@
+third_party/playwright-go/README.md: missing local link -> ./Dockerfile.example
+third_party/playwright-go/README.md: missing local link -> ./tests/helper_test.go
+third_party/playwright-go/README.md: missing local link -> ./examples/download/main.go
+third_party/playwright-go/README.md: missing local link -> ./examples/end-to-end-testing/main.go
+third_party/playwright-go/README.md: missing local link -> ./examples/javascript/main.go
+third_party/playwright-go/README.md: missing local link -> ./examples/mobile-and-geolocation/main.go
+third_party/playwright-go/README.md: missing local link -> ./examples/parallel-scraping/main.go
+third_party/playwright-go/README.md: missing local link -> ./examples/pdf/main.go
+third_party/playwright-go/README.md: missing local link -> ./examples/scraping/main.go
+third_party/playwright-go/README.md: missing local link -> ./examples/screenshot/main.go
+third_party/playwright-go/README.md: missing local link -> ./examples/video/main.go
+third_party/playwright-go/README.md: missing local link -> ./examples/network-monitoring/main.go

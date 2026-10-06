@@ -1,0 +1,118 @@
+Building controller...
+Starting controller on http://127.0.0.1:18472 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.A49L1Z0svS)...
+Controller healthy.
+Starting controller on http://127.0.0.1:18472 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.A49L1Z0svS)...
+Controller healthy.
+Auth profile verified: local-auth.
+
+Running 8 tests using 1 worker
+
+(node:88445) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/workflow-browser-resource-evidence.spec.ts:5:1 › browser resource evidence filters retained failures and inspects action attribution (7.3s)
+  ✓  2 e2e/workflow-browser-resource-evidence.spec.ts:87:1 › live browser legacy summary refuses unavailable values and distinguishes explicit zero without standards qualification (13.5s)
+  ✘  3 e2e/workflow-browser-resource-evidence.spec.ts:132:1 › archived browser legacy summary preserves mixed-cohort gaps in engine CSV and ranks only complete devices (7.6s)
+(node:88657) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  4 e2e/workflow-browser-resource-evidence.spec.ts:185:1 › browser results comparison cards preserve exact mixed cohorts and malformed summaries (7.5s)
+  ✓  5 e2e/workflow-browser-resource-evidence.spec.ts:333:1 › live document populations preserve overlapping provisional history, actual cohorts and missing-peer coverage (9.4s)
+  ✓  6 e2e/workflow-browser-resource-evidence.spec.ts:371:1 › archive document evidence retains latest pending, censored and unavailable measurements independently from actions (7.7s)
+  ✓  7 e2e/workflow-script-editor.spec.ts:7:1 › operator edits the failed nested browser assertion and reruns without losing source fields (7.5s)
+  ✓  8 e2e/workflow-script-editor.spec.ts:60:1 › authored script goals survive an unrelated editor save and canonical reopen (7.7s)
+
+
+  1) e2e/workflow-browser-resource-evidence.spec.ts:132:1 › archived browser legacy summary preserves mixed-cohort gaps in engine CSV and ranks only complete devices 
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 127
+    Received:    124.53125
+
+      53 |   const hit = async () => heading.evaluate(node => { const rect = node.getBoundingClientRect(); const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2); return { hit: hit === node || node.contains(hit), top: rect.top, bottom: rect.bottom } })
+      54 |   await expect.poll(async () => (await hit()).hit).toBe(true)
+    > 55 |   expect((await hit()).top).toBeGreaterThanOrEqual(positioning.headerBottom)
+         |                             ^
+      56 |   await test.info().attach(`${filename}-scroll-position`, { body: JSON.stringify(positioning), contentType: 'application/json' })
+      57 |   const captureGeometry = () => assessment.evaluate(node => {
+      58 |     const rect = node.getBoundingClientRect()
+        at captureReadableAssessment (/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard/e2e/workflow-browser-resource-evidence.spec.ts:55:29)
+        at /Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard/e2e/workflow-browser-resource-evidence.spec.ts:181:3
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-focused-layout-repeat-2/local-auth/workflow-browser-resource--7036a-ranks-only-complete-devices/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-focused-layout-repeat-2/local-auth/workflow-browser-resource--7036a-ranks-only-complete-devices/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-focused-layout-repeat-2/local-auth/workflow-browser-resource--7036a-ranks-only-complete-devices/trace.zip
+    Usage:
+
+        npx playwright show-trace ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-focused-layout-repeat-2/local-auth/workflow-browser-resource--7036a-ranks-only-complete-devices/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    e2e/workflow-browser-resource-evidence.spec.ts:132:1 › archived browser legacy summary preserves mixed-cohort gaps in engine CSV and ranks only complete devices 
+  7 passed (1.2m)
+--- controller log (last 60 lines) ---
+{"time":"2026-10-05T06:33:59.145495-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/object-repositories","status":200,"duration_ms":0,"remote":"127.0.0.1:50285"}
+{"time":"2026-10-05T06:33:59.145723-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/components","status":200,"duration_ms":0,"remote":"127.0.0.1:50284"}
+{"time":"2026-10-05T06:33:59.160031-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/browser-emulation-catalog","status":200,"duration_ms":0,"remote":"127.0.0.1:50285"}
+{"time":"2026-10-05T06:33:59.160132-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/config-defaults","status":200,"duration_ms":0,"remote":"127.0.0.1:50287"}
+{"time":"2026-10-05T06:33:59.160398-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/runtime-settings/support-matrix","status":200,"duration_ms":0,"remote":"127.0.0.1:50284"}
+{"time":"2026-10-05T06:33:59.21013-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:50290"}
+{"time":"2026-10-05T06:33:59.210132-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"11bd2566-dbd1-4d16-94fc-983ed5a4c2b7","clients":1}
+{"time":"2026-10-05T06:33:59.298973-04:00","level":"INFO","msg":"http request","method":"PUT","path":"/api/v1/scripts/5e519aca-b0f9-40a6-a6a7-a251a97e01b4","status":200,"duration_ms":5,"remote":"127.0.0.1:50284"}
+{"time":"2026-10-05T06:33:59.306646-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:50291"}
+{"time":"2026-10-05T06:33:59.306768-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"11bd2566-dbd1-4d16-94fc-983ed5a4c2b7","clients":2}
+{"time":"2026-10-05T06:33:59.307054-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/5e519aca-b0f9-40a6-a6a7-a251a97e01b4/secret-status","status":200,"duration_ms":0,"remote":"127.0.0.1:50284"}
+{"time":"2026-10-05T06:33:59.313533-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/sessions","status":200,"duration_ms":0,"remote":"127.0.0.1:50287"}
+{"time":"2026-10-05T06:33:59.315099-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts","status":200,"duration_ms":1,"remote":"127.0.0.1:50284"}
+{"time":"2026-10-05T06:33:59.32755-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/5e519aca-b0f9-40a6-a6a7-a251a97e01b4","status":200,"duration_ms":1,"remote":"127.0.0.1:50219"}
+{"time":"2026-10-05T06:33:59.333531-04:00","level":"INFO","msg":"websocket client disconnected","clients":1}
+{"time":"2026-10-05T06:33:59.333659-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-05T06:33:59.348665-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/me","status":200,"duration_ms":0,"remote":"127.0.0.1:50287"}
+{"time":"2026-10-05T06:33:59.363337-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:50287"}
+{"time":"2026-10-05T06:33:59.363538-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:50285"}
+{"time":"2026-10-05T06:33:59.364622-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:50288"}
+{"time":"2026-10-05T06:33:59.364783-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/desktop/status","status":200,"duration_ms":0,"remote":"127.0.0.1:50286"}
+{"time":"2026-10-05T06:33:59.364872-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains","status":200,"duration_ms":1,"remote":"127.0.0.1:50284"}
+{"time":"2026-10-05T06:33:59.365156-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects","status":200,"duration_ms":0,"remote":"127.0.0.1:50287"}
+{"time":"2026-10-05T06:33:59.366775-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/5e519aca-b0f9-40a6-a6a7-a251a97e01b4","status":200,"duration_ms":3,"remote":"127.0.0.1:50289"}
+{"time":"2026-10-05T06:33:59.369822-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:50289"}
+{"time":"2026-10-05T06:33:59.37037-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:50287"}
+{"time":"2026-10-05T06:33:59.370544-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/ca897a12-40ef-4df7-95fb-dec7314a73f6/application-repository","status":200,"duration_ms":0,"remote":"127.0.0.1:50284"}
+{"time":"2026-10-05T06:33:59.370743-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/ca897a12-40ef-4df7-95fb-dec7314a73f6/application-repository/categories","status":200,"duration_ms":0,"remote":"127.0.0.1:50286"}
+{"time":"2026-10-05T06:33:59.370937-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:50288"}
+{"time":"2026-10-05T06:33:59.371145-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:50285"}
+{"time":"2026-10-05T06:33:59.376335-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:50285"}
+{"time":"2026-10-05T06:33:59.37668-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:50286"}
+{"time":"2026-10-05T06:33:59.376867-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/b7412f2b-9fab-4934-8d31-6150f13aa7a6/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:50288"}
+{"time":"2026-10-05T06:33:59.37705-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/b7412f2b-9fab-4934-8d31-6150f13aa7a6/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:50284"}
+{"time":"2026-10-05T06:33:59.3954-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/correlation-rulesets","status":200,"duration_ms":0,"remote":"127.0.0.1:50285"}
+{"time":"2026-10-05T06:33:59.395631-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/object-repositories","status":200,"duration_ms":0,"remote":"127.0.0.1:50287"}
+{"time":"2026-10-05T06:33:59.396637-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/integrations/github/config","status":200,"duration_ms":0,"remote":"127.0.0.1:50285"}
+{"time":"2026-10-05T06:33:59.397392-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects/11bd2566-dbd1-4d16-94fc-983ed5a4c2b7/folders","status":200,"duration_ms":2,"remote":"127.0.0.1:50289"}
+{"time":"2026-10-05T06:33:59.397563-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/remotes","status":200,"duration_ms":2,"remote":"127.0.0.1:50286"}
+{"time":"2026-10-05T06:33:59.397921-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/catalog","status":200,"duration_ms":2,"remote":"127.0.0.1:50288"}
+{"time":"2026-10-05T06:33:59.399267-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts","status":200,"duration_ms":3,"remote":"127.0.0.1:50287"}
+{"time":"2026-10-05T06:33:59.399472-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/5e519aca-b0f9-40a6-a6a7-a251a97e01b4","status":200,"duration_ms":4,"remote":"127.0.0.1:50284"}
+{"time":"2026-10-05T06:33:59.399629-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/sessions","status":200,"duration_ms":2,"remote":"127.0.0.1:50285"}
+{"time":"2026-10-05T06:33:59.399865-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:50286"}
+{"time":"2026-10-05T06:33:59.4-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":2,"remote":"127.0.0.1:50289"}
+{"time":"2026-10-05T06:33:59.456996-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/object-repositories","status":200,"duration_ms":0,"remote":"127.0.0.1:50288"}
+{"time":"2026-10-05T06:33:59.457161-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/actions","status":200,"duration_ms":0,"remote":"127.0.0.1:50287"}
+{"time":"2026-10-05T06:33:59.457168-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/config-defaults","status":200,"duration_ms":0,"remote":"127.0.0.1:50286"}
+{"time":"2026-10-05T06:33:59.457398-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/browser-emulation-catalog","status":200,"duration_ms":0,"remote":"127.0.0.1:50285"}
+{"time":"2026-10-05T06:33:59.457528-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/components","status":200,"duration_ms":1,"remote":"127.0.0.1:50284"}
+{"time":"2026-10-05T06:33:59.457724-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/runtime-settings/support-matrix","status":200,"duration_ms":1,"remote":"127.0.0.1:50289"}
+{"time":"2026-10-05T06:33:59.458537-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/5e519aca-b0f9-40a6-a6a7-a251a97e01b4/secret-status","status":200,"duration_ms":0,"remote":"127.0.0.1:50219"}
+{"time":"2026-10-05T06:33:59.521361-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:50293"}
+{"time":"2026-10-05T06:33:59.521384-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"11bd2566-dbd1-4d16-94fc-983ed5a4c2b7","clients":1}
+{"time":"2026-10-05T06:33:59.598571-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:50295"}
+{"time":"2026-10-05T06:33:59.598596-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"11bd2566-dbd1-4d16-94fc-983ed5a4c2b7","clients":2}
+{"time":"2026-10-05T06:33:59.879864-04:00","level":"INFO","msg":"websocket client disconnected","clients":1}
+{"time":"2026-10-05T06:33:59.879914-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-05T06:33:59.924831-04:00","level":"INFO","msg":"shutting down"}
+2026/10/05 06:33:59 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"

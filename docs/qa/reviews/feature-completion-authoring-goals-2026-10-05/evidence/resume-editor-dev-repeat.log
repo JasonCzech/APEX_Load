@@ -1,0 +1,114 @@
+Building controller...
+Starting controller on http://127.0.0.1:18475 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.jJLJQBXvkh)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 1 test using 1 worker
+
+(node:28156) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 e2e/workflow-script-goals.spec.ts:4:1 › authored script goals survive an unrelated editor save and canonical reopen (17.6s)
+
+
+  1) e2e/workflow-script-goals.spec.ts:4:1 › authored script goals survive an unrelated editor save and canonical reopen 
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: locator('.script-code-pane').locator('.cm-content')
+    Expected substring: "goal_config"
+    Received string:    "{  \"script\": {    \"actions\": [      {        \"method\": \"GET\",        \"name\": \"Purchase\",        \"target\": \"/\",        \"think_time\": {          \"mean_ms\": 0,          \"type\": \"\"        },        \"type\": \"request\"      }    ],    \"config\": {      \"base_url\": \"http://127.0.0.1:2\",      \"browser\": {        \"geolocation\": {},        \"http_credentials\": {},        \"proxy\": {},        \"review_policy\": {},        \"viewport\": {}      },      \"bruno\": {        \"limits\": {}      },      \"database\": {},      \"error_handling\": {},      \"eventhubs\": {},      \"grpc\": {},      \"http\": {        \"auth\": {},        \"proxy\": {},"
+    Timeout: 15000ms
+
+    Call log:
+      - Expect "toContainText" with timeout 15000ms
+      - waiting for locator('.script-code-pane').locator('.cm-content')
+        34 × locator resolved to <div translate="no" role="textbox" autocorrect="off" spellcheck="false" autocapitalize="off" data-language="json" aria-multiline="true" contenteditable="false" aria-autocomplete="list" writingsuggestions="false" class="cm-content cm-lineWrapping">…</div>
+           - unexpected value "{  "script": {    "actions": [      {        "method": "GET",        "name": "Purchase",        "target": "/",        "think_time": {          "mean_ms": 0,          "type": ""        },        "type": "request"      }    ],    "config": {      "base_url": "http://127.0.0.1:2",      "browser": {        "geolocation": {},        "http_credentials": {},        "proxy": {},        "review_policy": {},        "viewport": {}      },      "bruno": {        "limits": {}      },      "database": {},      "error_handling": {},      "eventhubs": {},      "grpc": {},      "http": {        "auth": {},        "proxy": {},"
+
+
+      42 |   await find.fill('goal_config')
+      43 |   await find.press('Enter')
+    > 44 |   await expect(code.locator('.cm-content')).toContainText('goal_config')
+         |                                             ^
+      45 |   await find.fill('217.5')
+      46 |   await find.press('Enter')
+      47 |   await expect(code.locator('.cm-content')).toContainText('217.5')
+        at /Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/e2e/workflow-script-goals.spec.ts:44:45
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/authoring-goals-repeat/dev-admin/workflow-script-goals-auth-63f1f-r-save-and-canonical-reopen/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/authoring-goals-repeat/dev-admin/workflow-script-goals-auth-63f1f-r-save-and-canonical-reopen/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/authoring-goals-repeat/dev-admin/workflow-script-goals-auth-63f1f-r-save-and-canonical-reopen/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/authoring-goals-repeat/dev-admin/workflow-script-goals-auth-63f1f-r-save-and-canonical-reopen/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    e2e/workflow-script-goals.spec.ts:4:1 › authored script goals survive an unrelated editor save and canonical reopen 
+--- controller log (last 60 lines) ---
+{"time":"2026-10-05T00:14:58.934491-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/61cb2d77-1cf6-48e4-b498-8f164399054e/secret-status","status":200,"duration_ms":0,"remote":"127.0.0.1:54189"}
+{"time":"2026-10-05T00:14:58.935132-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/actions","status":200,"duration_ms":1,"remote":"127.0.0.1:54192"}
+{"time":"2026-10-05T00:14:58.93723-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/components","status":200,"duration_ms":0,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:14:58.961885-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/config-defaults","status":200,"duration_ms":0,"remote":"127.0.0.1:54192"}
+{"time":"2026-10-05T00:14:58.962107-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/browser-emulation-catalog","status":200,"duration_ms":0,"remote":"127.0.0.1:54189"}
+{"time":"2026-10-05T00:14:58.962819-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/runtime-settings/support-matrix","status":200,"duration_ms":1,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:14:59.121987-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:54198"}
+{"time":"2026-10-05T00:14:59.122077-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"5962a096-ad0b-42a0-8403-b8d9e4d6010d","clients":2}
+{"time":"2026-10-05T00:14:59.304284-04:00","level":"INFO","msg":"http request","method":"PUT","path":"/api/v1/scripts/61cb2d77-1cf6-48e4-b498-8f164399054e","status":200,"duration_ms":15,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:14:59.31524-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/61cb2d77-1cf6-48e4-b498-8f164399054e/secret-status","status":200,"duration_ms":1,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:14:59.336758-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/sessions","status":200,"duration_ms":2,"remote":"127.0.0.1:54189"}
+{"time":"2026-10-05T00:14:59.348154-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts","status":200,"duration_ms":14,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:14:59.384962-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/61cb2d77-1cf6-48e4-b498-8f164399054e","status":200,"duration_ms":4,"remote":"127.0.0.1:54188"}
+{"time":"2026-10-05T00:14:59.396726-04:00","level":"INFO","msg":"websocket client disconnected","clients":1}
+{"time":"2026-10-05T00:14:59.397028-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-05T00:14:59.421908-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/me","status":200,"duration_ms":0,"remote":"127.0.0.1:54189"}
+{"time":"2026-10-05T00:14:59.462704-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects","status":200,"duration_ms":0,"remote":"127.0.0.1:54193"}
+{"time":"2026-10-05T00:14:59.464386-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains","status":200,"duration_ms":0,"remote":"127.0.0.1:54194"}
+{"time":"2026-10-05T00:14:59.464754-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:14:59.473496-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/9a09843c-e20d-4700-ab64-fed7979b185a/application-repository","status":200,"duration_ms":0,"remote":"127.0.0.1:54193"}
+{"time":"2026-10-05T00:14:59.474023-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:54194"}
+{"time":"2026-10-05T00:14:59.474526-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/61cb2d77-1cf6-48e4-b498-8f164399054e","status":200,"duration_ms":10,"remote":"127.0.0.1:54190"}
+{"time":"2026-10-05T00:14:59.474701-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:14:59.475342-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:54189"}
+{"time":"2026-10-05T00:14:59.475477-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/desktop/status","status":200,"duration_ms":12,"remote":"127.0.0.1:54192"}
+{"time":"2026-10-05T00:14:59.476225-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:54194"}
+{"time":"2026-10-05T00:14:59.477053-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:14:59.477645-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/9a09843c-e20d-4700-ab64-fed7979b185a/application-repository/categories","status":200,"duration_ms":0,"remote":"127.0.0.1:54193"}
+{"time":"2026-10-05T00:14:59.489226-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:54194"}
+{"time":"2026-10-05T00:14:59.489375-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:54193"}
+{"time":"2026-10-05T00:14:59.490829-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/8bf8a4dd-82a9-4f85-b040-5644ca6acae8/releases","status":200,"duration_ms":1,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:14:59.492635-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/8bf8a4dd-82a9-4f85-b040-5644ca6acae8/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:54194"}
+{"time":"2026-10-05T00:14:59.542324-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/correlation-rulesets","status":200,"duration_ms":0,"remote":"127.0.0.1:54189"}
+{"time":"2026-10-05T00:14:59.544917-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/integrations/github/config","status":200,"duration_ms":0,"remote":"127.0.0.1:54189"}
+{"time":"2026-10-05T00:14:59.546039-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/catalog","status":200,"duration_ms":3,"remote":"127.0.0.1:54192"}
+{"time":"2026-10-05T00:14:59.546397-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects/5962a096-ad0b-42a0-8403-b8d9e4d6010d/folders","status":200,"duration_ms":1,"remote":"127.0.0.1:54193"}
+{"time":"2026-10-05T00:14:59.546768-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/object-repositories","status":200,"duration_ms":1,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:14:59.547002-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/remotes","status":200,"duration_ms":1,"remote":"127.0.0.1:54190"}
+{"time":"2026-10-05T00:14:59.548667-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:14:59.548893-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:54193"}
+{"time":"2026-10-05T00:14:59.551882-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/sessions","status":200,"duration_ms":2,"remote":"127.0.0.1:54192"}
+{"time":"2026-10-05T00:14:59.560112-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts","status":200,"duration_ms":11,"remote":"127.0.0.1:54189"}
+{"time":"2026-10-05T00:14:59.563682-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/61cb2d77-1cf6-48e4-b498-8f164399054e","status":200,"duration_ms":18,"remote":"127.0.0.1:54194"}
+{"time":"2026-10-05T00:14:59.633991-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/object-repositories","status":200,"duration_ms":0,"remote":"127.0.0.1:54189"}
+{"time":"2026-10-05T00:14:59.63491-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/actions","status":200,"duration_ms":1,"remote":"127.0.0.1:54193"}
+{"time":"2026-10-05T00:14:59.63705-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/components","status":200,"duration_ms":0,"remote":"127.0.0.1:54194"}
+{"time":"2026-10-05T00:14:59.637161-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/61cb2d77-1cf6-48e4-b498-8f164399054e/secret-status","status":200,"duration_ms":2,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:14:59.654344-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/browser-emulation-catalog","status":200,"duration_ms":0,"remote":"127.0.0.1:54193"}
+{"time":"2026-10-05T00:14:59.668543-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/runtime-settings/support-matrix","status":200,"duration_ms":11,"remote":"127.0.0.1:54194"}
+{"time":"2026-10-05T00:14:59.676635-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/config-defaults","status":200,"duration_ms":0,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:14:59.678537-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:54199"}
+{"time":"2026-10-05T00:14:59.678643-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"5962a096-ad0b-42a0-8403-b8d9e4d6010d","clients":1}
+{"time":"2026-10-05T00:14:59.790544-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:54200"}
+{"time":"2026-10-05T00:14:59.790627-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"5962a096-ad0b-42a0-8403-b8d9e4d6010d","clients":2}
+{"time":"2026-10-05T00:15:00.448266-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/scripts/validate","status":200,"duration_ms":1,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:15:09.543216-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:54191"}
+{"time":"2026-10-05T00:15:15.92289-04:00","level":"INFO","msg":"websocket client disconnected","clients":1}
+{"time":"2026-10-05T00:15:15.922946-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-05T00:15:16.641098-04:00","level":"INFO","msg":"shutting down"}
+2026/10/05 00:15:16 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"

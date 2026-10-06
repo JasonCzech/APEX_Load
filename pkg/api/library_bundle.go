@@ -428,7 +428,7 @@ func (s *Server) libraryScenarioBundleItem(id string) (LibraryBundleItem, error)
 	if !ok || scenario == nil {
 		return LibraryBundleItem{}, fmt.Errorf("scenario not found")
 	}
-	req := createScenarioRequestFromStored(maskStoredScenario(scenario))
+	req := portableScenarioRequestFromStored(maskStoredScenario(scenario))
 	return LibraryBundleItem{
 		Kind:             "scenario",
 		SourceInstanceID: s.controllerID,
@@ -1102,7 +1102,7 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		}
 		action = "updated"
 	}
-	req := cloneScenarioRequestForLibrary(item.Scenario.Request)
+	req := completeLibraryScenarioSnapshot(item.Scenario.Request)
 	req.creationActor = testCreationActor{
 		Type:    "legacy",
 		Subject: "controller:library-import-unattributed",
@@ -1686,6 +1686,18 @@ func importedArchiveRegularFilesAt(root *os.Root, prefix string) ([]string, erro
 	return files, nil
 }
 
+// completeLibraryScenarioSnapshot adapts the already hash-verified portable
+// payload to a complete write. Portable omission denotes the default empty shape;
+// ordinary partial saves intentionally keep nil as preserve-existing semantics.
+func completeLibraryScenarioSnapshot(req CreateScenarioRequest) CreateScenarioRequest {
+	req = cloneScenarioRequestForLibrary(req)
+	if req.WorkloadShapeID == nil {
+		empty := ""
+		req.WorkloadShapeID = &empty
+	}
+	return req
+}
+
 func cloneScenarioRequestForLibrary(req CreateScenarioRequest) CreateScenarioRequest {
 	payload, err := json.Marshal(req)
 	if err != nil {
@@ -1708,9 +1720,30 @@ func cloneScriptForLibrary(script *dsl.Script) *dsl.Script {
 	return &cloned
 }
 
+// portableScenarioRequestFromStored retains all transferable authored fields
+// while keeping historical omitted defaults stable in the exported hash contract.
+// The full private snapshot remains explicit for update/rollback clears.
+func portableScenarioRequestFromStored(scenario *StoredScenario) CreateScenarioRequest {
+	return normalizePortableScenarioRequestDefaults(createScenarioRequestFromStored(scenario))
+}
+
+func normalizePortableScenarioRequestDefaults(req CreateScenarioRequest) CreateScenarioRequest {
+	if mode := strings.ToLower(strings.TrimSpace(req.TerminationMode)); mode == "" || mode == "duration" {
+		req.TerminationMode = ""
+	}
+	if req.WorkloadShapeID != nil && strings.TrimSpace(*req.WorkloadShapeID) == "" {
+		req.WorkloadShapeID = nil
+	}
+	return req
+}
+
 func createScenarioRequestFromStored(scenario *StoredScenario) CreateScenarioRequest {
+	// The request is an owned authored snapshot used by export and rollback.
+	// It must preserve explicit clears without aliasing a live/cached scenario.
+	scenario = cloneStoredScenarioForRead(scenario)
 	req := CreateScenarioRequest{
 		Name:             scenario.Name,
+		TerminationMode:  scenario.TerminationMode,
 		Duration:         scenario.Duration,
 		StartDelay:       scenario.StartDelay,
 		ScenarioMode:     scenario.ScenarioMode,
@@ -1722,23 +1755,23 @@ func createScenarioRequestFromStored(scenario *StoredScenario) CreateScenarioReq
 		RuntimeSettings:  scenario.RuntimeSettings,
 		DataPools:        scenario.DataPools,
 	}
-	if shapeID := strings.TrimSpace(scenario.WorkloadShapeID); shapeID != "" {
-		req.WorkloadShapeID = &shapeID
-	}
+	shapeID := strings.TrimSpace(scenario.WorkloadShapeID)
+	req.WorkloadShapeID = &shapeID
 	for _, script := range scenario.Scripts {
 		req.Groups = append(req.Groups, CreateGroupEntry{
-			Name:            script.Name,
-			ScriptID:        script.ScriptID,
-			Role:            script.Role,
-			VUsers:          script.VUsers,
-			RampUp:          script.RampUp,
-			RampDown:        script.RampDown,
-			StartOffset:     script.StartOffset,
-			Stages:          script.Stages,
-			Iterations:      script.Iterations,
-			RuntimeSettings: script.RuntimeSettings,
-			Assignment:      script.Assignment,
-			InitStrategy:    script.Initialization,
+			Name:                         script.Name,
+			ScriptID:                     script.ScriptID,
+			Role:                         script.Role,
+			VUsers:                       script.VUsers,
+			RampUp:                       script.RampUp,
+			RampDown:                     script.RampDown,
+			StartOffset:                  script.StartOffset,
+			Stages:                       script.Stages,
+			Iterations:                   script.Iterations,
+			RuntimeSettings:              script.RuntimeSettings,
+			Assignment:                   script.Assignment,
+			InitStrategy:                 script.Initialization,
+			TransactionResponseTimeSLAMs: script.TransactionResponseTimeSLAMs,
 		})
 	}
 	return req

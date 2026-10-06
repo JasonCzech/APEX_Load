@@ -1,0 +1,71 @@
+{
+  "schema": "apexload.main-command-center-local-auth-coverage-private-patch.v1",
+  "at_utc": "2026-10-06T04:35:29.774646+00:00",
+  "reviewer": "/root/authoring_fidelity_resume_v3",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "result": "temporary-only proposed auth-profile coverage correction; unapplied/uncompiled/untested",
+  "patch": {
+    "path": "/private/tmp/apexload-main-command-center-local-auth-coverage-additional-20261006.patch",
+    "sha256": "74f2026197f49db1289e3daac322ae6b463eac6d58e473d45d6f96448dfc8277",
+    "bytes": 5320
+  },
+  "changes": [
+    {
+      "path": "dashboard/e2e/command-center-details.spec.ts",
+      "expected_before_sha256": "59b2f1500ac478b1e49cace2984e4e123f2c0507a1118ea60885494606847ca1",
+      "expected_after_sha256": "52061f3afe884cc48ceda77df535d204976008f7ce046a716eaaf68bb68f0765",
+      "expected_before_source": "Previously frozen resize-only proposed source; apply original geometry patch first with its own ROOTbefore guard.",
+      "private_proposed_source": "/private/tmp/apexload-main-command-center-details-auth-proposed-20261006.spec.ts",
+      "scope": "Spec-local fixture override authenticates only local-auth through existing realUIlogin, snapshots actual page storageState into private API context, reuses real run seed/abort helpers and retains timeout-surviving private teardown/context disposal."
+    },
+    {
+      "path": "dashboard/playwright.config.ts",
+      "expected_before_sha256": "0514900e6e509ab3cd13bfb57a97480e0a56825645b2ad30e7a680d08cf9b313",
+      "expected_after_sha256": "ce0cfe7ff8567a7e34277fc6fa8cd71ce34b7ab3ec011d7729d35cc162468e69",
+      "private_proposed_source": "/private/tmp/apexload-main-command-center-playwright-auth-proposed-20261006.config.ts",
+      "scope": "Add exact command-center-details.spec.ts filename to existing local-auth testMatch; no temporary config/profile bypass/retries or global fixture alteration."
+    }
+  ],
+  "readonly_root_inputs": [
+    {
+      "path": "dashboard/e2e/support/liveRun.ts",
+      "sha256": "75e3d5f41a3afd838946d5bd543c172baad2527032530cb8070920213bd5c511",
+      "bytes": 10107
+    },
+    {
+      "path": "dashboard/e2e/support/workflow.ts",
+      "sha256": "f43c6b99e7614b88e6e17d0cf827f1ac3802118d87b987f43f7b1a77f2079ce9",
+      "bytes": 15949
+    },
+    {
+      "path": "dashboard/e2e/workflow-command-center.spec.ts",
+      "sha256": "3ad7e1ca303a513fd3c6c581a2977aa4bf4dd121ad564a5817c41165bf015db4",
+      "bytes": 14990
+    },
+    {
+      "path": "dashboard/e2e/command-center-details.spec.ts",
+      "sha256": "eea3f101357b697df47c93e077bcf92d5992a98cfd3a11b0fd9368be4483cfda",
+      "bytes": 5822
+    },
+    {
+      "path": "dashboard/playwright.config.ts",
+      "sha256": "0514900e6e509ab3cd13bfb57a97480e0a56825645b2ad30e7a680d08cf9b313",
+      "bytes": 3313
+    }
+  ],
+  "self_review": [
+    "Both existing cases request seedLiveRun, so authentication fixture executes before each test body; dev-admin login remains skipped.",
+    "Authenticated page storageState is captured only after existing login confirms actual dashboard access, matching existing workflow cleanup context pattern. No forged token/header or auth disabling.",
+    "All seeded runs are retained until genuine abort/delete teardown; private API context remains separate from page disposal and is always disposed through finally.",
+    "Shared liveRun/workflow helpers, real run fixture behavior, both original test bodies and strict geometry assertion are preserved.",
+    "No CSS/components/viewport/tolerance or original resize patch mutation.",
+    "Adding the2existing cases makes them discoverable under local-auth; parent must measure actual test collection instead of treating predicted198\u2192200count as execution."
+  ],
+  "qualification_needed": [
+    "Independently review composed two temporary test patches and final source hashes before guarded apply after originalUIjob physically joins.",
+    "Run typecheck/lint and affected two browser cases repeatedly under dev-admin and local-auth using real configured profiles.",
+    "Run fresh full dashboard test:cycle in both auth profiles since shared Playwright discovery configuration changes."
+  ],
+  "findings": [],
+  "execution": "Only /private/tmp patch/proposed-source/metadata outputs created. No ROOT source edits, source patch application, tests/builds, staging/Gitwrites or cache cleanup."
+}

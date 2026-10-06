@@ -1,0 +1,28 @@
+{
+  "label": "frontend-identity-grid-fix-build",
+  "command": [
+    "npm",
+    "run",
+    "build"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard",
+  "started_utc": "2026-10-05T03:38:04.827124+00:00",
+  "finished_utc": "2026-10-05T03:38:37.891442+00:00",
+  "duration_seconds": 33.064,
+  "exit_code": 0,
+  "profile": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "APEXLOAD_ANALYSIS_MEMORY_LIMIT": "512MiB",
+    "APEXLOAD_ANALYSIS_SPILL_LIMIT": "128MiB",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_AUTH_PORT": "18472"
+  },
+  "log_bytes": 25926,
+  "log_sha256": "9e7cd113a7e807c4f4fc3c11cbeb58a9c6b92368d83d7ce0b45e2647e2b47289"
+}

@@ -167,7 +167,13 @@ func takeSnapshotNetworkEntries(entries []protocol.NetworkEntry, remaining *int)
 			break
 		}
 		*remaining -= snapshotNetworkEntryOverhead
+		var resource *protocol.BrowserResourceEvidence
+		if entry.BrowserEvidence != nil && *remaining > 4096 {
+			resource = entry.BrowserEvidence.Clone()
+			*remaining -= 4096
+		}
 		out = append(out, protocol.NetworkEntry{
+			BrowserEvidence: resource, FailureKind: entry.FailureKind,
 			URL:                  takeSnapshotString(entry.URL, remaining, 8<<10),
 			Method:               takeSnapshotString(entry.Method, remaining, 64),
 			StatusCode:           entry.StatusCode,

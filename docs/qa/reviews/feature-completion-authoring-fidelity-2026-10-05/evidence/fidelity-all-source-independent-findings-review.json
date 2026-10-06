@@ -1,0 +1,128 @@
+{
+  "created_utc": "2026-10-05T18:52:25.013277+00:00",
+  "scope": "Independent read-only static review of pending authoring-fidelity diff and relevant runtime/portable/queued-copy fixtures. No source edits, builds, tests, commits, pushes or cache cleanup. QA logs and static embed outputs excluded as implementation.",
+  "root": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+  "head": "fe24d2191810690bbb65dc75fc692e9ac04c7035",
+  "source_inventory": "/private/tmp/apexload-authoring-fidelity-independent-review-20261005-source.json",
+  "source_inventory_sha256": "1b88b61c6529b9c45ac546357fb649f7c24e4e1d3b79d1d53eb935b5747ca4a9",
+  "source_files": 48,
+  "review_end_drift": [],
+  "additional_reviewed_dependency_files": [
+    {
+      "path": "pkg/api/testcreation.go",
+      "bytes": 152274,
+      "sha256": "9c1ce27e3cd018b2dfc00ae35df3a9391ced4413813b673ab98fffa4640f2ec3"
+    },
+    {
+      "path": "pkg/api/iteration_termination.go",
+      "bytes": 2320,
+      "sha256": "aebab135f304a9066b980ab56e1820f5aaa464915ba2ef89132985700f75707e"
+    },
+    {
+      "path": "pkg/api/scenario.go",
+      "bytes": 54295,
+      "sha256": "13e6f79254de290427b8f8299665d98b9e18b6805a25215d45bd5012bdc18e8f"
+    },
+    {
+      "path": "pkg/api/runtime_mask.go",
+      "bytes": 34151,
+      "sha256": "accdc1a6354a0409a9bee1e12e5cf0fd0f1efc62674a806b36b753b3803b82be"
+    },
+    {
+      "path": "pkg/api/runner.go",
+      "bytes": 124491,
+      "sha256": "c07ad9c2b0ddae5ced257abd1ebc57cf24ddcc27717ee5fa8a43c50bf6901630"
+    },
+    {
+      "path": "pkg/api/library_import_journal.go",
+      "bytes": 10573,
+      "sha256": "439cfd4959ff8f8199d9b6f6375379e90bb3a155eca2fe4e807727fc8699d892"
+    },
+    {
+      "path": "dashboard/src/components/CreateTestRuntimeOverrides.tsx",
+      "bytes": 1997,
+      "sha256": "396a817b4730bf64e4f3b44bff64ff99a9c919de06ff992f5da61da9b83a371f"
+    },
+    {
+      "path": "dashboard/src/components/DurationField.tsx",
+      "bytes": 3831,
+      "sha256": "adbe9109ad3d8e9b2732acd33c77046a3cc4d7ea233e08ff06f42d14a2b2ada0"
+    },
+    {
+      "path": "dashboard/src/components/RunMonitorBindingSelector.tsx",
+      "bytes": 3961,
+      "sha256": "359e28de5ecbaa82e93a14978742080fc7c68ef9f02b3084c0ef9eef5eff12de"
+    },
+    {
+      "path": "dashboard/src/hooks/useModalDialog.ts",
+      "bytes": 5650,
+      "sha256": "39341404207c9aad1e0b078fafd8535c75f1d4e1cd9f33d305230f103bb93041"
+    },
+    {
+      "path": "dashboard/src/components/ux/DialogLayer.tsx",
+      "bytes": 581,
+      "sha256": "b366bb79317979acbfe61ec5db8408f7f4a32e857ac13d8a353b40986e4ffa25"
+    }
+  ],
+  "findings": [
+    {
+      "priority": 2,
+      "title": "Join direct and navigation-guard creation requests",
+      "path": "dashboard/src/components/CreateTestModal.tsx",
+      "line": 339,
+      "scenario": "Hold a direct queued-copy POST response, navigate browser history while it is pending, then choose Save changes in the unsaved guard. submitDraft is called again and creates a second queued run.",
+      "evidence": [
+        "CreateTestModal.tsx:339-342 and 371-372 have no in-flight ownership guard",
+        "CreateTestModal.tsx:403 publishes the same submit callback to the navigation guard",
+        "App.tsx:2537,2586,2609 admit browser history navigation independently of modal inert isolation",
+        "NavigationGuardRoot.tsx:92 invokes guard.save despite an existing direct modal save"
+      ],
+      "recommendation": "Keep one owned in-flight promise/ref shared by direct and navigation-guard submissions; preserve the submitted snapshot and late-edit false result when joining. Add held actual transport plus history navigation fixture."
+    },
+    {
+      "priority": 2,
+      "title": "Preserve iteration termination through revised queued drafts",
+      "path": "dashboard/src/components/useQueuedRunRevision.ts",
+      "line": 22,
+      "scenario": "Open a QUEUED iteration-terminated source and change only its name. The new action admits the source, but its blank duration becomes 1m and submission does not carry termination mode. The server inherits iterations and rejects the synthetic duration.",
+      "evidence": [
+        "scenarioDraftUtils.ts:302-328 omits source termination_mode",
+        "scenarioDraftUtils.ts:233 defaults blank duration to 1m",
+        "CreateTestModal.tsx:241-287 omits termination_mode from create and estimate",
+        "testcreation.go:1891 inherits source termination mode",
+        "iteration_termination.go:13-15 rejects nonempty duration for iteration mode"
+      ],
+      "recommendation": "Carry immutable actual termination mode and empty duration through draft, estimates and creation. Make the form respect the admitted fixed iteration workload. Add rename-only actual transport/reopen fixture."
+    },
+    {
+      "priority": 2,
+      "title": "Encode an explicit global start-delay clear",
+      "path": "dashboard/src/components/CreateTestModal.tsx",
+      "line": 473,
+      "scenario": "Open a queued source with start_delay=10s, empty the Global Start Delay field, and create the copy. The form and timeline show no delay, but the payload omits start_delay and the controller restores 10s from the source.",
+      "evidence": [
+        "CreateTestModal.tsx:473-477 permits an empty delay",
+        "scenarioPayloadUtils.ts:419 omits blank start_delay",
+        "testcreation.go:1900-1901 inherits nonempty source delay when request is blank"
+      ],
+      "recommendation": "Normalize an owned revised-source empty delay to 0s, or implement presence-aware clear semantics. Preserve ordinary new-run default serialization and qualify actual transport plus reopen."
+    },
+    {
+      "priority": 2,
+      "title": "Encode clearing the last root runtime override",
+      "path": "dashboard/src/components/scenarioPayloadUtils.ts",
+      "line": 368,
+      "scenario": "Open a queued source whose only root override is WebSocket or Results, clear that section in Runtime Settings Overrides, and create the copy. The empty runtime payload is omitted, so the controller reattaches the original root section from the source.",
+      "evidence": [
+        "RuntimeSettingsGroupEditor.tsx:550-563 deletes the selected Results/WebSocket override",
+        "RuntimeSettingsGroupEditor.tsx:771-772 exposes the clear action",
+        "scenarioPayloadUtils.ts:368-369 returns undefined for the empty authored runtime",
+        "scenarioPayloadUtils.ts:421 omits that runtime",
+        "testcreation.go:1953-1954 clones the revision-source runtime on absent request"
+      ],
+      "recommendation": "Keep private source-runtime presence and submit runtime_settings:{} for an owned revised-source root clear, distinguishing absent source, explicit empty root, empty Results/WebSocket section, and selected override clear. Add actual transport/reopen coverage."
+    }
+  ],
+  "other_findings": "No additional actionable defects found in changed Go runtime Results precedence, script projection, scenario storage shape persistence, portable export/recovery hash normalization, hash-verified complete library snapshot/rollback, queued source ownership/permission/ABA/lazy callback fences, capture connection retention/readiness, goal guardrail preservation/explicit empty goal, New Test authored group projections, or scope-limited guide/help changes. This is review evidence, not test acceptance.",
+  "cache_cleanup": "Deferred: root session still owns dependent builds, verification and follow-up fixes."
+}

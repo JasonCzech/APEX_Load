@@ -1,0 +1,8 @@
+--- FAIL: TestHAROwnershipDocumentFinalizerDeadlineRetainsSameCloseOwner (0.24s)
+    har_ownership_document_test.go:53: document finalizer blocked Teardown before owner deadline
+    har_ownership_document_test.go:63: document cancellation bypassed close-once owner 2
+--- FAIL: TestHAROwnershipStaleFrameFailureCannotCensorLiveSibling (0.00s)
+    har_ownership_document_test.go:94: one stale native frame erased the live sibling's valid final receipt
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/protocol/browser	0.447s
+FAIL

@@ -1,0 +1,35 @@
+{
+  "schema": "apexload.dashboard-lazy-access-self-review.v1",
+  "reviewer": "implementing HAR/browser subagent; self review, not independent review",
+  "utc": "2026-10-06T01:10:03.340086+00:00",
+  "scope": "Fifteen direct source inputs in source-freeze-v2.json; not full transitive dependencies or full dashboard acceptance",
+  "source_sha256": "513158b0372bcc31410d5608c5e9390014ed474ca1319fe978eba0d74c5692e3",
+  "bookends_verified": true,
+  "actionable_findings": [],
+  "resolved_findings": [
+    {
+      "origin": "parent source review after v1",
+      "finding": "Optional inspector chunk rejection reached the entire Execution route boundary",
+      "fix": "Existing local LazyLoadBoundary encloses only the open inspector subtree; real rejected-module regression preserves archive heading, outer route, no reads and close behavior"
+    },
+    {
+      "origin": "first focused units",
+      "finding": "Original disclosure tests assumed eager module availability",
+      "fix": "Explicitly await real BrowserResourceInspector import inside act; original exact owner/call/coverage assertions retained"
+    },
+    {
+      "origin": "first focused units and corrected AST inventory",
+      "finding": "Original consumer audit falsely treated swagger-access-muted substring as access-muted",
+      "fix": "Exact class token boundary proves six real consumers; unnecessary Swagger import removed and original source restored; not a missing style/product defect"
+    }
+  ],
+  "checks_reviewed": [
+    "Lazy import requested only when authorized disclosure open",
+    "Pending module close/run replacement cannot resurrect reads; gated module test joins on cleanup",
+    "Local error boundary preserves parent archive/route with reload control",
+    "All169 moved rule declarations, contexts and order match original AST; all1349 retained rules match original AST",
+    "Mixed980 rule retained globally; its3 access selectors cloned at original scoped order",
+    "Six actual access-class TSX consumers own their CSS; no App eager Access stylesheet import"
+  ],
+  "qualification_limit": "Parent-owned focused units and candidate bundle results linked separately; real browser/full cycle and full program remain parent gates"
+}

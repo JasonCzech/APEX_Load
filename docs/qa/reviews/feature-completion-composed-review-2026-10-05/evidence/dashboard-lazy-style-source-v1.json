@@ -1,0 +1,66 @@
+{
+  "scope": "Twelve direct lazy-disclosure/access-style source inputs; not a full transitive source inventory; no builds/tests run yet",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "inputs": [
+    {
+      "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.tsx",
+      "bytes": 1779,
+      "sha256": "be29c0b0004a646c71fb438c47815ea45999956fcfbe6333240d56be8cb90f1d"
+    },
+    {
+      "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.lazy.test.tsx",
+      "bytes": 3554,
+      "sha256": "6cfa39fd998c562302b900eb8c2c0084b7f9787b59022382d757bf117204e940"
+    },
+    {
+      "path": "dashboard/src/components/Pages.css",
+      "bytes": 171197,
+      "sha256": "ef6607910b2b9448d614577a1c3eeb0415c479175fe0411b4163fe8202613840"
+    },
+    {
+      "path": "dashboard/src/components/Access.css",
+      "bytes": 23670,
+      "sha256": "0526eca49722ec1086d2a9fd20830bf98a181ef31d8d1a2a7baff08e59593b67"
+    },
+    {
+      "path": "dashboard/src/components/AccessStyles.test.ts",
+      "bytes": 4955,
+      "sha256": "4f32391514721462623c12cca619f8efcced8447d8162e6f445594aa5027a6b1"
+    },
+    {
+      "path": "dashboard/src/components/AccessPage.tsx",
+      "bytes": 146848,
+      "sha256": "dbff095fb5757b2bb1b8407360abc1aacd6dd35329a27efb08f60c940059ceed"
+    },
+    {
+      "path": "dashboard/src/components/AccessNavigation.tsx",
+      "bytes": 1254,
+      "sha256": "442c347b1a98d74909d83ebe9db2459ce9c35d78b02052ed58a891f7c9fbe5d6"
+    },
+    {
+      "path": "dashboard/src/components/AccessIssuedKeyModal.tsx",
+      "bytes": 3305,
+      "sha256": "52b1bc6aef3f6ea8d571f9aeedbcec713899ee2383bef7a396af6869fb9606aa"
+    },
+    {
+      "path": "dashboard/src/components/AccessUsagePanel.tsx",
+      "bytes": 11594,
+      "sha256": "b9c7266b39dcdf863f02d06238acb8ca886a090825e0c8d6a9e7f15a6c0c17a0"
+    },
+    {
+      "path": "dashboard/src/components/AuditEventTable.tsx",
+      "bytes": 2281,
+      "sha256": "529d0611a8092e5db7efed69d6017d0b6c9c8e3be13d796fac03fde0231b95f3"
+    },
+    {
+      "path": "dashboard/src/components/CapacityCommitments.tsx",
+      "bytes": 3920,
+      "sha256": "c0a34469b55c1a4a212bff03a90238db20d60d694d4393bed8da41fddd876dc0"
+    },
+    {
+      "path": "dashboard/src/components/SwaggerDocsPage.tsx",
+      "bytes": 15732,
+      "sha256": "049702606ca9b000197d438b9d4a54c61dfdf3ca175017ff7c0dcd79d25b5747"
+    }
+  ]
+}

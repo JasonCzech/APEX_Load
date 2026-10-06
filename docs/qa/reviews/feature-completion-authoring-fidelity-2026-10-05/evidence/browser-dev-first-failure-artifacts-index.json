@@ -1,0 +1,159 @@
+{
+  "schema": "apexload.qa.browser-artifacts.v1",
+  "captured_at_utc": "2026-10-05T15:24:20.249480+00:00",
+  "root": "/private/tmp/apexload-authoring-fidelity-focused-final-1/dev-admin",
+  "raw_gate_sha256": "2b3584def21014173db0468138c1a5fa7d01e9e3bf5a7d9cd642cb7c2174c179",
+  "scope": "Immutable initial actualdev artifacts;21pass1existing restricted-persona skip3fail. Goal early_stop addition is real; HoldManualStart visibility and application scope fixtures need correction. No failing assertion weakened. Original private artifacts preserved.",
+  "files": [
+    {
+      "path": ".last-run.json",
+      "bytes": 194,
+      "sha256": "405bf994fc34ff4487792bbacb9bde4e8bd18dd148f6ce689c414343b1c13d81"
+    },
+    {
+      "path": "playwright-junit.xml",
+      "bytes": 15688,
+      "sha256": "4acc53477120daa6ccc3cc264e168eb46073d9c12a9ffacd14442e3e04e06a6a"
+    },
+    {
+      "path": "workflow-help-DSL-operator-4f826--and-follow-reference-links/dsl-operator-guide-narrow.png",
+      "bytes": 206562,
+      "sha256": "f7936e21bef56bcbec934ee190655e9cac4d28b6463751de6f11e13ea2234357"
+    },
+    {
+      "path": "workflow-help-DSL-operator-4f826--and-follow-reference-links/dsl-operator-guide-wide.png",
+      "bytes": 269266,
+      "sha256": "9f607003a99c2db658a657fdc4b8fa735c443ebc3885c4228ec6ffc71dedff8c"
+    },
+    {
+      "path": "workflow-help-Help-is-read-88ce3-poses-accessible-navigation/help-desktop.png",
+      "bytes": 236393,
+      "sha256": "d0fac21717a9d3c93fdf149948aca450e7050b4edce0b3f303e7e1d786a7b297"
+    },
+    {
+      "path": "workflow-help-Help-is-read-88ce3-poses-accessible-navigation/help-narrow.png",
+      "bytes": 192371,
+      "sha256": "37c60cce6f2a5adb9009e36595b1284a02dde1f6de34a31dac47f0dca266f9ab"
+    },
+    {
+      "path": "workflow-help-evidence-gui-2e28c-in-their-scope-after-reload/authoring-scenario-fidelity-narrow.png",
+      "bytes": 229140,
+      "sha256": "7a86b52198af96cb7b8617c3b59e53bcb617740c6bc905ca63f67db6539b0e14"
+    },
+    {
+      "path": "workflow-help-evidence-gui-2e28c-in-their-scope-after-reload/browser-document-evidence-narrow.png",
+      "bytes": 272062,
+      "sha256": "c9c0937d016bea948370aa9bb6e4701e8a6598f543bdb94626c01fefee2897bf"
+    },
+    {
+      "path": "workflow-help-evidence-gui-2e28c-in-their-scope-after-reload/telemetry-policy-receipts-narrow.png",
+      "bytes": 236458,
+      "sha256": "ae849773a64f413fd1a57597da302ad1171d75d2b37d0fe6106b1e555e45d42b"
+    },
+    {
+      "path": "workflow-new-test-Java-gro-0c281-istence-facade-ledger-true-/java-profile-placement.png",
+      "bytes": 171015,
+      "sha256": "47347c07aaf3c1ca2131be3b8c5416a53d6cf9d9fde2a1f0e395afb855e064c0"
+    },
+    {
+      "path": "workflow-new-test-Java-gro-1fb68-stence-facade-ledger-false-/java-profile-placement.png",
+      "bytes": 171083,
+      "sha256": "0450d858778baae0ad759b112138428bee7305f0097085bd728f3105b421e2f0"
+    },
+    {
+      "path": "workflow-new-test-Live-con-1955a-ns-without-opening-raw-JSON/java-reservations.png",
+      "bytes": 220961,
+      "sha256": "95f0b75887e7c40d146d91530067b0a51e7230962970bbe4cf1e56f0d53a3baf"
+    },
+    {
+      "path": "workflow-new-test-New-Test-a4e1f-edule-with-visible-policies/new-test-schedules-narrow.png",
+      "bytes": 177348,
+      "sha256": "f301d5af6775e2a0a9fff0764aac3e988107c22cfa6a9d681d40daf686a27937"
+    },
+    {
+      "path": "workflow-new-test-Scenario-03ef7-d-the-recovery-spare-budget/controller-continuity.png",
+      "bytes": 192769,
+      "sha256": "9908da95e762b2b2e8d829fb4d08e566726e684963d538bbadd63419af6dc5d2"
+    },
+    {
+      "path": "workflow-new-test-Scenario-2ede1-multi-region-infrastructure/weighted-placement-multi-region.png",
+      "bytes": 57771,
+      "sha256": "5a309eb55832a51fc5affeef3246f26fd20db4cd9e798733df500cb5c7a2d189"
+    },
+    {
+      "path": "workflow-new-test-Scenario-54f4c-ingle-region-infrastructure/weighted-placement-single-region.png",
+      "bytes": 46128,
+      "sha256": "3af9cf94c7fb1af0422f315495f6378a74e4b0903e2d597f11facc3f9da75440"
+    },
+    {
+      "path": "workflow-new-test-Scenario-8f139--for-missing-infrastructure/weighted-placement-missing.png",
+      "bytes": 46128,
+      "sha256": "3af9cf94c7fb1af0422f315495f6378a74e4b0903e2d597f11facc3f9da75440"
+    },
+    {
+      "path": "workflow-new-test-Scenario-d6313-r-multi-zone-infrastructure/weighted-placement-multi-zone.png",
+      "bytes": 46128,
+      "sha256": "3af9cf94c7fb1af0422f315495f6378a74e4b0903e2d597f11facc3f9da75440"
+    },
+    {
+      "path": "workflow-new-test-new-run--05bed-ve-complete-authored-intent/error-context.md",
+      "bytes": 43440,
+      "sha256": "2c8279b879f1860aa156ed5ab214ff6922ed983b3a03a251f5cf812537449d55"
+    },
+    {
+      "path": "workflow-new-test-new-run--05bed-ve-complete-authored-intent/test-failed-1.png",
+      "bytes": 245238,
+      "sha256": "16a7da6d42a498627a90b1b260d8118df85980cbcf6116ceb546df668cb25ef1"
+    },
+    {
+      "path": "workflow-new-test-new-run--05bed-ve-complete-authored-intent/trace.zip",
+      "bytes": 6899661,
+      "sha256": "13c6351fbe6d1a33cbfd626e7421c187a6b6dff784d3e599bf26bbc8988c4801"
+    },
+    {
+      "path": "workflow-new-test-prepared-275a7-ts-with-the-pinned-revision/eventhubs-preparation-resources.png",
+      "bytes": 187307,
+      "sha256": "ce51f6e901eedc384ca6102c7d563f03e3db1bd30cf09d4c146316a2b804cec1"
+    },
+    {
+      "path": "workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/error-context.md",
+      "bytes": 17750,
+      "sha256": "1ea993e48320a420da4a23d9f1e4ebbc30d6175b0fe797ff3a6e7c56ff8e03c9"
+    },
+    {
+      "path": "workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/test-failed-1.png",
+      "bytes": 165232,
+      "sha256": "b1f8de153f3c3b9971ebfc15a0955e090e7a3fe6faabd0ebe741c9947289103a"
+    },
+    {
+      "path": "workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/trace.zip",
+      "bytes": 2624802,
+      "sha256": "2becf1bd8460ea53a62762df2beac8ab6b1f4f77f5c169fa7e6dd352a7241294"
+    },
+    {
+      "path": "workflow-scenario-composit-14c99-ape-and-group-timing-intent/error-context.md",
+      "bytes": 26019,
+      "sha256": "087b623540c7f498b392c1b315206b9f641f851c43c4e3a278bdba0dadb52f77"
+    },
+    {
+      "path": "workflow-scenario-composit-14c99-ape-and-group-timing-intent/test-failed-1.png",
+      "bytes": 214881,
+      "sha256": "2b9b8223af2e04cbb66b8296ac8a0bbd1186a60413cb70182517a35ecfbeaed8"
+    },
+    {
+      "path": "workflow-scenario-composit-14c99-ape-and-group-timing-intent/trace.zip",
+      "bytes": 1290801,
+      "sha256": "3c3c43a3879c9f263f89580fdf997a6519621ffdb890abe3bf8662333c4f1785"
+    },
+    {
+      "path": "workflow-scenario-composit-6ecc2-editing-with-a-live-preview/scenario-composition-desktop.png",
+      "bytes": 265475,
+      "sha256": "7fc6bf2901662f5d6311b5a393249ee9c5ee6c90bd4579f0a645361a0fc1b7c0"
+    },
+    {
+      "path": "workflow-scenario-composit-6ecc2-editing-with-a-live-preview/scenario-composition-narrow.png",
+      "bytes": 136041,
+      "sha256": "2de670a56d097178081df7bb9bcd175ff4e934bcec9b184afb75be68bcfbb66c"
+    }
+  ]
+}

@@ -30,7 +30,6 @@ import TestExecutionHeroMetrics from './TestExecutionHeroMetrics'
 import TestExecutionLiveControls from './TestExecutionLiveControls'
 import TestExecutionManifestCard from './TestExecutionManifestCard'
 import TestExecutionScenarioOverview from './TestExecutionScenarioOverview'
-import TestExecutionScenarioEditor from './TestExecutionScenarioEditor'
 import GenerateReportModal from './GenerateReportModal'
 import type { ReportProfileId } from './reportTypeOptions'
 import ReportComposer from './ReportComposer'
@@ -156,7 +155,6 @@ export default function TestExecution({
   onBack,
   onEditScript,
   onWorkspaceTabChange,
-  onSelectTest,
   onOpenCommandCenter,
 }: Props) {
   const api = useOptionalApi()
@@ -170,7 +168,6 @@ export default function TestExecution({
     archiveCheckError,
     checkArchiveAgain,
   } = useExecutionTestPolling(testId)
-  const [showScenarioEditor, setShowScenarioEditor] = useState(false)
   const [showGenerateReport, setShowGenerateReport] = useState(false)
   const [showTestNotes, setShowTestNotes] = useState(false)
   const [reportProfile, setReportProfile] = useState<ReportProfileId | null>(null)
@@ -1052,12 +1049,6 @@ export default function TestExecution({
       <OrchestrationReturn testId={testId} />
       <RunMonitorTimeline key={`monitor-${testId}`} projectId={test.project_id} testId={testId} history={filteredData} />
       <PreparationControls canEdit={canManageTests} key={testId} testId={testId} projectId={test.project_id} status={test.status} />
-      <TestExecutionScenarioEditor
-        open={showScenarioEditor}
-        test={test}
-        onClose={() => setShowScenarioEditor(false)}
-        onSelectTest={onSelectTest}
-      />
 
       {pendingAction && (
         <ConfirmRunActionModal

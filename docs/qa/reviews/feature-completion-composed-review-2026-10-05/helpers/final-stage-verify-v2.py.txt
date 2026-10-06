@@ -1,0 +1,108 @@
+import sys,json,hashlib,subprocess,os,datetime,stat
+from pathlib import Path
+ROOT=Path('/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner')
+mode,basearg,auditsha,outarg=sys.argv[1:]
+assert mode in ('prestage','staged')
+BASE=Path(basearg);OUT=Path(outarg)
+assert BASE.parent==Path('/private/tmp') and OUT.parent==Path('/private/tmp')
+def sha(p):
+ h=hashlib.sha256()
+ with p.open('rb') as f:
+  while b:=f.read(1024*1024):h.update(b)
+ return h.hexdigest()
+def g(*args):
+ p=subprocess.run(['git','--no-optional-locks','-C',str(ROOT),*args],capture_output=True,env={**os.environ,'GIT_OPTIONAL_LOCKS':'0'})
+ assert p.returncode==0,('git failed',args[:2],p.returncode)
+ return p.stdout
+assert sha(BASE/'audit.json')==auditsha
+c=json.loads((BASE/'complete.json').read_bytes());a=json.loads((BASE/'audit.json').read_bytes())
+assert a['schema']=='apexload-root-final-prospective-staging-audit-v1'
+assert a['root']==str(ROOT) and a['passed'] and not a['issues']
+assert c['schema']=='apexload-root-audit-output-completion-v1' and c['passed'] and c['pathspecs_created']
+expected_files={'audit.json','all-paths.nul','normal-paths.nul','force-paths.nul'}
+assert len(c['files'])==4 and {r['path'] for r in c['files']}==expected_files
+for row in c['files']:
+ p=BASE/row['path'];assert p.is_file() and not p.is_symlink() and p.stat().st_size==row['bytes'] and sha(p)==row['sha256']
+assert next(r['sha256'] for r in c['files'] if r['path']=='audit.json')==auditsha
+head=g('rev-parse','HEAD').decode().strip();branch=g('branch','--show-current').decode().strip()
+assert head==a['expected_head'] and branch==a['expected_branch']
+indexpath=Path(g('rev-parse','--git-path','index').decode().strip())
+if not indexpath.is_absolute():indexpath=ROOT/indexpath
+index_before=sha(indexpath)
+rows={r['path']:r for r in a['rows']}
+assert len(rows)==len(a['rows'])
+for rel,r in rows.items():
+ assert rel and not rel.startswith('/') and '\\' not in rel and chr(0) not in rel
+ assert all(x not in ('.','..','.git') for x in Path(rel).parts) and Path(rel).as_posix()==rel
+ assert r['stage_action'] in ('none','normal','force') and r['file_type'] in ('absent','regular')
+expected_paths=sorted((rel for rel,r in rows.items() if r['stage_action']!='none'),key=lambda p:p.encode('utf-8'))
+for name,kind in [('all-paths.nul',None),('normal-paths.nul','normal'),('force-paths.nul','force')]:
+ expected=[p for p in expected_paths if kind is None or rows[p]['stage_action']==kind]
+ assert (BASE/name).read_bytes()==b''.join(p.encode('utf-8')+bytes([0]) for p in expected),name
+def current_matches(rel,r):
+ p=ROOT/rel
+ cursor=ROOT
+ for component in Path(rel).parts:
+  cursor=cursor/component;assert not cursor.is_symlink(),(rel,'symlink component')
+ if r['file_type']=='absent':
+  assert not p.exists() and not p.is_symlink(),(rel,'deleted path recreated')
+  return
+ before=p.lstat();assert stat.S_ISREG(before.st_mode)
+ assert stat.S_IMODE(before.st_mode)==r['mode'],(rel,'working mode changed')
+ assert before.st_size==r['bytes'] and sha(p)==r['sha256'],(rel,'working content changed')
+ after=p.lstat()
+ assert (before.st_dev,before.st_ino,before.st_mode,before.st_size,before.st_mtime_ns,before.st_ctime_ns)==(after.st_dev,after.st_ino,after.st_mode,after.st_size,after.st_mtime_ns,after.st_ctime_ns),(rel,'working file changed during verification')
+plan=(BASE/'all-paths.nul').read_bytes().split(b'\0')[:-1]
+paths=[p.decode() for p in plan];assert len(set(paths))==len(paths)
+normal=(BASE/'normal-paths.nul').read_bytes().split(b'\0')[:-1]
+force=(BASE/'force-paths.nul').read_bytes().split(b'\0')[:-1]
+assert set(plan)==set(normal)|set(force) and not(set(normal)&set(force))
+current=g('diff','--cached','--no-renames','--name-only','-z').split(b'\0')[:-1]
+if mode=='prestage':
+ assert not current
+ assert index_before==a['head_branch_index_after']['index_sha256']
+ for r in a['rows']:
+  current_matches(r['path'],r)
+ checked=len(a['rows']);whitespace=None
+else:
+ assert set(current)==set(plan),{'missing':len(set(plan)-set(current)),'extra':len(set(current)-set(plan))}
+ staged={}
+ for row in g('ls-files','--stage','-z').split(b'\0'):
+  if not row:continue
+  info,rawpath=row.split(b'\t',1);filemode,oid,stage=info.split(b' ')
+  assert stage==b'0'
+  staged[rawpath.decode()]=(filemode,oid)
+ proc=subprocess.Popen(['git','--no-optional-locks','-C',str(ROOT),'cat-file','--batch'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env={**os.environ,'GIT_OPTIONAL_LOCKS':'0'})
+ checked=0
+ try:
+  for rel in paths:
+   r=rows[rel]
+   if r['file_type']=='absent':
+    assert rel not in staged;current_matches(rel,r);continue
+   filemode,oid=staged[rel]
+   wantmode=b'100755' if r['mode']&0o111 else b'100644'
+   assert filemode==wantmode,(rel,'mode')
+   proc.stdin.write(oid+b'\n');proc.stdin.flush()
+   header=proc.stdout.readline().split();assert header[0]==oid and header[1]==b'blob'
+   remaining=int(header[2]);assert remaining==r['bytes']
+   h=hashlib.sha256()
+   while remaining:
+    b=proc.stdout.read(min(remaining,1024*1024));assert b;h.update(b);remaining-=len(b)
+   assert proc.stdout.read(1)==b'\n'
+   assert h.hexdigest()==r['sha256'],(rel,'staged blob mismatch')
+   current_matches(rel,r)
+   checked+=1
+ finally:
+  proc.stdin.close();assert proc.wait(timeout=20)==0
+ p=subprocess.run(['git','--no-optional-locks','-c','color.ui=false','-C',str(ROOT),'diff','--cached','--check'],capture_output=True)
+ output=OUT.with_suffix('.whitespace.txt')
+ with output.open('xb') as f:f.write(p.stdout+p.stderr)
+ output.chmod(0o444)
+ whitespace={'exit_code':p.returncode,'output_path':str(output),'bytes':output.stat().st_size,'sha256':sha(output)}
+assert sha(indexpath)==index_before
+assert g('rev-parse','HEAD').decode().strip()==head
+assert g('branch','--show-current').decode().strip()==branch
+out={'schema':'apexload.final-stage-verification.v1','mode':mode,'at_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'root':str(ROOT),'head':head,'branch':branch,'audit_path':str(BASE/'audit.json'),'audit_sha256':auditsha,'complete_sha256':sha(BASE/'complete.json'),'index_sha256':index_before,'planned_paths':len(paths),'verified_regular_entries':checked,'all_blob_and_working_hashes_match':True,'staged_path_set_exact':mode=='staged','whitespace':whitespace,'passed_content_verification':True,'scope_limit':'Read-only metadata, source/artifact hashes and staged whitespace; no testing, staging, commitment, source/cache mutation or acceptance claim.'}
+with OUT.open('x') as f:f.write(json.dumps(out,indent=2)+'\n')
+OUT.chmod(0o444)
+print(json.dumps({'mode':mode,'receipt':str(OUT),'sha256':sha(OUT),'paths':len(paths),'verified':checked,'whitespace':whitespace},indent=2))

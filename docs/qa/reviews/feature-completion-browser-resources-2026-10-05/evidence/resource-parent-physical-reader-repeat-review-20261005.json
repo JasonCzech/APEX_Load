@@ -1,0 +1,32 @@
+{
+  "reviewed_at_utc": "2026-10-05T21:54:01.321232+00:00",
+  "reviewer": "Parent repeated physical/JSONL reader review",
+  "scope": "Full physical Parquet and JSONL resource-reader implementation; selected adjacent physical fixtures and prior independent physical-budget review. No newly executed qualification or whole-program review.",
+  "files": [
+    {
+      "path": "pkg/api/archive_browser_resource_parquet.go",
+      "sha256": "4c8e32421da3d2200b1f7fdbe605c7355b63c6b28bcccfc9559c75c04bfd6e79"
+    },
+    {
+      "path": "pkg/api/archive_browser_resource_parquet_test.go",
+      "sha256": "5ff194e49a651130ead614e60f201bc8b169fe7b2b422f0af7617ecec9d51053"
+    },
+    {
+      "path": "pkg/api/archive_browser_resource_reader.go",
+      "sha256": "50b6a418a81030c29ae5c717cf2da347d13fdc5f8d89198c31cdf055f2501f34"
+    }
+  ],
+  "reviewed_boundaries": [
+    "Immutable private snapshot hashing and cancellation callback join",
+    "Footer and primitive schema admission, bounded compact protocol, external chunk/path refusal, exact row/span checks",
+    "Compressed/decompressed page bounds, codec/CRC/header/encoding admission, dictionary index and retained boxing charges",
+    "Selected-column semantics, exact transaction counts, unavailable legacy timestamp precision, no partial errors",
+    "JSONL line/total/entry bounds, duplicate and case-alias selected field refusal, bounded unknown traversal, disclosure projection",
+    "Stable selection/continuation ordinals, measured zero versus unavailable, complete error rather than truncation"
+  ],
+  "remaining_findings": [],
+  "limitations": [
+    "Retained byte accounting is logical decoder geometry, not measured process RSS",
+    "Full composed Go/dashboard and generator/archive/browser program acceptance remain pending"
+  ]
+}

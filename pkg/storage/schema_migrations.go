@@ -60,10 +60,13 @@ var schemaReleases = []schemaRelease{
 	{Version: 33, Name: "isolated-native-analysis-attempts", Fingerprint: "348e5bff6128c23431046d91f301e65f219eaa542faead33fc42d1508c4587df"},
 	{Version: 34, Name: "durable-analysis-upload-physical-writers", Fingerprint: "52971cd3c20e72aefeb2c719f02e125a3689f107a50981c4da14d01a8e34783b"},
 	{Version: 35, Name: "dynatrace-saas-durable-run-monitoring", Fingerprint: "de996ade9928b95fa97e6ede0c811d2ee20ee73e0f44d1e26945547814066d7a"},
-	{Version: 36, Name: "run-trace-context-policy", Fingerprint: "26cd04b1928418d383f28268ae70c20e2b943e08217c7fdb3855e8a092a6d8cc"},
-	{Version: 37, Name: "rca-analysis-revisions", Fingerprint: "0aa6b5258f7162db82e7647c622672b145dd1db69356907c774882a4071a54e3"},
-	{Version: 38, Name: "business-key-project-keys", Fingerprint: "385585ff3818a833a350cd25838901726297b40a458670abf302d52bbb667c52"},
-	{Version: 39, Name: "rca-critiques", Fingerprint: "5e31b89e22ce9909bc942ec9abaed9adb9c4fa48a06b838dbbaa13699e35f188"},
+	{Version: 36, Name: "durable-script-goal-config", Fingerprint: "2d937708f297ade2cdcdc224678c7f25689d3f5f923124549963014c38e0b29e"},
+	{Version: 37, Name: "durable-script-content-revision", Fingerprint: "d741b8384d281d84172d60b888a72228892173bbbc96d4f04a0e480cc1e9b745"},
+	{Version: 38, Name: "durable-scenario-content-revision", Fingerprint: "185b01e0a6e99c3a5d43a668d2113d7258b5cd89aa0f30e45f094bb2f9c7f5d4"},
+	{Version: 39, Name: "run-trace-context-policy", Fingerprint: "26cd04b1928418d383f28268ae70c20e2b943e08217c7fdb3855e8a092a6d8cc"},
+	{Version: 40, Name: "rca-analysis-revisions", Fingerprint: "0aa6b5258f7162db82e7647c622672b145dd1db69356907c774882a4071a54e3"},
+	{Version: 41, Name: "business-key-project-keys", Fingerprint: "385585ff3818a833a350cd25838901726297b40a458670abf302d52bbb667c52"},
+	{Version: 42, Name: "rca-critiques", Fingerprint: "b17ff1432f5b81961297d33644433a760017d6bf8317877509633fab06ac70bb"},
 }
 
 type SchemaMigrationRecord struct {
@@ -136,8 +139,29 @@ func schemaConvergenceFingerprint() string {
 		"postgres-foreign-keys",
 		"timescaledb",
 		"object-activity-legacy-backfill",
+		"durable-script-content-revision-immediate-tracking",
+		"durable-scenario-content-revision-immediate-tracking",
 	} {
 		write("phase", phase, "")
+	}
+	for _, trigger := range sqliteScriptRevisionTriggers() {
+		write("script-revision-sqlite-trigger", trigger.name, trigger.sql)
+	}
+	for _, function := range postgresScriptRevisionFunctions() {
+		write("script-revision-postgres-function", function.name, postgresScriptRevisionFunctionSQL(function))
+	}
+	for _, trigger := range postgresScriptRevisionTriggers() {
+		write("script-revision-postgres-trigger", trigger.name, postgresScriptRevisionTriggerSQL(trigger))
+	}
+
+	for _, trigger := range sqliteScenarioRevisionTriggers() {
+		write("scenario-revision-sqlite-trigger", trigger.name, trigger.sql)
+	}
+	for _, function := range postgresScenarioRevisionFunctions() {
+		write("scenario-revision-postgres-function", function.name, postgresScenarioRevisionFunctionSQL(function))
+	}
+	for _, trigger := range postgresScenarioRevisionTriggers() {
+		write("scenario-revision-postgres-trigger", trigger.name, postgresScenarioRevisionTriggerSQL(trigger))
 	}
 	return fmt.Sprintf("%x", hash.Sum(nil))
 }

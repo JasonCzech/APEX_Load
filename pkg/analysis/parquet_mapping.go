@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ParquetColumnPath paths are individual schema components, never expressions.
@@ -17,16 +18,75 @@ type ParquetMeasure struct {
 	Unit       string            `json:"unit"`
 }
 type ParquetMapping struct {
-	Version           int               `json:"version"`
-	Timestamp         ParquetColumnPath `json:"timestamp"`
-	TimestampEncoding string            `json:"timestamp_encoding"` // timestamp (local wall time), timestamp_offset (absolute), unix_s/ms/us/ns
-	Timezone          string            `json:"timezone"`
-	Measures          []ParquetMeasure  `json:"measures"`
+	Version           int                     `json:"version"`
+	Timestamp         ParquetColumnPath       `json:"timestamp"`
+	TimestampEncoding string                  `json:"timestamp_encoding"` // timestamp (local wall time), timestamp_offset (absolute), unix_s/ms/us/ns
+	Timezone          string                  `json:"timezone"`
+	Measures          []ParquetMeasure        `json:"measures"`
+	Identity          *ParquetIdentityMapping `json:"identity,omitempty"`
+}
+
+// ValidateDefinition checks finite mapping syntax without inventing a file
+// schema. Applying the mapping still validates every actual Parquet schema.
+func (m ParquetMapping) ValidateDefinition() error {
+	if err := m.ValidateDisclosure(); err != nil {
+		return err
+	}
+	if len(m.Measures) < 1 || len(m.Measures) > 64 || m.Identity != nil && len(m.Identity.Dimensions) > maxDimensions {
+		return errors.New("mapping definition exceeds collection bounds")
+	}
+	schema := ParquetSchemaPreview{Columns: make([]ParquetColumn, 0, 1+2*len(m.Measures)+3+maxDimensions)}
+	add := func(path ParquetColumnPath) error {
+		if len(path) < 1 || len(path) > 16 {
+			return errors.New("mapping definition column path exceeds bounds")
+		}
+		for _, part := range path {
+			if part == "" || len(part) > 256 || !utf8.ValidString(part) || strings.ContainsRune(part, 0) {
+				return errors.New("invalid mapping definition column path")
+			}
+		}
+		schema.Columns = append(schema.Columns, ParquetColumn{PathComponents: path})
+		return nil
+	}
+	if err := add(m.Timestamp); err != nil {
+		return err
+	}
+	for _, measure := range m.Measures {
+		if err := add(measure.Value); err != nil {
+			return err
+		}
+		if len(measure.NameColumn) != 0 {
+			if err := add(measure.NameColumn); err != nil {
+				return err
+			}
+		}
+	}
+	if m.Identity != nil {
+		for _, path := range []ParquetColumnPath{m.Identity.Source, m.Identity.Host, m.Identity.Service} {
+			if len(path) != 0 {
+				if err := add(path); err != nil {
+					return err
+				}
+			}
+		}
+		for _, dimension := range m.Identity.Dimensions {
+			if err := add(dimension.Value); err != nil {
+				return err
+			}
+		}
+	}
+	return m.Validate(schema)
 }
 
 func (m ParquetMapping) Validate(schema ParquetSchemaPreview) error {
-	if m.Version != 1 || len(m.Measures) < 1 || len(m.Measures) > 64 {
-		return errors.New("mapping version 1 with 1-64 measures is required")
+	if err := m.ValidateDisclosure(); err != nil {
+		return err
+	}
+	if err := ValidateParquetSQLSchema(schema); err != nil {
+		return err
+	}
+	if (m.Version != 1 && m.Version != 2) || m.Version == 1 && m.Identity != nil || len(m.Measures) < 1 || len(m.Measures) > 64 {
+		return errors.New("mapping version 1 or 2 with 1-64 measures is required; identities require version 2")
 	}
 	if m.Timezone == "" {
 		return errors.New("explicit timestamp timezone is required")
@@ -44,7 +104,7 @@ func (m ParquetMapping) Validate(schema ParquetSchemaPreview) error {
 			return errors.New("column path required")
 		}
 		for _, part := range path {
-			if part == "" || len(part) > 256 || strings.ContainsRune(part, 0) {
+			if part == "" || len(part) > 256 || !utf8.ValidString(part) || strings.ContainsRune(part, 0) {
 				return errors.New("column path components must contain 1-256 non-NUL bytes")
 			}
 		}
@@ -59,6 +119,9 @@ func (m ParquetMapping) Validate(schema ParquetSchemaPreview) error {
 		return errors.New("mapping column is absent from schema")
 	}
 	if err := check(m.Timestamp); err != nil {
+		return err
+	}
+	if err := m.Identity.validate(check); err != nil {
 		return err
 	}
 	seen := map[string]bool{}
@@ -79,7 +142,7 @@ func (m ParquetMapping) Validate(schema ParquetSchemaPreview) error {
 				return errors.New("duplicate long-table measurement")
 			}
 			long[string(identity)] = true
-		} else if strings.TrimSpace(measure.Name) == "" || len(measure.Name) > 256 || seen[measure.Name] {
+		} else if strings.TrimSpace(measure.Name) == "" || len(measure.Name) > 256 || !utf8.ValidString(measure.Name) || strings.ContainsRune(measure.Name, 0) || seen[measure.Name] {
 			return errors.New("wide metric names must be nonempty, bounded, and unique")
 		}
 		seen[measure.Name] = true

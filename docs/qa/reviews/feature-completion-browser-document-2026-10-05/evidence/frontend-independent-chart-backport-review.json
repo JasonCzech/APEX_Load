@@ -1,0 +1,24 @@
+{
+  "reviewed_at_utc": "2026-10-05T12:16:46.575861+00:00",
+  "worktree": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "mode": "read-only independent source review; no edits or gates",
+  "findings": [],
+  "scope": "Scoped direct-child sr-only style retains accessibility; standalone stylesheet proof; real no-card-overflow plus whole-control/hit browser assertions.",
+  "files": [
+    {
+      "path": "dashboard/src/components/ExportableChart.css",
+      "sha256": "370b2e78b99d0099371ddbb11c745d28954845151b36c3f76e0a72911eec875b",
+      "canonical_equal": true
+    },
+    {
+      "path": "dashboard/src/components/ExportableChart.test.tsx",
+      "sha256": "17a454d3cab6204cc81b17daf4fa900e1e5bd7658e373b048ceacdf97d9f04b8",
+      "canonical_equal": true
+    },
+    {
+      "path": "dashboard/e2e/workflow-analysis-preparation.spec.ts",
+      "sha256": "eee5bfbad385c15114d2a6b4dbc69547c2d66b1a6f1e56afa866d525b8759374",
+      "canonical_equal": true
+    }
+  ]
+}

@@ -280,6 +280,7 @@ func schemaCreateTableStatements() []string {
 		)`,
 		`CREATE TABLE IF NOT EXISTS scenarios (
 			id TEXT PRIMARY KEY,
+			content_revision TEXT,
 			ref_key TEXT,
 			materialization_key TEXT,
 			name TEXT NOT NULL,
@@ -550,6 +551,7 @@ func schemaCreateTableStatements() []string {
 		)`,
 		`CREATE TABLE IF NOT EXISTS scripts (
 			id TEXT PRIMARY KEY,
+			content_revision TEXT,
 			ref_key TEXT,
 			name TEXT,
 			protocol TEXT,
@@ -559,6 +561,7 @@ func schemaCreateTableStatements() []string {
 			generated_by TEXT,
 			generated_from TEXT,
 			metadata_json TEXT,
+			goal_config_json TEXT,
 			config TEXT,
 			data_sources TEXT,
 			parameters TEXT,
@@ -1798,6 +1801,10 @@ func schemaCreateTableStatements() []string {
 // columns added here (e.g. boolean flags added to existing tables).
 func schemaColumnMigrations() []optionalSchemaMigration {
 	return []optionalSchemaMigration{
+		{name: "scripts.content_revision", query: `ALTER TABLE scripts ADD COLUMN content_revision TEXT`},
+		{name: "scenarios.content_revision", query: `ALTER TABLE scenarios ADD COLUMN content_revision TEXT`},
+		{name: "scenarios.materialization_key", query: `ALTER TABLE scenarios ADD COLUMN materialization_key TEXT`},
+		{name: "scripts.goal_config_json", query: `ALTER TABLE scripts ADD COLUMN goal_config_json TEXT`},
 		{name: "run_monitor_collector_readiness.instance_id", query: `ALTER TABLE run_monitor_collector_readiness ADD COLUMN instance_id TEXT`},
 		{name: "run_monitor_collector_readiness.capabilities_json", query: `ALTER TABLE run_monitor_collector_readiness ADD COLUMN capabilities_json TEXT`},
 		{name: "run_monitor_collector_readiness.management_scopes_json", query: `ALTER TABLE run_monitor_collector_readiness ADD COLUMN management_scopes_json TEXT`},
@@ -2228,6 +2235,12 @@ func (s *SQLiteStore) init() error {
 	if err := s.applyOptionalSchemaMigrations(schemaColumnMigrations()); err != nil {
 		return err
 	}
+	if err := s.validateScriptRevisionInitialization(); err != nil {
+		return fmt.Errorf("validate persisted script content revisions: %w", err)
+	}
+	if err := s.validateScenarioRevisionInitialization(); err != nil {
+		return fmt.Errorf("validate persisted scenario content revisions: %w", err)
+	}
 	if err := s.ensurePostgresIntegerColumnsBigint(); err != nil {
 		return err
 	}
@@ -2321,6 +2334,12 @@ func (s *SQLiteStore) init() error {
 	}
 	if err := s.backfillObjectActivity(); err != nil {
 		return err
+	}
+	if err := s.ensureScriptContentRevisionTracking(); err != nil {
+		return fmt.Errorf("initialize script content revision tracking: %w", err)
+	}
+	if err := s.ensureScenarioContentRevisionTracking(); err != nil {
+		return fmt.Errorf("initialize scenario content revision tracking: %w", err)
 	}
 	return s.recordSchemaReleases()
 }

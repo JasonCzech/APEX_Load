@@ -1,3 +1,4 @@
+export type { TelemetryBudgetPolicy, TelemetryPolicyEvidence } from './types/telemetryPolicy'
 // Compatibility barrel for dashboard domain contracts. New API/domain code
 // should import from ./types/<domain>; existing consumers can migrate without a
 // flag day while these re-exports preserve their public type names.
@@ -16,6 +17,7 @@ import type {
   ProtocolEvidence,
 } from './types/replay'
 import type { ActiveLoadLevel, ClientMetrics } from './types/metrics'
+import type { BrowserDocumentSummary, BrowserDocumentObservation } from './types/browserDocumentEvidence'
 import type { ScenarioDataPoolBinding } from './types/dataPools'
 import type {
   RedactionRule,
@@ -671,6 +673,7 @@ export interface LoadComparisonRequestOptions {
 }
 
 export interface RunArchiveProvenance {
+  telemetry_policy?: import('./types/telemetryPolicy').TelemetryBudgetPolicy
   elk_capture?: { connection_id: string; connection_name?: string }
   dynatrace_capture?: { connection_id: string; connection_name?: string }
   application_id?: string
@@ -775,6 +778,9 @@ export interface RunContinuityStatus {
 }
 
 export interface TestSummary {
+  /** Safe configured capture identities; credentials are never part of this projection. */
+  elk_capture?: { connection_id: string; connection_name?: string }
+  dynatrace_capture?: { connection_id: string; connection_name?: string }
   monitor_bindings?: { revision?: number; sources: import('./types/appdynamics').MonitorBinding[] }
   activity?: import("./types/objectActivity").ObjectActivitySummary
   termination_mode?: "duration" | "iterations"
@@ -1167,6 +1173,7 @@ export interface TestRunManifestArchive {
 }
 
 export interface TestRunManifest {
+  telemetry_policy?: import('./types/telemetryPolicy').TelemetryPolicyEvidence
   schema_version: string
   test_id: string
   ref_key?: string
@@ -1315,6 +1322,7 @@ export interface TransactionEvent {
 }
 
 export interface IntervalSummaryRecord {
+  browser_documents?: BrowserDocumentSummary | null
   timestamp: string
   test_id: string
   test_name: string
@@ -1694,6 +1702,10 @@ export interface IntegrationOutcome {
 }
 
 export interface RunArchiveReport {
+  telemetry_policy?: import('./types/telemetryPolicy').TelemetryPolicyEvidence
+  browser_documents?: BrowserDocumentSummary | null
+  browser_document_evidence?: BrowserDocumentObservation[]
+  browser_document_evidence_truncated?: boolean
   messaging_progress?: MessagingProgressSnapshot
   monitor_diagnostics?: import('./types/appdynamics').RunMonitorDiagnostic[]
   monitor_rule_results?: import('./types/appdynamics').MonitorRuleResult[]
@@ -2051,6 +2063,12 @@ export interface ScenarioDraftGroup {
 }
 
 export interface ScenarioDraftRevisionContext {
+  /** Initial source presence distinguishes an authored empty replacement from inheritance. */
+  sourceGoalConfigPresent?: boolean
+  sourceRuntimeSettingsPresent?: boolean
+  sourceStartDelayPresent?: boolean
+  elkConnectionId?: string
+  dynatraceConnectionId?: string
   monitorBindings?: import('./types/appdynamics').MonitorBinding[]
   sourceTestId: string
   applicationId?: string
@@ -2093,6 +2111,8 @@ export type TestStatus =
   | 'PAUSED'
 
 export interface LiveMetrics {
+  telemetry_policy?: import('./types/telemetryPolicy').TelemetryPolicyEvidence
+  browser_documents?: BrowserDocumentSummary | null
   messaging_progress?: MessagingProgressSnapshot
   messaging?: Record<string, MessagingSummary>
   observation_state?: 'historical' | 'stale'

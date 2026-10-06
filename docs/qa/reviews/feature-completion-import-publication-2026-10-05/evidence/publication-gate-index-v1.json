@@ -1,0 +1,65 @@
+{
+  "scope": "Dedicated durable publication primitive and existing claims/backfill paths. No public scenario support or source-aware scenario admission. Independent review, final race repeat and API qualification are pending.",
+  "source_inventory": "publication-primitive-source-inventory-v1.json",
+  "source_inventory_sha256": "dcaf2d02766031e063310f599e00e743b98a244bf9d226071b2838ae83876f54",
+  "gates": [
+    {
+      "receipt": "publication-backfill-bounds-red-1.json",
+      "receipt_sha256": "c48bd9929e10a487f0a6c3655c9c1d8b235e119f054cfc81bfa38b16810f0ac8",
+      "status": "failed",
+      "exit_code": 1,
+      "duration_seconds": 15.574,
+      "raw_log_sha256": "6d64f9028033405ec52b47ca4d12a9e2973e471251ded6e0f555e913dcdb36d1",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-storage-focused-1.json",
+      "receipt_sha256": "f4c7824a228fac6ad6566d6359b1e59a2cbbf578f77e853183ca2c54b19e70b5",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 25.725,
+      "raw_log_sha256": "22ae3e247204d3329d9dcb67489abd85a116dde5f35d0baf847a9cb8466d496a",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-storage-race-1.json",
+      "receipt_sha256": "6cbb5da759610c9e74a9fd0ad0806aada0bdc949b251fabf6a15d051974edec8",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 90.438,
+      "raw_log_sha256": "d4d04f3c4d4c5f74c34b8fec3350b488fb09344d6295ef6cdd9c2542a29e7c18",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-storage-focused-2.json",
+      "receipt_sha256": "158df7a8afa5fa225f3cfe98b689ade8dce10ebdef9e07f2f68b202b99390326",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 12.79,
+      "raw_log_sha256": "96734dde27b6d7aa1ed971be8c8477443674ff3ce5531c509f69651da967de85",
+      "source_changed": false
+    },
+    {
+      "receipt": "publication-postgres-focused-1.json",
+      "receipt_sha256": "e5334694714fbd74a3f571f89e405cb027ebda10d5a2337cff1e89e47c49d86d",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 13.954,
+      "raw_log_sha256": "ae7945f64779e895d14df66c893a6315212ac1751766451fa66635a8300ac486",
+      "source_changed": false
+    }
+  ],
+  "pending": [
+    "Independent review of frozen implementation",
+    "Final current-source storage race repeat",
+    "Affected API/import/rollback tests once shared API/compiler slot is released",
+    "Composed full Go merge gate",
+    "Documentation and final diff checks"
+  ],
+  "exclusions": [
+    "Unrelated untracked telemetry supplement",
+    "Public conditional scenario API/UI support",
+    "Dependency-aware scenario storage admission",
+    "Commit/push/cache cleanup"
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "label": "har-sample-shape-focused-2",
+  "started_utc": "2026-10-05T20:01:31.969548+00:00",
+  "ended_utc": "2026-10-05T20:01:37.678874+00:00",
+  "duration_seconds": 5.709,
+  "command": [
+    "go",
+    "test",
+    "./pkg/convert/sample",
+    "./pkg/convert/salesforce",
+    "-run",
+    "^(TestHARSampleShape|TestSalesforceSampleShape)",
+    "-count=1"
+  ],
+  "worktree": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "exit_code": 1,
+  "raw_log_path": "/private/tmp/har-sample-shape-focused-2.log",
+  "raw_log_sha256": "4a6e96e0a576fe1df0df187b8b697d158786ff3780d8d597a358c596680abfd2",
+  "source_before": [
+    {
+      "path": "pkg/convert/sample/har_sample_shape_test.go",
+      "sha256": "5ed5da1387b7486ca24db61add085fc0268bc973ce913ddcba65375307cd4206"
+    },
+    {
+      "path": "pkg/convert/salesforce/har_sample_shape_test.go",
+      "sha256": "1f0080e9e609ba74e3eecd77964e490734f9b07d841fe62ee4950435d45a596a"
+    },
+    {
+      "path": "pkg/convert/sample/har.go",
+      "sha256": "9d40cde7fb713104eff85ce2108fd805e74e385a956e30239d9d698a80a9bfa6"
+    },
+    {
+      "path": "pkg/convert/sample/converter.go",
+      "sha256": "a9d299594d35239df8dc9879764f4057ec201cb297a82ee62d2a2594f551e11b"
+    },
+    {
+      "path": "pkg/convert/sample/request_pipeline.go",
+      "sha256": "5c070103fb7481208ffbb977769b659a39bcfd1321fa9088698d3ed20f0c875c"
+    },
+    {
+      "path": "pkg/convert/salesforce/analyzer.go",
+      "sha256": "de30d371b6defd9ec443ef03e9e8e9fa025f8922b4bfc82c25ccce76c4a8bf7f"
+    },
+    {
+      "path": "pkg/convert/requestimport/response_content_capture.go",
+      "sha256": "37a6d30825a3d1e55e85646229934f0c63ece4388abb3de0423354f9776f642b"
+    },
+    {
+      "path": "go.mod",
+      "sha256": "05c38d4d914dd463eadcff718550f394425eeb85721dbcab2c0fc8c8d59b2d1b"
+    },
+    {
+      "path": "go.sum",
+      "sha256": "f24fca42c52f47ee68239f16130fc02743aed90c7ba2815b3197b665db15c2c8"
+    }
+  ],
+  "source_after": [
+    {
+      "path": "pkg/convert/sample/har_sample_shape_test.go",
+      "sha256": "5ed5da1387b7486ca24db61add085fc0268bc973ce913ddcba65375307cd4206"
+    },
+    {
+      "path": "pkg/convert/salesforce/har_sample_shape_test.go",
+      "sha256": "1f0080e9e609ba74e3eecd77964e490734f9b07d841fe62ee4950435d45a596a"
+    },
+    {
+      "path": "pkg/convert/sample/har.go",
+      "sha256": "9d40cde7fb713104eff85ce2108fd805e74e385a956e30239d9d698a80a9bfa6"
+    },
+    {
+      "path": "pkg/convert/sample/converter.go",
+      "sha256": "a9d299594d35239df8dc9879764f4057ec201cb297a82ee62d2a2594f551e11b"
+    },
+    {
+      "path": "pkg/convert/sample/request_pipeline.go",
+      "sha256": "5c070103fb7481208ffbb977769b659a39bcfd1321fa9088698d3ed20f0c875c"
+    },
+    {
+      "path": "pkg/convert/salesforce/analyzer.go",
+      "sha256": "de30d371b6defd9ec443ef03e9e8e9fa025f8922b4bfc82c25ccce76c4a8bf7f"
+    },
+    {
+      "path": "pkg/convert/requestimport/response_content_capture.go",
+      "sha256": "37a6d30825a3d1e55e85646229934f0c63ece4388abb3de0423354f9776f642b"
+    },
+    {
+      "path": "go.mod",
+      "sha256": "05c38d4d914dd463eadcff718550f394425eeb85721dbcab2c0fc8c8d59b2d1b"
+    },
+    {
+      "path": "go.sum",
+      "sha256": "f24fca42c52f47ee68239f16130fc02743aed90c7ba2815b3197b665db15c2c8"
+    }
+  ],
+  "source_unchanged": true,
+  "cache": "/private/tmp/apexload-feature-completion-resume-go-cache",
+  "limits": "Synthetic-only converter regression tests; no APIs, controllers, browsers or target traffic."
+}

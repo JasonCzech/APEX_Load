@@ -1,0 +1,33 @@
+import datetime,hashlib,json,pathlib,re
+root=pathlib.Path('/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner');qa=root/'docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence'
+freeze=json.loads((qa/'telemetry-consumer-final-cycle-source-and-embed-freeze.json').read_text());bookend=json.loads((qa/'telemetry-consumer-final-post-visual-source-and-embed-bookend.json').read_text())
+assert freeze['source_files']==bookend['source_files'] and freeze['generated_embed_files']==bookend['generated_embed_files']
+def proof_file(name):
+ p=qa/name;return {'path':str(p.relative_to(root)),'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'bytes':p.stat().st_size}
+def gate(label,scope):
+ p=qa/(label+'.json');v=json.loads(p.read_text());log=qa/(label+'.stdout.txt');assert v['exit_code']==0 and hashlib.sha256(log.read_bytes()).hexdigest()==v['raw_log_sha256']
+ assert v['source_before']==v['source_after']
+ if 'generated_embed_after' in v:assert v['generated_embed_after']==freeze['generated_embed_files']
+ return {'scope':scope,'receipt':proof_file(p.name),'raw_log':proof_file(log.name),'exit_code':v['exit_code'],'duration_seconds':v['duration_seconds'],'source_before_after_equal':True,'started_at':v['started_at'],'finished_at':v['finished_at']}
+gates=[gate(label,scope) for label,scope in [
+ ('telemetry-composed-corrected-final-bundle-full-go','Full repository Go gate on final source; parent owned admission/dispatch/SQLite/PostgreSQL policy receipt and generated-contract qualification composed with consumers.'),
+ ('telemetry-dashboard-full-cycle-corrected','Full dashboard typecheck/lint/units/build and both real auth profiles; generated embedded assets after build equal final freeze.'),
+ ('telemetry-cli-focused-normal-final-source','Final-source CLI strict bounded policy projection regressions, normal.'),
+ ('telemetry-cli-focused-race-final-source','Final-source CLI strict bounded policy projection regressions, race.'),
+ ('telemetry-stable-visual-dev-admin-final','Unchanged final bundle genuine HTTP workload and stable live/archive/manifest screenshots; separate controlled CSS PNG/refusal helper, dev-admin.'),
+ ('telemetry-stable-visual-local-auth-final','Unchanged final bundle genuine HTTP workload and stable live/archive/manifest screenshots; separate controlled CSS PNG/refusal helper, local-auth.'),
+]]
+raw=(qa/'telemetry-dashboard-full-cycle-corrected.stdout.txt').read_text();skips=[line.strip() for line in raw.splitlines() if re.match(r'^\s*-\s+\d+\s+e2e/',line)];assert len(skips)==6
+assert '5738 passed (5738)' in raw and '243 passed (7.1m)' in raw and '183 passed (26.0m)' in raw
+assert len([x for x in raw.splitlines() if '✓' in x and 'workflow-telemetry-policy.spec.ts:' in x])==4
+historical=[]
+for p in sorted(qa.glob('*.json')):
+ v=json.loads(p.read_text())
+ if 'exit_code' in v and v['exit_code']!=0 and 'raw_log_sha256' in v:
+  log=p.with_suffix('.stdout.txt')
+  assert log.exists() and hashlib.sha256(log.read_bytes()).hexdigest()==v['raw_log_sha256']
+  historical.append({'receipt':proof_file(p.name),'raw_log':proof_file(log.name),'exit_code':v['exit_code'],'classification':'Retained failed or interrupted development attempt; not a passed acceptance gate.'})
+review=json.loads((qa/'telemetry-consumer-independent-final-review.json').read_text());assert review['source_files']==freeze['source_files']
+v={'schema':'apexload.qa.telemetry-consumer-completion.v1','captured_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'scope':'Narrow immutable legacy telemetry budget receipt consumers, neutral observed pipeline facts, explicit legacy classifications, missing-vs-zero fidelity, strict bounded CLI projections and canonical shared chart correction. Full TEL-1–TEL-4/program remain open. Ready for parent final review/commit; no push by this agent.','final_source_inventory_sha256':freeze['source_inventory_sha256'],'final_generated_embed_inventory_sha256':freeze['generated_embed_inventory_sha256'],'source_file_count':20,'generated_embed_file_count':247,'source_freeze':proof_file('telemetry-consumer-final-cycle-source-and-embed-freeze.json'),'source_post_visual_bookend':proof_file('telemetry-consumer-final-post-visual-source-and-embed-bookend.json'),'independent_same_source_review':proof_file('telemetry-consumer-independent-final-review.json'),'final_gates':gates,'full_dashboard_counts':{'vitest_files':514,'vitest_tests':5738,'dev_admin_passed':243,'dev_admin_skipped':5,'local_auth_passed':183,'local_auth_skipped':1,'new_telemetry_cases_skipped':0,'new_telemetry_cases_passed':4,'skips_from_raw_log':skips,'skip_interpretation':'Four role-specific viewer/nonadmin workflows are inactive in dev-admin; one private LoadRunner archive acceptance fixture absent in each profile. No missing private provider fixture is qualified by these skips.'},'stable_visual_index':proof_file('stable-visual-final-browser-proof-index.json'),'external_fixture_final_revision':proof_file('stable-visual-proof-revision5-source-index.json'),'canonical_chart_backport':proof_file('telemetry-chart-canonical-backport-provenance.json'),'historical_failed_or_interrupted_gates':historical,'historical_passed_boundaries':['Earlier production Go gate changed embed inventory during the zero-time rebuild and does not certify final corrected UI.','Earlier focused browser proofs before the canonical chart backport certify those historical source snapshots; preliminary archive screenshots captured page fade.','Initial/diagnostic external stable-capture helper attempts refused unrecognized CSS ancestor gradients; revision4 controlled renderer failed PATH Python without Pillow. All failures remain retained; no production assertion was weakened.'],'remaining_scope':['Source/counter epochs, qualified clocks and observation windows','Union coverage, gap-aware intervals and exact/lower-bound increments','Browser-render observations and measured end-to-end reference latency','Telemetry policy/workload comparisons, CI verdicts and full report/export program','Mandatory1GiB/platform/recovery/remote-backend acceptance elsewhere;10GiB waiver only'],'cleanup':'Owned18671/18672 fixture controllers physically joined; listeners absent. Shared Go/frontend/Docker caches retained while dependent parent/browser tasks remain active.'}
+with (qa/'telemetry-consumer-final-evidence-index.json').open('x') as f:json.dump(v,f,indent=2);f.write('\n')
+print(json.dumps({'final_gates':len(gates),'failed_or_interrupted_attempts':len(historical),'source':v['final_source_inventory_sha256'],'embed':v['final_generated_embed_inventory_sha256'],'index':str(qa/'telemetry-consumer-final-evidence-index.json')},indent=2))

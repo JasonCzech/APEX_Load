@@ -699,6 +699,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -1628,9 +1629,150 @@ export interface operations {
               "device_platform"?: string;
               "samples"?: number;
             }) | null>;
+            "browser_document_evidence"?: Array<{
+              "algorithm"?: string;
+              "algorithm_sha256"?: string;
+              "available"?: boolean;
+              "boundary"?: string;
+              "captured_at"?: string;
+              "cohort"?: ({
+                "browser_version"?: string;
+                "cache_content_urls"?: (boolean) | null;
+                "cache_enabled"?: (boolean) | null;
+                "check_newer_versions"?: (boolean) | null;
+                "cpu_throttle_rate"?: number;
+                "device_scale_factor"?: number;
+                "headless"?: (boolean) | null;
+                "mobile"?: (boolean) | null;
+                "network_bandwidth_kbps"?: number;
+                "network_latency_ms"?: number;
+                "new_user_policy"?: string;
+                "new_user_policy_applied"?: boolean;
+                "platform"?: string;
+                "shaping_applied"?: boolean;
+                "touch"?: (boolean) | null;
+                "unavailable_reason"?: string;
+                "version"?: number;
+                "viewport_height"?: number;
+                "viewport_width"?: number;
+              }) | null;
+              "device_profile"?: string;
+              "document_id"?: string;
+              "engine"?: string;
+              "frame_id"?: string;
+              "frame_scope"?: string;
+              "group"?: string;
+              "interaction_count"?: number;
+              "lifecycle_id"?: string;
+              "lifecycle_phase"?: string;
+              "measurement_id"?: string;
+              "metric"?: string;
+              "navigation_id"?: string;
+              "qualified"?: boolean;
+              "region"?: string;
+              "revision"?: number;
+              "source_generation"?: string;
+              "state"?: string;
+              "unavailable_reason"?: string;
+              "unit"?: string;
+              "value"?: (number) | null;
+              "version"?: number;
+              "window_end"?: string;
+              "window_start"?: string;
+            }>;
+            "browser_document_evidence_truncated"?: boolean;
+            "browser_documents"?: ({
+              "dropped_observations"?: number;
+              "incomplete"?: boolean;
+              "metrics"?: (Array<{
+                "algorithm"?: string;
+                "algorithm_sha256"?: string;
+                "censored"?: number;
+                "cohort"?: ({
+                  "browser_version"?: string;
+                  "cache_content_urls"?: (boolean) | null;
+                  "cache_enabled"?: (boolean) | null;
+                  "check_newer_versions"?: (boolean) | null;
+                  "cpu_throttle_rate"?: number;
+                  "device_scale_factor"?: number;
+                  "headless"?: (boolean) | null;
+                  "mobile"?: (boolean) | null;
+                  "network_bandwidth_kbps"?: number;
+                  "network_latency_ms"?: number;
+                  "new_user_policy"?: string;
+                  "new_user_policy_applied"?: boolean;
+                  "platform"?: string;
+                  "shaping_applied"?: boolean;
+                  "touch"?: (boolean) | null;
+                  "unavailable_reason"?: string;
+                  "version"?: number;
+                  "viewport_height"?: number;
+                  "viewport_width"?: number;
+                }) | null;
+                "device_profile"?: string;
+                "distribution"?: {
+                  "buckets"?: Array<number>;
+                  "count"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "sum"?: number;
+                };
+                "eligible_final"?: number;
+                "engine"?: string;
+                "excluded_reasons"?: Record<string, number>;
+                "frame_scope"?: string;
+                "group"?: string;
+                "lifecycle_phase"?: string;
+                "metric"?: string;
+                "provisional"?: number;
+                "region"?: string;
+                "unavailable_final"?: number;
+                "unit"?: string;
+                "unqualified_final"?: number;
+              }>) | null;
+              "version"?: number;
+            }) | null;
             "browser_resources"?: Array<{
               "action_name"?: string;
               "browser_engine"?: string;
+              "browser_evidence"?: ({
+                "bytes"?: {
+                  "request_body"?: (number) | null;
+                  "request_headers"?: (number) | null;
+                  "response_encoded_body"?: (number) | null;
+                  "response_headers"?: (number) | null;
+                  "unavailable_reason"?: string;
+                };
+                "cache"?: (boolean) | null;
+                "cache_unavailable_reason"?: string;
+                "document_id"?: string;
+                "document_offset_ms"?: (number) | null;
+                "epoch_start_ms"?: (number) | null;
+                "frame_id"?: string;
+                "identity_unavailable_reason"?: string;
+                "initiating_action_id"?: string;
+                "initiator_unavailable_reason"?: string;
+                "navigation_id"?: string;
+                "observation_action_id"?: string;
+                "observed_at"?: string;
+                "origin"?: string;
+                "phases"?: (Array<{
+                  "end_ms"?: (number) | null;
+                  "name"?: string;
+                  "start_ms"?: (number) | null;
+                  "unavailable_reason"?: string;
+                }>) | null;
+                "redirect_chain_id"?: string;
+                "redirect_from_request_id"?: string;
+                "redirect_hop"?: number;
+                "request_id"?: string;
+                "service_worker"?: (boolean) | null;
+                "service_worker_unavailable_reason"?: string;
+                "source_generation"?: string;
+                "state"?: string;
+                "timing_source"?: string;
+                "version"?: number;
+              }) | null;
               "bytes_received"?: number;
               "device_platform"?: string;
               "device_profile"?: string;
@@ -3039,6 +3181,13 @@ export interface operations {
                 "sha256"?: string;
                 "size_bytes"?: number;
               }>;
+              "browser_document_capture_requested"?: boolean;
+              "browser_document_coverage_incomplete"?: boolean;
+              "browser_document_record_count"?: number;
+              "browser_documents_file"?: string;
+              "browser_documents_parquet_file"?: string;
+              "browser_documents_parquet_sha256"?: string;
+              "browser_documents_sha256"?: string;
               "business_key_digests_unavailable"?: boolean;
               "clock_observation_count"?: number;
               "clock_observations_file"?: string;
@@ -3129,6 +3278,24 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "telemetry_policy"?: ({
+                  "budgets"?: Array<{
+                    "enabled"?: boolean;
+                    "limit_ms"?: number;
+                    "stage"?: string;
+                  }>;
+                  "cadence_scope"?: string;
+                  "capture_boundary"?: string;
+                  "captured_at"?: string;
+                  "classification_algorithm"?: string;
+                  "coverage_rule"?: string;
+                  "expected_controller_publication_interval_ms"?: number;
+                  "hash"?: string;
+                  "policy_id"?: string;
+                  "revision"?: number;
+                  "schema_version"?: string;
+                  "sustained_breach_window_ms"?: number;
+                }) | null;
                 "termination_mode"?: string;
                 "total_vusers"?: number;
                 "traffic_profile"?: (Record<string, unknown>) | null;
@@ -3225,6 +3392,24 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "telemetry_policy"?: ({
+                  "budgets"?: Array<{
+                    "enabled"?: boolean;
+                    "limit_ms"?: number;
+                    "stage"?: string;
+                  }>;
+                  "cadence_scope"?: string;
+                  "capture_boundary"?: string;
+                  "captured_at"?: string;
+                  "classification_algorithm"?: string;
+                  "coverage_rule"?: string;
+                  "expected_controller_publication_interval_ms"?: number;
+                  "hash"?: string;
+                  "policy_id"?: string;
+                  "revision"?: number;
+                  "schema_version"?: string;
+                  "sustained_breach_window_ms"?: number;
+                }) | null;
                 "termination_mode"?: string;
                 "total_vusers"?: number;
                 "traffic_profile"?: (Record<string, unknown>) | null;
@@ -3803,6 +3988,57 @@ export interface operations {
             }>;
             "summary_timeline"?: Array<{
               "active_vusers"?: number;
+              "browser_documents"?: ({
+                "dropped_observations"?: number;
+                "incomplete"?: boolean;
+                "metrics"?: (Array<{
+                  "algorithm"?: string;
+                  "algorithm_sha256"?: string;
+                  "censored"?: number;
+                  "cohort"?: ({
+                    "browser_version"?: string;
+                    "cache_content_urls"?: (boolean) | null;
+                    "cache_enabled"?: (boolean) | null;
+                    "check_newer_versions"?: (boolean) | null;
+                    "cpu_throttle_rate"?: number;
+                    "device_scale_factor"?: number;
+                    "headless"?: (boolean) | null;
+                    "mobile"?: (boolean) | null;
+                    "network_bandwidth_kbps"?: number;
+                    "network_latency_ms"?: number;
+                    "new_user_policy"?: string;
+                    "new_user_policy_applied"?: boolean;
+                    "platform"?: string;
+                    "shaping_applied"?: boolean;
+                    "touch"?: (boolean) | null;
+                    "unavailable_reason"?: string;
+                    "version"?: number;
+                    "viewport_height"?: number;
+                    "viewport_width"?: number;
+                  }) | null;
+                  "device_profile"?: string;
+                  "distribution"?: {
+                    "buckets"?: Array<number>;
+                    "count"?: number;
+                    "max"?: number;
+                    "min"?: number;
+                    "sum"?: number;
+                  };
+                  "eligible_final"?: number;
+                  "engine"?: string;
+                  "excluded_reasons"?: Record<string, number>;
+                  "frame_scope"?: string;
+                  "group"?: string;
+                  "lifecycle_phase"?: string;
+                  "metric"?: string;
+                  "provisional"?: number;
+                  "region"?: string;
+                  "unavailable_final"?: number;
+                  "unit"?: string;
+                  "unqualified_final"?: number;
+                }>) | null;
+                "version"?: number;
+              }) | null;
               "error_pct"?: number;
               "p95_ms"?: number;
               "percentile_quality"?: string;
@@ -3814,6 +4050,28 @@ export interface operations {
               "total_transactions"?: number;
               "tps"?: number;
             }>;
+            "telemetry_policy"?: ({
+              "availability"?: string;
+              "policy"?: ({
+                "budgets"?: Array<{
+                  "enabled"?: boolean;
+                  "limit_ms"?: number;
+                  "stage"?: string;
+                }>;
+                "cadence_scope"?: string;
+                "capture_boundary"?: string;
+                "captured_at"?: string;
+                "classification_algorithm"?: string;
+                "coverage_rule"?: string;
+                "expected_controller_publication_interval_ms"?: number;
+                "hash"?: string;
+                "policy_id"?: string;
+                "revision"?: number;
+                "schema_version"?: string;
+                "sustained_breach_window_ms"?: number;
+              }) | null;
+              "reason"?: string;
+            }) | null;
             "transaction_response_time_sla_results"?: Array<{
               "eligible_success_count"?: number;
               "excluded_error_count"?: number;
@@ -3860,6 +4118,7 @@ export interface operations {
               "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<{
@@ -4294,6 +4553,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -4616,6 +4876,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -5431,6 +5692,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -6148,6 +6410,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -7426,6 +7689,7 @@ export interface operations {
             "diagnostics_enabled": boolean;
             "enabled": boolean;
             "heavy_jobs": number;
+            "imported_identity_version": number;
             "max_import_bytes": number;
             "memory_limit": string;
             "messaging_management_enabled": boolean;
@@ -7488,6 +7752,8 @@ export interface operations {
             };
             "monitoring_enabled": boolean;
             "native_parquet": boolean;
+            "partition_manifest_version": number;
+            "partition_pruning_available": boolean;
             "preparation_enabled": boolean;
             "resource_configuration_accepted": boolean;
             "spill_limit": string;
@@ -7540,6 +7806,15 @@ export interface operations {
             }>;
             "id": string;
             "mapping"?: ({
+              "identity"?: ({
+                "dimensions"?: Array<{
+                  "name": string;
+                  "value": Record<string, unknown>;
+                }>;
+                "host"?: Array<string>;
+                "service"?: Array<string>;
+                "source"?: Array<string>;
+              }) | null;
               "measures": Array<{
                 "kind": string;
                 "name"?: string;
@@ -7558,6 +7833,35 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "partition_manifest"?: ({
+              "dataset_id": string;
+              "digest": string;
+              "mapping_sha256": string;
+              "mapping_version": number;
+              "partitions": Array<{
+                "bytes": number;
+                "object_key": string;
+                "sha256": string;
+                "stats": {
+                  "identity"?: (Record<string, unknown>) | null;
+                  "identity_version": number;
+                  "kind": string;
+                  "max_time"?: (string) | null;
+                  "metric"?: (string) | null;
+                  "min_time"?: (string) | null;
+                  "missing": number;
+                  "rows": number;
+                  "schema_version": string;
+                  "unit": string;
+                  "valid": number;
+                  "version": number;
+                };
+              }>;
+              "producer": string;
+              "project_id": string;
+              "version": number;
+            }) | null;
+            "partition_manifest_version"?: number;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -7598,6 +7902,15 @@ export interface operations {
             }>;
             "id": string;
             "mapping"?: ({
+              "identity"?: ({
+                "dimensions"?: Array<{
+                  "name": string;
+                  "value": Record<string, unknown>;
+                }>;
+                "host"?: Array<string>;
+                "service"?: Array<string>;
+                "source"?: Array<string>;
+              }) | null;
               "measures": Array<{
                 "kind": string;
                 "name"?: string;
@@ -7616,6 +7929,35 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "partition_manifest"?: ({
+              "dataset_id": string;
+              "digest": string;
+              "mapping_sha256": string;
+              "mapping_version": number;
+              "partitions": Array<{
+                "bytes": number;
+                "object_key": string;
+                "sha256": string;
+                "stats": {
+                  "identity"?: (Record<string, unknown>) | null;
+                  "identity_version": number;
+                  "kind": string;
+                  "max_time"?: (string) | null;
+                  "metric"?: (string) | null;
+                  "min_time"?: (string) | null;
+                  "missing": number;
+                  "rows": number;
+                  "schema_version": string;
+                  "unit": string;
+                  "valid": number;
+                  "version": number;
+                };
+              }>;
+              "producer": string;
+              "project_id": string;
+              "version": number;
+            }) | null;
+            "partition_manifest_version"?: number;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -7684,6 +8026,7 @@ export interface operations {
             "metric"?: string;
             "protocol"?: string;
             "run_id"?: string;
+            "service"?: string;
             "source_id"?: string;
             "transaction"?: string;
           };
@@ -7698,6 +8041,7 @@ export interface operations {
             "metric"?: string;
             "protocol"?: string;
             "run_id"?: string;
+            "service"?: string;
             "source_id"?: string;
             "transaction"?: string;
           };
@@ -7708,7 +8052,200 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "advisory": boolean;
+            "artifact_selections"?: Array<{
+              "avoided_artifact_bytes": number;
+              "dataset_id": string;
+              "dataset_revision": number;
+              "manifest_digest"?: string;
+              "manifest_version": number;
+              "mode": string;
+              "pruned_objects": number;
+              "selected_objects": number;
+              "staged_artifact_bytes": number;
+              "total_artifact_bytes": number;
+              "total_objects": number;
+            }>;
+            "correlation"?: Array<{
+              "coefficient"?: (number) | null;
+              "coverage": number;
+              "expected_buckets": number;
+              "lag_seconds": number;
+              "pairs": number;
+            }>;
+            "interpretation": string;
+            "left": Array<{
+              "active_runtime_ms"?: (number) | null;
+              "dataset_id"?: string;
+              "derivation"?: Array<{
+                "algorithm": string;
+                "bucket_seconds"?: number;
+                "operation": string;
+              }>;
+              "dimensions"?: Record<string, string>;
+              "host"?: string;
+              "input_kind"?: string;
+              "kind": string;
+              "metric_name": string;
+              "metric_version"?: string;
+              "population"?: string;
+              "project_id": string;
+              "provider"?: ({
+                "aggregation_eligible": boolean;
+                "analysis_statistic"?: string;
+                "backend"?: string;
+                "backend_profile"?: string;
+                "bucket_end": string;
+                "bucket_start": string;
+                "catalog_path"?: string;
+                "count"?: (number) | null;
+                "definition_hash"?: string;
+                "display_labels"?: Record<string, string>;
+                "entity_ids"?: Record<string, string>;
+                "evaluation_step_seconds"?: number;
+                "freshness_known"?: boolean;
+                "max"?: (number) | null;
+                "metric_id": string;
+                "min"?: (number) | null;
+                "mode"?: string;
+                "name": string;
+                "query_id"?: string;
+                "query_window"?: boolean;
+                "resolution_seconds": number;
+                "settled": boolean;
+                "statistic": string;
+                "sum"?: (number) | null;
+                "synthetic"?: boolean;
+                "underlying_sample_time"?: (string) | null;
+              }) | null;
+              "quality": string;
+              "received_at"?: string;
+              "relative_time_ms"?: (number) | null;
+              "run_id"?: string;
+              "scenario_id"?: string;
+              "schema_version": string;
+              "service"?: string;
+              "source": string;
+              "timestamp_utc": string;
+              "timing"?: ({
+                "clock_offset_ms"?: (number) | null;
+                "clock_source": string;
+                "clock_uncertainty_ms"?: (number) | null;
+                "freshness_seconds"?: (number) | null;
+                "offset_status": string;
+                "received_at"?: (string) | null;
+                "resolution_seconds"?: number;
+              }) | null;
+              "unit"?: string;
+              "value"?: (number) | null;
+            }>;
+            "request": {
+              "bucket_seconds": number;
+              "from": string;
+              "left": {
+                "aggregation": string;
+                "dataset_id"?: string;
+                "dimensions"?: Record<string, string>;
+                "group"?: string;
+                "host"?: string;
+                "metric": string;
+                "protocol"?: string;
+                "run_id"?: string;
+                "service"?: string;
+                "source_id"?: string;
+                "transaction"?: string;
+              };
+              "max_lag_seconds": number;
+              "mode": string;
+              "right": {
+                "aggregation": string;
+                "dataset_id"?: string;
+                "dimensions"?: Record<string, string>;
+                "group"?: string;
+                "host"?: string;
+                "metric": string;
+                "protocol"?: string;
+                "run_id"?: string;
+                "service"?: string;
+                "source_id"?: string;
+                "transaction"?: string;
+              };
+              "to": string;
+            };
+            "right": Array<{
+              "active_runtime_ms"?: (number) | null;
+              "dataset_id"?: string;
+              "derivation"?: Array<{
+                "algorithm": string;
+                "bucket_seconds"?: number;
+                "operation": string;
+              }>;
+              "dimensions"?: Record<string, string>;
+              "host"?: string;
+              "input_kind"?: string;
+              "kind": string;
+              "metric_name": string;
+              "metric_version"?: string;
+              "population"?: string;
+              "project_id": string;
+              "provider"?: ({
+                "aggregation_eligible": boolean;
+                "analysis_statistic"?: string;
+                "backend"?: string;
+                "backend_profile"?: string;
+                "bucket_end": string;
+                "bucket_start": string;
+                "catalog_path"?: string;
+                "count"?: (number) | null;
+                "definition_hash"?: string;
+                "display_labels"?: Record<string, string>;
+                "entity_ids"?: Record<string, string>;
+                "evaluation_step_seconds"?: number;
+                "freshness_known"?: boolean;
+                "max"?: (number) | null;
+                "metric_id": string;
+                "min"?: (number) | null;
+                "mode"?: string;
+                "name": string;
+                "query_id"?: string;
+                "query_window"?: boolean;
+                "resolution_seconds": number;
+                "settled": boolean;
+                "statistic": string;
+                "sum"?: (number) | null;
+                "synthetic"?: boolean;
+                "underlying_sample_time"?: (string) | null;
+              }) | null;
+              "quality": string;
+              "received_at"?: string;
+              "relative_time_ms"?: (number) | null;
+              "run_id"?: string;
+              "scenario_id"?: string;
+              "schema_version": string;
+              "service"?: string;
+              "source": string;
+              "timestamp_utc": string;
+              "timing"?: ({
+                "clock_offset_ms"?: (number) | null;
+                "clock_source": string;
+                "clock_uncertainty_ms"?: (number) | null;
+                "freshness_seconds"?: (number) | null;
+                "offset_status": string;
+                "received_at"?: (string) | null;
+                "resolution_seconds"?: number;
+              }) | null;
+              "unit"?: string;
+              "value"?: (number) | null;
+            }>;
+            "time_window"?: ({
+              "from": string;
+              "requested_from": string;
+              "requested_to": string;
+              "resolution": string;
+              "to": string;
+            }) | null;
+          };
         };
       };
       "400": {
@@ -7758,9 +8295,14 @@ export interface operations {
           "aggregation"?: string;
           "bucket_seconds"?: number;
           "dataset_id"?: string;
+          "dimensions"?: Record<string, string>;
           "from"?: string;
+          "host"?: string;
+          "identity_schema_version"?: number;
           "metric"?: string;
           "project_id"?: string;
+          "service"?: string;
+          "source_id"?: string;
           "to"?: string;
         };
       };
@@ -7768,7 +8310,95 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "artifact_selections"?: Array<{
+              "avoided_artifact_bytes": number;
+              "dataset_id": string;
+              "dataset_revision": number;
+              "manifest_digest"?: string;
+              "manifest_version": number;
+              "mode": string;
+              "pruned_objects": number;
+              "selected_objects": number;
+              "staged_artifact_bytes": number;
+              "total_artifact_bytes": number;
+              "total_objects": number;
+            }>;
+            "dataset_id": string;
+            "points": Array<{
+              "active_runtime_ms"?: (number) | null;
+              "dataset_id"?: string;
+              "derivation"?: Array<{
+                "algorithm": string;
+                "bucket_seconds"?: number;
+                "operation": string;
+              }>;
+              "dimensions"?: Record<string, string>;
+              "host"?: string;
+              "input_kind"?: string;
+              "kind": string;
+              "metric_name": string;
+              "metric_version"?: string;
+              "population"?: string;
+              "project_id": string;
+              "provider"?: ({
+                "aggregation_eligible": boolean;
+                "analysis_statistic"?: string;
+                "backend"?: string;
+                "backend_profile"?: string;
+                "bucket_end": string;
+                "bucket_start": string;
+                "catalog_path"?: string;
+                "count"?: (number) | null;
+                "definition_hash"?: string;
+                "display_labels"?: Record<string, string>;
+                "entity_ids"?: Record<string, string>;
+                "evaluation_step_seconds"?: number;
+                "freshness_known"?: boolean;
+                "max"?: (number) | null;
+                "metric_id": string;
+                "min"?: (number) | null;
+                "mode"?: string;
+                "name": string;
+                "query_id"?: string;
+                "query_window"?: boolean;
+                "resolution_seconds": number;
+                "settled": boolean;
+                "statistic": string;
+                "sum"?: (number) | null;
+                "synthetic"?: boolean;
+                "underlying_sample_time"?: (string) | null;
+              }) | null;
+              "quality": string;
+              "received_at"?: string;
+              "relative_time_ms"?: (number) | null;
+              "run_id"?: string;
+              "scenario_id"?: string;
+              "schema_version": string;
+              "service"?: string;
+              "source": string;
+              "timestamp_utc": string;
+              "timing"?: ({
+                "clock_offset_ms"?: (number) | null;
+                "clock_source": string;
+                "clock_uncertainty_ms"?: (number) | null;
+                "freshness_seconds"?: (number) | null;
+                "offset_status": string;
+                "received_at"?: (string) | null;
+                "resolution_seconds"?: number;
+              }) | null;
+              "unit"?: string;
+              "value"?: (number) | null;
+            }>;
+            "rejected_rows": number;
+            "time_window"?: ({
+              "from": string;
+              "requested_from": string;
+              "requested_to": string;
+              "resolution": string;
+              "to": string;
+            }) | null;
+          };
         };
       };
       "400": {
@@ -7892,7 +8522,39 @@ export interface operations {
       content: {
         "application/json": {
           "created_at"?: string;
-          "definition"?: unknown;
+          "definition"?: {
+            "bucket_seconds"?: number;
+            "from"?: string;
+            "left"?: {
+              "aggregation"?: string;
+              "dataset_id"?: string;
+              "dimensions"?: Record<string, string>;
+              "group"?: string;
+              "host"?: string;
+              "metric"?: string;
+              "protocol"?: string;
+              "run_id"?: string;
+              "service"?: string;
+              "source_id"?: string;
+              "transaction"?: string;
+            };
+            "max_lag_seconds"?: number;
+            "mode"?: string;
+            "right"?: {
+              "aggregation"?: string;
+              "dataset_id"?: string;
+              "dimensions"?: Record<string, string>;
+              "group"?: string;
+              "host"?: string;
+              "metric"?: string;
+              "protocol"?: string;
+              "run_id"?: string;
+              "service"?: string;
+              "source_id"?: string;
+              "transaction"?: string;
+            };
+            "to"?: string;
+          };
           "deleted"?: boolean;
           "id"?: string;
           "kind"?: string;
@@ -8045,7 +8707,28 @@ export interface operations {
       content: {
         "application/json": {
           "created_at"?: string;
-          "definition"?: unknown;
+          "definition"?: {
+            "identity"?: {
+              "dimensions"?: Array<{
+                "name"?: string;
+                "value"?: Array<string>;
+              }>;
+              "host"?: Array<string>;
+              "service"?: Array<string>;
+              "source"?: Array<string>;
+            };
+            "measures"?: Array<{
+              "kind"?: string;
+              "name"?: string;
+              "name_column"?: Array<string>;
+              "unit"?: string;
+              "value"?: Array<string>;
+            }>;
+            "timestamp"?: Array<string>;
+            "timestamp_encoding"?: string;
+            "timezone"?: string;
+            "version"?: number;
+          };
           "deleted"?: boolean;
           "id"?: string;
           "kind"?: string;
@@ -8290,7 +8973,28 @@ export interface operations {
       content: {
         "application/json": {
           "created_at"?: string;
-          "definition"?: unknown;
+          "definition"?: {
+            "identity"?: {
+              "dimensions"?: Array<{
+                "name"?: string;
+                "value"?: Array<string>;
+              }>;
+              "host"?: Array<string>;
+              "service"?: Array<string>;
+              "source"?: Array<string>;
+            };
+            "measures"?: Array<{
+              "kind"?: string;
+              "name"?: string;
+              "name_column"?: Array<string>;
+              "unit"?: string;
+              "value"?: Array<string>;
+            }>;
+            "timestamp"?: Array<string>;
+            "timestamp_encoding"?: string;
+            "timezone"?: string;
+            "version"?: number;
+          };
           "deleted"?: boolean;
           "id"?: string;
           "kind"?: string;
@@ -9169,7 +9873,39 @@ export interface operations {
       content: {
         "application/json": {
           "created_at"?: string;
-          "definition"?: unknown;
+          "definition"?: {
+            "bucket_seconds"?: number;
+            "from"?: string;
+            "left"?: {
+              "aggregation"?: string;
+              "dataset_id"?: string;
+              "dimensions"?: Record<string, string>;
+              "group"?: string;
+              "host"?: string;
+              "metric"?: string;
+              "protocol"?: string;
+              "run_id"?: string;
+              "service"?: string;
+              "source_id"?: string;
+              "transaction"?: string;
+            };
+            "max_lag_seconds"?: number;
+            "mode"?: string;
+            "right"?: {
+              "aggregation"?: string;
+              "dataset_id"?: string;
+              "dimensions"?: Record<string, string>;
+              "group"?: string;
+              "host"?: string;
+              "metric"?: string;
+              "protocol"?: string;
+              "run_id"?: string;
+              "service"?: string;
+              "source_id"?: string;
+              "transaction"?: string;
+            };
+            "to"?: string;
+          };
           "deleted"?: boolean;
           "id"?: string;
           "kind"?: string;
@@ -9428,6 +10164,15 @@ export interface operations {
             }>;
             "id": string;
             "mapping"?: ({
+              "identity"?: ({
+                "dimensions"?: Array<{
+                  "name": string;
+                  "value": Record<string, unknown>;
+                }>;
+                "host"?: Array<string>;
+                "service"?: Array<string>;
+                "source"?: Array<string>;
+              }) | null;
               "measures": Array<{
                 "kind": string;
                 "name"?: string;
@@ -9446,6 +10191,35 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "partition_manifest"?: ({
+              "dataset_id": string;
+              "digest": string;
+              "mapping_sha256": string;
+              "mapping_version": number;
+              "partitions": Array<{
+                "bytes": number;
+                "object_key": string;
+                "sha256": string;
+                "stats": {
+                  "identity"?: (Record<string, unknown>) | null;
+                  "identity_version": number;
+                  "kind": string;
+                  "max_time"?: (string) | null;
+                  "metric"?: (string) | null;
+                  "min_time"?: (string) | null;
+                  "missing": number;
+                  "rows": number;
+                  "schema_version": string;
+                  "unit": string;
+                  "valid": number;
+                  "version": number;
+                };
+              }>;
+              "producer": string;
+              "project_id": string;
+              "version": number;
+            }) | null;
+            "partition_manifest_version"?: number;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -9527,6 +10301,15 @@ export interface operations {
             }>;
             "id": string;
             "mapping"?: ({
+              "identity"?: ({
+                "dimensions"?: Array<{
+                  "name": string;
+                  "value": Record<string, unknown>;
+                }>;
+                "host"?: Array<string>;
+                "service"?: Array<string>;
+                "source"?: Array<string>;
+              }) | null;
               "measures": Array<{
                 "kind": string;
                 "name"?: string;
@@ -9545,6 +10328,35 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "partition_manifest"?: ({
+              "dataset_id": string;
+              "digest": string;
+              "mapping_sha256": string;
+              "mapping_version": number;
+              "partitions": Array<{
+                "bytes": number;
+                "object_key": string;
+                "sha256": string;
+                "stats": {
+                  "identity"?: (Record<string, unknown>) | null;
+                  "identity_version": number;
+                  "kind": string;
+                  "max_time"?: (string) | null;
+                  "metric"?: (string) | null;
+                  "min_time"?: (string) | null;
+                  "missing": number;
+                  "rows": number;
+                  "schema_version": string;
+                  "unit": string;
+                  "valid": number;
+                  "version": number;
+                };
+              }>;
+              "producer": string;
+              "project_id": string;
+              "version": number;
+            }) | null;
+            "partition_manifest_version"?: number;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -9626,6 +10438,15 @@ export interface operations {
             }>;
             "id": string;
             "mapping"?: ({
+              "identity"?: ({
+                "dimensions"?: Array<{
+                  "name": string;
+                  "value": Record<string, unknown>;
+                }>;
+                "host"?: Array<string>;
+                "service"?: Array<string>;
+                "source"?: Array<string>;
+              }) | null;
               "measures": Array<{
                 "kind": string;
                 "name"?: string;
@@ -9644,6 +10465,35 @@ export interface operations {
             "normalized"?: Array<string>;
             "normalized_sha256"?: Record<string, string>;
             "obsolete_objects"?: Array<string>;
+            "partition_manifest"?: ({
+              "dataset_id": string;
+              "digest": string;
+              "mapping_sha256": string;
+              "mapping_version": number;
+              "partitions": Array<{
+                "bytes": number;
+                "object_key": string;
+                "sha256": string;
+                "stats": {
+                  "identity"?: (Record<string, unknown>) | null;
+                  "identity_version": number;
+                  "kind": string;
+                  "max_time"?: (string) | null;
+                  "metric"?: (string) | null;
+                  "min_time"?: (string) | null;
+                  "missing": number;
+                  "rows": number;
+                  "schema_version": string;
+                  "unit": string;
+                  "valid": number;
+                  "version": number;
+                };
+              }>;
+              "producer": string;
+              "project_id": string;
+              "version": number;
+            }) | null;
+            "partition_manifest_version"?: number;
             "project_id": string;
             "rejected": number;
             "rejection_artifacts"?: Array<string>;
@@ -9816,6 +10666,15 @@ export interface operations {
         "application/json": {
           "allow_rejected"?: boolean;
           "mapping"?: {
+            "identity"?: {
+              "dimensions"?: Array<{
+                "name"?: string;
+                "value"?: Array<string>;
+              }>;
+              "host"?: Array<string>;
+              "service"?: Array<string>;
+              "source"?: Array<string>;
+            };
             "measures"?: Array<{
               "kind"?: string;
               "name"?: string;
@@ -10843,6 +11702,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -11712,6 +12572,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -12406,6 +13267,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -13068,6 +13930,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -13618,6 +14481,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -14242,6 +15106,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -14879,6 +15744,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -15717,6 +16583,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -16193,6 +17060,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -16922,6 +17790,37 @@ export interface operations {
                 "score": number;
                 "status": string;
               }) | null;
+              "authoring_projection"?: ({
+                "content_revision": string;
+                "folder_id": (string) | null;
+                "id": string;
+                "library_placement": {
+                  "application_id": (string) | null;
+                  "release_ids": Array<string>;
+                };
+                "project_id": string;
+                "projection_version": string;
+                "script": {
+                  "actions": Array<Record<string, unknown>>;
+                  "config": Record<string, unknown>;
+                  "data_sources"?: Array<Record<string, unknown>>;
+                  "folder_id"?: (string) | null;
+                  "generated_by"?: string;
+                  "generated_from"?: string;
+                  "goal_config"?: (Record<string, unknown>) | null;
+                  "id": string;
+                  "init"?: Array<Record<string, unknown>>;
+                  "metadata"?: (Record<string, unknown>) | null;
+                  "name": string;
+                  "parameters"?: Array<Record<string, unknown>>;
+                  "project_id"?: string;
+                  "protocol": string;
+                  "ref_key"?: string;
+                  "teardown"?: Array<Record<string, unknown>>;
+                  "version": string;
+                };
+              }) | null;
+              "content_revision"?: string;
               "created_at": string;
               "folder_id"?: (string) | null;
               "id": string;
@@ -17704,6 +18603,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -18101,6 +19001,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -18643,6 +19544,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -19040,6 +19942,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -19453,6 +20356,215 @@ export interface operations {
               "score": number;
               "status": string;
             }) | null;
+            "authoring_projection"?: ({
+              "content_revision": string;
+              "folder_id": (string) | null;
+              "id": string;
+              "library_placement": {
+                "application_id": (string) | null;
+                "release_ids": Array<string>;
+              };
+              "project_id": string;
+              "projection_version": string;
+              "script": {
+                "actions": Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "config": {
+                  "base_url": string;
+                  "browser"?: Record<string, unknown>;
+                  "browser_emulation"?: (Record<string, unknown>) | null;
+                  "bruno"?: Record<string, unknown>;
+                  "database"?: Record<string, unknown>;
+                  "error_handling"?: Record<string, unknown>;
+                  "eventhubs"?: Record<string, unknown>;
+                  "grpc"?: Record<string, unknown>;
+                  "http"?: Record<string, unknown>;
+                  "java_http"?: Record<string, unknown>;
+                  "java_vuser"?: Record<string, unknown>;
+                  "jmeter"?: (Record<string, unknown>) | null;
+                  "jms"?: Record<string, unknown>;
+                  "kafka"?: Record<string, unknown>;
+                  "log"?: Record<string, unknown>;
+                  "network"?: Record<string, unknown>;
+                  "observability"?: Record<string, unknown>;
+                  "pacing"?: Record<string, unknown>;
+                  "results"?: Record<string, unknown>;
+                  "run_logic"?: Record<string, unknown>;
+                  "sampler_schedules"?: Array<Record<string, unknown>>;
+                  "sapgui"?: Record<string, unknown>;
+                  "soap"?: Record<string, unknown>;
+                  "think_time"?: Record<string, unknown>;
+                  "web_runtime"?: Record<string, unknown>;
+                  "websocket"?: Record<string, unknown>;
+                };
+                "data_sources"?: Array<{
+                  "columns"?: Array<string>;
+                  "content_type"?: string;
+                  "delimiter"?: string;
+                  "encoding"?: string;
+                  "file_name"?: string;
+                  "first_row_header": boolean;
+                  "inline_data"?: string;
+                  "name": string;
+                  "path"?: string;
+                  "staged_asset"?: string;
+                  "storage_ref"?: string;
+                  "strategy": string;
+                  "type": string;
+                }>;
+                "folder_id"?: (string) | null;
+                "generated_by"?: string;
+                "generated_from"?: string;
+                "goal_config"?: ({
+                  "max_avg_server_processing_ms"?: (number) | null;
+                  "max_avg_transfer_ms"?: (number) | null;
+                  "max_error_count"?: (number) | null;
+                  "max_error_pct"?: (number) | null;
+                  "max_vusers"?: (number) | null;
+                  "min_vusers"?: (number) | null;
+                  "p95_latency_ms"?: (number) | null;
+                  "sla_breach_window"?: string;
+                  "stop_on_max_errors"?: boolean;
+                  "stop_on_sla_breach"?: boolean;
+                  "target_average_tps"?: (number) | null;
+                  "transaction_rules"?: Array<Record<string, unknown>>;
+                }) | null;
+                "id": string;
+                "init"?: Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "metadata"?: ({
+                  "import"?: (Record<string, unknown>) | null;
+                  "runtime_policy"?: (Record<string, unknown>) | null;
+                }) | null;
+                "name": string;
+                "parameters"?: Array<{
+                  "auto_allocate"?: boolean;
+                  "block_size"?: number;
+                  "charset"?: string;
+                  "column"?: string;
+                  "data_source"?: string;
+                  "end"?: number;
+                  "format"?: string;
+                  "format_dialect"?: string;
+                  "length"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "name": string;
+                  "offset_seconds"?: number;
+                  "on_exhaustion"?: string;
+                  "pad_char"?: string;
+                  "pad_width"?: number;
+                  "random_algorithm"?: string;
+                  "same_line_as"?: string;
+                  "scope"?: string;
+                  "scope_id"?: string;
+                  "seed"?: (number) | null;
+                  "selection"?: string;
+                  "start"?: number;
+                  "start_row"?: number;
+                  "step"?: number;
+                  "timezone"?: string;
+                  "type": string;
+                  "update"?: string;
+                  "value_for_each_vuser"?: boolean;
+                  "values"?: Array<string>;
+                }>;
+                "project_id"?: string;
+                "protocol": string;
+                "ref_key"?: string;
+                "teardown"?: Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "version": string;
+              };
+            }) | null;
+            "content_revision"?: string;
             "created_at": string;
             "folder_id"?: (string) | null;
             "id": string;
@@ -19571,6 +20683,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -20299,6 +21412,215 @@ export interface operations {
               "score": number;
               "status": string;
             }) | null;
+            "authoring_projection"?: ({
+              "content_revision": string;
+              "folder_id": (string) | null;
+              "id": string;
+              "library_placement": {
+                "application_id": (string) | null;
+                "release_ids": Array<string>;
+              };
+              "project_id": string;
+              "projection_version": string;
+              "script": {
+                "actions": Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "config": {
+                  "base_url": string;
+                  "browser"?: Record<string, unknown>;
+                  "browser_emulation"?: (Record<string, unknown>) | null;
+                  "bruno"?: Record<string, unknown>;
+                  "database"?: Record<string, unknown>;
+                  "error_handling"?: Record<string, unknown>;
+                  "eventhubs"?: Record<string, unknown>;
+                  "grpc"?: Record<string, unknown>;
+                  "http"?: Record<string, unknown>;
+                  "java_http"?: Record<string, unknown>;
+                  "java_vuser"?: Record<string, unknown>;
+                  "jmeter"?: (Record<string, unknown>) | null;
+                  "jms"?: Record<string, unknown>;
+                  "kafka"?: Record<string, unknown>;
+                  "log"?: Record<string, unknown>;
+                  "network"?: Record<string, unknown>;
+                  "observability"?: Record<string, unknown>;
+                  "pacing"?: Record<string, unknown>;
+                  "results"?: Record<string, unknown>;
+                  "run_logic"?: Record<string, unknown>;
+                  "sampler_schedules"?: Array<Record<string, unknown>>;
+                  "sapgui"?: Record<string, unknown>;
+                  "soap"?: Record<string, unknown>;
+                  "think_time"?: Record<string, unknown>;
+                  "web_runtime"?: Record<string, unknown>;
+                  "websocket"?: Record<string, unknown>;
+                };
+                "data_sources"?: Array<{
+                  "columns"?: Array<string>;
+                  "content_type"?: string;
+                  "delimiter"?: string;
+                  "encoding"?: string;
+                  "file_name"?: string;
+                  "first_row_header": boolean;
+                  "inline_data"?: string;
+                  "name": string;
+                  "path"?: string;
+                  "staged_asset"?: string;
+                  "storage_ref"?: string;
+                  "strategy": string;
+                  "type": string;
+                }>;
+                "folder_id"?: (string) | null;
+                "generated_by"?: string;
+                "generated_from"?: string;
+                "goal_config"?: ({
+                  "max_avg_server_processing_ms"?: (number) | null;
+                  "max_avg_transfer_ms"?: (number) | null;
+                  "max_error_count"?: (number) | null;
+                  "max_error_pct"?: (number) | null;
+                  "max_vusers"?: (number) | null;
+                  "min_vusers"?: (number) | null;
+                  "p95_latency_ms"?: (number) | null;
+                  "sla_breach_window"?: string;
+                  "stop_on_max_errors"?: boolean;
+                  "stop_on_sla_breach"?: boolean;
+                  "target_average_tps"?: (number) | null;
+                  "transaction_rules"?: Array<Record<string, unknown>>;
+                }) | null;
+                "id": string;
+                "init"?: Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "metadata"?: ({
+                  "import"?: (Record<string, unknown>) | null;
+                  "runtime_policy"?: (Record<string, unknown>) | null;
+                }) | null;
+                "name": string;
+                "parameters"?: Array<{
+                  "auto_allocate"?: boolean;
+                  "block_size"?: number;
+                  "charset"?: string;
+                  "column"?: string;
+                  "data_source"?: string;
+                  "end"?: number;
+                  "format"?: string;
+                  "format_dialect"?: string;
+                  "length"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "name": string;
+                  "offset_seconds"?: number;
+                  "on_exhaustion"?: string;
+                  "pad_char"?: string;
+                  "pad_width"?: number;
+                  "random_algorithm"?: string;
+                  "same_line_as"?: string;
+                  "scope"?: string;
+                  "scope_id"?: string;
+                  "seed"?: (number) | null;
+                  "selection"?: string;
+                  "start"?: number;
+                  "start_row"?: number;
+                  "step"?: number;
+                  "timezone"?: string;
+                  "type": string;
+                  "update"?: string;
+                  "value_for_each_vuser"?: boolean;
+                  "values"?: Array<string>;
+                }>;
+                "project_id"?: string;
+                "protocol": string;
+                "ref_key"?: string;
+                "teardown"?: Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "version": string;
+              };
+            }) | null;
+            "content_revision"?: string;
             "created_at": string;
             "folder_id"?: (string) | null;
             "id": string;
@@ -20417,6 +21739,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -21227,6 +22550,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -23081,6 +24405,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -23757,6 +25082,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -24642,6 +25968,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -25858,6 +27185,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -26564,6 +27892,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -29949,6 +31278,10 @@ export interface operations {
           "domain_id"?: (string) | null;
           "name"?: string;
           "settings"?: {
+            "authoring"?: ({
+              "require_scenario_save_if_match"?: boolean;
+              "require_script_save_if_match"?: boolean;
+            }) | null;
             "features"?: {
               "control_parallel"?: boolean;
               "media_stream"?: boolean;
@@ -30859,6 +32192,7 @@ export interface operations {
               "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<Record<string, unknown>>;
@@ -31229,6 +32563,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -31978,6 +33313,7 @@ export interface operations {
                   "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "browser_document_capture_requested"?: boolean;
                 "continue_on_error"?: ({
                   "conflict"?: boolean;
                   "effective": boolean;
@@ -32052,6 +33388,57 @@ export interface operations {
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
+                "browser_documents"?: ({
+                  "dropped_observations": number;
+                  "incomplete": boolean;
+                  "metrics": (Array<{
+                    "algorithm": string;
+                    "algorithm_sha256": string;
+                    "censored": number;
+                    "cohort"?: ({
+                      "browser_version": string;
+                      "cache_content_urls"?: (boolean) | null;
+                      "cache_enabled"?: (boolean) | null;
+                      "check_newer_versions"?: (boolean) | null;
+                      "cpu_throttle_rate": number;
+                      "device_scale_factor": number;
+                      "headless"?: (boolean) | null;
+                      "mobile"?: (boolean) | null;
+                      "network_bandwidth_kbps": number;
+                      "network_latency_ms": number;
+                      "new_user_policy": string;
+                      "new_user_policy_applied": boolean;
+                      "platform": string;
+                      "shaping_applied": boolean;
+                      "touch"?: (boolean) | null;
+                      "unavailable_reason"?: string;
+                      "version": number;
+                      "viewport_height": number;
+                      "viewport_width": number;
+                    }) | null;
+                    "device_profile": string;
+                    "distribution": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "eligible_final": number;
+                    "engine": string;
+                    "excluded_reasons"?: Record<string, number>;
+                    "frame_scope": string;
+                    "group"?: string;
+                    "lifecycle_phase": string;
+                    "metric": string;
+                    "provisional": number;
+                    "region"?: string;
+                    "unavailable_final": number;
+                    "unit": string;
+                    "unqualified_final": number;
+                  }>) | null;
+                  "version": number;
+                }) | null;
                 "by_region"?: Record<string, (Record<string, unknown>) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
@@ -32226,6 +33613,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -32287,6 +33696,57 @@ export interface operations {
                   "device_tier"?: string;
                   "samples": number;
                 }) | null>;
+                "browser_documents"?: ({
+                  "dropped_observations": number;
+                  "incomplete": boolean;
+                  "metrics": (Array<{
+                    "algorithm": string;
+                    "algorithm_sha256": string;
+                    "censored": number;
+                    "cohort"?: ({
+                      "browser_version": string;
+                      "cache_content_urls"?: (boolean) | null;
+                      "cache_enabled"?: (boolean) | null;
+                      "check_newer_versions"?: (boolean) | null;
+                      "cpu_throttle_rate": number;
+                      "device_scale_factor": number;
+                      "headless"?: (boolean) | null;
+                      "mobile"?: (boolean) | null;
+                      "network_bandwidth_kbps": number;
+                      "network_latency_ms": number;
+                      "new_user_policy": string;
+                      "new_user_policy_applied": boolean;
+                      "platform": string;
+                      "shaping_applied": boolean;
+                      "touch"?: (boolean) | null;
+                      "unavailable_reason"?: string;
+                      "version": number;
+                      "viewport_height": number;
+                      "viewport_width": number;
+                    }) | null;
+                    "device_profile": string;
+                    "distribution": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "eligible_final": number;
+                    "engine": string;
+                    "excluded_reasons"?: Record<string, number>;
+                    "frame_scope": string;
+                    "group"?: string;
+                    "lifecycle_phase": string;
+                    "metric": string;
+                    "provisional": number;
+                    "region"?: string;
+                    "unavailable_final": number;
+                    "unit": string;
+                    "unqualified_final": number;
+                  }>) | null;
+                  "version": number;
+                }) | null;
                 "by_region"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -32634,6 +34094,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -32723,6 +34205,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -33719,6 +35202,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -33916,6 +35400,7 @@ export interface operations {
               "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<{
@@ -34494,6 +35979,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -34891,6 +36377,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -35482,6 +36969,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -36304,6 +37792,215 @@ export interface operations {
               "score": number;
               "status": string;
             }) | null;
+            "authoring_projection"?: ({
+              "content_revision": string;
+              "folder_id": (string) | null;
+              "id": string;
+              "library_placement": {
+                "application_id": (string) | null;
+                "release_ids": Array<string>;
+              };
+              "project_id": string;
+              "projection_version": string;
+              "script": {
+                "actions": Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "config": {
+                  "base_url": string;
+                  "browser"?: Record<string, unknown>;
+                  "browser_emulation"?: (Record<string, unknown>) | null;
+                  "bruno"?: Record<string, unknown>;
+                  "database"?: Record<string, unknown>;
+                  "error_handling"?: Record<string, unknown>;
+                  "eventhubs"?: Record<string, unknown>;
+                  "grpc"?: Record<string, unknown>;
+                  "http"?: Record<string, unknown>;
+                  "java_http"?: Record<string, unknown>;
+                  "java_vuser"?: Record<string, unknown>;
+                  "jmeter"?: (Record<string, unknown>) | null;
+                  "jms"?: Record<string, unknown>;
+                  "kafka"?: Record<string, unknown>;
+                  "log"?: Record<string, unknown>;
+                  "network"?: Record<string, unknown>;
+                  "observability"?: Record<string, unknown>;
+                  "pacing"?: Record<string, unknown>;
+                  "results"?: Record<string, unknown>;
+                  "run_logic"?: Record<string, unknown>;
+                  "sampler_schedules"?: Array<Record<string, unknown>>;
+                  "sapgui"?: Record<string, unknown>;
+                  "soap"?: Record<string, unknown>;
+                  "think_time"?: Record<string, unknown>;
+                  "web_runtime"?: Record<string, unknown>;
+                  "websocket"?: Record<string, unknown>;
+                };
+                "data_sources"?: Array<{
+                  "columns"?: Array<string>;
+                  "content_type"?: string;
+                  "delimiter"?: string;
+                  "encoding"?: string;
+                  "file_name"?: string;
+                  "first_row_header": boolean;
+                  "inline_data"?: string;
+                  "name": string;
+                  "path"?: string;
+                  "staged_asset"?: string;
+                  "storage_ref"?: string;
+                  "strategy": string;
+                  "type": string;
+                }>;
+                "folder_id"?: (string) | null;
+                "generated_by"?: string;
+                "generated_from"?: string;
+                "goal_config"?: ({
+                  "max_avg_server_processing_ms"?: (number) | null;
+                  "max_avg_transfer_ms"?: (number) | null;
+                  "max_error_count"?: (number) | null;
+                  "max_error_pct"?: (number) | null;
+                  "max_vusers"?: (number) | null;
+                  "min_vusers"?: (number) | null;
+                  "p95_latency_ms"?: (number) | null;
+                  "sla_breach_window"?: string;
+                  "stop_on_max_errors"?: boolean;
+                  "stop_on_sla_breach"?: boolean;
+                  "target_average_tps"?: (number) | null;
+                  "transaction_rules"?: Array<Record<string, unknown>>;
+                }) | null;
+                "id": string;
+                "init"?: Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "metadata"?: ({
+                  "import"?: (Record<string, unknown>) | null;
+                  "runtime_policy"?: (Record<string, unknown>) | null;
+                }) | null;
+                "name": string;
+                "parameters"?: Array<{
+                  "auto_allocate"?: boolean;
+                  "block_size"?: number;
+                  "charset"?: string;
+                  "column"?: string;
+                  "data_source"?: string;
+                  "end"?: number;
+                  "format"?: string;
+                  "format_dialect"?: string;
+                  "length"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "name": string;
+                  "offset_seconds"?: number;
+                  "on_exhaustion"?: string;
+                  "pad_char"?: string;
+                  "pad_width"?: number;
+                  "random_algorithm"?: string;
+                  "same_line_as"?: string;
+                  "scope"?: string;
+                  "scope_id"?: string;
+                  "seed"?: (number) | null;
+                  "selection"?: string;
+                  "start"?: number;
+                  "start_row"?: number;
+                  "step"?: number;
+                  "timezone"?: string;
+                  "type": string;
+                  "update"?: string;
+                  "value_for_each_vuser"?: boolean;
+                  "values"?: Array<string>;
+                }>;
+                "project_id"?: string;
+                "protocol": string;
+                "ref_key"?: string;
+                "teardown"?: Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "version": string;
+              };
+            }) | null;
+            "content_revision"?: string;
             "created_at": string;
             "folder_id"?: (string) | null;
             "id": string;
@@ -36422,6 +38119,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -37058,6 +38756,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "default": {
         content?: never;
       };
@@ -37308,6 +39011,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -37514,6 +39218,7 @@ export interface operations {
               "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<{
@@ -38659,6 +40364,7 @@ export interface operations {
                 "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
+              "browser_document_capture_requested"?: boolean;
               "continue_on_error"?: ({
                 "conflict"?: boolean;
                 "effective": boolean;
@@ -38695,6 +40401,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -38916,6 +40623,57 @@ export interface operations {
                 "device_tier"?: string;
                 "samples": number;
               }) | null>;
+              "browser_documents"?: ({
+                "dropped_observations": number;
+                "incomplete": boolean;
+                "metrics": (Array<{
+                  "algorithm": string;
+                  "algorithm_sha256": string;
+                  "censored": number;
+                  "cohort"?: ({
+                    "browser_version": string;
+                    "cache_content_urls"?: (boolean) | null;
+                    "cache_enabled"?: (boolean) | null;
+                    "check_newer_versions"?: (boolean) | null;
+                    "cpu_throttle_rate": number;
+                    "device_scale_factor": number;
+                    "headless"?: (boolean) | null;
+                    "mobile"?: (boolean) | null;
+                    "network_bandwidth_kbps": number;
+                    "network_latency_ms": number;
+                    "new_user_policy": string;
+                    "new_user_policy_applied": boolean;
+                    "platform": string;
+                    "shaping_applied": boolean;
+                    "touch"?: (boolean) | null;
+                    "unavailable_reason"?: string;
+                    "version": number;
+                    "viewport_height": number;
+                    "viewport_width": number;
+                  }) | null;
+                  "device_profile": string;
+                  "distribution": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "eligible_final": number;
+                  "engine": string;
+                  "excluded_reasons"?: Record<string, number>;
+                  "frame_scope": string;
+                  "group"?: string;
+                  "lifecycle_phase": string;
+                  "metric": string;
+                  "provisional": number;
+                  "region"?: string;
+                  "unavailable_final": number;
+                  "unit": string;
+                  "unqualified_final": number;
+                }>) | null;
+                "version": number;
+              }) | null;
               "by_region"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -39273,6 +41031,28 @@ export interface operations {
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -39369,6 +41149,57 @@ export interface operations {
                 "device_tier"?: string;
                 "samples": number;
               }) | null>;
+              "browser_documents"?: ({
+                "dropped_observations": number;
+                "incomplete": boolean;
+                "metrics": (Array<{
+                  "algorithm": string;
+                  "algorithm_sha256": string;
+                  "censored": number;
+                  "cohort"?: ({
+                    "browser_version": string;
+                    "cache_content_urls"?: (boolean) | null;
+                    "cache_enabled"?: (boolean) | null;
+                    "check_newer_versions"?: (boolean) | null;
+                    "cpu_throttle_rate": number;
+                    "device_scale_factor": number;
+                    "headless"?: (boolean) | null;
+                    "mobile"?: (boolean) | null;
+                    "network_bandwidth_kbps": number;
+                    "network_latency_ms": number;
+                    "new_user_policy": string;
+                    "new_user_policy_applied": boolean;
+                    "platform": string;
+                    "shaping_applied": boolean;
+                    "touch"?: (boolean) | null;
+                    "unavailable_reason"?: string;
+                    "version": number;
+                    "viewport_height": number;
+                    "viewport_width": number;
+                  }) | null;
+                  "device_profile": string;
+                  "distribution": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "eligible_final": number;
+                  "engine": string;
+                  "excluded_reasons"?: Record<string, number>;
+                  "frame_scope": string;
+                  "group"?: string;
+                  "lifecycle_phase": string;
+                  "metric": string;
+                  "provisional": number;
+                  "region"?: string;
+                  "unavailable_final": number;
+                  "unit": string;
+                  "unqualified_final": number;
+                }>) | null;
+                "version": number;
+              }) | null;
               "by_region"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -40730,6 +42561,28 @@ export interface operations {
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -40986,6 +42839,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -43806,6 +45660,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -44468,6 +46323,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -45052,6 +46908,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -45714,6 +47571,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -47811,6 +49669,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -48017,6 +49876,7 @@ export interface operations {
               "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<{
@@ -48535,6 +50395,7 @@ export interface operations {
                 "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
+              "browser_document_capture_requested"?: boolean;
               "continue_on_error"?: ({
                 "conflict"?: boolean;
                 "effective": boolean;
@@ -48571,6 +50432,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -49341,6 +51203,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -50813,7 +52676,14 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "created_at": string;
+            "description"?: string;
+            "domain_id": string;
+            "id": string;
+            "name": string;
+            "updated_at": string;
+          }) | null;
         };
       };
       "401": {
@@ -51223,6 +53093,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -52617,6 +54488,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -52630,6 +54561,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -52669,6 +54610,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -52751,6 +54730,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -52764,6 +54803,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -54888,6 +56937,44 @@ export interface operations {
               }) | null;
               "html"?: string;
               "network_entries"?: Array<{
+                "browser_evidence"?: ({
+                  "bytes": {
+                    "request_body"?: (number) | null;
+                    "request_headers"?: (number) | null;
+                    "response_encoded_body"?: (number) | null;
+                    "response_headers"?: (number) | null;
+                    "unavailable_reason"?: string;
+                  };
+                  "cache"?: (boolean) | null;
+                  "cache_unavailable_reason"?: string;
+                  "document_id"?: string;
+                  "document_offset_ms"?: (number) | null;
+                  "epoch_start_ms"?: (number) | null;
+                  "frame_id"?: string;
+                  "identity_unavailable_reason"?: string;
+                  "initiating_action_id"?: string;
+                  "initiator_unavailable_reason"?: string;
+                  "navigation_id"?: string;
+                  "observation_action_id"?: string;
+                  "observed_at": string;
+                  "origin"?: string;
+                  "phases": (Array<{
+                    "end_ms"?: (number) | null;
+                    "name": string;
+                    "start_ms"?: (number) | null;
+                    "unavailable_reason"?: string;
+                  }>) | null;
+                  "redirect_chain_id"?: string;
+                  "redirect_from_request_id"?: string;
+                  "redirect_hop": number;
+                  "request_id": string;
+                  "service_worker"?: (boolean) | null;
+                  "service_worker_unavailable_reason"?: string;
+                  "source_generation": string;
+                  "state": string;
+                  "timing_source": string;
+                  "version": number;
+                }) | null;
                 "bytes_received"?: number;
                 "duration_ms"?: number;
                 "failure_kind"?: string;
@@ -54966,7 +57053,2232 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "history"?: (Array<({
+              "active_vusers": number;
+              "avg_connect_ms"?: number;
+              "avg_dns_ms"?: number;
+              "avg_response_ms": number;
+              "avg_tls_ms"?: number;
+              "avg_ttfb_ms"?: number;
+              "avg_wait_ms"?: number;
+              "browser"?: ({
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "samples": number;
+              }) | null;
+              "browser_by_device"?: Record<string, ({
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "browser_engine"?: string;
+                "device_platform"?: string;
+                "device_profile"?: string;
+                "device_tier"?: string;
+                "samples": number;
+              }) | null>;
+              "browser_documents"?: ({
+                "dropped_observations": number;
+                "incomplete": boolean;
+                "metrics": (Array<{
+                  "algorithm": string;
+                  "algorithm_sha256": string;
+                  "censored": number;
+                  "cohort"?: ({
+                    "browser_version": string;
+                    "cache_content_urls"?: (boolean) | null;
+                    "cache_enabled"?: (boolean) | null;
+                    "check_newer_versions"?: (boolean) | null;
+                    "cpu_throttle_rate": number;
+                    "device_scale_factor": number;
+                    "headless"?: (boolean) | null;
+                    "mobile"?: (boolean) | null;
+                    "network_bandwidth_kbps": number;
+                    "network_latency_ms": number;
+                    "new_user_policy": string;
+                    "new_user_policy_applied": boolean;
+                    "platform": string;
+                    "shaping_applied": boolean;
+                    "touch"?: (boolean) | null;
+                    "unavailable_reason"?: string;
+                    "version": number;
+                    "viewport_height": number;
+                    "viewport_width": number;
+                  }) | null;
+                  "device_profile": string;
+                  "distribution": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "eligible_final": number;
+                  "engine": string;
+                  "excluded_reasons"?: Record<string, number>;
+                  "frame_scope": string;
+                  "group"?: string;
+                  "lifecycle_phase": string;
+                  "metric": string;
+                  "provisional": number;
+                  "region"?: string;
+                  "unavailable_final": number;
+                  "unit": string;
+                  "unqualified_final": number;
+                }>) | null;
+                "version": number;
+              }) | null;
+              "by_region"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
+              "capacity_status"?: ({
+                "allocated_vusers": number;
+                "available_generators": number;
+                "by_protocol"?: Record<string, (Record<string, unknown>) | null>;
+                "by_region"?: Record<string, (Record<string, unknown>) | null>;
+                "queued_vusers": number;
+                "recommended_generators": number;
+                "rejected_vusers": number;
+                "saturated": boolean;
+              }) | null;
+              "completed_iterations": number;
+              "dependency_health"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
+              "dependency_map"?: ({
+                "edges": Array<Record<string, unknown>>;
+                "nodes": Array<Record<string, unknown>>;
+              }) | null;
+              "dynatrace"?: ({
+                "capabilities"?: Record<string, Record<string, unknown>>;
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
+                "logs"?: Array<Record<string, unknown>>;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "problems"?: Array<Record<string, unknown>>;
+                "status": string;
+              }) | null;
+              "elk"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "observation"?: string;
+                "samples"?: Array<Record<string, unknown>>;
+                "status": string;
+              }) | null;
+              "error_breakdown"?: Record<string, number>;
+              "error_patterns"?: Array<{
+                "actions"?: Array<string>;
+                "affected_groups"?: Array<string>;
+                "count": number;
+                "error_pct"?: number;
+                "evidence_count"?: number;
+                "evidence_url"?: string;
+                "first_seen": string;
+                "latest_evidence_id"?: string;
+                "latest_seen": string;
+                "sample": string;
+                "signature": string;
+                "snapshot_url"?: string;
+                "status_code"?: number;
+              }>;
+              "error_pct": number;
+              "generator_resources"?: Record<string, ({
+                "active_vusers": number;
+                "error_pct"?: number;
+                "generator_id": string;
+                "impact_reasons"?: Array<string>;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "pod_capacity"?: (Record<string, unknown>) | null;
+                "region"?: string;
+                "resources"?: (Record<string, unknown>) | null;
+                "saturation_state"?: string;
+                "target": string;
+                "timestamp": string;
+                "tps"?: number;
+              }) | null>;
+              "goal_status"?: ({
+                "breach_active"?: boolean;
+                "breach_duration_sec"?: number;
+                "cls_breached"?: boolean;
+                "current_total_vusers": number;
+                "current_tps": number;
+                "dead_letter_rate_breached"?: boolean;
+                "end_to_end_latency_breached"?: boolean;
+                "error_breached"?: boolean;
+                "error_count_breached"?: boolean;
+                "inp_breached"?: boolean;
+                "last_scale_at"?: (string) | null;
+                "last_scale_direction"?: string;
+                "last_scale_reason"?: string;
+                "latency_breached"?: boolean;
+                "lcp_breached"?: boolean;
+                "max_error_count"?: (number) | null;
+                "max_vusers"?: (number) | null;
+                "min_vusers"?: (number) | null;
+                "mode": string;
+                "partition_skew_breached"?: boolean;
+                "redelivery_rate_breached"?: boolean;
+                "server_processing_breached"?: boolean;
+                "stop_reason"?: string;
+                "stop_triggered"?: boolean;
+                "suggested_total_vusers"?: number;
+                "target_average_tps"?: (number) | null;
+                "throttled_requests_breached"?: boolean;
+                "transfer_breached"?: boolean;
+              }) | null;
+              "groups"?: Record<string, ({
+                "avg_response_ms": number;
+                "errors": number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "percentile_quality"?: string;
+                "target_tps"?: number;
+                "throughput_gap_pct"?: number;
+                "throughput_target_missed"?: boolean;
+                "tps": number;
+                "transactions": number;
+                "vusers": number;
+              }) | null>;
+              "latency"?: ({
+                "targets": Array<Record<string, unknown>>;
+              }) | null;
+              "load_levels"?: Array<{
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
+              "messaging"?: Record<string, ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<Record<string, unknown>>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
+              "native_evidence"?: ({
+                "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                "incomplete"?: boolean;
+                "publication"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "sequence": number;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
+                "version": number;
+                "window_seconds": number;
+              }) | null;
+              "network_profiles"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
+              "observation_state"?: string;
+              "observation_valid_until"?: (string) | null;
+              "p50_ms": number;
+              "p90_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
+              "properties"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
+              "resources"?: ({
+                "container_cpu_limit_cores"?: number;
+                "container_cpu_periods_delta"?: number;
+                "container_cpu_throttled_periods_delta"?: number;
+                "container_cpu_throttled_seconds_rate"?: number;
+                "container_cpu_usage_pct"?: number;
+                "container_memory_fail_count_delta"?: number;
+                "container_memory_limit_mb"?: number;
+                "container_memory_usage_pct"?: number;
+                "container_memory_working_set_mb"?: number;
+                "container_oom_kill_count_delta"?: number;
+                "cpu_free_pct": number;
+                "cpu_iowait_pct"?: number;
+                "cpu_process_pct": number;
+                "cpu_process_pct_max"?: number;
+                "cpu_steal_pct"?: number;
+                "cpu_system_pct"?: number;
+                "cpu_user_pct"?: number;
+                "disk_in_progress"?: number;
+                "disk_io_time_pct"?: number;
+                "disk_read_kbps": number;
+                "disk_weighted_io_time_pct"?: number;
+                "disk_write_kbps": number;
+                "ephemeral_port_utilization_pct"?: number;
+                "external_metrics"?: Record<string, number>;
+                "gc_count_delta"?: number;
+                "gc_pause_ms"?: number;
+                "goroutine_count"?: number;
+                "heap_alloc_mb"?: number;
+                "heap_in_use_mb"?: number;
+                "load1"?: number;
+                "load15"?: number;
+                "load5"?: number;
+                "mem_free_mb": number;
+                "mem_process_mb": number;
+                "net_drop_in_per_sec"?: number;
+                "net_drop_out_per_sec"?: number;
+                "net_error_in_per_sec"?: number;
+                "net_error_out_per_sec"?: number;
+                "net_recv_kbps": number;
+                "net_sent_kbps": number;
+                "open_fd_count"?: number;
+                "tcp_established"?: number;
+                "tcp_retransmits_per_sec"?: number;
+                "tcp_time_wait"?: number;
+                "thread_count"?: number;
+              }) | null;
+              "soap_operations"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
+              "statistical_findings"?: Array<{
+                "advisory": boolean;
+                "baseline_end": string;
+                "baseline_start": string;
+                "timestamp": string;
+              }>;
+              "target_tps"?: number;
+              "telemetry"?: ({
+                "browser_render_lag_ms"?: number;
+                "collected_at"?: string;
+                "controller_fanout_lag_ms"?: number;
+                "controller_received_at"?: string;
+                "dropped_results"?: number;
+                "dropped_results_available"?: boolean;
+                "dropped_subscriber_batches"?: number;
+                "generator_processing_lag_ms"?: number;
+                "generator_published_at"?: string;
+                "history_points"?: number;
+                "missing_metric_windows"?: number;
+                "published_at"?: string;
+                "sample_age_ms"?: number;
+                "shedded_arrivals"?: number;
+                "transport_lag_ms"?: number;
+                "websocket_clients"?: number;
+                "websocket_dropped_events"?: number;
+                "websocket_dropped_messages"?: number;
+              }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
+              "telemetry_status"?: ({
+                "breach_active"?: boolean;
+                "breach_duration_sec"?: number;
+                "breach_started_at"?: (string) | null;
+                "conditions"?: Array<string>;
+                "current_signature"?: string;
+                "last_observed_at": string;
+                "last_transition_at"?: string;
+                "severity": string;
+                "status": string;
+                "summary"?: string;
+                "sustained_breach"?: boolean;
+              }) | null;
+              "throughput_gap_pct"?: number;
+              "throughput_target_missed"?: boolean;
+              "timestamp": string;
+              "total_errors": number;
+              "total_transactions": number;
+              "tps": number;
+              "transaction_response_time_sla"?: Array<{
+                "eligible_success_count": number;
+                "excluded_error_count": number;
+                "group": string;
+                "met_pct": number;
+                "missed_count": number;
+                "missed_pct": number;
+                "required_met_pct": number;
+                "status": string;
+                "threshold_ms": number;
+                "total_count": number;
+                "transaction": string;
+              }>;
+              "transactions"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
+              }) | null>;
+            }) | null>) | null;
+            "message"?: string;
+            "metrics"?: ({
+              "active_vusers": number;
+              "avg_connect_ms"?: number;
+              "avg_dns_ms"?: number;
+              "avg_response_ms": number;
+              "avg_tls_ms"?: number;
+              "avg_ttfb_ms"?: number;
+              "avg_wait_ms"?: number;
+              "browser"?: ({
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "samples": number;
+              }) | null;
+              "browser_by_device"?: Record<string, ({
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "browser_engine"?: string;
+                "device_platform"?: string;
+                "device_profile"?: string;
+                "device_tier"?: string;
+                "samples": number;
+              }) | null>;
+              "browser_documents"?: ({
+                "dropped_observations": number;
+                "incomplete": boolean;
+                "metrics": (Array<{
+                  "algorithm": string;
+                  "algorithm_sha256": string;
+                  "censored": number;
+                  "cohort"?: ({
+                    "browser_version": string;
+                    "cache_content_urls"?: (boolean) | null;
+                    "cache_enabled"?: (boolean) | null;
+                    "check_newer_versions"?: (boolean) | null;
+                    "cpu_throttle_rate": number;
+                    "device_scale_factor": number;
+                    "headless"?: (boolean) | null;
+                    "mobile"?: (boolean) | null;
+                    "network_bandwidth_kbps": number;
+                    "network_latency_ms": number;
+                    "new_user_policy": string;
+                    "new_user_policy_applied": boolean;
+                    "platform": string;
+                    "shaping_applied": boolean;
+                    "touch"?: (boolean) | null;
+                    "unavailable_reason"?: string;
+                    "version": number;
+                    "viewport_height": number;
+                    "viewport_width": number;
+                  }) | null;
+                  "device_profile": string;
+                  "distribution": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "eligible_final": number;
+                  "engine": string;
+                  "excluded_reasons"?: Record<string, number>;
+                  "frame_scope": string;
+                  "group"?: string;
+                  "lifecycle_phase": string;
+                  "metric": string;
+                  "provisional": number;
+                  "region"?: string;
+                  "unavailable_final": number;
+                  "unit": string;
+                  "unqualified_final": number;
+                }>) | null;
+                "version": number;
+              }) | null;
+              "by_region"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
+              "capacity_status"?: ({
+                "allocated_vusers": number;
+                "available_generators": number;
+                "by_protocol"?: Record<string, ({
+                  "allocated_vusers"?: number;
+                  "queued_vusers"?: number;
+                  "rejected_vusers"?: number;
+                }) | null>;
+                "by_region"?: Record<string, ({
+                  "allocated_vusers"?: number;
+                  "queued_vusers"?: number;
+                  "rejected_vusers"?: number;
+                }) | null>;
+                "queued_vusers": number;
+                "recommended_generators": number;
+                "rejected_vusers": number;
+                "saturated": boolean;
+              }) | null;
+              "completed_iterations": number;
+              "dependency_health"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
+              "dependency_map"?: ({
+                "edges": Array<{
+                  "dependency_type"?: string;
+                  "error_pct"?: number;
+                  "errors"?: number;
+                  "p95_ms"?: number;
+                  "source": string;
+                  "target": string;
+                  "transactions"?: number;
+                }>;
+                "nodes": Array<{
+                  "dependency_type"?: string;
+                  "error_pct"?: number;
+                  "errors"?: number;
+                  "id": string;
+                  "kind": string;
+                  "label": string;
+                  "p95_ms"?: number;
+                  "status"?: string;
+                  "transactions"?: number;
+                }>;
+              }) | null;
+              "dynatrace"?: ({
+                "capabilities"?: Record<string, {
+                  "message"?: string;
+                  "status": string;
+                }>;
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
+                "logs"?: Array<{
+                  "message"?: string;
+                  "status"?: string;
+                  "test_id"?: string;
+                  "timestamp"?: string;
+                  "trace_id"?: string;
+                }>;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "problems"?: Array<{
+                  "affected_entity"?: string;
+                  "display_id"?: string;
+                  "end_time"?: string;
+                  "id"?: string;
+                  "severity"?: string;
+                  "start_time"?: string;
+                  "status"?: string;
+                  "title"?: string;
+                }>;
+                "status": string;
+              }) | null;
+              "elk"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "observation"?: string;
+                "samples"?: Array<{
+                  "id"?: string;
+                  "level"?: string;
+                  "message"?: string;
+                  "test_id"?: string;
+                  "timestamp"?: string;
+                  "trace_id"?: string;
+                }>;
+                "status": string;
+              }) | null;
+              "error_breakdown"?: Record<string, number>;
+              "error_patterns"?: Array<{
+                "actions"?: Array<string>;
+                "affected_groups"?: Array<string>;
+                "count": number;
+                "error_pct"?: number;
+                "evidence_count"?: number;
+                "evidence_url"?: string;
+                "first_seen": string;
+                "latest_evidence_id"?: string;
+                "latest_seen": string;
+                "sample": string;
+                "signature": string;
+                "snapshot_url"?: string;
+                "status_code"?: number;
+              }>;
+              "error_pct": number;
+              "generator_resources"?: Record<string, ({
+                "active_vusers": number;
+                "error_pct"?: number;
+                "generator_id": string;
+                "impact_reasons"?: Array<string>;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "pod_capacity"?: ({
+                  "bottleneck"?: string;
+                  "confidence": string;
+                  "dedicated": boolean;
+                  "headroom_pct": number;
+                  "incarnation": string;
+                  "model_version": string;
+                  "observed_at_unix_ms": number;
+                  "remaining": Record<string, unknown>;
+                  "remaining_pct": number;
+                  "reserved": Record<string, unknown>;
+                  "reserved_pct": number;
+                  "schedulable": Record<string, unknown>;
+                  "state": string;
+                }) | null;
+                "region"?: string;
+                "resources"?: ({
+                  "container_cpu_limit_cores"?: number;
+                  "container_cpu_periods_delta"?: number;
+                  "container_cpu_throttled_periods_delta"?: number;
+                  "container_cpu_throttled_seconds_rate"?: number;
+                  "container_cpu_usage_pct"?: number;
+                  "container_memory_fail_count_delta"?: number;
+                  "container_memory_limit_mb"?: number;
+                  "container_memory_usage_pct"?: number;
+                  "container_memory_working_set_mb"?: number;
+                  "container_oom_kill_count_delta"?: number;
+                  "cpu_free_pct": number;
+                  "cpu_iowait_pct"?: number;
+                  "cpu_process_pct": number;
+                  "cpu_process_pct_max"?: number;
+                  "cpu_steal_pct"?: number;
+                  "cpu_system_pct"?: number;
+                  "cpu_user_pct"?: number;
+                  "disk_in_progress"?: number;
+                  "disk_io_time_pct"?: number;
+                  "disk_read_kbps": number;
+                  "disk_weighted_io_time_pct"?: number;
+                  "disk_write_kbps": number;
+                  "ephemeral_port_utilization_pct"?: number;
+                  "external_metrics"?: Record<string, number>;
+                  "gc_count_delta"?: number;
+                  "gc_pause_ms"?: number;
+                  "goroutine_count"?: number;
+                  "heap_alloc_mb"?: number;
+                  "heap_in_use_mb"?: number;
+                  "load1"?: number;
+                  "load15"?: number;
+                  "load5"?: number;
+                  "mem_free_mb": number;
+                  "mem_process_mb": number;
+                  "net_drop_in_per_sec"?: number;
+                  "net_drop_out_per_sec"?: number;
+                  "net_error_in_per_sec"?: number;
+                  "net_error_out_per_sec"?: number;
+                  "net_recv_kbps": number;
+                  "net_sent_kbps": number;
+                  "open_fd_count"?: number;
+                  "tcp_established"?: number;
+                  "tcp_retransmits_per_sec"?: number;
+                  "tcp_time_wait"?: number;
+                  "thread_count"?: number;
+                }) | null;
+                "saturation_state"?: string;
+                "target": string;
+                "timestamp": string;
+                "tps"?: number;
+              }) | null>;
+              "goal_status"?: ({
+                "breach_active"?: boolean;
+                "breach_duration_sec"?: number;
+                "cls_breached"?: boolean;
+                "current_total_vusers": number;
+                "current_tps": number;
+                "dead_letter_rate_breached"?: boolean;
+                "end_to_end_latency_breached"?: boolean;
+                "error_breached"?: boolean;
+                "error_count_breached"?: boolean;
+                "inp_breached"?: boolean;
+                "last_scale_at"?: (string) | null;
+                "last_scale_direction"?: string;
+                "last_scale_reason"?: string;
+                "latency_breached"?: boolean;
+                "lcp_breached"?: boolean;
+                "max_error_count"?: (number) | null;
+                "max_vusers"?: (number) | null;
+                "min_vusers"?: (number) | null;
+                "mode": string;
+                "partition_skew_breached"?: boolean;
+                "redelivery_rate_breached"?: boolean;
+                "server_processing_breached"?: boolean;
+                "stop_reason"?: string;
+                "stop_triggered"?: boolean;
+                "suggested_total_vusers"?: number;
+                "target_average_tps"?: (number) | null;
+                "throttled_requests_breached"?: boolean;
+                "transfer_breached"?: boolean;
+              }) | null;
+              "groups"?: Record<string, ({
+                "avg_response_ms": number;
+                "errors": number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "percentile_quality"?: string;
+                "target_tps"?: number;
+                "throughput_gap_pct"?: number;
+                "throughput_target_missed"?: boolean;
+                "tps": number;
+                "transactions": number;
+                "vusers": number;
+              }) | null>;
+              "latency"?: ({
+                "targets": Array<{
+                  "connect_ms"?: number;
+                  "dns_ms"?: number;
+                  "endpoint": string;
+                  "error"?: string;
+                  "hops"?: number;
+                  "http_status"?: number;
+                  "ip"?: string;
+                  "jitter_ms"?: number;
+                  "last_success": boolean;
+                  "latency_ms": number;
+                  "name": string;
+                  "probe_method"?: string;
+                  "probe_total_ms"?: number;
+                  "route_status"?: string;
+                  "sample_count"?: number;
+                  "success_rate_pct"?: number;
+                  "timestamp": string;
+                  "tls_ms"?: number;
+                  "ttfb_ms"?: number;
+                }>;
+              }) | null;
+              "load_levels"?: Array<{
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
+              "messaging"?: Record<string, ({
+                "dimensions": Array<Record<string, unknown>>;
+                "incomplete"?: boolean;
+              }) | null>;
+              "messaging_progress"?: ({
+                "captured_at": string;
+                "dropped_rows"?: number;
+                "incomplete"?: boolean;
+                "lifecycle"?: string;
+                "rows": Array<{
+                  "acquired": number;
+                  "capture_revision": string;
+                  "captured_at": string;
+                  "checkpoint": Record<string, unknown>;
+                  "checkpoint_position": Record<string, unknown>;
+                  "delivered": number;
+                  "delivered_position": Record<string, unknown>;
+                  "expected_partitions": number;
+                  "generation": string;
+                  "group"?: string;
+                  "incomplete"?: boolean;
+                  "inventory_complete": boolean;
+                  "lost": number;
+                  "mode": string;
+                  "origin"?: string;
+                  "ownership": string;
+                  "ownership_verified_age_ms"?: (number) | null;
+                  "ownership_verified_at": string;
+                  "partition": string;
+                  "protocol": string;
+                  "redelivered": number;
+                  "rejected": number;
+                  "revision": string;
+                  "session_id": string;
+                  "source": string;
+                  "source_id": string;
+                  "subscription": string;
+                  "tail_position": Record<string, unknown>;
+                  "updated_at": string;
+                }>;
+                "unavailable_reason"?: string;
+                "version": number;
+              }) | null;
+              "native_evidence"?: ({
+                "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                "incomplete"?: boolean;
+                "publication"?: ({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "sequence": number;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null;
+                "version": number;
+                "window_seconds": number;
+              }) | null;
+              "network_profiles"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
+              "observation_state"?: string;
+              "observation_valid_until"?: (string) | null;
+              "p50_ms": number;
+              "p90_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
+              "properties"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
+              "resources"?: ({
+                "container_cpu_limit_cores"?: number;
+                "container_cpu_periods_delta"?: number;
+                "container_cpu_throttled_periods_delta"?: number;
+                "container_cpu_throttled_seconds_rate"?: number;
+                "container_cpu_usage_pct"?: number;
+                "container_memory_fail_count_delta"?: number;
+                "container_memory_limit_mb"?: number;
+                "container_memory_usage_pct"?: number;
+                "container_memory_working_set_mb"?: number;
+                "container_oom_kill_count_delta"?: number;
+                "cpu_free_pct": number;
+                "cpu_iowait_pct"?: number;
+                "cpu_process_pct": number;
+                "cpu_process_pct_max"?: number;
+                "cpu_steal_pct"?: number;
+                "cpu_system_pct"?: number;
+                "cpu_user_pct"?: number;
+                "disk_in_progress"?: number;
+                "disk_io_time_pct"?: number;
+                "disk_read_kbps": number;
+                "disk_weighted_io_time_pct"?: number;
+                "disk_write_kbps": number;
+                "ephemeral_port_utilization_pct"?: number;
+                "external_metrics"?: Record<string, number>;
+                "gc_count_delta"?: number;
+                "gc_pause_ms"?: number;
+                "goroutine_count"?: number;
+                "heap_alloc_mb"?: number;
+                "heap_in_use_mb"?: number;
+                "load1"?: number;
+                "load15"?: number;
+                "load5"?: number;
+                "mem_free_mb": number;
+                "mem_process_mb": number;
+                "net_drop_in_per_sec"?: number;
+                "net_drop_out_per_sec"?: number;
+                "net_error_in_per_sec"?: number;
+                "net_error_out_per_sec"?: number;
+                "net_recv_kbps": number;
+                "net_sent_kbps": number;
+                "open_fd_count"?: number;
+                "tcp_established"?: number;
+                "tcp_retransmits_per_sec"?: number;
+                "tcp_time_wait"?: number;
+                "thread_count"?: number;
+              }) | null;
+              "soap_operations"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
+              "statistical_findings"?: Array<{
+                "advisory": boolean;
+                "baseline_buckets": number;
+                "baseline_end": string;
+                "baseline_mean": number;
+                "baseline_start": string;
+                "baseline_stddev": number;
+                "current": number;
+                "exceeded": boolean;
+                "metric_name": string;
+                "threshold": number;
+                "timestamp": string;
+                "z_score": number;
+              }>;
+              "target_tps"?: number;
+              "telemetry"?: ({
+                "browser_render_lag_ms"?: number;
+                "collected_at"?: string;
+                "controller_fanout_lag_ms"?: number;
+                "controller_received_at"?: string;
+                "dropped_results"?: number;
+                "dropped_results_available"?: boolean;
+                "dropped_subscriber_batches"?: number;
+                "generator_processing_lag_ms"?: number;
+                "generator_published_at"?: string;
+                "history_points"?: number;
+                "missing_metric_windows"?: number;
+                "published_at"?: string;
+                "sample_age_ms"?: number;
+                "shedded_arrivals"?: number;
+                "transport_lag_ms"?: number;
+                "websocket_clients"?: number;
+                "websocket_dropped_events"?: number;
+                "websocket_dropped_messages"?: number;
+              }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
+              "telemetry_status"?: ({
+                "breach_active"?: boolean;
+                "breach_duration_sec"?: number;
+                "breach_started_at"?: (string) | null;
+                "conditions"?: Array<string>;
+                "current_signature"?: string;
+                "last_observed_at": string;
+                "last_transition_at"?: string;
+                "severity": string;
+                "status": string;
+                "summary"?: string;
+                "sustained_breach"?: boolean;
+              }) | null;
+              "throughput_gap_pct"?: number;
+              "throughput_target_missed"?: boolean;
+              "timestamp": string;
+              "total_errors": number;
+              "total_transactions": number;
+              "tps": number;
+              "transaction_response_time_sla"?: Array<{
+                "eligible_success_count": number;
+                "excluded_error_count": number;
+                "group": string;
+                "met_pct": number;
+                "missed_count": number;
+                "missed_pct": number;
+                "required_met_pct": number;
+                "status": string;
+                "threshold_ms": number;
+                "total_count": number;
+                "transaction": string;
+              }>;
+              "transactions"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "exemplars"?: Array<Record<string, unknown>>;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "consumer_lag_samples"?: number;
+                  "consumer_offset_lag_samples"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "diagnostic_findings"?: Array<Record<string, unknown>>;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "first_event_samples"?: number;
+                  "grpc"?: ({
+                    "call_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_budget_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "deadline_observed"?: number;
+                    "decode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "encode_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "first_message_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "method"?: string;
+                    "mixed_methods"?: boolean;
+                    "mode"?: string;
+                    "near_deadline"?: number;
+                    "receive_limit_reached": number;
+                    "request_bytes": number;
+                    "response_bytes": number;
+                    "samples": number;
+                    "status_counts": Array<number>;
+                    "unavailable_status": number;
+                  }) | null;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "messaging"?: (Record<string, unknown>) | null;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                  "websocket"?: ({
+                    "abnormal_closes": number;
+                    "binary_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "bytes_received": number;
+                    "bytes_sent": number;
+                    "cancellations": number;
+                    "handshake_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "max_pending_writes": number;
+                    "messages_received": number;
+                    "messages_sent": number;
+                    "normal_closes": number;
+                    "ping_rtt_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnect_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "reconnects": number;
+                    "samples": number;
+                    "send_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "text_receive_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "timeouts": number;
+                    "write_wait_ms": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                  }) | null;
+                }) | null;
+                "tps": number;
+              }) | null>;
+            }) | null;
+            "status": string;
+            "test_id": string;
+          };
         };
       };
       "400": {
@@ -55238,7 +59550,79 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "category_id"?: string;
+            "created_at": string;
+            "domain_id"?: string;
+            "id": string;
+            "name": string;
+            "settings"?: {
+              "authoring"?: ({
+                "require_scenario_save_if_match"?: boolean;
+                "require_script_save_if_match"?: boolean;
+              }) | null;
+              "features"?: {
+                "control_parallel"?: boolean;
+                "media_stream"?: boolean;
+                "native_elastic_capacity"?: boolean;
+                "privileged_monitors"?: boolean;
+                "successful_message_detail"?: boolean;
+              };
+              "github"?: {
+                "actions"?: {
+                  "allowed_environments"?: Array<string>;
+                  "allowed_protocols"?: Array<string>;
+                  "allowed_refs"?: Array<string>;
+                  "allowed_repositories"?: Array<string>;
+                  "allowed_repository_ids"?: Array<string>;
+                  "allowed_target_hosts"?: Array<string>;
+                  "allowed_workflow_refs"?: Array<string>;
+                  "audience"?: string;
+                  "checks_enabled"?: boolean;
+                  "enabled"?: boolean;
+                  "issuer"?: string;
+                  "max_duration_minutes"?: number;
+                  "max_vusers"?: number;
+                  "required_runner_environment"?: string;
+                  "revision"?: number;
+                  "server_url"?: string;
+                  "updated_at"?: string;
+                  "updated_by"?: string;
+                  "validity_gate"?: string;
+                };
+                "allow_direct_commit"?: boolean;
+                "allow_import"?: boolean;
+                "allow_push"?: boolean;
+                "allowed_branches"?: Array<string>;
+                "allowed_repos"?: Array<string>;
+                "app_installation_id"?: number;
+                "auto_sync_enabled"?: boolean;
+                "automation_identity"?: string;
+                "bulk_sync_enabled"?: boolean;
+                "checks_enabled"?: boolean;
+                "default_branch"?: string;
+                "default_repo"?: string;
+                "default_sync_directory"?: string;
+                "enabled"?: boolean;
+                "path_template"?: string;
+                "require_pull_request"?: boolean;
+              };
+              "max_concurrent_tests"?: number;
+              "max_test_duration_minutes"?: number;
+              "max_vusers"?: number;
+              "max_vusers_per_test"?: number;
+              "pool_quotas"?: Record<string, {
+                "max_concurrent_tests"?: number;
+                "max_vusers"?: number;
+              }>;
+              "redaction_rules"?: Array<{
+                "name"?: string;
+                "pattern": string;
+                "replacement"?: string;
+              }>;
+            };
+            "updated_at": string;
+          }) | null;
         };
       };
       "401": {
@@ -56469,6 +60853,7 @@ export interface operations {
                   "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "browser_document_capture_requested"?: boolean;
                 "continue_on_error"?: ({
                   "conflict"?: boolean;
                   "effective": boolean;
@@ -56543,6 +60928,57 @@ export interface operations {
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
+                "browser_documents"?: ({
+                  "dropped_observations": number;
+                  "incomplete": boolean;
+                  "metrics": (Array<{
+                    "algorithm": string;
+                    "algorithm_sha256": string;
+                    "censored": number;
+                    "cohort"?: ({
+                      "browser_version": string;
+                      "cache_content_urls"?: (boolean) | null;
+                      "cache_enabled"?: (boolean) | null;
+                      "check_newer_versions"?: (boolean) | null;
+                      "cpu_throttle_rate": number;
+                      "device_scale_factor": number;
+                      "headless"?: (boolean) | null;
+                      "mobile"?: (boolean) | null;
+                      "network_bandwidth_kbps": number;
+                      "network_latency_ms": number;
+                      "new_user_policy": string;
+                      "new_user_policy_applied": boolean;
+                      "platform": string;
+                      "shaping_applied": boolean;
+                      "touch"?: (boolean) | null;
+                      "unavailable_reason"?: string;
+                      "version": number;
+                      "viewport_height": number;
+                      "viewport_width": number;
+                    }) | null;
+                    "device_profile": string;
+                    "distribution": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "eligible_final": number;
+                    "engine": string;
+                    "excluded_reasons"?: Record<string, number>;
+                    "frame_scope": string;
+                    "group"?: string;
+                    "lifecycle_phase": string;
+                    "metric": string;
+                    "provisional": number;
+                    "region"?: string;
+                    "unavailable_final": number;
+                    "unit": string;
+                    "unqualified_final": number;
+                  }>) | null;
+                  "version": number;
+                }) | null;
                 "by_region"?: Record<string, (Record<string, unknown>) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
@@ -56717,6 +61153,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -56778,6 +61236,57 @@ export interface operations {
                   "device_tier"?: string;
                   "samples": number;
                 }) | null>;
+                "browser_documents"?: ({
+                  "dropped_observations": number;
+                  "incomplete": boolean;
+                  "metrics": (Array<{
+                    "algorithm": string;
+                    "algorithm_sha256": string;
+                    "censored": number;
+                    "cohort"?: ({
+                      "browser_version": string;
+                      "cache_content_urls"?: (boolean) | null;
+                      "cache_enabled"?: (boolean) | null;
+                      "check_newer_versions"?: (boolean) | null;
+                      "cpu_throttle_rate": number;
+                      "device_scale_factor": number;
+                      "headless"?: (boolean) | null;
+                      "mobile"?: (boolean) | null;
+                      "network_bandwidth_kbps": number;
+                      "network_latency_ms": number;
+                      "new_user_policy": string;
+                      "new_user_policy_applied": boolean;
+                      "platform": string;
+                      "shaping_applied": boolean;
+                      "touch"?: (boolean) | null;
+                      "unavailable_reason"?: string;
+                      "version": number;
+                      "viewport_height": number;
+                      "viewport_width": number;
+                    }) | null;
+                    "device_profile": string;
+                    "distribution": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "eligible_final": number;
+                    "engine": string;
+                    "excluded_reasons"?: Record<string, number>;
+                    "frame_scope": string;
+                    "group"?: string;
+                    "lifecycle_phase": string;
+                    "metric": string;
+                    "provisional": number;
+                    "region"?: string;
+                    "unavailable_final": number;
+                    "unit": string;
+                    "unqualified_final": number;
+                  }>) | null;
+                  "version": number;
+                }) | null;
                 "by_region"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -57125,6 +61634,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -57214,6 +61745,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -57876,6 +62408,172 @@ export interface operations {
       };
     };
   };
+  "handleGetRunArchiveBrowserResources": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "action_name"?: string;
+        "browser_engine"?: string;
+        "cursor"?: string;
+        "device_profile"?: string;
+        "document_id"?: string;
+        "failure_kind"?: "http" | "transport" | "timeout" | "canceled" | "body_limit";
+        "group"?: string;
+        "initiating_action_id"?: string;
+        "limit"?: number;
+        "observation_action_id"?: string;
+        "origin"?: string;
+        "project_id"?: string;
+        "redirect_chain_id"?: string;
+        "region"?: string;
+        "request_id"?: string;
+        "resource_type"?: string;
+        "sort_by"?: "capture_order" | "duration_ms" | "native_start_ms" | "response_encoded_body";
+        "sort_dir"?: "asc" | "desc";
+        "source_generation"?: string;
+        "state"?: "finished" | "failed" | "censored";
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "capture_coverage": {
+              "availability": string;
+              "reason": string;
+            };
+            "items": Array<{
+              "action_name"?: string;
+              "browser_engine"?: string;
+              "browser_evidence"?: ({
+                "bytes": {
+                  "request_body"?: (number) | null;
+                  "request_headers"?: (number) | null;
+                  "response_encoded_body"?: (number) | null;
+                  "response_headers"?: (number) | null;
+                  "unavailable_reason"?: string;
+                };
+                "cache"?: (boolean) | null;
+                "cache_unavailable_reason"?: string;
+                "document_id"?: string;
+                "document_offset_ms"?: (number) | null;
+                "epoch_start_ms"?: (number) | null;
+                "frame_id"?: string;
+                "identity_unavailable_reason"?: string;
+                "initiating_action_id"?: string;
+                "initiator_unavailable_reason"?: string;
+                "navigation_id"?: string;
+                "observation_action_id"?: string;
+                "observed_at": string;
+                "origin"?: string;
+                "phases": (Array<{
+                  "end_ms"?: (number) | null;
+                  "name": string;
+                  "start_ms"?: (number) | null;
+                  "unavailable_reason"?: string;
+                }>) | null;
+                "redirect_chain_id"?: string;
+                "redirect_from_request_id"?: string;
+                "redirect_hop": number;
+                "request_id": string;
+                "service_worker"?: (boolean) | null;
+                "service_worker_unavailable_reason"?: string;
+                "source_generation": string;
+                "state": string;
+                "timing_source": string;
+                "version": number;
+              }) | null;
+              "bytes_received"?: (number) | null;
+              "device_platform"?: string;
+              "device_profile"?: string;
+              "duration_ms"?: (number) | null;
+              "evidence_state": string;
+              "failure_kind"?: string;
+              "group"?: string;
+              "locator": {
+                "branch": string;
+                "resource_ordinal": number;
+                "transaction_ordinal": number;
+              };
+              "method"?: string;
+              "page_url"?: string;
+              "region"?: string;
+              "resource_type"?: string;
+              "status_code"?: (number) | null;
+              "timestamp"?: (string) | null;
+              "timestamp_precision": string;
+              "url"?: string;
+            }>;
+            "next_cursor"?: string;
+            "population": {
+              "availability": string;
+              "matched_retained_observations": (number) | null;
+              "retained_entry_observations": (number) | null;
+              "transaction_records": number;
+            };
+            "project_id": string;
+            "source_format": string;
+            "source_integrity": string;
+            "source_revision": string;
+            "source_timestamp_precision": string;
+            "test_id": string;
+            "version": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "408": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetRunArchiveComparison": {
     parameters: {
       "path": {
@@ -58018,6 +62716,13 @@ export interface operations {
               "sha256"?: string;
               "size_bytes"?: number;
             }>;
+            "browser_document_capture_requested"?: boolean;
+            "browser_document_coverage_incomplete"?: boolean;
+            "browser_document_record_count"?: number;
+            "browser_documents_file"?: string;
+            "browser_documents_parquet_file"?: string;
+            "browser_documents_parquet_sha256"?: string;
+            "browser_documents_sha256"?: string;
             "business_key_digests_unavailable"?: boolean;
             "clock_observation_count"?: number;
             "clock_observations_file"?: string;
@@ -58415,6 +63120,7 @@ export interface operations {
                   "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "browser_document_capture_requested"?: boolean;
                 "continue_on_error"?: ({
                   "conflict"?: boolean;
                   "effective": boolean;
@@ -58485,6 +63191,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -58703,6 +63410,24 @@ export interface operations {
               "started_by_subject"?: string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "telemetry_policy"?: ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
               "termination_mode"?: string;
               "total_vusers"?: number;
               "traffic_profile"?: ({
@@ -59239,6 +63964,7 @@ export interface operations {
                   "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "browser_document_capture_requested"?: boolean;
                 "continue_on_error"?: ({
                   "conflict"?: boolean;
                   "effective": boolean;
@@ -59309,6 +64035,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -59527,6 +64254,24 @@ export interface operations {
               "started_by_subject"?: string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "telemetry_policy"?: ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
               "termination_mode"?: string;
               "total_vusers"?: number;
               "traffic_profile"?: ({
@@ -60220,9 +64965,150 @@ export interface operations {
               "device_platform"?: string;
               "samples": number;
             }) | null>;
+            "browser_document_evidence"?: Array<{
+              "algorithm": string;
+              "algorithm_sha256": string;
+              "available": boolean;
+              "boundary": string;
+              "captured_at": string;
+              "cohort"?: ({
+                "browser_version": string;
+                "cache_content_urls"?: (boolean) | null;
+                "cache_enabled"?: (boolean) | null;
+                "check_newer_versions"?: (boolean) | null;
+                "cpu_throttle_rate": number;
+                "device_scale_factor": number;
+                "headless"?: (boolean) | null;
+                "mobile"?: (boolean) | null;
+                "network_bandwidth_kbps": number;
+                "network_latency_ms": number;
+                "new_user_policy": string;
+                "new_user_policy_applied": boolean;
+                "platform": string;
+                "shaping_applied": boolean;
+                "touch"?: (boolean) | null;
+                "unavailable_reason"?: string;
+                "version": number;
+                "viewport_height": number;
+                "viewport_width": number;
+              }) | null;
+              "device_profile": string;
+              "document_id": string;
+              "engine": string;
+              "frame_id": string;
+              "frame_scope": string;
+              "group"?: string;
+              "interaction_count"?: number;
+              "lifecycle_id": string;
+              "lifecycle_phase": string;
+              "measurement_id": string;
+              "metric": string;
+              "navigation_id": string;
+              "qualified": boolean;
+              "region"?: string;
+              "revision": number;
+              "source_generation": string;
+              "state": string;
+              "unavailable_reason"?: string;
+              "unit": string;
+              "value"?: (number) | null;
+              "version": number;
+              "window_end": string;
+              "window_start": string;
+            }>;
+            "browser_document_evidence_truncated"?: boolean;
+            "browser_documents"?: ({
+              "dropped_observations": number;
+              "incomplete": boolean;
+              "metrics": (Array<{
+                "algorithm": string;
+                "algorithm_sha256": string;
+                "censored": number;
+                "cohort"?: ({
+                  "browser_version": string;
+                  "cache_content_urls"?: (boolean) | null;
+                  "cache_enabled"?: (boolean) | null;
+                  "check_newer_versions"?: (boolean) | null;
+                  "cpu_throttle_rate": number;
+                  "device_scale_factor": number;
+                  "headless"?: (boolean) | null;
+                  "mobile"?: (boolean) | null;
+                  "network_bandwidth_kbps": number;
+                  "network_latency_ms": number;
+                  "new_user_policy": string;
+                  "new_user_policy_applied": boolean;
+                  "platform": string;
+                  "shaping_applied": boolean;
+                  "touch"?: (boolean) | null;
+                  "unavailable_reason"?: string;
+                  "version": number;
+                  "viewport_height": number;
+                  "viewport_width": number;
+                }) | null;
+                "device_profile": string;
+                "distribution": {
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                };
+                "eligible_final": number;
+                "engine": string;
+                "excluded_reasons"?: Record<string, number>;
+                "frame_scope": string;
+                "group"?: string;
+                "lifecycle_phase": string;
+                "metric": string;
+                "provisional": number;
+                "region"?: string;
+                "unavailable_final": number;
+                "unit": string;
+                "unqualified_final": number;
+              }>) | null;
+              "version": number;
+            }) | null;
             "browser_resources"?: Array<{
               "action_name"?: string;
               "browser_engine"?: string;
+              "browser_evidence"?: ({
+                "bytes": {
+                  "request_body"?: (number) | null;
+                  "request_headers"?: (number) | null;
+                  "response_encoded_body"?: (number) | null;
+                  "response_headers"?: (number) | null;
+                  "unavailable_reason"?: string;
+                };
+                "cache"?: (boolean) | null;
+                "cache_unavailable_reason"?: string;
+                "document_id"?: string;
+                "document_offset_ms"?: (number) | null;
+                "epoch_start_ms"?: (number) | null;
+                "frame_id"?: string;
+                "identity_unavailable_reason"?: string;
+                "initiating_action_id"?: string;
+                "initiator_unavailable_reason"?: string;
+                "navigation_id"?: string;
+                "observation_action_id"?: string;
+                "observed_at": string;
+                "origin"?: string;
+                "phases": (Array<{
+                  "end_ms"?: (number) | null;
+                  "name": string;
+                  "start_ms"?: (number) | null;
+                  "unavailable_reason"?: string;
+                }>) | null;
+                "redirect_chain_id"?: string;
+                "redirect_from_request_id"?: string;
+                "redirect_hop": number;
+                "request_id": string;
+                "service_worker"?: (boolean) | null;
+                "service_worker_unavailable_reason"?: string;
+                "source_generation": string;
+                "state": string;
+                "timing_source": string;
+                "version": number;
+              }) | null;
               "bytes_received"?: number;
               "device_platform"?: string;
               "device_profile"?: string;
@@ -61707,6 +66593,13 @@ export interface operations {
                 "sha256"?: string;
                 "size_bytes"?: number;
               }>;
+              "browser_document_capture_requested"?: boolean;
+              "browser_document_coverage_incomplete"?: boolean;
+              "browser_document_record_count"?: number;
+              "browser_documents_file"?: string;
+              "browser_documents_parquet_file"?: string;
+              "browser_documents_parquet_sha256"?: string;
+              "browser_documents_sha256"?: string;
               "business_key_digests_unavailable"?: boolean;
               "clock_observation_count"?: number;
               "clock_observations_file"?: string;
@@ -61937,6 +66830,7 @@ export interface operations {
                 "groups"?: Array<{
                   "active_stage"?: (Record<string, unknown>) | null;
                   "assignment"?: (Record<string, unknown>) | null;
+                  "browser_document_capture_requested"?: boolean;
                   "continue_on_error"?: (Record<string, unknown>) | null;
                   "effective_end_at"?: (string) | null;
                   "ended_at"?: (string) | null;
@@ -62003,6 +66897,24 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "telemetry_policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
                 "termination_mode"?: string;
                 "total_vusers"?: number;
                 "traffic_profile"?: ({
@@ -62312,6 +67224,7 @@ export interface operations {
                 "groups"?: Array<{
                   "active_stage"?: (Record<string, unknown>) | null;
                   "assignment"?: (Record<string, unknown>) | null;
+                  "browser_document_capture_requested"?: boolean;
                   "continue_on_error"?: (Record<string, unknown>) | null;
                   "effective_end_at"?: (string) | null;
                   "ended_at"?: (string) | null;
@@ -62378,6 +67291,24 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "telemetry_policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
                 "termination_mode"?: string;
                 "total_vusers"?: number;
                 "traffic_profile"?: ({
@@ -63044,6 +67975,57 @@ export interface operations {
             }>;
             "summary_timeline"?: Array<{
               "active_vusers": number;
+              "browser_documents"?: ({
+                "dropped_observations": number;
+                "incomplete": boolean;
+                "metrics": (Array<{
+                  "algorithm": string;
+                  "algorithm_sha256": string;
+                  "censored": number;
+                  "cohort"?: ({
+                    "browser_version": string;
+                    "cache_content_urls"?: (boolean) | null;
+                    "cache_enabled"?: (boolean) | null;
+                    "check_newer_versions"?: (boolean) | null;
+                    "cpu_throttle_rate": number;
+                    "device_scale_factor": number;
+                    "headless"?: (boolean) | null;
+                    "mobile"?: (boolean) | null;
+                    "network_bandwidth_kbps": number;
+                    "network_latency_ms": number;
+                    "new_user_policy": string;
+                    "new_user_policy_applied": boolean;
+                    "platform": string;
+                    "shaping_applied": boolean;
+                    "touch"?: (boolean) | null;
+                    "unavailable_reason"?: string;
+                    "version": number;
+                    "viewport_height": number;
+                    "viewport_width": number;
+                  }) | null;
+                  "device_profile": string;
+                  "distribution": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "eligible_final": number;
+                  "engine": string;
+                  "excluded_reasons"?: Record<string, number>;
+                  "frame_scope": string;
+                  "group"?: string;
+                  "lifecycle_phase": string;
+                  "metric": string;
+                  "provisional": number;
+                  "region"?: string;
+                  "unavailable_final": number;
+                  "unit": string;
+                  "unqualified_final": number;
+                }>) | null;
+                "version": number;
+              }) | null;
               "error_pct": number;
               "p95_ms": number;
               "percentile_quality"?: string;
@@ -63055,6 +68037,28 @@ export interface operations {
               "total_transactions": number;
               "tps": number;
             }>;
+            "telemetry_policy"?: ({
+              "availability": string;
+              "policy"?: ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "reason"?: string;
+            }) | null;
             "transaction_response_time_sla_results"?: Array<{
               "eligible_success_count": number;
               "excluded_error_count": number;
@@ -63722,6 +68726,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -64119,6 +69124,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -64477,10 +69483,16 @@ export interface operations {
       "path": {
         "id": string;
       };
+      "query"?: {
+        "view"?: "authoring";
+      };
     };
     requestBody?: never;
     responses: {
       "200": {
+        headers: {
+          "ETag"?: string;
+        };
         content: {
           "application/json": ({
             "activity"?: ({
@@ -64553,6 +69565,215 @@ export interface operations {
               "score": number;
               "status": string;
             }) | null;
+            "authoring_projection"?: ({
+              "content_revision": string;
+              "folder_id": (string) | null;
+              "id": string;
+              "library_placement": {
+                "application_id": (string) | null;
+                "release_ids": Array<string>;
+              };
+              "project_id": string;
+              "projection_version": string;
+              "script": {
+                "actions": Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "config": {
+                  "base_url": string;
+                  "browser"?: Record<string, unknown>;
+                  "browser_emulation"?: (Record<string, unknown>) | null;
+                  "bruno"?: Record<string, unknown>;
+                  "database"?: Record<string, unknown>;
+                  "error_handling"?: Record<string, unknown>;
+                  "eventhubs"?: Record<string, unknown>;
+                  "grpc"?: Record<string, unknown>;
+                  "http"?: Record<string, unknown>;
+                  "java_http"?: Record<string, unknown>;
+                  "java_vuser"?: Record<string, unknown>;
+                  "jmeter"?: (Record<string, unknown>) | null;
+                  "jms"?: Record<string, unknown>;
+                  "kafka"?: Record<string, unknown>;
+                  "log"?: Record<string, unknown>;
+                  "network"?: Record<string, unknown>;
+                  "observability"?: Record<string, unknown>;
+                  "pacing"?: Record<string, unknown>;
+                  "results"?: Record<string, unknown>;
+                  "run_logic"?: Record<string, unknown>;
+                  "sampler_schedules"?: Array<Record<string, unknown>>;
+                  "sapgui"?: Record<string, unknown>;
+                  "soap"?: Record<string, unknown>;
+                  "think_time"?: Record<string, unknown>;
+                  "web_runtime"?: Record<string, unknown>;
+                  "websocket"?: Record<string, unknown>;
+                };
+                "data_sources"?: Array<{
+                  "columns"?: Array<string>;
+                  "content_type"?: string;
+                  "delimiter"?: string;
+                  "encoding"?: string;
+                  "file_name"?: string;
+                  "first_row_header": boolean;
+                  "inline_data"?: string;
+                  "name": string;
+                  "path"?: string;
+                  "staged_asset"?: string;
+                  "storage_ref"?: string;
+                  "strategy": string;
+                  "type": string;
+                }>;
+                "folder_id"?: (string) | null;
+                "generated_by"?: string;
+                "generated_from"?: string;
+                "goal_config"?: ({
+                  "max_avg_server_processing_ms"?: (number) | null;
+                  "max_avg_transfer_ms"?: (number) | null;
+                  "max_error_count"?: (number) | null;
+                  "max_error_pct"?: (number) | null;
+                  "max_vusers"?: (number) | null;
+                  "min_vusers"?: (number) | null;
+                  "p95_latency_ms"?: (number) | null;
+                  "sla_breach_window"?: string;
+                  "stop_on_max_errors"?: boolean;
+                  "stop_on_sla_breach"?: boolean;
+                  "target_average_tps"?: (number) | null;
+                  "transaction_rules"?: Array<Record<string, unknown>>;
+                }) | null;
+                "id": string;
+                "init"?: Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "metadata"?: ({
+                  "import"?: (Record<string, unknown>) | null;
+                  "runtime_policy"?: (Record<string, unknown>) | null;
+                }) | null;
+                "name": string;
+                "parameters"?: Array<{
+                  "auto_allocate"?: boolean;
+                  "block_size"?: number;
+                  "charset"?: string;
+                  "column"?: string;
+                  "data_source"?: string;
+                  "end"?: number;
+                  "format"?: string;
+                  "format_dialect"?: string;
+                  "length"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "name": string;
+                  "offset_seconds"?: number;
+                  "on_exhaustion"?: string;
+                  "pad_char"?: string;
+                  "pad_width"?: number;
+                  "random_algorithm"?: string;
+                  "same_line_as"?: string;
+                  "scope"?: string;
+                  "scope_id"?: string;
+                  "seed"?: (number) | null;
+                  "selection"?: string;
+                  "start"?: number;
+                  "start_row"?: number;
+                  "step"?: number;
+                  "timezone"?: string;
+                  "type": string;
+                  "update"?: string;
+                  "value_for_each_vuser"?: boolean;
+                  "values"?: Array<string>;
+                }>;
+                "project_id"?: string;
+                "protocol": string;
+                "ref_key"?: string;
+                "teardown"?: Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "version": string;
+              };
+            }) | null;
+            "content_revision"?: string;
             "created_at": string;
             "folder_id"?: (string) | null;
             "id": string;
@@ -64671,6 +69892,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -65269,7 +70491,708 @@ export interface operations {
               "version": string;
             }) | null;
             "version": string;
-          }) | null;
+          } | {
+            "content_revision": string;
+            "folder_id": (string) | null;
+            "id": string;
+            "library_placement": {
+              "application_id": (string) | null;
+              "release_ids": Array<string>;
+            };
+            "project_id": string;
+            "projection_version": "apexload.script_authoring.v1";
+            "script": {
+              "actions": Array<{
+                "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
+                "auth"?: ({
+                  "domain"?: string;
+                  "password"?: string;
+                  "token"?: string;
+                  "type"?: string;
+                  "username"?: string;
+                }) | null;
+                "body"?: string;
+                "body_encoding"?: string;
+                "body_file"?: string;
+                "capture"?: ({
+                  "full_page"?: boolean;
+                  "html"?: boolean;
+                  "screenshot"?: boolean;
+                }) | null;
+                "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
+                  "condition"?: (Record<string, unknown>) | null;
+                  "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
+                  "do_while"?: boolean;
+                  "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
+                  "for_each"?: (Record<string, unknown>) | null;
+                  "max_iterations"?: number;
+                  "steps"?: Array<Record<string, unknown>>;
+                }) | null;
+                "extractors"?: Array<Record<string, unknown>>;
+                "header_list"?: Array<Record<string, unknown>>;
+                "headers"?: Record<string, string>;
+                "http_version"?: "auto" | "1.1" | "2";
+                "max_redirects"?: (number) | null;
+                "metadata"?: Record<string, unknown>;
+                "method"?: string;
+                "name": string;
+                "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
+                "params"?: Record<string, unknown>;
+                "selector"?: string;
+                "soap"?: ({
+                  "action"?: string;
+                  "body_mode"?: string;
+                  "operation"?: string;
+                }) | null;
+                "sync"?: ({
+                  "stable_ms"?: number;
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+                "target": string;
+                "think_time"?: {
+                  "force"?: boolean;
+                  "ignore"?: boolean;
+                  "limit_ms"?: number;
+                  "max_ms"?: number;
+                  "max_percent"?: number;
+                  "mean_ms": number;
+                  "min_ms"?: number;
+                  "min_percent"?: number;
+                  "multiplier"?: number;
+                  "std_ms"?: number;
+                  "type": string;
+                };
+                "think_time_after"?: boolean;
+                "timeout_ms"?: number;
+                "type": string;
+                "value"?: string;
+                "wait_for"?: ({
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+              }>;
+              "config": {
+                "base_url": string;
+                "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
+                  "cache_content_urls"?: (boolean) | null;
+                  "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
+                  "capture_screenshots"?: string;
+                  "check_newer_versions"?: (boolean) | null;
+                  "client_certificates"?: Array<Record<string, unknown>>;
+                  "client_metrics"?: (boolean) | null;
+                  "device_profile"?: string;
+                  "download_resources"?: string;
+                  "engine"?: string;
+                  "experience_canary"?: boolean;
+                  "geolocation"?: Record<string, unknown>;
+                  "har_artifact_dir"?: string;
+                  "har_capture"?: string;
+                  "har_capture_policy"?: string;
+                  "har_sla_threshold_ms"?: number;
+                  "headless"?: (boolean) | null;
+                  "http_credentials"?: Record<string, unknown>;
+                  "locale"?: string;
+                  "new_user_per_iteration"?: (boolean) | null;
+                  "orientation"?: string;
+                  "proxy"?: Record<string, unknown>;
+                  "review_policy"?: Record<string, unknown>;
+                  "slow_mo_ms"?: number;
+                  "storage_state"?: string;
+                  "system_language"?: string;
+                  "timezone"?: string;
+                  "touch_mode"?: (boolean) | null;
+                  "traceparent"?: (boolean) | null;
+                  "user_agent"?: string;
+                  "viewport"?: Record<string, unknown>;
+                };
+                "browser_emulation"?: ({
+                  "browser_type"?: string;
+                  "browser_version"?: string;
+                  "cache"?: (Record<string, unknown>) | null;
+                  "custom_user_agent"?: string;
+                  "language"?: string;
+                  "mode"?: string;
+                  "platform"?: string;
+                }) | null;
+                "bruno"?: {
+                  "bundle_ref"?: string;
+                  "bundle_sha256"?: string;
+                  "compatibility_version"?: string;
+                  "default_environment"?: string;
+                  "default_global_environment"?: string;
+                  "dependency_snapshot_ref"?: string;
+                  "limits"?: Record<string, unknown>;
+                  "manifest_sha256"?: string;
+                  "persist_session_across_iterations"?: boolean;
+                  "runner_profile"?: string;
+                  "sandbox"?: string;
+                  "secret_bindings"?: Record<string, string>;
+                  "source_format"?: string;
+                  "source_revision"?: string;
+                };
+                "database"?: {
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                };
+                "error_handling"?: {
+                  "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
+                  "max_retries"?: number;
+                  "retry_backoff"?: string;
+                  "retry_delay_ms"?: number;
+                  "snapshot_on_error"?: boolean;
+                };
+                "eventhubs"?: {
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                };
+                "grpc"?: {
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
+                };
+                "http"?: {
+                  "accept_encoding"?: string;
+                  "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
+                  "auth"?: Record<string, unknown>;
+                  "cache_enabled"?: (boolean) | null;
+                  "cache_excluded_mime_types"?: Array<string>;
+                  "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
+                  "clear_cookies_per_iteration"?: (boolean) | null;
+                  "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
+                  "cookies_enabled"?: (boolean) | null;
+                  "default_header_list"?: Array<Record<string, unknown>>;
+                  "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
+                  "html_excluded_mime_types"?: Array<string>;
+                  "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
+                  "idle_timeout_ms"?: number;
+                  "ip_version"?: string;
+                  "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
+                  "max_conns_per_host"?: number;
+                  "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
+                  "max_redirects"?: (number) | null;
+                  "page_timeout_ms"?: number;
+                  "proxy"?: Record<string, unknown>;
+                  "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
+                  "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
+                  "tls"?: Record<string, unknown>;
+                  "tls_timeout_ms"?: number;
+                  "traceparent"?: (boolean) | null;
+                  "traceparent_sampled"?: (boolean) | null;
+                  "user_agent"?: string;
+                  "version"?: string;
+                };
+                "java_http"?: {
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                };
+                "java_vuser"?: {
+                  "action_timeout_ms"?: number;
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "classpath_assets"?: Array<Record<string, unknown>>;
+                  "dedicated_class_loader"?: (boolean) | null;
+                  "enabled"?: boolean;
+                  "harness_jar"?: string;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
+                  "runner_command"?: string;
+                  "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
+                  "use_xbootclasspath"?: (boolean) | null;
+                  "work_dir"?: string;
+                };
+                "jmeter"?: ({
+                  "configuration_id"?: string;
+                  "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
+                  "profile": string;
+                  "sample_timing"?: string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
+                "jms"?: {
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                };
+                "kafka"?: {
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
+                };
+                "log"?: {
+                  "error_buffer_bytes"?: number;
+                  "extended_options"?: Array<string>;
+                  "level"?: string;
+                  "max_response_bytes"?: number;
+                  "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
+                };
+                "network"?: {
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                };
+                "observability"?: {
+                  "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
+                };
+                "pacing"?: {
+                  "delay_ms"?: number;
+                  "interval_ms"?: number;
+                  "max_delay_ms"?: number;
+                  "max_interval_ms"?: number;
+                  "min_delay_ms"?: number;
+                  "min_interval_ms"?: number;
+                  "tps"?: number;
+                  "type": string;
+                };
+                "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
+                  "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
+                };
+                "run_logic"?: {
+                  "action_sequence"?: Array<string>;
+                  "auto_transactions"?: string;
+                  "block_scheduling"?: string;
+                  "global_iterations"?: number;
+                  "iterations"?: number;
+                  "max_in_flight"?: number;
+                  "max_transactions"?: number;
+                  "termination_mode"?: string;
+                  "workload_model"?: string;
+                };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
+                "sapgui"?: {
+                  "auto_logon"?: boolean;
+                  "client"?: string;
+                  "connection_string"?: string;
+                  "language"?: string;
+                  "password"?: string;
+                  "session_behavior"?: string;
+                  "sync_timeout_ms"?: number;
+                  "username"?: string;
+                };
+                "soap"?: {
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
+                };
+                "think_time"?: {
+                  "force"?: boolean;
+                  "ignore"?: boolean;
+                  "limit_ms"?: number;
+                  "max_ms"?: number;
+                  "max_percent"?: number;
+                  "mean_ms": number;
+                  "min_ms"?: number;
+                  "min_percent"?: number;
+                  "multiplier"?: number;
+                  "std_ms"?: number;
+                  "type": string;
+                };
+                "web_runtime"?: {
+                  "additional_attributes"?: Record<string, string>;
+                  "content_checks"?: Array<Record<string, unknown>>;
+                  "data_formatting"?: Record<string, unknown>;
+                  "download_filters"?: Record<string, unknown>;
+                  "network_profiles"?: Array<Record<string, unknown>>;
+                  "network_simulation"?: Record<string, unknown>;
+                  "source_ips"?: Array<string>;
+                  "streaming"?: Record<string, unknown>;
+                };
+                "websocket"?: {
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
+                };
+              };
+              "data_sources"?: Array<{
+                "columns"?: Array<string>;
+                "content_type"?: string;
+                "delimiter"?: string;
+                "encoding"?: string;
+                "file_name"?: string;
+                "first_row_header": boolean;
+                "inline_data"?: string;
+                "name": string;
+                "path"?: string;
+                "staged_asset"?: string;
+                "storage_ref"?: string;
+                "strategy": string;
+                "type": string;
+              }>;
+              "folder_id"?: (string) | null;
+              "generated_by"?: string;
+              "generated_from"?: string;
+              "goal_config"?: ({
+                "max_avg_server_processing_ms"?: (number) | null;
+                "max_avg_transfer_ms"?: (number) | null;
+                "max_error_count"?: (number) | null;
+                "max_error_pct"?: (number) | null;
+                "max_vusers"?: (number) | null;
+                "min_vusers"?: (number) | null;
+                "p95_latency_ms"?: (number) | null;
+                "sla_breach_window"?: string;
+                "stop_on_max_errors"?: boolean;
+                "stop_on_sla_breach"?: boolean;
+                "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "group"?: string;
+                  "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
+              }) | null;
+              "id": string;
+              "init"?: Array<{
+                "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
+                "auth"?: ({
+                  "domain"?: string;
+                  "password"?: string;
+                  "token"?: string;
+                  "type"?: string;
+                  "username"?: string;
+                }) | null;
+                "body"?: string;
+                "body_encoding"?: string;
+                "body_file"?: string;
+                "capture"?: ({
+                  "full_page"?: boolean;
+                  "html"?: boolean;
+                  "screenshot"?: boolean;
+                }) | null;
+                "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
+                  "condition"?: (Record<string, unknown>) | null;
+                  "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
+                  "do_while"?: boolean;
+                  "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
+                  "for_each"?: (Record<string, unknown>) | null;
+                  "max_iterations"?: number;
+                  "steps"?: Array<Record<string, unknown>>;
+                }) | null;
+                "extractors"?: Array<Record<string, unknown>>;
+                "header_list"?: Array<Record<string, unknown>>;
+                "headers"?: Record<string, string>;
+                "http_version"?: "auto" | "1.1" | "2";
+                "max_redirects"?: (number) | null;
+                "metadata"?: Record<string, unknown>;
+                "method"?: string;
+                "name": string;
+                "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
+                "params"?: Record<string, unknown>;
+                "selector"?: string;
+                "soap"?: ({
+                  "action"?: string;
+                  "body_mode"?: string;
+                  "operation"?: string;
+                }) | null;
+                "sync"?: ({
+                  "stable_ms"?: number;
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+                "target": string;
+                "think_time"?: {
+                  "force"?: boolean;
+                  "ignore"?: boolean;
+                  "limit_ms"?: number;
+                  "max_ms"?: number;
+                  "max_percent"?: number;
+                  "mean_ms": number;
+                  "min_ms"?: number;
+                  "min_percent"?: number;
+                  "multiplier"?: number;
+                  "std_ms"?: number;
+                  "type": string;
+                };
+                "think_time_after"?: boolean;
+                "timeout_ms"?: number;
+                "type": string;
+                "value"?: string;
+                "wait_for"?: ({
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+              }>;
+              "metadata"?: ({
+                "import"?: ({
+                  "preserved"?: Record<string, unknown>;
+                  "source"?: string;
+                  "source_script_name"?: string;
+                }) | null;
+                "runtime_policy"?: ({
+                  "allowed_target_hosts"?: Array<string>;
+                }) | null;
+              }) | null;
+              "name": string;
+              "parameters"?: Array<{
+                "auto_allocate"?: boolean;
+                "block_size"?: number;
+                "charset"?: string;
+                "column"?: string;
+                "data_source"?: string;
+                "end"?: number;
+                "format"?: string;
+                "format_dialect"?: string;
+                "length"?: number;
+                "max"?: number;
+                "min"?: number;
+                "name": string;
+                "offset_seconds"?: number;
+                "on_exhaustion"?: string;
+                "pad_char"?: string;
+                "pad_width"?: number;
+                "random_algorithm"?: string;
+                "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
+                "seed"?: (number) | null;
+                "selection"?: string;
+                "start"?: number;
+                "start_row"?: number;
+                "step"?: number;
+                "timezone"?: string;
+                "type": string;
+                "update"?: string;
+                "value_for_each_vuser"?: boolean;
+                "values"?: Array<string>;
+              }>;
+              "project_id"?: string;
+              "protocol": string;
+              "ref_key"?: string;
+              "teardown"?: Array<{
+                "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
+                "auth"?: ({
+                  "domain"?: string;
+                  "password"?: string;
+                  "token"?: string;
+                  "type"?: string;
+                  "username"?: string;
+                }) | null;
+                "body"?: string;
+                "body_encoding"?: string;
+                "body_file"?: string;
+                "capture"?: ({
+                  "full_page"?: boolean;
+                  "html"?: boolean;
+                  "screenshot"?: boolean;
+                }) | null;
+                "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
+                  "condition"?: (Record<string, unknown>) | null;
+                  "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
+                  "do_while"?: boolean;
+                  "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
+                  "for_each"?: (Record<string, unknown>) | null;
+                  "max_iterations"?: number;
+                  "steps"?: Array<Record<string, unknown>>;
+                }) | null;
+                "extractors"?: Array<Record<string, unknown>>;
+                "header_list"?: Array<Record<string, unknown>>;
+                "headers"?: Record<string, string>;
+                "http_version"?: "auto" | "1.1" | "2";
+                "max_redirects"?: (number) | null;
+                "metadata"?: Record<string, unknown>;
+                "method"?: string;
+                "name": string;
+                "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
+                "params"?: Record<string, unknown>;
+                "selector"?: string;
+                "soap"?: ({
+                  "action"?: string;
+                  "body_mode"?: string;
+                  "operation"?: string;
+                }) | null;
+                "sync"?: ({
+                  "stable_ms"?: number;
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+                "target": string;
+                "think_time"?: {
+                  "force"?: boolean;
+                  "ignore"?: boolean;
+                  "limit_ms"?: number;
+                  "max_ms"?: number;
+                  "max_percent"?: number;
+                  "mean_ms": number;
+                  "min_ms"?: number;
+                  "min_percent"?: number;
+                  "multiplier"?: number;
+                  "std_ms"?: number;
+                  "type": string;
+                };
+                "think_time_after"?: boolean;
+                "timeout_ms"?: number;
+                "type": string;
+                "value"?: string;
+                "wait_for"?: ({
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+              }>;
+              "version": string;
+            };
+          });
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {
@@ -65282,7 +71205,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      "404": {
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -65358,6 +71281,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -65371,6 +71354,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -65410,6 +71403,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -65492,6 +71523,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -65505,6 +71596,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -65877,6 +71978,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -65890,6 +72051,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -65929,6 +72100,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -66011,6 +72220,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -66024,6 +72293,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -67627,6 +73906,7 @@ export interface operations {
                 "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
+              "browser_document_capture_requested"?: boolean;
               "continue_on_error"?: ({
                 "conflict"?: boolean;
                 "effective": boolean;
@@ -67663,6 +73943,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -67884,6 +74165,57 @@ export interface operations {
                 "device_tier"?: string;
                 "samples": number;
               }) | null>;
+              "browser_documents"?: ({
+                "dropped_observations": number;
+                "incomplete": boolean;
+                "metrics": (Array<{
+                  "algorithm": string;
+                  "algorithm_sha256": string;
+                  "censored": number;
+                  "cohort"?: ({
+                    "browser_version": string;
+                    "cache_content_urls"?: (boolean) | null;
+                    "cache_enabled"?: (boolean) | null;
+                    "check_newer_versions"?: (boolean) | null;
+                    "cpu_throttle_rate": number;
+                    "device_scale_factor": number;
+                    "headless"?: (boolean) | null;
+                    "mobile"?: (boolean) | null;
+                    "network_bandwidth_kbps": number;
+                    "network_latency_ms": number;
+                    "new_user_policy": string;
+                    "new_user_policy_applied": boolean;
+                    "platform": string;
+                    "shaping_applied": boolean;
+                    "touch"?: (boolean) | null;
+                    "unavailable_reason"?: string;
+                    "version": number;
+                    "viewport_height": number;
+                    "viewport_width": number;
+                  }) | null;
+                  "device_profile": string;
+                  "distribution": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "eligible_final": number;
+                  "engine": string;
+                  "excluded_reasons"?: Record<string, number>;
+                  "frame_scope": string;
+                  "group"?: string;
+                  "lifecycle_phase": string;
+                  "metric": string;
+                  "provisional": number;
+                  "region"?: string;
+                  "unavailable_final": number;
+                  "unit": string;
+                  "unqualified_final": number;
+                }>) | null;
+                "version": number;
+              }) | null;
               "by_region"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -68241,6 +74573,28 @@ export interface operations {
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -68337,6 +74691,57 @@ export interface operations {
                 "device_tier"?: string;
                 "samples": number;
               }) | null>;
+              "browser_documents"?: ({
+                "dropped_observations": number;
+                "incomplete": boolean;
+                "metrics": (Array<{
+                  "algorithm": string;
+                  "algorithm_sha256": string;
+                  "censored": number;
+                  "cohort"?: ({
+                    "browser_version": string;
+                    "cache_content_urls"?: (boolean) | null;
+                    "cache_enabled"?: (boolean) | null;
+                    "check_newer_versions"?: (boolean) | null;
+                    "cpu_throttle_rate": number;
+                    "device_scale_factor": number;
+                    "headless"?: (boolean) | null;
+                    "mobile"?: (boolean) | null;
+                    "network_bandwidth_kbps": number;
+                    "network_latency_ms": number;
+                    "new_user_policy": string;
+                    "new_user_policy_applied": boolean;
+                    "platform": string;
+                    "shaping_applied": boolean;
+                    "touch"?: (boolean) | null;
+                    "unavailable_reason"?: string;
+                    "version": number;
+                    "viewport_height": number;
+                    "viewport_width": number;
+                  }) | null;
+                  "device_profile": string;
+                  "distribution": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "eligible_final": number;
+                  "engine": string;
+                  "excluded_reasons"?: Record<string, number>;
+                  "frame_scope": string;
+                  "group"?: string;
+                  "lifecycle_phase": string;
+                  "metric": string;
+                  "provisional": number;
+                  "region"?: string;
+                  "unavailable_final": number;
+                  "unit": string;
+                  "unqualified_final": number;
+                }>) | null;
+                "version": number;
+              }) | null;
               "by_region"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -69698,6 +76103,28 @@ export interface operations {
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -69954,6 +76381,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -70566,6 +76994,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -70865,6 +77294,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -71150,6 +77580,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -71435,6 +77866,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -71962,6 +78394,7 @@ export interface operations {
                   "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "browser_document_capture_requested"?: boolean;
                 "continue_on_error"?: ({
                   "conflict"?: boolean;
                   "effective": boolean;
@@ -72029,6 +78462,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -72469,6 +78903,7 @@ export interface operations {
                   "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "browser_document_capture_requested"?: boolean;
                 "continue_on_error"?: ({
                   "conflict"?: boolean;
                   "effective": boolean;
@@ -72536,6 +78971,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -73061,6 +79497,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -73243,6 +79680,28 @@ export interface operations {
             }>;
             "source": string;
             "status": string;
+            "telemetry_policy"?: ({
+              "availability": string;
+              "policy"?: ({
+                "budgets": Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_scope": string;
+                "capture_boundary": string;
+                "captured_at": string;
+                "classification_algorithm": string;
+                "coverage_rule": string;
+                "expected_controller_publication_interval_ms": number;
+                "hash": string;
+                "policy_id": string;
+                "revision": number;
+                "schema_version": string;
+                "sustained_breach_window_ms": number;
+              }) | null;
+              "reason"?: string;
+            }) | null;
             "test_id": string;
             "test_name": string;
             "warnings"?: Array<string>;
@@ -75363,6 +81822,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -76061,6 +82521,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -83350,108 +89811,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": {
-            "annotations"?: Array<{
-              "created_at": string;
-              "created_by": string;
-              "deleted_at"?: (string) | null;
-              "deleted_by"?: string;
-              "id": string;
-              "label": string;
-              "text"?: string;
-              "timestamp": string;
-            }>;
-            "correlation"?: Record<string, Array<{
-              "coefficient"?: (number) | null;
-              "coverage": number;
-              "expected_buckets": number;
-              "lag_seconds": number;
-              "pairs": number;
-            }>>;
-            "from": string;
-            "live_bucket_mode"?: string;
-            "mode": string;
-            "overlay"?: Array<{
-              "active_runtime_ms"?: (number) | null;
-              "dataset_id"?: string;
-              "derivation"?: Array<{
-                "algorithm": string;
-                "bucket_seconds"?: number;
-                "operation": string;
-              }>;
-              "dimensions"?: Record<string, string>;
-              "host"?: string;
-              "input_kind"?: string;
-              "kind": string;
-              "metric_name": string;
-              "metric_version"?: string;
-              "population"?: string;
-              "project_id": string;
-              "provider"?: ({
-                "aggregation_eligible": boolean;
-                "analysis_statistic"?: string;
-                "backend"?: string;
-                "backend_profile"?: string;
-                "bucket_end": string;
-                "bucket_start": string;
-                "catalog_path"?: string;
-                "count"?: (number) | null;
-                "definition_hash"?: string;
-                "display_labels"?: Record<string, string>;
-                "entity_ids"?: Record<string, string>;
-                "evaluation_step_seconds"?: number;
-                "freshness_known"?: boolean;
-                "max"?: (number) | null;
-                "metric_id": string;
-                "min"?: (number) | null;
-                "mode"?: string;
-                "name": string;
-                "query_id"?: string;
-                "query_window"?: boolean;
-                "resolution_seconds": number;
-                "settled": boolean;
-                "statistic": string;
-                "sum"?: (number) | null;
-                "synthetic"?: boolean;
-                "underlying_sample_time"?: (string) | null;
-              }) | null;
-              "quality": string;
-              "received_at"?: string;
-              "relative_time_ms"?: (number) | null;
-              "run_id"?: string;
-              "scenario_id"?: string;
-              "schema_version": string;
-              "service"?: string;
-              "source": string;
-              "timestamp_utc": string;
-              "timing"?: ({
-                "clock_offset_ms"?: (number) | null;
-                "clock_source": string;
-                "clock_uncertainty_ms"?: (number) | null;
-                "freshness_seconds"?: (number) | null;
-                "offset_status": string;
-                "received_at"?: (string) | null;
-                "resolution_seconds"?: number;
-              }) | null;
-              "unit"?: string;
-              "value"?: (number) | null;
-            }>;
-            "series": Array<{
-              "name": string;
-              "points": Array<{
-                "count": number;
-                "coverage"?: (number) | null;
-                "from": string;
-                "offset_seconds": number;
-                "to": string;
-                "value": (number) | null;
-              }>;
-              "unit": string;
-            }>;
-            "start": string;
-            "to": string;
-            "warnings": Array<string>;
-          };
+          "application/json": unknown;
         };
       };
       "400": {
@@ -84553,6 +90913,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -84566,6 +90986,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -84605,6 +91035,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -84687,6 +91155,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -84700,6 +91228,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -85139,6 +91677,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -85152,6 +91750,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -85191,6 +91799,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -85273,6 +91919,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -85286,6 +91992,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -85663,6 +92379,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -85676,6 +92452,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -85715,6 +92501,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -85797,6 +92621,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -85810,6 +92694,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -86922,6 +93816,7 @@ export interface operations {
                 "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
+              "browser_document_capture_requested"?: boolean;
               "continue_on_error"?: ({
                 "conflict"?: boolean;
                 "effective": boolean;
@@ -86958,6 +93853,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -87179,6 +94075,57 @@ export interface operations {
                 "device_tier"?: string;
                 "samples": number;
               }) | null>;
+              "browser_documents"?: ({
+                "dropped_observations": number;
+                "incomplete": boolean;
+                "metrics": (Array<{
+                  "algorithm": string;
+                  "algorithm_sha256": string;
+                  "censored": number;
+                  "cohort"?: ({
+                    "browser_version": string;
+                    "cache_content_urls"?: (boolean) | null;
+                    "cache_enabled"?: (boolean) | null;
+                    "check_newer_versions"?: (boolean) | null;
+                    "cpu_throttle_rate": number;
+                    "device_scale_factor": number;
+                    "headless"?: (boolean) | null;
+                    "mobile"?: (boolean) | null;
+                    "network_bandwidth_kbps": number;
+                    "network_latency_ms": number;
+                    "new_user_policy": string;
+                    "new_user_policy_applied": boolean;
+                    "platform": string;
+                    "shaping_applied": boolean;
+                    "touch"?: (boolean) | null;
+                    "unavailable_reason"?: string;
+                    "version": number;
+                    "viewport_height": number;
+                    "viewport_width": number;
+                  }) | null;
+                  "device_profile": string;
+                  "distribution": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "eligible_final": number;
+                  "engine": string;
+                  "excluded_reasons"?: Record<string, number>;
+                  "frame_scope": string;
+                  "group"?: string;
+                  "lifecycle_phase": string;
+                  "metric": string;
+                  "provisional": number;
+                  "region"?: string;
+                  "unavailable_final": number;
+                  "unit": string;
+                  "unqualified_final": number;
+                }>) | null;
+                "version": number;
+              }) | null;
               "by_region"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -87536,6 +94483,28 @@ export interface operations {
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -87632,6 +94601,57 @@ export interface operations {
                 "device_tier"?: string;
                 "samples": number;
               }) | null>;
+              "browser_documents"?: ({
+                "dropped_observations": number;
+                "incomplete": boolean;
+                "metrics": (Array<{
+                  "algorithm": string;
+                  "algorithm_sha256": string;
+                  "censored": number;
+                  "cohort"?: ({
+                    "browser_version": string;
+                    "cache_content_urls"?: (boolean) | null;
+                    "cache_enabled"?: (boolean) | null;
+                    "check_newer_versions"?: (boolean) | null;
+                    "cpu_throttle_rate": number;
+                    "device_scale_factor": number;
+                    "headless"?: (boolean) | null;
+                    "mobile"?: (boolean) | null;
+                    "network_bandwidth_kbps": number;
+                    "network_latency_ms": number;
+                    "new_user_policy": string;
+                    "new_user_policy_applied": boolean;
+                    "platform": string;
+                    "shaping_applied": boolean;
+                    "touch"?: (boolean) | null;
+                    "unavailable_reason"?: string;
+                    "version": number;
+                    "viewport_height": number;
+                    "viewport_width": number;
+                  }) | null;
+                  "device_profile": string;
+                  "distribution": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "eligible_final": number;
+                  "engine": string;
+                  "excluded_reasons"?: Record<string, number>;
+                  "frame_scope": string;
+                  "group"?: string;
+                  "lifecycle_phase": string;
+                  "metric": string;
+                  "provisional": number;
+                  "region"?: string;
+                  "unavailable_final": number;
+                  "unit": string;
+                  "unqualified_final": number;
+                }>) | null;
+                "version": number;
+              }) | null;
               "by_region"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -88993,6 +96013,28 @@ export interface operations {
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -89249,6 +96291,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -90167,6 +97210,7 @@ export interface operations {
               "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<Record<string, unknown>>;
@@ -91917,6 +98961,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -92675,6 +99720,44 @@ export interface operations {
           "include_static_assets"?: boolean;
           "name"?: string;
           "network_entries"?: Array<{
+            "browser_evidence"?: ({
+              "bytes"?: {
+                "request_body"?: (number) | null;
+                "request_headers"?: (number) | null;
+                "response_encoded_body"?: (number) | null;
+                "response_headers"?: (number) | null;
+                "unavailable_reason"?: string;
+              };
+              "cache"?: (boolean) | null;
+              "cache_unavailable_reason"?: string;
+              "document_id"?: string;
+              "document_offset_ms"?: (number) | null;
+              "epoch_start_ms"?: (number) | null;
+              "frame_id"?: string;
+              "identity_unavailable_reason"?: string;
+              "initiating_action_id"?: string;
+              "initiator_unavailable_reason"?: string;
+              "navigation_id"?: string;
+              "observation_action_id"?: string;
+              "observed_at"?: string;
+              "origin"?: string;
+              "phases"?: (Array<{
+                "end_ms"?: (number) | null;
+                "name"?: string;
+                "start_ms"?: (number) | null;
+                "unavailable_reason"?: string;
+              }>) | null;
+              "redirect_chain_id"?: string;
+              "redirect_from_request_id"?: string;
+              "redirect_hop"?: number;
+              "request_id"?: string;
+              "service_worker"?: (boolean) | null;
+              "service_worker_unavailable_reason"?: string;
+              "source_generation"?: string;
+              "state"?: string;
+              "timing_source"?: string;
+              "version"?: number;
+            }) | null;
             "bytes_received"?: number;
             "duration_ms"?: number;
             "failure_kind"?: string;
@@ -92781,6 +99864,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -93488,6 +100572,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -94264,6 +101349,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -95249,6 +102335,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -95943,6 +103030,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -96605,6 +103693,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -97155,6 +104244,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -98889,7 +105979,11 @@ export interface operations {
     };
   };
   "handleRebindScriptSecretReference": {
-    parameters?: never;
+    parameters: {
+      "header"?: {
+        "If-Match"?: string;
+      };
+    };
     requestBody: {
       content: {
         "application/json": {
@@ -98986,6 +106080,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -99589,7 +106684,1392 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": ({
+            "changed_count": number;
+            "changed_locations": Array<string>;
+            "new_name": string;
+            "old_name": string;
+            "script": {
+              "actions": Array<{
+                "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
+                "auth"?: ({
+                  "domain"?: string;
+                  "password"?: string;
+                  "token"?: string;
+                  "type"?: string;
+                  "username"?: string;
+                }) | null;
+                "body"?: string;
+                "body_encoding"?: string;
+                "body_file"?: string;
+                "capture"?: ({
+                  "full_page"?: boolean;
+                  "html"?: boolean;
+                  "screenshot"?: boolean;
+                }) | null;
+                "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
+                  "condition"?: (Record<string, unknown>) | null;
+                  "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
+                  "do_while"?: boolean;
+                  "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
+                  "for_each"?: (Record<string, unknown>) | null;
+                  "max_iterations"?: number;
+                  "steps"?: Array<Record<string, unknown>>;
+                }) | null;
+                "extractors"?: Array<Record<string, unknown>>;
+                "header_list"?: Array<Record<string, unknown>>;
+                "headers"?: Record<string, string>;
+                "http_version"?: "auto" | "1.1" | "2";
+                "max_redirects"?: (number) | null;
+                "metadata"?: Record<string, unknown>;
+                "method"?: string;
+                "name": string;
+                "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
+                "params"?: Record<string, unknown>;
+                "selector"?: string;
+                "soap"?: ({
+                  "action"?: string;
+                  "body_mode"?: string;
+                  "operation"?: string;
+                }) | null;
+                "sync"?: ({
+                  "stable_ms"?: number;
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+                "target": string;
+                "think_time"?: {
+                  "force"?: boolean;
+                  "ignore"?: boolean;
+                  "limit_ms"?: number;
+                  "max_ms"?: number;
+                  "max_percent"?: number;
+                  "mean_ms": number;
+                  "min_ms"?: number;
+                  "min_percent"?: number;
+                  "multiplier"?: number;
+                  "std_ms"?: number;
+                  "type": string;
+                };
+                "think_time_after"?: boolean;
+                "timeout_ms"?: number;
+                "type": string;
+                "value"?: string;
+                "wait_for"?: ({
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+              }>;
+              "config": {
+                "base_url": string;
+                "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
+                  "cache_content_urls"?: (boolean) | null;
+                  "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
+                  "capture_screenshots"?: string;
+                  "check_newer_versions"?: (boolean) | null;
+                  "client_certificates"?: Array<Record<string, unknown>>;
+                  "client_metrics"?: (boolean) | null;
+                  "device_profile"?: string;
+                  "download_resources"?: string;
+                  "engine"?: string;
+                  "experience_canary"?: boolean;
+                  "geolocation"?: Record<string, unknown>;
+                  "har_artifact_dir"?: string;
+                  "har_capture"?: string;
+                  "har_capture_policy"?: string;
+                  "har_sla_threshold_ms"?: number;
+                  "headless"?: (boolean) | null;
+                  "http_credentials"?: Record<string, unknown>;
+                  "locale"?: string;
+                  "new_user_per_iteration"?: (boolean) | null;
+                  "orientation"?: string;
+                  "proxy"?: Record<string, unknown>;
+                  "review_policy"?: Record<string, unknown>;
+                  "slow_mo_ms"?: number;
+                  "storage_state"?: string;
+                  "system_language"?: string;
+                  "timezone"?: string;
+                  "touch_mode"?: (boolean) | null;
+                  "traceparent"?: (boolean) | null;
+                  "user_agent"?: string;
+                  "viewport"?: Record<string, unknown>;
+                };
+                "browser_emulation"?: ({
+                  "browser_type"?: string;
+                  "browser_version"?: string;
+                  "cache"?: (Record<string, unknown>) | null;
+                  "custom_user_agent"?: string;
+                  "language"?: string;
+                  "mode"?: string;
+                  "platform"?: string;
+                }) | null;
+                "bruno"?: {
+                  "bundle_ref"?: string;
+                  "bundle_sha256"?: string;
+                  "compatibility_version"?: string;
+                  "default_environment"?: string;
+                  "default_global_environment"?: string;
+                  "dependency_snapshot_ref"?: string;
+                  "limits"?: Record<string, unknown>;
+                  "manifest_sha256"?: string;
+                  "persist_session_across_iterations"?: boolean;
+                  "runner_profile"?: string;
+                  "sandbox"?: string;
+                  "secret_bindings"?: Record<string, string>;
+                  "source_format"?: string;
+                  "source_revision"?: string;
+                };
+                "database"?: {
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                };
+                "error_handling"?: {
+                  "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
+                  "max_retries"?: number;
+                  "retry_backoff"?: string;
+                  "retry_delay_ms"?: number;
+                  "snapshot_on_error"?: boolean;
+                };
+                "eventhubs"?: {
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                };
+                "grpc"?: {
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
+                };
+                "http"?: {
+                  "accept_encoding"?: string;
+                  "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
+                  "auth"?: Record<string, unknown>;
+                  "cache_enabled"?: (boolean) | null;
+                  "cache_excluded_mime_types"?: Array<string>;
+                  "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
+                  "clear_cookies_per_iteration"?: (boolean) | null;
+                  "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
+                  "cookies_enabled"?: (boolean) | null;
+                  "default_header_list"?: Array<Record<string, unknown>>;
+                  "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
+                  "html_excluded_mime_types"?: Array<string>;
+                  "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
+                  "idle_timeout_ms"?: number;
+                  "ip_version"?: string;
+                  "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
+                  "max_conns_per_host"?: number;
+                  "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
+                  "max_redirects"?: (number) | null;
+                  "page_timeout_ms"?: number;
+                  "proxy"?: Record<string, unknown>;
+                  "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
+                  "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
+                  "tls"?: Record<string, unknown>;
+                  "tls_timeout_ms"?: number;
+                  "traceparent"?: (boolean) | null;
+                  "traceparent_sampled"?: (boolean) | null;
+                  "user_agent"?: string;
+                  "version"?: string;
+                };
+                "java_http"?: {
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                };
+                "java_vuser"?: {
+                  "action_timeout_ms"?: number;
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "classpath_assets"?: Array<Record<string, unknown>>;
+                  "dedicated_class_loader"?: (boolean) | null;
+                  "enabled"?: boolean;
+                  "harness_jar"?: string;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
+                  "runner_command"?: string;
+                  "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
+                  "use_xbootclasspath"?: (boolean) | null;
+                  "work_dir"?: string;
+                };
+                "jmeter"?: ({
+                  "configuration_id"?: string;
+                  "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
+                  "profile": string;
+                  "sample_timing"?: string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
+                "jms"?: {
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                };
+                "kafka"?: {
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
+                };
+                "log"?: {
+                  "error_buffer_bytes"?: number;
+                  "extended_options"?: Array<string>;
+                  "level"?: string;
+                  "max_response_bytes"?: number;
+                  "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
+                };
+                "network"?: {
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                };
+                "observability"?: {
+                  "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
+                };
+                "pacing"?: {
+                  "delay_ms"?: number;
+                  "interval_ms"?: number;
+                  "max_delay_ms"?: number;
+                  "max_interval_ms"?: number;
+                  "min_delay_ms"?: number;
+                  "min_interval_ms"?: number;
+                  "tps"?: number;
+                  "type": string;
+                };
+                "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
+                  "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
+                };
+                "run_logic"?: {
+                  "action_sequence"?: Array<string>;
+                  "auto_transactions"?: string;
+                  "block_scheduling"?: string;
+                  "global_iterations"?: number;
+                  "iterations"?: number;
+                  "max_in_flight"?: number;
+                  "max_transactions"?: number;
+                  "termination_mode"?: string;
+                  "workload_model"?: string;
+                };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
+                "sapgui"?: {
+                  "auto_logon"?: boolean;
+                  "client"?: string;
+                  "connection_string"?: string;
+                  "language"?: string;
+                  "password"?: string;
+                  "session_behavior"?: string;
+                  "sync_timeout_ms"?: number;
+                  "username"?: string;
+                };
+                "soap"?: {
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
+                };
+                "think_time"?: {
+                  "force"?: boolean;
+                  "ignore"?: boolean;
+                  "limit_ms"?: number;
+                  "max_ms"?: number;
+                  "max_percent"?: number;
+                  "mean_ms": number;
+                  "min_ms"?: number;
+                  "min_percent"?: number;
+                  "multiplier"?: number;
+                  "std_ms"?: number;
+                  "type": string;
+                };
+                "web_runtime"?: {
+                  "additional_attributes"?: Record<string, string>;
+                  "content_checks"?: Array<Record<string, unknown>>;
+                  "data_formatting"?: Record<string, unknown>;
+                  "download_filters"?: Record<string, unknown>;
+                  "network_profiles"?: Array<Record<string, unknown>>;
+                  "network_simulation"?: Record<string, unknown>;
+                  "source_ips"?: Array<string>;
+                  "streaming"?: Record<string, unknown>;
+                };
+                "websocket"?: {
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
+                };
+              };
+              "data_sources"?: Array<{
+                "columns"?: Array<string>;
+                "content_type"?: string;
+                "delimiter"?: string;
+                "encoding"?: string;
+                "file_name"?: string;
+                "first_row_header": boolean;
+                "inline_data"?: string;
+                "name": string;
+                "path"?: string;
+                "staged_asset"?: string;
+                "storage_ref"?: string;
+                "strategy": string;
+                "type": string;
+              }>;
+              "folder_id"?: (string) | null;
+              "generated_by"?: string;
+              "generated_from"?: string;
+              "goal_config"?: ({
+                "max_avg_server_processing_ms"?: (number) | null;
+                "max_avg_transfer_ms"?: (number) | null;
+                "max_error_count"?: (number) | null;
+                "max_error_pct"?: (number) | null;
+                "max_vusers"?: (number) | null;
+                "min_vusers"?: (number) | null;
+                "p95_latency_ms"?: (number) | null;
+                "sla_breach_window"?: string;
+                "stop_on_max_errors"?: boolean;
+                "stop_on_sla_breach"?: boolean;
+                "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "group"?: string;
+                  "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
+              }) | null;
+              "id": string;
+              "init"?: Array<{
+                "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
+                "auth"?: ({
+                  "domain"?: string;
+                  "password"?: string;
+                  "token"?: string;
+                  "type"?: string;
+                  "username"?: string;
+                }) | null;
+                "body"?: string;
+                "body_encoding"?: string;
+                "body_file"?: string;
+                "capture"?: ({
+                  "full_page"?: boolean;
+                  "html"?: boolean;
+                  "screenshot"?: boolean;
+                }) | null;
+                "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
+                  "condition"?: (Record<string, unknown>) | null;
+                  "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
+                  "do_while"?: boolean;
+                  "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
+                  "for_each"?: (Record<string, unknown>) | null;
+                  "max_iterations"?: number;
+                  "steps"?: Array<Record<string, unknown>>;
+                }) | null;
+                "extractors"?: Array<Record<string, unknown>>;
+                "header_list"?: Array<Record<string, unknown>>;
+                "headers"?: Record<string, string>;
+                "http_version"?: "auto" | "1.1" | "2";
+                "max_redirects"?: (number) | null;
+                "metadata"?: Record<string, unknown>;
+                "method"?: string;
+                "name": string;
+                "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
+                "params"?: Record<string, unknown>;
+                "selector"?: string;
+                "soap"?: ({
+                  "action"?: string;
+                  "body_mode"?: string;
+                  "operation"?: string;
+                }) | null;
+                "sync"?: ({
+                  "stable_ms"?: number;
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+                "target": string;
+                "think_time"?: {
+                  "force"?: boolean;
+                  "ignore"?: boolean;
+                  "limit_ms"?: number;
+                  "max_ms"?: number;
+                  "max_percent"?: number;
+                  "mean_ms": number;
+                  "min_ms"?: number;
+                  "min_percent"?: number;
+                  "multiplier"?: number;
+                  "std_ms"?: number;
+                  "type": string;
+                };
+                "think_time_after"?: boolean;
+                "timeout_ms"?: number;
+                "type": string;
+                "value"?: string;
+                "wait_for"?: ({
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+              }>;
+              "metadata"?: ({
+                "import"?: ({
+                  "preserved"?: Record<string, unknown>;
+                  "source"?: string;
+                  "source_script_name"?: string;
+                }) | null;
+                "runtime_policy"?: ({
+                  "allowed_target_hosts"?: Array<string>;
+                }) | null;
+              }) | null;
+              "name": string;
+              "parameters"?: Array<{
+                "auto_allocate"?: boolean;
+                "block_size"?: number;
+                "charset"?: string;
+                "column"?: string;
+                "data_source"?: string;
+                "end"?: number;
+                "format"?: string;
+                "format_dialect"?: string;
+                "length"?: number;
+                "max"?: number;
+                "min"?: number;
+                "name": string;
+                "offset_seconds"?: number;
+                "on_exhaustion"?: string;
+                "pad_char"?: string;
+                "pad_width"?: number;
+                "random_algorithm"?: string;
+                "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
+                "seed"?: (number) | null;
+                "selection"?: string;
+                "start"?: number;
+                "start_row"?: number;
+                "step"?: number;
+                "timezone"?: string;
+                "type": string;
+                "update"?: string;
+                "value_for_each_vuser"?: boolean;
+                "values"?: Array<string>;
+              }>;
+              "project_id"?: string;
+              "protocol": string;
+              "ref_key"?: string;
+              "teardown"?: Array<{
+                "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
+                "auth"?: ({
+                  "domain"?: string;
+                  "password"?: string;
+                  "token"?: string;
+                  "type"?: string;
+                  "username"?: string;
+                }) | null;
+                "body"?: string;
+                "body_encoding"?: string;
+                "body_file"?: string;
+                "capture"?: ({
+                  "full_page"?: boolean;
+                  "html"?: boolean;
+                  "screenshot"?: boolean;
+                }) | null;
+                "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
+                  "condition"?: (Record<string, unknown>) | null;
+                  "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
+                  "do_while"?: boolean;
+                  "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
+                  "for_each"?: (Record<string, unknown>) | null;
+                  "max_iterations"?: number;
+                  "steps"?: Array<Record<string, unknown>>;
+                }) | null;
+                "extractors"?: Array<Record<string, unknown>>;
+                "header_list"?: Array<Record<string, unknown>>;
+                "headers"?: Record<string, string>;
+                "http_version"?: "auto" | "1.1" | "2";
+                "max_redirects"?: (number) | null;
+                "metadata"?: Record<string, unknown>;
+                "method"?: string;
+                "name": string;
+                "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
+                "params"?: Record<string, unknown>;
+                "selector"?: string;
+                "soap"?: ({
+                  "action"?: string;
+                  "body_mode"?: string;
+                  "operation"?: string;
+                }) | null;
+                "sync"?: ({
+                  "stable_ms"?: number;
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+                "target": string;
+                "think_time"?: {
+                  "force"?: boolean;
+                  "ignore"?: boolean;
+                  "limit_ms"?: number;
+                  "max_ms"?: number;
+                  "max_percent"?: number;
+                  "mean_ms": number;
+                  "min_ms"?: number;
+                  "min_percent"?: number;
+                  "multiplier"?: number;
+                  "std_ms"?: number;
+                  "type": string;
+                };
+                "think_time_after"?: boolean;
+                "timeout_ms"?: number;
+                "type": string;
+                "value"?: string;
+                "wait_for"?: ({
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+              }>;
+              "version": string;
+            };
+          } | {
+            "changed_count": number;
+            "changed_locations": Array<string>;
+            "new_name": string;
+            "old_name": string;
+            "script": ({
+              "actions": Array<{
+                "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
+                "auth"?: ({
+                  "domain"?: string;
+                  "password"?: string;
+                  "token"?: string;
+                  "type"?: string;
+                  "username"?: string;
+                }) | null;
+                "body"?: string;
+                "body_encoding"?: string;
+                "body_file"?: string;
+                "capture"?: ({
+                  "full_page"?: boolean;
+                  "html"?: boolean;
+                  "screenshot"?: boolean;
+                }) | null;
+                "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
+                  "condition"?: (Record<string, unknown>) | null;
+                  "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
+                  "do_while"?: boolean;
+                  "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
+                  "for_each"?: (Record<string, unknown>) | null;
+                  "max_iterations"?: number;
+                  "steps"?: Array<Record<string, unknown>>;
+                }) | null;
+                "extractors"?: Array<Record<string, unknown>>;
+                "header_list"?: Array<Record<string, unknown>>;
+                "headers"?: Record<string, string>;
+                "http_version"?: "auto" | "1.1" | "2";
+                "max_redirects"?: (number) | null;
+                "metadata"?: Record<string, unknown>;
+                "method"?: string;
+                "name": string;
+                "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
+                "params"?: Record<string, unknown>;
+                "selector"?: string;
+                "soap"?: ({
+                  "action"?: string;
+                  "body_mode"?: string;
+                  "operation"?: string;
+                }) | null;
+                "sync"?: ({
+                  "stable_ms"?: number;
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+                "target": string;
+                "think_time"?: {
+                  "force"?: boolean;
+                  "ignore"?: boolean;
+                  "limit_ms"?: number;
+                  "max_ms"?: number;
+                  "max_percent"?: number;
+                  "mean_ms": number;
+                  "min_ms"?: number;
+                  "min_percent"?: number;
+                  "multiplier"?: number;
+                  "std_ms"?: number;
+                  "type": string;
+                };
+                "think_time_after"?: boolean;
+                "timeout_ms"?: number;
+                "type": string;
+                "value"?: string;
+                "wait_for"?: ({
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+              }>;
+              "archived_at"?: (string) | null;
+              "config": {
+                "base_url": string;
+                "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
+                  "cache_content_urls"?: (boolean) | null;
+                  "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
+                  "capture_screenshots"?: string;
+                  "check_newer_versions"?: (boolean) | null;
+                  "client_certificates"?: Array<Record<string, unknown>>;
+                  "client_metrics"?: (boolean) | null;
+                  "device_profile"?: string;
+                  "download_resources"?: string;
+                  "engine"?: string;
+                  "experience_canary"?: boolean;
+                  "geolocation"?: Record<string, unknown>;
+                  "har_artifact_dir"?: string;
+                  "har_capture"?: string;
+                  "har_capture_policy"?: string;
+                  "har_sla_threshold_ms"?: number;
+                  "headless"?: (boolean) | null;
+                  "http_credentials"?: Record<string, unknown>;
+                  "locale"?: string;
+                  "new_user_per_iteration"?: (boolean) | null;
+                  "orientation"?: string;
+                  "proxy"?: Record<string, unknown>;
+                  "review_policy"?: Record<string, unknown>;
+                  "slow_mo_ms"?: number;
+                  "storage_state"?: string;
+                  "system_language"?: string;
+                  "timezone"?: string;
+                  "touch_mode"?: (boolean) | null;
+                  "traceparent"?: (boolean) | null;
+                  "user_agent"?: string;
+                  "viewport"?: Record<string, unknown>;
+                };
+                "browser_emulation"?: ({
+                  "browser_type"?: string;
+                  "browser_version"?: string;
+                  "cache"?: (Record<string, unknown>) | null;
+                  "custom_user_agent"?: string;
+                  "language"?: string;
+                  "mode"?: string;
+                  "platform"?: string;
+                }) | null;
+                "bruno"?: {
+                  "bundle_ref"?: string;
+                  "bundle_sha256"?: string;
+                  "compatibility_version"?: string;
+                  "default_environment"?: string;
+                  "default_global_environment"?: string;
+                  "dependency_snapshot_ref"?: string;
+                  "limits"?: Record<string, unknown>;
+                  "manifest_sha256"?: string;
+                  "persist_session_across_iterations"?: boolean;
+                  "runner_profile"?: string;
+                  "sandbox"?: string;
+                  "secret_bindings"?: Record<string, string>;
+                  "source_format"?: string;
+                  "source_revision"?: string;
+                };
+                "database"?: {
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                };
+                "error_handling"?: {
+                  "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
+                  "max_retries"?: number;
+                  "retry_backoff"?: string;
+                  "retry_delay_ms"?: number;
+                  "snapshot_on_error"?: boolean;
+                };
+                "eventhubs"?: {
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                };
+                "grpc"?: {
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
+                };
+                "http"?: {
+                  "accept_encoding"?: string;
+                  "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
+                  "auth"?: Record<string, unknown>;
+                  "cache_enabled"?: (boolean) | null;
+                  "cache_excluded_mime_types"?: Array<string>;
+                  "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
+                  "clear_cookies_per_iteration"?: (boolean) | null;
+                  "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
+                  "cookies_enabled"?: (boolean) | null;
+                  "default_header_list"?: Array<Record<string, unknown>>;
+                  "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
+                  "html_excluded_mime_types"?: Array<string>;
+                  "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
+                  "idle_timeout_ms"?: number;
+                  "ip_version"?: string;
+                  "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
+                  "max_conns_per_host"?: number;
+                  "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
+                  "max_redirects"?: (number) | null;
+                  "page_timeout_ms"?: number;
+                  "proxy"?: Record<string, unknown>;
+                  "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
+                  "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
+                  "tls"?: Record<string, unknown>;
+                  "tls_timeout_ms"?: number;
+                  "traceparent"?: (boolean) | null;
+                  "traceparent_sampled"?: (boolean) | null;
+                  "user_agent"?: string;
+                  "version"?: string;
+                };
+                "java_http"?: {
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                };
+                "java_vuser"?: {
+                  "action_timeout_ms"?: number;
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "classpath_assets"?: Array<Record<string, unknown>>;
+                  "dedicated_class_loader"?: (boolean) | null;
+                  "enabled"?: boolean;
+                  "harness_jar"?: string;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
+                  "runner_command"?: string;
+                  "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
+                  "use_xbootclasspath"?: (boolean) | null;
+                  "work_dir"?: string;
+                };
+                "jmeter"?: ({
+                  "configuration_id"?: string;
+                  "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
+                  "profile": string;
+                  "sample_timing"?: string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
+                "jms"?: {
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                };
+                "kafka"?: {
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
+                };
+                "log"?: {
+                  "error_buffer_bytes"?: number;
+                  "extended_options"?: Array<string>;
+                  "level"?: string;
+                  "max_response_bytes"?: number;
+                  "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
+                };
+                "network"?: {
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                };
+                "observability"?: {
+                  "external_metrics"?: Array<Record<string, unknown>>;
+                  "trace_carrier"?: string;
+                };
+                "pacing"?: {
+                  "delay_ms"?: number;
+                  "interval_ms"?: number;
+                  "max_delay_ms"?: number;
+                  "max_interval_ms"?: number;
+                  "min_delay_ms"?: number;
+                  "min_interval_ms"?: number;
+                  "tps"?: number;
+                  "type": string;
+                };
+                "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
+                  "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
+                };
+                "run_logic"?: {
+                  "action_sequence"?: Array<string>;
+                  "auto_transactions"?: string;
+                  "block_scheduling"?: string;
+                  "global_iterations"?: number;
+                  "iterations"?: number;
+                  "max_in_flight"?: number;
+                  "max_transactions"?: number;
+                  "termination_mode"?: string;
+                  "workload_model"?: string;
+                };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
+                "sapgui"?: {
+                  "auto_logon"?: boolean;
+                  "client"?: string;
+                  "connection_string"?: string;
+                  "language"?: string;
+                  "password"?: string;
+                  "session_behavior"?: string;
+                  "sync_timeout_ms"?: number;
+                  "username"?: string;
+                };
+                "soap"?: {
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
+                };
+                "think_time"?: {
+                  "force"?: boolean;
+                  "ignore"?: boolean;
+                  "limit_ms"?: number;
+                  "max_ms"?: number;
+                  "max_percent"?: number;
+                  "mean_ms": number;
+                  "min_ms"?: number;
+                  "min_percent"?: number;
+                  "multiplier"?: number;
+                  "std_ms"?: number;
+                  "type": string;
+                };
+                "web_runtime"?: {
+                  "additional_attributes"?: Record<string, string>;
+                  "content_checks"?: Array<Record<string, unknown>>;
+                  "data_formatting"?: Record<string, unknown>;
+                  "download_filters"?: Record<string, unknown>;
+                  "network_profiles"?: Array<Record<string, unknown>>;
+                  "network_simulation"?: Record<string, unknown>;
+                  "source_ips"?: Array<string>;
+                  "streaming"?: Record<string, unknown>;
+                };
+                "websocket"?: {
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
+                };
+              };
+              "created_at"?: string;
+              "data_sources"?: Array<{
+                "columns"?: Array<string>;
+                "content_type"?: string;
+                "delimiter"?: string;
+                "encoding"?: string;
+                "file_name"?: string;
+                "first_row_header": boolean;
+                "inline_data"?: string;
+                "name": string;
+                "path"?: string;
+                "staged_asset"?: string;
+                "storage_ref"?: string;
+                "strategy": string;
+                "type": string;
+              }>;
+              "folder_id"?: (string) | null;
+              "generated_by"?: string;
+              "generated_from"?: string;
+              "goal_config"?: ({
+                "max_avg_server_processing_ms"?: (number) | null;
+                "max_avg_transfer_ms"?: (number) | null;
+                "max_error_count"?: (number) | null;
+                "max_error_pct"?: (number) | null;
+                "max_vusers"?: (number) | null;
+                "min_vusers"?: (number) | null;
+                "p95_latency_ms"?: (number) | null;
+                "sla_breach_window"?: string;
+                "stop_on_max_errors"?: boolean;
+                "stop_on_sla_breach"?: boolean;
+                "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "group"?: string;
+                  "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
+              }) | null;
+              "id": string;
+              "init"?: Array<{
+                "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
+                "auth"?: ({
+                  "domain"?: string;
+                  "password"?: string;
+                  "token"?: string;
+                  "type"?: string;
+                  "username"?: string;
+                }) | null;
+                "body"?: string;
+                "body_encoding"?: string;
+                "body_file"?: string;
+                "capture"?: ({
+                  "full_page"?: boolean;
+                  "html"?: boolean;
+                  "screenshot"?: boolean;
+                }) | null;
+                "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
+                  "condition"?: (Record<string, unknown>) | null;
+                  "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
+                  "do_while"?: boolean;
+                  "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
+                  "for_each"?: (Record<string, unknown>) | null;
+                  "max_iterations"?: number;
+                  "steps"?: Array<Record<string, unknown>>;
+                }) | null;
+                "extractors"?: Array<Record<string, unknown>>;
+                "header_list"?: Array<Record<string, unknown>>;
+                "headers"?: Record<string, string>;
+                "http_version"?: "auto" | "1.1" | "2";
+                "max_redirects"?: (number) | null;
+                "metadata"?: Record<string, unknown>;
+                "method"?: string;
+                "name": string;
+                "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
+                "params"?: Record<string, unknown>;
+                "selector"?: string;
+                "soap"?: ({
+                  "action"?: string;
+                  "body_mode"?: string;
+                  "operation"?: string;
+                }) | null;
+                "sync"?: ({
+                  "stable_ms"?: number;
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+                "target": string;
+                "think_time"?: {
+                  "force"?: boolean;
+                  "ignore"?: boolean;
+                  "limit_ms"?: number;
+                  "max_ms"?: number;
+                  "max_percent"?: number;
+                  "mean_ms": number;
+                  "min_ms"?: number;
+                  "min_percent"?: number;
+                  "multiplier"?: number;
+                  "std_ms"?: number;
+                  "type": string;
+                };
+                "think_time_after"?: boolean;
+                "timeout_ms"?: number;
+                "type": string;
+                "value"?: string;
+                "wait_for"?: ({
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+              }>;
+              "metadata"?: ({
+                "import"?: ({
+                  "preserved"?: Record<string, unknown>;
+                  "source"?: string;
+                  "source_script_name"?: string;
+                }) | null;
+                "runtime_policy"?: ({
+                  "allowed_target_hosts"?: Array<string>;
+                }) | null;
+              }) | null;
+              "name": string;
+              "parameters"?: Array<{
+                "auto_allocate"?: boolean;
+                "block_size"?: number;
+                "charset"?: string;
+                "column"?: string;
+                "data_source"?: string;
+                "end"?: number;
+                "format"?: string;
+                "format_dialect"?: string;
+                "length"?: number;
+                "max"?: number;
+                "min"?: number;
+                "name": string;
+                "offset_seconds"?: number;
+                "on_exhaustion"?: string;
+                "pad_char"?: string;
+                "pad_width"?: number;
+                "random_algorithm"?: string;
+                "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
+                "seed"?: (number) | null;
+                "selection"?: string;
+                "start"?: number;
+                "start_row"?: number;
+                "step"?: number;
+                "timezone"?: string;
+                "type": string;
+                "update"?: string;
+                "value_for_each_vuser"?: boolean;
+                "values"?: Array<string>;
+              }>;
+              "project_id"?: string;
+              "protocol": string;
+              "ref_key"?: string;
+              "teardown"?: Array<{
+                "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
+                "auth"?: ({
+                  "domain"?: string;
+                  "password"?: string;
+                  "token"?: string;
+                  "type"?: string;
+                  "username"?: string;
+                }) | null;
+                "body"?: string;
+                "body_encoding"?: string;
+                "body_file"?: string;
+                "capture"?: ({
+                  "full_page"?: boolean;
+                  "html"?: boolean;
+                  "screenshot"?: boolean;
+                }) | null;
+                "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
+                  "condition"?: (Record<string, unknown>) | null;
+                  "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
+                  "do_while"?: boolean;
+                  "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
+                  "for_each"?: (Record<string, unknown>) | null;
+                  "max_iterations"?: number;
+                  "steps"?: Array<Record<string, unknown>>;
+                }) | null;
+                "extractors"?: Array<Record<string, unknown>>;
+                "header_list"?: Array<Record<string, unknown>>;
+                "headers"?: Record<string, string>;
+                "http_version"?: "auto" | "1.1" | "2";
+                "max_redirects"?: (number) | null;
+                "metadata"?: Record<string, unknown>;
+                "method"?: string;
+                "name": string;
+                "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
+                "params"?: Record<string, unknown>;
+                "selector"?: string;
+                "soap"?: ({
+                  "action"?: string;
+                  "body_mode"?: string;
+                  "operation"?: string;
+                }) | null;
+                "sync"?: ({
+                  "stable_ms"?: number;
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+                "target": string;
+                "think_time"?: {
+                  "force"?: boolean;
+                  "ignore"?: boolean;
+                  "limit_ms"?: number;
+                  "max_ms"?: number;
+                  "max_percent"?: number;
+                  "mean_ms": number;
+                  "min_ms"?: number;
+                  "min_percent"?: number;
+                  "multiplier"?: number;
+                  "std_ms"?: number;
+                  "type": string;
+                };
+                "think_time_after"?: boolean;
+                "timeout_ms"?: number;
+                "type": string;
+                "value"?: string;
+                "wait_for"?: ({
+                  "timeout_ms"?: number;
+                  "type"?: string;
+                  "value"?: string;
+                }) | null;
+              }>;
+              "updated_at"?: string;
+              "version": string;
+            }) | null;
+          });
         };
       };
       "400": {
@@ -99609,7 +108089,9 @@ export interface operations {
       };
       "404": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            "error": string;
+          };
         };
       };
       "409": {
@@ -99617,7 +108099,19 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "412": {
+        content: {
+          "application/json": {
+            "error": string;
+          };
+        };
+      };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -100405,6 +108899,7 @@ export interface operations {
                   "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "browser_document_capture_requested"?: boolean;
                 "continue_on_error"?: ({
                   "conflict"?: boolean;
                   "effective": boolean;
@@ -100479,6 +108974,57 @@ export interface operations {
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
+                "browser_documents"?: ({
+                  "dropped_observations": number;
+                  "incomplete": boolean;
+                  "metrics": (Array<{
+                    "algorithm": string;
+                    "algorithm_sha256": string;
+                    "censored": number;
+                    "cohort"?: ({
+                      "browser_version": string;
+                      "cache_content_urls"?: (boolean) | null;
+                      "cache_enabled"?: (boolean) | null;
+                      "check_newer_versions"?: (boolean) | null;
+                      "cpu_throttle_rate": number;
+                      "device_scale_factor": number;
+                      "headless"?: (boolean) | null;
+                      "mobile"?: (boolean) | null;
+                      "network_bandwidth_kbps": number;
+                      "network_latency_ms": number;
+                      "new_user_policy": string;
+                      "new_user_policy_applied": boolean;
+                      "platform": string;
+                      "shaping_applied": boolean;
+                      "touch"?: (boolean) | null;
+                      "unavailable_reason"?: string;
+                      "version": number;
+                      "viewport_height": number;
+                      "viewport_width": number;
+                    }) | null;
+                    "device_profile": string;
+                    "distribution": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "eligible_final": number;
+                    "engine": string;
+                    "excluded_reasons"?: Record<string, number>;
+                    "frame_scope": string;
+                    "group"?: string;
+                    "lifecycle_phase": string;
+                    "metric": string;
+                    "provisional": number;
+                    "region"?: string;
+                    "unavailable_final": number;
+                    "unit": string;
+                    "unqualified_final": number;
+                  }>) | null;
+                  "version": number;
+                }) | null;
                 "by_region"?: Record<string, (Record<string, unknown>) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
@@ -100653,6 +109199,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -100714,6 +109282,57 @@ export interface operations {
                   "device_tier"?: string;
                   "samples": number;
                 }) | null>;
+                "browser_documents"?: ({
+                  "dropped_observations": number;
+                  "incomplete": boolean;
+                  "metrics": (Array<{
+                    "algorithm": string;
+                    "algorithm_sha256": string;
+                    "censored": number;
+                    "cohort"?: ({
+                      "browser_version": string;
+                      "cache_content_urls"?: (boolean) | null;
+                      "cache_enabled"?: (boolean) | null;
+                      "check_newer_versions"?: (boolean) | null;
+                      "cpu_throttle_rate": number;
+                      "device_scale_factor": number;
+                      "headless"?: (boolean) | null;
+                      "mobile"?: (boolean) | null;
+                      "network_bandwidth_kbps": number;
+                      "network_latency_ms": number;
+                      "new_user_policy": string;
+                      "new_user_policy_applied": boolean;
+                      "platform": string;
+                      "shaping_applied": boolean;
+                      "touch"?: (boolean) | null;
+                      "unavailable_reason"?: string;
+                      "version": number;
+                      "viewport_height": number;
+                      "viewport_width": number;
+                    }) | null;
+                    "device_profile": string;
+                    "distribution": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "eligible_final": number;
+                    "engine": string;
+                    "excluded_reasons"?: Record<string, number>;
+                    "frame_scope": string;
+                    "group"?: string;
+                    "lifecycle_phase": string;
+                    "metric": string;
+                    "provisional": number;
+                    "region"?: string;
+                    "unavailable_final": number;
+                    "unit": string;
+                    "unqualified_final": number;
+                  }>) | null;
+                  "version": number;
+                }) | null;
                 "by_region"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -101061,6 +109680,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -101150,6 +109791,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -101981,6 +110623,7 @@ export interface operations {
                   "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "browser_document_capture_requested"?: boolean;
                 "continue_on_error"?: ({
                   "conflict"?: boolean;
                   "effective": boolean;
@@ -102055,6 +110698,57 @@ export interface operations {
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
+                "browser_documents"?: ({
+                  "dropped_observations": number;
+                  "incomplete": boolean;
+                  "metrics": (Array<{
+                    "algorithm": string;
+                    "algorithm_sha256": string;
+                    "censored": number;
+                    "cohort"?: ({
+                      "browser_version": string;
+                      "cache_content_urls"?: (boolean) | null;
+                      "cache_enabled"?: (boolean) | null;
+                      "check_newer_versions"?: (boolean) | null;
+                      "cpu_throttle_rate": number;
+                      "device_scale_factor": number;
+                      "headless"?: (boolean) | null;
+                      "mobile"?: (boolean) | null;
+                      "network_bandwidth_kbps": number;
+                      "network_latency_ms": number;
+                      "new_user_policy": string;
+                      "new_user_policy_applied": boolean;
+                      "platform": string;
+                      "shaping_applied": boolean;
+                      "touch"?: (boolean) | null;
+                      "unavailable_reason"?: string;
+                      "version": number;
+                      "viewport_height": number;
+                      "viewport_width": number;
+                    }) | null;
+                    "device_profile": string;
+                    "distribution": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "eligible_final": number;
+                    "engine": string;
+                    "excluded_reasons"?: Record<string, number>;
+                    "frame_scope": string;
+                    "group"?: string;
+                    "lifecycle_phase": string;
+                    "metric": string;
+                    "provisional": number;
+                    "region"?: string;
+                    "unavailable_final": number;
+                    "unit": string;
+                    "unqualified_final": number;
+                  }>) | null;
+                  "version": number;
+                }) | null;
                 "by_region"?: Record<string, (Record<string, unknown>) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
@@ -102229,6 +110923,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -102290,6 +111006,57 @@ export interface operations {
                   "device_tier"?: string;
                   "samples": number;
                 }) | null>;
+                "browser_documents"?: ({
+                  "dropped_observations": number;
+                  "incomplete": boolean;
+                  "metrics": (Array<{
+                    "algorithm": string;
+                    "algorithm_sha256": string;
+                    "censored": number;
+                    "cohort"?: ({
+                      "browser_version": string;
+                      "cache_content_urls"?: (boolean) | null;
+                      "cache_enabled"?: (boolean) | null;
+                      "check_newer_versions"?: (boolean) | null;
+                      "cpu_throttle_rate": number;
+                      "device_scale_factor": number;
+                      "headless"?: (boolean) | null;
+                      "mobile"?: (boolean) | null;
+                      "network_bandwidth_kbps": number;
+                      "network_latency_ms": number;
+                      "new_user_policy": string;
+                      "new_user_policy_applied": boolean;
+                      "platform": string;
+                      "shaping_applied": boolean;
+                      "touch"?: (boolean) | null;
+                      "unavailable_reason"?: string;
+                      "version": number;
+                      "viewport_height": number;
+                      "viewport_width": number;
+                    }) | null;
+                    "device_profile": string;
+                    "distribution": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "eligible_final": number;
+                    "engine": string;
+                    "excluded_reasons"?: Record<string, number>;
+                    "frame_scope": string;
+                    "group"?: string;
+                    "lifecycle_phase": string;
+                    "metric": string;
+                    "provisional": number;
+                    "region"?: string;
+                    "unavailable_final": number;
+                    "unit": string;
+                    "unqualified_final": number;
+                  }>) | null;
+                  "version": number;
+                }) | null;
                 "by_region"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -102637,6 +111404,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -102726,6 +111515,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -103557,6 +112347,7 @@ export interface operations {
                   "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "browser_document_capture_requested"?: boolean;
                 "continue_on_error"?: ({
                   "conflict"?: boolean;
                   "effective": boolean;
@@ -103631,6 +112422,57 @@ export interface operations {
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
+                "browser_documents"?: ({
+                  "dropped_observations": number;
+                  "incomplete": boolean;
+                  "metrics": (Array<{
+                    "algorithm": string;
+                    "algorithm_sha256": string;
+                    "censored": number;
+                    "cohort"?: ({
+                      "browser_version": string;
+                      "cache_content_urls"?: (boolean) | null;
+                      "cache_enabled"?: (boolean) | null;
+                      "check_newer_versions"?: (boolean) | null;
+                      "cpu_throttle_rate": number;
+                      "device_scale_factor": number;
+                      "headless"?: (boolean) | null;
+                      "mobile"?: (boolean) | null;
+                      "network_bandwidth_kbps": number;
+                      "network_latency_ms": number;
+                      "new_user_policy": string;
+                      "new_user_policy_applied": boolean;
+                      "platform": string;
+                      "shaping_applied": boolean;
+                      "touch"?: (boolean) | null;
+                      "unavailable_reason"?: string;
+                      "version": number;
+                      "viewport_height": number;
+                      "viewport_width": number;
+                    }) | null;
+                    "device_profile": string;
+                    "distribution": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "eligible_final": number;
+                    "engine": string;
+                    "excluded_reasons"?: Record<string, number>;
+                    "frame_scope": string;
+                    "group"?: string;
+                    "lifecycle_phase": string;
+                    "metric": string;
+                    "provisional": number;
+                    "region"?: string;
+                    "unavailable_final": number;
+                    "unit": string;
+                    "unqualified_final": number;
+                  }>) | null;
+                  "version": number;
+                }) | null;
                 "by_region"?: Record<string, (Record<string, unknown>) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
@@ -103805,6 +112647,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -103866,6 +112730,57 @@ export interface operations {
                   "device_tier"?: string;
                   "samples": number;
                 }) | null>;
+                "browser_documents"?: ({
+                  "dropped_observations": number;
+                  "incomplete": boolean;
+                  "metrics": (Array<{
+                    "algorithm": string;
+                    "algorithm_sha256": string;
+                    "censored": number;
+                    "cohort"?: ({
+                      "browser_version": string;
+                      "cache_content_urls"?: (boolean) | null;
+                      "cache_enabled"?: (boolean) | null;
+                      "check_newer_versions"?: (boolean) | null;
+                      "cpu_throttle_rate": number;
+                      "device_scale_factor": number;
+                      "headless"?: (boolean) | null;
+                      "mobile"?: (boolean) | null;
+                      "network_bandwidth_kbps": number;
+                      "network_latency_ms": number;
+                      "new_user_policy": string;
+                      "new_user_policy_applied": boolean;
+                      "platform": string;
+                      "shaping_applied": boolean;
+                      "touch"?: (boolean) | null;
+                      "unavailable_reason"?: string;
+                      "version": number;
+                      "viewport_height": number;
+                      "viewport_width": number;
+                    }) | null;
+                    "device_profile": string;
+                    "distribution": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "eligible_final": number;
+                    "engine": string;
+                    "excluded_reasons"?: Record<string, number>;
+                    "frame_scope": string;
+                    "group"?: string;
+                    "lifecycle_phase": string;
+                    "metric": string;
+                    "provisional": number;
+                    "region"?: string;
+                    "unavailable_final": number;
+                    "unit": string;
+                    "unqualified_final": number;
+                  }>) | null;
+                  "version": number;
+                }) | null;
                 "by_region"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -104213,6 +113128,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -104302,6 +113239,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -105133,6 +114071,7 @@ export interface operations {
                   "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "browser_document_capture_requested"?: boolean;
                 "continue_on_error"?: ({
                   "conflict"?: boolean;
                   "effective": boolean;
@@ -105207,6 +114146,57 @@ export interface operations {
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
+                "browser_documents"?: ({
+                  "dropped_observations": number;
+                  "incomplete": boolean;
+                  "metrics": (Array<{
+                    "algorithm": string;
+                    "algorithm_sha256": string;
+                    "censored": number;
+                    "cohort"?: ({
+                      "browser_version": string;
+                      "cache_content_urls"?: (boolean) | null;
+                      "cache_enabled"?: (boolean) | null;
+                      "check_newer_versions"?: (boolean) | null;
+                      "cpu_throttle_rate": number;
+                      "device_scale_factor": number;
+                      "headless"?: (boolean) | null;
+                      "mobile"?: (boolean) | null;
+                      "network_bandwidth_kbps": number;
+                      "network_latency_ms": number;
+                      "new_user_policy": string;
+                      "new_user_policy_applied": boolean;
+                      "platform": string;
+                      "shaping_applied": boolean;
+                      "touch"?: (boolean) | null;
+                      "unavailable_reason"?: string;
+                      "version": number;
+                      "viewport_height": number;
+                      "viewport_width": number;
+                    }) | null;
+                    "device_profile": string;
+                    "distribution": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "eligible_final": number;
+                    "engine": string;
+                    "excluded_reasons"?: Record<string, number>;
+                    "frame_scope": string;
+                    "group"?: string;
+                    "lifecycle_phase": string;
+                    "metric": string;
+                    "provisional": number;
+                    "region"?: string;
+                    "unavailable_final": number;
+                    "unit": string;
+                    "unqualified_final": number;
+                  }>) | null;
+                  "version": number;
+                }) | null;
                 "by_region"?: Record<string, (Record<string, unknown>) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
@@ -105381,6 +114371,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -105442,6 +114454,57 @@ export interface operations {
                   "device_tier"?: string;
                   "samples": number;
                 }) | null>;
+                "browser_documents"?: ({
+                  "dropped_observations": number;
+                  "incomplete": boolean;
+                  "metrics": (Array<{
+                    "algorithm": string;
+                    "algorithm_sha256": string;
+                    "censored": number;
+                    "cohort"?: ({
+                      "browser_version": string;
+                      "cache_content_urls"?: (boolean) | null;
+                      "cache_enabled"?: (boolean) | null;
+                      "check_newer_versions"?: (boolean) | null;
+                      "cpu_throttle_rate": number;
+                      "device_scale_factor": number;
+                      "headless"?: (boolean) | null;
+                      "mobile"?: (boolean) | null;
+                      "network_bandwidth_kbps": number;
+                      "network_latency_ms": number;
+                      "new_user_policy": string;
+                      "new_user_policy_applied": boolean;
+                      "platform": string;
+                      "shaping_applied": boolean;
+                      "touch"?: (boolean) | null;
+                      "unavailable_reason"?: string;
+                      "version": number;
+                      "viewport_height": number;
+                      "viewport_width": number;
+                    }) | null;
+                    "device_profile": string;
+                    "distribution": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "eligible_final": number;
+                    "engine": string;
+                    "excluded_reasons"?: Record<string, number>;
+                    "frame_scope": string;
+                    "group"?: string;
+                    "lifecycle_phase": string;
+                    "metric": string;
+                    "provisional": number;
+                    "region"?: string;
+                    "unavailable_final": number;
+                    "unit": string;
+                    "unqualified_final": number;
+                  }>) | null;
+                  "version": number;
+                }) | null;
                 "by_region"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -105789,6 +114852,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -105878,6 +114963,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -106709,6 +115795,7 @@ export interface operations {
                   "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "browser_document_capture_requested"?: boolean;
                 "continue_on_error"?: ({
                   "conflict"?: boolean;
                   "effective": boolean;
@@ -106783,6 +115870,57 @@ export interface operations {
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
+                "browser_documents"?: ({
+                  "dropped_observations": number;
+                  "incomplete": boolean;
+                  "metrics": (Array<{
+                    "algorithm": string;
+                    "algorithm_sha256": string;
+                    "censored": number;
+                    "cohort"?: ({
+                      "browser_version": string;
+                      "cache_content_urls"?: (boolean) | null;
+                      "cache_enabled"?: (boolean) | null;
+                      "check_newer_versions"?: (boolean) | null;
+                      "cpu_throttle_rate": number;
+                      "device_scale_factor": number;
+                      "headless"?: (boolean) | null;
+                      "mobile"?: (boolean) | null;
+                      "network_bandwidth_kbps": number;
+                      "network_latency_ms": number;
+                      "new_user_policy": string;
+                      "new_user_policy_applied": boolean;
+                      "platform": string;
+                      "shaping_applied": boolean;
+                      "touch"?: (boolean) | null;
+                      "unavailable_reason"?: string;
+                      "version": number;
+                      "viewport_height": number;
+                      "viewport_width": number;
+                    }) | null;
+                    "device_profile": string;
+                    "distribution": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "eligible_final": number;
+                    "engine": string;
+                    "excluded_reasons"?: Record<string, number>;
+                    "frame_scope": string;
+                    "group"?: string;
+                    "lifecycle_phase": string;
+                    "metric": string;
+                    "provisional": number;
+                    "region"?: string;
+                    "unavailable_final": number;
+                    "unit": string;
+                    "unqualified_final": number;
+                  }>) | null;
+                  "version": number;
+                }) | null;
                 "by_region"?: Record<string, (Record<string, unknown>) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
@@ -106957,6 +116095,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -107018,6 +116178,57 @@ export interface operations {
                   "device_tier"?: string;
                   "samples": number;
                 }) | null>;
+                "browser_documents"?: ({
+                  "dropped_observations": number;
+                  "incomplete": boolean;
+                  "metrics": (Array<{
+                    "algorithm": string;
+                    "algorithm_sha256": string;
+                    "censored": number;
+                    "cohort"?: ({
+                      "browser_version": string;
+                      "cache_content_urls"?: (boolean) | null;
+                      "cache_enabled"?: (boolean) | null;
+                      "check_newer_versions"?: (boolean) | null;
+                      "cpu_throttle_rate": number;
+                      "device_scale_factor": number;
+                      "headless"?: (boolean) | null;
+                      "mobile"?: (boolean) | null;
+                      "network_bandwidth_kbps": number;
+                      "network_latency_ms": number;
+                      "new_user_policy": string;
+                      "new_user_policy_applied": boolean;
+                      "platform": string;
+                      "shaping_applied": boolean;
+                      "touch"?: (boolean) | null;
+                      "unavailable_reason"?: string;
+                      "version": number;
+                      "viewport_height": number;
+                      "viewport_width": number;
+                    }) | null;
+                    "device_profile": string;
+                    "distribution": {
+                      "buckets": Array<number>;
+                      "count": number;
+                      "max": number;
+                      "min": number;
+                      "sum": number;
+                    };
+                    "eligible_final": number;
+                    "engine": string;
+                    "excluded_reasons"?: Record<string, number>;
+                    "frame_scope": string;
+                    "group"?: string;
+                    "lifecycle_phase": string;
+                    "metric": string;
+                    "provisional": number;
+                    "region"?: string;
+                    "unavailable_final": number;
+                    "unit": string;
+                    "unqualified_final": number;
+                  }>) | null;
+                  "version": number;
+                }) | null;
                 "by_region"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -107365,6 +116576,28 @@ export interface operations {
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
+                "telemetry_policy"?: ({
+                  "availability": string;
+                  "policy"?: ({
+                    "budgets": Array<{
+                      "enabled": boolean;
+                      "limit_ms": number;
+                      "stage": string;
+                    }>;
+                    "cadence_scope": string;
+                    "capture_boundary": string;
+                    "captured_at": string;
+                    "classification_algorithm": string;
+                    "coverage_rule": string;
+                    "expected_controller_publication_interval_ms": number;
+                    "hash": string;
+                    "policy_id": string;
+                    "revision": number;
+                    "schema_version": string;
+                    "sustained_breach_window_ms": number;
+                  }) | null;
+                  "reason"?: string;
+                }) | null;
                 "telemetry_status"?: ({
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
@@ -107454,6 +116687,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -108001,6 +117235,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -108793,6 +118028,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -109589,6 +118825,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -109602,6 +118898,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -109641,6 +118947,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -109723,6 +119067,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -109736,6 +119140,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -110175,6 +119589,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -110188,6 +119662,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -110227,6 +119711,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -110309,6 +119831,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -110322,6 +119904,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -110699,6 +120291,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -110712,6 +120364,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -110751,6 +120413,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -110833,6 +120533,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -110846,6 +120606,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -111346,6 +121116,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -113022,6 +122793,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -113288,6 +123060,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -113916,6 +123689,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -115818,6 +125592,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -116222,6 +125997,7 @@ export interface operations {
             "available_screen_width"?: number;
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
+            "capture_document_metrics"?: (boolean) | null;
             "capture_screenshots"?: string;
             "check_newer_versions"?: (boolean) | null;
             "client_certificates"?: Array<{
@@ -116377,6 +126153,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -117022,6 +126799,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -117035,6 +126872,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -117074,6 +126921,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -117156,6 +127041,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -117169,6 +127114,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -117474,6 +127429,7 @@ export interface operations {
             "available_screen_width"?: number;
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
+            "capture_document_metrics"?: (boolean) | null;
             "capture_screenshots"?: string;
             "check_newer_versions"?: (boolean) | null;
             "client_certificates"?: Array<{
@@ -117629,6 +127585,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -118274,6 +128231,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -118287,6 +128304,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -118326,6 +128353,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -118408,6 +128473,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -118421,6 +128546,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -118789,6 +128924,7 @@ export interface operations {
             "available_screen_width"?: number;
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
+            "capture_document_metrics"?: (boolean) | null;
             "capture_screenshots"?: string;
             "check_newer_versions"?: (boolean) | null;
             "client_certificates"?: Array<{
@@ -118958,6 +129094,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -119642,6 +129779,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -119655,6 +129852,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -119694,6 +129901,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -119776,6 +130021,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -119789,6 +130094,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -120141,6 +130456,7 @@ export interface operations {
             "available_screen_width"?: number;
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
+            "capture_document_metrics"?: (boolean) | null;
             "capture_screenshots"?: string;
             "check_newer_versions"?: (boolean) | null;
             "client_certificates"?: Array<{
@@ -120310,6 +130626,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -120994,6 +131311,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -121007,6 +131384,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -121046,6 +131433,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -121128,6 +131553,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -121141,6 +131626,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -121494,6 +131989,7 @@ export interface operations {
             "available_screen_width"?: number;
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
+            "capture_document_metrics"?: (boolean) | null;
             "capture_screenshots"?: string;
             "check_newer_versions"?: (boolean) | null;
             "client_certificates"?: Array<{
@@ -121663,6 +132159,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -122347,6 +132844,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -122360,6 +132917,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -122399,6 +132966,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -122481,6 +133086,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -122494,6 +133159,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -122846,6 +133521,7 @@ export interface operations {
             "available_screen_width"?: number;
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
+            "capture_document_metrics"?: (boolean) | null;
             "capture_screenshots"?: string;
             "check_newer_versions"?: (boolean) | null;
             "client_certificates"?: Array<{
@@ -123015,6 +133691,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -123699,6 +134376,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -123712,6 +134449,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -123751,6 +134498,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -123833,6 +134618,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -123846,6 +134691,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -124348,6 +135203,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -124361,6 +135276,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -124400,6 +135325,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -124482,6 +135445,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -124495,6 +135518,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -124881,6 +135914,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -124894,6 +135987,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -124933,6 +136036,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -125015,6 +136156,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -125028,6 +136229,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -125405,6 +136616,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -125418,6 +136689,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -125457,6 +136738,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -125539,6 +136858,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -125552,6 +136931,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -125986,6 +137375,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -125999,6 +137448,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -126038,6 +137497,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -126120,6 +137617,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -126133,6 +137690,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -126505,6 +138072,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -126518,6 +138145,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -126557,6 +138194,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -126639,6 +138314,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -126652,6 +138387,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -128473,6 +140218,7 @@ export interface operations {
                 "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
+              "browser_document_capture_requested"?: boolean;
               "continue_on_error"?: ({
                 "conflict"?: boolean;
                 "effective": boolean;
@@ -128509,6 +140255,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -128730,6 +140477,57 @@ export interface operations {
                 "device_tier"?: string;
                 "samples": number;
               }) | null>;
+              "browser_documents"?: ({
+                "dropped_observations": number;
+                "incomplete": boolean;
+                "metrics": (Array<{
+                  "algorithm": string;
+                  "algorithm_sha256": string;
+                  "censored": number;
+                  "cohort"?: ({
+                    "browser_version": string;
+                    "cache_content_urls"?: (boolean) | null;
+                    "cache_enabled"?: (boolean) | null;
+                    "check_newer_versions"?: (boolean) | null;
+                    "cpu_throttle_rate": number;
+                    "device_scale_factor": number;
+                    "headless"?: (boolean) | null;
+                    "mobile"?: (boolean) | null;
+                    "network_bandwidth_kbps": number;
+                    "network_latency_ms": number;
+                    "new_user_policy": string;
+                    "new_user_policy_applied": boolean;
+                    "platform": string;
+                    "shaping_applied": boolean;
+                    "touch"?: (boolean) | null;
+                    "unavailable_reason"?: string;
+                    "version": number;
+                    "viewport_height": number;
+                    "viewport_width": number;
+                  }) | null;
+                  "device_profile": string;
+                  "distribution": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "eligible_final": number;
+                  "engine": string;
+                  "excluded_reasons"?: Record<string, number>;
+                  "frame_scope": string;
+                  "group"?: string;
+                  "lifecycle_phase": string;
+                  "metric": string;
+                  "provisional": number;
+                  "region"?: string;
+                  "unavailable_final": number;
+                  "unit": string;
+                  "unqualified_final": number;
+                }>) | null;
+                "version": number;
+              }) | null;
               "by_region"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -129087,6 +140885,28 @@ export interface operations {
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -129183,6 +141003,57 @@ export interface operations {
                 "device_tier"?: string;
                 "samples": number;
               }) | null>;
+              "browser_documents"?: ({
+                "dropped_observations": number;
+                "incomplete": boolean;
+                "metrics": (Array<{
+                  "algorithm": string;
+                  "algorithm_sha256": string;
+                  "censored": number;
+                  "cohort"?: ({
+                    "browser_version": string;
+                    "cache_content_urls"?: (boolean) | null;
+                    "cache_enabled"?: (boolean) | null;
+                    "check_newer_versions"?: (boolean) | null;
+                    "cpu_throttle_rate": number;
+                    "device_scale_factor": number;
+                    "headless"?: (boolean) | null;
+                    "mobile"?: (boolean) | null;
+                    "network_bandwidth_kbps": number;
+                    "network_latency_ms": number;
+                    "new_user_policy": string;
+                    "new_user_policy_applied": boolean;
+                    "platform": string;
+                    "shaping_applied": boolean;
+                    "touch"?: (boolean) | null;
+                    "unavailable_reason"?: string;
+                    "version": number;
+                    "viewport_height": number;
+                    "viewport_width": number;
+                  }) | null;
+                  "device_profile": string;
+                  "distribution": {
+                    "buckets": Array<number>;
+                    "count": number;
+                    "max": number;
+                    "min": number;
+                    "sum": number;
+                  };
+                  "eligible_final": number;
+                  "engine": string;
+                  "excluded_reasons"?: Record<string, number>;
+                  "frame_scope": string;
+                  "group"?: string;
+                  "lifecycle_phase": string;
+                  "metric": string;
+                  "provisional": number;
+                  "region"?: string;
+                  "unavailable_final": number;
+                  "unit": string;
+                  "unqualified_final": number;
+                }>) | null;
+                "version": number;
+              }) | null;
               "by_region"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -130544,6 +142415,28 @@ export interface operations {
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
+              "telemetry_policy"?: ({
+                "availability": string;
+                "policy"?: ({
+                  "budgets": Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_scope": string;
+                  "capture_boundary": string;
+                  "captured_at": string;
+                  "classification_algorithm": string;
+                  "coverage_rule": string;
+                  "expected_controller_publication_interval_ms": number;
+                  "hash": string;
+                  "policy_id": string;
+                  "revision": number;
+                  "schema_version": string;
+                  "sustained_breach_window_ms": number;
+                }) | null;
+                "reason"?: string;
+              }) | null;
               "telemetry_status"?: ({
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
@@ -130800,6 +142693,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -131513,7 +143407,14 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "created_at": string;
+            "description"?: string;
+            "domain_id": string;
+            "id": string;
+            "name": string;
+            "updated_at": string;
+          }) | null;
         };
       };
       "400": {
@@ -131661,6 +143562,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -132366,6 +144268,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -135074,6 +146977,10 @@ export interface operations {
           "domain_id"?: (string) | null;
           "name"?: string;
           "settings"?: {
+            "authoring"?: ({
+              "require_scenario_save_if_match"?: boolean;
+              "require_script_save_if_match"?: boolean;
+            }) | null;
             "features"?: {
               "control_parallel"?: boolean;
               "media_stream"?: boolean;
@@ -135140,7 +147047,79 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "category_id"?: string;
+            "created_at": string;
+            "domain_id"?: string;
+            "id": string;
+            "name": string;
+            "settings"?: {
+              "authoring"?: ({
+                "require_scenario_save_if_match"?: boolean;
+                "require_script_save_if_match"?: boolean;
+              }) | null;
+              "features"?: {
+                "control_parallel"?: boolean;
+                "media_stream"?: boolean;
+                "native_elastic_capacity"?: boolean;
+                "privileged_monitors"?: boolean;
+                "successful_message_detail"?: boolean;
+              };
+              "github"?: {
+                "actions"?: {
+                  "allowed_environments"?: Array<string>;
+                  "allowed_protocols"?: Array<string>;
+                  "allowed_refs"?: Array<string>;
+                  "allowed_repositories"?: Array<string>;
+                  "allowed_repository_ids"?: Array<string>;
+                  "allowed_target_hosts"?: Array<string>;
+                  "allowed_workflow_refs"?: Array<string>;
+                  "audience"?: string;
+                  "checks_enabled"?: boolean;
+                  "enabled"?: boolean;
+                  "issuer"?: string;
+                  "max_duration_minutes"?: number;
+                  "max_vusers"?: number;
+                  "required_runner_environment"?: string;
+                  "revision"?: number;
+                  "server_url"?: string;
+                  "updated_at"?: string;
+                  "updated_by"?: string;
+                  "validity_gate"?: string;
+                };
+                "allow_direct_commit"?: boolean;
+                "allow_import"?: boolean;
+                "allow_push"?: boolean;
+                "allowed_branches"?: Array<string>;
+                "allowed_repos"?: Array<string>;
+                "app_installation_id"?: number;
+                "auto_sync_enabled"?: boolean;
+                "automation_identity"?: string;
+                "bulk_sync_enabled"?: boolean;
+                "checks_enabled"?: boolean;
+                "default_branch"?: string;
+                "default_repo"?: string;
+                "default_sync_directory"?: string;
+                "enabled"?: boolean;
+                "path_template"?: string;
+                "require_pull_request"?: boolean;
+              };
+              "max_concurrent_tests"?: number;
+              "max_test_duration_minutes"?: number;
+              "max_vusers"?: number;
+              "max_vusers_per_test"?: number;
+              "pool_quotas"?: Record<string, {
+                "max_concurrent_tests"?: number;
+                "max_vusers"?: number;
+              }>;
+              "redaction_rules"?: Array<{
+                "name"?: string;
+                "pattern": string;
+                "replacement"?: string;
+              }>;
+            };
+            "updated_at": string;
+          }) | null;
         };
       };
       "400": {
@@ -135603,7 +147582,16 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "created_at": string;
+            "description"?: string;
+            "domain_id": string;
+            "id": string;
+            "name": string;
+            "repository_id": string;
+            "sort_order"?: number;
+            "updated_at": string;
+          }) | null;
         };
       };
       "400": {
@@ -135655,6 +147643,9 @@ export interface operations {
     parameters: {
       "path": {
         "id": string;
+      };
+      "header"?: {
+        "If-Match"?: string;
       };
     };
     requestBody: {
@@ -135808,6 +147799,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -136005,6 +147997,7 @@ export interface operations {
               "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<{
@@ -136583,6 +148576,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -136980,6 +148974,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -137293,7 +149288,11 @@ export interface operations {
       };
       "503": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            "code"?: "scenario_save_if_match_unavailable" | "scenario_save_strict_policy_unavailable";
+            "error": string;
+            "ref"?: string;
+          };
         };
       };
       "default": {
@@ -137557,6 +149556,9 @@ export interface operations {
       "path": {
         "id": string;
       };
+      "header"?: {
+        "If-Match"?: string;
+      };
     };
     requestBody: {
       content: {
@@ -137671,6 +149673,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -138420,6 +150423,9 @@ export interface operations {
     };
     responses: {
       "200": {
+        headers: {
+          "X-APEX-Script-Save-Mode"?: "conditioned" | "legacy_unconditioned";
+        };
         content: {
           "application/json": ({
             "activity"?: ({
@@ -138492,6 +150498,215 @@ export interface operations {
               "score": number;
               "status": string;
             }) | null;
+            "authoring_projection"?: ({
+              "content_revision": string;
+              "folder_id": (string) | null;
+              "id": string;
+              "library_placement": {
+                "application_id": (string) | null;
+                "release_ids": Array<string>;
+              };
+              "project_id": string;
+              "projection_version": string;
+              "script": {
+                "actions": Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "config": {
+                  "base_url": string;
+                  "browser"?: Record<string, unknown>;
+                  "browser_emulation"?: (Record<string, unknown>) | null;
+                  "bruno"?: Record<string, unknown>;
+                  "database"?: Record<string, unknown>;
+                  "error_handling"?: Record<string, unknown>;
+                  "eventhubs"?: Record<string, unknown>;
+                  "grpc"?: Record<string, unknown>;
+                  "http"?: Record<string, unknown>;
+                  "java_http"?: Record<string, unknown>;
+                  "java_vuser"?: Record<string, unknown>;
+                  "jmeter"?: (Record<string, unknown>) | null;
+                  "jms"?: Record<string, unknown>;
+                  "kafka"?: Record<string, unknown>;
+                  "log"?: Record<string, unknown>;
+                  "network"?: Record<string, unknown>;
+                  "observability"?: Record<string, unknown>;
+                  "pacing"?: Record<string, unknown>;
+                  "results"?: Record<string, unknown>;
+                  "run_logic"?: Record<string, unknown>;
+                  "sampler_schedules"?: Array<Record<string, unknown>>;
+                  "sapgui"?: Record<string, unknown>;
+                  "soap"?: Record<string, unknown>;
+                  "think_time"?: Record<string, unknown>;
+                  "web_runtime"?: Record<string, unknown>;
+                  "websocket"?: Record<string, unknown>;
+                };
+                "data_sources"?: Array<{
+                  "columns"?: Array<string>;
+                  "content_type"?: string;
+                  "delimiter"?: string;
+                  "encoding"?: string;
+                  "file_name"?: string;
+                  "first_row_header": boolean;
+                  "inline_data"?: string;
+                  "name": string;
+                  "path"?: string;
+                  "staged_asset"?: string;
+                  "storage_ref"?: string;
+                  "strategy": string;
+                  "type": string;
+                }>;
+                "folder_id"?: (string) | null;
+                "generated_by"?: string;
+                "generated_from"?: string;
+                "goal_config"?: ({
+                  "max_avg_server_processing_ms"?: (number) | null;
+                  "max_avg_transfer_ms"?: (number) | null;
+                  "max_error_count"?: (number) | null;
+                  "max_error_pct"?: (number) | null;
+                  "max_vusers"?: (number) | null;
+                  "min_vusers"?: (number) | null;
+                  "p95_latency_ms"?: (number) | null;
+                  "sla_breach_window"?: string;
+                  "stop_on_max_errors"?: boolean;
+                  "stop_on_sla_breach"?: boolean;
+                  "target_average_tps"?: (number) | null;
+                  "transaction_rules"?: Array<Record<string, unknown>>;
+                }) | null;
+                "id": string;
+                "init"?: Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "metadata"?: ({
+                  "import"?: (Record<string, unknown>) | null;
+                  "runtime_policy"?: (Record<string, unknown>) | null;
+                }) | null;
+                "name": string;
+                "parameters"?: Array<{
+                  "auto_allocate"?: boolean;
+                  "block_size"?: number;
+                  "charset"?: string;
+                  "column"?: string;
+                  "data_source"?: string;
+                  "end"?: number;
+                  "format"?: string;
+                  "format_dialect"?: string;
+                  "length"?: number;
+                  "max"?: number;
+                  "min"?: number;
+                  "name": string;
+                  "offset_seconds"?: number;
+                  "on_exhaustion"?: string;
+                  "pad_char"?: string;
+                  "pad_width"?: number;
+                  "random_algorithm"?: string;
+                  "same_line_as"?: string;
+                  "scope"?: string;
+                  "scope_id"?: string;
+                  "seed"?: (number) | null;
+                  "selection"?: string;
+                  "start"?: number;
+                  "start_row"?: number;
+                  "step"?: number;
+                  "timezone"?: string;
+                  "type": string;
+                  "update"?: string;
+                  "value_for_each_vuser"?: boolean;
+                  "values"?: Array<string>;
+                }>;
+                "project_id"?: string;
+                "protocol": string;
+                "ref_key"?: string;
+                "teardown"?: Array<{
+                  "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
+                  "auth"?: (Record<string, unknown>) | null;
+                  "body"?: string;
+                  "body_encoding"?: string;
+                  "body_file"?: string;
+                  "capture"?: (Record<string, unknown>) | null;
+                  "control"?: (Record<string, unknown>) | null;
+                  "extractors"?: Array<Record<string, unknown>>;
+                  "header_list"?: Record<string, unknown>;
+                  "headers"?: Record<string, string>;
+                  "http_version"?: "auto" | "1.1" | "2";
+                  "max_redirects"?: (number) | null;
+                  "metadata"?: Record<string, unknown>;
+                  "method"?: string;
+                  "name": string;
+                  "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
+                  "params"?: Record<string, unknown>;
+                  "selector"?: string;
+                  "soap"?: (Record<string, unknown>) | null;
+                  "sync"?: (Record<string, unknown>) | null;
+                  "target": string;
+                  "think_time"?: Record<string, unknown>;
+                  "think_time_after"?: boolean;
+                  "timeout_ms"?: number;
+                  "type": string;
+                  "value"?: string;
+                  "wait_for"?: (Record<string, unknown>) | null;
+                }>;
+                "version": string;
+              };
+            }) | null;
+            "content_revision"?: string;
             "created_at": string;
             "folder_id"?: (string) | null;
             "id": string;
@@ -138610,6 +150825,7 @@ export interface operations {
                   "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -139236,14 +151452,32 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "412": {
+        content: {
+          "application/json": {
+            "error": string;
+          };
+        };
+      };
       "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      "500": {
+      "428": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            "error": string;
+          };
+        };
+      };
+      "503": {
+        content: {
+          "application/json": {
+            "code"?: "script_save_outcome_unknown" | "script_save_outcome_audit_unavailable";
+            "error": string;
+            "ref"?: string;
+          };
         };
       };
       "default": {
@@ -139321,6 +151555,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -139334,6 +151628,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -139373,6 +151677,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -139455,6 +151797,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -139468,6 +151870,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -139854,6 +152266,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -139867,6 +152339,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -139906,6 +152388,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -139988,6 +152508,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -140001,6 +152581,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -140387,6 +152977,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -140400,6 +153050,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -140439,6 +153099,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -140521,6 +153219,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -140534,6 +153292,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -140920,6 +153688,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -140933,6 +153761,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -140972,6 +153810,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -141054,6 +153930,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -141067,6 +154003,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -141410,7 +154356,26 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "active": boolean;
+            "application_repository_roles"?: Record<string, Array<string>>;
+            "contact_email"?: string;
+            "created_at": string;
+            "description"?: string;
+            "domain_roles"?: Record<string, Array<string>>;
+            "expires_at"?: (string) | null;
+            "global_roles"?: Array<string>;
+            "id": string;
+            "key_rotated_at"?: (string) | null;
+            "last_used_at"?: (string) | null;
+            "name": string;
+            "owner_id"?: string;
+            "project_roles"?: Record<string, Array<string>>;
+            "rotation_due_at"?: (string) | null;
+            "rotation_interval_days"?: number;
+            "scopes"?: Array<string>;
+            "updated_at": string;
+          }) | null;
         };
       };
       "400": {
@@ -142021,6 +154986,7 @@ export interface operations {
               "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<{
@@ -142315,6 +155281,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -143043,6 +156010,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -144252,6 +157220,7 @@ export interface operations {
                 "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
+                "capture_document_metrics"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -144449,6 +157418,7 @@ export interface operations {
               "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<{
@@ -145133,6 +158103,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -145146,6 +158176,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -145185,6 +158225,44 @@ export interface operations {
                 "leaf_ordinal"?: number;
                 "method"?: string;
                 "network_entries"?: Array<{
+                  "browser_evidence"?: ({
+                    "bytes": {
+                      "request_body"?: (number) | null;
+                      "request_headers"?: (number) | null;
+                      "response_encoded_body"?: (number) | null;
+                      "response_headers"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    };
+                    "cache"?: (boolean) | null;
+                    "cache_unavailable_reason"?: string;
+                    "document_id"?: string;
+                    "document_offset_ms"?: (number) | null;
+                    "epoch_start_ms"?: (number) | null;
+                    "frame_id"?: string;
+                    "identity_unavailable_reason"?: string;
+                    "initiating_action_id"?: string;
+                    "initiator_unavailable_reason"?: string;
+                    "navigation_id"?: string;
+                    "observation_action_id"?: string;
+                    "observed_at": string;
+                    "origin"?: string;
+                    "phases": (Array<{
+                      "end_ms"?: (number) | null;
+                      "name": string;
+                      "start_ms"?: (number) | null;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "redirect_chain_id"?: string;
+                    "redirect_from_request_id"?: string;
+                    "redirect_hop": number;
+                    "request_id": string;
+                    "service_worker"?: (boolean) | null;
+                    "service_worker_unavailable_reason"?: string;
+                    "source_generation": string;
+                    "state": string;
+                    "timing_source": string;
+                    "version": number;
+                  }) | null;
                   "bytes_received"?: number;
                   "duration_ms"?: number;
                   "failure_kind"?: string;
@@ -145267,6 +158345,66 @@ export interface operations {
                   "device_platform"?: string;
                   "device_profile"?: string;
                   "device_tier"?: string;
+                  "document_evidence"?: ({
+                    "dropped_observations": number;
+                    "dropped_request_identities": number;
+                    "in_flight_requests": number;
+                    "incomplete": boolean;
+                    "issued_requests": number;
+                    "observations": (Array<{
+                      "algorithm": string;
+                      "algorithm_sha256": string;
+                      "available": boolean;
+                      "boundary": string;
+                      "captured_at": string;
+                      "cohort"?: ({
+                        "browser_version": string;
+                        "cache_content_urls"?: (boolean) | null;
+                        "cache_enabled"?: (boolean) | null;
+                        "check_newer_versions"?: (boolean) | null;
+                        "cpu_throttle_rate": number;
+                        "device_scale_factor": number;
+                        "headless"?: (boolean) | null;
+                        "mobile"?: (boolean) | null;
+                        "network_bandwidth_kbps": number;
+                        "network_latency_ms": number;
+                        "new_user_policy": string;
+                        "new_user_policy_applied": boolean;
+                        "platform": string;
+                        "shaping_applied": boolean;
+                        "touch"?: (boolean) | null;
+                        "unavailable_reason"?: string;
+                        "version": number;
+                        "viewport_height": number;
+                        "viewport_width": number;
+                      }) | null;
+                      "device_profile": string;
+                      "document_id": string;
+                      "engine": string;
+                      "frame_id": string;
+                      "frame_scope": string;
+                      "group"?: string;
+                      "interaction_count"?: number;
+                      "lifecycle_id": string;
+                      "lifecycle_phase": string;
+                      "measurement_id": string;
+                      "metric": string;
+                      "navigation_id": string;
+                      "qualified": boolean;
+                      "region"?: string;
+                      "revision": number;
+                      "source_generation": string;
+                      "state": string;
+                      "unavailable_reason"?: string;
+                      "unit": string;
+                      "value"?: (number) | null;
+                      "version": number;
+                      "window_end": string;
+                      "window_start": string;
+                    }>) | null;
+                    "source_generation": string;
+                    "version": number;
+                  }) | null;
                   "dom_complete_ms"?: number;
                   "dom_content_loaded_ms"?: number;
                   "fcp_ms"?: number;
@@ -145280,6 +158418,16 @@ export interface operations {
                   "long_task_count"?: number;
                   "recalc_style_count"?: number;
                   "resource_transfer_kb"?: number;
+                  "runtime_availability"?: ({
+                    "metrics": (Array<{
+                      "available": boolean;
+                      "metric": string;
+                      "scope": string;
+                      "source": string;
+                      "unavailable_reason"?: string;
+                    }>) | null;
+                    "version": number;
+                  }) | null;
                   "script_duration_ms"?: number;
                   "task_duration_ms"?: number;
                   "total_resource_count"?: number;
@@ -147351,6 +160499,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/browser-diagnostics": {
     "get": operations["handleDownloadRunArchiveBrowserDiagnostics"];
+  };
+  "/api/v1/tests/{id}/archive/browser-resources": {
+    "get": operations["handleGetRunArchiveBrowserResources"];
   };
   "/api/v1/tests/{id}/archive/business-keys/lookup": {
     "post": operations["handleBusinessKeyLookup"];

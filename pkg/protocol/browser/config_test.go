@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -393,5 +394,45 @@ func TestBrowserApplyDefaultConfigClearsSecurityAndRetentionState(t *testing.T) 
 	b.applyDefaultConfig()
 	if b.traceparentEnabled || b.harDir != "" || len(b.resourceValidatorKeys) != 0 {
 		t.Fatalf("stale config survived reset: trace=%v harDir=%q validatorKeys=%v", b.traceparentEnabled, b.harDir, b.resourceValidatorKeys)
+	}
+}
+
+func TestBrowserDocumentCaptureRequiresExplicitTypedOptInBeforeLaunch(t *testing.T) {
+	for _, raw := range []any{nil, "true", float64(1), map[string]any{"enabled": true}} {
+		b := &Browser{}
+		if err := b.Init(context.Background(), map[string]any{"browser_capture_document_metrics": raw, "browser_storage_state": "not-even-a-state"}); err == nil || !strings.Contains(err.Error(), "browser_capture_document_metrics must be boolean") {
+			t.Fatalf("explicit invalid capture reached runtime/state work: %v", err)
+		}
+		if b.currentPage() != nil {
+			t.Fatal("invalid capture initialized target runtime")
+		}
+	}
+	for _, enabled := range []bool{false, true} {
+		b := &Browser{}
+		if err := b.applyConfig(map[string]any{"browser_capture_document_metrics": enabled}); err != nil || b.BrowserDocumentCaptureEnabled() != enabled {
+			t.Fatalf("typed opt-in mismatch: %v", err)
+		}
+	}
+}
+
+func TestBrowserRuntimeNewUserPolicyAdmissionPrecedesTargetInitialization(t *testing.T) {
+	for _, policy := range []any{nil, true, "unknown", ""} {
+		b := &Browser{}
+		if err := b.Init(context.Background(), map[string]any{"browser_runtime_new_user_policy": policy}); err == nil || !strings.Contains(err.Error(), "browser_runtime_new_user_policy") {
+			t.Fatal("invalid explicit runtime policy reached initialization")
+		}
+	}
+	b := &Browser{}
+	if err := b.applyConfig(nil); err != nil || b.newUserPolicy != "persistent_context" {
+		t.Fatal("native persistent context default not represented")
+	}
+	if err := b.resetBrowserEvidence("native-test-version"); err != nil || !b.evidence.cohort.NewUserPolicyApplied {
+		t.Fatal("actual native default policy lost")
+	}
+	if err := b.applyConfig(map[string]any{"browser_runtime_new_user_policy": "cookies_each_iteration"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.resetBrowserEvidence("native-test-version"); err != nil || b.evidence.cohort.Eligible() || b.evidence.cohort.NewUserPolicyApplied || b.evidence.cohort.UnavailableReason != "new_user_policy_unavailable" {
+		t.Fatal("unsupported cookie reset labeled applied")
 	}
 }

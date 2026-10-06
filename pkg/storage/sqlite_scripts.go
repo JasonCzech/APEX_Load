@@ -38,13 +38,13 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 		return err
 	}
 	defer tx.Rollback()
-	if err := ensureObjectActiveTx(tx, "script", script.ID); err != nil {
-		return err
-	}
 	if err := validateScriptFolderProjectTx(tx, script.ProjectID, script.FolderID); err != nil {
 		return err
 	}
 	if err := validateScriptObjectRepositoryProjectsTx(tx, script.ProjectID, script); err != nil {
+		return err
+	}
+	if err := ensureObjectActiveTx(tx, "script", script.ID); err != nil {
 		return err
 	}
 	var existingProjectID string
@@ -54,14 +54,14 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 		return fmt.Errorf("script %q belongs to another project", script.ID)
 	}
 
-	query := `INSERT INTO scripts (id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO scripts (id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, goal_config_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
 			  ref_key=CASE WHEN TRIM(COALESCE(excluded.ref_key, '')) = '' THEN scripts.ref_key ELSE excluded.ref_key END,
 			  name=excluded.name, protocol=excluded.protocol, version=excluded.version,
 			  folder_id=excluded.folder_id,
 			  generated_by=excluded.generated_by, generated_from=excluded.generated_from,
-			  metadata_json=excluded.metadata_json,
+			  metadata_json=excluded.metadata_json, goal_config_json=excluded.goal_config_json,
 			  config=excluded.config, data_sources=excluded.data_sources, parameters=excluded.parameters,
 			  init=excluded.init, actions=excluded.actions, teardown=excluded.teardown,
 			  updated_at=excluded.updated_at
@@ -70,7 +70,7 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 	result, err := tx.Exec(query,
 		script.ID, script.RefKey, script.Name, script.Protocol, script.Version, script.ProjectID, script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
-		encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
+		encoded.metadata, encoded.goals, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
 		script.CreatedAt, script.UpdatedAt)
 	if err != nil {
 		return err
@@ -88,17 +88,25 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 // primitive because their deterministic ID is observable and may be targeted
 // by a concurrent controller or client.
 func (s *SQLiteStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
+	result, err := s.CreateScriptAuthoringIfAbsent(script)
+	if err != nil {
+		return false, err
+	}
+	return result.Applied, nil
+}
+
+func (s *SQLiteStore) CreateScriptAuthoringIfAbsent(script *dsl.Script) (*ScriptAuthoringMutationResult, error) {
 	if script == nil {
-		return false, errors.New("script is required")
+		return nil, errors.New("script is required")
 	}
 	if strings.TrimSpace(script.ID) == "" {
-		return false, errors.New("script id is required")
+		return nil, errors.New("script id is required")
 	}
 	script.ArchivedAt = nil
 	script.ProjectID = normalizeProjectID(strings.TrimSpace(script.ProjectID))
 	encoded, err := marshalScriptForStorage(script)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	if script.CreatedAt.IsZero() {
 		script.CreatedAt = time.Now().UTC()
@@ -106,33 +114,37 @@ func (s *SQLiteStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
 	script.UpdatedAt = time.Now().UTC()
 	tx, err := s.db.Begin()
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	defer tx.Rollback()
 	if err := validateScriptFolderProjectTx(tx, script.ProjectID, script.FolderID); err != nil {
-		return false, err
+		return nil, err
 	}
 	if err := validateScriptObjectRepositoryProjectsTx(tx, script.ProjectID, script); err != nil {
-		return false, err
+		return nil, err
 	}
-	result, err := tx.Exec(`INSERT INTO scripts (id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	result, err := tx.Exec(`INSERT INTO scripts (id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, goal_config_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`,
 		script.ID, script.RefKey, script.Name, script.Protocol, script.Version, script.ProjectID, script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
-		encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
+		encoded.metadata, encoded.goals, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
 		script.CreatedAt, script.UpdatedAt)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	rows, err := result.RowsAffected()
-	if err != nil || rows != 1 {
-		return false, err
+	if err != nil {
+		return nil, err
+	}
+	snapshot, snapshotErr := readScriptAuthoringSnapshotTx(tx, script.ID)
+	if snapshotErr != nil {
+		return nil, snapshotErr
 	}
 	if err := tx.Commit(); err != nil {
-		return false, err
+		return nil, err
 	}
-	return true, nil
+	return &ScriptAuthoringMutationResult{Snapshot: snapshot, Applied: rows == 1}, nil
 }
 
 // UpdateScriptIfUnchanged atomically replaces a script only when the caller's
@@ -168,41 +180,74 @@ func (s *SQLiteStore) UpdateScriptIfUnchangedAndCorrelationRulesetCurrent(
 	)
 }
 
-func (s *SQLiteStore) updateScriptIfUnchanged(
+func (s *SQLiteStore) updateScriptIfUnchanged(script *dsl.Script, updatedAt time.Time, rulesetID, rulesetProject string, rulesetUpdatedAt time.Time) (bool, error) {
+	result, err := s.updateScriptConditional(script, updatedAt, nil, rulesetID, rulesetProject, rulesetUpdatedAt)
+	if errors.Is(err, ErrScriptAuthoringConflict) || errors.Is(err, ErrScriptAuthoringNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return result.Applied, nil
+}
+
+func (s *SQLiteStore) UpdateScriptAuthoringIfCurrent(script *dsl.Script, expected ScriptAuthoringPrecondition) (*ScriptAuthoringMutationResult, error) {
+	return s.updateScriptConditional(script, time.Time{}, &expected, "", "", time.Time{})
+}
+
+func (s *SQLiteStore) UpdateScriptAuthoringIfCurrentAndCorrelationRulesetCurrent(script *dsl.Script, expected ScriptAuthoringPrecondition, rulesetID, rulesetProject string, rulesetUpdatedAt time.Time) (*ScriptAuthoringMutationResult, error) {
+	rulesetID = strings.TrimSpace(rulesetID)
+	if rulesetID == "" || rulesetUpdatedAt.IsZero() {
+		return nil, errors.New("correlation ruleset id and expected updated_at are required")
+	}
+	return s.updateScriptConditional(script, time.Time{}, &expected, rulesetID, normalizeProjectID(rulesetProject), rulesetUpdatedAt)
+}
+
+func (s *SQLiteStore) updateScriptConditional(
 	script *dsl.Script,
 	expectedUpdatedAt time.Time,
+	expected *ScriptAuthoringPrecondition,
 	rulesetID string,
 	expectedRulesetProjectID string,
 	expectedRulesetUpdatedAt time.Time,
-) (bool, error) {
+) (*ScriptAuthoringMutationResult, error) {
 	if script == nil {
-		return false, errors.New("script is required")
+		return nil, errors.New("script is required")
 	}
-	if strings.TrimSpace(script.ID) == "" || expectedUpdatedAt.IsZero() {
-		return false, errors.New("script id and expected updated_at are required")
+	if strings.TrimSpace(script.ID) == "" || (expected == nil && expectedUpdatedAt.IsZero()) {
+		return nil, errors.New("script id and expected updated_at are required")
+	}
+	if expected != nil {
+		if err := validateScriptAuthoringPrecondition(*expected); err != nil {
+			return nil, err
+		}
+		if normalizeProjectID(script.ProjectID) != normalizeProjectID(expected.ProjectID) {
+			return nil, ErrScriptAuthoringNotFound
+		}
+		script.CreatedAt = expected.CreatedAt
 	}
 	script.ArchivedAt = nil
 	script.ProjectID = normalizeProjectID(strings.TrimSpace(script.ProjectID))
 	if rulesetID != "" && expectedRulesetProjectID != script.ProjectID {
-		return false, errors.New("correlation ruleset belongs to another project")
+		return nil, errors.New("correlation ruleset belongs to another project")
 	}
 	encoded, err := marshalScriptForStorage(script)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	if script.CreatedAt.IsZero() {
-		return false, errors.New("script created_at is required for conditional update")
+		return nil, errors.New("script created_at is required for conditional update")
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	defer tx.Rollback()
 	if err := validateScriptFolderProjectTx(tx, script.ProjectID, script.FolderID); err != nil {
-		return false, err
+		return nil, err
 	}
 	if err := validateScriptObjectRepositoryProjectsTx(tx, script.ProjectID, script); err != nil {
-		return false, err
+		return nil, err
 	}
 	if rulesetID != "" {
 		rulesetQuery := `SELECT COALESCE(project_id, ''), updated_at
@@ -217,49 +262,91 @@ func (s *SQLiteStore) updateScriptIfUnchanged(
 			&currentRulesetUpdatedAt,
 		); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return false, nil
+				return nil, ErrScriptAuthoringConflict
 			}
-			return false, err
+			return nil, err
 		}
 		if normalizeProjectID(currentRulesetProjectID) != expectedRulesetProjectID ||
 			!currentRulesetUpdatedAt.Equal(expectedRulesetUpdatedAt) {
-			return false, nil
+			return nil, ErrScriptAuthoringConflict
 		}
+	}
+	var currentUpdatedAt, currentCreatedAt time.Time
+	var currentUpdatedRaw, currentProjectID, currentRevision string
+	readQuery := `SELECT updated_at, CAST(updated_at AS TEXT), COALESCE(project_id, ''), created_at, COALESCE(content_revision, '') FROM scripts WHERE id = ?`
+	if tx.dialect == storeDialectPostgres {
+		readQuery += ` FOR UPDATE`
+	}
+	if err := tx.QueryRow(readQuery, script.ID).Scan(&currentUpdatedAt, &currentUpdatedRaw, &currentProjectID, &currentCreatedAt, &currentRevision); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrScriptAuthoringNotFound
+		}
+		return nil, err
+	}
+	if normalizeProjectID(currentProjectID) != script.ProjectID || !currentCreatedAt.Equal(script.CreatedAt) {
+		return nil, ErrScriptAuthoringNotFound
+	}
+	if expected != nil && expected.LegacyOrdinarySave {
+		var rawSettings string
+		if err := tx.QueryRow(`SELECT COALESCE(settings_json,'') FROM projects WHERE id=?`, script.ProjectID).Scan(&rawSettings); err != nil {
+			return nil, err
+		}
+		var settings ProjectSettings
+		if rawSettings != "" && rawSettings != "null" {
+			if err := json.Unmarshal([]byte(rawSettings), &settings); err != nil {
+				return nil, fmt.Errorf("decode project authoring policy: %w", err)
+			}
+		}
+		if settings.Authoring != nil && settings.Authoring.RequireScriptSaveIfMatch {
+			return nil, ErrScriptAuthoringPreconditionRequired
+		}
+	}
+	if expected != nil {
+		if !ValidScriptContentRevision(currentRevision) {
+			return nil, ErrScriptAuthoringUnavailable
+		}
+		if currentRevision != expected.ContentRevision {
+			return nil, ErrScriptAuthoringConflict
+		}
+	} else if !currentUpdatedAt.Equal(expectedUpdatedAt) {
+		return nil, ErrScriptAuthoringConflict
 	}
 	if err := ensureObjectActiveTx(tx, "script", script.ID); err != nil {
-		return false, err
-	}
-	var currentUpdatedAt time.Time
-	var currentUpdatedRaw, currentProjectID string
-	if err := tx.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT), project_id FROM scripts WHERE id = ?`, script.ID).Scan(&currentUpdatedAt, &currentUpdatedRaw, &currentProjectID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil
-		}
-		return false, err
-	}
-	if normalizeProjectID(currentProjectID) != script.ProjectID || !currentUpdatedAt.Equal(expectedUpdatedAt) {
-		return false, nil
+		return nil, err
 	}
 	script.UpdatedAt = time.Now().UTC()
-	result, err := tx.Exec(`UPDATE scripts SET
+	query := `UPDATE scripts SET
 		ref_key = ?, name = ?, protocol = ?, version = ?, folder_id = ?,
-		generated_by = ?, generated_from = ?, metadata_json = ?, config = ?, data_sources = ?, parameters = ?, init = ?, actions = ?, teardown = ?, updated_at = ?
-		WHERE id = ? AND project_id = ? AND CAST(updated_at AS TEXT) = ?`,
+		generated_by = ?, generated_from = ?, metadata_json = ?, goal_config_json = ?, config = ?, data_sources = ?, parameters = ?, init = ?, actions = ?, teardown = ?, updated_at = ?
+		WHERE id = ? AND project_id = ? AND CAST(updated_at AS TEXT) = ?`
+	args := []any{
 		script.RefKey, script.Name, script.Protocol, script.Version, script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
-		encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
-		script.UpdatedAt, script.ID, script.ProjectID, currentUpdatedRaw)
+		encoded.metadata, encoded.goals, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
+		script.UpdatedAt, script.ID, script.ProjectID, currentUpdatedRaw}
+	if expected != nil {
+		query += ` AND content_revision = ?`
+		args = append(args, expected.ContentRevision)
+	}
+	result, err := tx.Exec(query, args...)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	rows, err := result.RowsAffected()
-	if err != nil || rows != 1 {
-		return false, err
+	if err != nil {
+		return nil, err
+	}
+	if rows != 1 {
+		return nil, ErrScriptAuthoringConflict
+	}
+	snapshot, err := readScriptAuthoringSnapshotTx(tx, script.ID)
+	if err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
-		return false, err
+		return nil, err
 	}
-	return true, nil
+	return &ScriptAuthoringMutationResult{Snapshot: snapshot, Applied: true}, nil
 }
 
 func validateScriptFolderProjectTx(executor testSaveExecutor, projectID string, folderID *string) error {
@@ -353,91 +440,16 @@ func (s *SQLiteStore) DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.
 	if id == "" || expectedUpdatedAt.IsZero() {
 		return false, errors.New("script id and expected updated_at are required")
 	}
-	var currentUpdatedAt time.Time
-	var currentUpdatedRaw, projectID string
-	if err := s.db.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT), COALESCE(project_id, '') FROM scripts WHERE id = ?`, id).Scan(&currentUpdatedAt, &currentUpdatedRaw, &projectID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil
-		}
-		return false, err
-	}
-	if !currentUpdatedAt.Equal(expectedUpdatedAt) {
+	applied, err := s.deleteScriptConditional(id, expectedUpdatedAt, nil)
+	if errors.Is(err, ErrScriptAuthoringNotFound) || errors.Is(err, ErrScriptAuthoringConflict) {
 		return false, nil
 	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	if err := lockRequiredPlacementParent(tx,
-		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, normalizeProjectID(projectID), "script", "project"); err != nil {
-		return false, err
-	}
-	// Lock the parent scripts row before touching dependent rows so this
-	// transaction and SaveScriptRecording (which locks the parent first, then
-	// upserts script_recordings) acquire row locks in the same order on
-	// PostgreSQL; the opposite order can deadlock. See DeleteScript.
-	lockQuery := `SELECT CAST(updated_at AS TEXT) FROM scripts WHERE id = ?`
-	if s.db.dialect == storeDialectPostgres {
-		lockQuery += ` FOR UPDATE`
-	}
-	var lockedUpdatedRaw string
-	if err := tx.QueryRow(lockQuery, id).Scan(&lockedUpdatedRaw); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil
-		}
-		return false, err
-	}
-	if lockedUpdatedRaw != currentUpdatedRaw {
-		return false, nil
-	}
-	if err := rejectActiveGitHubScriptSyncClaimTx(tx, id); err != nil {
-		return false, err
-	}
-	if err := detachOrDeleteGitHubCheckLinksForScriptTx(tx, id); err != nil {
-		return false, err
-	}
-	for _, query := range []string{
-		`DELETE FROM github_script_sync_target_claims WHERE script_id = ?`,
-		`DELETE FROM github_script_sync_claims WHERE script_id = ?`,
-		`DELETE FROM github_script_sync_target_owners WHERE script_id = ?`,
-		`DELETE FROM github_script_links WHERE script_id = ?`,
-	} {
-		if _, err := tx.Exec(query, id); err != nil {
-			return false, err
-		}
-	}
-	if _, err := tx.Exec(`DELETE FROM script_recordings WHERE script_id = ? AND EXISTS (
-		SELECT 1 FROM scripts WHERE id = ? AND CAST(updated_at AS TEXT) = ?
-	)`, id, id, currentUpdatedRaw); err != nil {
-		return false, err
-	}
-	result, err := tx.Exec(`DELETE FROM bruno_source_revisions WHERE script_id = ? AND EXISTS (
-		SELECT 1 FROM scripts WHERE id = ? AND CAST(updated_at AS TEXT) = ?
-	)`, id, id, currentUpdatedRaw)
-	if err != nil {
-		return false, err
-	}
-	_ = result
-	result, err = tx.Exec(`DELETE FROM scripts WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, id, currentUpdatedRaw)
-	if err != nil {
-		return false, err
-	}
-	rows, err := result.RowsAffected()
-	if err != nil || rows != 1 {
-		return false, err
-	}
-	if _, err := tx.Exec(deleteUnreferencedImportArtifactsSQL); err != nil {
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return applied, err
 }
 
 type storedScriptJSON struct {
 	metadata    string
+	goals       string
 	config      string
 	dataSources string
 	parameters  string
@@ -447,27 +459,21 @@ type storedScriptJSON struct {
 }
 
 func marshalScriptForStorage(script *dsl.Script) (storedScriptJSON, error) {
+	var encoded storedScriptJSON
 	fields := []struct {
 		name  string
 		value any
 		dst   *string
 	}{
-		{name: "metadata_json", value: script.Metadata},
-		{name: "config", value: script.Config},
-		{name: "data_sources", value: script.DataSources},
-		{name: "parameters", value: script.Parameters},
-		{name: "init", value: script.Init},
-		{name: "actions", value: script.Actions},
-		{name: "teardown", value: script.Teardown},
+		{name: "metadata_json", value: script.Metadata, dst: &encoded.metadata},
+		{name: "goal_config_json", value: script.GoalConfig, dst: &encoded.goals},
+		{name: "config", value: script.Config, dst: &encoded.config},
+		{name: "data_sources", value: script.DataSources, dst: &encoded.dataSources},
+		{name: "parameters", value: script.Parameters, dst: &encoded.parameters},
+		{name: "init", value: script.Init, dst: &encoded.init},
+		{name: "actions", value: script.Actions, dst: &encoded.actions},
+		{name: "teardown", value: script.Teardown, dst: &encoded.teardown},
 	}
-	var encoded storedScriptJSON
-	fields[0].dst = &encoded.metadata
-	fields[1].dst = &encoded.config
-	fields[2].dst = &encoded.dataSources
-	fields[3].dst = &encoded.parameters
-	fields[4].dst = &encoded.init
-	fields[5].dst = &encoded.actions
-	fields[6].dst = &encoded.teardown
 	for _, field := range fields {
 		payload, err := json.Marshal(field.value)
 		if err != nil {
@@ -479,132 +485,34 @@ func marshalScriptForStorage(script *dsl.Script) (storedScriptJSON, error) {
 }
 
 func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
-	var script dsl.Script
-	var metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
-
-	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='script' AND a.resource_id=scripts.id AND ` + archiveIncarnationMatch(s.db.dialect, "a.incarnation", "scripts.created_at") + `)
-			  FROM scripts WHERE id = ?`
-	err := s.db.QueryRow(query, id).Scan(
-		&script.ID, &script.RefKey, &script.Name, &script.Protocol, &script.Version,
-		&script.ProjectID, &script.FolderID,
-		&script.GeneratedBy, &script.GeneratedFrom,
-		&metadataJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
-		&script.CreatedAt, &script.UpdatedAt, &script.ArchivedAt)
+	snapshot, err := s.GetScriptAuthoringSnapshot(id)
+	if errors.Is(err, ErrScriptAuthoringNotFound) {
+		return nil, sql.ErrNoRows
+	}
 	if err != nil {
 		return nil, err
 	}
-
-	if err := decodeStoredScriptJSON(&script, metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON); err != nil {
-		return nil, fmt.Errorf("decode script %s: %w", script.ID, err)
-	}
-	recognizeLegacyCredentialPreservingImport(&script)
-
-	return &script, nil
+	return snapshot.Script, nil
 }
 
 func (s *SQLiteStore) ListScripts(projectID string, folderID *string) ([]*dsl.Script, error) {
-	args := []any{}
-	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, COALESCE(parameters, ''), init, actions, teardown, created_at, updated_at, (SELECT archived_at FROM object_archive_states a WHERE a.resource_type='script' AND a.resource_id=scripts.id AND ` + archiveIncarnationMatch(s.db.dialect, "a.incarnation", "scripts.created_at") + `) FROM scripts`
-	var filters []string
-	if projectID != "" {
-		filters = append(filters, `project_id = ?`)
-		args = append(args, projectID)
-	}
-	if folderID != nil {
-		if *folderID == "" {
-			filters = append(filters, `folder_id IS NULL`)
-		} else {
-			filters = append(filters, `folder_id = ?`)
-			args = append(args, *folderID)
-		}
-	}
-	if len(filters) > 0 {
-		query += ` WHERE ` + strings.Join(filters, ` AND `)
-	}
-	query += ` ORDER BY created_at DESC`
-	rows, err := s.db.Query(query, args...)
+	snapshots, err := s.ListScriptAuthoringSnapshots(projectID, folderID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
 	var scripts []*dsl.Script
-	for rows.Next() {
-		var script dsl.Script
-		var metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
-		err := rows.Scan(
-			&script.ID, &script.RefKey, &script.Name, &script.Protocol, &script.Version,
-			&script.ProjectID, &script.FolderID,
-			&script.GeneratedBy, &script.GeneratedFrom,
-			&metadataJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
-			&script.CreatedAt, &script.UpdatedAt, &script.ArchivedAt)
-		if err != nil {
-			return nil, err
-		}
-		if err := decodeStoredScriptJSON(&script, metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON); err != nil {
-			return nil, fmt.Errorf("decode script %s: %w", script.ID, err)
-		}
-		recognizeLegacyCredentialPreservingImport(&script)
-		scripts = append(scripts, &script)
+	for _, snapshot := range snapshots {
+		scripts = append(scripts, snapshot.Script)
 	}
-	return scripts, rows.Err()
+	return scripts, nil
 }
 
 func (s *SQLiteStore) DeleteScript(id string) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
+	_, err := s.deleteScriptConditional(id, time.Time{}, nil)
+	if errors.Is(err, ErrScriptAuthoringNotFound) {
+		return nil
 	}
-	defer tx.Rollback()
-	var projectID string
-	if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM scripts WHERE id = ?`, id).Scan(&projectID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		return err
-	}
-	if err := lockRequiredPlacementParent(tx,
-		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, normalizeProjectID(projectID), "script", "project"); err != nil {
-		return err
-	}
-	// Lock the parent before removing dependent integration rows. A concurrent
-	// GitHub link save takes the same row lock, so it cannot insert a new link
-	// after this transaction has already passed its dependent-row cleanup.
-	lockQuery := `SELECT id FROM scripts WHERE id = ?`
-	if s.db.dialect == storeDialectPostgres {
-		lockQuery += ` FOR UPDATE`
-	}
-	var lockedID string
-	if err := tx.QueryRow(lockQuery, id).Scan(&lockedID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		return err
-	}
-	if err := rejectActiveGitHubScriptSyncClaimTx(tx, id); err != nil {
-		return err
-	}
-	if err := detachOrDeleteGitHubCheckLinksForScriptTx(tx, id); err != nil {
-		return err
-	}
-	for _, deletion := range []struct {
-		query string
-		args  []any
-	}{
-		{query: `DELETE FROM github_script_sync_target_claims WHERE script_id = ?`, args: []any{id}},
-		{query: `DELETE FROM github_script_sync_claims WHERE script_id = ?`, args: []any{id}},
-		{query: `DELETE FROM github_script_sync_target_owners WHERE script_id = ?`, args: []any{id}},
-		{query: `DELETE FROM github_script_links WHERE script_id = ?`, args: []any{id}},
-		{query: `DELETE FROM script_recordings WHERE script_id = ?`, args: []any{id}},
-		{query: `DELETE FROM bruno_source_revisions WHERE script_id = ?`, args: []any{id}},
-		{query: deleteUnreferencedImportArtifactsSQL},
-		{query: `DELETE FROM scripts WHERE id = ?`, args: []any{id}},
-	} {
-		if _, err := tx.Exec(deletion.query, deletion.args...); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
+	return err
 }
 
 // detachOrDeleteGitHubCheckLinksForScriptTx preserves checks whose durable
@@ -620,7 +528,7 @@ func detachOrDeleteGitHubCheckLinksForScriptTx(tx *storeTx, scriptID string) err
 	return err
 }
 
-func decodeStoredScriptJSON(script *dsl.Script, metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string) error {
+func decodeStoredScriptJSON(script *dsl.Script, metadataJSON, goalsJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string) error {
 	if script == nil {
 		return errors.New("script is required")
 	}
@@ -631,6 +539,7 @@ func decodeStoredScriptJSON(script *dsl.Script, metadataJSON, configJSON, dataSo
 		optional bool
 	}{
 		{name: "metadata_json", raw: metadataJSON, dst: &script.Metadata, optional: true},
+		{name: "goal_config_json", raw: goalsJSON, dst: &script.GoalConfig, optional: true},
 		{name: "config", raw: configJSON, dst: &script.Config},
 		{name: "data_sources", raw: dataSourcesJSON, dst: &script.DataSources},
 		{name: "parameters", raw: parametersJSON, dst: &script.Parameters, optional: true},
@@ -650,31 +559,16 @@ func decodeStoredScriptJSON(script *dsl.Script, metadataJSON, configJSON, dataSo
 }
 
 func (s *SQLiteStore) MoveScript(id string, folderID *string) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := ensureObjectActiveTx(tx, "script", id); err != nil {
-		return err
-	}
-	var projectID string
-	if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM scripts WHERE id = ?`, id).Scan(&projectID); err != nil {
-		return err
-	}
-	if err := validateScriptFolderProjectTx(tx, projectID, folderID); err != nil {
-		return err
-	}
-	result, err := tx.Exec(`UPDATE scripts SET folder_id = ?, updated_at = ? WHERE id = ? AND project_id = ?`, folderID, time.Now(), id, projectID)
-	if err != nil {
-		return err
-	}
-	if affected, err := result.RowsAffected(); err != nil {
-		return err
-	} else if affected != 1 {
+	snapshot, err := s.GetScriptAuthoringSnapshot(id)
+	if errors.Is(err, ErrScriptAuthoringNotFound) {
 		return sql.ErrNoRows
 	}
-	return tx.Commit()
+	if err != nil {
+		return err
+	}
+	expected := ScriptAuthoringPrecondition{ProjectID: snapshot.Script.ProjectID, ContentRevision: snapshot.ContentRevision, CreatedAt: snapshot.Script.CreatedAt}
+	_, err = s.MoveScriptAuthoringIfCurrent(id, folderID, expected)
+	return err
 }
 
 func (s *SQLiteStore) SaveAuthoringSession(session *AuthoringSession) error {

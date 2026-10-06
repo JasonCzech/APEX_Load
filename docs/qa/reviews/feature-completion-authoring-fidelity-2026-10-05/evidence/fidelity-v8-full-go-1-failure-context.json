@@ -1,0 +1,122 @@
+{
+  "gate": "fidelity-v8-full-go-1",
+  "receipt_sha256": "25828a809a29d2353aa202015fc89ca5fbbd125ecf1f78278202aa3d6e0df4c6",
+  "raw_log_sha256": "535285d355cdc5a3094bb65e953eeb7d0700f3091598cdfe9101aad6322943e1",
+  "duration_seconds": 1342.081,
+  "exit_code": 1,
+  "source_count": 5220,
+  "source_bookends_equal": true,
+  "embed_count": 251,
+  "embed_bookends_equal": true,
+  "failure_contexts": [
+    {
+      "start_line": 16,
+      "end_line": 27,
+      "lines": [
+        {
+          "number": 16,
+          "text": "ok  \tgithub.com/jasonczech/apexload/cmd/webcoverage\t0.356s"
+        },
+        {
+          "number": 17,
+          "text": "ok  \tgithub.com/jasonczech/apexload/deployments/k8s\t3.174s"
+        },
+        {
+          "number": 18,
+          "text": "ok  \tgithub.com/jasonczech/apexload/desktop\t1.606s"
+        },
+        {
+          "number": 19,
+          "text": "--- FAIL: TestGeneratedDashboardIsFresh (1.35s)"
+        },
+        {
+          "number": 20,
+          "text": "    status_inventory_test.go:665: QA dashboard freshness: exit status 1"
+        },
+        {
+          "number": 21,
+          "text": "        DASHBOARD.md is stale; run scripts/qa-generate-dashboard.py"
+        },
+        {
+          "number": 22,
+          "text": "FAIL"
+        },
+        {
+          "number": 23,
+          "text": "FAIL\tgithub.com/jasonczech/apexload/docs/qa\t2.152s"
+        },
+        {
+          "number": 24,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/analysis\t0.170s"
+        },
+        {
+          "number": 25,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/analysis/duckdb\t43.690s"
+        },
+        {
+          "number": 26,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/api\t578.367s"
+        },
+        {
+          "number": 27,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/api/testexec\t0.405s"
+        }
+      ]
+    },
+    {
+      "start_line": 103,
+      "end_line": 114,
+      "lines": [
+        {
+          "number": 103,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/prometheus\t0.153s"
+        },
+        {
+          "number": 104,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol\t0.531s"
+        },
+        {
+          "number": 105,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol/aura\t0.113s"
+        },
+        {
+          "number": 106,
+          "text": "--- FAIL: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.99s)"
+        },
+        {
+          "number": 107,
+          "text": "    --- FAIL: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.90s)"
+        },
+        {
+          "number": 108,
+          "text": "        document_actual_integration_test.go:114: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin"
+        },
+        {
+          "number": 109,
+          "text": "        document_actual_integration_test.go:159: independent frame INP finality missing"
+        },
+        {
+          "number": 110,
+          "text": "        document_actual_integration_test.go:59: owned fixture diagnostics documents=7 frames=5 issued=6 browser_version=26.5 errors=[]"
+        },
+        {
+          "number": 111,
+          "text": "2026/10/05 17:19:52 ERROR could not resolve BindingCall error=\"playwright: target closed: Target page, context or browser has been closed\""
+        },
+        {
+          "number": 112,
+          "text": "2026/10/05 17:19:59 INFO browser HAR artifact captured policy=always path=/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestHARCaptureAlwaysPersistsScrubbedArtifact1355873638/001/apexload_browser_1791235198926287000_scrubbed.har sensitivity=scrubbed error_seen=false sla_breach_seen=false manual_seen=false"
+        },
+        {
+          "number": 113,
+          "text": "2026/10/05 17:19:59 INFO browser HAR artifact captured policy=always path=/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestFinalizeHARCaptureRedactsLowEntropyRuntimeSecrets3453244471/001/apexload_browser_runtime_scrubbed.har sensitivity=scrubbed error_seen=false sla_breach_seen=false manual_seen=false"
+        },
+        {
+          "number": 114,
+          "text": "2026/10/05 17:19:59 INFO browser HAR artifact captured policy=always path=/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestFinalizeHARCaptureRedactsPercentEncodedRuntimeSecrets4066150057/001/apexload_browser_encoded_scrubbed.har sensitivity=scrubbed error_seen=false sla_breach_seen=false manual_seen=false"
+        }
+      ]
+    }
+  ],
+  "scope": "Complete owned full Go run; failure contexts remain separate from qualification and have not been dismissed."
+}

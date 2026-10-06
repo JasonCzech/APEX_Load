@@ -54,7 +54,11 @@ func workerReviewTwoMeasureFixture(t *testing.T) (workerBootstrap, workerRequest
 	r.Normalize.OutputHandles = append(r.Normalize.OutputHandles, b.Handles[3].Handle, b.Handles[4].Handle)
 	v := workerTestNormalizeResult(b)
 	v.Normalize.Accepted = 5
-	v.Normalize.Outputs = append(v.Normalize.Outputs, workerOutput{Handle: b.Handles[3].Handle, SHA256: strings.Repeat("a", 64), Bytes: 100, Rows: 3})
+	// The second measure has its own coherent producer summary. This fixture
+	// exercises population inference, independently of summary admission.
+	stats := v.Normalize.Outputs[0].Partition.Clone()
+	stats.Kind, stats.Rows, stats.Valid = analysis.KindGauge, 3, 3
+	v.Normalize.Outputs = append(v.Normalize.Outputs, workerOutput{Handle: b.Handles[3].Handle, SHA256: strings.Repeat("a", 64), Bytes: 100, Rows: 3, Partition: &stats})
 	if v.validate(b, r) != nil {
 		t.Fatal("coherent unknown-row fixture rejected")
 	}
@@ -63,7 +67,17 @@ func workerReviewTwoMeasureFixture(t *testing.T) (workerBootstrap, workerRequest
 func TestWorkerUnknownRowsStillRequireEachMeasurePopulation(t *testing.T) {
 	b, r, v := workerReviewTwoMeasureFixture(t)
 	v.Normalize.Outputs[0].Rows = 0
+	v.Normalize.Outputs[0].Partition.Rows = 0
+	v.Normalize.Outputs[0].Partition.Valid = 0
+	v.Normalize.Outputs[0].Partition.MinTime, v.Normalize.Outputs[0].Partition.MaxTime = nil, nil
 	v.Normalize.Outputs[2].Rows = 5
+	v.Normalize.Outputs[2].Partition.Rows = 5
+	v.Normalize.Outputs[2].Partition.Valid = 5
+	for _, output := range []workerOutput{v.Normalize.Outputs[0], v.Normalize.Outputs[2]} {
+		if output.Partition.Validate() != nil || output.Partition.Rows != output.Rows {
+			t.Fatal("population regression reached an unrelated partition-proof refusal")
+		}
+	}
 	if v.validate(b, r) == nil {
 		t.Fatal("slot totals 1 and 5 accepted for one three-row source")
 	}

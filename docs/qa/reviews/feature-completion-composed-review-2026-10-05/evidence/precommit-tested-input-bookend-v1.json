@@ -1,0 +1,17 @@
+{
+  "schema": "apexload.precommit-tested-input-bookend.v1",
+  "at_utc": "2026-10-06T03:15:26.740298+00:00",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "full_go_2_receipt_sha256": "2414c442fe38b9c2ed8cec6457a296ac616eb419434d174612c9a530d0d1e129",
+  "dashboard_cycle_2_receipt_sha256": "f74e2970b743546a188c5b3521238ca04a3eb7939476becb4397baeebd3caa3a",
+  "current_source_entries_matched": 5721,
+  "current_embed_entries_matched": 260,
+  "dashboard_final_embed_equals_full_go_final_embed": true,
+  "two_test_only_changes_after_dashboard_cycle": [
+    "pkg/api/route_catalog_characterization_test.go",
+    "pkg/api/route_registry_test.go"
+  ],
+  "working_tracked_diff_check_exit": 0,
+  "mismatched_inputs": [],
+  "scope_limit": "Metadata/source hashes and tracked whitespace only; completed test scopes and skips remain those of the retained receipts."
+}

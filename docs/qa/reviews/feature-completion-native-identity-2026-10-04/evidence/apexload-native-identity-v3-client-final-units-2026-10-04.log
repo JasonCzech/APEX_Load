@@ -1,0 +1,13 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run src/utils/analysisIdentity.test.ts src/components/AnalysisIdentityMapping.test.tsx src/components/AnalysisComparison.test.tsx src/components/AnalysisWorkspace.test.tsx
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/publish-diagnostics/Project_Stormrunner/dashboard
+
+
+ Test Files  4 passed (4)
+      Tests  47 passed (47)
+   Start at  13:07:59
+   Duration  1.52s (transform 409ms, setup 154ms, import 1.01s, tests 563ms, environment 2.16s)
+

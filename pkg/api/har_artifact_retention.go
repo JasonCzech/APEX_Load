@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -35,6 +36,8 @@ type HARArtifactPruneCandidate struct {
 	ModifiedAt    time.Time `json:"modified_at"`
 	ExpiredAt     time.Time `json:"expired_at"`
 	identity      os.FileInfo
+	working       *browserprotocol.RuntimeHARWorkingPruneCandidate
+	planningError error
 }
 
 type HARArtifactRetentionResult struct {
@@ -71,9 +74,26 @@ func planHARArtifactRetentionLimit(now time.Time, settings ArchiveRetentionSetti
 	if dir == "" {
 		dir = os.TempDir()
 	}
+	candidates := make([]HARArtifactPruneCandidate, 0)
+	planCtx, planCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer planCancel()
+	workingPlans, planErr := browserprotocol.PlanRuntimeHARWorkingCleanupContext(planCtx, dir, limit)
+	if planErr != nil {
+		return []HARArtifactPruneCandidate{{Path: dir, Sensitivity: scrub.SensitivityRaw, planningError: fmt.Errorf("HAR maintenance unavailable: %w", planErr)}}
+	}
+	completedWorking := make(map[string][]browserprotocol.RuntimeHARWorkingPruneCandidate)
+	for _, working := range workingPlans {
+		copy := working
+		sensitivity := scrub.SensitivityRaw
+		if working.Completed {
+			sensitivity = scrub.SensitivityScrubbed
+			completedWorking[filepath.Base(working.Path)] = append(completedWorking[filepath.Base(working.Path)], working)
+		}
+		candidates = append(candidates, HARArtifactPruneCandidate{Path: working.Path, Sensitivity: sensitivity, SizeBytes: working.SizeBytes, ModifiedAt: working.ModifiedAt, ExpiredAt: now.UTC(), working: &copy})
+	}
 	root, err := openArchiveDirectoryNoSymlink(dir)
 	if err != nil {
-		return nil
+		return candidates
 	}
 	defer root.Close()
 	directory, err := root.Open(".")
@@ -82,7 +102,6 @@ func planHARArtifactRetentionLimit(now time.Time, settings ArchiveRetentionSetti
 	}
 	defer directory.Close()
 
-	candidates := make([]HARArtifactPruneCandidate, 0)
 	for len(candidates) < limit {
 		entries, readErr := directory.ReadDir(harArtifactRetentionReadBatch)
 		for _, entry := range entries {
@@ -96,9 +115,25 @@ func planHARArtifactRetentionLimit(now time.Time, settings ArchiveRetentionSetti
 			if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 				continue
 			}
+			// The qualified working plan and this flat scan originate from the
+			// same artifact directory. A completed retirement interrupted before
+			// rename still has its original flat basename; do not apply it twice.
+			// Basename plus exact inode handles canonical directory aliases while
+			// preserving a same-name replacement for separate validation.
+			duplicate := false
+			for _, working := range completedWorking[entry.Name()] {
+				if working.MatchesFileIdentity(info) {
+					duplicate = true
+					break
+				}
+			}
+			if duplicate {
+				continue
+			}
 			path := filepath.Join(dir, entry.Name())
 			rawWorkingFile := strings.HasSuffix(entry.Name(), harArtifactTempSuffix)
-			if rawWorkingFile && browserprotocol.RuntimeHARWorkingPathActive(path) {
+			// A legacy flat raw file has no cross-process writer-join proof.
+			if rawWorkingFile {
 				continue
 			}
 			if !rawWorkingFile && !settings.Enabled {
@@ -166,19 +201,26 @@ func applyHARArtifactRetention(candidates []HARArtifactPruneCandidate) ([]HARArt
 }
 
 func removeHARArtifactCandidate(candidate HARArtifactPruneCandidate) error {
+	if candidate.planningError != nil {
+		return candidate.planningError
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if candidate.working != nil {
+		return browserprotocol.PruneRuntimeHARWorkingCandidate(ctx, *candidate.working)
+	}
+	if strings.HasSuffix(candidate.Path, harArtifactTempSuffix) {
+		return fmt.Errorf("legacy HAR raw writer ownership is unproven")
+	}
+	return browserprotocol.WithRuntimeHARArtifactNamespace(ctx, filepath.Dir(candidate.Path), func(root *os.Root) error { return removeHARArtifactCandidateAt(root, candidate) })
+}
+
+func removeHARArtifactCandidateAt(root *os.Root, candidate HARArtifactPruneCandidate) error {
 	path := filepath.Clean(strings.TrimSpace(candidate.Path))
 	name := filepath.Base(path)
 	if path == "." || !isHARArtifactName(name) || candidate.identity == nil {
 		return fmt.Errorf("HAR retention candidate is incomplete")
 	}
-	if strings.HasSuffix(name, harArtifactTempSuffix) && browserprotocol.RuntimeHARWorkingPathActive(path) {
-		return fmt.Errorf("HAR working file %q is active", name)
-	}
-	root, err := openArchiveDirectoryNoSymlink(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer root.Close()
 	current, err := root.Lstat(name)
 	if err != nil {
 		return err
@@ -188,24 +230,5 @@ func removeHARArtifactCandidate(candidate HARArtifactPruneCandidate) error {
 		!current.ModTime().UTC().Equal(candidate.ModifiedAt) {
 		return fmt.Errorf("HAR artifact %q changed after retention planning", name)
 	}
-	tombstone, err := archiveTemporaryName(".", name+".retention")
-	if err != nil {
-		return err
-	}
-	if err := root.Rename(name, tombstone); err != nil {
-		return err
-	}
-	tombstoneInfo, err := root.Lstat(tombstone)
-	if err != nil || tombstoneInfo.Mode()&os.ModeSymlink != 0 || !tombstoneInfo.Mode().IsRegular() || !os.SameFile(candidate.identity, tombstoneInfo) {
-		_ = root.Rename(tombstone, name)
-		if err != nil {
-			return err
-		}
-		return fmt.Errorf("HAR artifact %q changed during retention deletion", name)
-	}
-	if err := root.Remove(tombstone); err != nil {
-		_ = root.Rename(tombstone, name)
-		return err
-	}
-	return syncOpenedArchiveDirectory(root)
+	return browserprotocol.RemoveRuntimeHARArtifactAt(root, name, candidate.identity)
 }

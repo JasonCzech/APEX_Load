@@ -1,0 +1,158 @@
+Building controller...
+Starting controller on http://127.0.0.1:18471 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.ws99mvPJHd)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 8 tests using 1 worker
+
+(node:76187) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/workflow-browser-resource-evidence.spec.ts:5:1 › browser resource evidence filters retained failures and inspects action attribution (672ms)
+  ✓  2 e2e/workflow-browser-resource-evidence.spec.ts:87:1 › live browser legacy summary refuses unavailable values and distinguishes explicit zero without standards qualification (6.8s)
+  ✓  3 e2e/workflow-browser-resource-evidence.spec.ts:132:1 › archived browser legacy summary preserves mixed-cohort gaps in engine CSV and ranks only complete devices (992ms)
+  ✓  4 e2e/workflow-browser-resource-evidence.spec.ts:185:1 › browser results comparison cards preserve exact mixed cohorts and malformed summaries (705ms)
+  ✘  5 e2e/workflow-browser-resource-evidence.spec.ts:318:1 › live document populations preserve overlapping provisional history, actual cohorts and missing-peer coverage (691ms)
+(node:76279) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  6 e2e/workflow-browser-resource-evidence.spec.ts:356:1 › archive document evidence retains latest pending, censored and unavailable measurements independently from actions (15.7s)
+(node:76455) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  7 e2e/workflow-script-editor.spec.ts:7:1 › operator edits the failed nested browser assertion and reruns without losing source fields (959ms)
+  ✓  8 e2e/workflow-script-editor.spec.ts:60:1 › authored script goals survive an unrelated editor save and canonical reopen (1.2s)
+
+
+  1) e2e/workflow-browser-resource-evidence.spec.ts:318:1 › live document populations preserve overlapping provisional history, actual cohorts and missing-peer coverage 
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 147
+    Received:    20.578125
+
+      308 |   expect(after.left).toBeGreaterThanOrEqual(after.ownerLeft)
+      309 |   expect(after.right).toBeLessThanOrEqual(after.ownerRight)
+    > 310 |   expect(after.headingTop).toBeGreaterThanOrEqual(after.topbarBottom)
+          |                            ^
+      311 |   expect(after.headingBottom).toBeLessThanOrEqual(after.viewportHeight)
+      312 |   expect(after.headingLeft).toBeGreaterThanOrEqual(after.left)
+      313 |   expect(after.headingRight).toBeLessThanOrEqual(after.right)
+        at captureDocumentPanel (/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard/e2e/workflow-browser-resource-evidence.spec.ts:310:28)
+        at /Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard/e2e/workflow-browser-resource-evidence.spec.ts:348:3
+
+    attachment #3: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-focused-preliminary-1/dev-admin/workflow-browser-resource--814c4-s-and-missing-peer-coverage/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-focused-preliminary-1/dev-admin/workflow-browser-resource--814c4-s-and-missing-peer-coverage/error-context.md
+
+    attachment #5: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-focused-preliminary-1/dev-admin/workflow-browser-resource--814c4-s-and-missing-peer-coverage/trace.zip
+    Usage:
+
+        npx playwright show-trace ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-focused-preliminary-1/dev-admin/workflow-browser-resource--814c4-s-and-missing-peer-coverage/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) e2e/workflow-browser-resource-evidence.spec.ts:356:1 › archive document evidence retains latest pending, censored and unavailable measurements independently from actions 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByRole('region', { name: 'Browser document evidence', exact: true }).getByLabel('Document metric populations', { exact: true }).locator('tbody > tr')
+    Expected: 3
+    Received: 6
+    Timeout:  15000ms
+
+    Call log:
+      - Expect "toHaveCount" with timeout 15000ms
+      - waiting for getByRole('region', { name: 'Browser document evidence', exact: true }).getByLabel('Document metric populations', { exact: true }).locator('tbody > tr')
+        34 × locator resolved to 6 elements
+           - unexpected value "6"
+
+
+      383 |   await expect(panel).toContainText('Document evidence is incomplete. 7 observations were dropped')
+      384 |   await expect(panel).toContainText('Additional source observations are excluded from this view')
+    > 385 |   await expect(panel.getByLabel('Document metric populations', { exact: true }).locator('tbody > tr')).toHaveCount(3)
+          |                                                                                                        ^
+      386 |   const observations = panel.getByLabel('Retained document measurements', { exact: true })
+      387 |   await expect(observations.locator('tbody > tr')).toHaveCount(4)
+      388 |   await expect(observations).toContainText('provisional · hidden')
+        at /Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard/e2e/workflow-browser-resource-evidence.spec.ts:385:104
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-focused-preliminary-1/dev-admin/workflow-browser-resource--6abc2--independently-from-actions/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-focused-preliminary-1/dev-admin/workflow-browser-resource--6abc2--independently-from-actions/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-focused-preliminary-1/dev-admin/workflow-browser-resource--6abc2--independently-from-actions/trace.zip
+    Usage:
+
+        npx playwright show-trace ../docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-focused-preliminary-1/dev-admin/workflow-browser-resource--6abc2--independently-from-actions/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    e2e/workflow-browser-resource-evidence.spec.ts:318:1 › live document populations preserve overlapping provisional history, actual cohorts and missing-peer coverage 
+    e2e/workflow-browser-resource-evidence.spec.ts:356:1 › archive document evidence retains latest pending, censored and unavailable measurements independently from actions 
+  6 passed (29.5s)
+--- controller log (last 60 lines) ---
+{"time":"2026-10-05T06:21:13.97876-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/components","status":200,"duration_ms":0,"remote":"127.0.0.1:61338"}
+{"time":"2026-10-05T06:21:13.996666-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/browser-emulation-catalog","status":200,"duration_ms":0,"remote":"127.0.0.1:61337"}
+{"time":"2026-10-05T06:21:13.996859-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/config-defaults","status":200,"duration_ms":0,"remote":"127.0.0.1:61336"}
+{"time":"2026-10-05T06:21:13.997352-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/runtime-settings/support-matrix","status":200,"duration_ms":0,"remote":"127.0.0.1:61338"}
+{"time":"2026-10-05T06:21:14.014882-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:61339"}
+{"time":"2026-10-05T06:21:14.014892-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"976cfd29-b1d0-49d1-86d1-ee65d578af0b","clients":1}
+{"time":"2026-10-05T06:21:14.14644-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:61340"}
+{"time":"2026-10-05T06:21:14.146469-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"976cfd29-b1d0-49d1-86d1-ee65d578af0b","clients":2}
+{"time":"2026-10-05T06:21:14.236262-04:00","level":"INFO","msg":"http request","method":"PUT","path":"/api/v1/scripts/65347b70-cf22-4b51-9000-e9bb3b018375","status":200,"duration_ms":12,"remote":"127.0.0.1:61338"}
+{"time":"2026-10-05T06:21:14.239917-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/65347b70-cf22-4b51-9000-e9bb3b018375/secret-status","status":200,"duration_ms":0,"remote":"127.0.0.1:61338"}
+{"time":"2026-10-05T06:21:14.246606-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/sessions","status":200,"duration_ms":0,"remote":"127.0.0.1:61336"}
+{"time":"2026-10-05T06:21:14.24882-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts","status":200,"duration_ms":2,"remote":"127.0.0.1:61338"}
+{"time":"2026-10-05T06:21:14.262704-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/65347b70-cf22-4b51-9000-e9bb3b018375","status":200,"duration_ms":1,"remote":"127.0.0.1:61324"}
+{"time":"2026-10-05T06:21:14.273669-04:00","level":"INFO","msg":"websocket client disconnected","clients":1}
+{"time":"2026-10-05T06:21:14.273864-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-05T06:21:14.292966-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/me","status":200,"duration_ms":0,"remote":"127.0.0.1:61338"}
+{"time":"2026-10-05T06:21:14.311707-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:61338"}
+{"time":"2026-10-05T06:21:14.313128-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:61338"}
+{"time":"2026-10-05T06:21:14.313885-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains","status":200,"duration_ms":0,"remote":"127.0.0.1:61336"}
+{"time":"2026-10-05T06:21:14.314132-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:61337"}
+{"time":"2026-10-05T06:21:14.318527-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects","status":200,"duration_ms":0,"remote":"127.0.0.1:61338"}
+{"time":"2026-10-05T06:21:14.318978-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/desktop/status","status":200,"duration_ms":0,"remote":"127.0.0.1:61335"}
+{"time":"2026-10-05T06:21:14.319919-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/65347b70-cf22-4b51-9000-e9bb3b018375","status":200,"duration_ms":3,"remote":"127.0.0.1:61333"}
+{"time":"2026-10-05T06:21:14.328374-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/149ac1f4-9e9b-4be8-ab6f-72cede8a8f6e/application-repository","status":200,"duration_ms":0,"remote":"127.0.0.1:61333"}
+{"time":"2026-10-05T06:21:14.328392-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:61338"}
+{"time":"2026-10-05T06:21:14.328509-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/149ac1f4-9e9b-4be8-ab6f-72cede8a8f6e/application-repository/categories","status":200,"duration_ms":0,"remote":"127.0.0.1:61335"}
+{"time":"2026-10-05T06:21:14.328839-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:61337"}
+{"time":"2026-10-05T06:21:14.32912-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:61336"}
+{"time":"2026-10-05T06:21:14.329256-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:61334"}
+{"time":"2026-10-05T06:21:14.330335-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:61333"}
+{"time":"2026-10-05T06:21:14.336003-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:61333"}
+{"time":"2026-10-05T06:21:14.336685-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:61333"}
+{"time":"2026-10-05T06:21:14.337027-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/a05e5022-be1d-4a41-aae6-f3db33421ea1/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:61334"}
+{"time":"2026-10-05T06:21:14.337429-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/a05e5022-be1d-4a41-aae6-f3db33421ea1/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:61336"}
+{"time":"2026-10-05T06:21:14.358711-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/correlation-rulesets","status":200,"duration_ms":0,"remote":"127.0.0.1:61334"}
+{"time":"2026-10-05T06:21:14.358938-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/object-repositories","status":200,"duration_ms":0,"remote":"127.0.0.1:61336"}
+{"time":"2026-10-05T06:21:14.359109-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects/976cfd29-b1d0-49d1-86d1-ee65d578af0b/folders","status":200,"duration_ms":0,"remote":"127.0.0.1:61338"}
+{"time":"2026-10-05T06:21:14.3594-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/integrations/github/config","status":200,"duration_ms":0,"remote":"127.0.0.1:61334"}
+{"time":"2026-10-05T06:21:14.359599-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/remotes","status":200,"duration_ms":0,"remote":"127.0.0.1:61337"}
+{"time":"2026-10-05T06:21:14.360734-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/catalog","status":200,"duration_ms":2,"remote":"127.0.0.1:61335"}
+{"time":"2026-10-05T06:21:14.361198-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:61337"}
+{"time":"2026-10-05T06:21:14.361385-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:61334"}
+{"time":"2026-10-05T06:21:14.361829-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/65347b70-cf22-4b51-9000-e9bb3b018375","status":200,"duration_ms":2,"remote":"127.0.0.1:61333"}
+{"time":"2026-10-05T06:21:14.363205-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/sessions","status":200,"duration_ms":1,"remote":"127.0.0.1:61338"}
+{"time":"2026-10-05T06:21:14.365259-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts","status":200,"duration_ms":3,"remote":"127.0.0.1:61336"}
+{"time":"2026-10-05T06:21:14.425524-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/object-repositories","status":200,"duration_ms":0,"remote":"127.0.0.1:61338"}
+{"time":"2026-10-05T06:21:14.425707-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/config-defaults","status":200,"duration_ms":0,"remote":"127.0.0.1:61334"}
+{"time":"2026-10-05T06:21:14.425843-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/actions","status":200,"duration_ms":0,"remote":"127.0.0.1:61333"}
+{"time":"2026-10-05T06:21:14.426157-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/runtime-settings/support-matrix","status":200,"duration_ms":0,"remote":"127.0.0.1:61336"}
+{"time":"2026-10-05T06:21:14.426268-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/components","status":200,"duration_ms":0,"remote":"127.0.0.1:61335"}
+{"time":"2026-10-05T06:21:14.426832-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/browser-emulation-catalog","status":200,"duration_ms":0,"remote":"127.0.0.1:61337"}
+{"time":"2026-10-05T06:21:14.428802-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/65347b70-cf22-4b51-9000-e9bb3b018375/secret-status","status":200,"duration_ms":0,"remote":"127.0.0.1:61324"}
+{"time":"2026-10-05T06:21:14.471709-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:61342"}
+{"time":"2026-10-05T06:21:14.471714-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"976cfd29-b1d0-49d1-86d1-ee65d578af0b","clients":1}
+{"time":"2026-10-05T06:21:14.564314-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:61343"}
+{"time":"2026-10-05T06:21:14.564324-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"976cfd29-b1d0-49d1-86d1-ee65d578af0b","clients":2}
+{"time":"2026-10-05T06:21:14.9159-04:00","level":"INFO","msg":"websocket client disconnected","clients":1}
+{"time":"2026-10-05T06:21:14.915963-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-05T06:21:14.953602-04:00","level":"INFO","msg":"shutting down"}
+2026/10/05 06:21:14 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"

@@ -1,0 +1,80 @@
+=== RUN   TestAPEXOwnedHARRepeatCallersJoinExactResult
+--- PASS: TestAPEXOwnedHARRepeatCallersJoinExactResult (0.03s)
+=== RUN   TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess
+=== RUN   TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/error
+=== RUN   TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/panic
+=== RUN   TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/goexit
+--- PASS: TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess (0.00s)
+    --- PASS: TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/error (0.00s)
+    --- PASS: TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/panic (0.00s)
+    --- PASS: TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/goexit (0.00s)
+=== RUN   TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed
+=== RUN   TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/ordinary_inflight
+=== RUN   TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/ordinary_closed
+=== RUN   TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/server_closed
+--- PASS: TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed (0.00s)
+    --- PASS: TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/ordinary_inflight (0.00s)
+    --- PASS: TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/ordinary_closed (0.00s)
+    --- PASS: TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/server_closed (0.00s)
+=== RUN   TestAPEXOwnedHARServerCloseDuringBodyRetainsFailure
+--- PASS: TestAPEXOwnedHARServerCloseDuringBodyRetainsFailure (0.00s)
+=== RUN   TestAPEXOwnedHARBroadcastCloseNotification
+--- PASS: TestAPEXOwnedHARBroadcastCloseNotification (0.00s)
+=== RUN   TestAPEXOwnedHARDispatcherRepeatCannotBlockFirstAcknowledgment
+--- PASS: TestAPEXOwnedHARDispatcherRepeatCannotBlockFirstAcknowledgment (0.00s)
+=== RUN   TestAPEXOwnedHARUnknownDispatcherRepeatFailsClosed
+--- PASS: TestAPEXOwnedHARUnknownDispatcherRepeatFailsClosed (0.00s)
+=== RUN   TestAPEXOwnedHARRepeatCallersJoinExactResult
+--- PASS: TestAPEXOwnedHARRepeatCallersJoinExactResult (0.03s)
+=== RUN   TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess
+=== RUN   TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/error
+=== RUN   TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/panic
+=== RUN   TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/goexit
+--- PASS: TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess (0.00s)
+    --- PASS: TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/error (0.00s)
+    --- PASS: TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/panic (0.00s)
+    --- PASS: TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/goexit (0.00s)
+=== RUN   TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed
+=== RUN   TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/ordinary_inflight
+=== RUN   TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/ordinary_closed
+=== RUN   TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/server_closed
+--- PASS: TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed (0.00s)
+    --- PASS: TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/ordinary_inflight (0.00s)
+    --- PASS: TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/ordinary_closed (0.00s)
+    --- PASS: TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/server_closed (0.00s)
+=== RUN   TestAPEXOwnedHARServerCloseDuringBodyRetainsFailure
+--- PASS: TestAPEXOwnedHARServerCloseDuringBodyRetainsFailure (0.00s)
+=== RUN   TestAPEXOwnedHARBroadcastCloseNotification
+--- PASS: TestAPEXOwnedHARBroadcastCloseNotification (0.00s)
+=== RUN   TestAPEXOwnedHARDispatcherRepeatCannotBlockFirstAcknowledgment
+--- PASS: TestAPEXOwnedHARDispatcherRepeatCannotBlockFirstAcknowledgment (0.00s)
+=== RUN   TestAPEXOwnedHARUnknownDispatcherRepeatFailsClosed
+--- PASS: TestAPEXOwnedHARUnknownDispatcherRepeatFailsClosed (0.00s)
+=== RUN   TestAPEXOwnedHARRepeatCallersJoinExactResult
+--- PASS: TestAPEXOwnedHARRepeatCallersJoinExactResult (0.03s)
+=== RUN   TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess
+=== RUN   TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/error
+=== RUN   TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/panic
+=== RUN   TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/goexit
+--- PASS: TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess (0.00s)
+    --- PASS: TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/error (0.00s)
+    --- PASS: TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/panic (0.00s)
+    --- PASS: TestAPEXOwnedHARErrorPanicAndGoexitNeverBecomeSuccess/goexit (0.00s)
+=== RUN   TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed
+=== RUN   TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/ordinary_inflight
+=== RUN   TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/ordinary_closed
+=== RUN   TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/server_closed
+--- PASS: TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed (0.00s)
+    --- PASS: TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/ordinary_inflight (0.00s)
+    --- PASS: TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/ordinary_closed (0.00s)
+    --- PASS: TestAPEXOwnedHARPriorClientAndServerEntriesFailClosed/server_closed (0.00s)
+=== RUN   TestAPEXOwnedHARServerCloseDuringBodyRetainsFailure
+--- PASS: TestAPEXOwnedHARServerCloseDuringBodyRetainsFailure (0.00s)
+=== RUN   TestAPEXOwnedHARBroadcastCloseNotification
+--- PASS: TestAPEXOwnedHARBroadcastCloseNotification (0.00s)
+=== RUN   TestAPEXOwnedHARDispatcherRepeatCannotBlockFirstAcknowledgment
+--- PASS: TestAPEXOwnedHARDispatcherRepeatCannotBlockFirstAcknowledgment (0.00s)
+=== RUN   TestAPEXOwnedHARUnknownDispatcherRepeatFailsClosed
+--- PASS: TestAPEXOwnedHARUnknownDispatcherRepeatFailsClosed (0.00s)
+PASS
+ok  	github.com/mxschmitt/playwright-go	0.444s

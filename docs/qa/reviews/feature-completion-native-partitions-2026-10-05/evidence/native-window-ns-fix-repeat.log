@@ -1,0 +1,40 @@
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/from-plus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/from-minus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/to-plus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/to-minus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/both-plus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/both-minus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/offset-zone-plus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/collapsed-native-window
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/from-plus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/from-minus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/to-plus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/to-minus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/both-plus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/both-minus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/offset-zone-plus-1ns
+=== RUN   TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/collapsed-native-window
+--- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets (8.57s)
+    --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z (4.13s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/from-plus-1ns (0.47s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/from-minus-1ns (0.47s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/to-plus-1ns (0.45s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/to-minus-1ns (0.47s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/both-plus-1ns (0.45s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/both-minus-1ns (0.45s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/offset-zone-plus-1ns (0.44s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/2026-01-01T00:00:00.123456Z/collapsed-native-window (0.44s)
+    --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z (4.43s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/from-plus-1ns (0.45s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/from-minus-1ns (0.55s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/to-plus-1ns (0.47s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/to-minus-1ns (0.44s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/both-plus-1ns (0.45s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/both-minus-1ns (0.56s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/offset-zone-plus-1ns (0.56s)
+        --- PASS: TestNativeSeriesSubmicrosecondBoundsPreserveAuthoritativeBuckets/1969-12-31T23:59:56.123456Z/collapsed-native-window (0.46s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/analysis/duckdb	9.034s

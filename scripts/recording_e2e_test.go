@@ -43,7 +43,7 @@ func TestRecordingCIChangeAndTrustBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	workflow := string(b)
-	for _, path := range []string{"pkg/recorder/**", "pkg/recordagent/**", "pkg/protocol/browser/**", "pkg/protocol/http/**", "pkg/api/**", "pkg/engine/**", "pkg/controller/**", "pkg/protocol/*.go", "pkg/config/**", "pkg/dslwalk/**", "pkg/netpolicy/**", "pkg/fileasset/**", "pkg/dsl/**", "pkg/convert/**", "dashboard/**", "go.mod", "go.sum"} {
+	for _, path := range []string{"pkg/recorder/**", "pkg/recordagent/**", "pkg/protocol/browser/**", "pkg/protocol/http/**", "pkg/api/**", "pkg/engine/**", "pkg/controller/**", "pkg/protocol/*.go", "pkg/config/**", "pkg/dslwalk/**", "pkg/netpolicy/**", "pkg/fileasset/**", "pkg/dsl/**", "pkg/convert/**", "dashboard/**", "go.mod", "go.sum", "third_party/playwright-go/**"} {
 		if strings.Count(workflow, "'"+path+"'") != 2 {
 			t.Errorf("%s must trigger both pull-request and main-branch coverage", path)
 		}

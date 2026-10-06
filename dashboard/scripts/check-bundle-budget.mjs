@@ -16,24 +16,28 @@ const mib = (value) => value * 1024 * 1024
 // Modal-only dependencies remain off the Scripts route, and the tighter
 // per-asset and route budgets continue to catch loading regressions
 // independently of intentionally deferred feature chunks.
-// September usability verification: baseline is 5.28 MiB JS / 1.42 MiB gzip
-// and 699.63 KiB CSS. Guided setup, outcome evidence and responsive fixes add
-// about 0.01 MiB JS and 2.74 KiB CSS. Reconcile aggregate ceilings to that
-// measured inventory; per-asset and route startup/transfer limits stay fixed.
+// The 2026-10-05 committed HEAD baseline independently measured 6.93 MiB JS /
+// 1.93 MiB gzip and 888.47 KiB CSS / 159.10 KiB gzip. The composed candidate
+// includes deferred resource inspection and measures 6.99 MiB / 1.95 MiB JS
+// and 890.47 KiB / 160.75 KiB CSS after the access-style split. The scoped
+// composed-review QA bundle retains both builds and their exact inventories.
+// Reconcile only aggregate inventory limits with modest measured headroom;
+// individual assets, route budgets and forbidden startup dependencies remain
+// separate strict guards. Deferred feature inventory is not startup cost.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
     maxAssetBytes: kib(650),
     maxAssetGzipBytes: kib(220),
-    maxTotalBytes: mib(5.30),
-    maxTotalGzipBytes: mib(1.425),
+    maxTotalBytes: mib(7.05),
+    maxTotalGzipBytes: mib(1.98),
   }),
   '.css': Object.freeze({
     label: 'CSS',
     maxAssetBytes: kib(210),
     maxAssetGzipBytes: kib(34),
-    maxTotalBytes: kib(704),
-    maxTotalGzipBytes: kib(121),
+    maxTotalBytes: kib(904),
+    maxTotalGzipBytes: kib(162),
   }),
 })
 
@@ -49,6 +53,7 @@ export const DEFAULT_ROUTE_BUDGETS = Object.freeze([
     id: 'scripts-library',
     label: 'Scripts library route',
     entryFile: /ScriptsPage-.*\.js$/,
+    forbiddenEntryKeys: ['index.html'],
     maxGzipBytes: kib(225),
     forbiddenAssets: [/codemirror/i, /ScriptEditor/i],
   }),
@@ -56,6 +61,7 @@ export const DEFAULT_ROUTE_BUDGETS = Object.freeze([
     id: 'test-execution',
     label: 'Test execution route',
     entryKey: 'src/components/TestExecution.tsx',
+    forbiddenEntryKeys: ['index.html'],
     maxGzipBytes: kib(380),
     forbiddenAssets: [/codemirror/i, /vendor-three/i, /LoadImpact3DHeatmap/i],
   }),
@@ -132,6 +138,11 @@ export async function inspectRouteBudgets(root, routeBudgets = DEFAULT_ROUTE_BUD
         `${budget.label} static JavaScript is ${formatBytes(totalGzipBytes)} gzip ` +
           `(limit ${formatBytes(budget.maxGzipBytes)})`,
       )
+    }
+    for (const forbiddenEntry of budget.forbiddenEntryKeys || []) {
+      if (entryKeys.includes(forbiddenEntry)) {
+        violations.push(`${budget.label} unexpectedly imports the ${forbiddenEntry} entry`)
+      }
     }
     for (const asset of assets) {
       const forbidden = budget.forbiddenAssets?.find(pattern => pattern.test(asset.path))

@@ -1,0 +1,250 @@
+{
+  "created_utc": "2026-10-05T20:59:45.353466+00:00",
+  "source_root": "/private/tmp/apexload-authoring-fidelity-v7-json-local-auth-20261005",
+  "retained_root": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/evidence/browser-v7-json-local-auth-passed",
+  "scope": "Unmodified original reporter artifacts plus exactly decoded JSON attachment bodies; successful runtime verification is in the sibling immutable gate receipt.",
+  "decoded_json_attachments": [
+    {
+      "name": "held-run-authored-intent",
+      "path": "decoded-json-attachments/000-held-run-authored-intent.json",
+      "sha256": "0a5e2a618467d795464a13e606319cf45baf31343bbc32f76583c0fbd0e4ee11",
+      "bytes": 8295
+    },
+    {
+      "name": "queued-source-authored-intent",
+      "path": "decoded-json-attachments/001-queued-source-authored-intent.json",
+      "sha256": "abe5970fedf0bd0250170288ae50a62ba858a0d5321a58ce9b6c2b2cfb7f2dfb",
+      "bytes": 8150
+    },
+    {
+      "name": "queued-copy-submitted-response",
+      "path": "decoded-json-attachments/002-queued-copy-submitted-response.json",
+      "sha256": "4b129b9e6ffdc871c1f9722dd85b8dcab58f5c3c22bec57a75609b2502278a8d",
+      "bytes": 9055
+    },
+    {
+      "name": "queued-copy-fidelity",
+      "path": "decoded-json-attachments/003-queued-copy-fidelity.json",
+      "sha256": "f1a771ae4a9bc924df980ee2cd62bb91751e56f29c54a98981dd87ec55e4497b",
+      "bytes": 38512
+    },
+    {
+      "name": "capture-clear-source",
+      "path": "decoded-json-attachments/004-capture-clear-source.json",
+      "sha256": "d1fc43ba95e1d15ecc1a7f94040c2669d4b8be1a1cbf1789c5a62bd8b0770e19",
+      "bytes": 3661
+    },
+    {
+      "name": "capture-rename-submission",
+      "path": "decoded-json-attachments/005-capture-rename-submission.json",
+      "sha256": "2413695b054f1958cae8f6244f4bbd1ffbb46dd6a90bdcae1bc66daa87a4784d",
+      "bytes": 4937
+    },
+    {
+      "name": "capture-rename-reopened",
+      "path": "decoded-json-attachments/006-capture-rename-reopened.json",
+      "sha256": "33a17170ea61491027e4f72e8ad37c1163042449367e2e11a9b4673fa10755d3",
+      "bytes": 3708
+    },
+    {
+      "name": "capture-goal-clear-submission",
+      "path": "decoded-json-attachments/007-capture-goal-clear-submission.json",
+      "sha256": "6c3593b3a8ada8eb34a5546a8184626b9c9821063c132f5706c258822e842879",
+      "bytes": 4441
+    },
+    {
+      "name": "capture-goal-clear-reopened",
+      "path": "decoded-json-attachments/008-capture-goal-clear-reopened.json",
+      "sha256": "693c40cca5e6c1931f04e084568e9e1164c011f0615263c49cb6b24ddc46037c",
+      "bytes": 7595
+    },
+    {
+      "name": "iteration-copy-transport-reopened",
+      "path": "decoded-json-attachments/009-iteration-copy-transport-reopened.json",
+      "sha256": "963ea75c8e55dda50f38fd13faa9c5cd0688fa92d1b4109fe6bf718567b4f047",
+      "bytes": 11908
+    },
+    {
+      "name": "positive-iteration-delay-copy-clear-reopened",
+      "path": "decoded-json-attachments/010-positive-iteration-delay-copy-clear-reopened.json",
+      "sha256": "ef40a836fa0a44ee4882530199c79620422dd3ebbd3fa014b34d5a94c73412ee",
+      "bytes": 15823
+    },
+    {
+      "name": "delay-runtime-clear-transport-reopened",
+      "path": "decoded-json-attachments/011-delay-runtime-clear-transport-reopened.json",
+      "sha256": "e1aeb245befc5ec966576e1f3c81d3736178c9351802b91b1081dab40305f65c",
+      "bytes": 11908
+    },
+    {
+      "name": "actual-submitted-late-draft-receipt",
+      "path": "decoded-json-attachments/012-actual-submitted-late-draft-receipt.json",
+      "sha256": "8347f286ea3af535cadc265d6ff4a0055139e8670e3b2ca8f6d5cfb948a2214f",
+      "bytes": 4348
+    },
+    {
+      "name": "history-joined-single-flight-reopened",
+      "path": "decoded-json-attachments/013-history-joined-single-flight-reopened.json",
+      "sha256": "ad8d5f1ea82922031842d0e5e49e41a23fd21fd7b1de0684377b1c5d9206cf1c",
+      "bytes": 7289
+    },
+    {
+      "name": "started-source-refusal",
+      "path": "decoded-json-attachments/014-started-source-refusal.json",
+      "sha256": "b2b5d3e4558f0941a8f559e47a3b3d48bcd3d9169aaf3467d977baf7928d3f39",
+      "bytes": 802
+    },
+    {
+      "name": "group-dialog-fidelity",
+      "path": "decoded-json-attachments/015-group-dialog-fidelity.json",
+      "sha256": "5488c3ceba4df590f50f93ee3c38153486763dd5ceb6aa2208aee9cf459e22ea",
+      "bytes": 3337
+    },
+    {
+      "name": "canonical-scenario-fidelity",
+      "path": "decoded-json-attachments/016-canonical-scenario-fidelity.json",
+      "sha256": "73c9a0eb795e67bdf4b4f18425d59e73f415bf2e5d3f8177cec30a7e4c4433b1",
+      "bytes": 9929
+    },
+    {
+      "name": "original-shape-guardrails",
+      "path": "decoded-json-attachments/017-original-shape-guardrails.json",
+      "sha256": "9e6ea3991a99aa90428da75aed21f97fa499fdb7f5cc8c593bab31339d00e931",
+      "bytes": 2444
+    },
+    {
+      "name": "shape-guardrail-save",
+      "path": "decoded-json-attachments/018-shape-guardrail-save.json",
+      "sha256": "2d96516c4d294bd8d12f6c27fc107567c4e9e2ad4c12bb1f86ec47d3cb0530ec",
+      "bytes": 5813
+    },
+    {
+      "name": "reopened-shape-guardrails",
+      "path": "decoded-json-attachments/019-reopened-shape-guardrails.json",
+      "sha256": "f158079b03ac2e054c7da01b3f6295e7c40ac39e88a3850897567e90486a5c2f",
+      "bytes": 3965
+    }
+  ],
+  "files": [
+    {
+      "path": "decoded-json-attachments/000-held-run-authored-intent.json",
+      "bytes": 8295,
+      "sha256": "0a5e2a618467d795464a13e606319cf45baf31343bbc32f76583c0fbd0e4ee11"
+    },
+    {
+      "path": "decoded-json-attachments/001-queued-source-authored-intent.json",
+      "bytes": 8150,
+      "sha256": "abe5970fedf0bd0250170288ae50a62ba858a0d5321a58ce9b6c2b2cfb7f2dfb"
+    },
+    {
+      "path": "decoded-json-attachments/002-queued-copy-submitted-response.json",
+      "bytes": 9055,
+      "sha256": "4b129b9e6ffdc871c1f9722dd85b8dcab58f5c3c22bec57a75609b2502278a8d"
+    },
+    {
+      "path": "decoded-json-attachments/003-queued-copy-fidelity.json",
+      "bytes": 38512,
+      "sha256": "f1a771ae4a9bc924df980ee2cd62bb91751e56f29c54a98981dd87ec55e4497b"
+    },
+    {
+      "path": "decoded-json-attachments/004-capture-clear-source.json",
+      "bytes": 3661,
+      "sha256": "d1fc43ba95e1d15ecc1a7f94040c2669d4b8be1a1cbf1789c5a62bd8b0770e19"
+    },
+    {
+      "path": "decoded-json-attachments/005-capture-rename-submission.json",
+      "bytes": 4937,
+      "sha256": "2413695b054f1958cae8f6244f4bbd1ffbb46dd6a90bdcae1bc66daa87a4784d"
+    },
+    {
+      "path": "decoded-json-attachments/006-capture-rename-reopened.json",
+      "bytes": 3708,
+      "sha256": "33a17170ea61491027e4f72e8ad37c1163042449367e2e11a9b4673fa10755d3"
+    },
+    {
+      "path": "decoded-json-attachments/007-capture-goal-clear-submission.json",
+      "bytes": 4441,
+      "sha256": "6c3593b3a8ada8eb34a5546a8184626b9c9821063c132f5706c258822e842879"
+    },
+    {
+      "path": "decoded-json-attachments/008-capture-goal-clear-reopened.json",
+      "bytes": 7595,
+      "sha256": "693c40cca5e6c1931f04e084568e9e1164c011f0615263c49cb6b24ddc46037c"
+    },
+    {
+      "path": "decoded-json-attachments/009-iteration-copy-transport-reopened.json",
+      "bytes": 11908,
+      "sha256": "963ea75c8e55dda50f38fd13faa9c5cd0688fa92d1b4109fe6bf718567b4f047"
+    },
+    {
+      "path": "decoded-json-attachments/010-positive-iteration-delay-copy-clear-reopened.json",
+      "bytes": 15823,
+      "sha256": "ef40a836fa0a44ee4882530199c79620422dd3ebbd3fa014b34d5a94c73412ee"
+    },
+    {
+      "path": "decoded-json-attachments/011-delay-runtime-clear-transport-reopened.json",
+      "bytes": 11908,
+      "sha256": "e1aeb245befc5ec966576e1f3c81d3736178c9351802b91b1081dab40305f65c"
+    },
+    {
+      "path": "decoded-json-attachments/012-actual-submitted-late-draft-receipt.json",
+      "bytes": 4348,
+      "sha256": "8347f286ea3af535cadc265d6ff4a0055139e8670e3b2ca8f6d5cfb948a2214f"
+    },
+    {
+      "path": "decoded-json-attachments/013-history-joined-single-flight-reopened.json",
+      "bytes": 7289,
+      "sha256": "ad8d5f1ea82922031842d0e5e49e41a23fd21fd7b1de0684377b1c5d9206cf1c"
+    },
+    {
+      "path": "decoded-json-attachments/014-started-source-refusal.json",
+      "bytes": 802,
+      "sha256": "b2b5d3e4558f0941a8f559e47a3b3d48bcd3d9169aaf3467d977baf7928d3f39"
+    },
+    {
+      "path": "decoded-json-attachments/015-group-dialog-fidelity.json",
+      "bytes": 3337,
+      "sha256": "5488c3ceba4df590f50f93ee3c38153486763dd5ceb6aa2208aee9cf459e22ea"
+    },
+    {
+      "path": "decoded-json-attachments/016-canonical-scenario-fidelity.json",
+      "bytes": 9929,
+      "sha256": "73c9a0eb795e67bdf4b4f18425d59e73f415bf2e5d3f8177cec30a7e4c4433b1"
+    },
+    {
+      "path": "decoded-json-attachments/017-original-shape-guardrails.json",
+      "bytes": 2444,
+      "sha256": "9e6ea3991a99aa90428da75aed21f97fa499fdb7f5cc8c593bab31339d00e931"
+    },
+    {
+      "path": "decoded-json-attachments/018-shape-guardrail-save.json",
+      "bytes": 5813,
+      "sha256": "2d96516c4d294bd8d12f6c27fc107567c4e9e2ad4c12bb1f86ec47d3cb0530ec"
+    },
+    {
+      "path": "decoded-json-attachments/019-reopened-shape-guardrails.json",
+      "bytes": 3965,
+      "sha256": "f158079b03ac2e054c7da01b3f6295e7c40ac39e88a3850897567e90486a5c2f"
+    },
+    {
+      "path": "local-auth/.last-run.json",
+      "bytes": 45,
+      "sha256": "91d1c43004802cd49950d78eb11c8fa7d05da8ffffe219a8b13b2f561bc00903"
+    },
+    {
+      "path": "local-auth/playwright-junit.xml",
+      "bytes": 1833,
+      "sha256": "e839d18da77d3ddd61f97a9fad36c885344ba7ab5aade91d2a6be5065750ef67"
+    },
+    {
+      "path": "local-auth/report.json",
+      "bytes": 238664,
+      "sha256": "0156b08a72cf1d6f312850528d28baee9ce47644df4733f96b8a4792e3e761d3"
+    },
+    {
+      "path": "local-auth/workflow-new-test-actual-h-00cdb-ve-complete-authored-intent/queued-copy-fidelity.png",
+      "bytes": 310117,
+      "sha256": "01d3da4e98d692637103cd045c8bcb46fb64754ff47fe341520e71ad5092aa00"
+    }
+  ]
+}

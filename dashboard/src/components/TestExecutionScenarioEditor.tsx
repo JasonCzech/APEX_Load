@@ -57,10 +57,10 @@ export default function TestExecutionScenarioEditor({ open, test, onClose, onSel
         initialScenario={initialScenario}
         onClose={onClose}
         onCreated={(createdTest) => {
-          onClose()
           if (createdTest?.id) {
             onSelectTest(createdTest.id)
           }
+          onClose()
         }}
       />
     </Suspense>

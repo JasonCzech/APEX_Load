@@ -1,0 +1,2253 @@
+{
+  "recorded_at_utc": "2026-10-06T00:30:17.905790+00:00",
+  "source_root": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "destination_root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "source_candidate_path": "/private/tmp/apexload-native-har-ownership-candidate-source-v7-20261005.json",
+  "source_candidate_sha256": "93fe5c3e895f88b1788b6ea61ef1b4e6670bf596d3e49c8117fa98a9bf607608",
+  "source_count": 135,
+  "guide_count": 1,
+  "qa_count": 163,
+  "qa_bytes": 878864,
+  "scope": "Final native HAR component transfer only. SDK/APEX production behavior qualified by v6 exact receipts; v7 has130 unchanged direct hashes,4 documentation/provenance/test updates and1 exact upstream README copy. Final source135 independent static reviews clean; full composed Go/dashboard gates remain parent-owned. No raw private HAR/input/derived body included. No full BE-3/archive transfer/export or aggregate quota acceptance claim. No component job active; heavy slot released.",
+  "documentation_validation": {
+    "exit_code": 0,
+    "log_path": "/private/tmp/native-har-final-qa-link-validation-20261005.log",
+    "log_sha256": "8e0de64215e31a79d9fb17bc223e930c36a787c5b8cfd8afd8d1cbb38f30881e",
+    "qa_unchanged": true
+  },
+  "independent_reviews": {
+    "v6_sdk": "ace6fd59d2ff61c1dd97a385b40760cd2b4702c01b1921a2de31fa5289362373",
+    "v7_packaging": "4029dabed8b1fb0d8992637c71f849122f633e3316fa68c52273c7190498c806",
+    "parent_composed_v6": "eaf8914cb1c9eff917f883c5ae0ad37d5f9c13368122516e598c777a3cacaf06"
+  },
+  "entries": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "bytes": 60280,
+      "sha256": "1b7bf39be18706cf9b97ea651731c087a16b7bd3da4dcb5e62473c39cc008573",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "1b7bf39be18706cf9b97ea651731c087a16b7bd3da4dcb5e62473c39cc008573",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": ".github/workflows/recording-e2e.yml",
+      "bytes": 4855,
+      "sha256": "1ea7562bf1043708d68a118e4041e0e8be5472ba10544e52ea045438f59a5e8e",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "1ea7562bf1043708d68a118e4041e0e8be5472ba10544e52ea045438f59a5e8e",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "Dockerfile",
+      "bytes": 5185,
+      "sha256": "6217dd33f5186af078384060692d1dcfe2d422615d04dce2d93c66c77b7a7b40",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "6217dd33f5186af078384060692d1dcfe2d422615d04dce2d93c66c77b7a7b40",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "Dockerfile.controller",
+      "bytes": 5126,
+      "sha256": "27b60561bcbe50c9d392530222e084c2a2f60a34da41873a624b9d97657f5a6e",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "27b60561bcbe50c9d392530222e084c2a2f60a34da41873a624b9d97657f5a6e",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "Makefile",
+      "bytes": 13649,
+      "sha256": "2c06590d9aff78f448c8a279e43faa6ef96d6df5684696ebc44e1bf1dcdd607a",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "2c06590d9aff78f448c8a279e43faa6ef96d6df5684696ebc44e1bf1dcdd607a",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "go.mod",
+      "bytes": 11533,
+      "sha256": "30806ceb5fa14c24c7703d9e4e57f9267502b59a1d01abcae8d9687a4fea62d0",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "30806ceb5fa14c24c7703d9e4e57f9267502b59a1d01abcae8d9687a4fea62d0",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "go.sum",
+      "bytes": 160523,
+      "sha256": "66b5b966246df011fa86f71b09c9ce19cae7154b659358b786a13c2198c1320e",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "66b5b966246df011fa86f71b09c9ce19cae7154b659358b786a13c2198c1320e",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/api/har_artifact_ownership_test.go",
+      "bytes": 11272,
+      "sha256": "490e90b21e6d82f4884fc823161aa6f11500a47fd440d63739c07a3d1c34ef28",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "490e90b21e6d82f4884fc823161aa6f11500a47fd440d63739c07a3d1c34ef28",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/api/har_artifact_retention.go",
+      "bytes": 8129,
+      "sha256": "796d551dc2e08c965549df5e44e7bd0531bab0efdead0adc8705e8ab9792c2ea",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "796d551dc2e08c965549df5e44e7bd0531bab0efdead0adc8705e8ab9792c2ea",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/api/har_artifact_retention_test.go",
+      "bytes": 6709,
+      "sha256": "5ac730ad8545796f20294ee3882c6dc9e12098388cd23f3dc76331c1b2c9721a",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "5ac730ad8545796f20294ee3882c6dc9e12098388cd23f3dc76331c1b2c9721a",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/internal/filelock/context.go",
+      "bytes": 3158,
+      "sha256": "31f1682d87707ae3406327a005b346d96c7c3a9f25b5a5e9a5c41fbd7d868f0b",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "31f1682d87707ae3406327a005b346d96c7c3a9f25b5a5e9a5c41fbd7d868f0b",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/internal/filelock/filelock_unix.go",
+      "bytes": 1400,
+      "sha256": "a9d477790b3402842a54d30c05cc4d237461af92368f877a65bc3c277aee0ec5",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "a9d477790b3402842a54d30c05cc4d237461af92368f877a65bc3c277aee0ec5",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/internal/filelock/filelock_windows.go",
+      "bytes": 1260,
+      "sha256": "e2f7c92017efc06ba53b62ee9bf85584a28493297337eb13b9e29dfecf18dee0",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "e2f7c92017efc06ba53b62ee9bf85584a28493297337eb13b9e29dfecf18dee0",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/browser.go",
+      "bytes": 11619,
+      "sha256": "601ce7ef533024d00b4b4bafd94341780a6f07648cbb1d8fbaeb1a44693e2030",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "601ce7ef533024d00b4b4bafd94341780a6f07648cbb1d8fbaeb1a44693e2030",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/document_actual_integration_test.go",
+      "bytes": 18347,
+      "sha256": "f1c4555a671bcbeb904a0e5e50ed9e7d05cccc08ffdc01d92422779f2f7c7846",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "553db9f6d9a98b2ef6e74bc6cb113ec9f09d6452b9775555ef8d87189f772ba7",
+      "transfer": "preserve-parent-aggregate-logging-and-unchanged-oracle"
+    },
+    {
+      "path": "pkg/protocol/browser/document_bootstrap.go",
+      "bytes": 7431,
+      "sha256": "dc3c8727caad97d7a24f5a73acbf8227b58dfe93834448d08c6aa392dbdd5a05",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "dc3c8727caad97d7a24f5a73acbf8227b58dfe93834448d08c6aa392dbdd5a05",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/document_evidence.go",
+      "bytes": 19723,
+      "sha256": "289c73f0c59bc1781e71c85da18c59f4bca9dc6dee7f58a3f73ad347ee988603",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "289c73f0c59bc1781e71c85da18c59f4bca9dc6dee7f58a3f73ad347ee988603",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/document_evidence_test.go",
+      "bytes": 10055,
+      "sha256": "25c15edb67d86668cf26fd865b871fb4096bf6b5f3f127d560006f499a50e9a9",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "25c15edb67d86668cf26fd865b871fb4096bf6b5f3f127d560006f499a50e9a9",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/document_finality_join_test.go",
+      "bytes": 8261,
+      "sha256": "4c305e187129671b14708f74ddb061c6f670ea5b61c2a9852e8acdc7b0255205",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "4c305e187129671b14708f74ddb061c6f670ea5b61c2a9852e8acdc7b0255205",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/document_finalizer_frame_isolation_test.go",
+      "bytes": 2274,
+      "sha256": "2485c62faa6ab53518694bb00b2624be93639f61cd805c6f226143361b94a2ed",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "2485c62faa6ab53518694bb00b2624be93639f61cd805c6f226143361b94a2ed",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_capture.go",
+      "bytes": 10364,
+      "sha256": "3d7df2b254fdaffd8e04f334d06d394ec7b38074d6bd8df5a0e5a79b6434418a",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "3d7df2b254fdaffd8e04f334d06d394ec7b38074d6bd8df5a0e5a79b6434418a",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_capture_integration_test.go",
+      "bytes": 11594,
+      "sha256": "7ff3d019e6e22d2edcd4beb1462c50230fabf78bc6dfe3f263624bd07579a875",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "7ff3d019e6e22d2edcd4beb1462c50230fabf78bc6dfe3f263624bd07579a875",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_limit_test.go",
+      "bytes": 1169,
+      "sha256": "154f6e609bdf853475de3eb5fc02e65882919092b5b7cafc76e244fe39e6d630",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "154f6e609bdf853475de3eb5fc02e65882919092b5b7cafc76e244fe39e6d630",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_native_callback_test.go",
+      "bytes": 4101,
+      "sha256": "5ff22d61c829ab464b02bbe97f1760bc522f86d208104b1489e4d543499d4257",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "5ff22d61c829ab464b02bbe97f1760bc522f86d208104b1489e4d543499d4257",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_native_close.go",
+      "bytes": 499,
+      "sha256": "a4aa7d4b0302e1a5cdaaff661f5b3fb89e88afdf57e9cef3141cb751b06b03bd",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "a4aa7d4b0302e1a5cdaaff661f5b3fb89e88afdf57e9cef3141cb751b06b03bd",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_native_close_test.go",
+      "bytes": 1454,
+      "sha256": "24317f65828d6327dfad56e8cba0960fc2de747de2b79b195959e21281477b4c",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "24317f65828d6327dfad56e8cba0960fc2de747de2b79b195959e21281477b4c",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_native_preclosed_test.go",
+      "bytes": 5362,
+      "sha256": "ea24119a451ebc40db7324238de1ca3da389866ba392173e68cdd5d07ce3d5d9",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "ea24119a451ebc40db7324238de1ca3da389866ba392173e68cdd5d07ce3d5d9",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_ownership_contract_test.go",
+      "bytes": 5231,
+      "sha256": "386cabc2e54d0ff665c3e2e940cf5ebf21440c5fceba99d6f4881dcf82dc5d0d",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "386cabc2e54d0ff665c3e2e940cf5ebf21440c5fceba99d6f4881dcf82dc5d0d",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_ownership_document_test.go",
+      "bytes": 3824,
+      "sha256": "116c98cb7f6e0f0025df7f571911790e9149903a78891cd2757ba4e7f023f48e",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "116c98cb7f6e0f0025df7f571911790e9149903a78891cd2757ba4e7f023f48e",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_ownership_final_review_test.go",
+      "bytes": 10539,
+      "sha256": "0cb49ea1311eed3ff036a462d51cc7f3c2e93066b6faa0e8cea4a1a5492f022b",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "0cb49ea1311eed3ff036a462d51cc7f3c2e93066b6faa0e8cea4a1a5492f022b",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_ownership_native_test.go",
+      "bytes": 7221,
+      "sha256": "5f81f6df02b805ac9caed37085d6e15946838ccea8116cdf41c2dee7d621741c",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "5f81f6df02b805ac9caed37085d6e15946838ccea8116cdf41c2dee7d621741c",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_ownership_review_test.go",
+      "bytes": 8016,
+      "sha256": "50124cf4ff6d869820a554e3b7838183c42e3d1d385285e840c894438347bbf3",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "50124cf4ff6d869820a554e3b7838183c42e3d1d385285e840c894438347bbf3",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_retention.go",
+      "bytes": 5708,
+      "sha256": "73b244f86af3c4003f557315427e329a4bd25f0206286add430c063d13335672",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "73b244f86af3c4003f557315427e329a4bd25f0206286add430c063d13335672",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_retirement_ledger.go",
+      "bytes": 15863,
+      "sha256": "2f584accbcc6edfdda5e54dd91fe4521609998087cfff3798e4811f78297b9c5",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "2f584accbcc6edfdda5e54dd91fe4521609998087cfff3798e4811f78297b9c5",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_retirement_ledger_test.go",
+      "bytes": 11214,
+      "sha256": "77e798b486a8254fb6aff36ddeb998f554ee3687c68e46329f6822c89433cf43",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "77e798b486a8254fb6aff36ddeb998f554ee3687c68e46329f6822c89433cf43",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_fs.go",
+      "bytes": 7919,
+      "sha256": "fbfb6af72f43a6d5fd735f5350d1217d693d1a557739d87e9db3818debaa478d",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "fbfb6af72f43a6d5fd735f5350d1217d693d1a557739d87e9db3818debaa478d",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_lease.go",
+      "bytes": 26158,
+      "sha256": "f2796acd7f62416782c602ffe257441aea8080d9f476bad254dabca91ccf5b97",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "f2796acd7f62416782c602ffe257441aea8080d9f476bad254dabca91ccf5b97",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_lease_test.go",
+      "bytes": 15387,
+      "sha256": "61c696ef774fa1c160a6bd3cc50de790f573eecbee22c012185a5354694b8183",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "61c696ef774fa1c160a6bd3cc50de790f573eecbee22c012185a5354694b8183",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_security_other.go",
+      "bytes": 401,
+      "sha256": "f8eb98b13f65abffe84a72c8dca1a6486a3f68596808c89d3f03a1e91862fd33",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "f8eb98b13f65abffe84a72c8dca1a6486a3f68596808c89d3f03a1e91862fd33",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_security_unix.go",
+      "bytes": 831,
+      "sha256": "485571761203640d7db4009b3b7499e7171d3441088cc55ce303ae0e20e95631",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "485571761203640d7db4009b3b7499e7171d3441088cc55ce303ae0e20e95631",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/lifecycle.go",
+      "bytes": 3312,
+      "sha256": "3ccd8452412ba87da48ad3a4178caadd8770672f88d693a14974e9e36c4df881",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "3ccd8452412ba87da48ad3a4178caadd8770672f88d693a14974e9e36c4df881",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/pool.go",
+      "bytes": 5541,
+      "sha256": "2dd3fc5b3493285cde1d53c9a3a5a5fe52295b5d7fb06d52a216fe39a9fdde7a",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "2dd3fc5b3493285cde1d53c9a3a5a5fe52295b5d7fb06d52a216fe39a9fdde7a",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/runtime_context.go",
+      "bytes": 26127,
+      "sha256": "ef6e62ee9b3f39e2867126018700af1f08107b6a734740841242eb13165e49ec",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "ef6e62ee9b3f39e2867126018700af1f08107b6a734740841242eb13165e49ec",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "pkg/protocol/browser/runtime_gate_test.go",
+      "bytes": 18614,
+      "sha256": "85cd6ff4b1b0eefbc4b3e2e0aaf489cf829b13578c16a91bbe89953fc09d73b9",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "85cd6ff4b1b0eefbc4b3e2e0aaf489cf829b13578c16a91bbe89953fc09d73b9",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "runners/java_vuser/Dockerfile",
+      "bytes": 2574,
+      "sha256": "70babc61c284c14efed4298ca8e71712de1602f1493ff580a48a5e9c4251b848",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "70babc61c284c14efed4298ca8e71712de1602f1493ff580a48a5e9c4251b848",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "runners/java_vuser/Dockerfile.broker",
+      "bytes": 917,
+      "sha256": "983ff6c6ffb6e0369c87ae4c0a8f2a1885b7c7e469459a016a0fba0d3d4fa1c6",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "983ff6c6ffb6e0369c87ae4c0a8f2a1885b7c7e469459a016a0fba0d3d4fa1c6",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "runners/java_vuser/Dockerfile.facade",
+      "bytes": 823,
+      "sha256": "85cb5887fbfbde61693c95d9b11a7e45252f9802e33c78996c242c7f97fb225a",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "85cb5887fbfbde61693c95d9b11a7e45252f9802e33c78996c242c7f97fb225a",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "runners/java_vuser/Dockerfile.supervisor",
+      "bytes": 1782,
+      "sha256": "c8b2887c4a1962a13135de937f0a4d5168fb109724d4fed57f37a706e4918a51",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "c8b2887c4a1962a13135de937f0a4d5168fb109724d4fed57f37a706e4918a51",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "scripts/playwright_sdk_fork_test.go",
+      "bytes": 3508,
+      "sha256": "25a632aeb68d5bc66e83236790e642957d540f9fd3fc3f17a3f54a1dc806ae8f",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "25a632aeb68d5bc66e83236790e642957d540f9fd3fc3f17a3f54a1dc806ae8f",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "scripts/recording_e2e_test.go",
+      "bytes": 2970,
+      "sha256": "5a2a374a3f76ee13209ea86be3e2dca1e1fa7dc31d07552ee1d3e95e07388045",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "5a2a374a3f76ee13209ea86be3e2dca1e1fa7dc31d07552ee1d3e95e07388045",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/APEX_PATCHES.md",
+      "bytes": 2174,
+      "sha256": "57a45970a163ee755603f9bd8f93558a859d51058e44eb5f90b9e45f87caeb98",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "57a45970a163ee755603f9bd8f93558a859d51058e44eb5f90b9e45f87caeb98",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/LICENSE",
+      "bytes": 1068,
+      "sha256": "012b4d1cf8295a878fb932a9b0bd03ef3e5083b2b16c2936986e1de0b8c3b784",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "012b4d1cf8295a878fb932a9b0bd03ef3e5083b2b16c2936986e1de0b8c3b784",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/README.md",
+      "bytes": 568,
+      "sha256": "d88be4fe449b6c96e1f5a983937254d43ce702eb04faf80b83bdf71492c68287",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "d88be4fe449b6c96e1f5a983937254d43ce702eb04faf80b83bdf71492c68287",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/README.upstream.txt",
+      "bytes": 7697,
+      "sha256": "10ad6ed78db64fe19b2d704b6f4d811f47879cdebf53172f6a8a6ec2fd9ed04e",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "10ad6ed78db64fe19b2d704b6f4d811f47879cdebf53172f6a8a6ec2fd9ed04e",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/UPSTREAM_MANIFEST.json",
+      "bytes": 12524,
+      "sha256": "b989773c1aa72835249fce767e549c2142ee02ff19585e6fd6ded8c528cecc1a",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "b989773c1aa72835249fce767e549c2142ee02ff19585e6fd6ded8c528cecc1a",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/apiresponse_assertions.go",
+      "bytes": 1724,
+      "sha256": "e87dfe182835c73a8673a02cf06153cf779705050338c589ac91024633bbc720",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "e87dfe182835c73a8673a02cf06153cf779705050338c589ac91024633bbc720",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/artifact.go",
+      "bytes": 1681,
+      "sha256": "3e01585e8c8b05f62c964d1ab167b5e96a9c3d45a8de6c8e2862bc9bef52f1cc",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "3e01585e8c8b05f62c964d1ab167b5e96a9c3d45a8de6c8e2862bc9bef52f1cc",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/assertions.go",
+      "bytes": 4761,
+      "sha256": "f741fbf8eab7ee3bd94c588ac8cc381398dc0de07af16cbf185af18e81a36ac1",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "f741fbf8eab7ee3bd94c588ac8cc381398dc0de07af16cbf185af18e81a36ac1",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/binding_call.go",
+      "bytes": 2529,
+      "sha256": "27fb1b4146344fd6e60f143be7bb85ad6ba07f1d0e6e201f5e699ab54070a0a5",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "27fb1b4146344fd6e60f143be7bb85ad6ba07f1d0e6e201f5e699ab54070a0a5",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/browser.go",
+      "bytes": 8460,
+      "sha256": "6699d2846d966112fe0128a11d07e09289569cb63cd829b53c59b485cdf5240f",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "6699d2846d966112fe0128a11d07e09289569cb63cd829b53c59b485cdf5240f",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/browser_context.go",
+      "bytes": 31758,
+      "sha256": "cdb3661ec88f0e812298703f17dedb50ea10a252daf27d7ee2f73e7c8f7e15a3",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "cdb3661ec88f0e812298703f17dedb50ea10a252daf27d7ee2f73e7c8f7e15a3",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/browser_type.go",
+      "bytes": 9189,
+      "sha256": "6854931adffd5db28983f0785f72dddd4e2141e2ecaf86053287da9d3adf1113",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "6854931adffd5db28983f0785f72dddd4e2141e2ecaf86053287da9d3adf1113",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/cdp_session.go",
+      "bytes": 1097,
+      "sha256": "ea67e23fc6d9fec35129e9ed2b024d8eb0c3f2d6a544307da6988a1207411652",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "ea67e23fc6d9fec35129e9ed2b024d8eb0c3f2d6a544307da6988a1207411652",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/channel.go",
+      "bytes": 2866,
+      "sha256": "5cfdee0423ef1c7450fedddd7c61b5e03d60fc5ddf3232955bca6d718a4e665c",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "5cfdee0423ef1c7450fedddd7c61b5e03d60fc5ddf3232955bca6d718a4e665c",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/channel_owner.go",
+      "bytes": 3215,
+      "sha256": "befa59b86f4fb32dbae235d2ceeafaabc9b0ded029cd67cace08b43e1ea57a4e",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "befa59b86f4fb32dbae235d2ceeafaabc9b0ded029cd67cace08b43e1ea57a4e",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/clock.go",
+      "bytes": 2260,
+      "sha256": "9f807668194e7070f2142181c6a87c0b4b1b0985ceab3a325eaade91a6849721",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "9f807668194e7070f2142181c6a87c0b4b1b0985ceab3a325eaade91a6849721",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/connection.go",
+      "bytes": 14303,
+      "sha256": "d7a48dbf4279b94dfb96736b31a98de92d4d9743a8a50b4f26d3dc6168ad1efc",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "d7a48dbf4279b94dfb96736b31a98de92d4d9743a8a50b4f26d3dc6168ad1efc",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/console_message.go",
+      "bytes": 1535,
+      "sha256": "692d1d3ce5654f048d0976e545db57e176421a4b0805c3fff0d378c1f29e1fd5",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "692d1d3ce5654f048d0976e545db57e176421a4b0805c3fff0d378c1f29e1fd5",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/credentials.go",
+      "bytes": 1382,
+      "sha256": "dd13892a3cd189a10950d6407d2efe65acf6f4dda24f7701b98dde45a3dd7c4d",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "dd13892a3cd189a10950d6407d2efe65acf6f4dda24f7701b98dde45a3dd7c4d",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/debugger.go",
+      "bytes": 1735,
+      "sha256": "95b1be2c73a5713cc179d5e8372bab1fcba019652ea9a2e09a5aeda2432d7476",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "95b1be2c73a5713cc179d5e8372bab1fcba019652ea9a2e09a5aeda2432d7476",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/dialog.go",
+      "bytes": 1114,
+      "sha256": "0ac9339031f9a7f315cc40532bed0d36d44659173083cce1c7a0bf983b7dcf52",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "0ac9339031f9a7f315cc40532bed0d36d44659173083cce1c7a0bf983b7dcf52",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/disposable.go",
+      "bytes": 455,
+      "sha256": "caabe5df02cf57c79373de1ace2ade10eea15a9a9e536ae7a4227f84f144f22f",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "caabe5df02cf57c79373de1ace2ade10eea15a9a9e536ae7a4227f84f144f22f",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/download.go",
+      "bytes": 1123,
+      "sha256": "e9697f44b98f507030b433ad3ba3650778977ee8d8d06b5aab27b2d760d15069",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "e9697f44b98f507030b433ad3ba3650778977ee8d8d06b5aab27b2d760d15069",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/element_handle.go",
+      "bytes": 11198,
+      "sha256": "3370b4fe18766d3d120c0f85f7ff9afab50d5fdecdc4b1d0744260f8233161d4",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "3370b4fe18766d3d120c0f85f7ff9afab50d5fdecdc4b1d0744260f8233161d4",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/errors.go",
+      "bytes": 1937,
+      "sha256": "1b58045b31168b633e98c4b6fd85182f97fcf0d38f69a2693a27c2937bd5ceaa",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "1b58045b31168b633e98c4b6fd85182f97fcf0d38f69a2693a27c2937bd5ceaa",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/event_emitter.go",
+      "bytes": 4894,
+      "sha256": "fc5a0effada20e79bbf6f236275f36d4449ce8c5a64e6f5088c1e945884a5389",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "fc5a0effada20e79bbf6f236275f36d4449ce8c5a64e6f5088c1e945884a5389",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/event_emitter_test.go",
+      "bytes": 5883,
+      "sha256": "30eba55f12f1d8a8a95048932252812a7a34424af3d50a3ba80bad259d0422c3",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "30eba55f12f1d8a8a95048932252812a7a34424af3d50a3ba80bad259d0422c3",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/fetch.go",
+      "bytes": 14955,
+      "sha256": "9ef3d12b9f6bd21e2315ae3b2c395b17c10f63d2a9efc61d76c1d70bc537ff61",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "9ef3d12b9f6bd21e2315ae3b2c395b17c10f63d2a9efc61d76c1d70bc537ff61",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/file_chooser.go",
+      "bytes": 1070,
+      "sha256": "abc900bf9f618c588464d0ac7a383122cea7d9826ff128203be0890fa7b3ebec",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "abc900bf9f618c588464d0ac7a383122cea7d9826ff128203be0890fa7b3ebec",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/frame.go",
+      "bytes": 23304,
+      "sha256": "ded93ff48f185c02879b19729e1375965f0e6459ab61ebec05d7054750ed98f7",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "ded93ff48f185c02879b19729e1375965f0e6459ab61ebec05d7054750ed98f7",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/frame_locator.go",
+      "bytes": 3660,
+      "sha256": "19306a5466ecec3808b6080962a7c3c5c579f549ec6d3f8a051d99966849cf81",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "19306a5466ecec3808b6080962a7c3c5c579f549ec6d3f8a051d99966849cf81",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/generated-enums.go",
+      "bytes": 15118,
+      "sha256": "cb71d9b957b232299ddfe91d4812bc784edfb29b2146649894de2fa5dd4424cc",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "cb71d9b957b232299ddfe91d4812bc784edfb29b2146649894de2fa5dd4424cc",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/generated-interfaces.go",
+      "bytes": 265922,
+      "sha256": "d766831794a45ff2214faa652fd1c7c2e47ccaf2b87ec29de22865bde73de52d",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "d766831794a45ff2214faa652fd1c7c2e47ccaf2b87ec29de22865bde73de52d",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/generated-structs.go",
+      "bytes": 252530,
+      "sha256": "43a0f0bcc51d6b946f496f6f6ed1daa8593402f6c0aa35b3f35889ba02f1718d",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "43a0f0bcc51d6b946f496f6f6ed1daa8593402f6c0aa35b3f35889ba02f1718d",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/glob.go",
+      "bytes": 5543,
+      "sha256": "635891a66a901aba16c63b3241505c35b95bc301bee81fd7b1ae069c73a59575",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "635891a66a901aba16c63b3241505c35b95bc301bee81fd7b1ae069c73a59575",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/glob_test.go",
+      "bytes": 6877,
+      "sha256": "70e4c79a4583c99349a1722faddc878539b6313fa2ddab0f65ae60f9e21dde75",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "70e4c79a4583c99349a1722faddc878539b6313fa2ddab0f65ae60f9e21dde75",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/go.mod",
+      "bytes": 782,
+      "sha256": "755e83d264703fc6b0bdce94ec159cd3a7e229c5c85418029c89cad58b2c37da",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "755e83d264703fc6b0bdce94ec159cd3a7e229c5c85418029c89cad58b2c37da",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/go.sum",
+      "bytes": 7739,
+      "sha256": "07b39a80c1d0550c500039856573b5387830ef0bc465f85ff32131ccb6268856",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "07b39a80c1d0550c500039856573b5387830ef0bc465f85ff32131ccb6268856",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/goid.go",
+      "bytes": 1477,
+      "sha256": "7c95ffc7cf4fde7daef2b8a903e67d1b73e2e527132d6e935675b17c529aaa8c",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "7c95ffc7cf4fde7daef2b8a903e67d1b73e2e527132d6e935675b17c529aaa8c",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/har_router.go",
+      "bytes": 3250,
+      "sha256": "85d77f3e7ca0b6c54b936735c6c8bcf09907773d4ffe64485c9180d68d81f736",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "85d77f3e7ca0b6c54b936735c6c8bcf09907773d4ffe64485c9180d68d81f736",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/helpers.go",
+      "bytes": 18749,
+      "sha256": "c465189c7eab3f861ffbe18b10212a86e174a09f760b6fac22dc4307c2a8a2d7",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "c465189c7eab3f861ffbe18b10212a86e174a09f760b6fac22dc4307c2a8a2d7",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/helpers_test.go",
+      "bytes": 5712,
+      "sha256": "a593cc02ef1120da2270fc61b3bc453ffb0119a99eab3815aff979e63cd88f98",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "a593cc02ef1120da2270fc61b3bc453ffb0119a99eab3815aff979e63cd88f98",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/input.go",
+      "bytes": 2479,
+      "sha256": "2a200403603c542ce21aa151219b645d06b31173c90f1c3e0fee5157899312fd",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "2a200403603c542ce21aa151219b645d06b31173c90f1c3e0fee5157899312fd",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/input_files_helper.go",
+      "bytes": 5510,
+      "sha256": "97ca12d97b0cfedd90e523f2ba9a8be48387d258f8422199d0e59cd0e486a02b",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "97ca12d97b0cfedd90e523f2ba9a8be48387d258f8422199d0e59cd0e486a02b",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/internal/safe/map.go",
+      "bytes": 1519,
+      "sha256": "f3982502474ee0e4ac2f1011445b65cb9ed455f4254593b267523d7e953b63bc",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "f3982502474ee0e4ac2f1011445b65cb9ed455f4254593b267523d7e953b63bc",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/js_handle.go",
+      "bytes": 10263,
+      "sha256": "c114d9d2f5e886cd2dcac087c6fdacea31e6ab27528028277be441f5349b2dbc",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "c114d9d2f5e886cd2dcac087c6fdacea31e6ab27528028277be441f5349b2dbc",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/jsonPipe.go",
+      "bytes": 2328,
+      "sha256": "111afb2e2f0ce0e783a9ae1a0e3fd567a0bba0e2d87d2b76ea3175b1510c3ff8",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "111afb2e2f0ce0e783a9ae1a0e3fd567a0bba0e2d87d2b76ea3175b1510c3ff8",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/jsonPipe_test.go",
+      "bytes": 4075,
+      "sha256": "1c09eab91c73c6b94b4d0a9884f4977add2e5aec9cdbb3f7ffbdf2d0871f205e",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "1c09eab91c73c6b94b4d0a9884f4977add2e5aec9cdbb3f7ffbdf2d0871f205e",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/local_utils.go",
+      "bytes": 4654,
+      "sha256": "825aca06d97e7660f7a3b4ca66b2a707ab30e844d7ca979f9e76cbc1cde269f4",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "825aca06d97e7660f7a3b4ca66b2a707ab30e844d7ca979f9e76cbc1cde269f4",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/locator.go",
+      "bytes": 26516,
+      "sha256": "5b512aac7cbd369a948eb88fe5a0bc2cca1b6e9b3436a2b20c9c13a1a4177015",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "5b512aac7cbd369a948eb88fe5a0bc2cca1b6e9b3436a2b20c9c13a1a4177015",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/locator_assertions.go",
+      "bytes": 15063,
+      "sha256": "79941886a819833a63fea33982cd1843215199cf3d6554480a9765131ef8aa42",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "79941886a819833a63fea33982cd1843215199cf3d6554480a9765131ef8aa42",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/locator_helpers.go",
+      "bytes": 6244,
+      "sha256": "35ed6ac6ec418e4fa12b7f6af739646ed07c06ec2deedfd4d781f71940e9c56e",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "35ed6ac6ec418e4fa12b7f6af739646ed07c06ec2deedfd4d781f71940e9c56e",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/mime_types.go",
+      "bytes": 2629,
+      "sha256": "b31631656376a0300135a51c8478c8432aee6d6f09dcb2a25ae9f12f6017ecd8",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "b31631656376a0300135a51c8478c8432aee6d6f09dcb2a25ae9f12f6017ecd8",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/network.go",
+      "bytes": 1789,
+      "sha256": "6e7982656dea91ecf173dac4231e9cd2255f2eacb9241277a00dc7ab31b9c7bd",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "6e7982656dea91ecf173dac4231e9cd2255f2eacb9241277a00dc7ab31b9c7bd",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/network_test.go",
+      "bytes": 1716,
+      "sha256": "936dacb17f4192863c23f4ed0933b09243df595931c1a3e46d49ba8d2a350daf",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "936dacb17f4192863c23f4ed0933b09243df595931c1a3e46d49ba8d2a350daf",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/objectFactory.go",
+      "bytes": 3433,
+      "sha256": "c692710835e09690cd703cdec19aa1b5f788a35f4d100cc6695aff1b82ee6d9f",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "c692710835e09690cd703cdec19aa1b5f788a35f4d100cc6695aff1b82ee6d9f",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/owned_har_close.go",
+      "bytes": 2324,
+      "sha256": "bf96da14bfdc93ad0455bf12a85e1e23675172a58603c25d30059fcc3fee6db6",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "bf96da14bfdc93ad0455bf12a85e1e23675172a58603c25d30059fcc3fee6db6",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/owned_har_close_test.go",
+      "bytes": 7591,
+      "sha256": "0dbb40baf32f2ba3424d8943af5c99d9a7b21df2a11015fab88f571383c05484",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "0dbb40baf32f2ba3424d8943af5c99d9a7b21df2a11015fab88f571383c05484",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/page.go",
+      "bytes": 45453,
+      "sha256": "1cce4f395474c5ca607b85fbbef99493436012ef5b59cabd162ba89b86a250ea",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "1cce4f395474c5ca607b85fbbef99493436012ef5b59cabd162ba89b86a250ea",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/page_assertions.go",
+      "bytes": 4001,
+      "sha256": "1057baacf0c374b8ad1ee142ff90d02ca0b2951bff82299d7c9dc9f8f080d8d4",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "1057baacf0c374b8ad1ee142ff90d02ca0b2951bff82299d7c9dc9f8f080d8d4",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/playwright.go",
+      "bytes": 2927,
+      "sha256": "a5a9e43348877d0b613742822b2826c16363436f8317e00851956da787088e40",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "a5a9e43348877d0b613742822b2826c16363436f8317e00851956da787088e40",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/request.go",
+      "bytes": 8158,
+      "sha256": "574aa784fd224c41c2c107ea07258dd8e072a970610d9dc4327665684f22d9d2",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "574aa784fd224c41c2c107ea07258dd8e072a970610d9dc4327665684f22d9d2",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/response.go",
+      "bytes": 4667,
+      "sha256": "971934c347eb775c37c04c7085fdd80613440440337f11da547c2b023a623ab1",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "971934c347eb775c37c04c7085fdd80613440440337f11da547c2b023a623ab1",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/route.go",
+      "bytes": 6848,
+      "sha256": "94063bcb37429517f495406eccf45d70fddbf4e8f32b5c823518ef8a2238952e",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "94063bcb37429517f495406eccf45d70fddbf4e8f32b5c823518ef8a2238952e",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/run.go",
+      "bytes": 20902,
+      "sha256": "132aab827689596c4fbd8715943a3004b369a15d339f456f0e0ae93ec3a42d63",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "132aab827689596c4fbd8715943a3004b369a15d339f456f0e0ae93ec3a42d63",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/run_test.go",
+      "bytes": 6590,
+      "sha256": "cc5b657b428b6f9d77ec498a2f672329aeebbbb1836ac8c962c28dfad3df1654",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "cc5b657b428b6f9d77ec498a2f672329aeebbbb1836ac8c962c28dfad3df1654",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/run_unix.go",
+      "bytes": 174,
+      "sha256": "f6365a7e3d75c06188883369598aee6aee7e0467f14756127ad1bfa091f67681",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "f6365a7e3d75c06188883369598aee6aee7e0467f14756127ad1bfa091f67681",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/run_win.go",
+      "bytes": 187,
+      "sha256": "c54832107aa36afc760b4efd5d303d7c16ddcf56cc84d144c7f872fa0afd2394",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "c54832107aa36afc760b4efd5d303d7c16ddcf56cc84d144c7f872fa0afd2394",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/screencast.go",
+      "bytes": 3416,
+      "sha256": "b7e7e3c8b12cfbf9d755daa3794118fe97c30917e975641d947c4852dc811b8d",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "b7e7e3c8b12cfbf9d755daa3794118fe97c30917e975641d947c4852dc811b8d",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/selectors.go",
+      "bytes": 4151,
+      "sha256": "d444b4f2104d44c060dbac78919d169ccac5ea23c4de422e9fb939a910b06dd2",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "d444b4f2104d44c060dbac78919d169ccac5ea23c4de422e9fb939a910b06dd2",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/selectors_internal_test.go",
+      "bytes": 1560,
+      "sha256": "7754ee84512bf71b41e94a6fa966156e51c1c84d184c94c974d46c63e0c4c8ac",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "7754ee84512bf71b41e94a6fa966156e51c1c84d184c94c974d46c63e0c4c8ac",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/stream.go",
+      "bytes": 1357,
+      "sha256": "7c0a86625491999bac66b9db0facb867af4a8127af8d0e85fae6b88a25934f0d",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "7c0a86625491999bac66b9db0facb867af4a8127af8d0e85fae6b88a25934f0d",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/tracing.go",
+      "bytes": 8312,
+      "sha256": "9a5fed9c6851016e6c8965f81bb381864b80a23ca78ff78d42e15e5174a4f6d2",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "9a5fed9c6851016e6c8965f81bb381864b80a23ca78ff78d42e15e5174a4f6d2",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/transport.go",
+      "bytes": 3384,
+      "sha256": "24750ccab39f8b6d24cc3850e7c55af865f2ee6cdf0ffa180fdeddf13781f565",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "24750ccab39f8b6d24cc3850e7c55af865f2ee6cdf0ffa180fdeddf13781f565",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/type_helpers.go",
+      "bytes": 2291,
+      "sha256": "fdfd77df58dd06543e9092550869711e6fc7465fc0d766ad628f0779c643e2db",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "fdfd77df58dd06543e9092550869711e6fc7465fc0d766ad628f0779c643e2db",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/type_helpers_test.go",
+      "bytes": 968,
+      "sha256": "7c96fbdd3f60ef8ceb1174d8c5dea34cdf850038e24027f524d67a8608beb29e",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "7c96fbdd3f60ef8ceb1174d8c5dea34cdf850038e24027f524d67a8608beb29e",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/video.go",
+      "bytes": 2118,
+      "sha256": "84c4637e20050dfba23ebf4c014f806c100c2d4f50c2df8458765dc4f1baafbc",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "84c4637e20050dfba23ebf4c014f806c100c2d4f50c2df8458765dc4f1baafbc",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/waiter.go",
+      "bytes": 4020,
+      "sha256": "8b013d11b82f08504621707820de405db23a73c58207d485a7daab3b2a72de81",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "8b013d11b82f08504621707820de405db23a73c58207d485a7daab3b2a72de81",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/waiter_test.go",
+      "bytes": 7176,
+      "sha256": "b8c92119761d84419ff325855c7901f4625909e2ca5a6de523b497086c71bc4b",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "b8c92119761d84419ff325855c7901f4625909e2ca5a6de523b497086c71bc4b",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/web_error.go",
+      "bytes": 459,
+      "sha256": "82125844bee07c282b236f01290e37ba1ccd5745063e1c2f9a0c73643511a942",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "82125844bee07c282b236f01290e37ba1ccd5745063e1c2f9a0c73643511a942",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/web_storage.go",
+      "bytes": 1551,
+      "sha256": "6830a3813c110b3db05e937291fd1dda46c87bdad2e83620fae5cdf87a2387b8",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "6830a3813c110b3db05e937291fd1dda46c87bdad2e83620fae5cdf87a2387b8",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/websocket.go",
+      "bytes": 3454,
+      "sha256": "5bda6f92394fd16578adce608b8389bdb2ae816f50ee294436e1d9b0d24d615a",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "5bda6f92394fd16578adce608b8389bdb2ae816f50ee294436e1d9b0d24d615a",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/websocket_route.go",
+      "bytes": 6735,
+      "sha256": "790b80277afe6c65e3c4f02c1b0ca2d3114d27271e98fa6792784570d6f71d4b",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "790b80277afe6c65e3c4f02c1b0ca2d3114d27271e98fa6792784570d6f71d4b",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/worker.go",
+      "bytes": 2104,
+      "sha256": "1082a6f7ae30ae27918f714b4881208bf82e64657fbaca66aa29c526ea4feeb4",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "1082a6f7ae30ae27918f714b4881208bf82e64657fbaca66aa29c526ea4feeb4",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "third_party/playwright-go/writable_stream.go",
+      "bytes": 871,
+      "sha256": "b651ff9e8dbdd2025eafd78c4b550a3f4495123894f6b38b864db1d39588a447",
+      "kind": "direct-source-or-reviewed-reference",
+      "destination_current_sha256": "b651ff9e8dbdd2025eafd78c4b550a3f4495123894f6b38b864db1d39588a447",
+      "transfer": "verify-current-composed-source"
+    },
+    {
+      "path": "docs/guides/BROWSER_HAR_WORKING_OWNERSHIP.md",
+      "bytes": 7009,
+      "sha256": "a537d068d773f5d351ca8dfbabef333edb9174f1d67ecffc7a09817e7c6a4846",
+      "kind": "scope-guide",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/README-v5-static-history.md",
+      "bytes": 4761,
+      "sha256": "28edef97129a6b166f1ed1f4c2e8670b77abaee464a0f3482c744850f12e971c",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/README.md",
+      "bytes": 7942,
+      "sha256": "11d508198aec639c7517db14576d2059b95f7f814f92f0e8bb994f76bdd03e18",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-document-frame-finalizer-isolation-20261005.patch",
+      "bytes": 4309,
+      "sha256": "1b253bacc151464c6743b2bedb4199edf67d3ad66d5cc3a5470d834d9e495183",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-har-document-resource-composition-independent-review-v1-20261005.json",
+      "bytes": 56145,
+      "sha256": "eaf8914cb1c9eff917f883c5ae0ad37d5f9c13368122516e598c777a3cacaf06",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-har-sdk-authoring-independent-draft-review-20261005.json",
+      "bytes": 13737,
+      "sha256": "78a22bf567d1618d9c8233c194568895425e06e1b5243aea7121b7584e1f1b7e",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-har-sdk-corrected-authoring-independent-review-v6-20261005.json",
+      "bytes": 51982,
+      "sha256": "ace6fd59d2ff61c1dd97a385b40760cd2b4702c01b1921a2de31fa5289362373",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-har-sdk-readme-packaging-authoring-independent-review-v7-20261005.json",
+      "bytes": 46871,
+      "sha256": "4029dabed8b1fb0d8992637c71f849122f633e3316fa68c52273c7190498c806",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-owned-sdk-patch-design-20261005.md",
+      "bytes": 7411,
+      "sha256": "b10a2d61c0adb60309cfc11b0ee40f44dd7e2c2595bc6d8a1bcc2e79a2d8c3ca",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-owned-sdk-patch-design-v2-20261005.md",
+      "bytes": 7395,
+      "sha256": "d6cf41125afd6354c2b8ef7b045dabda32af9ce03c249e4f4d2b60100fa17949",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-ownership-candidate-source-v1-20261005.json",
+      "bytes": 3704,
+      "sha256": "62fc84b834f480ad40f278915450a0976c875d4852fcdc2f71936ed593d50930",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-ownership-candidate-source-v2-20261005.json",
+      "bytes": 4848,
+      "sha256": "aa049e84b8b736b951dc3caa4e1a2c9482f1783eee081b8bfc301b363a329625",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-ownership-candidate-source-v3-20261005.json",
+      "bytes": 6362,
+      "sha256": "7ebd62cc5d09e708480b27c8fd892de9fe9664448a7f85445daa05920821b105",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-ownership-candidate-source-v4-20261005.json",
+      "bytes": 7515,
+      "sha256": "9317de086c2020e1af00fc9f3d176a29add4a8405049a09f851e7dfee8aef6a9",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-ownership-candidate-source-v4-before-strict-type-draft-20261005.json",
+      "bytes": 6533,
+      "sha256": "1805627907da3c1063a9816b95e74672a01dc0d14b72bb3942ad64d41ade7e1c",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-ownership-candidate-source-v5-20261005.json",
+      "bytes": 8286,
+      "sha256": "65fae202e058f59da5b5c25b7beef494a5f14168e06ccb8e8cf4aefb58c24e1c",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-ownership-candidate-source-v6-20261005.json",
+      "bytes": 24176,
+      "sha256": "23f08c42d3cd307ad75b76487e0837bf8ac48ca578e1542e6f98be55af76b19e",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-ownership-candidate-source-v6-draft-20261005.json",
+      "bytes": 24102,
+      "sha256": "c9494ff8f6f7fefbd61c3695a8b776eae15984786e15a28d6808e233945175b0",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-ownership-candidate-source-v7-20261005.json",
+      "bytes": 24881,
+      "sha256": "93fe5c3e895f88b1788b6ea61ef1b4e6670bf596d3e49c8117fa98a9bf607608",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-ownership-parent-review-v4-20261005.json",
+      "bytes": 2446,
+      "sha256": "2f833ac348146a93e521765c92ef296aee5862e209bae280258f30d66088e8e6",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-ownership-parent-review-v5-20261005.json",
+      "bytes": 2106,
+      "sha256": "d2c8a0c9c21c1bcdc330387ed82eb1977c0d3f449edb033d846227d5fe76fbb8",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-parent-review-v1-20261005.json",
+      "bytes": 3029,
+      "sha256": "8604535c26a0bd918b486dc9db133a01a1b4d58cbf2798226ec703b4b642864c",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-parent-review-v2-20261005.json",
+      "bytes": 3481,
+      "sha256": "88760a88c7c32a0ceb5abd85e66d4d93eef13757046c601e3b63ff36ee3d3def",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-parent-review-v3-20261005.json",
+      "bytes": 6041,
+      "sha256": "4f3cf583e3716a17c3ff3a5045e5079fc57c1527545147d0cae5c483b13eb51d",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-sdk-close-contract-review-20261005.json",
+      "bytes": 3682,
+      "sha256": "617664f87564694e1c66aa9b255ebad4dc6bae798c97c1cdddfefc7424c35e88",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/apexload-native-har-working-ownership-design-20261005.md",
+      "bytes": 18451,
+      "sha256": "b71d606913230e51c91cfc98f8d2b039be6f3881295db2a0877a87a9e46ba762",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/check-history.json",
+      "bytes": 23334,
+      "sha256": "061a434016ee243b31258aa145e6d8d99c282098800dcbc2866e33594cfbcc11",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-api-pre-dedup-overlay-20261005.json",
+      "bytes": 213,
+      "sha256": "025415f154d9598ff3ff4c4a178788194b95aac83e6b79d6dac170ac61284710",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-api-pre-dedup-overlay-inputs-20261005.json",
+      "bytes": 758,
+      "sha256": "7bad6931db4eb0f3d2c9bf93a71afbb7bd63673b704318609873b40dfbd17f5e",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-api-pre-dedup-red-1.json",
+      "bytes": 2166,
+      "sha256": "3de7d1804ae5a34db872d907715dbc1e5dec82706804616adecaf88cc755d991",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-api-pre-dedup-red-1.log",
+      "bytes": 1043,
+      "sha256": "6b97da413186172b5866407d66e1d400f95a9396a4536f2d48ec2157e0f4b13f",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-api-retention-final-1.json",
+      "bytes": 2084,
+      "sha256": "2dfdd50d25c6458e30aa2ed847909a7ca3aeb2b6efa9c4e65786c0e60b73cbb6",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-api-retention-final-1.log",
+      "bytes": 3512,
+      "sha256": "c6e19355fe82772b9fcd32a0a2c34a07fbf662edf3a71eaa413b53869a0064db",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-api-retention-race-final-1.json",
+      "bytes": 2089,
+      "sha256": "2a01ddd228fc32cb04d729f02b747f28ea1904197430f7bb946f5176ff14585a",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-api-retention-race-final-1.log",
+      "bytes": 2152,
+      "sha256": "a809968083a309b79b8527b7f9e6ddabb36caade9c1eff2eb78f46164bed1b22",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-compile-1.json",
+      "bytes": 1860,
+      "sha256": "89aa74a857f6648169fc1253437a43f1344d45ff3f0f60f87cd9574cbc897af8",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-compile-1.log",
+      "bytes": 415,
+      "sha256": "250d7a90f41acd70828a7c988cf2d1106d01157aac30e869dd7f41754030b088",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-focused-1.json",
+      "bytes": 2081,
+      "sha256": "75bdc7d27fe3c55e0b82e5a38aa01d027a3d240144ea3fe0381a76514308ccab",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-focused-1.log",
+      "bytes": 220,
+      "sha256": "62fb053a143cbc7a7781430ef72bf2b9cf2f2f13089eb4e1e29eb9e2232de9cb",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-focused-2.json",
+      "bytes": 2081,
+      "sha256": "8ccca169deabe2565055e07b91dc7ea1acb23e417b5d30133fd6a51db3f952ef",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-focused-2.log",
+      "bytes": 64,
+      "sha256": "731ec3ecb532648a9522c8e2e52a48e2df36c4013ffcdfb5ac8f191419ec8c0b",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-focused-3.json",
+      "bytes": 2081,
+      "sha256": "29e3f1f1a64dc8433bae7f5c17cebee1b2eead9f6ff7aac2a74e4acfc789f3b6",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-focused-3.log",
+      "bytes": 64,
+      "sha256": "ce6e183c422896cde20bd36ec289bcf90248ded76ac106b378d60219d5d43dce",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-focused-4.json",
+      "bytes": 2082,
+      "sha256": "a9dd046075ec9f8888462623c6a869279341872be55667acae798f4e74fd9f80",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-focused-4.log",
+      "bytes": 64,
+      "sha256": "b218fa35b4eb605f3ab676c66a57546baa79ec02911dd09d17a1ee549f2b676f",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-race-1.json",
+      "bytes": 2089,
+      "sha256": "8613e9edb885105d05dd2bd291dcec72493d6c32ba2247cd8f421662836ffcc6",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-race-1.log",
+      "bytes": 64,
+      "sha256": "080a55a21bcb4dcb1421c503d87ac7e0563910556cdeb972c2b7ee61de128a4d",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-race-2.json",
+      "bytes": 2089,
+      "sha256": "7e37ec2e7eaf30f2f3f3f7c103fb2901f6f52595008414b4efd4df73ae8985ce",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-race-2.log",
+      "bytes": 64,
+      "sha256": "382aede78541f317a0d6000f66acefe368ef0a28e699d08b629502843b09037d",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-race-3.json",
+      "bytes": 2164,
+      "sha256": "8ddfe31ce16b473b8cc1f0f5433589b7d0fb63a28043c6ae796981c0aded7ab0",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-race-3.log",
+      "bytes": 65,
+      "sha256": "ea348b4190fb34cff37ce935229ffb1b418e618cda83469a39174f3fdbda3f95",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-race-4.json",
+      "bytes": 2165,
+      "sha256": "c8d5dabcae28162ba6406fb603183618607fa53ac145d6435e485a28e375adc1",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-race-4.log",
+      "bytes": 65,
+      "sha256": "bc085e5bd50a3435241431d4ecf4e8ff19020a036e89e8ea39b9776383ef958f",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-short-suite-1.json",
+      "bytes": 1991,
+      "sha256": "d3281572aa0715feb960f6bf8d184144b19e59c01fa9f9cf762f9b9b049f5b2b",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-browser-short-suite-1.log",
+      "bytes": 65,
+      "sha256": "d4cc5f6d93e6b8c12d007fdb36828c8dd1d9c9bc6d8563f42f7f83874a190579",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-docs-final-1.json",
+      "bytes": 1988,
+      "sha256": "861ca3dd5d5be371ec644a9ec55a5c6369d1268ed819c66187aa97e3379cbe76",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-docs-final-1.log",
+      "bytes": 1071,
+      "sha256": "3a7449d2494624d8f00474457c6d91bf686d7d28e1172ee984d527a7e3be4e04",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-docs-final-2.json",
+      "bytes": 1861,
+      "sha256": "5d49414310a7113a4eecd84830267f08247cce5a7717a63f53f0801855210af0",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-docs-final-2.log",
+      "bytes": 59,
+      "sha256": "8e0de64215e31a79d9fb17bc223e930c36a787c5b8cfd8afd8d1cbb38f30881e",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-docs-final-3.json",
+      "bytes": 1874,
+      "sha256": "3a9d511f7c7895cfa4c38ebe0332d770bd54af582c70aacc9d9b5da36eaa958e",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-docs-final-3.log",
+      "bytes": 59,
+      "sha256": "8e0de64215e31a79d9fb17bc223e930c36a787c5b8cfd8afd8d1cbb38f30881e",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-document-owner-fixed-1.json",
+      "bytes": 1953,
+      "sha256": "e2b8ee6db1c60295b1beae06d9be982f0341fe024c6990a78132dfe2c7a2dd5e",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-document-owner-fixed-1.log",
+      "bytes": 64,
+      "sha256": "a3a6d03c94da4437939276b9d2a749b3e15a6f8de207ee5c035d5196be342a39",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-document-owner-red-1.json",
+      "bytes": 1986,
+      "sha256": "00aa43539e05d1a759ac2c59eef575424881b2bfd10a86654cc373fad9d3dcaa",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-document-owner-red-1.log",
+      "bytes": 524,
+      "sha256": "2023c63187aa11c9f37c2270eccf56f87cac71be6839183cb6b6e32154646464",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-ledger-compile-1.json",
+      "bytes": 1929,
+      "sha256": "7045522a5b184f8ed7df10a85d7aa82afa4b9629c9fa7f6dbefbf72c875f3649",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-ledger-compile-1.log",
+      "bytes": 64,
+      "sha256": "95e44ed9761d0ee30f6d0eb15ca52a08514867ce37902bdd93dcdeed8ae64a41",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-ledger-focused-fixed-1.json",
+      "bytes": 2119,
+      "sha256": "990988f8da00a5dd86db8e37b19e28a97fbb79fc0de8bb0c96095829d34f10e6",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-ledger-focused-fixed-1.log",
+      "bytes": 64,
+      "sha256": "bc1095cca010a7da53a51dc8f204d37dcf449b0229e94b1da10c2b24418174a7",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-ledger-focused-red-1.json",
+      "bytes": 1938,
+      "sha256": "bb717087f31fa0c74e70238b4121b2477efc508a7a16e8082524e041b7ce32b2",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-ledger-focused-red-1.log",
+      "bytes": 223,
+      "sha256": "f947883bb161f01b171dc7532deb7aff635da5994126cefcb100c70a92d5b7ff",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-ledger-focused-red-2.json",
+      "bytes": 2005,
+      "sha256": "1eef2c6a3ac3c255fe823c00b6a638732bbec437271a17867755dfd785347966",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-ledger-focused-red-2.log",
+      "bytes": 462,
+      "sha256": "b87e165b2ec1a11d2270aba73d9842c5200e78cca4fda43fcd3213d6e54d533c",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-ledger-strict-types-red-1.json",
+      "bytes": 2055,
+      "sha256": "893baeb8d75956c6b91198d97c0fab9a4b69700be2f7b01a1b408099a70f095b",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-ledger-strict-types-red-1.log",
+      "bytes": 493,
+      "sha256": "d6938f8d50fd974f0beb8ffd172b086b33b8c6bfe3a4e6012d401e8cbb8e46ef",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-neutral-frame-finalizer-unit-1.json",
+      "bytes": 2037,
+      "sha256": "a976947accb9b7c142ffbfb3bbddd0bf6ae3bd04cf695bd233a98f8cffcec743",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-neutral-frame-finalizer-unit-1.log",
+      "bytes": 64,
+      "sha256": "c5e2cd676a8469bef43ee0c6cc0313eec138676a392c2e372cc90ea4f0879877",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-all-native-final-1.json",
+      "bytes": 2170,
+      "sha256": "d7dc702be5d9d8063fa956bbf6943fc94756d5242b1fed958b444018123c8db9",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-all-native-final-1.log",
+      "bytes": 6580,
+      "sha256": "bb0564eda8b6f34eac0fb57c3c2ec53b1853d57cc5e41065332e7c17fc5c5d09",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-before-dispatch-repeat-fix-20261005.go.txt",
+      "bytes": 1789,
+      "sha256": "3da087fa7aa7a2a2ebc45100f885ce2531303526c7a97ad2ea4b82139537bb77",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-callback-native-final-1.json",
+      "bytes": 2043,
+      "sha256": "0cb685866934217f8b433c2043ad4be1b2b64b64c9f6ed68d6bf307ce702e563",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-callback-native-final-1.log",
+      "bytes": 535,
+      "sha256": "5f5022a96055203d9d63831a6ed4ab77316a8fec9dcc6fb06a0045dc22066003",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-contract-final-1.json",
+      "bytes": 1962,
+      "sha256": "96b57ca4beafa5288747ab13fe7ed09c7e9d74df736bbc07bf08877efc3de5fb",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-contract-final-1.log",
+      "bytes": 4882,
+      "sha256": "346a0c6e0ccd63dc005732f6dc8974506e6ee3022087619a97741469326193a3",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-contract-final-2.json",
+      "bytes": 1962,
+      "sha256": "2b1030188b6d6884be6597dd28df38af41d1c6795024b1af8ea5341c6be359ed",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-contract-final-2.log",
+      "bytes": 5344,
+      "sha256": "6d76f6f86c0380ddbc7cc75525c5ba68df646d1e8e6529cbe5874f884a803360",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-contract-final-3.json",
+      "bytes": 2010,
+      "sha256": "835de75632ad61b8b82f16c0c9da795eff564f7af6b79138745ab1260e888d40",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-contract-final-3.log",
+      "bytes": 5734,
+      "sha256": "f34665cba2713338e56a6a8ed528bbe44be17b0310aed1ea6511221bdc46a330",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-contract-first-1.json",
+      "bytes": 1962,
+      "sha256": "9eb4376e66706f8f6effa80775b32f1b7c5cbccc480b4b7302dbff3b2d537785",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-contract-first-1.log",
+      "bytes": 1662,
+      "sha256": "ce356027282000db5f8c600c2f0c916fa14c375ad86afbfde36766da048614b1",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-contract-race-final-1.json",
+      "bytes": 1976,
+      "sha256": "3991de9ff407dbd6e42d55b25d1125e77b794692c29e7d875bbbefe7eac94f22",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-contract-race-final-1.log",
+      "bytes": 47,
+      "sha256": "4ef366d34890840e5d326b5a48b85dc6d4e07f0e2d8ad46689b5526c71534cb6",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-contract-race-final-3.json",
+      "bytes": 1972,
+      "sha256": "41192c84f63066fc3650af2fb82cea679cf61265ae523b487fe6f9765c1bbf76",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-contract-race-final-3.log",
+      "bytes": 5734,
+      "sha256": "c0febb48f65a851bad401263121469d9d0a7afe22fbc127d14a3d7eddd6b0982",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-dispatch-repeat-red-1.json",
+      "bytes": 2139,
+      "sha256": "5c8a877e391cc0493e4fed83801c7f322de41149e2c088c77789fb4c765f2872",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-dispatch-repeat-red-1.log",
+      "bytes": 415,
+      "sha256": "182834954ebbc5ff78eb4b6cf392dd181493166fb0c8438e6b24ac0054579616",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-document-finality-required20-final-1.json",
+      "bytes": 2083,
+      "sha256": "759c18b528968c765ef87020c649f834fb523fded66b0acd3dc69ee5cfaa4489",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-document-finality-required20-final-1.log",
+      "bytes": 19330,
+      "sha256": "83afc20167a699727ea72d54fb0f3597f1dce1f95a4143c1b3a9d60903df26d2",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-fresh-flush-and-failure-final-1.json",
+      "bytes": 2045,
+      "sha256": "8002dd054f53f0bb9a8073ef252dc9d135300f483373245fb5dca562eacd8e7f",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-fresh-flush-and-failure-final-1.log",
+      "bytes": 917,
+      "sha256": "23699c8bba176a7ffbbcbd47481f319643d9075afc833d0509408244b6be45d4",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-packaging-final-1.json",
+      "bytes": 2004,
+      "sha256": "6a850a1191260390fe28f9e79332e9da1539febddf1074b406e6772ab46d5adb",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-packaging-final-1.log",
+      "bytes": 698,
+      "sha256": "0ddb4813b88cd2dab38d2565900d7eb2fe5a02982339e96ecaee24bd5b3c26a2",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-packaging-final-2.json",
+      "bytes": 2112,
+      "sha256": "47939a2bb26e2fb1a7e90a2baa8b240cc0d6e6b5f83871d5dc9f46c9cd7567bf",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-packaging-final-2.log",
+      "bytes": 1352,
+      "sha256": "c3960b0c62220517ecc7e0e06fae4cda1bbb4ca6cd245f4b15875f118bebb8c5",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-packaging-final-3.json",
+      "bytes": 2142,
+      "sha256": "609ad6a85f4af77b7f66f7436798ce884687c37cf6313a074fc1404dd33ad42f",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-packaging-final-3.log",
+      "bytes": 1352,
+      "sha256": "ebcededcda23b013256cd14d9736e2f5dd5faa68482b81d99798e2226f37086b",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-packaging-race-final-1.json",
+      "bytes": 2115,
+      "sha256": "3fb98ecd4fdaf937d27bd8b43590e3b08cb297e1e9b593cf72c39e0aade7bfed",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-packaging-race-final-1.log",
+      "bytes": 1352,
+      "sha256": "9201ff80c8fa792ac7cb3d7508c9e46284ac7444845de60407587b84b39145b0",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-prior-close-green-1.json",
+      "bytes": 1995,
+      "sha256": "201f9822041bba2b5da2d0ea8b4fcbf3a013d90824c175d8d780c0fe85b740f8",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-prior-close-green-1.log",
+      "bytes": 2637,
+      "sha256": "eca1f5bbe0d7580dd90369b1249d34afd3acacaf11600fc787818edda035ee76",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-recording-path-red-1.json",
+      "bytes": 2002,
+      "sha256": "a2e9c3539e77baa906cb1271849c0c20d48799b690641c763ff82b6eb1df52f9",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-recording-path-red-1.log",
+      "bytes": 280,
+      "sha256": "6bd5cadf5e7d270e89efda883cbc4a5ab3bf47a4a6b625d9266fb915f9023093",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-runtime-after-v2-20261005.json",
+      "bytes": 3628,
+      "sha256": "9a5f15f6bd981a4e25c4ac9b85e1264121e770563a0771dd503b08b9b96efcec",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-runtime-before-20261005.json",
+      "bytes": 3579,
+      "sha256": "f6a24518a4de0227f104573c51191ed423e947de4070bf7d5fc56ff90376c155",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-owned-sdk-runtime-before-v2-20261005.json",
+      "bytes": 3601,
+      "sha256": "32dbb2c8e83b15b3c2a53e98058f36a10030454a3c94ea4f45c13543f930d0cd",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-parent-findings-fixed-1.json",
+      "bytes": 2093,
+      "sha256": "d1dbc2855d393ad9ccde1c14a3cb3d2236d8b2b7bf3660d41613a79a87e803ce",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-parent-findings-fixed-1.log",
+      "bytes": 64,
+      "sha256": "41a67190920795521c49eebb2404cd3006ea6b1f1633e8b66b18c55393f63b6b",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-parent-findings-red-1.json",
+      "bytes": 2142,
+      "sha256": "276c7386b012066bc54a8d1e15250152978475cbacad1e6d1f091a476833f2f4",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-parent-findings-red-1.log",
+      "bytes": 1982,
+      "sha256": "f310d9c0c4351c15301428faa3a54f5f870b32dc321ed73f7bc540cee80ca623",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-parent-scan-size-red-2.json",
+      "bytes": 1965,
+      "sha256": "25c153b2e9447082ba0fd460440290ca740cc05a1a0980b8d1a3e203e5618a17",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-parent-scan-size-red-2.log",
+      "bytes": 644,
+      "sha256": "c626c30150810f50e27658bc161293155538814a5917cd1681315300ea286ed7",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-precreate-bounds-fixed-1.json",
+      "bytes": 2109,
+      "sha256": "5b0f124d1d4451155443e2551556b874154a5a5587c46e9d1de43e3f0e5f4ea4",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-precreate-bounds-fixed-1.log",
+      "bytes": 404,
+      "sha256": "ad518bd954dfe90b26110df58f9d050096db74861951142eee708b3780edd955",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-precreate-bounds-fixed-2.json",
+      "bytes": 2095,
+      "sha256": "42ea66d360b48c44d5a30f1fc51ff8f8cf968a9fae15cd3a5c3051a518b02a22",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-precreate-bounds-fixed-2.log",
+      "bytes": 64,
+      "sha256": "46cc5df8c68d8f31185bad9b8e43b9fa36fb0147bc5d9690a7e7df291c8c46c0",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-precreate-bounds-red-1.json",
+      "bytes": 1958,
+      "sha256": "6559a8c7f0d67cf9cf6b4bfe74bf8b811458e3fd21b312d43656cfa201da35f2",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-precreate-bounds-red-1.log",
+      "bytes": 291,
+      "sha256": "f3a9e2e96ad2eb52f8326e82bdcc3ffa93683782599bb226179e8a4b108bb913",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-precreate-bounds-red-2.json",
+      "bytes": 2001,
+      "sha256": "f8f119034f9ae1531317a2d8b6d8dd4ac57b053f1edbfa7b9d36fef795f3585c",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-precreate-bounds-red-2.log",
+      "bytes": 644,
+      "sha256": "e19471b8f68738db67d46e771173439e7189888251d6bf96d0beca3487a30ae7",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-sdk-local-module-resolution-after-v2-20261005.json",
+      "bytes": 670,
+      "sha256": "38d536a92ae98d9ba4498cbf76c290c90cca83f72c8eddff7c86b8ac9e9e8bd0",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-sdk-local-module-resolution-before-v2-20261005.json",
+      "bytes": 670,
+      "sha256": "38d536a92ae98d9ba4498cbf76c290c90cca83f72c8eddff7c86b8ac9e9e8bd0",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-sdk-original-binding-overlay-20261005.json",
+      "bytes": 217,
+      "sha256": "910a0da616a0f9337f690c966bc1aa0238c55390c6184e8ac6aaf0917350df3f",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-sdk-original-module-resolution-after-20261005.json",
+      "bytes": 447,
+      "sha256": "7e73f1abc9987bb4ac9236aa8a853e1edd51a499bfcc60a1701da2a7b8588194",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-sdk-original-module-resolution-before-20261005.json",
+      "bytes": 447,
+      "sha256": "7e73f1abc9987bb4ac9236aa8a853e1edd51a499bfcc60a1701da2a7b8588194",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-sdk-original-prior-close-red-1.json",
+      "bytes": 2266,
+      "sha256": "3357a457c82537b6dc694722f9e03622a5a3b023d3bb612cfdfa6f291d4e8f1b",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-sdk-original-prior-close-red-1.log",
+      "bytes": 1394,
+      "sha256": "b48a986d52198984ede1e5d806a02e1cbbe39d4df4e9ec98858bb0789761654e",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-sdk-original-red-extra-inputs-20261005.json",
+      "bytes": 1263,
+      "sha256": "73dde5aea00aa4a36dd1de7e353c3456e43187b2c6542e48550f969eafca2228",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-sdk-recording-workflow-before-path-fix-20261005.yml",
+      "bytes": 4777,
+      "sha256": "107a59963ba7115d081f6276c9d8847beab9133d9884586341913b5a0de139d7",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v3-final-findings-fixed-1.json",
+      "bytes": 2174,
+      "sha256": "a76617354cecfd040c093ea665e75182a5bc4f90bf0e4b895015b8131be1bd98",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v3-final-findings-fixed-1.log",
+      "bytes": 64,
+      "sha256": "e3b202295af1d24c4c917200b9208129c8524a7dbaf4e163ad083f1f8a98a13d",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v3-final-findings-red-1.json",
+      "bytes": 2100,
+      "sha256": "81efde3739ad8822809ee738e9f187e0ee40438074f7c9a02fe69b478e1727d4",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v3-final-findings-red-1.log",
+      "bytes": 801,
+      "sha256": "f9e99f90d023c23541fd6d24c6363c6dbcfac56623c4e4d2927703145cd7b890",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v4-api-retention-before-dedup-20261005.go.txt",
+      "bytes": 7364,
+      "sha256": "9d9c55f5bc7d1b53524abd772a00b4742350b644e96cffb3117ba364b2b7a27d",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v4-focused-final-1.json",
+      "bytes": 2164,
+      "sha256": "b40e09637e2641d1e8a52dd9c572ff9a49d9bd226d70f9f526e31b1b12af6cd5",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v4-focused-final-1.log",
+      "bytes": 65,
+      "sha256": "9238fc692a85560ad9298921191faed7c757706d9d109766a631244286616e30",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v4-mixed-plan-red-1.json",
+      "bytes": 2118,
+      "sha256": "6314d2d480fd25a195b03c2ef2fde2baa2b6049709dbb7f18e82eaafbae38d1b",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v4-mixed-plan-red-1.log",
+      "bytes": 1085,
+      "sha256": "f21c5038cef57da4c4b28f8baab14363a0c83b3c3e226afb3aa788f5269874df",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v4-race-final-1.json",
+      "bytes": 2170,
+      "sha256": "a44047a2e26de7cb58f1c80c8018e21456d9b10db19541d6bee4dfba84109e3f",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v4-race-final-1.log",
+      "bytes": 65,
+      "sha256": "b3574737fca871ed5692d884dfa3a4d782a7f115cb8e77ad70031b01d809eae7",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v5-before-owned-sdk-20261005.mod",
+      "bytes": 11383,
+      "sha256": "05c38d4d914dd463eadcff718550f394425eeb85721dbcab2c0fc8c8d59b2d1b",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v5-before-owned-sdk-20261005.sum",
+      "bytes": 160716,
+      "sha256": "f24fca42c52f47ee68239f16130fc02743aed90c7ba2815b3197b665db15c2c8",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v5-focused-final-1.json",
+      "bytes": 2160,
+      "sha256": "10c8be158ede69a4a284cbdd1f91f82a2294480c0c0023ccf5457a090e355496",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v5-focused-final-1.log",
+      "bytes": 65,
+      "sha256": "5318d7924f8fdb996c7a0f1eba74dba4592f6ec12455104148ca1fc153b61b94",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v5-focused-final-2.json",
+      "bytes": 2243,
+      "sha256": "f330945843728b6d93ea0aea8f26a669f8cc261936441a9db61730acb2fb8a99",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v5-focused-final-2.log",
+      "bytes": 65,
+      "sha256": "7f3748179680b7e18e6e58f56811d9252690026ce6aba8843c79badacf1a17bf",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v5-race-final-1.json",
+      "bytes": 2182,
+      "sha256": "1ba5e2115d9726322fe9d895652bf059ce182ef821708fb45cea632eaf1bf4d8",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v5-race-final-1.log",
+      "bytes": 65,
+      "sha256": "4f516618fee11f33cf226ec910d440d0d0f75788e61e255568d08fe0f06c075a",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v5-runtime-before-owned-sdk-20261005.go.txt",
+      "bytes": 26106,
+      "sha256": "4ad56f15bd279bf5121631bf8620825b64061e9549c3d11cdfa56503522cb5c4",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v6-focused-final-1.json",
+      "bytes": 2297,
+      "sha256": "b8cd541a89b0b9f28dedb3dccd066785e229b11fce2650122d353a470f5f7f93",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v6-focused-final-1.log",
+      "bytes": 36976,
+      "sha256": "c7a1bf7cbcdbd6653aeeffef775761cb10c35a2daadd85cd64a420cac91e2caf",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v6-race-final-1.json",
+      "bytes": 2328,
+      "sha256": "38b117a8d54691383e6ae63cc5a79bfe186c4715121b0438888e18917f72e3bd",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/native-har-v6-race-final-1.log",
+      "bytes": 36976,
+      "sha256": "553f87e808f6877a0496efe6f32fff01ce95e6f2234c1884942e109e2324130c",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/run-native-har-check-20261005.py",
+      "bytes": 1978,
+      "sha256": "441d01cdf332ba6cf65d8acd741035ef158908d450f1b7d03081047d572c6cbf",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/evidence/run-native-har-check-joined-v2-20261005.py",
+      "bytes": 2133,
+      "sha256": "1f3ff56413361d3cdddd10601274a761a7065cca1ce701087be4f6e1c6a4fd2a",
+      "kind": "scoped-qa",
+      "transfer": "create-or-exact-owned-update"
+    }
+  ]
+}

@@ -4608,7 +4608,7 @@
               "params": {
                 "properties": {
                   "consumer_group": {
-                    "description": "Consumer group identity; falls back to config.kafka.consumer_group.",
+                    "description": "Consumer group identity; falls back to config.kafka.consumer_group. In real mode an explicit identity must match the configured group.",
                     "type": "string"
                   }
                 },
@@ -6882,6 +6882,9 @@
           "type": "boolean"
         },
         "cache_enabled": {
+          "type": "boolean"
+        },
+        "capture_document_metrics": {
           "type": "boolean"
         },
         "capture_screenshots": {

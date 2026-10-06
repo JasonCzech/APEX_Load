@@ -107,6 +107,29 @@ test('DSL operators can discover the guide, validate its example, and follow ref
   await page.screenshot({ path: testInfo.outputPath('dsl-operator-guide-narrow.png'), animations: 'disabled' })
 })
 
+test('evidence guides are searchable, readable and retain their scope after reload', async ({ page }, testInfo) => {
+  const guides = [
+    { query: 'provisional history', id: 'browser-document-evidence', title: 'Browser document evidence', body: 'No-interaction INP is unavailable.' },
+    { query: 'semantic SHA-256', id: 'telemetry-policy-receipts', title: 'Telemetry budget policy receipts', body: 'explicit zero disables a stage' },
+    { query: 'sub-millisecond thresholds', id: 'authoring-scenario-fidelity', title: 'Scenario and queued-run authoring fidelity', body: 'A present empty section is a whole-section replacement.' },
+  ]
+  for (const guide of guides) {
+    await page.getByRole('searchbox', { name: 'Search all help articles' }).fill(guide.query)
+    await page.locator('.help-search-results').getByRole('link', { name: guide.title, exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`article=${guide.id}`))
+    await expect(page.getByRole('heading', { name: guide.title, exact: true })).toBeVisible()
+    await expect(page.locator('.guide-markdown-article')).toBeVisible()
+    await expect(page.locator('.guide-markdown-article')).toContainText(guide.body)
+    await expect(page.locator('.guide-markdown-article')).toContainText('remain open')
+    await page.reload()
+    await expect(page.locator('.guide-markdown-article')).toContainText(guide.body)
+    await page.setViewportSize({ width: 760, height: 900 })
+    await expect(page.locator('.help-workspace')).toBeVisible()
+    expect(await page.locator('.help-workspace').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`${guide.id}-narrow.png`), animations: 'disabled' })
+  }
+})
+
 test('legacy URLs, generated API search and contextual guidance reach the right articles', async ({ page }) => {
   for (const [hash, title] of [['#/docs?guide=quick-start', 'Overview & first API calls'], ['#/docs?guide=mcp', 'MCP setup'], ['#/docs?guide=authentication', 'API authentication'], ['#/repository-guide', 'API workflows']]) {
     await page.goto(`/${hash}`)
@@ -169,4 +192,48 @@ test('Help maintains readable contrast across the supported themes', async ({ pa
     const violations = await page.evaluate(async () => (await (window as typeof window & { axe: typeof axe }).axe.run('.help-workspace, .help-primary-nav', { runOnly: ['color-contrast'] })).violations)
     expect(violations, theme).toEqual([])
   }
+})
+
+test('retained resource guide is searchable and remains selected after reload and narrowing', async ({ page }, testInfo) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('opaque continuation')
+  await page.locator('.help-search-results').getByRole('link', { name: 'Retained resource inspection', exact: true }).click()
+  await expect(page).toHaveURL(/article=retained-resource-inspection/)
+  await expect(page.getByRole('heading', { name: 'Retained resource inspection', exact: true })).toBeAttached()
+  const section = page.locator('#filter-and-page')
+  await expect(section).toBeFocused()
+  const reading = page.locator('.help-reading-pane')
+  await expect(reading).toContainText('A zero filter match differs from an unavailable projection')
+  await page.reload()
+  await expect(page).toHaveURL(/article=retained-resource-inspection/)
+  await expect(section).toBeFocused()
+  await expect(reading).toContainText('not a complete browser network census')
+  await page.setViewportSize({ width: 760, height: 1000 })
+  await expect(section).toBeVisible()
+  const geometry = async () => {
+    const target = await section.boundingBox()
+    const toolbar = await page.locator('.main-topbar').boundingBox()
+    const owner = await page.locator('.main-content').boundingBox()
+    if (!target || !toolbar || !owner) throw new Error('Help heading or its scroll owner is unavailable')
+    return { target, toolbar, owner, viewport: page.viewportSize()! }
+  }
+  const assertVisible = (value: Awaited<ReturnType<typeof geometry>>) => {
+    expect(value.target.y).toBeGreaterThanOrEqual(value.toolbar.y + value.toolbar.height)
+    expect(value.target.y + value.target.height).toBeLessThanOrEqual(value.viewport.height)
+    expect(value.target.x).toBeGreaterThanOrEqual(value.owner.x)
+    expect(value.target.x + value.target.width).toBeLessThanOrEqual(Math.min(value.viewport.width, value.owner.x + value.owner.width))
+  }
+  const before = await geometry()
+  await testInfo.attach('resource-help-heading-before', { body: JSON.stringify(before), contentType: 'application/json' })
+  assertVisible(before)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('retained-resource-help-narrow.png'), animations: 'disabled' })
+  const after = await geometry()
+  await testInfo.attach('resource-help-heading-after', { body: JSON.stringify(after), contentType: 'application/json' })
+  assertVisible(after)
+  await page.locator('.guide-markdown-article').getByRole('link', { name: 'browser document evidence guide', exact: true }).click()
+  await expect(page).toHaveURL(/article=browser-document-evidence/)
+  await expect(page.getByRole('heading', { name: 'Browser document evidence', exact: true })).toBeAttached()
+  await expect(page.locator('.guide-markdown-article')).toContainText('No-interaction INP is unavailable.')
+  await page.reload()
+  await expect(page.locator('.guide-markdown-article')).toContainText('No-interaction INP is unavailable.')
 })

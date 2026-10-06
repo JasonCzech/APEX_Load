@@ -1,0 +1,24 @@
+{
+  "captured_utc": "2026-10-05T10:01:36.749051+00:00",
+  "reviewer": "/root",
+  "scope": "Independent review of minimal four-file Source Find backport; clean. Approved embed/focused both profiles/full cycle after affected units/types/lint.",
+  "sources": [
+    {
+      "path": "dashboard/src/components/ScriptJsonAuthoringView.tsx",
+      "sha256": "ea54c1441babb42a5c37aa9a41fd944b94c6ff1fcce6297d2ab1f7aec8542fa0"
+    },
+    {
+      "path": "dashboard/src/components/ScriptJsonAuthoringView.test.tsx",
+      "sha256": "62dc5af20dad0bc437ad4f0b1469f7a31bd8dd426d798340ecf68bf9aafcf959"
+    },
+    {
+      "path": "dashboard/src/components/ScriptEditor.tsx",
+      "sha256": "c2b82fcd0d32d8e96ce47e0163cb0cc45358f4ef0c2826f7ed759a24fa8952ca"
+    },
+    {
+      "path": "dashboard/e2e/workflow-script-editor.spec.ts",
+      "sha256": "d4664761405f20bd4402b0003981926b496b86ac6f00165651bd3eb12998d5f6"
+    }
+  ],
+  "findings": []
+}

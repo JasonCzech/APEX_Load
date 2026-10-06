@@ -1,0 +1,1 @@
+function e(e,t){return e.script||!t?e:{...e,script:t}}function t(t,n){return(t||[]).map((t,r)=>e(t,n[r]||null))}export{t as n,e as t};

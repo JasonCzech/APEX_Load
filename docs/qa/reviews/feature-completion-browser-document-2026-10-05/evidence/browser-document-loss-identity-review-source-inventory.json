@@ -1,0 +1,37 @@
+{
+  "captured_utc": "2026-10-05T13:04:00.252568+00:00",
+  "scope": "Narrow document loss units, coverage-only publication, and requested-run CLI identity review correction. Frontend and embedded bundle remain unchanged.",
+  "files": [
+    {
+      "path": "pkg/engine/browser_documents.go",
+      "sha256": "05f208392ab37dbd4f65d8e67b75777fb4bf691d28605ebb7a6009b1928f10cc",
+      "bytes": 10330
+    },
+    {
+      "path": "pkg/engine/browser_documents_test.go",
+      "sha256": "84e0d60af3c0799693d3c7333c53589a2531e7e8a59b6bb7e6ac0713234b4fdf",
+      "bytes": 15761
+    },
+    {
+      "path": "pkg/api/archive_browser_documents.go",
+      "sha256": "95f2a54f95b170b6da8d3c2e432ef8c95096390c222086d44608a3d7ae62fa11",
+      "bytes": 15072
+    },
+    {
+      "path": "pkg/api/archive_browser_documents_test.go",
+      "sha256": "bb0d84b7d5c37dcacfe771be4129f2d1d3af9a9e980e74647bcb5534ca72223a",
+      "bytes": 27773
+    },
+    {
+      "path": "cmd/apexctl/browser_document_evidence.go",
+      "sha256": "04ae3246d89910019802c8599df2d8784fc24d8b12ac5ff068eb024385a3453d",
+      "bytes": 7337
+    },
+    {
+      "path": "cmd/apexctl/browser_document_evidence_test.go",
+      "sha256": "70fe90dbfb38c49dfe27d8c12491cde611283910861fdb1fac93058fde3ba2c5",
+      "bytes": 14158
+    }
+  ],
+  "files_list_sha256": "2f6a420a818419db4e2b3f4b57db6e1fa29bb817ad85add31b66138c3ad1fe71"
+}

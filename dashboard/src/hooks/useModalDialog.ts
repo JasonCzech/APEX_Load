@@ -6,6 +6,7 @@ interface ModalDialogOptions {
   initialFocusRef?: RefObject<HTMLElement | null>
   onClose?: () => void
   returnFocusSelector?: string
+  shouldRestoreFocus?: () => boolean
 }
 
 interface DialogStackEntry {
@@ -106,10 +107,13 @@ export function useModalDialog({
   initialFocusRef,
   onClose,
   returnFocusSelector,
+  shouldRestoreFocus,
 }: ModalDialogOptions) {
   const idRef = useRef<number>(0)
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
+  const shouldRestoreFocusRef = useRef(shouldRestoreFocus)
+  shouldRestoreFocusRef.current = shouldRestoreFocus
 
   useEffect(() => {
     if (!enabled) return undefined
@@ -163,6 +167,7 @@ export function useModalDialog({
       removeDialog(id)
       updateModalIsolation()
       if (!dialogStack.length) document.body.style.overflow = bodyOverflow
+      if (shouldRestoreFocusRef.current?.() === false) return
       if (previouslyFocused?.isConnected && previouslyFocused !== document.body && isVisible(previouslyFocused)) {
         previouslyFocused.focus()
       } else if (returnFocusSelector) {

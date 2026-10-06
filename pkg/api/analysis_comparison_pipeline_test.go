@@ -45,7 +45,7 @@ func TestAnalysisComparisonChargesBothStagingSidesAndLargestSequentialChild(t *t
 func TestAnalysisComparisonSnapshotsOnlyOwnedBoundedDatasetMetadata(t *testing.T) {
 	id := "00000000-0000-0000-0000-000000000001"
 	key := analysisObjectKey("proj-a", id, "part-0-0.parquet")
-	in := &storage.AnalysisImport{ID: id, ProjectID: "proj-a", Revision: 7, State: "ready", RunID: "associated-run", Normalized: []string{key}, NormalizedSHA256: map[string]string{key: strings.Repeat("a", 64)}, Mapping: &analysis.ParquetMapping{Measures: []analysis.ParquetMeasure{{Name: "latency", Value: []string{"value"}}}}}
+	in := &storage.AnalysisImport{ID: id, ProjectID: "proj-a", Revision: 7, State: "ready", RunID: "associated-run", Normalized: []string{key}, NormalizedSHA256: map[string]string{key: strings.Repeat("a", 64)}, Mapping: &analysis.ParquetMapping{Version: 1, Measures: []analysis.ParquetMeasure{{Name: "latency", Value: []string{"value"}}}}}
 	snapshot, err := snapshotAnalysisQueryDataset(in)
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func TestAnalysisComparisonSnapshotsOnlyOwnedBoundedDatasetMetadata(t *testing.T
 	}
 }
 
-func TestAnalysisComparisonRejectsUnimplementedDatasetFilters(t *testing.T) {
+func TestAnalysisComparisonAdmitsBoundedVersionedDatasetFilters(t *testing.T) {
 	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	base := AnalysisComparisonRequest{Left: AnalysisSeriesSelection{DatasetID: "dataset", Metric: "latency", Aggregation: "avg"}, Right: AnalysisSeriesSelection{RunID: "run", Metric: "latency", Aggregation: "avg"}, From: from, To: from.Add(time.Minute), BucketSeconds: 1, Mode: "overlay"}
 	if err := base.validate(); err != nil {
@@ -93,8 +93,12 @@ func TestAnalysisComparisonRejectsUnimplementedDatasetFilters(t *testing.T) {
 	} {
 		candidate := base
 		change(&candidate.Left)
-		if err := candidate.validate(); err == nil {
-			t.Fatal("requested native identity filter was silently ignored")
+		if err := candidate.validate(); err != nil {
+			t.Fatal("bounded native identity selection rejected", err)
+		}
+		nativeQuery, err := importedNativeSeriesQuery("p", &storage.AnalysisImport{ID: "dataset", ProjectID: "p", Mapping: &analysis.ParquetMapping{Version: 2}}, candidate.Left, candidate)
+		if err != nil || nativeQuery.IdentitySchemaVersion != 2 {
+			t.Fatal("bounded filter not transmitted with versioned native request", nativeQuery, err)
 		}
 		candidate = base
 		change(&candidate.Right)
@@ -110,7 +114,7 @@ func TestAnalysisComparisonCancellationAndMissingScopeCannotServeRetainedPlan(t 
 	if err := server.verifyNativeAnalysisComparison(ctx, "proj-a"); err == nil {
 		t.Fatal("cancelled comparison served result")
 	}
-	plan := &analysisComparisonPipeline{plans: map[analysisDatasetQueryIdentity]analysisDatasetQueryPlan{{"deleted", "latency"}: {dataset: &storage.AnalysisImport{ID: "deleted", ProjectID: "proj-a", State: "ready", Revision: 1}}}}
+	plan := &analysisComparisonPipeline{plans: map[analysisDatasetQueryIdentity]analysisDatasetQueryPlan{{dataset: "deleted", metric: "latency"}: {dataset: &storage.AnalysisImport{ID: "deleted", ProjectID: "proj-a", State: "ready", Revision: 1}}}}
 	ctx = context.WithValue(t.Context(), analysisComparisonPipelineKey{}, plan)
 	if err := server.verifyNativeAnalysisComparison(ctx, "proj-a"); err == nil {
 		t.Fatal("retained private plan served missing dataset")

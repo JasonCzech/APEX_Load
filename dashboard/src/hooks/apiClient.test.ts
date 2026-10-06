@@ -18,6 +18,7 @@ import {
   request,
   requestApiNavigation,
   requestFromOrigin,
+  requestWithResponse,
   resolveApiResourceUrl,
   resolveApiOrigin,
   setApiOrigin,
@@ -582,5 +583,31 @@ describe('activity warnings for saved mutations', () => {
       window.removeEventListener('apexload:activity-warning', warning)
       window.removeEventListener('apexload:activity-changed', changed)
     }
+  })
+})
+
+
+describe('bounded paired response envelopes', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+  it('retains the actual strong tag and save mode alongside decoded JSON', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"id":"script-1"}', { headers: { 'Content-Type': 'application/json', ETag: '"exact"', 'X-APEX-Script-Save-Mode': 'conditioned' } })))
+    const response = await requestWithResponse<{ id: string }>('/scripts/script-1?view=authoring', { timeoutMs: 100, maxResponseBytes: 100 })
+    expect(response.body.id).toBe('script-1')
+    expect(response.headers.get('ETag')).toBe('"exact"')
+    expect(response.headers.get('X-APEX-Script-Save-Mode')).toBe('conditioned')
+  })
+  it('refuses an oversized body and does not pass local limits into fetch', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"large":"0123456789"}', { headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(requestWithResponse('/scripts/script-1', { maxResponseBytes: 5, timeoutMs: 100 })).rejects.toThrow('approved size limit')
+    expect(fetchMock.mock.calls[0][1]).not.toHaveProperty('maxResponseBytes')
+  })
+  it('bounds body decoding even when headers arrive but the native body never settles', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, headers: new Headers({ 'Content-Type': 'application/json' }), text: () => new Promise(() => undefined) }))
+    const pending = requestWithResponse('/scripts/script-1', { timeoutMs: 100, maxResponseBytes: 100 })
+    const assertion = expect(pending).rejects.toThrow('Request timed out after 100ms')
+    await vi.advanceTimersByTimeAsync(100)
+    await assertion
   })
 })

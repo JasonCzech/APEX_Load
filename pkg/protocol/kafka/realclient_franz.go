@@ -76,6 +76,7 @@ type franzClient struct {
 	ownedPartitions      map[string]map[int32]uint64
 	consumedMu           sync.Mutex
 	consumedOffsets      map[string]map[int32]trackedConsumedRecord
+	polledPartitions     map[string]map[int32]uint64 // consumedMu; independent of committable differences
 	pendingMu            sync.Mutex
 	pending              []pendingReply
 	pendingBytes         int64
@@ -401,6 +402,16 @@ func (c *franzClient) discardPartitionState(partitions map[string][]int32) {
 			delete(c.consumedOffsets, topic)
 		}
 	}
+	for topic, polled := range c.polledPartitions {
+		for partition := range polled {
+			if contains(topic, partition) {
+				delete(polled, partition)
+			}
+		}
+		if len(polled) == 0 {
+			delete(c.polledPartitions, topic)
+		}
+	}
 	c.consumedMu.Unlock()
 }
 
@@ -576,8 +587,8 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 	// honored without a distinct client, so fail loudly rather than silently
 	// consuming under the configured group (the mock honors per-action groups, so
 	// this keeps mock and real from diverging unannounced).
-	if group != "" && group != c.cfg.ConsumerGroup {
-		return kafkaRecord{}, 0, fmt.Errorf("per-action consumer_group %q differs from the configured config.kafka.consumer_group %q; the real Kafka adapter binds one group per client", group, c.cfg.ConsumerGroup)
+	if err := ValidateConsumerGroupOverride(group, c.cfg.ConsumerGroup); err != nil {
+		return kafkaRecord{}, 0, err
 	}
 	cl, err := c.handle()
 	if err != nil {
@@ -775,7 +786,7 @@ func (c *franzClient) trackConsumedRecord(record kafkaRecord) error {
 		c.consumedOffsets = make(map[string]map[int32]trackedConsumedRecord)
 	}
 	partitions := c.consumedOffsets[record.Topic]
-	if partitions == nil {
+	if _, exists := partitions[record.Partition]; !exists {
 		trackedPartitions := 0
 		for _, existing := range c.consumedOffsets {
 			trackedPartitions += len(existing)
@@ -783,20 +794,49 @@ func (c *franzClient) trackConsumedRecord(record kafkaRecord) error {
 		if trackedPartitions >= maxTrackedConsumePartitions {
 			return fmt.Errorf("kafka delivered partition capacity exceeded (%d)", maxTrackedConsumePartitions)
 		}
+	}
+	if err := c.trackPolledPartitionLocked(record.Topic, record.Partition, generation); err != nil {
+		return err
+	}
+	if partitions == nil {
 		partitions = make(map[int32]trackedConsumedRecord)
 		c.consumedOffsets[record.Topic] = partitions
-	} else if _, exists := partitions[record.Partition]; !exists {
-		trackedPartitions := 0
-		for _, existing := range c.consumedOffsets {
-			trackedPartitions += len(existing)
-		}
-		if trackedPartitions >= maxTrackedConsumePartitions {
-			return fmt.Errorf("kafka delivered partition capacity exceeded (%d)", maxTrackedConsumePartitions)
-		}
 	}
 	if current, ok := partitions[record.Partition]; !ok || record.Offset > current.record.Offset || (record.Offset == current.record.Offset && record.LeaderEpoch > current.record.LeaderEpoch) {
 		partitions[record.Partition] = trackedConsumedRecord{record: record, generation: generation}
 	}
+	return nil
+}
+
+// trackPolledPartitionLocked records actual delivered or buffered polls, rather
+// than differences from committed offsets. Commit and seek may clear delivery
+// bookkeeping without undoing polling in this ownership generation.
+// consumedMu must be held by the caller.
+func (c *franzClient) trackPolledPartitionLocked(topic string, partition int32, generation uint64) error {
+	if c.cfg.ConsumerGroup == "" {
+		return nil
+	}
+	polled := c.polledPartitions[topic]
+	if polled == nil && len(c.polledPartitions) >= maxTrackedConsumeTopics {
+		return fmt.Errorf("kafka polled topic capacity exceeded (%d)", maxTrackedConsumeTopics)
+	}
+	if _, exists := polled[partition]; !exists {
+		tracked := 0
+		for _, existing := range c.polledPartitions {
+			tracked += len(existing)
+		}
+		if tracked >= maxTrackedConsumePartitions {
+			return fmt.Errorf("kafka polled partition capacity exceeded (%d)", maxTrackedConsumePartitions)
+		}
+	}
+	if c.polledPartitions == nil {
+		c.polledPartitions = make(map[string]map[int32]uint64)
+	}
+	if polled == nil {
+		polled = make(map[int32]uint64)
+		c.polledPartitions[topic] = polled
+	}
+	polled[partition] = generation
 	return nil
 }
 
@@ -1006,6 +1046,13 @@ func (c *franzClient) addPendingLocked(record kafkaRecord, highWatermarks ...int
 	if !globalKafkaPending.reserve(bytes) {
 		return fmt.Errorf("kafka generator-wide pending capacity exceeded (%d records, %d bytes)", maxGlobalPendingRecords, maxGlobalPendingBytes)
 	}
+	c.consumedMu.Lock()
+	pollErr := c.trackPolledPartitionLocked(record.Topic, record.Partition, generation)
+	c.consumedMu.Unlock()
+	if pollErr != nil {
+		globalKafkaPending.release(bytes)
+		return pollErr
+	}
 	highWatermark := int64(-1)
 	if len(highWatermarks) > 0 {
 		highWatermark = highWatermarks[0]
@@ -1201,8 +1248,11 @@ func (c *franzClient) Seek(ctx context.Context, topic, group, target string) err
 	if c.cfg.ConsumerTransactions {
 		return fmt.Errorf("seek is unavailable in consumer_transactions mode; use a separate replay group")
 	}
-	if c.cfg.ConsumerGroup == "" || group != "" && group != c.cfg.ConsumerGroup {
+	if c.cfg.ConsumerGroup == "" {
 		return fmt.Errorf("real seek requires the configured consumer_group")
+	}
+	if err := ValidateConsumerGroupOverride(group, c.cfg.ConsumerGroup); err != nil {
+		return err
 	}
 	offset, err := parseRealSeekTarget(target)
 	if err != nil {
@@ -1212,24 +1262,16 @@ func (c *franzClient) Seek(ctx context.Context, topic, group, target string) err
 	if err != nil {
 		return err
 	}
-	positions := cl.UncommittedOffsets()[topic]
-	if len(positions) == 0 || len(positions) > maxTrackedConsumePartitions {
-		return fmt.Errorf("seek requires previously polled owned partitions; consume the topic first")
+	if cl.Context().Err() != nil {
+		return kgo.ErrClientClosed
 	}
-	c.assignmentMu.RLock()
-	owned := c.ownedPartitions[topic]
-	if len(owned) != len(positions) {
-		c.assignmentMu.RUnlock()
-		return fmt.Errorf("seek requires every owned partition to have been polled")
+	// CommittedOffsets includes every current SDK registration even when dirty
+	// equals committed. Registration alone does not establish polling; require
+	// the independent current-generation polling inventory for every owner.
+	positions, generation, err := c.polledSeekPositions(topic, cl.CommittedOffsets()[topic])
+	if err != nil {
+		return err
 	}
-	for partition := range positions {
-		if _, ok := owned[partition]; !ok {
-			c.assignmentMu.RUnlock()
-			return fmt.Errorf("seek partition ownership changed")
-		}
-	}
-	generation := c.assignmentGeneration
-	c.assignmentMu.RUnlock()
 	if offset < 0 {
 		req := kmsg.NewPtrListOffsetsRequest()
 		if strings.EqualFold(c.cfg.IsolationLevel, "read_committed") {
@@ -1263,6 +1305,9 @@ func (c *franzClient) Seek(ctx context.Context, topic, group, target string) err
 	if c.assignmentGeneration != generation {
 		return fmt.Errorf("seek partition ownership changed during offset lookup")
 	}
+	if cl.Context().Err() != nil {
+		return kgo.ErrClientClosed
+	}
 	cl.SetOffsets(map[string]map[int32]kgo.EpochOffset{topic: positions})
 	// Both queued delivery and explicit commit tracking must follow the new cursor.
 	c.pendingMu.Lock()
@@ -1279,6 +1324,29 @@ func (c *franzClient) Seek(ctx context.Context, topic, group, target string) err
 	c.consumedMu.Unlock()
 	return nil
 }
+func (c *franzClient) polledSeekPositions(topic string, registered map[int32]kgo.EpochOffset) (map[int32]kgo.EpochOffset, uint64, error) {
+	c.assignmentMu.RLock()
+	defer c.assignmentMu.RUnlock()
+	owned := c.ownedPartitions[topic]
+	if len(owned) == 0 || len(owned) > maxTrackedConsumePartitions {
+		return nil, 0, fmt.Errorf("seek requires previously polled owned partitions; consume the topic first")
+	}
+	c.consumedMu.Lock()
+	defer c.consumedMu.Unlock()
+	positions := make(map[int32]kgo.EpochOffset, len(owned))
+	for partition, generation := range owned {
+		if polledGeneration, exists := c.polledPartitions[topic][partition]; !exists || polledGeneration != generation {
+			return nil, 0, fmt.Errorf("seek requires every owned partition to have been polled")
+		}
+		position, exists := registered[partition]
+		if !exists {
+			return nil, 0, fmt.Errorf("seek partition is no longer registered by the Kafka client")
+		}
+		positions[partition] = position
+	}
+	return positions, c.assignmentGeneration, nil
+}
+
 func parseRealSeekTarget(target string) (int64, error) {
 	switch target {
 	case "earliest":

@@ -1,0 +1,543 @@
+=== RUN   TestBrowserResourceOriginRejectsUnsanitizedIdentity
+--- PASS: TestBrowserResourceOriginRejectsUnsanitizedIdentity (0.00s)
+=== RUN   TestBrowserResourceArchiveProjectionPreservesPresenceAndExcludesPrivatePayloads
+--- PASS: TestBrowserResourceArchiveProjectionPreservesPresenceAndExcludesPrivatePayloads (0.00s)
+=== RUN   TestBrowserResourceArchiveProjectionPreservesMalformedAndFutureStatesWithoutRawBodies
+--- PASS: TestBrowserResourceArchiveProjectionPreservesMalformedAndFutureStatesWithoutRawBodies (0.00s)
+=== RUN   TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope
+=== RUN   TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/oversize
+=== RUN   TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/entry_limit
+=== RUN   TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/malformed
+=== RUN   TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/duplicate
+=== RUN   TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/marker_with_row
+=== RUN   TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/future
+=== RUN   TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/missing
+=== RUN   TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/null
+=== RUN   TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/unknown
+=== RUN   TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/trailing
+=== RUN   TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/duplicate#01
+=== RUN   TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/hidden_source_body
+--- PASS: TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope (0.00s)
+    --- PASS: TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/oversize (0.00s)
+    --- PASS: TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/entry_limit (0.00s)
+    --- PASS: TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/malformed (0.00s)
+    --- PASS: TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/duplicate (0.00s)
+    --- PASS: TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/marker_with_row (0.00s)
+    --- PASS: TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/future (0.00s)
+    --- PASS: TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/missing (0.00s)
+    --- PASS: TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/null (0.00s)
+    --- PASS: TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/unknown (0.00s)
+    --- PASS: TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/trailing (0.00s)
+    --- PASS: TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/duplicate#01 (0.00s)
+    --- PASS: TestBrowserResourceArchiveProjectionLimitsAndClosedEnvelope/hidden_source_body (0.00s)
+=== RUN   TestDecodeBrowserResourceEvidencePreservesPresenceAndOwnership
+--- PASS: TestDecodeBrowserResourceEvidencePreservesPresenceAndOwnership (0.00s)
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_version
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_source_generation
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_request_id
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_redirect_hop
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_observed_at
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_timing_source
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_phases
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_bytes
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_state
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/wrong_boolean
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/future
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/invalid_date
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/unknown
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/negative_bytes
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/null_scalar
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/subnanosecond
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/offset
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/wrong_generation
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/unsafe_origin
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/duplicate_phase
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/incomplete_no_reason
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/null_bytes
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/duplicate
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/trailing
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/oversize
+=== RUN   TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/invalid_utf8
+--- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_version (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_source_generation (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_request_id (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_redirect_hop (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_observed_at (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_timing_source (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_phases (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_bytes (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/missing_state (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/wrong_boolean (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/future (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/invalid_date (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/unknown (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/negative_bytes (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/null_scalar (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/subnanosecond (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/offset (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/wrong_generation (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/unsafe_origin (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/duplicate_phase (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/incomplete_no_reason (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/null_bytes (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/duplicate (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/trailing (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/oversize (0.00s)
+    --- PASS: TestDecodeBrowserResourceEvidenceRefusesOmittedOrForgedWire/invalid_utf8 (0.00s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/protocol	0.237s
+=== RUN   TestBrowserResourceFinalAuthUserParityAndRevocation
+=== RUN   TestBrowserResourceFinalAuthUserParityAndRevocation/project_role
+=== RUN   TestBrowserResourceFinalAuthUserParityAndRevocation/session_epoch
+=== RUN   TestBrowserResourceFinalAuthUserParityAndRevocation/inactive_user
+=== RUN   TestBrowserResourceFinalAuthUserParityAndRevocation/session_expiry
+--- PASS: TestBrowserResourceFinalAuthUserParityAndRevocation (0.17s)
+    --- PASS: TestBrowserResourceFinalAuthUserParityAndRevocation/project_role (0.04s)
+    --- PASS: TestBrowserResourceFinalAuthUserParityAndRevocation/session_epoch (0.04s)
+    --- PASS: TestBrowserResourceFinalAuthUserParityAndRevocation/inactive_user (0.04s)
+    --- PASS: TestBrowserResourceFinalAuthUserParityAndRevocation/session_expiry (0.04s)
+=== RUN   TestBrowserResourceFinalAuthServiceAccountParityAndRevocation
+=== RUN   TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/key_rotation
+=== RUN   TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/read_scope
+=== RUN   TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/project_role
+=== RUN   TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/inactive
+=== RUN   TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/expiry
+--- PASS: TestBrowserResourceFinalAuthServiceAccountParityAndRevocation (0.20s)
+    --- PASS: TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/key_rotation (0.04s)
+    --- PASS: TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/read_scope (0.04s)
+    --- PASS: TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/project_role (0.04s)
+    --- PASS: TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/inactive (0.04s)
+    --- PASS: TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/expiry (0.04s)
+=== RUN   TestBrowserResourceFinalAuthLocalSessionAndGenerationParity
+--- PASS: TestBrowserResourceFinalAuthLocalSessionAndGenerationParity (0.05s)
+=== RUN   TestBrowserResourceFinalAuthParentScopeAndGlobalViewerParity
+=== RUN   TestBrowserResourceFinalAuthParentScopeAndGlobalViewerParity/domain
+=== RUN   TestBrowserResourceFinalAuthParentScopeAndGlobalViewerParity/application_repository
+--- PASS: TestBrowserResourceFinalAuthParentScopeAndGlobalViewerParity (0.13s)
+    --- PASS: TestBrowserResourceFinalAuthParentScopeAndGlobalViewerParity/domain (0.04s)
+    --- PASS: TestBrowserResourceFinalAuthParentScopeAndGlobalViewerParity/application_repository (0.04s)
+=== RUN   TestBrowserResourceFinalAuthCancellationAndUnavailableStoreAreExplicit
+--- PASS: TestBrowserResourceFinalAuthCancellationAndUnavailableStoreAreExplicit (0.08s)
+=== RUN   TestBrowserResourceFinalAuthPinsPresentedKeyAcrossMiddlewareRotation
+--- PASS: TestBrowserResourceFinalAuthPinsPresentedKeyAcrossMiddlewareRotation (0.04s)
+=== RUN   TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware
+=== RUN   TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware/results_read
+=== RUN   TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware/broad_read
+=== RUN   TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware/tests_run
+=== RUN   TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware/revoked_after_middleware
+--- PASS: TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware (0.16s)
+    --- PASS: TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware/results_read (0.04s)
+    --- PASS: TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware/broad_read (0.04s)
+    --- PASS: TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware/tests_run (0.04s)
+    --- PASS: TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware/revoked_after_middleware (0.04s)
+=== RUN   TestBrowserResourceCursorBindsExactSourceQueryAndBoundary
+=== RUN   TestBrowserResourceCursorBindsExactSourceQueryAndBoundary/unbounded_expiry
+=== RUN   TestBrowserResourceCursorBindsExactSourceQueryAndBoundary/empty_project
+=== RUN   TestBrowserResourceCursorBindsExactSourceQueryAndBoundary/missing_digest
+=== RUN   TestBrowserResourceCursorBindsExactSourceQueryAndBoundary/future
+=== RUN   TestBrowserResourceCursorBindsExactSourceQueryAndBoundary/unavailable_value
+=== RUN   TestBrowserResourceCursorBindsExactSourceQueryAndBoundary/invalid_ordinal
+=== RUN   TestBrowserResourceCursorBindsExactSourceQueryAndBoundary/expiry
+--- PASS: TestBrowserResourceCursorBindsExactSourceQueryAndBoundary (0.00s)
+    --- PASS: TestBrowserResourceCursorBindsExactSourceQueryAndBoundary/unbounded_expiry (0.00s)
+    --- PASS: TestBrowserResourceCursorBindsExactSourceQueryAndBoundary/empty_project (0.00s)
+    --- PASS: TestBrowserResourceCursorBindsExactSourceQueryAndBoundary/missing_digest (0.00s)
+    --- PASS: TestBrowserResourceCursorBindsExactSourceQueryAndBoundary/future (0.00s)
+    --- PASS: TestBrowserResourceCursorBindsExactSourceQueryAndBoundary/unavailable_value (0.00s)
+    --- PASS: TestBrowserResourceCursorBindsExactSourceQueryAndBoundary/invalid_ordinal (0.00s)
+    --- PASS: TestBrowserResourceCursorBindsExactSourceQueryAndBoundary/expiry (0.00s)
+=== RUN   TestBrowserResourceCursorKeyReopensAndInvalidKeyFailsClosed
+--- PASS: TestBrowserResourceCursorKeyReopensAndInvalidKeyFailsClosed (0.05s)
+=== RUN   TestBrowserResourceRouteDeadlineCoversPreHandlerOccupiedProjectSQL
+=== RUN   TestBrowserResourceRouteDeadlineCoversPreHandlerOccupiedProjectSQL/occupied_pool_deadline
+=== RUN   TestBrowserResourceRouteDeadlineCoversPreHandlerOccupiedProjectSQL/already_canceled
+--- PASS: TestBrowserResourceRouteDeadlineCoversPreHandlerOccupiedProjectSQL (0.12s)
+    --- PASS: TestBrowserResourceRouteDeadlineCoversPreHandlerOccupiedProjectSQL/occupied_pool_deadline (0.08s)
+    --- PASS: TestBrowserResourceRouteDeadlineCoversPreHandlerOccupiedProjectSQL/already_canceled (0.04s)
+=== RUN   TestBrowserResourceRouteAddsTenSecondDeadlineWithoutChangingOtherRoutes
+--- PASS: TestBrowserResourceRouteAddsTenSecondDeadlineWithoutChangingOtherRoutes (0.00s)
+=== RUN   TestBrowserResourceHandlerLegacyProjectAuthorityAndSuppliedConflict
+--- PASS: TestBrowserResourceHandlerLegacyProjectAuthorityAndSuppliedConflict (0.04s)
+=== RUN   TestBrowserResourceHandlerFinalProjectIncarnationAndAuthorizationFences
+=== RUN   TestBrowserResourceHandlerFinalProjectIncarnationAndAuthorizationFences/project
+=== RUN   TestBrowserResourceHandlerFinalProjectIncarnationAndAuthorizationFences/incarnation
+=== RUN   TestBrowserResourceHandlerFinalProjectIncarnationAndAuthorizationFences/role
+=== RUN   TestBrowserResourceHandlerFinalProjectIncarnationAndAuthorizationFences/artifact_path_replacement
+=== RUN   TestBrowserResourceHandlerFinalProjectIncarnationAndAuthorizationFences/manifest
+--- PASS: TestBrowserResourceHandlerFinalProjectIncarnationAndAuthorizationFences (0.21s)
+    --- PASS: TestBrowserResourceHandlerFinalProjectIncarnationAndAuthorizationFences/project (0.04s)
+    --- PASS: TestBrowserResourceHandlerFinalProjectIncarnationAndAuthorizationFences/incarnation (0.04s)
+    --- PASS: TestBrowserResourceHandlerFinalProjectIncarnationAndAuthorizationFences/role (0.04s)
+    --- PASS: TestBrowserResourceHandlerFinalProjectIncarnationAndAuthorizationFences/artifact_path_replacement (0.04s)
+    --- PASS: TestBrowserResourceHandlerFinalProjectIncarnationAndAuthorizationFences/manifest (0.04s)
+=== RUN   TestBrowserResourceHandlerCancellationIsNotArchiveAbsence
+--- PASS: TestBrowserResourceHandlerCancellationIsNotArchiveAbsence (0.04s)
+=== RUN   TestBrowserResourcePhysicalParquetMatchesRawWireAcrossPagesAndContinuation
+--- PASS: TestBrowserResourcePhysicalParquetMatchesRawWireAcrossPagesAndContinuation (0.07s)
+=== RUN   TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct
+=== RUN   TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/absent
+=== RUN   TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/null
+=== RUN   TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/both_null
+=== RUN   TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/empty
+=== RUN   TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/empty_null_fallback
+=== RUN   TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/null_empty_fallback
+=== RUN   TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/zero
+=== RUN   TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/snapshot
+=== RUN   TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/null_snapshot
+=== RUN   TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/ordinary_priority
+--- PASS: TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct (0.01s)
+    --- PASS: TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/absent (0.00s)
+    --- PASS: TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/null (0.00s)
+    --- PASS: TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/both_null (0.00s)
+    --- PASS: TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/empty (0.00s)
+    --- PASS: TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/empty_null_fallback (0.00s)
+    --- PASS: TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/null_empty_fallback (0.00s)
+    --- PASS: TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/zero (0.00s)
+    --- PASS: TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/snapshot (0.00s)
+    --- PASS: TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/null_snapshot (0.00s)
+    --- PASS: TestBrowserResourcePhysicalProjectionKeepsAbsentNullEmptyAndZeroDistinct/ordinary_priority (0.00s)
+=== RUN   TestBrowserResourceLegacyPhysicalDictionaryAndMillisecondLimit
+--- PASS: TestBrowserResourceLegacyPhysicalDictionaryAndMillisecondLimit (0.00s)
+=== RUN   TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence
+=== RUN   TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/external_chunk
+=== RUN   TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/wrong_row_count
+=== RUN   TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/overlap
+=== RUN   TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/trailer_truncated
+=== RUN   TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/page_corrupt
+=== RUN   TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/unsupported_semantics
+=== RUN   TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/future_projection
+=== RUN   TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/unavailable_limit
+--- PASS: TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence (0.00s)
+    --- PASS: TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/external_chunk (0.00s)
+    --- PASS: TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/wrong_row_count (0.00s)
+    --- PASS: TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/overlap (0.00s)
+    --- PASS: TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/trailer_truncated (0.00s)
+    --- PASS: TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/page_corrupt (0.00s)
+    --- PASS: TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/unsupported_semantics (0.00s)
+    --- PASS: TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/future_projection (0.00s)
+    --- PASS: TestBrowserResourcePhysicalMalformedSourcesReturnNoPartialEvidence/unavailable_limit (0.00s)
+=== RUN   TestBrowserResourcePhysicalDecodersRefuseForgedAllocationAndDictionaryIndices
+--- PASS: TestBrowserResourcePhysicalDecodersRefuseForgedAllocationAndDictionaryIndices (0.00s)
+=== RUN   TestBrowserResourcePhysicalDictionaryZeroWidthAndBitPackedBoundaries
+=== RUN   TestBrowserResourcePhysicalDictionaryZeroWidthAndBitPackedBoundaries/zero_width_rle
+=== RUN   TestBrowserResourcePhysicalDictionaryZeroWidthAndBitPackedBoundaries/bit_packed_padding
+--- PASS: TestBrowserResourcePhysicalDictionaryZeroWidthAndBitPackedBoundaries (0.00s)
+    --- PASS: TestBrowserResourcePhysicalDictionaryZeroWidthAndBitPackedBoundaries/zero_width_rle (0.00s)
+    --- PASS: TestBrowserResourcePhysicalDictionaryZeroWidthAndBitPackedBoundaries/bit_packed_padding (0.00s)
+=== RUN   TestBrowserResourcePhysicalAggregateMemoryBudgetRefusesRatherThanDroppingEvidence
+--- PASS: TestBrowserResourcePhysicalAggregateMemoryBudgetRefusesRatherThanDroppingEvidence (0.00s)
+=== RUN   TestBrowserResourcePhysicalSnapshotOwnsCancellationAndRemovesScratch
+--- PASS: TestBrowserResourcePhysicalSnapshotOwnsCancellationAndRemovesScratch (0.00s)
+=== RUN   TestBrowserResourcePhysicalPlainStringBoxingCannotExceedRetainedBudget
+--- PASS: TestBrowserResourcePhysicalPlainStringBoxingCannotExceedRetainedBudget (0.00s)
+=== RUN   TestBrowserResourcePhysicalStringPageBranchesEnforceBoxedRetentionBeforeMaterialization
+=== RUN   TestBrowserResourcePhysicalStringPageBranchesEnforceBoxedRetentionBeforeMaterialization/plain
+=== RUN   TestBrowserResourcePhysicalStringPageBranchesEnforceBoxedRetentionBeforeMaterialization/dictionary
+--- PASS: TestBrowserResourcePhysicalStringPageBranchesEnforceBoxedRetentionBeforeMaterialization (0.00s)
+    --- PASS: TestBrowserResourcePhysicalStringPageBranchesEnforceBoxedRetentionBeforeMaterialization/plain (0.00s)
+    --- PASS: TestBrowserResourcePhysicalStringPageBranchesEnforceBoxedRetentionBeforeMaterialization/dictionary (0.00s)
+=== RUN   TestBrowserResourcePhysicalMalformedPageHeaderCannotMaterializeValues
+=== RUN   TestBrowserResourcePhysicalMalformedPageHeaderCannotMaterializeValues/unknown_definition_encoding
+=== RUN   TestBrowserResourcePhysicalMalformedPageHeaderCannotMaterializeValues/unknown_repetition_encoding
+=== RUN   TestBrowserResourcePhysicalMalformedPageHeaderCannotMaterializeValues/mixed_dictionary
+=== RUN   TestBrowserResourcePhysicalMalformedPageHeaderCannotMaterializeValues/mixed_index
+=== RUN   TestBrowserResourcePhysicalMalformedPageHeaderCannotMaterializeValues/mixed_v2
+--- PASS: TestBrowserResourcePhysicalMalformedPageHeaderCannotMaterializeValues (0.00s)
+    --- PASS: TestBrowserResourcePhysicalMalformedPageHeaderCannotMaterializeValues/unknown_definition_encoding (0.00s)
+    --- PASS: TestBrowserResourcePhysicalMalformedPageHeaderCannotMaterializeValues/unknown_repetition_encoding (0.00s)
+    --- PASS: TestBrowserResourcePhysicalMalformedPageHeaderCannotMaterializeValues/mixed_dictionary (0.00s)
+    --- PASS: TestBrowserResourcePhysicalMalformedPageHeaderCannotMaterializeValues/mixed_index (0.00s)
+    --- PASS: TestBrowserResourcePhysicalMalformedPageHeaderCannotMaterializeValues/mixed_v2 (0.00s)
+=== RUN   TestBrowserResourceDictionaryEncodedWidthIsIndependentFromBoundedCardinality
+--- PASS: TestBrowserResourceDictionaryEncodedWidthIsIndependentFromBoundedCardinality (0.00s)
+=== RUN   TestBrowserResourcePhysicalDictionaryWidthRefusesCorruptIndexes
+=== RUN   TestBrowserResourcePhysicalDictionaryWidthRefusesCorruptIndexes/legal32
+=== RUN   TestBrowserResourcePhysicalDictionaryWidthRefusesCorruptIndexes/width33
+=== RUN   TestBrowserResourcePhysicalDictionaryWidthRefusesCorruptIndexes/high_bit_index32
+--- PASS: TestBrowserResourcePhysicalDictionaryWidthRefusesCorruptIndexes (0.00s)
+    --- PASS: TestBrowserResourcePhysicalDictionaryWidthRefusesCorruptIndexes/legal32 (0.00s)
+    --- PASS: TestBrowserResourcePhysicalDictionaryWidthRefusesCorruptIndexes/width33 (0.00s)
+    --- PASS: TestBrowserResourcePhysicalDictionaryWidthRefusesCorruptIndexes/high_bit_index32 (0.00s)
+=== RUN   TestBrowserResourcePhysicalLegacyOpaqueStatisticsRefusesWithoutPartialEvidence
+--- PASS: TestBrowserResourcePhysicalLegacyOpaqueStatisticsRefusesWithoutPartialEvidence (0.01s)
+=== RUN   TestBrowserResourceControllerWriterPhysicalParityUsesExactJSONLPresence
+--- PASS: TestBrowserResourceControllerWriterPhysicalParityUsesExactJSONLPresence (0.09s)
+=== RUN   TestBrowserResourceControllerWriterSingleTransactionProjectionHeaderIsBounded
+    archive_browser_resource_producer_test.go:137: actual single-transaction projection entries=80 projection_bytes=49341 page_header_bytes=22 string_statistics_bytes=0 admitted_header_limit=16384
+--- PASS: TestBrowserResourceControllerWriterSingleTransactionProjectionHeaderIsBounded (0.06s)
+=== RUN   TestBrowserResourceReaderPagesMoreThanFiftyWithMissingSortTies
+=== RUN   TestBrowserResourceReaderPagesMoreThanFiftyWithMissingSortTies/asc
+=== RUN   TestBrowserResourceReaderPagesMoreThanFiftyWithMissingSortTies/desc
+--- PASS: TestBrowserResourceReaderPagesMoreThanFiftyWithMissingSortTies (0.00s)
+    --- PASS: TestBrowserResourceReaderPagesMoreThanFiftyWithMissingSortTies/asc (0.00s)
+    --- PASS: TestBrowserResourceReaderPagesMoreThanFiftyWithMissingSortTies/desc (0.00s)
+=== RUN   TestBrowserResourceReaderFiltersBeforePaginationAndSeparatesActions
+=== RUN   TestBrowserResourceReaderFiltersBeforePaginationAndSeparatesActions/initiating_action_id0123456789abcdef0123456789abcdef-action-1
+=== RUN   TestBrowserResourceReaderFiltersBeforePaginationAndSeparatesActions/observation_action_id0123456789abcdef0123456789abcdef-action-2
+=== RUN   TestBrowserResourceReaderFiltersBeforePaginationAndSeparatesActions/action_nameobserved
+=== RUN   TestBrowserResourceReaderFiltersBeforePaginationAndSeparatesActions/action_name0123456789abcdef0123456789abcdef-action-2
+--- PASS: TestBrowserResourceReaderFiltersBeforePaginationAndSeparatesActions (0.01s)
+    --- PASS: TestBrowserResourceReaderFiltersBeforePaginationAndSeparatesActions/initiating_action_id0123456789abcdef0123456789abcdef-action-1 (0.00s)
+    --- PASS: TestBrowserResourceReaderFiltersBeforePaginationAndSeparatesActions/observation_action_id0123456789abcdef0123456789abcdef-action-2 (0.00s)
+    --- PASS: TestBrowserResourceReaderFiltersBeforePaginationAndSeparatesActions/action_nameobserved (0.00s)
+    --- PASS: TestBrowserResourceReaderFiltersBeforePaginationAndSeparatesActions/action_name0123456789abcdef0123456789abcdef-action-2 (0.00s)
+=== RUN   TestBrowserResourceReaderFallbackPresenceAndDisclosure
+=== RUN   TestBrowserResourceReaderFallbackPresenceAndDisclosure/no_capture
+=== RUN   TestBrowserResourceReaderFallbackPresenceAndDisclosure/null_capture
+=== RUN   TestBrowserResourceReaderFallbackPresenceAndDisclosure/both_null
+=== RUN   TestBrowserResourceReaderFallbackPresenceAndDisclosure/empty_null_fallback
+=== RUN   TestBrowserResourceReaderFallbackPresenceAndDisclosure/null_empty_fallback
+=== RUN   TestBrowserResourceReaderFallbackPresenceAndDisclosure/null_nonempty_fallback
+=== RUN   TestBrowserResourceReaderFallbackPresenceAndDisclosure/explicit_empty
+=== RUN   TestBrowserResourceReaderFallbackPresenceAndDisclosure/fallback
+=== RUN   TestBrowserResourceReaderFallbackPresenceAndDisclosure/ordinary_preferred
+=== RUN   TestBrowserResourceReaderFallbackPresenceAndDisclosure/empty_url_retained
+=== RUN   TestBrowserResourceReaderFallbackPresenceAndDisclosure/malformed_v2
+=== RUN   TestBrowserResourceReaderFallbackPresenceAndDisclosure/future_v2
+=== RUN   TestBrowserResourceReaderFallbackPresenceAndDisclosure/valid_zero_false
+--- PASS: TestBrowserResourceReaderFallbackPresenceAndDisclosure (0.00s)
+    --- PASS: TestBrowserResourceReaderFallbackPresenceAndDisclosure/no_capture (0.00s)
+    --- PASS: TestBrowserResourceReaderFallbackPresenceAndDisclosure/null_capture (0.00s)
+    --- PASS: TestBrowserResourceReaderFallbackPresenceAndDisclosure/both_null (0.00s)
+    --- PASS: TestBrowserResourceReaderFallbackPresenceAndDisclosure/empty_null_fallback (0.00s)
+    --- PASS: TestBrowserResourceReaderFallbackPresenceAndDisclosure/null_empty_fallback (0.00s)
+    --- PASS: TestBrowserResourceReaderFallbackPresenceAndDisclosure/null_nonempty_fallback (0.00s)
+    --- PASS: TestBrowserResourceReaderFallbackPresenceAndDisclosure/explicit_empty (0.00s)
+    --- PASS: TestBrowserResourceReaderFallbackPresenceAndDisclosure/fallback (0.00s)
+    --- PASS: TestBrowserResourceReaderFallbackPresenceAndDisclosure/ordinary_preferred (0.00s)
+    --- PASS: TestBrowserResourceReaderFallbackPresenceAndDisclosure/empty_url_retained (0.00s)
+    --- PASS: TestBrowserResourceReaderFallbackPresenceAndDisclosure/malformed_v2 (0.00s)
+    --- PASS: TestBrowserResourceReaderFallbackPresenceAndDisclosure/future_v2 (0.00s)
+    --- PASS: TestBrowserResourceReaderFallbackPresenceAndDisclosure/valid_zero_false (0.00s)
+=== RUN   TestBrowserResourceReaderRefusesMalformedAndPartialScans
+=== RUN   TestBrowserResourceReaderRefusesMalformedAndPartialScans/case_alias
+=== RUN   TestBrowserResourceReaderRefusesMalformedAndPartialScans/negative
+=== RUN   TestBrowserResourceReaderRefusesMalformedAndPartialScans/foreign_run
+=== RUN   TestBrowserResourceReaderRefusesMalformedAndPartialScans/trailing
+=== RUN   TestBrowserResourceReaderRefusesMalformedAndPartialScans/wrong_shape
+=== RUN   TestBrowserResourceReaderRefusesMalformedAndPartialScans/partial
+=== RUN   TestBrowserResourceReaderRefusesMalformedAndPartialScans/subnanosecond
+=== RUN   TestBrowserResourceReaderRefusesMalformedAndPartialScans/duplicate
+--- PASS: TestBrowserResourceReaderRefusesMalformedAndPartialScans (0.01s)
+    --- PASS: TestBrowserResourceReaderRefusesMalformedAndPartialScans/case_alias (0.00s)
+    --- PASS: TestBrowserResourceReaderRefusesMalformedAndPartialScans/negative (0.00s)
+    --- PASS: TestBrowserResourceReaderRefusesMalformedAndPartialScans/foreign_run (0.00s)
+    --- PASS: TestBrowserResourceReaderRefusesMalformedAndPartialScans/trailing (0.00s)
+    --- PASS: TestBrowserResourceReaderRefusesMalformedAndPartialScans/wrong_shape (0.00s)
+    --- PASS: TestBrowserResourceReaderRefusesMalformedAndPartialScans/partial (0.00s)
+    --- PASS: TestBrowserResourceReaderRefusesMalformedAndPartialScans/subnanosecond (0.00s)
+    --- PASS: TestBrowserResourceReaderRefusesMalformedAndPartialScans/duplicate (0.00s)
+=== RUN   TestBrowserResourceReaderCancellationPhysicallyClosesAndJoins
+--- PASS: TestBrowserResourceReaderCancellationPhysicallyClosesAndJoins (0.00s)
+=== RUN   TestBrowserResourcePageClosedWirePresence
+=== RUN   TestBrowserResourcePageClosedWirePresence/missing_version
+=== RUN   TestBrowserResourcePageClosedWirePresence/missing_test_id
+=== RUN   TestBrowserResourcePageClosedWirePresence/missing_project_id
+=== RUN   TestBrowserResourcePageClosedWirePresence/missing_source_format
+=== RUN   TestBrowserResourcePageClosedWirePresence/missing_source_revision
+=== RUN   TestBrowserResourcePageClosedWirePresence/missing_source_integrity
+=== RUN   TestBrowserResourcePageClosedWirePresence/missing_source_timestamp_precision
+=== RUN   TestBrowserResourcePageClosedWirePresence/missing_population
+=== RUN   TestBrowserResourcePageClosedWirePresence/missing_capture_coverage
+=== RUN   TestBrowserResourcePageClosedWirePresence/missing_items
+--- PASS: TestBrowserResourcePageClosedWirePresence (0.00s)
+    --- PASS: TestBrowserResourcePageClosedWirePresence/missing_version (0.00s)
+    --- PASS: TestBrowserResourcePageClosedWirePresence/missing_test_id (0.00s)
+    --- PASS: TestBrowserResourcePageClosedWirePresence/missing_project_id (0.00s)
+    --- PASS: TestBrowserResourcePageClosedWirePresence/missing_source_format (0.00s)
+    --- PASS: TestBrowserResourcePageClosedWirePresence/missing_source_revision (0.00s)
+    --- PASS: TestBrowserResourcePageClosedWirePresence/missing_source_integrity (0.00s)
+    --- PASS: TestBrowserResourcePageClosedWirePresence/missing_source_timestamp_precision (0.00s)
+    --- PASS: TestBrowserResourcePageClosedWirePresence/missing_population (0.00s)
+    --- PASS: TestBrowserResourcePageClosedWirePresence/missing_capture_coverage (0.00s)
+    --- PASS: TestBrowserResourcePageClosedWirePresence/missing_items (0.00s)
+=== RUN   TestBrowserResourcePageQueryRefusesBroadening
+=== RUN   TestBrowserResourcePageQueryRefusesBroadening/empty
+=== RUN   TestBrowserResourcePageQueryRefusesBroadening/bad_sort
+=== RUN   TestBrowserResourcePageQueryRefusesBroadening/bad_generation
+=== RUN   TestBrowserResourcePageQueryRefusesBroadening/mixed_generation
+=== RUN   TestBrowserResourcePageQueryRefusesBroadening/bad_origin
+=== RUN   TestBrowserResourcePageQueryRefusesBroadening/unknown
+=== RUN   TestBrowserResourcePageQueryRefusesBroadening/duplicate
+--- PASS: TestBrowserResourcePageQueryRefusesBroadening (0.00s)
+    --- PASS: TestBrowserResourcePageQueryRefusesBroadening/empty (0.00s)
+    --- PASS: TestBrowserResourcePageQueryRefusesBroadening/bad_sort (0.00s)
+    --- PASS: TestBrowserResourcePageQueryRefusesBroadening/bad_generation (0.00s)
+    --- PASS: TestBrowserResourcePageQueryRefusesBroadening/mixed_generation (0.00s)
+    --- PASS: TestBrowserResourcePageQueryRefusesBroadening/bad_origin (0.00s)
+    --- PASS: TestBrowserResourcePageQueryRefusesBroadening/unknown (0.00s)
+    --- PASS: TestBrowserResourcePageQueryRefusesBroadening/duplicate (0.00s)
+=== RUN   TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection
+=== RUN   TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/2026-10-05T11:30:45.123456789-04:00
+=== RUN   TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/2026-10-05T11:30:45.000000001+05:30
+=== RUN   TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/1970-01-01T00:00:00.000000001+00:30
+=== RUN   TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/2026-10-05T11:30:45+00:00
+=== RUN   TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/2026-10-05T11:30:45.123456789Z
+=== RUN   TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/refuse_2026-10-05T11:30:45+24:00
+=== RUN   TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/refuse_2026-10-05T11:30:45+00:60
+=== RUN   TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/refuse_2026-10-05T11:30:45.1234567891-04:00
+=== RUN   TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/refuse_2026-02-30T11:30:45-04:00
+=== RUN   TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/refuse_2026-10-05T11:30:45
+=== RUN   TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/refuse_2026-10-05T11:30:45-04:00trailing
+=== RUN   TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/refuse_9999-12-31T23:59:59-23:59
+--- PASS: TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection (0.00s)
+    --- PASS: TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/2026-10-05T11:30:45.123456789-04:00 (0.00s)
+    --- PASS: TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/2026-10-05T11:30:45.000000001+05:30 (0.00s)
+    --- PASS: TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/1970-01-01T00:00:00.000000001+00:30 (0.00s)
+    --- PASS: TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/2026-10-05T11:30:45+00:00 (0.00s)
+    --- PASS: TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/2026-10-05T11:30:45.123456789Z (0.00s)
+    --- PASS: TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/refuse_2026-10-05T11:30:45+24:00 (0.00s)
+    --- PASS: TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/refuse_2026-10-05T11:30:45+00:60 (0.00s)
+    --- PASS: TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/refuse_2026-10-05T11:30:45.1234567891-04:00 (0.00s)
+    --- PASS: TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/refuse_2026-02-30T11:30:45-04:00 (0.00s)
+    --- PASS: TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/refuse_2026-10-05T11:30:45 (0.00s)
+    --- PASS: TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/refuse_2026-10-05T11:30:45-04:00trailing (0.00s)
+    --- PASS: TestBrowserResourceReaderSourceTimestampOffsetsNormalizeOnlyProjection/refuse_9999-12-31T23:59:59-23:59 (0.00s)
+=== RUN   TestBrowserResourceFailureAttribution
+--- PASS: TestBrowserResourceFailureAttribution (0.00s)
+=== RUN   TestBrowserResourceArchiveRetainsExactIdentityWithoutReplacingLegacyClock
+=== RUN   TestBrowserResourceArchiveRetainsExactIdentityWithoutReplacingLegacyClock/transaction
+=== RUN   TestBrowserResourceArchiveRetainsExactIdentityWithoutReplacingLegacyClock/snapshot
+--- PASS: TestBrowserResourceArchiveRetainsExactIdentityWithoutReplacingLegacyClock (0.00s)
+    --- PASS: TestBrowserResourceArchiveRetainsExactIdentityWithoutReplacingLegacyClock/transaction (0.00s)
+    --- PASS: TestBrowserResourceArchiveRetainsExactIdentityWithoutReplacingLegacyClock/snapshot (0.00s)
+=== RUN   TestBrowserResourceArchiveLegacyAndMalformedEvidenceStayExplicit
+--- PASS: TestBrowserResourceArchiveLegacyAndMalformedEvidenceStayExplicit (0.00s)
+=== RUN   TestBrowserResourceEvidenceCountsAgainstDiagnosticPayloadBudget
+--- PASS: TestBrowserResourceEvidenceCountsAgainstDiagnosticPayloadBudget (0.00s)
+=== RUN   TestBrowserResourceOpenAPIExactTypedPageAndApprovedQueryContract
+--- PASS: TestBrowserResourceOpenAPIExactTypedPageAndApprovedQueryContract (0.51s)
+=== RUN   TestModularAPIRouteCatalogsAreCompleteAndUnique
+--- PASS: TestModularAPIRouteCatalogsAreCompleteAndUnique (0.00s)
+=== RUN   TestControllerRouteDiscoveryIncludesModularCatalogs
+--- PASS: TestControllerRouteDiscoveryIncludesModularCatalogs (0.02s)
+=== RUN   TestWebSocketAuthorizerRechecksRoleAndSessionEpoch
+2026/10/05 13:39:56 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+--- PASS: TestWebSocketAuthorizerRechecksRoleAndSessionEpoch (0.05s)
+=== RUN   TestWebSocketAuthorizerRechecksExactLocalSessionAfterLogout
+2026/10/05 13:39:56 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 13:39:57 INFO http request method=POST path=/api/v1/auth/login status=200 duration_ms=49 remote=192.0.2.10:1234
+2026/10/05 13:39:57 INFO http request method=POST path=/api/v1/auth/login status=200 duration_ms=49 remote=192.0.2.10:1234
+2026/10/05 13:39:57 INFO http request method=POST path=/api/v1/auth/logout status=200 duration_ms=0 remote=192.0.2.1:1234
+--- PASS: TestWebSocketAuthorizerRechecksExactLocalSessionAfterLogout (0.34s)
+=== RUN   TestWebSocketAuthorizerRejectsRotatedServiceAccountKey
+2026/10/05 13:39:57 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+--- PASS: TestWebSocketAuthorizerRejectsRotatedServiceAccountKey (0.05s)
+=== RUN   TestWebSocketAuthorizerRechecksServiceAccountScopes
+2026/10/05 13:39:57 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+--- PASS: TestWebSocketAuthorizerRechecksServiceAccountScopes (0.05s)
+=== RUN   TestWebSocketAuthorizerPinsPresentedCredentialAcrossAdmissionRotation
+=== RUN   TestWebSocketAuthorizerPinsPresentedCredentialAcrossAdmissionRotation/api_key
+=== RUN   TestWebSocketAuthorizerPinsPresentedCredentialAcrossAdmissionRotation/bearer
+--- PASS: TestWebSocketAuthorizerPinsPresentedCredentialAcrossAdmissionRotation (0.08s)
+    --- PASS: TestWebSocketAuthorizerPinsPresentedCredentialAcrossAdmissionRotation/api_key (0.04s)
+    --- PASS: TestWebSocketAuthorizerPinsPresentedCredentialAcrossAdmissionRotation/bearer (0.04s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/api	4.141s
+=== RUN   TestBrowserResourceArchiveIdentityExactOwnerPrecedesAliasAndTombstone
+--- PASS: TestBrowserResourceArchiveIdentityExactOwnerPrecedesAliasAndTombstone (0.05s)
+=== RUN   TestBrowserResourceArchiveIdentitySeesFreshPublicationAndCancellation
+--- PASS: TestBrowserResourceArchiveIdentitySeesFreshPublicationAndCancellation (0.04s)
+=== RUN   TestBrowserResourceCursorSettingCASHasOneDurableWinner
+--- PASS: TestBrowserResourceCursorSettingCASHasOneDurableWinner (0.05s)
+=== RUN   TestBrowserResourceAuthContextMatchesEstablishedSQLProjection
+=== RUN   TestBrowserResourceAuthContextMatchesEstablishedSQLProjection/user_and_bindings
+=== RUN   TestBrowserResourceAuthContextMatchesEstablishedSQLProjection/service_account
+=== RUN   TestBrowserResourceAuthContextMatchesEstablishedSQLProjection/project
+=== RUN   TestBrowserResourceAuthContextMatchesEstablishedSQLProjection/category
+=== RUN   TestBrowserResourceAuthContextMatchesEstablishedSQLProjection/repository
+=== RUN   TestBrowserResourceAuthContextMatchesEstablishedSQLProjection/generation
+=== RUN   TestBrowserResourceAuthContextMatchesEstablishedSQLProjection/exact_session
+--- PASS: TestBrowserResourceAuthContextMatchesEstablishedSQLProjection (0.23s)
+    --- PASS: TestBrowserResourceAuthContextMatchesEstablishedSQLProjection/user_and_bindings (0.03s)
+    --- PASS: TestBrowserResourceAuthContextMatchesEstablishedSQLProjection/service_account (0.03s)
+    --- PASS: TestBrowserResourceAuthContextMatchesEstablishedSQLProjection/project (0.03s)
+    --- PASS: TestBrowserResourceAuthContextMatchesEstablishedSQLProjection/category (0.03s)
+    --- PASS: TestBrowserResourceAuthContextMatchesEstablishedSQLProjection/repository (0.03s)
+    --- PASS: TestBrowserResourceAuthContextMatchesEstablishedSQLProjection/generation (0.03s)
+    --- PASS: TestBrowserResourceAuthContextMatchesEstablishedSQLProjection/exact_session (0.03s)
+=== RUN   TestBrowserResourceAuthContextBindingOverflowCannotInventRole
+--- PASS: TestBrowserResourceAuthContextBindingOverflowCannotInventRole (0.10s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/storage	0.895s
+=== RUN   TestBrowserResourceGeneratorWriterPhysicalParityUsesExactJSONLPresence
+--- PASS: TestBrowserResourceGeneratorWriterPhysicalParityUsesExactJSONLPresence (0.05s)
+=== RUN   TestBrowserResourceGeneratorWriterSingleTransactionProjectionHeaderIsBounded
+    archive_browser_resource_projection_test.go:186: actual generator single-transaction projection entries=80 projection_bytes=34691 page_header_bytes=22 string_statistics_bytes=0
+--- PASS: TestBrowserResourceGeneratorWriterSingleTransactionProjectionHeaderIsBounded (0.03s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/distributed/generatorrpc	0.524s
+=== RUN   TestBrowserResourceCLIClosedProjectionAndScope
+--- PASS: TestBrowserResourceCLIClosedProjectionAndScope (0.00s)
+=== RUN   TestBrowserResourceCLIInvalidFlagsNeverPerformIO
+=== RUN   TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--file_secret.json
+=== RUN   TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--id_another
+=== RUN   TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--sort-by_capture_order_--sort-by_duration_ms
+=== RUN   TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--sort-by_sql
+=== RUN   TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--limit_101
+=== RUN   TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--state_unknown
+=== RUN   TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--cursor_not-a-cursor
+=== RUN   TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--action-name_
+=== RUN   TestBrowserResourceCLIInvalidFlagsNeverPerformIO/extra
+--- PASS: TestBrowserResourceCLIInvalidFlagsNeverPerformIO (0.00s)
+    --- PASS: TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--file_secret.json (0.00s)
+    --- PASS: TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--id_another (0.00s)
+    --- PASS: TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--sort-by_capture_order_--sort-by_duration_ms (0.00s)
+    --- PASS: TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--sort-by_sql (0.00s)
+    --- PASS: TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--limit_101 (0.00s)
+    --- PASS: TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--state_unknown (0.00s)
+    --- PASS: TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--cursor_not-a-cursor (0.00s)
+    --- PASS: TestBrowserResourceCLIInvalidFlagsNeverPerformIO/--action-name_ (0.00s)
+    --- PASS: TestBrowserResourceCLIInvalidFlagsNeverPerformIO/extra (0.00s)
+=== RUN   TestBrowserResourceCLIRefusesRawErrorsRedirectsOversizeAndMissingFields
+=== RUN   TestBrowserResourceCLIRefusesRawErrorsRedirectsOversizeAndMissingFields/secret_error
+=== RUN   TestBrowserResourceCLIRefusesRawErrorsRedirectsOversizeAndMissingFields/redirect
+=== RUN   TestBrowserResourceCLIRefusesRawErrorsRedirectsOversizeAndMissingFields/oversize
+=== RUN   TestBrowserResourceCLIRefusesRawErrorsRedirectsOversizeAndMissingFields/missing_required
+=== RUN   TestBrowserResourceCLIRefusesRawErrorsRedirectsOversizeAndMissingFields/unknown
+--- PASS: TestBrowserResourceCLIRefusesRawErrorsRedirectsOversizeAndMissingFields (0.00s)
+    --- PASS: TestBrowserResourceCLIRefusesRawErrorsRedirectsOversizeAndMissingFields/secret_error (0.00s)
+    --- PASS: TestBrowserResourceCLIRefusesRawErrorsRedirectsOversizeAndMissingFields/redirect (0.00s)
+    --- PASS: TestBrowserResourceCLIRefusesRawErrorsRedirectsOversizeAndMissingFields/oversize (0.00s)
+    --- PASS: TestBrowserResourceCLIRefusesRawErrorsRedirectsOversizeAndMissingFields/missing_required (0.00s)
+    --- PASS: TestBrowserResourceCLIRefusesRawErrorsRedirectsOversizeAndMissingFields/unknown (0.00s)
+=== RUN   TestBrowserResourceCLIContextBeforeNetwork
+--- PASS: TestBrowserResourceCLIContextBeforeNetwork (0.00s)
+=== RUN   TestBrowserResourceCLIAuthenticationDefaultsAndExplicitOverrides
+=== RUN   TestBrowserResourceCLIAuthenticationDefaultsAndExplicitOverrides/environment
+=== RUN   TestBrowserResourceCLIAuthenticationDefaultsAndExplicitOverrides/explicit
+=== RUN   TestBrowserResourceCLIAuthenticationDefaultsAndExplicitOverrides/explicit_empty_removes_environment
+--- PASS: TestBrowserResourceCLIAuthenticationDefaultsAndExplicitOverrides (0.00s)
+    --- PASS: TestBrowserResourceCLIAuthenticationDefaultsAndExplicitOverrides/environment (0.00s)
+    --- PASS: TestBrowserResourceCLIAuthenticationDefaultsAndExplicitOverrides/explicit (0.00s)
+    --- PASS: TestBrowserResourceCLIAuthenticationDefaultsAndExplicitOverrides/explicit_empty_removes_environment (0.00s)
+=== RUN   TestBrowserResourceCLIHelpNeverDisclosesCredentialOrEndpointDefaults
+--- PASS: TestBrowserResourceCLIHelpNeverDisclosesCredentialOrEndpointDefaults (0.00s)
+=== RUN   TestBrowserResourceCLIControllerAndDirectProjectAdmissionBeforeIO
+=== RUN   TestBrowserResourceCLIControllerAndDirectProjectAdmissionBeforeIO/#00
+=== RUN   TestBrowserResourceCLIControllerAndDirectProjectAdmissionBeforeIO/relative-controller
+=== RUN   TestBrowserResourceCLIControllerAndDirectProjectAdmissionBeforeIO/file:///private/key
+=== RUN   TestBrowserResourceCLIControllerAndDirectProjectAdmissionBeforeIO/https://operator:private-secret@example.test
+=== RUN   TestBrowserResourceCLIControllerAndDirectProjectAdmissionBeforeIO/https://example.test?api_key=private-secret
+=== RUN   TestBrowserResourceCLIControllerAndDirectProjectAdmissionBeforeIO/https://example.test#private-secret
+--- PASS: TestBrowserResourceCLIControllerAndDirectProjectAdmissionBeforeIO (0.00s)
+    --- PASS: TestBrowserResourceCLIControllerAndDirectProjectAdmissionBeforeIO/#00 (0.00s)
+    --- PASS: TestBrowserResourceCLIControllerAndDirectProjectAdmissionBeforeIO/relative-controller (0.00s)
+    --- PASS: TestBrowserResourceCLIControllerAndDirectProjectAdmissionBeforeIO/file:///private/key (0.00s)
+    --- PASS: TestBrowserResourceCLIControllerAndDirectProjectAdmissionBeforeIO/https://operator:private-secret@example.test (0.00s)
+    --- PASS: TestBrowserResourceCLIControllerAndDirectProjectAdmissionBeforeIO/https://example.test?api_key=private-secret (0.00s)
+    --- PASS: TestBrowserResourceCLIControllerAndDirectProjectAdmissionBeforeIO/https://example.test#private-secret (0.00s)
+=== RUN   TestBrowserResourceCLIDirectExplicitQueryScopeStillFencesResponse
+--- PASS: TestBrowserResourceCLIDirectExplicitQueryScopeStillFencesResponse (0.00s)
+=== RUN   TestBrowserResourceCLIRefusesValidShapeBeyondImmutableRequestedLimit
+=== RUN   TestBrowserResourceCLIRefusesValidShapeBeyondImmutableRequestedLimit/exact_requested_limit
+=== RUN   TestBrowserResourceCLIRefusesValidShapeBeyondImmutableRequestedLimit/above_requested_limit
+=== RUN   TestBrowserResourceCLIRefusesValidShapeBeyondImmutableRequestedLimit/above_default_limit
+--- PASS: TestBrowserResourceCLIRefusesValidShapeBeyondImmutableRequestedLimit (0.00s)
+    --- PASS: TestBrowserResourceCLIRefusesValidShapeBeyondImmutableRequestedLimit/exact_requested_limit (0.00s)
+    --- PASS: TestBrowserResourceCLIRefusesValidShapeBeyondImmutableRequestedLimit/above_requested_limit (0.00s)
+    --- PASS: TestBrowserResourceCLIRefusesValidShapeBeyondImmutableRequestedLimit/above_default_limit (0.00s)
+PASS
+ok  	github.com/jasonczech/apexload/cmd/apexctl	0.880s

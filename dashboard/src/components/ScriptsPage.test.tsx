@@ -1,3 +1,4 @@
+import { authoringFixture } from '../test/scriptAuthoringFixtures'
 // @vitest-environment jsdom
 
 import { act } from 'react'
@@ -20,6 +21,7 @@ const apiMock = {
   listFolders: vi.fn(() => Promise.resolve({ folders: [], count: 0 })),
   listScripts: vi.fn(),
   getScript: vi.fn(),
+  getScriptAuthoring: vi.fn(),
   getScriptSecretStatus: vi.fn(),
   getProjectSecretStatuses: vi.fn(),
   getApplicationSecretStatuses: vi.fn(),
@@ -338,6 +340,11 @@ describe('ScriptsPage', () => {
       ],
     })
     apiMock.getScript.mockResolvedValue({ script: null })
+    apiMock.getScriptAuthoring.mockImplementation(async (id: string, projectId?: string) => {
+      await Promise.resolve()
+      const result = apiMock.getScript.mock.results[apiMock.getScript.mock.results.length - 1]?.value
+      return authoringFixture((await result)?.script || { name: 'Existing Script' }, id, projectId)
+    })
     apiMock.getScriptSecretStatus.mockResolvedValue({
       script_id: 'script-1',
       project_id: 'project-1',
@@ -456,6 +463,7 @@ describe('ScriptsPage', () => {
   })
 
   it('opens the script-scoped bindings dialog from library health without navigating away', async () => {
+    apiMock.getScriptAuthoring.mockResolvedValueOnce(authoringFixture({ name: 'Existing Script', actions: [{ name: 'Login', type: 'request', target: '/', headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' } }] }))
     apiMock.listScripts.mockResolvedValueOnce({
       scripts: [{
         ...scriptRecord('script-1', 'Existing Script', 'project-1'),
@@ -1781,6 +1789,7 @@ describe('ScriptsPage', () => {
   })
 
   it('shows a follow-on notice when a multi-script import also saves a scenario draft', async () => {
+    apiMock.getScriptAuthoring.mockResolvedValueOnce(authoringFixture({ name: 'Auth Users' }, 'jmeter-script-1'))
     await act(async () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })
@@ -1819,6 +1828,7 @@ describe('ScriptsPage', () => {
   })
 
   it('keeps the persisted editor open after an import save handoff', async () => {
+    apiMock.getScriptAuthoring.mockResolvedValueOnce(authoringFixture({ name: 'Imported Enterprise Script Archive' }, 'imported-script-1'))
     await act(async () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })

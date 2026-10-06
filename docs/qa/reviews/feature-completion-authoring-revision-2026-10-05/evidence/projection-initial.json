@@ -1,0 +1,31 @@
+{
+  "label": "projection-initial",
+  "command": [
+    "go",
+    "test",
+    "./pkg/api",
+    "-run",
+    "^TestScriptAuthoring(IfMatch|Projection)",
+    "-count=1",
+    "-timeout=3m",
+    "-ldflags=-s -w"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner",
+  "started_utc": "2026-10-05T05:32:04.164494+00:00",
+  "finished_utc": "2026-10-05T05:33:12.645015+00:00",
+  "duration_seconds": 68.48,
+  "exit_code": 1,
+  "profile": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_AUTH_PORT": "18472"
+  },
+  "log_bytes": 266,
+  "log_sha256": "3caeb32ea2697fd79ab5422e67d8e90e91ef0dd26a66a84521ab260b65718db2"
+}

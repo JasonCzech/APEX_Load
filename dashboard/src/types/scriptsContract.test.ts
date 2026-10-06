@@ -72,6 +72,7 @@ describe('ScriptDefinition runtime contract', () => {
     expectTypeOf<keyof ScriptConfig>().toEqualTypeOf<keyof GeneratedConfig>()
     expectTypeOf<keyof RunLogicConfig>().toEqualTypeOf<keyof GeneratedRunLogic>()
     expectTypeOf<keyof BrowserConfig>().toEqualTypeOf<keyof GeneratedBrowser>()
+    expectTypeOf<BrowserConfig['capture_document_metrics']>().toEqualTypeOf<GeneratedBrowser['capture_document_metrics']>()
     expectTypeOf<keyof BrowserGeolocation>().toEqualTypeOf<keyof GeneratedBrowserGeolocation>()
     expectTypeOf<keyof BrowserHTTPCredentials>().toEqualTypeOf<keyof GeneratedBrowserCredentials>()
     expectTypeOf<keyof BrowserProxyConfig>().toEqualTypeOf<keyof GeneratedBrowserProxy>()
@@ -102,6 +103,7 @@ describe('ScriptDefinition runtime contract', () => {
           locale: 'en-US',
           timezone: 'America/New_York',
           experience_canary: true,
+          capture_document_metrics: true,
           traceparent: true,
           har_capture: 'on_error',
           har_capture_policy: 'scrub',

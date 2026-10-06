@@ -916,6 +916,7 @@ func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConf
 	result.OperationKind = scrubSensitiveTextWithConfig(result.OperationKind, config)
 
 	if result.ClientMetrics != nil {
+		result.ClientMetrics.DocumentEvidence = scrubBrowserDocumentEvidence(result.ClientMetrics.DocumentEvidence, config)
 		result.ClientMetrics.DeviceProfile = scrubSensitiveTextWithConfig(result.ClientMetrics.DeviceProfile, config)
 		result.ClientMetrics.DevicePlatform = scrubSensitiveTextWithConfig(result.ClientMetrics.DevicePlatform, config)
 		result.ClientMetrics.DeviceTier = scrubSensitiveTextWithConfig(result.ClientMetrics.DeviceTier, config)
@@ -971,6 +972,12 @@ func scrubSensitiveExtractions(values map[string]string, config *RedactionConfig
 
 func scrubSensitiveNetworkEntries(entries []protocol.NetworkEntry, config *RedactionConfig) []protocol.NetworkEntry {
 	for i := range entries {
+		if evidence := entries[i].BrowserEvidence.Clone(); evidence != nil {
+			evidence.Origin = scrubSensitiveTextWithConfig(evidence.Origin, config)
+			entries[i].BrowserEvidence = evidence.Clone()
+		} else {
+			entries[i].BrowserEvidence = nil
+		}
 		entries[i].URL = scrubSensitiveTextWithConfig(entries[i].URL, config)
 		entries[i].RequestHeaders = scrubSensitiveHeaders(entries[i].RequestHeaders, config)
 		entries[i].RequestBody = scrubSensitiveTextWithConfig(entries[i].RequestBody, config)
@@ -1284,4 +1291,34 @@ func expandRuntimeSecretMatches(value string, matched []bool) string {
 		offset = end
 	}
 	return out.String()
+}
+
+func scrubBrowserDocumentEvidence(evidence *protocol.BrowserDocumentEvidence, config *RedactionConfig) *protocol.BrowserDocumentEvidence {
+	evidence = evidence.Clone()
+	if evidence == nil {
+		return nil
+	}
+	for i := range evidence.Observations {
+		o := &evidence.Observations[i]
+		profile, group, region := o.DeviceProfile, o.Group, o.Region
+		o.DeviceProfile = scrubSensitiveTextWithConfig(profile, config)
+		o.Group = scrubSensitiveTextWithConfig(group, config)
+		o.Region = scrubSensitiveTextWithConfig(region, config)
+		selectorChanged := profile != o.DeviceProfile || group != o.Group || region != o.Region
+		if o.Cohort != nil {
+			version := o.Cohort.BrowserVersion
+			o.Cohort.BrowserVersion = scrubSensitiveTextWithConfig(version, config)
+			selectorChanged = selectorChanged || version != o.Cohort.BrowserVersion
+		}
+		if selectorChanged {
+			// Redacted comparison identities cannot certify runtime equivalence.
+			// Keep observed values while excluding them from qualified baselines.
+			o.Qualified = false
+			if o.Cohort != nil {
+				o.Cohort.UnavailableReason = "cohort_unavailable"
+			}
+			evidence.Incomplete = true
+		}
+	}
+	return evidence.Clone()
 }

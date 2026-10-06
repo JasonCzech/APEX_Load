@@ -1,0 +1,46 @@
+{
+  "recorded_at": "2026-10-05T17:57:01.354988+00:00",
+  "gate": "resource-generated-contracts-freshness-final.json",
+  "inputs_unchanged": true,
+  "files": {
+    "dashboard/src/types/generated/openapi.ts": {
+      "sha256": "24b258f93a562ebf2b5f7dad734e3e959c8f8477589dc15ce0b967924dead3f2",
+      "bytes": 5925976
+    },
+    "docs/api-endpoint-catalog.json": {
+      "sha256": "bca4eb849c2e446b2233d9db23af2c1e3b09457ae056f832dd48eeab3e686882",
+      "bytes": 292339
+    },
+    "docs/qa/TEST_PROGRAM.md": {
+      "sha256": "f6eaf76a3094b773e8f7cce7345d052ae7f9ec11d587e0a7fa2cab6a9d8716c8",
+      "bytes": 55125
+    },
+    "docs/qa/evidence/M1/api-contract-matrix.json": {
+      "sha256": "63bf9f8411cbea69afa0b07049686f706d704a987679ee513dbc7999a437c0fb",
+      "bytes": 586569
+    },
+    "docs/swagger.yaml": {
+      "sha256": "b2bb6103ad794012daf401807dea948f35945952e7f90ec2167509a90a65cd91",
+      "bytes": 17612524
+    },
+    "pkg/api/apidocs/api-endpoint-catalog.json": {
+      "sha256": "bca4eb849c2e446b2233d9db23af2c1e3b09457ae056f832dd48eeab3e686882",
+      "bytes": 292339
+    },
+    "pkg/api/apidocs/swagger.yaml": {
+      "sha256": "b2bb6103ad794012daf401807dea948f35945952e7f90ec2167509a90a65cd91",
+      "bytes": 17612524
+    }
+  },
+  "public_generated_file_count": 5,
+  "additional_inputs": [
+    "canonical machine-generated M1 API contract matrix",
+    "TEST_PROGRAM required browser qualification inventory"
+  ],
+  "embedded_copies_equal": {
+    "swagger": true,
+    "endpoint_catalog": true
+  },
+  "schema_review": "Resource page remains typed/closed with required nonnull items, required nullable population counts, native zero/false pointer presence and only approved exact filters/sorts/refusals. Existing formerly opaque get/update responses gain actual nullable storage DTO descriptions through current inference; credential KeyHash remains excluded. No handler behavior changes from generated artifacts.",
+  "scope": "Generated input and transport freshness; source/native/provider performance and whole repository/UI qualification are separate."
+}

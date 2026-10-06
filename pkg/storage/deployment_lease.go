@@ -195,10 +195,16 @@ func (s *SQLiteStore) GetDeploymentLease(name string) (*DeploymentLease, error) 
 	return lease, nil
 }
 
+// SaveTestStartIfNoDeploymentLease atomically commits the caller-owned Start
+// record. On successful INITIALIZING commit, InitialProvenance is replaced with
+// an owned decoded copy of the write-once winner read in that transaction. No
+// InitialProvenance changes on failure. Callers must not share the mutable record.
 func (s *SQLiteStore) SaveTestStartIfNoDeploymentLease(test *TestRecord, deploymentLeaseName, authorizedDeploymentOwnerID, authorizedDeploymentTokenHash string) error {
 	return s.saveTestStartIfNoDeploymentLease(test, "", "", deploymentLeaseName, authorizedDeploymentOwnerID, authorizedDeploymentTokenHash, false)
 }
 
+// SaveTestStartIfExecutionLeaseHeldAndNoDeploymentLease has the same owned
+// InitialProvenance result contract, additionally fenced by execution leadership.
 func (s *SQLiteStore) SaveTestStartIfExecutionLeaseHeldAndNoDeploymentLease(test *TestRecord, executionLeaseName, executionLeaseOwnerID, deploymentLeaseName, authorizedDeploymentOwnerID, authorizedDeploymentTokenHash string) (bool, error) {
 	err := s.saveTestStartIfNoDeploymentLease(test, executionLeaseName, executionLeaseOwnerID, deploymentLeaseName, authorizedDeploymentOwnerID, authorizedDeploymentTokenHash, true)
 	if errors.Is(err, errExecutionLeaseNotHeld) {
@@ -333,7 +339,30 @@ func (s *SQLiteStore) saveTestStartIfNoDeploymentLease(test *TestRecord, executi
 	if err := s.writePreparedTestWithExecutor(tx, test, preparedArgs); err != nil {
 		return err
 	}
-	return tx.Commit()
+	// Read the exact CASE winner while the same transaction owns the test row.
+	// A second read after commit could fail after execution-capable state is
+	// durable, or observe a different incarnation. Decode before commit so a
+	// corrupt prior receipt rolls back Start rather than exposing a candidate.
+	var initial any
+	initializing := strings.EqualFold(strings.TrimSpace(test.Status), "INITIALIZING")
+	if initializing {
+		var raw string
+		if err := tx.QueryRow(`SELECT COALESCE(initial_provenance_json, '') FROM tests WHERE id = ? AND project_id = ?`, test.ID, test.ProjectID).Scan(&raw); err != nil {
+			return fmt.Errorf("read committed Start provenance: %w", err)
+		}
+		if strings.TrimSpace(raw) != "" {
+			if err := json.Unmarshal([]byte(raw), &initial); err != nil {
+				return fmt.Errorf("decode committed Start provenance: %w", err)
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if initializing {
+		test.InitialProvenance = initial
+	}
+	return nil
 }
 
 func validateExistingTestStartIdentity(tx *storeTx, dialect storeDialect, test *TestRecord) error {

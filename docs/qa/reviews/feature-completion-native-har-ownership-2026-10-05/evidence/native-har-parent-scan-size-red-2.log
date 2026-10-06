@@ -1,0 +1,7 @@
+--- FAIL: TestHAROwnershipCompletedRetentionHasBoundedScan (0.14s)
+    har_ownership_review_test.go:162: unbounded completed namespace scan reported success
+--- FAIL: TestHAROwnershipJoinedCandidateCarriesBoundedActualSize (0.02s)
+    har_ownership_review_test.go:177: joined candidate silently reported zero source bytes [{/private/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestHAROwnershipJoinedCandidateCarriesBoundedActualSize3837251667/001/.apexload-har-work/71bb66d22f56c382027a4180b752aff8 0 71bb66d22f56c382027a4180b752aff8 0x19f19f927c70 0x19f19f9272b0}]
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/protocol/browser	0.378s
+FAIL

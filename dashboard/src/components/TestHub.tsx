@@ -227,6 +227,8 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
     scenario_mode: 'vuser_driven',
     script_shakeout: false,
     resource_baseline: false,
+    // These are defaults for a new owned draft, not an edit-time replacement.
+    goal_config: { early_stop: { enabled: false, error_rate_pct: 5, breach_window: '1m' } },
     runtime_pacing_type: '',
     runtime_think_time_type: '',
     runtime_ignore_think_time: false,
@@ -338,15 +340,8 @@ function reconstructedGoalTarget(groups: ScenarioFormGroup[], index: number, tot
 }
 
 function goalConfigFromForm(form: ScenarioFormState): GoalConfig {
-  const goal: GoalConfig = {
-    ...(form.goal_config || {}),
-    early_stop: {
-      enabled: false,
-      error_rate_pct: 5,
-      breach_window: '1m',
-      ...(form.goal_config?.early_stop || {}),
-    },
-  }
+  // Preserve authored absence and explicit nested values during unrelated edits.
+  const goal: GoalConfig = structuredClone(form.goal_config || {})
   const setNumber = (field: keyof GoalConfig, value: number | undefined) => {
     if (value === undefined || value === null) {
       delete goal[field]
@@ -2025,6 +2020,14 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const seedFormFromScenario = (seed: ScenarioSeed) => {
     setForm(prev => {
       const replacesRuntime = seed.runtime_settings !== undefined
+      // A shape owns its demand bounds and workload configuration. Other authored
+      // guardrails survive unless the seed explicitly replaces that field.
+      const authoredGuardrails = goalConfigFromForm(prev)
+      delete authoredGuardrails.target_average_tps
+      delete authoredGuardrails.min_vusers
+      delete authoredGuardrails.max_vusers
+      delete authoredGuardrails.workload_shape_config
+      const seededGoal: GoalConfig = { ...authoredGuardrails, ...structuredClone(seed.goal || {}) }
       return {
       ...prev,
       duration: seed.duration || prev.duration,
@@ -2032,12 +2035,12 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       script_shakeout: seed.script_shakeout ?? prev.script_shakeout,
       resource_baseline: seed.resource_baseline ?? prev.resource_baseline,
       groups: reseedScenarioGroups(seed.groups, prev.groups),
-      goal_target_average_tps: seed.goal?.target_average_tps,
-      goal_min_vusers: seed.goal?.min_vusers,
-      goal_max_vusers: seed.goal?.max_vusers,
-      goal_p95_latency_ms: seed.goal?.p95_latency_ms,
-      goal_max_error_pct: seed.goal?.max_error_pct,
-      goal_config: seed.goal ? { ...seed.goal } : undefined,
+      goal_target_average_tps: seededGoal.target_average_tps,
+      goal_min_vusers: seededGoal.min_vusers,
+      goal_max_vusers: seededGoal.max_vusers,
+      goal_p95_latency_ms: seededGoal.p95_latency_ms,
+      goal_max_error_pct: seededGoal.max_error_pct,
+      goal_config: Object.keys(seededGoal).length ? seededGoal : undefined,
       runtime_iterations: seed.iterations ?? prev.runtime_iterations,
       runtime_pacing_type: (seed.pacing?.type || (replacesRuntime ? '' : prev.runtime_pacing_type) || '') as ScenarioFormState['runtime_pacing_type'],
       runtime_pacing_delay_ms: seed.pacing ? seed.pacing.delay_ms : (replacesRuntime ? undefined : prev.runtime_pacing_delay_ms),
@@ -2289,7 +2292,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 			})
 			const goalConfig: GoalConfig = {
 				...(previous.goal_config || {}),
-				early_stop: previous.goal_config?.early_stop || { enabled: false, error_rate_pct: 5, breach_window: '1m' },
 				workload_shape_config: { ...otherShapeConfig, stepped_ramp: nextConfig },
 			}
 			return { ...previous, duration: nextDuration, scenario_mode: 'vuser_driven', groups: nextGroups, goal_config: goalConfig }
@@ -2353,7 +2355,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 			const longestDuration = plans.reduce((max, plan) => plan.error ? max : Math.max(max, plan.totalSeconds), 0)
 			const goalConfig: GoalConfig = {
 				...(previous.goal_config || {}),
-				early_stop: previous.goal_config?.early_stop || { enabled: false, error_rate_pct: 5, breach_window: '1m' },
 				workload_shape_config: { ...otherShapeConfig, closed_vuser: nextConfig },
 			}
 			return {

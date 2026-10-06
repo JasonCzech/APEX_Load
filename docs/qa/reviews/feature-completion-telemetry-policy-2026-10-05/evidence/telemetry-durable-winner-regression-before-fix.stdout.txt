@@ -1,0 +1,8 @@
+--- FAIL: TestTelemetryBudgetPolicyAdmissionAdoptsDurableWinnerBeforeBackend (0.22s)
+    --- FAIL: TestTelemetryBudgetPolicyAdmissionAdoptsDurableWinnerBeforeBackend/legacy-false (0.12s)
+        telemetry_policy_admission_test.go:286: Start published losing candidate limits
+    --- FAIL: TestTelemetryBudgetPolicyAdmissionAdoptsDurableWinnerBeforeBackend/legacy-true (0.10s)
+        telemetry_policy_admission_test.go:286: Start published losing candidate limits
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/api	1.847s
+FAIL

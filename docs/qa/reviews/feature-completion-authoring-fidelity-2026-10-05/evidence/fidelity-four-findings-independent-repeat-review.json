@@ -1,0 +1,338 @@
+{
+  "schema": "apexload.independent-source-review.v1",
+  "created_utc": "2026-10-05T19:57:35.854553+00:00",
+  "worktree": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+  "head": "fe24d2191810690bbb65dc75fc692e9ac04c7035",
+  "candidate_inventory_path": "docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/evidence/fidelity-four-findings-fixed-source-inventory-v2.json",
+  "candidate_inventory_sha256": "9310207de9e38e864c33e0895c69b6473dbbf45074c9c69a3ac6ce0343c8eb4b",
+  "before_inventory_path": "/private/tmp/apexload-authoring-fidelity-repeat-review-before-20261005.json",
+  "before_inventory_sha256": "159a99603dbc670e592f3e067238f9be51407210c832176131607f7306be3f45",
+  "source_files": [
+    {
+      "path": "dashboard/e2e/workflow-help.spec.ts",
+      "sha256": "6ead887e03dcfec150a82365f37593a88520d5321de57cf8d17fb3bb1a586f89",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/e2e/workflow-new-test.spec.ts",
+      "sha256": "af178a5839130332a3e08071de6d0a228b14d1d0e9b0cb208934100322a915a5",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/e2e/workflow-scenario-composition.spec.ts",
+      "sha256": "c949ed6054679b411064880b15e4cacebf68923dcfd21537400516d3b2ee13bc",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/App.tsx",
+      "sha256": "635e8f4fb51ff42039db2336c22fc625f48652f371adb18792e3783c923fbbb2",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/CommandCenterPrototype.test.tsx",
+      "sha256": "a9f0e1ec8d9294d8e02bfc5453572883b74f5d2e7a2f681ae886af81ea86d33f",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/CommandCenterPrototype.tsx",
+      "sha256": "e085a69456006f19fae18d1ccb273dc52efe6d1969243ea3b247154fc57bda02",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/CommandCenterQueuedRevision.test.tsx",
+      "sha256": "e75fd72f4f30cd216474770fc2fa129f37f2d54bdf4648aae5a5392d327183a8",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/CreateTestModal.test.tsx",
+      "sha256": "2c0870f0604abb1c9fa65b0278575bb4e9b4c0ff80cf610e0df97727b1d2616a",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/CreateTestModal.tsx",
+      "sha256": "a2a798542fc21b68f8cce7a2081c2bbfcd0234ff5d58aaca45df45d205da7c23",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/GroupRuntimeSettingsDialog.test.tsx",
+      "sha256": "88e22989c426d9cf8f102d584c86eb6b8eec5db4c1b1d42a5612fb371f36fe83",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/GroupRuntimeSettingsDialog.tsx",
+      "sha256": "55e4dcdbdc1a982d3ce1e1d400bf49d70729a6b01e537d285d3e60aa11716e1c",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/RuntimeSettingsGroupEditor.tsx",
+      "sha256": "b244d5beb06629cf52eb108c892b387a3eb6031dc6828d5aeffb1cecddee3be7",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/TestExecution.tsx",
+      "sha256": "746eb3f5071950ed7db12bb38fdcd94b875f18cc7863622f9b7c05384fa2026f",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/TestExecutionScenarioEditor.test.tsx",
+      "sha256": "2deb3800a63a016f6a5a46a5ad075433bfcf79d7471a665e8cb0fd56b28a2d05",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/TestExecutionScenarioEditor.tsx",
+      "sha256": "5427758f6f1fff7c208b43b9ddc767ab6d8395c88b1a4c1b671f1ad96d218eb6",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/TestHub.test.tsx",
+      "sha256": "6c8f9972c206d882972984906ba5d55fce5a031fd71f9cef3b8a7346800ad843",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/TestHub.tsx",
+      "sha256": "4143de7b41608f5f3af14e32df41510f8bb743110e4f8d40e82cfe510defed92",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/TransactionResponseTimeSLASettings.test.tsx",
+      "sha256": "096cb7f0455991b0a7e7f41a6a90ee663e08439ccba37bf0363e8049565ee1d5",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/TransactionResponseTimeSLASettings.tsx",
+      "sha256": "7df55c42748f2eeda7ea858c0284f8192185ea28d167b1cee4f80b1222cc370f",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/UnsavedChangesModal.tsx",
+      "sha256": "644f1e968084b34af8f37b1e991f8ea491db17ad7ffaba697f15e494c6333c77",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/newTestRunModel.ts",
+      "sha256": "ea65852fdadaaf727e65cb2f8986356808544eec9b977b535a01c382dbe45780",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/scenarioDraftUtils.test.ts",
+      "sha256": "8255abb7dc97f5ada0cf400c0ede2458e7760bf0492128d36e8aba63e49273f3",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/scenarioDraftUtils.ts",
+      "sha256": "5f258e1cc6ebd68b6f24ab857290bbb10bd562f212bebe543cde8f19270cb9cf",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/scenarioFidelity.test.ts",
+      "sha256": "df77806562bc3f28ee751fd229c656a5b56aa8ae60f1ce3e2b6067e5787b880d",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/scenarioPayloadUtils.test.ts",
+      "sha256": "d5d7da5e95b861d32ebafe806357cff5095b19aeb51c5fde63415c8fe3da1d48",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/scenarioPayloadUtils.ts",
+      "sha256": "b4a90f91eafbd626677a038292556000c7f1da52825b6b4480c977faec24d8f5",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/useQueuedRunRevision.test.tsx",
+      "sha256": "6f7556f149db11a7406d53e4f0bc885b4bbb842a39984cf8fc50e221fab4e787",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/useQueuedRunRevision.ts",
+      "sha256": "1f2056363033e457e8b4cfc319d08dc58310251b36fe1c88c74d9099dac910f4",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/helpContent.test.ts",
+      "sha256": "fc0f693177dc790317dc2af61186197c6ba1e4338c4ef753a3b6c86236b77fec",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/helpContent.ts",
+      "sha256": "87fec87f257855cbe100379a29ca70e3b3e6a494ad661d20eb0f836dab5151d1",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/hooks/NavigationGuardProvider.tsx",
+      "sha256": "48146838aee7298016a58e618b614324903a8bfd89de658f5ce10e04dd477dc6",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/hooks/NavigationGuardRoot.tsx",
+      "sha256": "c3bf75be71f81cc63c4a43b7cb78ac0fb8739c3eca16a890554898c8df073659",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/hooks/api/useScriptApi.test.tsx",
+      "sha256": "1432251bf85dbcb0152022f02e12abce8dd18b8386095a3631431c772c2357b9",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/hooks/api/useScriptApi.ts",
+      "sha256": "ce25b7385cc0805d366c84174f64d1344955b12a7f5163d63c4f135ecbbd47e1",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/types.ts",
+      "sha256": "b2fef82247574d49af22fb6fbd7b0659a7f74b76e17ac0a5fbbe34461de9e9f1",
+      "unchanged": true
+    },
+    {
+      "path": "docs/FEATURE_COMPLETION_SPEC.md",
+      "sha256": "fe1800db96cb06ed4b47f09ed3c58daabcc3653d5c357d1bab2f7cd8af7f2655",
+      "unchanged": true
+    },
+    {
+      "path": "docs/INDEX.md",
+      "sha256": "1fccf05bf266fd6008c60797801d8f7a86254f451ec6d1c074e73b52cd2fceb1",
+      "unchanged": true
+    },
+    {
+      "path": "docs/guides/AUTHORING_SCENARIO_FIDELITY.md",
+      "sha256": "d52dd97bc4f6a1f49344793b3e6bbd50d921c1c08f84f0a3e2edd0a92786abc1",
+      "unchanged": true
+    },
+    {
+      "path": "docs/help-content-catalog.json",
+      "sha256": "4d67d5995bb662ff6cc1703eafb2118a2df9336b828c66be11de0dedfde5b6e5",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/authoring_fidelity_lifecycle_test.go",
+      "sha256": "5086e05220f89ae54be121eede88720978a78043b3bfb0af1376d65795cb93ce",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/authoring_fidelity_postgres_integration_test.go",
+      "sha256": "127219fef692ea7ba64b969dee858226f7cf919dd532ba6d343fd4e40cd8ed5e",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/authoring_fidelity_regression_test.go",
+      "sha256": "9ada4640fd8e9e7b1b18dfe4f904e27dc41482ca54b7d1d6ef0f80b80dffe118",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/handlers_scenario_runtime.go",
+      "sha256": "c324c688a80df07b09622a27e862d9eb144114c7ded75e5355567c72c31da134",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/library_bundle.go",
+      "sha256": "be194150f1a56636034fc9b88396e9cea1a05ae16aaa752312ce36087e770f5f",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/library_import_claims.go",
+      "sha256": "0ef8e302ae32754b3d6fad70d6aef14546a6508f1caafc32b5becd67d9891bce",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/library_links.go",
+      "sha256": "470b4f0d323e19b24185385b0a1857a0df313b727be7ef5c1924aabf7df7f4fb",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/persistence.go",
+      "sha256": "0d874d0e7ab8f269608b34dcd0af6448ad12ac274d7a5dd9e7220041a82c6fb3",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/runtime_overrides.go",
+      "sha256": "59d0aae18b7e75dc1dc83b67258ea4b2479d237470eed7e11d2edbbf3b0f67bb",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/testcreation.go",
+      "sha256": "9c1ce27e3cd018b2dfc00ae35df3a9391ced4413813b673ab98fffa4640f2ec3",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/iteration_termination.go",
+      "sha256": "aebab135f304a9066b980ab56e1820f5aaa464915ba2ef89132985700f75707e",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/scenario.go",
+      "sha256": "13e6f79254de290427b8f8299665d98b9e18b6805a25215d45bd5012bdc18e8f",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/runtime_mask.go",
+      "sha256": "accdc1a6354a0409a9bee1e12e5cf0fd0f1efc62674a806b36b753b3803b82be",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/runner.go",
+      "sha256": "c07ad9c2b0ddae5ced257abd1ebc57cf24ddcc27717ee5fa8a43c50bf6901630",
+      "unchanged": true
+    },
+    {
+      "path": "pkg/api/library_import_journal.go",
+      "sha256": "439cfd4959ff8f8199d9b6f6375379e90bb3a155eca2fe4e807727fc8699d892",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/CreateTestRuntimeOverrides.tsx",
+      "sha256": "396a817b4730bf64e4f3b44bff64ff99a9c919de06ff992f5da61da9b83a371f",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/DurationField.tsx",
+      "sha256": "adbe9109ad3d8e9b2732acd33c77046a3cc4d7ea233e08ff06f42d14a2b2ada0",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/RunMonitorBindingSelector.tsx",
+      "sha256": "359e28de5ecbaa82e93a14978742080fc7c68ef9f02b3084c0ef9eef5eff12de",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/hooks/useModalDialog.ts",
+      "sha256": "39341404207c9aad1e0b078fafd8535c75f1d4e1cd9f33d305230f103bb93041",
+      "unchanged": true
+    },
+    {
+      "path": "dashboard/src/components/ux/DialogLayer.tsx",
+      "sha256": "b366bb79317979acbfe61ec5db8408f7f4a32e857ac13d8a353b40986e4ffa25",
+      "unchanged": true
+    }
+  ],
+  "prior_review_sha256": "c49390e2d4767faf962b531d2fdd1c4a403cd09f0cfc0e258f785c2864054c2a",
+  "resolved_findings": [
+    {
+      "priority": 2,
+      "title": "Join direct and navigation-guard creation requests",
+      "resolution": "The instance-owned operation ref captures the whole asynchronous preflight/create/receipt path; all submissions join its boolean result. Explicit both-settlement cleanup avoids an unhandled rejecting finally child. Late edits preserve the baseline receipt, own dirty guard, and false result. Unit and actual route.fetch/history fixtures assert one POST, late-edits retention, joined handler cleanup, and private reopened receipt."
+    },
+    {
+      "priority": 2,
+      "title": "Preserve iteration termination through revised queued drafts",
+      "resolution": "Source completion mode and empty duration survive draft hydration, both payload paths, estimates and creation. Modal displays immutable completion and disables the duration input for iterations. Absent source goal/runtime/delay remain omitted. JSON-boundary lifecycle fixtures exercise finite group iterations, actual compiler validation, source immutability and database reopen; actual browser fixture verifies submitted shape and reopened mode."
+    },
+    {
+      "priority": 2,
+      "title": "Encode an explicit global start-delay clear",
+      "resolution": "Private initial source presence emits start_delay 0s only for a revised source whose originally nonempty delay was emptied; ordinary creates and originally absent fields remain omitted. Unit, JSON-boundary SQLite/PostgreSQL shared lifecycle and actual browser/reopen assertions cover the clear."
+    },
+    {
+      "priority": 2,
+      "title": "Encode clearing the last root runtime override",
+      "resolution": "Private initial root runtime presence emits runtime_settings {} only when an owned revised root was cleared. Present empty Results/WebSocket sections remain replacements; ordinary/absent roots stay omitted. Supplied group runtime and assignment omissions use the existing group-clearing and source base-script compiler semantics, with explicit JSON-boundary/reopen source immutability fixtures."
+    }
+  ],
+  "checks": [
+    "All 48 originally reviewed changed/source files and 11 stable supporting dependency hashes matched the coherent inventory before and after review.",
+    "Reviewed every newly changed input from the previous independent review and rechecked the prior unchanged implementation seams: queued ownership/ABA retirement, capture identity retention, source goal presence, guarded submission baseline ownership, runtime clones, portable default hashes, full-snapshot rollback, and Results/WebSocket presence.",
+    "Reviewed supporting server duration/iteration restrictions, revision-source fallback, supplied-group secret reconciliation and base-script rebuild; no added termination conversion or durable idempotency claim.",
+    "Reviewed guide scope and actual transport fixture semantics; zero-target-traffic expectations, provider readiness, HTTP scenario CAS and broad qualification remain separate and unclaimed."
+  ],
+  "findings": [],
+  "qualification_limits": "Independent static review, fixture inspection and exact hash verification only; this review did not execute tests, a browser, a controller or a target. Runtime and full-suite qualification remain pending and must use the final candidate source."
+}

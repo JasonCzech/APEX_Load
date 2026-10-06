@@ -14,7 +14,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 
 import { downloadBlob } from '../utils/fileUtils'
 import { isCompletedTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
-import { Application, BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserPlatformLiveMetrics, ExternalResultImport, IntervalSummaryRecord, Release, RunArchiveActionStats, RunArchiveReport, TestSummary } from '../types'
+import { Application, ExternalResultImport, IntervalSummaryRecord, Release, RunArchiveActionStats, RunArchiveReport, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
@@ -24,7 +24,11 @@ import SelectAllCheckbox from './SelectAllCheckbox'
 import {
   BrowserBreakdown,
   BrowserBreakdownDatum,
+  browserMetricRecord,
   buildBrowserBreakdownData,
+  finiteBrowserMetric,
+  formatBrowserSampleCount,
+  buildComparisonBrowserBreakdownData,
   buildComparisonBrowserBreakdownSeries,
   formatBrowserEngineLabel,
   formatDevicePlatformLabel,
@@ -216,120 +220,61 @@ function externalResultNumber(result: ExternalResultImport, key: string) {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
-function formatBrowserMetric(value?: number, suffix = '', digits = 1) {
-  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(digits)}${suffix}` : 'n/a'
+function formatBrowserMetric(value: unknown, suffix = '', digits = 1) {
+  const observed = finiteBrowserMetric(value)
+  return observed === undefined ? 'n/a' : `${observed.toFixed(digits)}${suffix}`
 }
 
 function hasBrowserOverview(report?: RunArchiveReport) {
-  return Boolean(report?.overview.browser)
+  return report?.overview.browser !== undefined
 }
 
-function formatBrowserScore(value?: number) {
-  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : 'n/a'
+function browserBreakdownSource(report?: RunArchiveReport) {
+  return { summary: report?.overview.browser, devices: report?.browser_by_device, platforms: report?.browser_by_platform, engines: report?.browser_by_engine }
 }
 
-function getBrowserDeviceEntries(report?: RunArchiveReport): Array<[string, BrowserDeviceLiveMetrics]> {
-  return Object.entries(report?.browser_by_device ?? {}).sort(([left], [right]) => left.localeCompare(right))
+// Cards and charts use the same admitted measurements and exact cohort keys.
+// Direct metadata is independently shape-checked; derived rows cannot claim a
+// population count or engine identity that the shared projection does not carry.
+function getBrowserCardEntries(breakdown: Exclude<BrowserBreakdown, 'overall'>, report?: RunArchiveReport) {
+  const source = browserBreakdownSource(report)
+  const direct = Object.entries(breakdown === 'device' ? source.devices ?? {} : breakdown === 'platform' ? source.platforms ?? {} : source.engines ?? {})
+  const rawByCohort = new Map(direct.map(([identity, value]) => [JSON.stringify([breakdown, identity]), value]))
+  const derived = breakdown !== 'device' && direct.length === 0
+  return buildBrowserBreakdownData(breakdown, source).map(row => {
+    const metrics = browserMetricRecord(rawByCohort.get(row.cohortKey!))
+    return { row, metrics, derived, malformed: !derived && !metrics }
+  })
 }
 
-function getBrowserPlatformEntries(report?: RunArchiveReport): BrowserPlatformLiveMetrics[] {
-  const archivedEntries = Object.values(report?.browser_by_platform ?? {})
-  if (archivedEntries.length > 0) {
-    return archivedEntries.sort((left, right) => formatDevicePlatformLabel(left.device_platform).localeCompare(formatDevicePlatformLabel(right.device_platform)))
-  }
-
-  const entries = Object.values(report?.browser_by_device ?? {})
-  if (entries.length === 0) return []
-
-  const grouped = new Map<string, {
-    platform: string
-    engine?: string
-    samples: number
-    lcpTotal: number
-    clsTotal: number
-    inpTotal: number
-  }>()
-
-  for (const metrics of entries) {
-    if (!metrics) continue
-    const platform = metrics.device_platform || 'unknown'
-    const current = grouped.get(platform) ?? {
-      platform,
-      engine: metrics.browser_engine,
-      samples: 0,
-      lcpTotal: 0,
-      clsTotal: 0,
-      inpTotal: 0,
-    }
-    const samples = metrics.samples || 0
-    current.samples += samples
-    current.lcpTotal += (metrics.avg_lcp_ms ?? 0) * samples
-    current.clsTotal += (metrics.avg_cls_score ?? 0) * samples
-    current.inpTotal += (metrics.avg_inp_ms ?? 0) * samples
-    if (current.engine && metrics.browser_engine && current.engine !== metrics.browser_engine) {
-      current.engine = 'multiple'
-    } else if (!current.engine) {
-      current.engine = metrics.browser_engine
-    }
-    grouped.set(platform, current)
-  }
-
-  return Array.from(grouped.values())
-    .map(entry => ({
-      device_platform: entry.platform,
-      browser_engine: entry.engine,
-      samples: entry.samples,
-      avg_lcp_ms: entry.samples > 0 ? entry.lcpTotal / entry.samples : undefined,
-      avg_cls_score: entry.samples > 0 ? entry.clsTotal / entry.samples : undefined,
-      avg_inp_ms: entry.samples > 0 ? entry.inpTotal / entry.samples : undefined,
-    }))
-    .sort((left, right) => formatDevicePlatformLabel(left.device_platform).localeCompare(formatDevicePlatformLabel(right.device_platform)))
-}
-
-function getBrowserEngineEntries(report?: RunArchiveReport): BrowserEngineLiveMetrics[] {
-  const archivedEntries = Object.values(report?.browser_by_engine ?? {})
-  if (archivedEntries.length > 0) {
-    return archivedEntries.sort((left, right) => formatBrowserEngineLabel(left.browser_engine).localeCompare(formatBrowserEngineLabel(right.browser_engine)))
-  }
-
-  const entries = Object.values(report?.browser_by_device ?? {})
-  if (entries.length === 0) return []
-
-  const grouped = new Map<string, {
-    browserEngine: string
-    samples: number
-    lcpTotal: number
-    clsTotal: number
-    inpTotal: number
-  }>()
-
-  for (const metrics of entries) {
-    if (!metrics) continue
-    const browserEngine = metrics.browser_engine || 'browser'
-    const current = grouped.get(browserEngine) ?? {
-      browserEngine,
-      samples: 0,
-      lcpTotal: 0,
-      clsTotal: 0,
-      inpTotal: 0,
-    }
-    const samples = metrics.samples || 0
-    current.samples += samples
-    current.lcpTotal += (metrics.avg_lcp_ms ?? 0) * samples
-    current.clsTotal += (metrics.avg_cls_score ?? 0) * samples
-    current.inpTotal += (metrics.avg_inp_ms ?? 0) * samples
-    grouped.set(browserEngine, current)
-  }
-
-  return Array.from(grouped.values())
-    .map(entry => ({
-      browser_engine: entry.browserEngine,
-      samples: entry.samples,
-      avg_lcp_ms: entry.samples > 0 ? entry.lcpTotal / entry.samples : undefined,
-      avg_cls_score: entry.samples > 0 ? entry.clsTotal / entry.samples : undefined,
-      avg_inp_ms: entry.samples > 0 ? entry.inpTotal / entry.samples : undefined,
-    }))
-    .sort((left, right) => formatBrowserEngineLabel(left.browser_engine).localeCompare(formatBrowserEngineLabel(right.browser_engine)))
+function BrowserComparisonBreakdownCards({ breakdown, report }: { breakdown: Exclude<BrowserBreakdown, 'overall'>; report?: RunArchiveReport }) {
+  const entries = getBrowserCardEntries(breakdown, report)
+  if (entries.length === 0) return null
+  return (
+    <>
+      <span className="results-compare-label">{breakdown === 'platform' ? 'Platform Rollup' : breakdown === 'engine' ? 'Engine Rollup' : 'Devices'}</span>
+      <div className="browser-device-grid archive-browser-device-grid">
+        {entries.map(({ row, metrics, derived, malformed }) => (
+          <div key={row.cohortKey} data-cohort-key={row.cohortKey} className="browser-device-card">
+            <div className="browser-device-header">
+              <span className="browser-device-name">{row.segment}</span>
+              <span className="browser-device-tier">{breakdown === 'device'
+                ? `${formatDevicePlatformLabel(metrics?.device_platform)} · ${formatBrowserEngineLabel(metrics?.browser_engine)} · ${typeof metrics?.device_tier === 'string' && metrics.device_tier ? metrics.device_tier : 'unknown'} tier`
+                : derived ? 'Device-summary cohort · Sample count unavailable'
+                  : `${breakdown === 'platform' ? `${formatBrowserEngineLabel(metrics?.browser_engine)} · ` : ''}${formatBrowserSampleCount(metrics?.samples)}`}</span>
+            </div>
+            {malformed && <p className="browser-ux-qualification">Malformed summary: expected an object. Measurements unavailable.</p>}
+            {derived && (row.lcp === undefined || row.inp === undefined || row.cls === undefined) && <p className="browser-ux-qualification">Cohort measurements unavailable: identity, population, or required fields were not captured or are invalid. Unavailable members are retained.</p>}
+            <div className="browser-device-stats">
+              <span>LCP {formatBrowserMetric(row.lcp, ' ms')}</span>
+              <span>CLS {formatBrowserMetric(row.cls, '', 3)}</span>
+              <span>INP {formatBrowserMetric(row.inp, ' ms')}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  )
 }
 
 function resolveStatus(test: TestSummary, testStatuses: Record<string, string>) {
@@ -1058,7 +1003,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
   }, [comparisonActionFilter, comparisonActionOptions])
 
   const comparisonHasBrowserBreakdowns = useMemo(
-    () => !comparisonActionFiltered && comparisonCards.some(({ report }) => getBrowserDeviceEntries(report).length > 0 || getBrowserPlatformEntries(report).length > 0 || getBrowserEngineEntries(report).length > 0),
+    () => !comparisonActionFiltered && comparisonCards.some(({ report }) => getBrowserCardEntries('device', report).length > 0 || getBrowserCardEntries('platform', report).length > 0 || getBrowserCardEntries('engine', report).length > 0),
     [comparisonActionFiltered, comparisonCards],
   )
 
@@ -1169,25 +1114,10 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
       return [] as BrowserBreakdownDatum[]
     }
 
-    const segmentMap = new Map<string, BrowserBreakdownDatum>()
-
-    for (const { test, report } of comparisonCards) {
-      if (!report) continue
-
-      for (const metrics of buildBrowserBreakdownData(comparisonBreakdown, {
-        summary: report.overview.browser,
-        devices: report.browser_by_device,
-        platforms: report.browser_by_platform,
-        engines: report.browser_by_engine,
-      })) {
-        const current = segmentMap.get(metrics.segment) ?? { segment: metrics.segment }
-        current[test.id] = metrics.lcp
-        current[`${test.id}_inp`] = metrics.inp
-        segmentMap.set(metrics.segment, current)
-      }
-    }
-
-    return Array.from(segmentMap.values()).sort((left, right) => String(left.segment).localeCompare(String(right.segment)))
+    return buildComparisonBrowserBreakdownData(comparisonBreakdown, comparisonCards.flatMap(({ test, report }) => report ? [{
+      id: test.id,
+      source: browserBreakdownSource(report),
+    }] : []))
   }, [comparisonActionFiltered, comparisonBreakdown, comparisonCards])
 
   const browserBreakdownChartSeries = useMemo(
@@ -1609,9 +1539,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                   {comparisonCards.map(({ test, report }, index) => (
                     <div key={test.id} className="results-compare-panel" style={{ borderTopColor: comparisonRunColor(index), borderTopWidth: 3 }}>
                       {(() => {
-                        const deviceEntries = getBrowserDeviceEntries(report)
-                        const platformEntries = getBrowserPlatformEntries(report)
-                        const engineEntries = getBrowserEngineEntries(report)
+                        const browserOverview = buildBrowserBreakdownData('overall', browserBreakdownSource(report))[0]
                         const browserRuntimeSummary = formatBrowserRuntimeSummary(report?.manifest.provenance?.runtime_settings?.browser)
                         const actionStats = comparisonActionFiltered ? (report?.metric_populations ? report.by_request : report?.by_action)?.[comparisonActionFilter] : undefined
                         const population = report?.metric_populations?.transaction
@@ -1681,74 +1609,17 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                                   )}
                                   <div className="results-compare-metric">
                                     <span className="results-compare-label">Avg LCP</span>
-                                    <span className="results-compare-value">{formatBrowserMetric(report!.overview.browser?.avg_lcp_ms, ' ms')}</span>
+                                    <span className="results-compare-value">{formatBrowserMetric(browserOverview?.lcp, ' ms')}</span>
                                   </div>
                                   <div className="results-compare-metric">
                                     <span className="results-compare-label">Avg INP</span>
-                                    <span className="results-compare-value">{formatBrowserMetric(report!.overview.browser?.avg_inp_ms, ' ms')}</span>
+                                    <span className="results-compare-value">{formatBrowserMetric(browserOverview?.inp, ' ms')}</span>
                                   </div>
                                 </>
                               )}
                             </div>
-                            {!comparisonActionFiltered && comparisonBreakdown === 'platform' && platformEntries.length > 0 && (
-                              <>
-                                <span className="results-compare-label">Platform Rollup</span>
-                                <div className="browser-device-grid archive-browser-device-grid">
-                                  {platformEntries.map(metrics => (
-                                    <div key={metrics.device_platform || 'unknown'} className="browser-device-card">
-                                      <div className="browser-device-header">
-                                        <span className="browser-device-name">{formatDevicePlatformLabel(metrics.device_platform)}</span>
-                                        <span className="browser-device-tier">{formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.samples} samples</span>
-                                      </div>
-                                      <div className="browser-device-stats">
-                                        <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
-                                        <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
-                                        <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </>
-                            )}
-                            {!comparisonActionFiltered && comparisonBreakdown === 'engine' && engineEntries.length > 0 && (
-                              <>
-                                <span className="results-compare-label">Engine Rollup</span>
-                                <div className="browser-device-grid archive-browser-device-grid">
-                                  {engineEntries.map(metrics => (
-                                    <div key={metrics.browser_engine || 'browser'} className="browser-device-card">
-                                      <div className="browser-device-header">
-                                        <span className="browser-device-name">{formatBrowserEngineLabel(metrics.browser_engine)}</span>
-                                        <span className="browser-device-tier">{metrics.samples} samples</span>
-                                      </div>
-                                      <div className="browser-device-stats">
-                                        <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
-                                        <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
-                                        <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </>
-                            )}
-                            {!comparisonActionFiltered && comparisonBreakdown === 'device' && deviceEntries.length > 0 && (
-                              <>
-                                <span className="results-compare-label">Devices</span>
-                                <div className="browser-device-grid archive-browser-device-grid">
-                                  {deviceEntries.map(([profile, metrics]) => (
-                                    <div key={profile} className="browser-device-card">
-                                      <div className="browser-device-header">
-                                        <span className="browser-device-name">{profile}</span>
-                                        <span className="browser-device-tier">{formatDevicePlatformLabel(metrics.device_platform)} · {formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
-                                      </div>
-                                      <div className="browser-device-stats">
-                                        <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
-                                        <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
-                                        <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </>
+                            {!comparisonActionFiltered && comparisonBreakdown !== 'overall' && (
+                              <BrowserComparisonBreakdownCards breakdown={comparisonBreakdown} report={report} />
                             )}
                           </>
                         )

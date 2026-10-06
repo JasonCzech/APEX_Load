@@ -1,0 +1,13 @@
+[
+  {
+    "gate": "generate",
+    "command": [
+      "go",
+      "generate",
+      "./pkg/api"
+    ],
+    "exit_code": 0,
+    "seconds": 39.244,
+    "log": "/private/tmp/apexload-native-identity-capability-gates-2026-10-04-generate.log"
+  }
+]

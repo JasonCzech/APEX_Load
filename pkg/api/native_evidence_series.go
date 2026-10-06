@@ -26,6 +26,7 @@ type NativeEvidenceSeries struct {
 	Points []NativeEvidencePoint `json:"points"`
 }
 type NativeEvidenceResponse struct {
+	TimeWindow     *AnalysisTimeWindow                    `json:"time_window,omitempty"`
 	Annotations    []storage.RunAnnotation                `json:"annotations,omitempty"`
 	LiveBucketMode string                                 `json:"live_bucket_mode,omitempty"`
 	Mode           string                                 `json:"mode"`
@@ -64,7 +65,7 @@ func (s *Server) handleNativeEvidenceSeries(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer func() { <-analysisPipelineJobs }()
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(withAnalysisArtifactSelections(r.Context()), 30*time.Second)
 	defer cancel()
 	run, ok := s.archiveDomainService().GetTest(r.PathValue("id"))
 	if !ok {
@@ -111,11 +112,37 @@ func (s *Server) handleNativeEvidenceSeries(w http.ResponseWriter, r *http.Reque
 			}
 		}
 	}
+	s.writeNativeEvidenceSeries(w, r, ctx, run.ProjectID, result)
+}
+
+func (s *Server) writeNativeEvidenceSeries(w http.ResponseWriter, r *http.Request, ctx context.Context, project string, result NativeEvidenceResponse) bool {
+	// Overlay work retains the exact authority snapshot used by native staging.
+	// Recheck after the last context-free annotation read, before publication.
+	if snapshots := completedAnalysisQuerySnapshots(ctx); len(snapshots) != 0 {
+		if err := s.verifyNativeDatasetQuery(ctx, project, snapshots...); err != nil {
+			writeError(w, 409, err.Error())
+			return false
+		}
+	}
+	if !requireAuthorizedProjectMatch(w, r, project) {
+		return false
+	}
+	if !analysisQueryContextLive(ctx) {
+		writeError(w, 409, "analytical query authority expired")
+		return false
+	}
 	writeJSON(w, 200, result)
+	return true
 }
 func nativeEvidenceEnvelope(start time.Time, q storage.AnalyticsQuery) NativeEvidenceResponse {
 	start = start.UTC()
-	return NativeEvidenceResponse{Mode: q.EvidenceMode, Start: start, From: start.Add(time.Duration(q.StartSeconds) * time.Second), To: start.Add(time.Duration(q.EndSeconds) * time.Second), Series: []NativeEvidenceSeries{}, Warnings: []string{}}
+	out := NativeEvidenceResponse{Mode: q.EvidenceMode, Start: start, From: start.Add(time.Duration(q.StartSeconds) * time.Second), To: start.Add(time.Duration(q.EndSeconds) * time.Second), Series: []NativeEvidenceSeries{}, Warnings: []string{}}
+	if q.OverlaySelection != nil && q.OverlaySelection.DatasetID != "" {
+		window := nativeAnalysisTimeWindow(out.From, out.To)
+		out.From, out.To, out.TimeWindow = window.From, window.To, &window
+		out.Warnings = append(out.Warnings, "Dataset overlays use the reported microsecond window for both series; retained source timestamps and execution start are unchanged.")
+	}
+	return out
 }
 func nativeGroup(q storage.AnalyticsQuery) string {
 	if len(q.Dimensions) > 0 {

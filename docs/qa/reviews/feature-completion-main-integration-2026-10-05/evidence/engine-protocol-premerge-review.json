@@ -1,0 +1,338 @@
+{
+  "schema": "apexload.readonly-overlap-integration-review.v1",
+  "at_utc": "2026-10-06T03:46:12.805774+00:00",
+  "reviewer": "/root/scenario_foundation_resume_v3",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "refs": {
+    "base": "5ea8047980f3ac5a66f5b78a96edb26d52c14fa6",
+    "local": "6bbdc9971d23bcd03e27ff6a54f30b5e0f191a43",
+    "remote": "da1d6dd00ffdd250c630de7a73328a08040571a1"
+  },
+  "scope": "Immutable Git object reads of base-to-each diffs for five requested overlapping paths, selected adjacent callers/tests only. No merge result or all199files qualification. No source edits, tests/builds, Git mutations, staging or cleanup.",
+  "status": "no_actionable_conflicting_semantics_found_in_requested_premerge_overlap",
+  "findings": [],
+  "inputs": [
+    {
+      "ref_role": "base",
+      "commit": "5ea8047980f3ac5a66f5b78a96edb26d52c14fa6",
+      "path": "pkg/dsl/types.go",
+      "bytes": 73772,
+      "sha256_before": "54cda811b770724d67f563473a347dfb141f4572959f57e8d99ade6bda0479ba",
+      "sha256_after": "54cda811b770724d67f563473a347dfb141f4572959f57e8d99ade6bda0479ba"
+    },
+    {
+      "ref_role": "base",
+      "commit": "5ea8047980f3ac5a66f5b78a96edb26d52c14fa6",
+      "path": "pkg/engine/config_protocols.go",
+      "bytes": 30432,
+      "sha256_before": "0aaa894784a935256040c4d200493d5347c42b0bab7c02ad19468d45a93c5906",
+      "sha256_after": "0aaa894784a935256040c4d200493d5347c42b0bab7c02ad19468d45a93c5906"
+    },
+    {
+      "ref_role": "base",
+      "commit": "5ea8047980f3ac5a66f5b78a96edb26d52c14fa6",
+      "path": "pkg/engine/vuser.go",
+      "bytes": 60576,
+      "sha256_before": "eb7814d6bba9816e41e2ee6b6f76cd3062d6765818888b6f2ab569a0f3d84fb1",
+      "sha256_after": "eb7814d6bba9816e41e2ee6b6f76cd3062d6765818888b6f2ab569a0f3d84fb1"
+    },
+    {
+      "ref_role": "base",
+      "commit": "5ea8047980f3ac5a66f5b78a96edb26d52c14fa6",
+      "path": "pkg/engine/vuser_resolve.go",
+      "bytes": 44604,
+      "sha256_before": "175b3f83b7aebaaad539b365879ccfebb67268de440b7f1f1770967b46bca0ab",
+      "sha256_after": "175b3f83b7aebaaad539b365879ccfebb67268de440b7f1f1770967b46bca0ab"
+    },
+    {
+      "ref_role": "base",
+      "commit": "5ea8047980f3ac5a66f5b78a96edb26d52c14fa6",
+      "path": "pkg/protocol/protocol.go",
+      "bytes": 42156,
+      "sha256_before": "d457e5afe6db706653e7cb030c8cb959f5ccda8a9ae3871a0b35c574d12fb0a2",
+      "sha256_after": "d457e5afe6db706653e7cb030c8cb959f5ccda8a9ae3871a0b35c574d12fb0a2"
+    },
+    {
+      "ref_role": "local",
+      "commit": "6bbdc9971d23bcd03e27ff6a54f30b5e0f191a43",
+      "path": "pkg/dsl/types.go",
+      "bytes": 73846,
+      "sha256_before": "b4f4bb77e241f2396d833a0c30b2b9c056dc0f642b0c1820fc419512ad33bc08",
+      "sha256_after": "b4f4bb77e241f2396d833a0c30b2b9c056dc0f642b0c1820fc419512ad33bc08"
+    },
+    {
+      "ref_role": "local",
+      "commit": "6bbdc9971d23bcd03e27ff6a54f30b5e0f191a43",
+      "path": "pkg/engine/config_protocols.go",
+      "bytes": 31032,
+      "sha256_before": "e6746be9a97c50318390e658ca27a215f1230b2bdea693d3755c44aecb828f96",
+      "sha256_after": "e6746be9a97c50318390e658ca27a215f1230b2bdea693d3755c44aecb828f96"
+    },
+    {
+      "ref_role": "local",
+      "commit": "6bbdc9971d23bcd03e27ff6a54f30b5e0f191a43",
+      "path": "pkg/engine/vuser.go",
+      "bytes": 60696,
+      "sha256_before": "f0349dab8302407c95c7574c747dd85780c96a95e24c0c26d1a7605fac65f9f1",
+      "sha256_after": "f0349dab8302407c95c7574c747dd85780c96a95e24c0c26d1a7605fac65f9f1"
+    },
+    {
+      "ref_role": "local",
+      "commit": "6bbdc9971d23bcd03e27ff6a54f30b5e0f191a43",
+      "path": "pkg/engine/vuser_resolve.go",
+      "bytes": 44718,
+      "sha256_before": "22fe3e62c25355b9b85e470c5f49d9a28300d07ae48a787ce3938234950f0499",
+      "sha256_after": "22fe3e62c25355b9b85e470c5f49d9a28300d07ae48a787ce3938234950f0499"
+    },
+    {
+      "ref_role": "local",
+      "commit": "6bbdc9971d23bcd03e27ff6a54f30b5e0f191a43",
+      "path": "pkg/protocol/protocol.go",
+      "bytes": 43183,
+      "sha256_before": "100f778167fca7058ba0443db1cb85bae24b06817a6a31fad77bc3b5d9465162",
+      "sha256_after": "100f778167fca7058ba0443db1cb85bae24b06817a6a31fad77bc3b5d9465162"
+    },
+    {
+      "ref_role": "remote",
+      "commit": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "path": "pkg/dsl/types.go",
+      "bytes": 75116,
+      "sha256_before": "d896a2ec9ae1c8680e004c70581f35e22dceaf1c351ba0d2d579bff318909de9",
+      "sha256_after": "d896a2ec9ae1c8680e004c70581f35e22dceaf1c351ba0d2d579bff318909de9"
+    },
+    {
+      "ref_role": "remote",
+      "commit": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "path": "pkg/engine/config_protocols.go",
+      "bytes": 30539,
+      "sha256_before": "0361c9f10f3a83c8401b5a1ccae7d765b3b597f969ee7ab9f5db176cce879b1b",
+      "sha256_after": "0361c9f10f3a83c8401b5a1ccae7d765b3b597f969ee7ab9f5db176cce879b1b"
+    },
+    {
+      "ref_role": "remote",
+      "commit": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "path": "pkg/engine/vuser.go",
+      "bytes": 61986,
+      "sha256_before": "053a67d544b9c127fc6d94b49e21b0b2a26ca6791debbf728d616706eebb3520",
+      "sha256_after": "053a67d544b9c127fc6d94b49e21b0b2a26ca6791debbf728d616706eebb3520"
+    },
+    {
+      "ref_role": "remote",
+      "commit": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "path": "pkg/engine/vuser_resolve.go",
+      "bytes": 46298,
+      "sha256_before": "9f8535620213918d128aef91b895f11f859300a6bdb4ceedc9affd045648d74d",
+      "sha256_after": "9f8535620213918d128aef91b895f11f859300a6bdb4ceedc9affd045648d74d"
+    },
+    {
+      "ref_role": "remote",
+      "commit": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "path": "pkg/protocol/protocol.go",
+      "bytes": 42289,
+      "sha256_before": "1ad36452b52417065238cd4b9cd7ce1f21648f3883fab003f2947c55d6efc506",
+      "sha256_after": "1ad36452b52417065238cd4b9cd7ce1f21648f3883fab003f2947c55d6efc506"
+    },
+    {
+      "ref_role": "remote",
+      "commit": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "path": "pkg/engine/pacing.go",
+      "bytes": 17210,
+      "sha256_before": "903981f81d0d2e2269f8eae7d1f5aecf11265c3a917ac221e50292227560b639",
+      "sha256_after": "903981f81d0d2e2269f8eae7d1f5aecf11265c3a917ac221e50292227560b639",
+      "review_scope": "resolveActionThinkTime and Force delta"
+    },
+    {
+      "ref_role": "remote",
+      "commit": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "path": "pkg/engine/pacing_test.go",
+      "bytes": 25059,
+      "sha256_before": "4433c15fb219ebafe6db05384d8a0d240130a0e63a9a0cbc145caf7a9b6716b4",
+      "sha256_after": "4433c15fb219ebafe6db05384d8a0d240130a0e63a9a0cbc145caf7a9b6716b4",
+      "review_scope": "forced-delay tests590-615 and relevant timing controls"
+    },
+    {
+      "ref_role": "remote",
+      "commit": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "path": "pkg/engine/parameters.go",
+      "bytes": 22318,
+      "sha256_before": "392534a136e7b3228b102290c0f9b1bea0843981e363667d4eb90327b0b5ed17",
+      "sha256_after": "392534a136e7b3228b102290c0f9b1bea0843981e363667d4eb90327b0b5ed17",
+      "review_scope": "parameter UUID and same-line delta"
+    },
+    {
+      "ref_role": "remote",
+      "commit": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "path": "pkg/engine/parameter_uuid_format_test.go",
+      "bytes": 1486,
+      "sha256_before": "b0ab5434f9c48d362cdc594f579459ed07009d6a514c135f42570cc389220cd0",
+      "sha256_after": "b0ab5434f9c48d362cdc594f579459ed07009d6a514c135f42570cc389220cd0",
+      "review_scope": "UUID formats full focused test"
+    },
+    {
+      "ref_role": "remote",
+      "commit": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "path": "pkg/engine/vuser_source_json.go",
+      "bytes": 6279,
+      "sha256_before": "f1e3593aa1ce1136f36936098222d0f3d2ddb5d919803c81aabe29dc85747fcf",
+      "sha256_after": "f1e3593aa1ce1136f36936098222d0f3d2ddb5d919803c81aabe29dc85747fcf",
+      "review_scope": "source document dispatcher/state/evaluation15-92 only"
+    },
+    {
+      "ref_role": "remote",
+      "commit": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "path": "pkg/engine/http_concurrent.go",
+      "bytes": 18766,
+      "sha256_before": "8b7c82cf2f844790da37deb7b89f238d919f644c1feb77beafb2ed899806bd1d",
+      "sha256_after": "8b7c82cf2f844790da37deb7b89f238d919f644c1feb77beafb2ed899806bd1d",
+      "review_scope": "retry publication/parent callback17-179 only"
+    },
+    {
+      "ref_role": "remote",
+      "commit": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "path": "pkg/engine/http_concurrent_test.go",
+      "bytes": 74986,
+      "sha256_before": "17c19f31c34709fbe817fe9c5fdbd36d04f74cdcbe0dbeee8e0ed91e53abffa5",
+      "sha256_after": "17c19f31c34709fbe817fe9c5fdbd36d04f74cdcbe0dbeee8e0ed91e53abffa5",
+      "review_scope": "unresolved variable parity and request transaction tests395-477 only"
+    }
+  ],
+  "scoped_diff_sha256": {
+    "local": "c6e26a41651d4a28eb7acce512c1f214f65947a0a4725eaf7c9a9b7cbe92b440",
+    "remote": "6dffafd0b0b37465043b92bc28a0b03dc14e1c04c50c90d89902943c8a7b6dac"
+  },
+  "integration_guidance": [
+    {
+      "path": "pkg/dsl/types.go",
+      "preserve_local": [
+        "BrowserConfig.CaptureDocumentMetrics typed pointer/omitempty opt-in"
+      ],
+      "preserve_remote": [
+        "JavaVuserConfig.ParamLeftBrace/ParamRightBrace bounds",
+        "HTTPConfig.AuraRecordedFailures enum",
+        "ThinkTimeConfig.Force action semantics",
+        "UUID Parameter.Format compatibility comment",
+        "Assertion.CaseInsensitive"
+      ]
+    },
+    {
+      "path": "pkg/engine/config_protocols.go",
+      "preserve_local": [
+        "browser_capture_document_metrics only when explicit pointer present",
+        "browser_runtime_new_user_policy based on real cookie/cache/context emulation config"
+      ],
+      "preserve_remote": [
+        "aura_recorded_failures propagation only when nonempty"
+      ]
+    },
+    {
+      "path": "pkg/engine/vuser.go",
+      "preserve_local": [
+        "resetProtocolForIteration captures final browser-provider evidence after teardown and before rebinding/init, with current group/region/result publication redaction"
+      ],
+      "preserve_remote": [
+        "sourceJSONDocuments VUser-lifetime map must not be reset by browser iteration context resets",
+        "HTTP concurrent per-request transaction identity/accounting and transaction-goal reservations in both main and lifecycle branches",
+        "aggregate transaction suppression only where named child transactions replace it"
+      ]
+    },
+    {
+      "path": "pkg/engine/vuser_resolve.go",
+      "preserve_local": [
+        "bindBrowserDocumentRedaction attaches provider to current atomic runtime matcher alongside general protocol callback before Init"
+      ],
+      "preserve_remote": [
+        "Java brace reserved entries propagated even when automatic parameter evaluation skipped",
+        "CaseInsensitive assertion forwarding",
+        "unresolved concurrent variable parity with sequential behavior; do not restore removed generic early failure"
+      ]
+    },
+    {
+      "path": "pkg/protocol/protocol.go",
+      "preserve_local": [
+        "NetworkEntry.BrowserEvidence and deep clone",
+        "ClientMetrics.RuntimeAvailability and DocumentEvidence alongside legacy numerical metrics"
+      ],
+      "preserve_remote": [
+        "Assertion.CaseInsensitive additive JSON field"
+      ]
+    }
+  ],
+  "targeted_checks_recommended_not_run": [
+    {
+      "area": "DSL and generated contract union",
+      "packages": [
+        "./pkg/dsl"
+      ],
+      "tests": [
+        "TestBrowserDocumentRuntimeFeatureIsExplicit",
+        "TestValidateJavaVuserParamBraces",
+        "TestHTTPSequenceRequestTransactionsReadsTypedAndStoredGroups"
+      ],
+      "additional": "Run DSL generation/freshness against the union; do not select one branch generated schema/reference wholesale."
+    },
+    {
+      "area": "Remote UUID/sourceJSON/forced delay compatibility",
+      "packages": [
+        "./pkg/engine"
+      ],
+      "tests": [
+        "TestUUIDParameterFormat",
+        "TestResolveActionThinkTimeForceIgnoresScriptPolicy",
+        "TestReplayIgnoreThinkTimeStillWaitsForForcedDelay",
+        "TestSourceJSONHelpersReadAuraReturnValues",
+        "TestSourceJSONHelpersAcceptLegacyArguments",
+        "TestSourceJSONHelpersFailClearly",
+        "TestSourceJSONEvalAcceptsResolvedTemplateText",
+        "TestSourceJSONEvalResolvesEachOccurrenceParameterOnce",
+        "TestSourceJSONGetValuesWithFilter"
+      ]
+    },
+    {
+      "area": "Concurrent transaction/result identity and redaction",
+      "packages": [
+        "./pkg/engine"
+      ],
+      "tests": [
+        "TestConcurrentHTTPUnresolvedVariableMatchesSequential",
+        "TestConcurrentHTTPRecordsPerRequestTransactions",
+        "TestExplicitTransactionMarkersSuppressHTTPSequenceDuplicate",
+        "TestConcurrentHTTPLifecycleCapacityFailureUpdatesRetainedCallbacksAndPanic",
+        "TestConcurrentHTTPCombinedReviewDiscardedRetryClassification"
+      ],
+      "additional": "Exercise/race both lifecycle and main request-transaction paths, per-goal stopping and retained runtime callbacks."
+    },
+    {
+      "area": "Local browser measurement identity/lifecycle/redaction",
+      "packages": [
+        "./pkg/engine",
+        "./pkg/protocol"
+      ],
+      "tests": [
+        "TestBrowserDocumentsSeparateWindowsUpsertFinalAndLegacyPopulation",
+        "TestBrowserDocumentsConcurrentCaptureFinishAndImmutableOutput",
+        "TestBrowserDocumentsLiveAndFinalUseCurrentRuntimeSecretMatcher",
+        "TestBrowserDocumentFinishedProviderPublishesPendingTerminalAtStop",
+        "TestBrowserDocumentFinishedProviderPublishesAfterZeroGaugeAck",
+        "TestBrowserDocumentLifecycleIdentityAndClones",
+        "TestBrowserDocumentSummarySeparatesCohortsAndMetricDenominators"
+      ]
+    },
+    {
+      "area": "HTTP assertion/config forwarding",
+      "packages": [
+        "./pkg/protocol/http",
+        "./pkg/engine"
+      ],
+      "tests": [
+        "TestEvaluate_BodyContainsCaseInsensitive",
+        "TestAuraAssertionRecordedBaselinePolicy",
+        "TestJavaVuserCustomParamBracesReachRunner"
+      ]
+    }
+  ],
+  "limits": [
+    "This premerge semantic review does not qualify a conflict resolution or the final merged tree.",
+    "Previously green local composed gates are not evidence that the new remote-plus-local merge passes.",
+    "Parent owns merge, generated reconciliation and post-merge gates."
+  ]
+}

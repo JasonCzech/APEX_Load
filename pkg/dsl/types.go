@@ -598,6 +598,7 @@ type BrowserCacheSimulationConfig struct {
 }
 
 type BrowserConfig struct {
+	CaptureDocumentMetrics *bool `json:"capture_document_metrics,omitempty"`
 	// StorageState is a whole project-secret reference resolving to a Playwright
 	// cookies/localStorage JSON snapshot captured before the tested transaction.
 	StorageState string `json:"storage_state,omitempty"`

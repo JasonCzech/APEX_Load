@@ -43,6 +43,7 @@ FROM golang:1.26.5-bookworm@sha256:53eeac89074db483fdf0ab3be1df32bf6e47562263d2d
 
 WORKDIR /src
 COPY go.mod go.sum ./
+COPY third_party/playwright-go/ ./third_party/playwright-go/
 RUN go mod download
 COPY . .
 COPY --from=dashboard-builder /src/pkg/api/static/ ./pkg/api/static/

@@ -1,0 +1,12 @@
+{
+  "schema": "apexload.interrupted-check-status.v1",
+  "at_utc": "2026-10-06T08:14:18.043534+00:00",
+  "label": "main-network-acquisition-actual-1",
+  "receipt_absent": true,
+  "raw_log_bytes": 0,
+  "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "original_session": 99223,
+  "original_owned_go_pid_and_group": 15924,
+  "qualification": "unqualified; no completed receipt or test events",
+  "resume_observations": "Original unified session lookup returned Unknown process id 99223; no current private V4 gate process found. Current process absence does not establish an earlier physical join. Fresh actual2 is separately qualified."
+}

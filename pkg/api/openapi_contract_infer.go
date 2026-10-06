@@ -135,12 +135,16 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		}
 		applyExplicitRouteContractTypes(route, analysis, typeDefinitions)
 		applyRouteRequestSchemaProjection(route, analysis)
+		applyAnalysisRequestContract(route, analysis, typeDefinitions)
 		contract := inferredContractForAnalysis(route, analysis)
 		applySystemSettingsConcurrencyContract(route, &contract)
+		applyScriptAuthoringContract(route, &contract, typeDefinitions)
+		applyScenarioSavePolicyAvailabilityContract(route, &contract)
 		applyDataPoolImportExportContract(route, &contract)
 		applyGenericImportBatchContract(route, &contract)
 		applyEnterpriseArchiveCollectionContract(route, &contract)
 		applyMonitorManagementContract(route, &contract, typeDefinitions)
+		applyBrowserResourcePageContract(route, &contract, typeDefinitions)
 		applyObjectActivityContract(route, &contract)
 		contracts[route.Method+" "+route.Path] = contract
 	}
@@ -249,6 +253,8 @@ var explicitRouteContractTypes = map[string]struct {
 	responseTypes       map[int]string
 	responseDescription string
 }{
+	"GET /api/v1/tests/{id}/archive/browser-resources": {responseTypes: map[int]string{200: "BrowserResourcePage"}, responseDescription: "A completed bounded scan of retained resource observations. Counts do not attest browser capture coverage; native resource details appear only where explicitly retained."},
+	"GET /api/v1/tests/{id}/metrics":                   {responseTypes: map[int]string{200: "liveMetricsReadResponseContract"}},
 	// The compatibility test handler creates its own verification body before
 	// delegation. That internal body is not a caller-visible request contract.
 	"POST /api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/test": {
@@ -902,7 +908,7 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 		}
 
 		switch callName {
-		case "decodeJSONBody", "decodeRequestBody":
+		case "decodeJSONBody", "decodeRequestBody", "decodeAnalysisDefinitionJSON", "decodeAnalysisQueryRequest":
 			analysis.jsonRequest = true
 			setInferredRequestSchema(call, variableTypes, typeDefinitions, analysis)
 		case "decodeOptionalJSONBody", "decodeOptionalJSONBodyAllowingUnknownFields":
@@ -1523,6 +1529,7 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 		}
 		visiting[definitionKey] = true
 		schema := openAPISchemaForASTTypeInPackage(definition, typeDefinitions, visiting, depth+1, currentPackage)
+		applyBrowserEvidenceWireNullability(currentPackage, value.Name, &schema)
 		delete(visiting, definitionKey)
 		return schema
 	case *ast.StarExpr:
@@ -1585,6 +1592,7 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 					modelDepth = 0
 				}
 				schema := openAPISchemaForASTTypeInPackage(definition, typeDefinitions, visiting, modelDepth, pkg.Name)
+				applyBrowserEvidenceWireNullability(pkg.Name, value.Sel.Name, &schema)
 				delete(visiting, definitionKey)
 				return schema
 			}

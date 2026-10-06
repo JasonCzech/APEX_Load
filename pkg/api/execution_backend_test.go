@@ -2584,7 +2584,10 @@ func TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion(t *testing.T
 		t.Fatalf("StartTest returned error: %v", err)
 	}
 
-	deadline := time.Now().Add(8 * time.Second)
+	// The deadline catches a run that never publishes its archive; it is not
+	// a latency budget. Staging and finalization (with its evidence sidecars
+	// and their fsyncs) take most of eight seconds on a busy workstation.
+	deadline := time.Now().Add(20 * time.Second)
 	for {
 		completed, ok := runner.GetTest(testRun.ID)
 		if !ok {

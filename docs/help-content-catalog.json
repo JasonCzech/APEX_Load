@@ -105,6 +105,27 @@
     ]
   },
   {
+    "id": "browser-document-evidence",
+    "area": "user-guide",
+    "title": "Browser document evidence",
+    "path": "docs/guides/BROWSER_DOCUMENT_EVIDENCE.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "telemetry-policy-receipts",
+    "area": "user-guide",
+    "title": "Telemetry budget policy receipts",
+    "path": "docs/guides/TELEMETRY_POLICY_RECEIPTS.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "authoring-scenario-fidelity",
+    "area": "user-guide",
+    "title": "Scenario and queued-run authoring fidelity",
+    "path": "docs/guides/AUTHORING_SCENARIO_FIDELITY.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
     "id": "shared-assets",
     "area": "user-guide",
     "title": "Shared assets & settings",
@@ -567,5 +588,13 @@
     "sections": [
       "SAP GUI Runner Bridge Spec"
     ]
+  },
+  {
+    "id": "retained-resource-inspection",
+    "area": "user-guide",
+    "title": "Retained resource inspection",
+    "path": "docs/guides/RETAINED_RESOURCE_INSPECTION.md",
+    "owner": "APEX Load maintainers",
+    "group": "Analysis and evidence"
   }
 ]

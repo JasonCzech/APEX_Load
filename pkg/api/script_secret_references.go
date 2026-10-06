@@ -419,24 +419,58 @@ func escapeJSONPointerToken(token string) string {
 	return strings.NewReplacer("~", "~0", "/", "~1").Replace(token)
 }
 
+type ScriptSecretRebindAuthoringResponse struct {
+	Script           ScriptAuthoringDocument `json:"script"`
+	OldName          string                  `json:"old_name"`
+	NewName          string                  `json:"new_name"`
+	ChangedLocations []string                `json:"changed_locations"`
+	ChangedCount     int                     `json:"changed_count"`
+}
+type ScriptSecretRebindLegacyResponse struct {
+	Script           *dsl.Script `json:"script"`
+	OldName          string      `json:"old_name"`
+	NewName          string      `json:"new_name"`
+	ChangedLocations []string    `json:"changed_locations"`
+	ChangedCount     int         `json:"changed_count"`
+}
+
 func (s *Server) handleRebindScriptSecretReference(w http.ResponseWriter, r *http.Request) {
 	var req rebindScriptSecretReferenceRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	stored, ok := s.runner.GetScript(strings.TrimSpace(req.Script.ID))
-	if !ok || stored == nil || stored.Script == nil {
-		writeError(w, http.StatusNotFound, "script not found")
+	stored, supported, admitted := s.loadScriptAuthoringRequest(w, r, strings.TrimSpace(req.Script.ID))
+	if !admitted {
 		return
 	}
-	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+	// This endpoint only transforms the caller's draft. It neither saves nor
+	// mints a validator for the transformed document. New authoring clients use
+	// their exact observed content validator; enriched timestamps stay a legacy
+	// compatibility gate only when no authoring validator was supplied.
+	revision, present, err := parseScriptAuthoringIfMatch(r.Header)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "If-Match must contain one strong script authoring v1 tag")
 		return
+	}
+	if present {
+		if !supported {
+			writeError(w, http.StatusServiceUnavailable, "durable script content revisions unavailable")
+			return
+		}
+		if revision != stored.ContentRevision {
+			writeError(w, http.StatusPreconditionFailed, "script authored content changed; reload before rebinding secrets")
+			return
+		}
+		if req.Script.ID != stored.ID {
+			writeError(w, http.StatusBadRequest, "draft ID must match the observed authoring document")
+			return
+		}
 	}
 	if req.Script.ProjectID != stored.ProjectID {
 		writeError(w, http.StatusBadRequest, "script project does not match the saved script")
 		return
 	}
-	if req.Script.UpdatedAt.IsZero() || !req.Script.UpdatedAt.Equal(stored.Script.UpdatedAt) {
+	if !present && (req.Script.UpdatedAt.IsZero() || !req.Script.UpdatedAt.Equal(stored.Script.UpdatedAt)) {
 		writeError(w, http.StatusConflict, "script changed since this draft was loaded; refresh before rebinding secrets")
 		return
 	}
@@ -455,10 +489,11 @@ func (s *Server) handleRebindScriptSecretReference(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"script": transformed, "old_name": oldName, "new_name": newName,
-		"changed_locations": locations, "changed_count": count,
-	})
+	if present {
+		writeJSON(w, http.StatusOK, ScriptSecretRebindAuthoringResponse{Script: scriptAuthoringDocumentFromScript(transformed), OldName: oldName, NewName: newName, ChangedLocations: locations, ChangedCount: count})
+		return
+	}
+	writeJSON(w, http.StatusOK, ScriptSecretRebindLegacyResponse{Script: transformed, OldName: oldName, NewName: newName, ChangedLocations: locations, ChangedCount: count})
 }
 
 func validateExpectedProjectSecretUsage(usage projectSecretUsage, expected *projectSecretExpectedUsage) error {

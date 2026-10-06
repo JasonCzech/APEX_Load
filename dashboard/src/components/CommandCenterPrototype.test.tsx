@@ -152,6 +152,36 @@ describe('CommandCenterPrototype', () => {
     expect(appSource).not.toContain('prototypeMode')
   })
 
+  it('keeps revised queued-copy modules lazy and out of Advanced Details', async () => {
+    // @ts-expect-error Dashboard app tsconfig intentionally excludes Node test types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const source = readFileSync(`${cwd}/src/components/CommandCenterPrototype.tsx`, 'utf8') as string
+    expect(source).toMatch(/lazy\(\(\) => import\('\.\/TestExecutionScenarioEditor'\)\)/)
+    expect(source.replace(/import\('\.\/TestExecutionScenarioEditor'\)/g, '')).not.toContain('/TestExecutionScenarioEditor')
+    expect(readFileSync(`${cwd}/src/components/TestExecution.tsx`, 'utf8')).not.toContain('TestExecutionScenarioEditor')
+  })
+
+  it('shows the queued-copy action only for a permitted canonical unstarted run', async () => {
+    const queued: TestSummary = { ...buildLiveVuserTest(), project_id: 'project-1', status: 'QUEUED', started_at: undefined }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      const url = requestUrl(input)
+      if (url.endsWith(`/tests/${queued.id}`)) return Promise.resolve(jsonResponse(queued))
+      if (url.includes('/tests?')) return Promise.resolve(jsonResponse({ tests: [queued], count: 1 }))
+      return Promise.resolve(jsonResponse({}))
+    })
+    const render = async (canManageTests = false, run = queued) => { await act(async () => root.render(<CommandCenterPrototype projectId="project-1" testId={run.id} initialTest={run} canManageTests={canManageTests} onSelectRun={vi.fn()} />)); await flush() }
+    await render()
+    expect(container.textContent).not.toContain('Create revised queued copy')
+    await render(true)
+    expect(buttonNamed('Create revised queued copy').disabled).toBe(false)
+    await render(false)
+    expect(container.textContent).not.toContain('Create revised queued copy')
+    const started = { ...queued, status: 'RUNNING' as const, started_at: '2026-10-05T00:00:01Z' }
+    await render(true, started)
+    expect(container.textContent).not.toContain('Create revised queued copy')
+  })
+
   it('starts an authored first-stage ramp-down at the group peak', () => {
     const group = commandGroup('Checkout', 100)
     const testGroup = {

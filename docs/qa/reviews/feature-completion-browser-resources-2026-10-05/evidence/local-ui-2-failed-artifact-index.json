@@ -1,0 +1,43 @@
+{
+  "profile": "local-auth",
+  "gate": "resource-fixed-ui-local-2.json",
+  "status": "failed, not acceptance",
+  "cause": "fresh workspace was externally API-seeded after login initialized the project list; second case lacked fresh app reload",
+  "artifacts": [
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/playwright/local-ui-2-failed/local-auth/.last-run.json",
+      "bytes": 96,
+      "sha256": "31076b061d930c00ac99ea379397bae0ab0ead6dfeba4b2fac64ec29416557e9"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/playwright/local-ui-2-failed/local-auth/workflow-help-retained-res-b79cb--after-reload-and-narrowing/retained-resource-help-narrow.png",
+      "bytes": 308973,
+      "sha256": "f137b8425450eca69acedd7073ed28a138e7fee9194c0a44d0bd78a1471625e7"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/playwright/local-ui-2-failed/local-auth/workflow-retained-resource-ad392-alse-and-independent-clocks/retained-resource-inspector-overview.png",
+      "bytes": 275479,
+      "sha256": "f4e26f1af172c7b86b604d8debbca6a91464ce7d737c4982dc4d5b6977dddbf6"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/playwright/local-ui-2-failed/local-auth/workflow-retained-resource-ad392-alse-and-independent-clocks/retained-resource-native-detail.png",
+      "bytes": 88132,
+      "sha256": "be9c64420b12c3c97f48496fa3a4bcc6b09366074d64e6c8bdfe44ee4e335d49"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/playwright/local-ui-2-failed/local-auth/workflow-retained-resource-d21e8-navailable-evidence-as-zero/error-context.md",
+      "bytes": 14568,
+      "sha256": "646c098987d30865eaa0af63d8ac21c7f92ee6bbd85052e26263bc8ae919a1f7"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/playwright/local-ui-2-failed/local-auth/workflow-retained-resource-d21e8-navailable-evidence-as-zero/test-failed-1.png",
+      "bytes": 165274,
+      "sha256": "97271d43bffde1c66738e36f191273df9d7a784ec4f776d6ea24fb50b45f93d0"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/playwright/local-ui-2-failed/local-auth/workflow-retained-resource-d21e8-navailable-evidence-as-zero/trace.zip",
+      "bytes": 3000039,
+      "sha256": "cbc57e144549d32c420000428614d6f9f7f5c5aa4dab11477682ae2c2f6a64a4"
+    }
+  ]
+}

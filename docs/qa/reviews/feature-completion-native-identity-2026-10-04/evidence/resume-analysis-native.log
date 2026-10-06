@@ -1,0 +1,7 @@
+ok  	github.com/jasonczech/apexload/pkg/analysis	0.191s
+--- FAIL: TestNativePhysicalParquetCaseBindingCannotChangePreviewOrIdentity (6.52s)
+    --- FAIL: TestNativePhysicalParquetCaseBindingCannotChangePreviewOrIdentity/non-ASCII-case-is-distinct (1.54s)
+        native_sql_identity_test.go:135: distinct non-ASCII physical fields refused {{0 [] 0} []} native worker protocol invalid or excessive {[/private/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestNativePhysicalParquetCaseBindingCannotChangePreviewOrIdentit187299562/001/native-481684bc78f763f82166a6c0c3f3150a-3139412694/part-0000-00.parquet] [] [] 1 0 1} <nil>
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/analysis/duckdb	101.604s
+FAIL

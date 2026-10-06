@@ -346,6 +346,7 @@ func TestNativeUnknownPublicationRetainsCompleteReceiptAcrossRealServerReplaceme
 		candidate.NormalizedSHA256[key] = strings.Repeat("b", 64)
 	}
 	candidate.Accepted = 1
+	addAnalysisPublicationFixtureManifest(t, &candidate)
 	digest, err := storage.AnalysisAttemptResultDigest(candidate)
 	if err != nil {
 		t.Fatal(err)

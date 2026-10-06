@@ -1,0 +1,161 @@
+{
+  "schema": "apexload.root-local-auth-skip-closure.v1",
+  "recorded_at_utc": "2026-10-06T02:12:45.655790+00:00",
+  "scope": "Metadata-only read of stable JUnit result nodes, exact relevant source/committed HEAD guard windows, and full-cycle2 directory names. No trace/network payloads, original HAR/private archive contents, tests/builds, staging, source changes or cleanup.",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "head": "9b5b9e29a48950591f9e06d7acb7d2d3095cae4b",
+  "branch": "codex/feature-completion-resume",
+  "both_profiles_physically_joined_per_parent": true,
+  "full_Go_still_active_per_parent": true,
+  "structured_reports": {
+    "dev-admin": {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/dev-admin/playwright-junit.xml",
+      "bytes": 55552,
+      "sha256": "385c79e69515c1d0e561d086271b5e192eb64a1d9cc71e18ec9e8e25cadd0592",
+      "tests": 262,
+      "passed": 257,
+      "skipped": 5,
+      "failures": 0,
+      "errors": 0,
+      "duration_seconds": "484.888661",
+      "stable_report_after_parse": true
+    },
+    "local-auth": {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/playwright-junit.xml",
+      "bytes": 42056,
+      "sha256": "1319eeef79f9a258f397ec028a6bd04edfbb40c22ce7c7f790a6de466dca7a0d",
+      "tests": 198,
+      "passed": 197,
+      "skipped": 1,
+      "failures": 0,
+      "errors": 0,
+      "duration_seconds": "1694.135843",
+      "stable_report_after_parse": true
+    }
+  },
+  "prior_dev_admin_skip_audit": {
+    "path": "/private/tmp/apexload-root-dev-admin-skip-advisory-20261005.json",
+    "sha256": "249cef5606b1977e995946460617d7ec3f7e88e0e47ff03fc0e3a27ed6924d54"
+  },
+  "source_inputs": [
+    {
+      "path": "dashboard/e2e/workflow-help.spec.ts",
+      "current_sha256": "60d858471b4cc536f8801d794b5dadcfb87392a93d16d92b1ea6005d8c16a29a",
+      "committed_HEAD_sha256": "c7b55603407beb5cfca5f37bb867420c0b1865a54b8f5a175c62caebc6013def",
+      "skip_guard_window_matches_HEAD": true,
+      "source_bytes": 16837,
+      "stable_source_after_parse": true
+    },
+    {
+      "path": "dashboard/e2e/workflow-library-assignments.spec.ts",
+      "current_sha256": "6377c105ff550e79606d35d68519067af5c44dcb4f67081a0a7a581b035bf96f",
+      "committed_HEAD_sha256": "6377c105ff550e79606d35d68519067af5c44dcb4f67081a0a7a581b035bf96f",
+      "skip_guard_window_matches_HEAD": true,
+      "source_bytes": 9283,
+      "stable_source_after_parse": true
+    },
+    {
+      "path": "dashboard/e2e/workflow-loadrunner-review.spec.ts",
+      "current_sha256": "d737446022f044e90a2c461bf3a9f26ee4f784f8b30c2346be6cd25d519feff4",
+      "committed_HEAD_sha256": "d737446022f044e90a2c461bf3a9f26ee4f784f8b30c2346be6cd25d519feff4",
+      "skip_guard_window_matches_HEAD": true,
+      "source_bytes": 71439,
+      "stable_source_after_parse": true
+    },
+    {
+      "path": "dashboard/e2e/workflow-object-activity.spec.ts",
+      "current_sha256": "2819f998706cb00302de47acceb1f8c62d40f050207f8f0a85375d750cfa46d2",
+      "committed_HEAD_sha256": "2819f998706cb00302de47acceb1f8c62d40f050207f8f0a85375d750cfa46d2",
+      "skip_guard_window_matches_HEAD": true,
+      "source_bytes": 6734,
+      "stable_source_after_parse": true
+    },
+    {
+      "path": "dashboard/e2e/workflow-script-folders.spec.ts",
+      "current_sha256": "6f8dcbd66004b726ecba13249c94ad4aa36cb2a842f1c01ca692bf0e7dbc04db",
+      "committed_HEAD_sha256": "6f8dcbd66004b726ecba13249c94ad4aa36cb2a842f1c01ca692bf0e7dbc04db",
+      "skip_guard_window_matches_HEAD": true,
+      "source_bytes": 5820,
+      "stable_source_after_parse": true
+    }
+  ],
+  "dev_admin_auth_skip_closures": [
+    {
+      "file": "dashboard/e2e/workflow-help.spec.ts",
+      "title": "non-administrators cannot open or search Administration articles",
+      "time_seconds": "7.349",
+      "result": "passed",
+      "dev_admin_result": "skipped",
+      "dev_admin_source_reason": "Requires the restricted local-auth persona",
+      "guard_present_in_HEAD": true,
+      "guard_matches_HEAD": true,
+      "source_guard_reason_line": 172,
+      "classification": "Existing restricted/viewer-persona guard qualified by physically joined local-auth execution."
+    },
+    {
+      "file": "dashboard/e2e/workflow-library-assignments.spec.ts",
+      "title": "Viewer cannot change script or scenario assignments",
+      "time_seconds": "13.855",
+      "result": "passed",
+      "dev_admin_result": "skipped",
+      "dev_admin_source_reason": "requires viewer persona",
+      "guard_present_in_HEAD": true,
+      "guard_matches_HEAD": true,
+      "source_guard_reason_line": 97,
+      "classification": "Existing restricted/viewer-persona guard qualified by physically joined local-auth execution."
+    },
+    {
+      "file": "dashboard/e2e/workflow-object-activity.spec.ts",
+      "title": "project viewers can inspect deleted history but cannot archive or restore",
+      "time_seconds": "13.783",
+      "result": "passed",
+      "dev_admin_result": "skipped",
+      "dev_admin_source_reason": "requires the local viewer persona",
+      "guard_present_in_HEAD": true,
+      "guard_matches_HEAD": true,
+      "source_guard_reason_line": 69,
+      "classification": "Existing restricted/viewer-persona guard qualified by physically joined local-auth execution."
+    },
+    {
+      "file": "dashboard/e2e/workflow-script-folders.spec.ts",
+      "title": "Viewers cannot move scripts through the library or API",
+      "time_seconds": "13.711",
+      "result": "passed",
+      "dev_admin_result": "skipped",
+      "dev_admin_source_reason": "requires local viewer persona",
+      "guard_present_in_HEAD": true,
+      "guard_matches_HEAD": true,
+      "source_guard_reason_line": 67,
+      "classification": "Existing restricted/viewer-persona guard qualified by physically joined local-auth execution."
+    }
+  ],
+  "local_auth_skips": [
+    {
+      "file": "dashboard/e2e/workflow-loadrunner-review.spec.ts",
+      "title": "LoadRunner private acceptance archive groups repeated findings without hiding source locations",
+      "time_seconds": null,
+      "result": "skipped",
+      "reason_from_source": "Set APEXLOAD_LR_ACCEPTANCE_ARCHIVE for local archive acceptance.",
+      "source_guard_reason_line": 305,
+      "guard_present_in_HEAD": true,
+      "guard_matches_HEAD": true,
+      "classification": "Existing optional private LoadRunner acceptance archive prerequisite unavailable in both profiles.",
+      "qualification": "Remains unqualified. No user HAR substitution, upload, target replay or private archive content read."
+    }
+  ],
+  "full_cycle2_scratch": {
+    "scope": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2",
+    "before": {
+      "scratch_directories": [],
+      "symlink_directories_not_followed": []
+    },
+    "after": {
+      "scratch_directories": [],
+      "symlink_directories_not_followed": []
+    },
+    "stable_directory_scan": true,
+    "runner_scratch_physically_absent_at_bookends": true,
+    "file_contents_not_parsed": true
+  },
+  "disposition": "All four auth-specific dev-admin skips ran and passed under local-auth. Its sole skip is the existing optional private LoadRunner archive case, still unqualified. Full-cycle2 scratch directories were absent at both metadata bookends. This receipt does not qualify unavailable private acceptance inputs or the still-active full Go gate."
+}

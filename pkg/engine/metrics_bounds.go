@@ -59,6 +59,8 @@ func compactMetricsResult(input *protocol.Result) *protocol.Result {
 	}
 	if input.ClientMetrics != nil {
 		client := *input.ClientMetrics
+		client.DocumentEvidence = nil
+		client.RuntimeAvailability = input.ClientMetrics.RuntimeAvailability.Clone()
 		client.DeviceProfile = boundedMetricString(client.DeviceProfile, maxMetricLabelBytes)
 		client.DevicePlatform = boundedMetricString(client.DevicePlatform, maxMetricLabelBytes)
 		client.DeviceTier = boundedMetricString(client.DeviceTier, maxMetricLabelBytes)
@@ -141,6 +143,9 @@ func boundExternalMetrics(values map[string]float64) map[string]float64 {
 
 func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 	bytes := 1024
+	if documents := snapshot.BrowserDocuments; documents != nil {
+		bytes += 256 + len(documents.Metrics)*4096
+	}
 	estimateActions := func(values map[string]*ActionMetrics) {
 		for key, value := range values {
 			bytes += len(key) + 384

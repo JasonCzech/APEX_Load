@@ -1,0 +1,36 @@
+{
+  "name": "native-har-browser-race-2",
+  "argv": [
+    "go",
+    "test",
+    "-race",
+    "./pkg/protocol/browser",
+    "-run",
+    "TestHAROwnership|TestFinalizeHARCapture|TestApplyHARCapture|TestDiscardHARWorking|TestHARMonitor|TestClosePreserves|TestRuntimeHARRetention|TestBrowserContextOptions|TestBrowserClose",
+    "-short",
+    "-count=2"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "exit_code": 0,
+  "elapsed_seconds": 10.482,
+  "recorded_at_utc": "2026-10-05T21:19:18.429957+00:00",
+  "log_path": "/private/tmp/native-har-browser-race-2.log",
+  "log_sha256": "382aede78541f317a0d6000f66acefe368ef0a28e699d08b629502843b09037d",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4025,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "raw_receipt_sha256": "94c71ad3fbdc754ef397b56eb84c3dd994621ece7a858a02efe89000c038dbab",
+  "repository_inventory_before_sha256": "2da1f4a6ceca8da8a033ea1c05c9d5fda8b4cb81f6bbbd20d58016ec836f1b56",
+  "repository_inventory_after_sha256": "2da1f4a6ceca8da8a033ea1c05c9d5fda8b4cb81f6bbbd20d58016ec836f1b56",
+  "qualification_disposition": "Historical green/check superseded by subsequent source changes unless named as final candidate qualification in README.",
+  "receipt_scope_note": "Compact durable receipt retains original private receipt SHA, source count/stability and inventory digests. Full 4,000+ repository inventories remain in the named private raw receipt; direct review inventories are copied separately. Neither inventory includes complete module-cache/native dependencies.",
+  "outcome": "green-scoped"
+}

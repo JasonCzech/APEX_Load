@@ -4,7 +4,7 @@ import LiveObservationNotice from './LiveObservationNotice'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { createContext, lazy, Suspense, useContext, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Area,
@@ -45,6 +45,7 @@ import TestNotesDialog from './TestNotesDialog'
 import GroupParametersDialog from './GroupParametersDialog'
 import GroupRuntimeSettingsDialog from './GroupRuntimeSettingsDialog'
 import RuntimeAdjustmentDialog from './RuntimeAdjustmentDialog'
+import { queuedRunRevisionScope, useQueuedRunRevision } from './useQueuedRunRevision'
 import { runtimeAdjustmentTargets } from './runtimeAdjustmentModel'
 import ThresholdAlertStrip from './ThresholdAlertStrip'
 import type { ThresholdAlertEntry } from '../thresholdAlerts'
@@ -64,6 +65,8 @@ import {
 } from '../utils/snapshotFormatUtils'
 import './TestExecution.css'
 import './CommandCenterPrototype.css'
+
+const TestExecutionScenarioEditor = lazy(() => import('./TestExecutionScenarioEditor'))
 
 type VariantId = 'ops' | 'grafana'
 type CommandTableTab = 'scenario' | 'errors' | 'infrastructure'
@@ -88,6 +91,7 @@ interface CommandCenterPrototypeProps {
   releaseId?: string
   scopeLabel?: string
   onSelectRun?: (id: string) => void
+  canManageTests?: boolean
   onOpenOverview?: () => void
   runViewMemory?: Map<string, Map<string, unknown>>
   overviewActions?: Pick<CommandCenterOverviewProps, 'onNewTest' | 'newTestDisabledReason' | 'onBrowseScenarios' | 'releases' | 'onSelectRelease' | 'onOpenRepository'>
@@ -453,6 +457,7 @@ export default function CommandCenterPrototype({
   releaseId,
   scopeLabel = 'Current workspace',
   onSelectRun,
+  canManageTests = false,
   onOpenOverview,
   runViewMemory,
   overviewActions,
@@ -547,7 +552,7 @@ export default function CommandCenterPrototype({
   const [showNotes, setShowNotes] = useState(false)
   const [showRuntimeAdjustment, setShowRuntimeAdjustment] = useState(false)
   const { pendingAction, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
-  const [groupSettingsDialog, setGroupSettingsDialog] = useState<{ group: string; kind: GroupSettingsDialogKind } | null>(null)
+  const [groupSettingsDialog, setGroupSettingsDialog] = useState<{ group: string; kind: GroupSettingsDialogKind; plannedOwner?: { scope: string; token: { generation: number } } } | null>(null)
   const archiveCheckGenerationRef = useRef(0)
   const archiveCheckInFlightRef = useRef(false)
   const activeArchiveCheckTestIdRef = useRef(testId)
@@ -874,6 +879,27 @@ export default function CommandCenterPrototype({
   }, [displayTest, liveMode, viewMemory])
 
   const runStatus = liveMode || hasLiveRoute || emptyMode ? displayTest.status : state.runStatus
+  const queuedRevisionScope = queuedRunRevisionScope({ run: activeLiveTest, routeId: testId, projectId, applicationId, releaseId, resolvedStatus: runStatus, canManageTests, canSelectRun: Boolean(onSelectRun), active, prototypeMode })
+  const queuedRevision = useQueuedRunRevision(queuedRevisionScope, activeLiveTest, api.getTest, onSelectRun)
+  const plannedSettingsScope = active && !prototypeMode && canManageTests && activeLiveTest && testId === activeLiveTest.id && projectId === activeLiveTest.project_id && activeLiveTest.created_at && (runStatus === 'QUEUED' || runStatus === 'RESERVED') && activeLiveTest.status === runStatus && !activeLiveTest.started_at && !activeLiveTest.ended_at
+    ? JSON.stringify([activeLiveTest.id, activeLiveTest.project_id, activeLiveTest.created_at, applicationId ?? null, releaseId ?? null]) : ''
+  const plannedSettingsScopeRef = useRef(plannedSettingsScope)
+  const plannedSettingsTokenRef = useRef<{ generation: number } | null>(null)
+  const plannedSettingsGenerationRef = useRef(0)
+  if (plannedSettingsScopeRef.current !== plannedSettingsScope) {
+    plannedSettingsScopeRef.current = plannedSettingsScope
+    plannedSettingsTokenRef.current = null
+  }
+  const openPlannedGroupSettings = useCallback((group: string) => {
+    if (!plannedSettingsScope || plannedSettingsScopeRef.current !== plannedSettingsScope || !activeLiveTest?.groups.some(item => item.name === group)) return
+    const token = { generation: ++plannedSettingsGenerationRef.current }
+    plannedSettingsTokenRef.current = token
+    setGroupSettingsDialog({ group, kind: 'runtime-settings', plannedOwner: { scope: plannedSettingsScope, token } })
+  }, [activeLiveTest, plannedSettingsScope])
+  const visibleGroupSettingsDialog = groupSettingsDialog?.plannedOwner
+    ? groupSettingsDialog.plannedOwner.scope === plannedSettingsScope && groupSettingsDialog.plannedOwner.token === plannedSettingsTokenRef.current ? groupSettingsDialog : null
+    : groupSettingsDialog
+
   const groups = useMemo(
     () => liveMode ? buildLiveGroups(displayTest, state.vuserTargets) : hasLiveRoute || emptyMode ? [] : buildGroupsWithTargets(prototypeFixtures?.groups ?? [], state.vuserTargets),
     [displayTest, emptyMode, hasLiveRoute, liveMode, prototypeFixtures, state.vuserTargets],
@@ -1423,7 +1449,15 @@ export default function CommandCenterPrototype({
         onOpenTestNotes={testId ? () => setShowNotes(true) : undefined}
         onChangeDuration={liveMode && displayTest.termination_mode !== 'iterations' && runStatus === 'RUNNING' ? () => setShowRuntimeAdjustment(true) : undefined}
         changeDurationDisabled={showRuntimeAdjustment || pendingAction !== null}
+        onCreateQueuedCopy={queuedRevisionScope ? () => { void queuedRevision.open() } : undefined}
+        queuedCopyLoading={queuedRevision.loading}
       />
+      {queuedRevision.error && <div className="settings-inline-error" role="alert">{queuedRevision.error}</div>}
+      {queuedRevision.snapshot && (
+        <Suspense fallback={<div role="status">Loading queued-run editor…</div>}>
+          <TestExecutionScenarioEditor key={queuedRevision.incarnation} open test={queuedRevision.snapshot} onClose={queuedRevision.close} onSelectTest={queuedRevision.created} />
+        </Suspense>
+      )}
       {pendingAction && (
         <ConfirmRunActionModal
           action={pendingAction}
@@ -1486,18 +1520,27 @@ export default function CommandCenterPrototype({
           }}
         />
       )}
-      {groupSettingsDialog && testId && liveMode && groupSettingsDialog.kind === 'runtime-settings' && (
+      {visibleGroupSettingsDialog && testId && liveMode && visibleGroupSettingsDialog.kind === 'runtime-settings' && (
         <GroupRuntimeSettingsDialog
+          key={visibleGroupSettingsDialog.plannedOwner ? `${visibleGroupSettingsDialog.plannedOwner.scope}:${visibleGroupSettingsDialog.plannedOwner.token.generation}` : undefined}
           testId={testId}
-          groupName={groupSettingsDialog.group}
-          onClose={() => setGroupSettingsDialog(null)}
-          onSaved={handleGroupRuntimeSettingsSaved}
+          groupName={visibleGroupSettingsDialog.group}
+          onClose={() => {
+            const owner = visibleGroupSettingsDialog.plannedOwner
+            if (owner && (plannedSettingsScopeRef.current !== owner.scope || plannedSettingsTokenRef.current !== owner.token)) return
+            setGroupSettingsDialog(null)
+          }}
+          onSaved={result => {
+            const owner = visibleGroupSettingsDialog.plannedOwner
+            if (owner && (plannedSettingsScopeRef.current !== owner.scope || plannedSettingsTokenRef.current !== owner.token)) return
+            handleGroupRuntimeSettingsSaved(result)
+          }}
         />
       )}
-      {groupSettingsDialog && testId && liveMode && groupSettingsDialog.kind === 'parameters' && (
+      {visibleGroupSettingsDialog && testId && liveMode && visibleGroupSettingsDialog.kind === 'parameters' && (
         <GroupParametersDialog
           testId={testId}
-          groupName={groupSettingsDialog.group}
+          groupName={visibleGroupSettingsDialog.group}
           onClose={() => setGroupSettingsDialog(null)}
           onSaved={handleGroupParametersSaved}
         />
@@ -1548,6 +1591,7 @@ export default function CommandCenterPrototype({
           onApplyTarget={applyTarget}
           onErrorSelect={selectError}
           onOpenGroupSettings={liveMode && testId ? openGroupSettings : undefined}
+          onOpenPlannedGroupSettings={plannedSettingsScope ? openPlannedGroupSettings : undefined}
           onChangeDuration={liveMode && displayTest.termination_mode !== 'iterations' && runStatus === 'RUNNING' ? () => setShowRuntimeAdjustment(true) : undefined}
         />
       )}
@@ -1632,6 +1676,8 @@ interface RunControlShelfProps {
   onOpenTestNotes?: () => void
   onChangeDuration?: () => void
   changeDurationDisabled?: boolean
+  onCreateQueuedCopy?: () => void
+  queuedCopyLoading?: boolean
 }
 
 function RunControlShelf({
@@ -1655,6 +1701,8 @@ function RunControlShelf({
   onOpenTestNotes,
   onChangeDuration,
   changeDurationDisabled = false,
+  onCreateQueuedCopy,
+  queuedCopyLoading = false,
   noRequestSamples = false,
 }: RunControlShelfProps) {
   const terminal = status === 'ABORTED' || status === 'STOPPING' || status === 'COMPLETE' || status === 'FAILED'
@@ -1703,6 +1751,11 @@ function RunControlShelf({
           <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenTestNotes}>
             <NotesIcon />
             Test Notes
+          </button>
+        )}
+        {onCreateQueuedCopy && (
+          <button type="button" className="btn btn-sm btn-secondary" onClick={onCreateQueuedCopy} disabled={queuedCopyLoading}>
+            {queuedCopyLoading ? 'Loading queued source…' : 'Create revised queued copy'}
           </button>
         )}
         {onChangeDuration && (
@@ -1874,6 +1927,7 @@ interface OpsCockpitViewProps {
   onApplyTarget: (groupName: string, value: number) => void
   onErrorSelect: (errorId: string) => void
   onOpenGroupSettings?: (groupName: string, kind: GroupSettingsDialogKind) => void
+  onOpenPlannedGroupSettings?: (groupName: string) => void
   onChangeDuration?: () => void
 }
 
@@ -1921,10 +1975,28 @@ function OpsCockpitView({
   onApplyTarget,
   onErrorSelect,
   onOpenGroupSettings,
+  onOpenPlannedGroupSettings,
   onChangeDuration,
 }: OpsCockpitViewProps) {
   if (runStatus === 'RESERVED' || runStatus === 'QUEUED') {
-    return <section className="command-panel" aria-label="Planned run"><h3>Run not started</h3><p>Load targets describe the plan. Throughput, errors and response times will appear after execution produces samples.</p><LoadModelPanel groups={groups} testGroups={testGroups} runStatus={runStatus} totalDurationSeconds={totalDurationSeconds} remainingSeconds={remainingSeconds} /></section>
+    return (
+      <section className="command-panel" aria-label="Planned run">
+        <h3>Run not started</h3>
+        <p>Load targets describe the plan. Throughput, errors and response times will appear after execution produces samples.</p>
+        {onOpenPlannedGroupSettings && (
+          <ul aria-label="Configured group runtime settings">
+            {testGroups.map(group => (
+              <li key={group.name}>
+                <button type="button" className="btn btn-sm btn-secondary" aria-label={`${group.name} runtime settings`} onClick={() => onOpenPlannedGroupSettings(group.name)}>
+                  {group.name} · Runtime Settings
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <LoadModelPanel groups={groups} testGroups={testGroups} runStatus={runStatus} totalDurationSeconds={totalDurationSeconds} remainingSeconds={remainingSeconds} />
+      </section>
+    )
   }
   if (experienceVersion === 'v2') {
     return (

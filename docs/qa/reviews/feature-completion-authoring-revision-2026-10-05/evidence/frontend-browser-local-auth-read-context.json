@@ -1,0 +1,27 @@
+{
+  "label": "browser-local-auth-read-context",
+  "command": [
+    "scripts/run-e2e.sh",
+    "workflow-script-editor.spec.ts"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner",
+  "started_utc": "2026-10-05T08:19:27.866826+00:00",
+  "finished_utc": "2026-10-05T08:20:29.145886+00:00",
+  "duration_seconds": 61.279,
+  "exit_code": 0,
+  "profile": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "APEXLOAD_ANALYSIS_MEMORY_LIMIT": "512MiB",
+    "APEXLOAD_ANALYSIS_SPILL_LIMIT": "128MiB",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18472",
+    "APEXLOAD_E2E_AUTH_PORT": "18472"
+  },
+  "log_bytes": 1552,
+  "log_sha256": "6f44ff33e3234023ef65eda20cf116e5ddba2d35302e5ae247f46ff1c7e4a542"
+}

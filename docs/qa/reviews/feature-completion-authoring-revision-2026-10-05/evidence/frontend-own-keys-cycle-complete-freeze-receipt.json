@@ -1,0 +1,15 @@
+{
+  "captured_utc": "2026-10-05T09:59:45.445033+00:00",
+  "phase": "Completed passing full dashboard cycle; final source and embedded build remain frozen",
+  "cycle_receipt": "frontend-full-cycle-own-keys-final.json",
+  "source_inventory": "frontend-own-keys-final-source-inventory.json",
+  "source_inventory_sha256": "f4debe123ac891fc43b23ce20a8a357b9ca1c4fe5ec951bcc5d6de742ba56c02",
+  "source_files_unchanged": 1497,
+  "source_files_list_sha256": "2d1453e80773ca341983b5cf4a8ff972fc13bcb291bafe19836b7c19006fccf2",
+  "embedded_inventory": "frontend-own-keys-cycle-final-embedded-inventory.json",
+  "embedded_inventory_sha256": "fdcee2fdcdd04a8a5453c3e2d4611a037ffb0aebb2c4cf6cbf32e398192c8fe5",
+  "embedded_files_unchanged": 247,
+  "embedded_files_list_sha256": "b27eb2d96ec128bf74644f8ded047991fdc79931bd11d4e4c5a5d726a6de471e",
+  "embedded_exact_file_set": true,
+  "mismatches": []
+}

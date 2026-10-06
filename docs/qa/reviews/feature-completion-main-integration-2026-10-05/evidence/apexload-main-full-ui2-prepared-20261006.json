@@ -1,0 +1,76 @@
+{
+  "schema": "apexload.full-ui-cycle-preparation.v1",
+  "generated_utc": "2026-10-06T08:33:08.887038+00:00",
+  "scope": "Prepared only; no full cycle started or qualification claimed. Standard npm workflow will run dev-admin then local-auth sequentially.",
+  "command": [
+    "npm",
+    "--prefix",
+    "dashboard",
+    "run",
+    "test:cycle"
+  ],
+  "gate_label": "main-dashboard-full-cycle-2",
+  "helper_path": "/private/tmp/apexload-main-integration-gate-v4-20261006.py",
+  "helper_sha256": "d186c69109218016d4ea0ddabc79728e9ce8e2b9919be25a93dbc842841a8f54",
+  "tmpdir": "/private/tmp/apexload-main-full-ui2-bkv4kf0z",
+  "tmp_mode": "0o700",
+  "imports_env": "unset",
+  "resolved_default_import_root": "/private/tmp/apexload-main-full-ui2-bkv4kf0z/apexload-import-assets",
+  "import_isolation": "Fresh cycle-owned default root shared by sequential profiles only; not derived from script-owned controller DB/archive directories.",
+  "profile_env": "unset; unchanged script supplies dev-admin then local-auth",
+  "ports": {
+    "dev-admin": 18471,
+    "local-auth": 18472
+  },
+  "output_root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/full-cycle-2",
+  "source_bookends": [
+    {
+      "path": "dashboard/package.json",
+      "bytes": 2692,
+      "sha256": "412874b430e0afef3379ffbcf82266c208f7756d6737cf77dfb27b4b2ee1cc42"
+    },
+    {
+      "path": "dashboard/package-lock.json",
+      "bytes": 232114,
+      "sha256": "6d608e034fc67e1eef53d20cdc12fee6ef28ba770d1b212bcdb6bf16cf44f646"
+    },
+    {
+      "path": "scripts/run-dashboard-workflows.sh",
+      "bytes": 526,
+      "sha256": "325837f03803191edc8d535d67be6d6ac6627429b300254b047b2d2fb2a2c323"
+    },
+    {
+      "path": "scripts/run-e2e.sh",
+      "bytes": 4721,
+      "sha256": "add65b456f865af24171f8acc95d1ca36017e0d6772791729be16d24c7674285"
+    },
+    {
+      "path": "dashboard/e2e/command-center-details.spec.ts",
+      "bytes": 8136,
+      "sha256": "52061f3afe884cc48ceda77df535d204976008f7ce046a716eaaf68bb68f0765"
+    },
+    {
+      "path": "dashboard/playwright.config.ts",
+      "bytes": 3350,
+      "sha256": "ce0cfe7ff8567a7e34277fc6fa8cd71ce34b7ab3ec011d7729d35cc162468e69"
+    },
+    {
+      "path": "pkg/api/handlers_import_assets.go",
+      "bytes": 6333,
+      "sha256": "2c0de335f47619638006b078ef77dfba1ee7e5e10f68ec0edfa92913ef4c9efe"
+    },
+    {
+      "path": "pkg/fileasset/fileasset.go",
+      "bytes": 12990,
+      "sha256": "b71561ea32fc65f757440d09522567b5919ac7cd225b9b4e270d0e68454112bb"
+    },
+    {
+      "path": "cmd/controller/main.go",
+      "bytes": 23639,
+      "sha256": "ba87061e6881f445e598ce2440c6a21fc75542ad40c59ad76725d56a39ef287f"
+    }
+  ],
+  "source_changes_requested": false,
+  "deadline_or_retry_changes_requested": false,
+  "root_scheduling_signal_required": true
+}

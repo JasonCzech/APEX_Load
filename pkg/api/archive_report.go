@@ -57,6 +57,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 
 	report := &RunArchiveReport{
+		TelemetryPolicy:     telemetryPolicyEvidenceFromProvenance(manifest.InitialProvenance),
 		SchemaVersion:       runArchiveReportSchemaVersion,
 		Manifest:            maskRunArchiveManifest(manifest),
 		ByAction:            make(map[string]RunArchiveActionStats),
@@ -75,6 +76,10 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		DynatraceEvidence:   dynatraceEvidence,
 		MonitorDiagnostics:  monitorDiagnostics,
 		MonitorRuleResults:  manifest.MonitorRuleResults,
+	}
+	report.BrowserDocuments, report.BrowserDocumentEvidence, report.BrowserDocumentEvidenceTruncated, err = readArchiveBrowserDocumentSummary(record, manifest)
+	if err != nil {
+		return nil, err
 	}
 	if diagnosticsProjectEnabled(manifest.Provenance.ProjectID) {
 		report.StatisticalFindings = archiveStatisticalFindings(manifest.Provenance.ProjectID, record.TestID, summaries)
@@ -535,6 +540,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		}
 		mergeRunArchiveTelemetrySummary(&telemetrySummary, summary)
 		report.SummaryTimeline = append(report.SummaryTimeline, RunArchiveSummaryPoint{
+			BrowserDocuments:       summary.BrowserDocuments.Clone(),
 			Timestamp:              summary.Timestamp,
 			ActiveVUsers:           summary.ActiveVUsers,
 			TPS:                    summary.TPS,

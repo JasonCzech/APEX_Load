@@ -1,0 +1,37 @@
+{
+  "schema": "apexload.guarded-integration-fix-application.v1",
+  "at_utc": "2026-10-06T05:00:27.706176+00:00",
+  "head": "6bbdc9971d23bcd03e27ff6a54f30b5e0f191a43",
+  "integrating_main": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+  "original_gate_processes_joined": true,
+  "application_only": true,
+  "build_test_qualification_pending": true,
+  "patches": [
+    {
+      "path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v3.patch",
+      "sha256": "91f4299ca482618eb1637ee58a47119dc61a6d49d0e59499960e191597c8758d"
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-resize-offsets-test-only-20261006.patch",
+      "sha256": "8346a55027174a7e891506ab7266be3d19a400e3664d22e31a2f5cda30eab0a8"
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-local-auth-coverage-additional-20261006.patch",
+      "sha256": "74f2026197f49db1289e3daac322ae6b463eac6d58e473d45d6f96448dfc8277"
+    }
+  ],
+  "changed_paths": [
+    "pkg/protocol/browser/action_helpers.go",
+    "pkg/protocol/browser/browser.go",
+    "pkg/protocol/browser/lifecycle.go",
+    "pkg/protocol/browser/network_task_completion.go",
+    "pkg/protocol/browser/network_task_completion_test.go",
+    "pkg/protocol/browser/result_finalization.go",
+    "pkg/protocol/browser/result_finalization_test.go",
+    "pkg/protocol/browser/runtime_context.go",
+    "dashboard/e2e/command-center-details.spec.ts",
+    "dashboard/playwright.config.ts"
+  ],
+  "exact_before_after_guards_passed": true,
+  "unrelated_supplement_preserved": true
+}

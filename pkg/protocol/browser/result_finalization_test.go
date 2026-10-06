@@ -74,3 +74,21 @@ func TestApplyCapturedPageStateSuppressesScreenshotWhenRuntimeSecretsAreActive(t
 		t.Fatalf("captureScreenshot with active secrets = %q, %v", screenshot, err)
 	}
 }
+
+func TestApplyCapturedPageStateUsesOwnedNetworkSnapshotWithoutRecapture(t *testing.T) {
+	b := networkCompletionTestBrowser()
+	b.networkEntries = []protocol.NetworkEntry{{URL: "/owned", RequestHeaders: map[string]string{"x-owned": "yes"}}}
+	_, _, owner := b.actionEvidenceOffsets()
+	entries, reason := b.acquireActionNetworkEntries(context.Background(), owner, 0)
+	if reason != "" {
+		t.Fatalf("owned snapshot reason = %q", reason)
+	}
+	b.mu.Lock()
+	b.networkEntries = []protocol.NetworkEntry{{URL: "/later"}}
+	b.mu.Unlock()
+	result := &protocol.Result{}
+	b.applyCapturedPageStateWithNetwork(result, capturedBrowserPageState{pageTitle: "Owned"}, 0, entries)
+	if len(result.NetworkEntries) != 1 || result.NetworkEntries[0].URL != "/owned" || result.PageTitle != "Owned" {
+		t.Fatalf("page finalization recaptured a newer network buffer: %#v", result)
+	}
+}

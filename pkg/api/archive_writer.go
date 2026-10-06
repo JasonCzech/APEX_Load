@@ -52,7 +52,7 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 	if err := rejectArchiveBacklogDirectoryAlias(rootDir, archiveDir); err != nil {
 		return nil, err
 	}
-	targets := []string{"transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl", runArchiveManifestFileName}
+	targets := []string{"transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl", "browser_documents.jsonl", "browser_documents.parquet", runArchiveManifestFileName}
 	if test.ELKCapture != nil {
 		targets = append(targets, "elk_evidence.jsonl")
 	}
@@ -143,22 +143,23 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 	initialProvenance := maskRunArchiveProvenance(provenance)
 	writer := &runArchiveWriter{
 		manifest: RunArchiveManifest{
-			SchemaVersion:                archiveSchemaVersion,
-			TestID:                       test.ID,
-			TestName:                     test.Name,
-			CreatedAt:                    time.Now(),
-			Provenance:                   initialProvenance,
-			InitialProvenance:            &initialProvenance,
-			TransactionsFile:             "transactions.jsonl",
-			TransactionsParquetFile:      "transactions.parquet",
-			ResourceSamplesFile:          "resources.jsonl",
-			ResourceSamplesParquetFile:   "resources.parquet",
-			IntervalSummariesFile:        "interval_summaries.jsonl",
-			IntervalSummariesParquetFile: "interval_summaries.parquet",
-			ELKEvidenceFile:              elkEvidenceFile,
-			ELKObservation:               elkObservation(elkEvidenceFile),
-			DynatraceEvidenceFile:        dynatraceEvidenceFile,
-			ProviderLookupsFile:          providerLookupsFile,
+			BrowserDocumentCaptureRequested: groupsRequestBrowserDocumentCapture(test.Groups),
+			SchemaVersion:                   archiveSchemaVersion,
+			TestID:                          test.ID,
+			TestName:                        test.Name,
+			CreatedAt:                       time.Now(),
+			Provenance:                      initialProvenance,
+			InitialProvenance:               &initialProvenance,
+			TransactionsFile:                "transactions.jsonl",
+			TransactionsParquetFile:         "transactions.parquet",
+			ResourceSamplesFile:             "resources.jsonl",
+			ResourceSamplesParquetFile:      "resources.parquet",
+			IntervalSummariesFile:           "interval_summaries.jsonl",
+			IntervalSummariesParquetFile:    "interval_summaries.parquet",
+			ELKEvidenceFile:                 elkEvidenceFile,
+			ELKObservation:                  elkObservation(elkEvidenceFile),
+			DynatraceEvidenceFile:           dynatraceEvidenceFile,
+			ProviderLookupsFile:             providerLookupsFile,
 		},
 		region:           strings.TrimSpace(os.Getenv("APEXLOAD_REGION")),
 		rootDir:          archiveDir,
@@ -221,7 +222,7 @@ func (w *runArchiveWriter) stopFlushLoop() {
 
 func (w *runArchiveWriter) flushBuffersLocked() error {
 	var failures []error
-	for _, writer := range []*bufio.Writer{w.txBuf, w.resourceBuf, w.summaryBuf, w.elkBuf, w.dynatraceBuf, w.lookupBuf} {
+	for _, writer := range []*bufio.Writer{w.txBuf, w.resourceBuf, w.summaryBuf, w.elkBuf, w.dynatraceBuf, w.browserDocumentsBuf, w.lookupBuf} {
 		if writer == nil {
 			continue
 		}
@@ -297,6 +298,9 @@ func captureAPEXLoadEnv() map[string]string {
 }
 
 func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
+	if result != nil && result.SampleKind == "browser_document_evidence" {
+		return fmt.Errorf("browser documents require the typed evidence sink")
+	}
 	if result == nil {
 		return nil
 	}
@@ -619,6 +623,7 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 		Transactions:             intervalTransactionsFromLive(live.Transactions),
 		ByRegion:                 intervalTransactionsFromLive(live.ByRegion),
 		Browser:                  cloneBrowserLiveMetrics(live.Browser),
+		BrowserDocuments:         live.BrowserDocuments.Clone(),
 		BrowserByDevice:          cloneBrowserByDeviceMetrics(live.BrowserByDevice),
 		Telemetry:                cloneTelemetryHealth(live.Telemetry),
 		TelemetryStatus:          cloneTelemetryRunHealth(live.TelemetryStatus),
@@ -779,6 +784,7 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 		w.manifest.TransactionsParquetFile,
 		w.manifest.ResourceSamplesParquetFile,
 		w.manifest.IntervalSummariesParquetFile,
+		w.manifest.BrowserDocumentsParquetFile,
 		filepath.Base(w.manifestPath),
 	); err != nil {
 		return nil, err
@@ -830,12 +836,15 @@ func (w *runArchiveWriter) syncAndCloseDataFilesLocked() error {
 	if w == nil {
 		return nil
 	}
-	files := []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.elkFile, w.dynatraceFile, w.lookupFile}
+	files := []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.elkFile, w.dynatraceFile, w.browserDocumentsFile, w.lookupFile}
 	w.txFile = nil
 	w.resourceFile = nil
 	w.summaryFile = nil
 	w.elkFile = nil
 	w.dynatraceFile = nil
+	w.browserDocumentsFile = nil
+	w.browserDocumentsEncoder = nil
+	w.browserDocumentsBuf = nil
 	w.lookupFile = nil
 	var failures []error
 	for _, file := range files {
@@ -1045,6 +1054,8 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		{Name: manifest.ResourceSamplesParquetFile, Kind: "dataset", Format: "parquet", RecordType: "resource_samples", Count: manifest.ResourceSampleCount},
 		{Name: manifest.IntervalSummariesFile, Kind: "dataset", Format: "jsonl", RecordType: "interval_summaries", Count: manifest.IntervalSummaryCount},
 		{Name: manifest.IntervalSummariesParquetFile, Kind: "dataset", Format: "parquet", RecordType: "interval_summaries", Count: manifest.IntervalSummaryCount},
+		{Name: manifest.BrowserDocumentsFile, Kind: "evidence", Format: "jsonl", RecordType: "browser_documents_v2", Count: manifest.BrowserDocumentRecordCount},
+		{Name: manifest.BrowserDocumentsParquetFile, Kind: "evidence", Format: "parquet", RecordType: "browser_documents_v2", Count: manifest.BrowserDocumentRecordCount},
 		{Name: manifest.TestManifestFile, Kind: "manifest", Format: "json", RecordType: "test_manifest"},
 		{Name: manifest.TestNotesFile, Kind: "notes", Format: "json", RecordType: "test_notes"},
 		{Name: manifest.ELKEvidenceFile, Kind: "evidence", Format: "jsonl", RecordType: "elk_log_samples", Count: manifest.ELKEvidenceCount},
@@ -1063,6 +1074,8 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 			descriptors = append(descriptors, RunArchiveArtifact{Name: export.FileName, Kind: "csv_export", Format: "csv", RecordType: "action_results", Count: export.Rows})
 		}
 	}
+	manifest.BrowserDocumentsSHA256 = ""
+	manifest.BrowserDocumentsParquetSHA256 = ""
 	artifacts := make([]RunArchiveArtifact, 0, len(descriptors))
 	for _, artifact := range descriptors {
 		if strings.TrimSpace(artifact.Name) == "" {
@@ -1070,7 +1083,7 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		}
 		file, info, err := openArchiveArtifactForRead(root, artifact.Name)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if os.IsNotExist(err) && artifact.Name != manifest.BrowserDocumentsFile && artifact.Name != manifest.BrowserDocumentsParquetFile {
 				continue
 			}
 			return err
@@ -1085,6 +1098,12 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 			return closeErr
 		}
 		artifact.SHA256 = sum
+		if artifact.Name == manifest.BrowserDocumentsFile {
+			manifest.BrowserDocumentsSHA256 = sum
+		}
+		if artifact.Name == manifest.BrowserDocumentsParquetFile {
+			manifest.BrowserDocumentsParquetSHA256 = sum
+		}
 		artifacts = append(artifacts, artifact)
 	}
 	manifest.Artifacts = artifacts

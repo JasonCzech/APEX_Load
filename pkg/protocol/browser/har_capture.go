@@ -1,10 +1,10 @@
 package browser
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
-	"github.com/jasonczech/apexload/pkg/scrub"
 	playwright "github.com/mxschmitt/playwright-go"
 )
 
@@ -39,8 +38,8 @@ func normalizedRuntimeHARWorkingPath(path string) string {
 	return path
 }
 
-// RuntimeHARWorkingPathActive lets the controller retention sweep distinguish
-// a live Playwright writer from an orphan left by a crashed/legacy session.
+// RuntimeHARWorkingPathActive is a process-local diagnostic hint only. It does
+// not authorize retention to delete a raw file in any process.
 func RuntimeHARWorkingPathActive(path string) bool {
 	_, ok := activeRuntimeHARWorkingPaths.Load(normalizedRuntimeHARWorkingPath(path))
 	return ok
@@ -54,37 +53,36 @@ func unregisterRuntimeHARWorkingPath(path string) {
 	activeRuntimeHARWorkingPaths.Delete(normalizedRuntimeHARWorkingPath(path))
 }
 
-func (b *Browser) discardHARWorkingFile() {
-	workingPath := b.harWorkingPath
-	if workingPath == "" {
-		return
+// Runtime registrations are diagnostic only. Unknown legacy raw files have no
+// cross-process writer proof and are deliberately never purged here.
+func purgeInactiveRuntimeHARWorkingFiles(dir string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	for _, c := range PlanRuntimeHARWorkingCleanup(dir, 32) {
+		if ctx.Err() != nil {
+			return
+		}
+		_ = PruneRuntimeHARWorkingCandidate(ctx, c)
 	}
-	b.harWorkingPath = ""
-	unregisterRuntimeHARWorkingPath(workingPath)
-	_ = os.Remove(workingPath)
 }
 
-func purgeInactiveRuntimeHARWorkingFiles(dir string) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
+func (b *Browser) discardHARWorkingFile() error {
+	b.mu.Lock()
+	owner := b.harOwner
+	b.mu.Unlock()
+	if owner == nil {
+		return nil
 	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 ||
-			!strings.HasPrefix(name, "apexload_browser_") || !strings.HasSuffix(name, ".har.tmp") {
-			continue
-		}
-		path := filepath.Join(dir, name)
-		if RuntimeHARWorkingPathActive(path) {
-			continue
-		}
-		info, statErr := os.Lstat(path)
-		if statErr != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-			continue
-		}
-		_ = os.Remove(path)
+	owner.startFinish(false, nil)
+	_, err := owner.waitFinish(context.Background())
+	b.mu.Lock()
+	if b.harOwner == owner && owner.retiredSuccessfully() {
+		b.harOwner = nil
+		b.harWorkingPath = ""
+		unregisterRuntimeHARWorkingPath(owner.path)
 	}
+	b.mu.Unlock()
+	return err
 }
 
 func normalizeHARCapturePolicy(value string) string {
@@ -106,27 +104,41 @@ func normalizeHARCapturePolicy(value string) string {
 // file when the policy requires it. The recording always runs for on_error so
 // the evidence exists by the time the error happens; the file is discarded at
 // close when no error occurred.
-func (b *Browser) applyHARCaptureOptions(contextOptions *playwright.BrowserNewContextOptions) {
+func (b *Browser) applyHARCaptureOptions(contextOptions *playwright.BrowserNewContextOptions) error {
 	if b.harCapturePolicy == HARCaptureOff || b.harCapturePolicy == "" || b.hasRuntimeSecretMaterial() {
-		return
+		return nil
 	}
-	dir := b.harDir
-	if dir == "" {
-		dir = os.TempDir()
+	if contextOptions == nil {
+		return errors.New("browser HAR context options are required")
 	}
-	// Raw HARs are only working files. Clear legacy/crash leftovers before a
-	// new session starts; active writers are registered and skipped.
-	purgeInactiveRuntimeHARWorkingFiles(dir)
-	b.harWorkingPath = filepath.Join(dir, fmt.Sprintf("apexload_browser_%d.har.tmp", time.Now().UnixNano()))
-	registerRuntimeHARWorkingPath(b.harWorkingPath)
-	contextOptions.RecordHarPath = playwright.String(b.harWorkingPath)
+	b.mu.Lock()
+	previous := b.harOwner
+	b.mu.Unlock()
+	if previous != nil && !previous.retiredSuccessfully() {
+		return errHAROwnershipUnproven
+	}
+	purgeInactiveRuntimeHARWorkingFiles(b.harDir)
+	ctx, cancel := context.WithTimeout(context.Background(), runtimeHARCloseWait)
+	defer cancel()
+	owner, err := newHARCaptureOwner(ctx, b.harDir)
+	if err != nil {
+		return err
+	}
+	b.mu.Lock()
+	b.harOwner = owner
+	b.harWorkingPath = owner.path
+	b.mu.Unlock()
+	registerRuntimeHARWorkingPath(owner.path)
+	contextOptions.RecordHarPath = playwright.String(owner.path)
 	contextOptions.RecordHarContent = playwright.HarContentPolicyEmbed
+	return nil
 }
 
 func (b *Browser) startHARMonitor() {
 	if b.harWorkingPath == "" {
 		return
 	}
+	b.mu.Lock()
 	b.harMonitorStop = make(chan struct{})
 	b.harLimitExceeded = make(chan struct{})
 	b.harLimitOnce = sync.Once{}
@@ -134,6 +146,9 @@ func (b *Browser) startHARMonitor() {
 	b.harObservedEntries = 0
 	b.harMonitorWG.Add(1)
 	workingPath := b.harWorkingPath
+	owner := b.harOwner
+	stop, exceeded, generation := b.harMonitorStop, b.harLimitExceeded, b.evidence.generation
+	b.mu.Unlock()
 	go func(stop, exceeded <-chan struct{}) {
 		defer b.harMonitorWG.Done()
 		ticker := time.NewTicker(250 * time.Millisecond)
@@ -143,31 +158,50 @@ func (b *Browser) startHARMonitor() {
 			case <-stop:
 				return
 			case <-exceeded:
-				b.closeOversizedHARContext()
+				b.closeOwnedOversizedHARContext(owner, generation)
 				return
 			case <-ticker.C:
 				if info, err := os.Stat(workingPath); err == nil && info.Size() > maxRuntimeHARBytes {
-					b.harLimitOnce.Do(func() { close(b.harLimitExceeded) })
+					b.mu.Lock()
+					if generation == b.evidence.generation && owner == b.harOwner && stop == b.harMonitorStop && b.harLimitExceeded != nil {
+						b.harLimitOnce.Do(func() { close(b.harLimitExceeded) })
+					}
+					b.mu.Unlock()
 				}
 			}
 		}
-	}(b.harMonitorStop, b.harLimitExceeded)
+	}(stop, exceeded)
 }
 
-func (b *Browser) closeOversizedHARContext() {
+func (b *Browser) closeOversizedHARContext(expectedGeneration ...string) {
 	b.mu.Lock()
-	b.harErrorSeen = true
-	context := b.pwContext
-	b.pwContext = nil
+	owner := b.harOwner
 	b.mu.Unlock()
-	if context != nil {
-		_ = context.Close()
+	b.closeOwnedOversizedHARContext(owner, expectedGeneration...)
+}
+
+func (b *Browser) closeOwnedOversizedHARContext(owner *harCaptureOwner, expectedGeneration ...string) {
+	b.mu.Lock()
+	if owner != b.harOwner || len(expectedGeneration) > 0 && expectedGeneration[0] != b.evidence.generation {
+		b.mu.Unlock()
+		return
+	}
+	b.harErrorSeen = true
+	browserContext := b.pwContext
+	if owner == nil {
+		b.pwContext = nil
+	}
+	b.mu.Unlock()
+	if owner != nil {
+		owner.startClose()
+	} else if browserContext != nil {
+		_ = browserContext.Close()
 	}
 }
 
 const maxRuntimeHAREntries = 100_000
 
-func (b *Browser) noteHARRequest(request playwright.Request) {
+func (b *Browser) noteHARRequest(request playwright.Request, expectedGeneration ...string) {
 	b.mu.Lock()
 	active := b.harLimitExceeded != nil
 	b.mu.Unlock()
@@ -178,41 +212,39 @@ func (b *Browser) noteHARRequest(request playwright.Request) {
 	// bounded diagnostics queue cannot bypass the entry limiter. The monitor
 	// independently checks the actual HAR file size without calling Playwright.
 	_ = request
-	b.noteHARNetworkUsage(0)
+	b.noteHARNetworkUsage(0, expectedGeneration...)
 }
 
-func (b *Browser) noteHARNetworkUsage(bytes int64) {
+func (b *Browser) noteHARNetworkUsage(bytes int64, expectedGeneration ...string) {
 	b.mu.Lock()
-	if b.harLimitExceeded == nil {
+	if b.harLimitExceeded == nil || len(expectedGeneration) > 0 && expectedGeneration[0] != b.evidence.generation {
 		b.mu.Unlock()
 		return
 	}
 	b.harObservedBytes += bytes
 	b.harObservedEntries++
 	exceeded := b.harObservedBytes > maxRuntimeHARBytes || b.harObservedEntries > maxRuntimeHAREntries
-	signal := b.harLimitExceeded
-	b.mu.Unlock()
 	if exceeded {
-		b.harLimitOnce.Do(func() { close(signal) })
+		b.harLimitOnce.Do(func() { close(b.harLimitExceeded) })
 	}
+	b.mu.Unlock()
 }
 
-func (b *Browser) noteHARBytes(bytes int64) {
+func (b *Browser) noteHARBytes(bytes int64, expectedGeneration ...string) {
 	if bytes <= 0 {
 		return
 	}
 	b.mu.Lock()
-	if b.harLimitExceeded == nil {
+	if b.harLimitExceeded == nil || len(expectedGeneration) > 0 && expectedGeneration[0] != b.evidence.generation {
 		b.mu.Unlock()
 		return
 	}
 	b.harObservedBytes += bytes
 	exceeded := b.harObservedBytes > maxRuntimeHARBytes
-	signal := b.harLimitExceeded
-	b.mu.Unlock()
 	if exceeded {
-		b.harLimitOnce.Do(func() { close(signal) })
+		b.harLimitOnce.Do(func() { close(b.harLimitExceeded) })
 	}
+	b.mu.Unlock()
 }
 
 // noteHARError marks the session so an on_error policy keeps the recording.
@@ -245,90 +277,33 @@ func (b *Browser) noteHARManual() {
 // otherwise scrubs it and persists the artifact with a sensitivity-labeled
 // name. Returns the artifact path when one was kept.
 func (b *Browser) finalizeHARCapture() string {
-	workingPath := b.harWorkingPath
-	if workingPath == "" {
-		return ""
-	}
-	defer unregisterRuntimeHARWorkingPath(workingPath)
-	b.harWorkingPath = ""
+	path, _ := b.finalizeHARCaptureContext(context.Background())
+	return path
+}
 
+func (b *Browser) finalizeHARCaptureContext(ctx context.Context) (string, error) {
 	b.mu.Lock()
-	errorSeen := b.harErrorSeen
-	slaBreachSeen := b.harSLABreachSeen
-	manualSeen := b.harManualSeen
-	b.harErrorSeen = false
-	b.harSLABreachSeen = false
-	b.harManualSeen = false
+	owner := b.harOwner
+	if owner == nil {
+		b.mu.Unlock()
+		return "", nil
+	}
+	keep := b.harCapturePolicy == HARCaptureAlways || b.harCapturePolicy == HARCaptureOnError && b.harErrorSeen || b.harCapturePolicy == HARCaptureOnSLABreach && b.harSLABreachSeen || b.harCapturePolicy == HARCaptureManual && b.harManualSeen
+	redactor := b.runtimeTextRedactor
 	b.mu.Unlock()
-
-	if b.harCapturePolicy == HARCaptureOnError && !errorSeen {
-		_ = os.Remove(workingPath)
-		return ""
+	owner.startFinish(keep, redactor)
+	path, err := owner.waitFinish(ctx)
+	b.mu.Lock()
+	if b.harOwner == owner && owner.retiredSuccessfully() {
+		b.harOwner = nil
+		b.harWorkingPath = ""
+		b.harErrorSeen = false
+		b.harSLABreachSeen = false
+		b.harManualSeen = false
+		unregisterRuntimeHARWorkingPath(owner.path)
 	}
-	if b.harCapturePolicy == HARCaptureOnSLABreach && !slaBreachSeen {
-		_ = os.Remove(workingPath)
-		return ""
-	}
-	if b.harCapturePolicy == HARCaptureManual && !manualSeen {
-		_ = os.Remove(workingPath)
-		return ""
-	}
-
-	info, err := os.Stat(workingPath)
-	if err != nil {
-		slog.Warn("browser HAR capture unavailable", "policy", b.harCapturePolicy, "error", err)
-		return ""
-	}
-	if info.Size() > maxRuntimeHARBytes {
-		slog.Warn("browser HAR capture exceeded size limit", "policy", b.harCapturePolicy, "bytes", info.Size())
-		_ = os.Remove(workingPath)
-		return ""
-	}
-	f, err := os.Open(workingPath)
-	if err != nil {
-		slog.Warn("browser HAR capture unavailable", "policy", b.harCapturePolicy, "error", err)
-		return ""
-	}
-	data, err := io.ReadAll(io.LimitReader(f, maxRuntimeHARBytes+1))
-	_ = f.Close()
-	if err != nil || int64(len(data)) > maxRuntimeHARBytes {
-		slog.Warn("browser HAR capture exceeded size limit", "policy", b.harCapturePolicy)
-		_ = os.Remove(workingPath)
-		return ""
-	}
-	_ = os.Remove(workingPath)
-
-	scrubbed, err := scrub.HAR(data, scrub.Policy{})
-	if err != nil {
-		slog.Warn("browser HAR scrub-on-write failed; discarding capture to avoid persisting secrets",
-			"policy", b.harCapturePolicy, "error", err)
-		return ""
-	}
-	if redactor := b.currentRuntimeTextRedactor(); redactor != nil {
-		scrubbed, err = redactRuntimeHARText(scrubbed, redactor)
-		if err != nil {
-			slog.Warn("browser HAR runtime secret redaction failed; discarding capture to avoid persisting secrets",
-				"policy", b.harCapturePolicy, "error", err)
-			return ""
-		}
-	}
-
-	artifactPath := strings.TrimSuffix(workingPath, ".har.tmp") + "_" + scrub.SensitivityScrubbed + ".har"
-	if err := os.WriteFile(artifactPath, scrubbed, 0o600); err != nil {
-		slog.Warn("browser HAR artifact write failed", "path", artifactPath, "error", err)
-		return ""
-	}
-	if err := enforceRuntimeHARRetention(filepath.Dir(artifactPath)); err != nil {
-		slog.Warn("browser HAR artifact retention cleanup failed", "path", artifactPath, "error", err)
-	}
-	slog.Info("browser HAR artifact captured",
-		"policy", b.harCapturePolicy,
-		"path", artifactPath,
-		"sensitivity", scrub.SensitivityScrubbed,
-		"error_seen", errorSeen,
-		"sla_breach_seen", slaBreachSeen,
-		"manual_seen", manualSeen)
-	return artifactPath
+	b.mu.Unlock()
+	return path, err
 }
 
 func (b *Browser) currentRuntimeTextRedactor() protocol.TextRedactor {

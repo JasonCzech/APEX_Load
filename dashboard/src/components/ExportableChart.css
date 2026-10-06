@@ -13,3 +13,18 @@
 .chart-export-actions .btn {
   min-width: 3rem;
 }
+
+/* Chart descriptions belong to this component on every route, including
+   routes that never load the report page stylesheet. Keep them accessible
+   without allowing serialized analytical context to widen the visible card. */
+.exportable-chart > .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

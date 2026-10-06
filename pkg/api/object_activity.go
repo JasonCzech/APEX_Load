@@ -309,6 +309,16 @@ func (s *Server) objectActivityMiddleware(next http.Handler) http.Handler {
 				return
 			}
 		}
+		// The authored document and placement form a fixed strong-ETag body.
+		// Activity has its own lifecycle, so this representation must pass
+		// through without display-cache reads or JSON activity enrichment.
+		if r.Method == http.MethodGet && kind == "script" && len(parts) == 2 {
+			views := r.URL.Query()["view"]
+			if len(views) == 1 && views[0] == "authoring" {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
 		mutation := isMutatingMethod(r.Method)
 		readObject := r.Method == http.MethodGet && kind != "" && len(parts) <= 2
 		if !mutation && !readObject {

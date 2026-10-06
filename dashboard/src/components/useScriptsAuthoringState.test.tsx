@@ -1,3 +1,4 @@
+import { pairedAuthoringTestApi, savedAuthoringFixture } from '../test/scriptAuthoringFixtures'
 // @vitest-environment jsdom
 
 import { act } from 'react'
@@ -17,7 +18,7 @@ type HarnessProps = {
 }
 
 function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps) {
-  const model = useScriptsAuthoringState({ api: api as never, initialMode, initialEditId })
+  const model = useScriptsAuthoringState({ api: { ...api, ...pairedAuthoringTestApi(api.getScript) } as never, initialMode, initialEditId })
 
   return (
     <div>
@@ -27,6 +28,11 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <span data-testid="import-mode">{model.authoringState.importMode || 'none'}</span>
       <span data-testid="editing-id">{model.authoringState.editingId || 'none'}</span>
       <span data-testid="editing-creator">{model.authoringState.editingActivity?.creator?.actor_display_name || 'Unknown'}</span>
+      <span data-testid="retained-name">{model.authoringState.editingRetainedDraft?.name || 'none'}</span>
+      <span data-testid="retained-json">{model.authoringState.editingRetainedJsonText || 'none'}</span>
+      <span data-testid="retained-created">{model.authoringState.editingRetainedCreatedSecretNames?.join(',') || 'none'}</span>
+      <span data-testid="retained-review">{String(model.authoringState.editingRetainedNeedsReview || false)}</span>
+      <span data-testid="authoring-authority">{model.authoringState.editingAuthoring?.etag || 'none'}</span>
       <span data-testid="editing-name">{model.authoringState.editingScript?.name || 'none'}</span>
       <span data-testid="draft-name">{model.authoringState.draftScript?.name || 'none'}</span>
       <span data-testid="draft-protocol">{model.authoringState.draftScript?.protocol || 'none'}</span>
@@ -52,7 +58,8 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <button data-testid="load-edit" onClick={() => void model.handleEdit('script-1')}>load-edit</button>
       <button data-testid="save-script" onClick={() => model.handleSavedScript({ id: 'saved-script-1', name: 'Saved Draft', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z' })}>save-script</button>
       <button data-testid="save-script-with-notice" onClick={() => model.handleSavedScript({ id: 'saved-script-3', name: 'Saved Notice Draft', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z' }, 'Saved 2 scripts. Reviewing the first saved script.')}>save-script-with-notice</button>
-      <button data-testid="save-script-with-payload" onClick={() => model.handleSavedScript({ id: 'saved-script-2', name: 'Saved Payload', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z', script: { name: 'Persisted Checkout', protocol: 'http', config: {}, actions: [] } as never })}>save-script-with-payload</button>
+      <button data-testid="save-script-retained-summary" onClick={() => model.handleSavedScript({ id: 'saved-retained', name: 'Saved summary', protocol: 'http', version: '1', created_at: '' }, null, { name: 'Retained late draft', version: '1', protocol: 'http', config: { base_url: '' }, actions: [] }, { retainedJsonText: '{"name":"Incomplete late draft",', retainedCreatedSecretNames: ['CREATED_BEFORE_ACK'] })}>save-script-retained-summary</button>
+      <button data-testid="save-script-with-payload" onClick={() => model.handleSavedScript(savedAuthoringFixture({ name: 'Persisted Checkout' }, 'saved-script-2'))}>save-script-with-payload</button>
       <button data-testid="open-sample" onClick={model.createOptionActions.openSampleImport}>open-sample</button>
       <button data-testid="open-java-import" onClick={model.createOptionActions.openJavaHttpImport}>open-java-import</button>
       <button data-testid="open-salesforce" onClick={model.createOptionActions.openSalesforceImport}>open-salesforce</button>
@@ -317,6 +324,27 @@ describe('useScriptsAuthoringState', () => {
 
     expect(readTestId('editing-id')).toBe('script-2')
     expect(readTestId('editing-name')).toBe('Current Script')
+  })
+
+  it('keeps an unqualified saved draft and provenance when its canonical read fails', async () => {
+    let reject!: (cause: Error) => void
+    const api = { getScript: vi.fn().mockReturnValueOnce(new Promise((_, fail) => { reject = fail })) }
+    await act(async () => { root.render(<AuthoringStateHarness api={api} initialMode="list" />) })
+    await click('start-draft')
+    await click('save-script-retained-summary')
+    expect(api.getScript).toHaveBeenCalledTimes(1)
+    await act(async () => { reject(new Error('Supported authoring view unavailable')) })
+    await flushPromises()
+    expect(readTestId('subview')).toBe('edit')
+    expect(readTestId('editing-id')).toBe('saved-retained')
+    expect(readTestId('editing-name')).toBe('Retained late draft')
+    expect(readTestId('retained-name')).toBe('Retained late draft')
+    expect(readTestId('retained-json')).toBe('{"name":"Incomplete late draft",')
+    expect(readTestId('retained-created')).toBe('CREATED_BEFORE_ACK')
+    expect(readTestId('retained-review')).toBe('true')
+    expect(readTestId('authoring-authority')).toBe('none')
+    expect(readTestId('authoring-notice')).toContain('Supported authoring view unavailable')
+    expect(api.getScript).toHaveBeenCalledTimes(1)
   })
 
   it('prefers the persisted script payload when save returns one', async () => {

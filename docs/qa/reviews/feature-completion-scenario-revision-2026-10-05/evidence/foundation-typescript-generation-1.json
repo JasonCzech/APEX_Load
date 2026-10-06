@@ -1,0 +1,69 @@
+{
+  "scope": "scenario storage foundation and generated-contract checks; API/UI enforcement and composed merge acceptance are separate",
+  "command": [
+    "go",
+    "run",
+    "./cmd/openapits",
+    "-in",
+    "docs/swagger.yaml",
+    "-out",
+    "dashboard/src/types/generated/openapi.ts"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner",
+  "started_at": "2026-10-05T17:14:36.960775+00:00",
+  "finished_at": "2026-10-05T17:14:37.635127+00:00",
+  "duration_seconds": 0.674,
+  "exit_code": 0,
+  "status": "passed",
+  "raw_log": "foundation-typescript-generation-1.stdout.txt",
+  "raw_log_bytes": 47,
+  "raw_log_sha256": "c4fb751d9a266221ff3e6bfed222f74564615d536a5d67449f72656f82b63a14",
+  "source_before": {
+    "file": "foundation-go-inventory-f66d1f39e1adb6fe750d16da3d2cc09c67f776c191c0bc5d5a9a71b22af2a109.json",
+    "sha256": "f66d1f39e1adb6fe750d16da3d2cc09c67f776c191c0bc5d5a9a71b22af2a109",
+    "file_count": 4010
+  },
+  "source_after": {
+    "file": "foundation-go-inventory-f66d1f39e1adb6fe750d16da3d2cc09c67f776c191c0bc5d5a9a71b22af2a109.json",
+    "sha256": "f66d1f39e1adb6fe750d16da3d2cc09c67f776c191c0bc5d5a9a71b22af2a109",
+    "file_count": 4010
+  },
+  "source_changed": false,
+  "generated_before": [
+    {
+      "path": "docs/swagger.yaml",
+      "sha256": "452d94321bed98bc441333a7a702554e0aa395ccc6720ae6d5e2186934a9d7cc"
+    },
+    {
+      "path": "docs/api-endpoint-catalog.json",
+      "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+    },
+    {
+      "path": "dashboard/src/types/generated/openapi.ts",
+      "sha256": "62dc9076a281679319c6ce35ef1f9de8d20ba6e31edaf926183f564d5f889768"
+    }
+  ],
+  "generated_after": [
+    {
+      "path": "docs/swagger.yaml",
+      "sha256": "452d94321bed98bc441333a7a702554e0aa395ccc6720ae6d5e2186934a9d7cc"
+    },
+    {
+      "path": "docs/api-endpoint-catalog.json",
+      "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+    },
+    {
+      "path": "dashboard/src/types/generated/openapi.ts",
+      "sha256": "62dc9076a281679319c6ce35ef1f9de8d20ba6e31edaf926183f564d5f889768"
+    }
+  ],
+  "helper_sha256": "557b0d5b39f8648e33bca14d721fb0c43909585f0451d1228eed27bdb0cc55cd",
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "NODE_OPTIONS": "--max-old-space-size=2048"
+  }
+}

@@ -1,0 +1,1 @@
+{"version":"dev","display_version":"dev","commit":"","build_time":"","go_version":"go1.26.5","environment":"local","deployment":{"kind":"server","label":"Server","bind_scope":"loopback","auth_enforced":false,"desktop_available":false,"client_downloads_enabled":true}}

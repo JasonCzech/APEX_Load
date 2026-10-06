@@ -521,6 +521,9 @@ message MetricsBatch {
   // Standalone cumulative processor evidence: present even without actions.
   string messaging_progress_json = 27;
   uint32 messaging_progress_version = 28;
+ // Document lifecycle observations are independent of legacy action samples.
+ string browser_document_summary_json = 29;
+ uint32 browser_document_summary_version = 30;
 }
 
 message MetricsBatchTelemetry {

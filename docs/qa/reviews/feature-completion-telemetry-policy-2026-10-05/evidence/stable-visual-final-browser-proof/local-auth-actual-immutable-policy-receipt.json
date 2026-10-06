@@ -1,0 +1,47 @@
+{
+  "test_id": "7f0247d6-8152-41e4-856d-a311e3a11cb4",
+  "telemetry_policy": {
+    "availability": "available",
+    "policy": {
+      "schema_version": "apexload.telemetry_policy.v1",
+      "policy_id": "system-telemetry-budgets",
+      "revision": 1,
+      "hash": "6a50be8ebcc7ff85b4bbcff95fca3368b00b9284022b375b4b18907e31c88e11",
+      "captured_at": "2026-10-05T13:02:13.990025Z",
+      "capture_boundary": "execution-admission-before-staging",
+      "classification_algorithm": "legacy-mixed-diagnostic.v1",
+      "expected_controller_publication_interval_ms": 3000,
+      "cadence_scope": "local-controller-ticker",
+      "sustained_breach_window_ms": 15000,
+      "coverage_rule": "retained-classifications-only;gaps-unknown",
+      "budgets": [
+        {
+          "stage": "sample_age",
+          "enabled": true,
+          "limit_ms": 17
+        },
+        {
+          "stage": "generator_processing",
+          "enabled": false,
+          "limit_ms": 0
+        },
+        {
+          "stage": "transport",
+          "enabled": true,
+          "limit_ms": 500
+        },
+        {
+          "stage": "controller_fanout",
+          "enabled": true,
+          "limit_ms": 500
+        },
+        {
+          "stage": "browser_render",
+          "enabled": true,
+          "limit_ms": 500
+        }
+      ]
+    }
+  },
+  "target_requests_observed": 11
+}

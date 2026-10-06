@@ -875,11 +875,11 @@ func (s *SQLiteStore) CommitGitHubScriptImport(script *dsl.Script, link *GitHubS
 		}
 		result, err := tx.Exec(`INSERT INTO scripts
 			(id, ref_key, name, protocol, version, project_id, folder_id, generated_by, generated_from,
-			 metadata_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 metadata_json, goal_config_json, config, data_sources, parameters, init, actions, teardown, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO NOTHING`, script.ID, script.RefKey, script.Name, script.Protocol, script.Version,
 			script.ProjectID, script.FolderID, script.GeneratedBy, script.GeneratedFrom,
-			encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
+			encoded.metadata, encoded.goals, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
 			script.CreatedAt, script.UpdatedAt)
 		if err != nil {
 			return GitHubScriptImportConflict, err
@@ -938,10 +938,10 @@ func (s *SQLiteStore) CommitGitHubScriptImport(script *dsl.Script, link *GitHubS
 		}
 		result, err := tx.Exec(`UPDATE scripts SET
 			ref_key = ?, name = ?, protocol = ?, version = ?, folder_id = ?, generated_by = ?, generated_from = ?,
-			metadata_json = ?, config = ?, data_sources = ?, parameters = ?, init = ?, actions = ?, teardown = ?, updated_at = ?
+			metadata_json = ?, goal_config_json = ?, config = ?, data_sources = ?, parameters = ?, init = ?, actions = ?, teardown = ?, updated_at = ?
 			WHERE id = ? AND project_id = ? AND CAST(updated_at AS TEXT) = ?`,
 			script.RefKey, script.Name, script.Protocol, script.Version, script.FolderID, script.GeneratedBy, script.GeneratedFrom,
-			encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
+			encoded.metadata, encoded.goals, encoded.config, encoded.dataSources, encoded.parameters, encoded.init, encoded.actions, encoded.teardown,
 			script.UpdatedAt, script.ID, script.ProjectID, currentUpdatedRaw)
 		if err != nil {
 			return GitHubScriptImportConflict, err

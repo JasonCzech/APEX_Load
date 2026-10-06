@@ -1,0 +1,17 @@
+--- FAIL: TestBrowserDocumentBootstrapOfficialSessionWindowAndInteractionRank (0.07s)
+    document_bootstrap_test.go:53: algorithm adapter unit: exit status 1
+        AssertionError [ERR_ASSERTION]: final drain must recompute the pinned retained rank at the settled native count
+        
+        1000 !== 400
+        
+            at [eval]:23:135 {
+          generatedMessage: false,
+          code: 'ERR_ASSERTION',
+          actual: 1000,
+          expected: 400,
+          operator: 'strictEqual',
+          diff: 'simple'
+        }
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/protocol/browser	0.347s
+FAIL

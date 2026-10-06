@@ -1,0 +1,94 @@
+=== RUN   TestPostgresScriptContentRevisionIntegration
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers
+    script_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_script_revision_1791180517995008000
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/ref_key
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/name
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/protocol
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/version
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/project_id
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/folder_id
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/generated_by
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/generated_from
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/metadata_json
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/goal_config_json
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/config
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/data_sources
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/parameters
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/init
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/actions
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/teardown
+=== RUN   TestPostgresScriptContentRevisionIntegration/parent_triggers/created_at
+=== RUN   TestPostgresScriptContentRevisionIntegration/opaque_cas
+    script_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_script_revision_1791180519478955000
+=== RUN   TestPostgresScriptContentRevisionIntegration/opaque_cas/stale
+=== RUN   TestPostgresScriptContentRevisionIntegration/opaque_cas/foreign
+=== RUN   TestPostgresScriptContentRevisionIntegration/opaque_cas/incarnation
+=== RUN   TestPostgresScriptContentRevisionIntegration/opaque_cas/malformed
+=== RUN   TestPostgresScriptContentRevisionIntegration/reference_lookup
+    script_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_script_revision_1791180520925105000
+=== RUN   TestPostgresScriptContentRevisionIntegration/authored_placement
+    script_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_script_revision_1791180522456813000
+=== RUN   TestPostgresScriptContentRevisionIntegration/locked_policy_ruleset
+    script_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_script_revision_1791180524395511000
+=== RUN   TestPostgresScriptContentRevisionIntegration/imports_rollback_receipts
+    script_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_script_revision_1791180526156970000
+=== RUN   TestPostgresScriptContentRevisionIntegration/blank_id_incarnation_and_placement
+    script_content_revision_postgres_integration_test.go:83: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_script_revision_1791180528041739000
+=== RUN   TestPostgresScriptContentRevisionIntegration/coherent_read
+    script_content_revision_postgres_integration_test.go:86: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_script_revision_1791180529387190000
+=== RUN   TestPostgresScriptContentRevisionIntegration/migration_reopen_and_shape_repair
+    script_content_revision_postgres_integration_test.go:95: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_script_revision_1791180532589402000
+=== RUN   TestPostgresScriptContentRevisionIntegration/concurrent_initialization
+    script_content_revision_postgres_integration_test.go:182: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_script_revision_1791180541054729000
+=== RUN   TestPostgresScriptContentRevisionIntegration/legacy_writer_hierarchy_lock_order
+    script_content_revision_postgres_integration_test.go:237: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_script_revision_1791180546618092000
+=== RUN   TestPostgresScriptContentRevisionIntegration/legacy_writer_hierarchy_lock_order/save
+=== RUN   TestPostgresScriptContentRevisionIntegration/legacy_writer_hierarchy_lock_order/move
+=== RUN   TestPostgresScriptContentRevisionIntegration/child_write_fences_parent_before_commit
+    script_content_revision_postgres_integration_test.go:333: Actual PostgreSQL server_version=16.15 (Debian 16.15-1.pgdg13+2) owned schema=apexload_script_revision_1791180549356524000
+--- PASS: TestPostgresScriptContentRevisionIntegration (33.58s)
+    --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers (1.48s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/ref_key (0.01s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/name (0.00s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/protocol (0.00s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/version (0.00s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/project_id (0.00s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/folder_id (0.00s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/generated_by (0.00s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/generated_from (0.00s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/metadata_json (0.01s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/goal_config_json (0.00s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/config (0.00s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/data_sources (0.01s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/parameters (0.01s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/init (0.01s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/actions (0.01s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/teardown (0.01s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/parent_triggers/created_at (0.01s)
+    --- PASS: TestPostgresScriptContentRevisionIntegration/opaque_cas (1.45s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/opaque_cas/stale (0.01s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/opaque_cas/foreign (0.02s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/opaque_cas/incarnation (0.01s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/opaque_cas/malformed (0.01s)
+    --- PASS: TestPostgresScriptContentRevisionIntegration/reference_lookup (1.53s)
+    --- PASS: TestPostgresScriptContentRevisionIntegration/authored_placement (1.94s)
+    --- PASS: TestPostgresScriptContentRevisionIntegration/locked_policy_ruleset (1.76s)
+    --- PASS: TestPostgresScriptContentRevisionIntegration/imports_rollback_receipts (1.88s)
+    --- PASS: TestPostgresScriptContentRevisionIntegration/blank_id_incarnation_and_placement (1.35s)
+    --- PASS: TestPostgresScriptContentRevisionIntegration/coherent_read (3.20s)
+    --- PASS: TestPostgresScriptContentRevisionIntegration/migration_reopen_and_shape_repair (8.47s)
+    --- PASS: TestPostgresScriptContentRevisionIntegration/concurrent_initialization (5.56s)
+    --- PASS: TestPostgresScriptContentRevisionIntegration/legacy_writer_hierarchy_lock_order (2.74s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/legacy_writer_hierarchy_lock_order/save (0.04s)
+        --- PASS: TestPostgresScriptContentRevisionIntegration/legacy_writer_hierarchy_lock_order/move (0.07s)
+    --- PASS: TestPostgresScriptContentRevisionIntegration/child_write_fences_parent_before_commit (2.22s)
+=== RUN   TestPostgresScriptGoalConfigMigrationWritersAndReopen
+=== RUN   TestPostgresScriptGoalConfigMigrationWritersAndReopen/save
+=== RUN   TestPostgresScriptGoalConfigMigrationWritersAndReopen/conditional
+=== RUN   TestPostgresScriptGoalConfigMigrationWritersAndReopen/create-only
+--- PASS: TestPostgresScriptGoalConfigMigrationWritersAndReopen (5.64s)
+    --- PASS: TestPostgresScriptGoalConfigMigrationWritersAndReopen/save (0.14s)
+    --- PASS: TestPostgresScriptGoalConfigMigrationWritersAndReopen/conditional (0.16s)
+    --- PASS: TestPostgresScriptGoalConfigMigrationWritersAndReopen/create-only (0.05s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/storage	40.956s

@@ -1,0 +1,10 @@
+{
+  "server_version": "16.15 (Debian 16.15-1.pgdg13+2)",
+  "image_manifest_digest": "sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54",
+  "container": "apexload-feature-resume-pg-20261004",
+  "memory_limit_bytes": 536870912,
+  "cpus": 1,
+  "host_binding": "127.0.0.1:15437",
+  "scope": "disposable test fixture; no production resources or credentials",
+  "test_selector": "^TestPostgres"
+}

@@ -1,0 +1,366 @@
+{
+  "utc": "2026-10-06T00:46:01.936709+00:00",
+  "scope": "Read-only final generated API, M1 access, script authored-placement/save-mode and private scenario capability/documentation coherence review.",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "head": "9b5b9e29a48950591f9e06d7acb7d2d3095cae4b",
+  "outcome": "No additional actionable findings in the reviewed scope. Previous generated-browser-resource-contract pending item is closed by the now-present generated artifacts; no gate acceptance is implied by this source review.",
+  "findings": [],
+  "before_receipts": [
+    {
+      "path": "/private/tmp/apexload-generated-coherence-review-start-20261005.json",
+      "sha256": "3442b472a85c41220d84cad2d50df936f7cb903e8212774f7dcc6698be38ab55"
+    },
+    {
+      "path": "/private/tmp/apexload-generated-coherence-review-additional-start-20261005.json",
+      "sha256": "dccf1c47d79226b0b0c8790300dd3b779e651bca944964b675c01c2b011d6627"
+    }
+  ],
+  "bookend_count": 37,
+  "all_bookends_stable": true,
+  "files": [
+    {
+      "path": "docs/swagger.yaml",
+      "sha256": "4436bbdeb25cccd929308c70703adc50d0f8f5df456e6a3a18124a725ef60551",
+      "sha256_after": "4436bbdeb25cccd929308c70703adc50d0f8f5df456e6a3a18124a725ef60551",
+      "stable": true
+    },
+    {
+      "path": "docs/api-endpoint-catalog.json",
+      "sha256": "bca4eb849c2e446b2233d9db23af2c1e3b09457ae056f832dd48eeab3e686882",
+      "sha256_after": "bca4eb849c2e446b2233d9db23af2c1e3b09457ae056f832dd48eeab3e686882",
+      "stable": true
+    },
+    {
+      "path": "dashboard/src/types/generated/openapi.ts",
+      "sha256": "87fd69081785270438752c9c30c56f1fa075ee12743ccf5ab78e4f3f927cc4bd",
+      "sha256_after": "87fd69081785270438752c9c30c56f1fa075ee12743ccf5ab78e4f3f927cc4bd",
+      "stable": true
+    },
+    {
+      "path": "docs/qa/evidence/M1/api-contract-matrix.json",
+      "sha256": "63bf9f8411cbea69afa0b07049686f706d704a987679ee513dbc7999a437c0fb",
+      "sha256_after": "63bf9f8411cbea69afa0b07049686f706d704a987679ee513dbc7999a437c0fb",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/openapi_browser_resource.go",
+      "sha256": "6f066c80b83b5c80eda87b5c837fa083c9e3279695fb51b01bb8950d3c5f9408",
+      "sha256_after": "6f066c80b83b5c80eda87b5c837fa083c9e3279695fb51b01bb8950d3c5f9408",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/openapi_browser_resource_test.go",
+      "sha256": "2592b983286b263ec2ecee0e4c38ab83f48d86b96a00ed071187547fd4728ad5",
+      "sha256_after": "2592b983286b263ec2ecee0e4c38ab83f48d86b96a00ed071187547fd4728ad5",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/archive_browser_resource_query.go",
+      "sha256": "d7c31ab3299cbd8e93223c92023fec2fc7452191019e8f7480cd82f63d6ef746",
+      "sha256_after": "d7c31ab3299cbd8e93223c92023fec2fc7452191019e8f7480cd82f63d6ef746",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/archive_browser_resource_types.go",
+      "sha256": "679ae31f80ba98ef05df8ca8eacebbfe1e573e17bab4888f8db71019a83fc275",
+      "sha256_after": "679ae31f80ba98ef05df8ca8eacebbfe1e573e17bab4888f8db71019a83fc275",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/archive_browser_resource_wire.go",
+      "sha256": "d3b08dce6cc5a0aa6c064c7c0a0c6daedfd90f208d0f86b7c2ab71cab33d8c20",
+      "sha256_after": "d3b08dce6cc5a0aa6c064c7c0a0c6daedfd90f208d0f86b7c2ab71cab33d8c20",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/archive_browser_resource_handler.go",
+      "sha256": "d1d0f134696f53d1cb817f5e15c94a20018ec63fe83fbce3c394459710440753",
+      "sha256_after": "d1d0f134696f53d1cb817f5e15c94a20018ec63fe83fbce3c394459710440753",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/archive_browser_resource_deadline.go",
+      "sha256": "c58fa427c27cf0b75dc7936c12ffc735f559d55c7c9f0a495382713e29c36560",
+      "sha256_after": "c58fa427c27cf0b75dc7936c12ffc735f559d55c7c9f0a495382713e29c36560",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/route_registry_archive.go",
+      "sha256": "b78f655924604a8afbafe28c889fcb353c27de5c177509317dc3131cd322784e",
+      "sha256_after": "b78f655924604a8afbafe28c889fcb353c27de5c177509317dc3131cd322784e",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/openapi_contract_infer.go",
+      "sha256": "13ab761dd51b88a61cdf7d81ac7da6dca25b6395a0dab10e0773d5c0f140feb3",
+      "sha256_after": "13ab761dd51b88a61cdf7d81ac7da6dca25b6395a0dab10e0773d5c0f140feb3",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/openapi_monitor_management.go",
+      "sha256": "139c3f9f46e8603f91d1e64ccd3519123dfe96216ce73d8101f42fb64bcfc234",
+      "sha256_after": "139c3f9f46e8603f91d1e64ccd3519123dfe96216ce73d8101f42fb64bcfc234",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/openapi_script_authoring.go",
+      "sha256": "25263328aec0d1c1dfff0ad69d0628c877157d0c9d586e6709179febe1616555",
+      "sha256_after": "25263328aec0d1c1dfff0ad69d0628c877157d0c9d586e6709179febe1616555",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/script_authoring_projection.go",
+      "sha256": "53be157bf7908cb1c8b1366540fddf0618cd8626e710340e35973496b4f5f733",
+      "sha256_after": "53be157bf7908cb1c8b1366540fddf0618cd8626e710340e35973496b4f5f733",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/library_links.go",
+      "sha256": "470b4f0d323e19b24185385b0a1857a0df313b727be7ef5c1924aabf7df7f4fb",
+      "sha256_after": "470b4f0d323e19b24185385b0a1857a0df313b727be7ef5c1924aabf7df7f4fb",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/library_import_claims.go",
+      "sha256": "5c80701dbf7a1fdfc21bacc9192e7f122bea424cb34abcfe3b3361804b785631",
+      "sha256_after": "5c80701dbf7a1fdfc21bacc9192e7f122bea424cb34abcfe3b3361804b785631",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/handlers_scenario_runtime.go",
+      "sha256": "c324c688a80df07b09622a27e862d9eb144114c7ded75e5355567c72c31da134",
+      "sha256_after": "c324c688a80df07b09622a27e862d9eb144114c7ded75e5355567c72c31da134",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/handlers_scenarios.go",
+      "sha256": "047a552bae9a5d3890e0190b75b06b17b580596beca9a3e2c342fc0581a106cc",
+      "sha256_after": "047a552bae9a5d3890e0190b75b06b17b580596beca9a3e2c342fc0581a106cc",
+      "stable": true
+    },
+    {
+      "path": "docs/ROADMAP.md",
+      "sha256": "8732d15cd116a178100be18646cf4cae0ba542ed2557adf9335a5aab2e338aa8",
+      "sha256_after": "8732d15cd116a178100be18646cf4cae0ba542ed2557adf9335a5aab2e338aa8",
+      "stable": true
+    },
+    {
+      "path": "docs/FEATURE_COMPLETION_SPEC.md",
+      "sha256": "35df09302e0ba35e0f9bc575805045d20f2884069eac47915841f5fe5358745e",
+      "sha256_after": "35df09302e0ba35e0f9bc575805045d20f2884069eac47915841f5fe5358745e",
+      "stable": true
+    },
+    {
+      "path": "docs/INDEX.md",
+      "sha256": "267cb405a1167a01c6e9aaff8bf55d20356a7454ad7dd7f2c2ad7c69e0d6660c",
+      "sha256_after": "267cb405a1167a01c6e9aaff8bf55d20356a7454ad7dd7f2c2ad7c69e0d6660c",
+      "stable": true
+    },
+    {
+      "path": "docs/guides/RETAINED_RESOURCE_INSPECTION.md",
+      "sha256": "adbc4fd9618c1ea605e500dec6967c1a3a979674b555ed6bf6f23426d2806863",
+      "sha256_after": "adbc4fd9618c1ea605e500dec6967c1a3a979674b555ed6bf6f23426d2806863",
+      "stable": true
+    },
+    {
+      "path": "docs/guides/AUTHORING_SCENARIO_FIDELITY.md",
+      "sha256": "9ee7c86008bb465c0a513162dbf07221bd4e685c08606d39a39e38c377083295",
+      "sha256_after": "9ee7c86008bb465c0a513162dbf07221bd4e685c08606d39a39e38c377083295",
+      "stable": true
+    },
+    {
+      "path": "docs/guides/BROWSER_DOCUMENT_EVIDENCE.md",
+      "sha256": "12f71e79bc901e5aa136b9ab1c70e4d4e783fcf3b938a200b6d5b50b0b969133",
+      "sha256_after": "12f71e79bc901e5aa136b9ab1c70e4d4e783fcf3b938a200b6d5b50b0b969133",
+      "stable": true
+    },
+    {
+      "path": "docs/guides/BROWSER_HAR_WORKING_OWNERSHIP.md",
+      "sha256": "a537d068d773f5d351ca8dfbabef333edb9174f1d67ecffc7a09817e7c6a4846",
+      "sha256_after": "a537d068d773f5d351ca8dfbabef333edb9174f1d67ecffc7a09817e7c6a4846",
+      "stable": true
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/README.md",
+      "sha256": "28e0dd959986dbc13adcd16c3a7181c477b874501831630e2a2087edddd86007",
+      "sha256_after": "28e0dd959986dbc13adcd16c3a7181c477b874501831630e2a2087edddd86007",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/scenario_save_policy_availability.go",
+      "sha256": "b48bbc318ed06da21ff75806036fbca3fad15e0ab8ce8acdf1b43df6876da780",
+      "sha256_after": "b48bbc318ed06da21ff75806036fbca3fad15e0ab8ce8acdf1b43df6876da780",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/scenario_save_policy_availability_test.go",
+      "sha256": "972c6adb6ac51af933250c6ff5b4897c53292bd90fe79618a3d2a7aab16a18ce",
+      "sha256_after": "972c6adb6ac51af933250c6ff5b4897c53292bd90fe79618a3d2a7aab16a18ce",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/script_authoring_handlers_test.go",
+      "sha256": "07b348c52034146e0ce02c4f5c79517c1fd72e714162b53e845c4a2b4cf3e28a",
+      "sha256_after": "07b348c52034146e0ce02c4f5c79517c1fd72e714162b53e845c4a2b4cf3e28a",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/openapi_script_authoring_test.go",
+      "sha256": "21a383dbd9e4e3d470f2b5eb968b85641ee4ad18dba8cb1fbf265d32096c2f26",
+      "sha256_after": "21a383dbd9e4e3d470f2b5eb968b85641ee4ad18dba8cb1fbf265d32096c2f26",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/handlers_scripts.go",
+      "sha256": "6bcf63898ccdcb413176602866ab1f23e763c53b15095a7441e1a3555f635286",
+      "sha256_after": "6bcf63898ccdcb413176602866ab1f23e763c53b15095a7441e1a3555f635286",
+      "stable": true
+    },
+    {
+      "path": "pkg/storage/scenario_source_admission.go",
+      "sha256": "99a68c3e8048cebe3b06045800cabdf2ba6f77b2c40cd6b4ce48eecc3d335b23",
+      "sha256_after": "99a68c3e8048cebe3b06045800cabdf2ba6f77b2c40cd6b4ce48eecc3d335b23",
+      "stable": true
+    },
+    {
+      "path": "pkg/storage/scenario_content_revision.go",
+      "sha256": "be1ed1847de746e778b6a2de3c6b90b9a46fdf3b284ab3456801ffe3730d668a",
+      "sha256_after": "be1ed1847de746e778b6a2de3c6b90b9a46fdf3b284ab3456801ffe3730d668a",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/scenario.go",
+      "sha256": "13e6f79254de290427b8f8299665d98b9e18b6805a25215d45bd5012bdc18e8f",
+      "sha256_after": "13e6f79254de290427b8f8299665d98b9e18b6805a25215d45bd5012bdc18e8f",
+      "stable": true
+    },
+    {
+      "path": "pkg/api/openapi_gen.go",
+      "sha256": "5911ed64bdb8625f786635a9ff6cca5a593e3be56c04bc71cd0b97e68c79df6a",
+      "sha256_after": "5911ed64bdb8625f786635a9ff6cca5a593e3be56c04bc71cd0b97e68c79df6a",
+      "stable": true
+    }
+  ],
+  "generated_resource_contract": {
+    "route": "/api/v1/tests/{id}/archive/browser-resources",
+    "operation_id": "handleGetRunArchiveBrowserResources",
+    "method": "GET",
+    "query_names": [
+      "action_name",
+      "browser_engine",
+      "cursor",
+      "device_profile",
+      "document_id",
+      "failure_kind",
+      "group",
+      "initiating_action_id",
+      "limit",
+      "observation_action_id",
+      "origin",
+      "project_id",
+      "redirect_chain_id",
+      "region",
+      "request_id",
+      "resource_type",
+      "sort_by",
+      "sort_dir",
+      "source_generation",
+      "state"
+    ],
+    "query_count": 20,
+    "path_names": [
+      "id"
+    ],
+    "statuses": [
+      "200",
+      "400",
+      "401",
+      "403",
+      "404",
+      "408",
+      "409",
+      "413",
+      "422",
+      "503"
+    ],
+    "matches": "Generated Swagger, endpoint catalog and TS operation agree with registered viewer-project route and typed closed Go page. Page limit 1..100/default50, exact non-repeated/nonempty filter refusal, 15-minute query/source-bound continuation, approved sort/state/failure enums and no-partial-page refusal statuses retained. Nullable unavailable population counts and observed native0/false preserve their distinct wire semantics; items stay required/nonnullable.",
+    "native_semantics": "Resource rows remain retained observations, not capture coverage or health/verdict evidence. Optional native browser fields stay separately nullable and typed; legacy duration never substitutes for native timing sort.",
+    "review_method": "Read generated operation sections and actual Go query/DTO/handler/route; read meaningful OpenAPI regression assertions. JSON/text structural comparison only; no test execution or API generation."
+  },
+  "catalog_m1": {
+    "catalog_route_count": 692,
+    "matrix_route_count": 692,
+    "same_route_identity_set": true,
+    "all_operation_authentication_public_access_metadata_matches": true,
+    "resource_row": {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/browser-resources",
+      "operation_id": "handleGetRunArchiveBrowserResources",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    "qualification_limit": "Historical generated matrix labels and parent-reported freshness remain separately evidenced; this read-only comparison is not an authentication test."
+  },
+  "authored_script_compatibility": {
+    "review": "Script GET remains enriched by default; exact view=authoring alone pairs strong ETag with coherent durable content/revision/library placement. Folder/application/release placement participates in the nonce; default enriched create/save do not acquire a misleading byte-strong ETag. PUT If-Match syntax, stale412, strict missing428, safe outcome503 and conditioned/legacy_unconditioned save-mode header remain described by generated contract and actual handler. GoalConfig and pure draft transformation boundaries remain typed. Portable scenario hashing/default-mode normalization changes do not weaken script authored-placement identity.",
+    "tests_read": [
+      "pkg/api/openapi_script_authoring_test.go",
+      "pkg/api/script_authoring_handlers_test.go"
+    ]
+  },
+  "scenario_capability_boundary": {
+    "review": "Source-aware scenario admission remains an optional private storage contract with no request Published flag/public authoring route. Existing scenario full-save PUT refuses every presented If-Match after durable resource/project admission, with fixed503 code guidance; externally seeded strict policy also refuses. Generated OpenAPI continues documenting unavailable conditioned scenario saves and policy enablement refusal. This is not public scenario revision/CAS support. Adjacent runtime action compatibility is not advertised as conditioned scenario authoring.",
+    "strict_policy_note": "Final transaction admission for concurrently changed scenario strict policy remains explicitly part of the future vertical, not supplied by the availability guard."
+  },
+  "docs_scope": {
+    "review": "Resource, authoring fidelity, document and native HAR guides retain separate ownership, capture, transport and native acceptance facts. Backlog/spec and composed QA remain qualified and do not declare full AUTH/BE/BI complete; final qualification bookkeeping remains parent-owned.",
+    "composed_readme_state": "Still labels qualification in progress; final per-gate results and full composed Go/dashboard status must be updated after active gates join."
+  },
+  "sdk_v7_identity": {
+    "candidate_inventory": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/apexload-native-har-ownership-candidate-source-v7-20261005.json",
+    "sha256": "93fe5c3e895f88b1788b6ea61ef1b4e6670bf596d3e49c8117fa98a9bf607608",
+    "count": 135,
+    "exact_matches": 134,
+    "expected_preserved_root_diagnostic": [
+      {
+        "path": "pkg/protocol/browser/document_actual_integration_test.go",
+        "candidate_sha256": "f1c4555a671bcbeb904a0e5e50ed9e7d05cccc08ffdc01d92422779f2f7c7846",
+        "root_sha256": "553db9f6d9a98b2ef6e74bc6cb113ec9f09d6452b9775555ef8d87189f772ba7"
+      }
+    ],
+    "review_limit": "SDK module semantics already independently reviewed by owner; this review confirms frozen identities and known preserved diagnostic delta only."
+  },
+  "remaining_gates": [
+    "Full dashboard cycle active in parent-owned session49406; not inspected or polled here.",
+    "Final full composed Go remains pending.",
+    "Final documentation/result ledger refresh and cache cleanup remain parent-owned after gates."
+  ],
+  "actions": {
+    "repository_edits": false,
+    "builds_tests_or_generators": false,
+    "embedded_output_reads": false,
+    "process_signals": false,
+    "cache_cleanup": false,
+    "commit_or_push": false
+  }
+}

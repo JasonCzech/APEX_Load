@@ -92,6 +92,72 @@ describe('GroupRuntimeSettingsDialog', () => {
     }
   }
 
+  it('renders inherited script Results and submits an explicit off/false/zero replacement with untouched result siblings', async () => {
+    const inherited = { message_detail: { mode: 'errors', include_resources: true, max_items: 128 }, property_analytics: [{ name: 'category', extraction: 'category', values: ['one'] }], csv_exports: [{ id: 'csv', file_name: 'detail.csv', action_name: 'Home', columns: [{ name: 'latency', metric: 'latency_ms' }] }] }
+    let patchBody: { runtime_settings: RuntimeSettingsOverride; fields: string[]; expected_revision: string } | undefined
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = requestUrl(input)
+      if (url.includes('/runtime-settings') && init?.method === 'PATCH') { patchBody = JSON.parse(String(init.body)); return jsonResponse({}) }
+      if (url.includes('/runtime-settings')) return jsonResponse({ test_id: 'results-run', group: 'HTTP', group_index: 0, protocol: 'http', status: 'QUEUED', editable: true, revision: 'sha256:results-observed', editable_fields: ['results'], script_settings: { results: inherited }, runtime_settings: {}, effective_settings: { results: inherited } })
+      if (url.includes('/dsl/config-defaults')) return jsonResponse({ config: {} })
+      return jsonResponse({})
+    })
+    await act(async () => root.render(<GroupRuntimeSettingsDialog testId="results-run" groupName="HTTP" onClose={() => {}} onSaved={() => {}} />))
+    await flush()
+    const dialog = document.querySelector('.group-run-settings-dialog') as HTMLElement
+    const errorTab = Array.from(dialog.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Error Handling') as HTMLButtonElement
+    await act(async () => errorTab.click())
+    const field = (name: string) => Array.from(dialog.querySelectorAll('label')).find(label => label.textContent?.includes(name))!
+    const capture = field('Exchange capture').querySelector('select')!
+    expect(capture.value).toBe('errors')
+    await act(async () => { capture.value = 'off'; capture.dispatchEvent(new Event('change', { bubbles: true })) })
+    const resources = field('Include fetched resources').querySelector('select')!
+    await act(async () => { resources.value = 'false'; resources.dispatchEvent(new Event('change', { bubbles: true })) })
+    const limit = field('Retained exchange limit').querySelector('input')!
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(limit, '0'); limit.dispatchEvent(new Event('input', { bubbles: true })); limit.dispatchEvent(new Event('change', { bubbles: true })) })
+    const save = Array.from(dialog.querySelectorAll('button')).find(button => button.textContent?.includes('Save to run'))!
+    await act(async () => save.click())
+    await flush()
+    expect(patchBody?.expected_revision).toBe('sha256:results-observed')
+    expect(patchBody?.fields).toEqual(['results'])
+    expect(patchBody?.runtime_settings.results).toEqual({ ...inherited, message_detail: { mode: 'off', include_resources: false, max_items: 0 } })
+    expect(inherited.message_detail).toEqual({ mode: 'errors', include_resources: true, max_items: 128 })
+  })
+
+  it.each(['zero replacement', 'explicit clear'])('submits WebSocket %s from the real group dialog without losing false or sibling settings', async operation => {
+    const original = { callback_interval_ms: 500, read_timeout_ms: 100, compression: false, reconnect: false }
+    let patchBody: { runtime_settings: RuntimeSettingsOverride; fields: string[] } | undefined
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = requestUrl(input)
+      if (url.includes('/runtime-settings') && init?.method === 'PATCH') { patchBody = JSON.parse(String(init.body)); return jsonResponse({}) }
+      if (url.includes('/runtime-settings')) return jsonResponse({ test_id: 'ws-run', group: 'WS', group_index: 0, protocol: 'websocket', status: 'QUEUED', editable: true, revision: 'sha256:ws-observed', editable_fields: ['websocket'], script_settings: { websocket: { callback_interval_ms: 0 } }, runtime_settings: { websocket: original }, effective_settings: { websocket: original } })
+      if (url.includes('/dsl/config-defaults')) return jsonResponse({ config: {} })
+      return jsonResponse({})
+    })
+    await act(async () => root.render(<GroupRuntimeSettingsDialog testId="ws-run" groupName="WS" onClose={() => {}} onSaved={() => {}} />))
+    await flush()
+    const dialog = document.querySelector('.group-run-settings-dialog') as HTMLElement
+    const callback = Array.from(dialog.querySelectorAll('label')).find(label => label.textContent?.includes('WebSocket callback interval (ms)'))!.querySelector('input')!
+    expect(callback.placeholder).toBe('0')
+    if (operation === 'explicit clear') {
+      const clear = dialog.querySelector<HTMLButtonElement>('button[aria-label="Clear WebSocket override"]')!
+      expect(clear).not.toBeNull()
+      await act(async () => clear.click())
+    } else {
+      const input = Array.from(dialog.querySelectorAll('label')).find(label => label.textContent?.includes('WebSocket callback interval (ms)'))!.querySelector('input')!
+      expect(input.value).toBe('500')
+      await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '0'); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })) })
+      expect(input.validity.valid).toBe(true)
+    }
+    const save = Array.from(dialog.querySelectorAll('button')).find(button => button.textContent?.includes('Save to run'))!
+    await act(async () => save.click())
+    await flush()
+    expect(patchBody?.fields).toEqual(['websocket'])
+    expect(patchBody?.runtime_settings.websocket).toEqual(operation === 'explicit clear' ? undefined : { ...original, callback_interval_ms: 0 })
+    expect(original.callback_interval_ms).toBe(500)
+    expect(JSON.stringify(patchBody)).not.toContain('null')
+  })
+
   it('renders the editable group editor for a queued run and skips saving when nothing changed', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = requestUrl(input)

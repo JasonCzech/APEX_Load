@@ -1,0 +1,116 @@
+{
+  "created_at_utc": "2026-10-05T23:06:12.601042+00:00",
+  "scope": "Read-only independent review of unchanged neutral document finality failure; no test, native driver, file/source mutation or causation proof. HAR ownership v5 remains frozen; original user HAR not read.",
+  "failure_receipt_sha256": "14bb66c6e9b42250fc1831b48feed2f9bdf629f51dc064bd55d1d85110b67e35",
+  "failure": {
+    "label": "fidelity-v9-full-go-2",
+    "command": [
+      "go",
+      "test",
+      "./...",
+      "-count=1",
+      "-timeout=30m"
+    ],
+    "cwd": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+    "duration_seconds": 1592.586,
+    "exit_code": 1,
+    "log_sha256": "20a8b551c9ab2d8afe6b776f14992a5f7ca205c95bd28919cd154bdea232f2cd"
+  },
+  "sources": [
+    {
+      "root": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+      "path": "pkg/protocol/browser/document_evidence.go",
+      "sha256": "6155df22fedc81a2cdbbb6b825c4f8de7f0b0e499bfa6c2170da188b89c55fe7",
+      "bytes": 17710
+    },
+    {
+      "root": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+      "path": "pkg/protocol/browser/document_bootstrap.go",
+      "sha256": "f08ed0a61673944109b57256abf8cc7f2e32939f98102ae223a0a442d3584c15",
+      "bytes": 6486
+    },
+    {
+      "root": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+      "path": "pkg/protocol/browser/document_actual_integration_test.go",
+      "sha256": "f1c4555a671bcbeb904a0e5e50ed9e7d05cccc08ffdc01d92422779f2f7c7846",
+      "bytes": 18347
+    },
+    {
+      "root": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+      "path": "pkg/protocol/browser/runtime_context.go",
+      "sha256": "cad4deedefd5a1e77658f4fc6dfa299db7660a9d97c608d69a83ebefee8f6a1a",
+      "bytes": 25545
+    },
+    {
+      "root": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+      "path": "pkg/protocol/browser/navigation_actions.go",
+      "sha256": "031067ba95f1a267e765737c54b4f0acf954a9940fa4a88345742ef4eade1670",
+      "bytes": 3679
+    },
+    {
+      "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+      "path": "pkg/protocol/browser/document_evidence.go",
+      "sha256": "6155df22fedc81a2cdbbb6b825c4f8de7f0b0e499bfa6c2170da188b89c55fe7",
+      "bytes": 17710
+    },
+    {
+      "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+      "path": "pkg/protocol/browser/document_bootstrap.go",
+      "sha256": "f08ed0a61673944109b57256abf8cc7f2e32939f98102ae223a0a442d3584c15",
+      "bytes": 6486
+    },
+    {
+      "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+      "path": "pkg/protocol/browser/document_actual_integration_test.go",
+      "sha256": "553db9f6d9a98b2ef6e74bc6cb113ec9f09d6452b9775555ef8d87189f772ba7",
+      "bytes": 18665
+    },
+    {
+      "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+      "path": "pkg/protocol/browser/runtime_context.go",
+      "sha256": "cad4deedefd5a1e77658f4fc6dfa299db7660a9d97c608d69a83ebefee8f6a1a",
+      "bytes": 25545
+    },
+    {
+      "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+      "path": "pkg/protocol/browser/navigation_actions.go",
+      "sha256": "031067ba95f1a267e765737c54b4f0acf954a9940fa4a88345742ef4eade1670",
+      "bytes": 3679
+    },
+    {
+      "root": "local pinned SDK",
+      "path": "/Users/jasonczech/go/pkg/mod/github.com/mxschmitt/playwright-go@v0.6100.0/browser_context.go",
+      "sha256": "fd7c22dd4d5727c55e87ed41d89fea040590d9df1c6207144c1fa4d618ea1cd1",
+      "bytes": 31588
+    }
+  ],
+  "findings": [
+    {
+      "priority": 2,
+      "path": "pkg/protocol/browser/document_bootstrap.go",
+      "line": 75,
+      "issue": "finish sets ended before asynchronous drain/metric binding acknowledgments, so a second invocation returns early instead of joining the active finish promise. pagehide followed by graceful_end may allow Go final censorship before final receipts.",
+      "certainty": "Direct source defect; causal contribution to the observed v9 failure has not been executed/proven.",
+      "proposed_fix": "One joinable finish promise per lifecycle; capture lifecycle token/begin acknowledgment, preserve first boundary and fence old pending continuations after BFCache restoration."
+    },
+    {
+      "priority": 2,
+      "path": "pkg/protocol/browser/document_evidence.go",
+      "line": 396,
+      "issue": "One-shot frame inventory comes only from already-admitted begin callbacks. A current native child whose begin acknowledgment is delayed is absent and can be globally censored after other frames finish.",
+      "certainty": "Direct source omission; cleanup counts do not disclose initial snapshot membership.",
+      "proposed_fix": "Merge actual current BrowserContext Pages/Frames with retained known frame inventory; await per-lifecycle begin acknowledgment inside the existing passive finalizer before final metric sends."
+    }
+  ],
+  "oracle_limits": [
+    "Second-navigation condition admits any new main TTFB placeholder; it does not join child begin acknowledgments.",
+    "documents7/frames5/issued6 at failure does not prove all current frames belonged to the one-shot snapshot.",
+    "No timeout increase, added target probe, missing-to-zero substitution or native oracle weakening is proposed."
+  ],
+  "deterministic_regressions": [
+    "VM harness executing actual bootstrap with a held metric binding: pagehide starts finish; graceful_end must join it through all five final metric acknowledgments and end.",
+    "Held begin acknowledgment: finalizer emits no final metric/end until begin is admitted; false/failed admission remains visibly unavailable.",
+    "Restore a new lifecycle while old finish is suspended: old continuation cannot send under or terminalize the restored lifecycle; restored finalizer owns its own promise.",
+    "Order-controlled actual-frame/late begin fixture: current sibling frame absent from initial Go document map must still get a finalization attempt without target traffic."
+  ]
+}

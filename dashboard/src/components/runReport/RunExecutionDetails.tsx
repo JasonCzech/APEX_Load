@@ -1,3 +1,4 @@
+import TelemetryPolicy from '../TelemetryPolicy'
 import SeriesChartExport from "../SeriesChartExport"
 import { Area, CartesianGrid, ComposedChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { MetricsHistoryPoint, RunArchiveReport, TestRunManifest, TestSummary } from '../../types'
@@ -115,6 +116,7 @@ export default function RunExecutionDetails({ test, report, history = [], histor
         <strong>{event.label}</strong><span>{executionDate(event.created_at)}{event.status ? ` · ${event.status}` : ''}</span>
       </li>)}</ol> : !manifestLoading && !manifestError && manifest && <p>No lifecycle event history was retained. Missing events do not establish that an action never occurred.</p>}
     </section>
+    {manifest && <TelemetryPolicy evidence={manifest.telemetry_policy} />}
     <details className="run-execution-records"><summary>Configuration and infrastructure evidence</summary>
       <p>{manifest?.source === 'archive' ? 'Archived run manifest.' : 'Retained controller record.'} Document generated: {executionDate(manifest?.generated_at)}. Generation time is not the time the run was captured.</p>
       {manifest?.warnings?.map(warning => <p key={warning}>{warning}</p>)}

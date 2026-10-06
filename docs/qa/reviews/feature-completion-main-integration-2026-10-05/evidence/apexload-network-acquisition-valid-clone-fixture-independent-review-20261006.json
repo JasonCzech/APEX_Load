@@ -1,0 +1,152 @@
+{
+  "schema": "apexload.network-acquisition.valid-clone-fixture-independent-review.v1",
+  "at_utc": "2026-10-06T05:04:09.250233+00:00",
+  "reviewer": "/root/authoring_fidelity_resume_v3",
+  "result": "clean static review",
+  "scope": "Exact test-only fixture correction in TestNetworkCompletionWaitsForAcceptedMetadataAndClonesSnapshot against actual BrowserResourceEvidence.Clone and detached network-entry path. No execution result claim.",
+  "inputs_before": [
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/action_helpers.go",
+      "bytes": 9025,
+      "sha256": "c9916f043dbbc67779afecd5a248aef6e9f331721294ce4a46700a1633ff3274"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/browser.go",
+      "bytes": 11706,
+      "sha256": "904e724e846a73919b7efaf9dd683bd42973a994d615d657ecce01707869e7b0"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/lifecycle.go",
+      "bytes": 3344,
+      "sha256": "fc1db36243bcd6d6948216241f6646b6a4df66e56f2735d11986f03c9260de93"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/network_task_completion.go",
+      "bytes": 9108,
+      "sha256": "1e03017d6f20867d0aec87deb9d02670a36994375e118661cadaad85609cde0f"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/network_task_completion_test.go",
+      "bytes": 20416,
+      "sha256": "4adb6f77b6f53e61aae35c21310d28635dbf1e9fc80d17a600344f579de4c6bb"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/result_finalization.go",
+      "bytes": 3055,
+      "sha256": "10906e63e45b2ed728c3742f54590fd34660a4762e62091ef1e93872d09389ef"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/result_finalization_test.go",
+      "bytes": 3671,
+      "sha256": "a226c9619718c7ee5462bb26f20243276afc42a8e7fd017034ad5a6f3c0445ff"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/runtime_context.go",
+      "bytes": 25951,
+      "sha256": "b6038156d5346e17dd94dcef13b1fe1705f36270492eceb765c469d1bbd95773"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser_evidence.go",
+      "bytes": 33446,
+      "sha256": "c96651302063eb1b16fb177b6d901fdb9c1dabf616d7d4b05afc554bfa990b3c"
+    },
+    {
+      "path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/applied-v3-valid-evidence-fixture-correction.diff",
+      "bytes": 2179,
+      "sha256": "1ba41e488e0944100f3cda09a0a187b2c8a52781f271551eda832063d1b6c4eb"
+    },
+    {
+      "path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/applied-v3-valid-evidence-fixture-correction.json",
+      "bytes": 3764,
+      "sha256": "57aebb3769a174c697ff14e2da2289b7fab1cfa5a8565796ab147317d1daf0de"
+    },
+    {
+      "path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/after/pkg/protocol/browser/network_task_completion_test.go",
+      "bytes": 19940,
+      "sha256": "df79d76f1ab62cc454dd377616fe7a882c9ea5f11835be1389703bdacd55b9d7"
+    }
+  ],
+  "inputs_after": [
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/action_helpers.go",
+      "bytes": 9025,
+      "sha256": "c9916f043dbbc67779afecd5a248aef6e9f331721294ce4a46700a1633ff3274"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/browser.go",
+      "bytes": 11706,
+      "sha256": "904e724e846a73919b7efaf9dd683bd42973a994d615d657ecce01707869e7b0"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/lifecycle.go",
+      "bytes": 3344,
+      "sha256": "fc1db36243bcd6d6948216241f6646b6a4df66e56f2735d11986f03c9260de93"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/network_task_completion.go",
+      "bytes": 9108,
+      "sha256": "1e03017d6f20867d0aec87deb9d02670a36994375e118661cadaad85609cde0f"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/network_task_completion_test.go",
+      "bytes": 20416,
+      "sha256": "4adb6f77b6f53e61aae35c21310d28635dbf1e9fc80d17a600344f579de4c6bb"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/result_finalization.go",
+      "bytes": 3055,
+      "sha256": "10906e63e45b2ed728c3742f54590fd34660a4762e62091ef1e93872d09389ef"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/result_finalization_test.go",
+      "bytes": 3671,
+      "sha256": "a226c9619718c7ee5462bb26f20243276afc42a8e7fd017034ad5a6f3c0445ff"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser/runtime_context.go",
+      "bytes": 25951,
+      "sha256": "b6038156d5346e17dd94dcef13b1fe1705f36270492eceb765c469d1bbd95773"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/pkg/protocol/browser_evidence.go",
+      "bytes": 33446,
+      "sha256": "c96651302063eb1b16fb177b6d901fdb9c1dabf616d7d4b05afc554bfa990b3c"
+    },
+    {
+      "path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/applied-v3-valid-evidence-fixture-correction.diff",
+      "bytes": 2179,
+      "sha256": "1ba41e488e0944100f3cda09a0a187b2c8a52781f271551eda832063d1b6c4eb"
+    },
+    {
+      "path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/applied-v3-valid-evidence-fixture-correction.json",
+      "bytes": 3764,
+      "sha256": "57aebb3769a174c697ff14e2da2289b7fab1cfa5a8565796ab147317d1daf0de"
+    },
+    {
+      "path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/after/pkg/protocol/browser/network_task_completion_test.go",
+      "bytes": 19940,
+      "sha256": "df79d76f1ab62cc454dd377616fe7a882c9ea5f11835be1389703bdacd55b9d7"
+    }
+  ],
+  "verified_before_sha256": "df79d76f1ab62cc454dd377616fe7a882c9ea5f11835be1389703bdacd55b9d7",
+  "verified_after_sha256": "4adb6f77b6f53e61aae35c21310d28635dbf1e9fc80d17a600344f579de4c6bb",
+  "exact_diff_reconstructed": true,
+  "semantic_review": [
+    "Version, lowercase32hex SourceGeneration, generation-prefixed bounded RequestID, nonzero UTC timestamp, playwright timing source and finished state satisfy the existing production Clone guard.",
+    "Other optional identities/origin/reasons remain valid empty values; ServiceWorker remains explicitly measured false.",
+    "Explicit detached evidence/ServiceWorker nonnil checks fail clearly before mutation rather than panic.",
+    "Detached RequestID, bool pointer and both header maps are mutated, then stored originals must remain unchanged; no weakened aliasing oracle.",
+    "Receipt pending count/incomplete-state assertions, blocking ownership requirement, all other eighteen tests, production validation/budgets and other seven applied files are unchanged."
+  ],
+  "retained_red": {
+    "label": "main-network-acquisition-focused-1",
+    "exit_code": 1,
+    "duration_seconds": 33.373,
+    "raw_sha256": "b6e2bfa37d2d3b727b22d383272a6fece1ca22bf60d79be8c157f696b7922223",
+    "launch_helper_sha256": "4ad9cfbbdca7cd5705eac2c54dc82dbb1d911206b0c9c2d6a6b8aab15682d7d0",
+    "helper_sha256_reported_at_finish": "ddd9d7aadb2ab67e0fee64b9cd683a3e127150cdad6ea1965f672241d88c7d5e",
+    "helper_replacement_caveat": "Same helper path changed during execution; actual named test failure and immutable source/embed/raw outcome retained diagnostically, not a green qualification."
+  },
+  "findings": [],
+  "execution": "Read-only source and metadata/diff reconstruction; no tests/builds/source/Git/cache mutations."
+}

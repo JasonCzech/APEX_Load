@@ -1,0 +1,1081 @@
+{
+  "schema": "apexload.safe-component-composition.v1",
+  "utc": "2026-10-06T00:07:47.177015+00:00",
+  "source_root": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "destination_root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "manifest_sha256": "c9494ff8f6f7fefbd61c3695a8b776eae15984786e15a28d6808e233945175b0",
+  "records": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "source_sha256": "1b7bf39be18706cf9b97ea651731c087a16b7bd3da4dcb5e62473c39cc008573",
+      "destination_sha256": "86b2caaad89433e54e03ac09852d2a460bbd7500bbe5db052871bb3f2092eff6",
+      "root_head_sha256": "86b2caaad89433e54e03ac09852d2a460bbd7500bbe5db052871bb3f2092eff6",
+      "component_head_sha256": "86b2caaad89433e54e03ac09852d2a460bbd7500bbe5db052871bb3f2092eff6",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": ".github/workflows/recording-e2e.yml",
+      "source_sha256": "1ea7562bf1043708d68a118e4041e0e8be5472ba10544e52ea045438f59a5e8e",
+      "destination_sha256": "107a59963ba7115d081f6276c9d8847beab9133d9884586341913b5a0de139d7",
+      "root_head_sha256": "107a59963ba7115d081f6276c9d8847beab9133d9884586341913b5a0de139d7",
+      "component_head_sha256": "107a59963ba7115d081f6276c9d8847beab9133d9884586341913b5a0de139d7",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "Dockerfile",
+      "source_sha256": "6217dd33f5186af078384060692d1dcfe2d422615d04dce2d93c66c77b7a7b40",
+      "destination_sha256": "bd79004763d50b5331cbb63a9412c0f69babec67e8327acde58387f52c280216",
+      "root_head_sha256": "bd79004763d50b5331cbb63a9412c0f69babec67e8327acde58387f52c280216",
+      "component_head_sha256": "bd79004763d50b5331cbb63a9412c0f69babec67e8327acde58387f52c280216",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "Dockerfile.controller",
+      "source_sha256": "27b60561bcbe50c9d392530222e084c2a2f60a34da41873a624b9d97657f5a6e",
+      "destination_sha256": "a3aa0661f5fb516b4a8a3d917507c7739f5ee68874cfe0ff11654da0ae2ff764",
+      "root_head_sha256": "a3aa0661f5fb516b4a8a3d917507c7739f5ee68874cfe0ff11654da0ae2ff764",
+      "component_head_sha256": "a3aa0661f5fb516b4a8a3d917507c7739f5ee68874cfe0ff11654da0ae2ff764",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "Makefile",
+      "source_sha256": "2c06590d9aff78f448c8a279e43faa6ef96d6df5684696ebc44e1bf1dcdd607a",
+      "destination_sha256": "a6cd866fae1c5b254b2cb6964bfef4399f98e1da69611e458361aab8dd85096c",
+      "root_head_sha256": "a6cd866fae1c5b254b2cb6964bfef4399f98e1da69611e458361aab8dd85096c",
+      "component_head_sha256": "a6cd866fae1c5b254b2cb6964bfef4399f98e1da69611e458361aab8dd85096c",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "go.mod",
+      "source_sha256": "30806ceb5fa14c24c7703d9e4e57f9267502b59a1d01abcae8d9687a4fea62d0",
+      "destination_sha256": "05c38d4d914dd463eadcff718550f394425eeb85721dbcab2c0fc8c8d59b2d1b",
+      "root_head_sha256": "05c38d4d914dd463eadcff718550f394425eeb85721dbcab2c0fc8c8d59b2d1b",
+      "component_head_sha256": "05c38d4d914dd463eadcff718550f394425eeb85721dbcab2c0fc8c8d59b2d1b",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "go.sum",
+      "source_sha256": "66b5b966246df011fa86f71b09c9ce19cae7154b659358b786a13c2198c1320e",
+      "destination_sha256": "f24fca42c52f47ee68239f16130fc02743aed90c7ba2815b3197b665db15c2c8",
+      "root_head_sha256": "f24fca42c52f47ee68239f16130fc02743aed90c7ba2815b3197b665db15c2c8",
+      "component_head_sha256": "f24fca42c52f47ee68239f16130fc02743aed90c7ba2815b3197b665db15c2c8",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "pkg/api/har_artifact_ownership_test.go",
+      "source_sha256": "490e90b21e6d82f4884fc823161aa6f11500a47fd440d63739c07a3d1c34ef28",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/api/har_artifact_retention.go",
+      "source_sha256": "796d551dc2e08c965549df5e44e7bd0531bab0efdead0adc8705e8ab9792c2ea",
+      "destination_sha256": "498a30e70e21df093dc4fc4368b7195b801f7b5773f94509651cf63e65952295",
+      "root_head_sha256": "498a30e70e21df093dc4fc4368b7195b801f7b5773f94509651cf63e65952295",
+      "component_head_sha256": "498a30e70e21df093dc4fc4368b7195b801f7b5773f94509651cf63e65952295",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "pkg/api/har_artifact_retention_test.go",
+      "source_sha256": "5ac730ad8545796f20294ee3882c6dc9e12098388cd23f3dc76331c1b2c9721a",
+      "destination_sha256": "55a5bf9fe778a2dcdab12a835e8c37dd1c7f68b6c422e0705de78303d6a66a14",
+      "root_head_sha256": "55a5bf9fe778a2dcdab12a835e8c37dd1c7f68b6c422e0705de78303d6a66a14",
+      "component_head_sha256": "55a5bf9fe778a2dcdab12a835e8c37dd1c7f68b6c422e0705de78303d6a66a14",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "pkg/internal/filelock/context.go",
+      "source_sha256": "31f1682d87707ae3406327a005b346d96c7c3a9f25b5a5e9a5c41fbd7d868f0b",
+      "destination_sha256": "31f1682d87707ae3406327a005b346d96c7c3a9f25b5a5e9a5c41fbd7d868f0b",
+      "root_head_sha256": "31f1682d87707ae3406327a005b346d96c7c3a9f25b5a5e9a5c41fbd7d868f0b",
+      "component_head_sha256": "31f1682d87707ae3406327a005b346d96c7c3a9f25b5a5e9a5c41fbd7d868f0b",
+      "rule": "unchanged: retain destination"
+    },
+    {
+      "path": "pkg/internal/filelock/filelock_unix.go",
+      "source_sha256": "a9d477790b3402842a54d30c05cc4d237461af92368f877a65bc3c277aee0ec5",
+      "destination_sha256": "a9d477790b3402842a54d30c05cc4d237461af92368f877a65bc3c277aee0ec5",
+      "root_head_sha256": "a9d477790b3402842a54d30c05cc4d237461af92368f877a65bc3c277aee0ec5",
+      "component_head_sha256": "a9d477790b3402842a54d30c05cc4d237461af92368f877a65bc3c277aee0ec5",
+      "rule": "unchanged: retain destination"
+    },
+    {
+      "path": "pkg/internal/filelock/filelock_windows.go",
+      "source_sha256": "e2f7c92017efc06ba53b62ee9bf85584a28493297337eb13b9e29dfecf18dee0",
+      "destination_sha256": "e2f7c92017efc06ba53b62ee9bf85584a28493297337eb13b9e29dfecf18dee0",
+      "root_head_sha256": "e2f7c92017efc06ba53b62ee9bf85584a28493297337eb13b9e29dfecf18dee0",
+      "component_head_sha256": "e2f7c92017efc06ba53b62ee9bf85584a28493297337eb13b9e29dfecf18dee0",
+      "rule": "unchanged: retain destination"
+    },
+    {
+      "path": "pkg/protocol/browser/browser.go",
+      "source_sha256": "601ce7ef533024d00b4b4bafd94341780a6f07648cbb1d8fbaeb1a44693e2030",
+      "destination_sha256": "afc5a4f577ac061ddf2b7e146b18198ae421896dee9447ba5c60513dab2246b0",
+      "root_head_sha256": "afc5a4f577ac061ddf2b7e146b18198ae421896dee9447ba5c60513dab2246b0",
+      "component_head_sha256": "afc5a4f577ac061ddf2b7e146b18198ae421896dee9447ba5c60513dab2246b0",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "pkg/protocol/browser/document_actual_integration_test.go",
+      "source_sha256": "f1c4555a671bcbeb904a0e5e50ed9e7d05cccc08ffdc01d92422779f2f7c7846",
+      "destination_sha256": "553db9f6d9a98b2ef6e74bc6cb113ec9f09d6452b9775555ef8d87189f772ba7",
+      "root_head_sha256": "f1c4555a671bcbeb904a0e5e50ed9e7d05cccc08ffdc01d92422779f2f7c7846",
+      "component_head_sha256": "f1c4555a671bcbeb904a0e5e50ed9e7d05cccc08ffdc01d92422779f2f7c7846",
+      "rule": "retain ROOT diagnostics: no write"
+    },
+    {
+      "path": "pkg/protocol/browser/document_bootstrap.go",
+      "source_sha256": "dc3c8727caad97d7a24f5a73acbf8227b58dfe93834448d08c6aa392dbdd5a05",
+      "destination_sha256": "dc3c8727caad97d7a24f5a73acbf8227b58dfe93834448d08c6aa392dbdd5a05",
+      "root_head_sha256": "f08ed0a61673944109b57256abf8cc7f2e32939f98102ae223a0a442d3584c15",
+      "component_head_sha256": "f08ed0a61673944109b57256abf8cc7f2e32939f98102ae223a0a442d3584c15",
+      "rule": "unchanged: retain destination"
+    },
+    {
+      "path": "pkg/protocol/browser/document_evidence.go",
+      "source_sha256": "289c73f0c59bc1781e71c85da18c59f4bca9dc6dee7f58a3f73ad347ee988603",
+      "destination_sha256": "3312404b3313ce9c45c08079750d3894a8ceb0134615c8b9b272f6618229345d",
+      "root_head_sha256": "6155df22fedc81a2cdbbb6b825c4f8de7f0b0e499bfa6c2170da188b89c55fe7",
+      "component_head_sha256": "42352662bf5118a3e997177a818a54a028552d563328fbcf4926cbae241f75d3",
+      "rule": "reviewed neutral merge: preserve current-frame helper with owned join"
+    },
+    {
+      "path": "pkg/protocol/browser/document_evidence_test.go",
+      "source_sha256": "25c15edb67d86668cf26fd865b871fb4096bf6b5f3f127d560006f499a50e9a9",
+      "destination_sha256": "25c15edb67d86668cf26fd865b871fb4096bf6b5f3f127d560006f499a50e9a9",
+      "root_head_sha256": "25c15edb67d86668cf26fd865b871fb4096bf6b5f3f127d560006f499a50e9a9",
+      "component_head_sha256": "25c15edb67d86668cf26fd865b871fb4096bf6b5f3f127d560006f499a50e9a9",
+      "rule": "unchanged: retain destination"
+    },
+    {
+      "path": "pkg/protocol/browser/document_finality_join_test.go",
+      "source_sha256": "4c305e187129671b14708f74ddb061c6f670ea5b61c2a9852e8acdc7b0255205",
+      "destination_sha256": "4c305e187129671b14708f74ddb061c6f670ea5b61c2a9852e8acdc7b0255205",
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "unchanged: retain destination"
+    },
+    {
+      "path": "pkg/protocol/browser/document_finalizer_frame_isolation_test.go",
+      "source_sha256": "2485c62faa6ab53518694bb00b2624be93639f61cd805c6f226143361b94a2ed",
+      "destination_sha256": "2485c62faa6ab53518694bb00b2624be93639f61cd805c6f226143361b94a2ed",
+      "root_head_sha256": "2485c62faa6ab53518694bb00b2624be93639f61cd805c6f226143361b94a2ed",
+      "component_head_sha256": null,
+      "rule": "unchanged: retain destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_capture.go",
+      "source_sha256": "3d7df2b254fdaffd8e04f334d06d394ec7b38074d6bd8df5a0e5a79b6434418a",
+      "destination_sha256": "2402ff0d9860e92fd8445e0645d8ec5bfe6b807688d6d446fcb1445b7bba6022",
+      "root_head_sha256": "2402ff0d9860e92fd8445e0645d8ec5bfe6b807688d6d446fcb1445b7bba6022",
+      "component_head_sha256": "2402ff0d9860e92fd8445e0645d8ec5bfe6b807688d6d446fcb1445b7bba6022",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "pkg/protocol/browser/har_capture_integration_test.go",
+      "source_sha256": "7ff3d019e6e22d2edcd4beb1462c50230fabf78bc6dfe3f263624bd07579a875",
+      "destination_sha256": "78478ffebd102cdf9ccd48d575ad6d433dd44152c973f5414a608ca28b2c98cf",
+      "root_head_sha256": "78478ffebd102cdf9ccd48d575ad6d433dd44152c973f5414a608ca28b2c98cf",
+      "component_head_sha256": "78478ffebd102cdf9ccd48d575ad6d433dd44152c973f5414a608ca28b2c98cf",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "pkg/protocol/browser/har_limit_test.go",
+      "source_sha256": "154f6e609bdf853475de3eb5fc02e65882919092b5b7cafc76e244fe39e6d630",
+      "destination_sha256": "154f6e609bdf853475de3eb5fc02e65882919092b5b7cafc76e244fe39e6d630",
+      "root_head_sha256": "154f6e609bdf853475de3eb5fc02e65882919092b5b7cafc76e244fe39e6d630",
+      "component_head_sha256": "154f6e609bdf853475de3eb5fc02e65882919092b5b7cafc76e244fe39e6d630",
+      "rule": "unchanged: retain destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_native_callback_test.go",
+      "source_sha256": "5ff22d61c829ab464b02bbe97f1760bc522f86d208104b1489e4d543499d4257",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_native_close.go",
+      "source_sha256": "a4aa7d4b0302e1a5cdaaff661f5b3fb89e88afdf57e9cef3141cb751b06b03bd",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_native_close_test.go",
+      "source_sha256": "24317f65828d6327dfad56e8cba0960fc2de747de2b79b195959e21281477b4c",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_native_preclosed_test.go",
+      "source_sha256": "ea24119a451ebc40db7324238de1ca3da389866ba392173e68cdd5d07ce3d5d9",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_ownership_contract_test.go",
+      "source_sha256": "386cabc2e54d0ff665c3e2e940cf5ebf21440c5fceba99d6f4881dcf82dc5d0d",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_ownership_document_test.go",
+      "source_sha256": "116c98cb7f6e0f0025df7f571911790e9149903a78891cd2757ba4e7f023f48e",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_ownership_final_review_test.go",
+      "source_sha256": "0cb49ea1311eed3ff036a462d51cc7f3c2e93066b6faa0e8cea4a1a5492f022b",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_ownership_native_test.go",
+      "source_sha256": "5f81f6df02b805ac9caed37085d6e15946838ccea8116cdf41c2dee7d621741c",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_ownership_review_test.go",
+      "source_sha256": "50124cf4ff6d869820a554e3b7838183c42e3d1d385285e840c894438347bbf3",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_retention.go",
+      "source_sha256": "73b244f86af3c4003f557315427e329a4bd25f0206286add430c063d13335672",
+      "destination_sha256": "ebb1748a77241f45915592d6efffc0b1a4398826194c50a76b587826197e7a8b",
+      "root_head_sha256": "ebb1748a77241f45915592d6efffc0b1a4398826194c50a76b587826197e7a8b",
+      "component_head_sha256": "ebb1748a77241f45915592d6efffc0b1a4398826194c50a76b587826197e7a8b",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "pkg/protocol/browser/har_retirement_ledger.go",
+      "source_sha256": "2f584accbcc6edfdda5e54dd91fe4521609998087cfff3798e4811f78297b9c5",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_retirement_ledger_test.go",
+      "source_sha256": "77e798b486a8254fb6aff36ddeb998f554ee3687c68e46329f6822c89433cf43",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_fs.go",
+      "source_sha256": "fbfb6af72f43a6d5fd735f5350d1217d693d1a557739d87e9db3818debaa478d",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_lease.go",
+      "source_sha256": "f2796acd7f62416782c602ffe257441aea8080d9f476bad254dabca91ccf5b97",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_lease_test.go",
+      "source_sha256": "61c696ef774fa1c160a6bd3cc50de790f573eecbee22c012185a5354694b8183",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_security_other.go",
+      "source_sha256": "f8eb98b13f65abffe84a72c8dca1a6486a3f68596808c89d3f03a1e91862fd33",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_security_unix.go",
+      "source_sha256": "485571761203640d7db4009b3b7499e7171d3441088cc55ce303ae0e20e95631",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "pkg/protocol/browser/lifecycle.go",
+      "source_sha256": "3ccd8452412ba87da48ad3a4178caadd8770672f88d693a14974e9e36c4df881",
+      "destination_sha256": "971b848b06f5fcbbba3b7546bf4bf7a53abab872e585d41b7e1e39937b26e384",
+      "root_head_sha256": "971b848b06f5fcbbba3b7546bf4bf7a53abab872e585d41b7e1e39937b26e384",
+      "component_head_sha256": "971b848b06f5fcbbba3b7546bf4bf7a53abab872e585d41b7e1e39937b26e384",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "pkg/protocol/browser/pool.go",
+      "source_sha256": "2dd3fc5b3493285cde1d53c9a3a5a5fe52295b5d7fb06d52a216fe39a9fdde7a",
+      "destination_sha256": "2dd3fc5b3493285cde1d53c9a3a5a5fe52295b5d7fb06d52a216fe39a9fdde7a",
+      "root_head_sha256": "2dd3fc5b3493285cde1d53c9a3a5a5fe52295b5d7fb06d52a216fe39a9fdde7a",
+      "component_head_sha256": "2dd3fc5b3493285cde1d53c9a3a5a5fe52295b5d7fb06d52a216fe39a9fdde7a",
+      "rule": "unchanged: retain destination"
+    },
+    {
+      "path": "pkg/protocol/browser/runtime_context.go",
+      "source_sha256": "ef6e62ee9b3f39e2867126018700af1f08107b6a734740841242eb13165e49ec",
+      "destination_sha256": "cad4deedefd5a1e77658f4fc6dfa299db7660a9d97c608d69a83ebefee8f6a1a",
+      "root_head_sha256": "cad4deedefd5a1e77658f4fc6dfa299db7660a9d97c608d69a83ebefee8f6a1a",
+      "component_head_sha256": "cad4deedefd5a1e77658f4fc6dfa299db7660a9d97c608d69a83ebefee8f6a1a",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "pkg/protocol/browser/runtime_gate_test.go",
+      "source_sha256": "85cd6ff4b1b0eefbc4b3e2e0aaf489cf829b13578c16a91bbe89953fc09d73b9",
+      "destination_sha256": "85cd6ff4b1b0eefbc4b3e2e0aaf489cf829b13578c16a91bbe89953fc09d73b9",
+      "root_head_sha256": "85cd6ff4b1b0eefbc4b3e2e0aaf489cf829b13578c16a91bbe89953fc09d73b9",
+      "component_head_sha256": "85cd6ff4b1b0eefbc4b3e2e0aaf489cf829b13578c16a91bbe89953fc09d73b9",
+      "rule": "unchanged: retain destination"
+    },
+    {
+      "path": "runners/java_vuser/Dockerfile",
+      "source_sha256": "70babc61c284c14efed4298ca8e71712de1602f1493ff580a48a5e9c4251b848",
+      "destination_sha256": "96dfaca77967bd885b6aded77eebffef1c1a6d8df6e66ae0ca7741b6f086e7e9",
+      "root_head_sha256": "96dfaca77967bd885b6aded77eebffef1c1a6d8df6e66ae0ca7741b6f086e7e9",
+      "component_head_sha256": "96dfaca77967bd885b6aded77eebffef1c1a6d8df6e66ae0ca7741b6f086e7e9",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "runners/java_vuser/Dockerfile.broker",
+      "source_sha256": "983ff6c6ffb6e0369c87ae4c0a8f2a1885b7c7e469459a016a0fba0d3d4fa1c6",
+      "destination_sha256": "a5040d305ceb1f0c78e3e6650a9694eeedf0741266142d82e28535449b7b4244",
+      "root_head_sha256": "a5040d305ceb1f0c78e3e6650a9694eeedf0741266142d82e28535449b7b4244",
+      "component_head_sha256": "a5040d305ceb1f0c78e3e6650a9694eeedf0741266142d82e28535449b7b4244",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "runners/java_vuser/Dockerfile.facade",
+      "source_sha256": "85cb5887fbfbde61693c95d9b11a7e45252f9802e33c78996c242c7f97fb225a",
+      "destination_sha256": "ca9236e01f56aedbcfaffcfb7a527daaa1f091e9b077c8e5d04dcb7a96aa4634",
+      "root_head_sha256": "ca9236e01f56aedbcfaffcfb7a527daaa1f091e9b077c8e5d04dcb7a96aa4634",
+      "component_head_sha256": "ca9236e01f56aedbcfaffcfb7a527daaa1f091e9b077c8e5d04dcb7a96aa4634",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "runners/java_vuser/Dockerfile.supervisor",
+      "source_sha256": "c8b2887c4a1962a13135de937f0a4d5168fb109724d4fed57f37a706e4918a51",
+      "destination_sha256": "d8a162832a3e5585ea40314aefd7ff1ca4402a685fdd4190631896fce02a6b6c",
+      "root_head_sha256": "d8a162832a3e5585ea40314aefd7ff1ca4402a685fdd4190631896fce02a6b6c",
+      "component_head_sha256": "d8a162832a3e5585ea40314aefd7ff1ca4402a685fdd4190631896fce02a6b6c",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "scripts/playwright_sdk_fork_test.go",
+      "source_sha256": "1d8dc00fe63e18b341cc44ca8e52b72fd0733933453abfcab95ac48c7dc80dd9",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "scripts/recording_e2e_test.go",
+      "source_sha256": "5a2a374a3f76ee13209ea86be3e2dca1e1fa7dc31d07552ee1d3e95e07388045",
+      "destination_sha256": "f3c19620f6c3bc98195c68e823dc823b272f20aea6443f1f71535f22a7bffe3d",
+      "root_head_sha256": "f3c19620f6c3bc98195c68e823dc823b272f20aea6443f1f71535f22a7bffe3d",
+      "component_head_sha256": "f3c19620f6c3bc98195c68e823dc823b272f20aea6443f1f71535f22a7bffe3d",
+      "rule": "unmodified exact shared committed base: apply approved component delta"
+    },
+    {
+      "path": "third_party/playwright-go/APEX_PATCHES.md",
+      "source_sha256": "d74676e57d2cec29a512f2096cd2dc2f8327fa9e073415cc4e28a7421a8b1875",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/LICENSE",
+      "source_sha256": "012b4d1cf8295a878fb932a9b0bd03ef3e5083b2b16c2936986e1de0b8c3b784",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/README.md",
+      "source_sha256": "10ad6ed78db64fe19b2d704b6f4d811f47879cdebf53172f6a8a6ec2fd9ed04e",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/UPSTREAM_MANIFEST.json",
+      "source_sha256": "70c82749e3cd90cbfe0bc04cd32782cc611fea4455394d21f226319d8656be88",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/apiresponse_assertions.go",
+      "source_sha256": "e87dfe182835c73a8673a02cf06153cf779705050338c589ac91024633bbc720",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/artifact.go",
+      "source_sha256": "3e01585e8c8b05f62c964d1ab167b5e96a9c3d45a8de6c8e2862bc9bef52f1cc",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/assertions.go",
+      "source_sha256": "f741fbf8eab7ee3bd94c588ac8cc381398dc0de07af16cbf185af18e81a36ac1",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/binding_call.go",
+      "source_sha256": "27fb1b4146344fd6e60f143be7bb85ad6ba07f1d0e6e201f5e699ab54070a0a5",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/browser.go",
+      "source_sha256": "6699d2846d966112fe0128a11d07e09289569cb63cd829b53c59b485cdf5240f",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/browser_context.go",
+      "source_sha256": "cdb3661ec88f0e812298703f17dedb50ea10a252daf27d7ee2f73e7c8f7e15a3",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/browser_type.go",
+      "source_sha256": "6854931adffd5db28983f0785f72dddd4e2141e2ecaf86053287da9d3adf1113",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/cdp_session.go",
+      "source_sha256": "ea67e23fc6d9fec35129e9ed2b024d8eb0c3f2d6a544307da6988a1207411652",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/channel.go",
+      "source_sha256": "5cfdee0423ef1c7450fedddd7c61b5e03d60fc5ddf3232955bca6d718a4e665c",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/channel_owner.go",
+      "source_sha256": "befa59b86f4fb32dbae235d2ceeafaabc9b0ded029cd67cace08b43e1ea57a4e",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/clock.go",
+      "source_sha256": "9f807668194e7070f2142181c6a87c0b4b1b0985ceab3a325eaade91a6849721",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/connection.go",
+      "source_sha256": "d7a48dbf4279b94dfb96736b31a98de92d4d9743a8a50b4f26d3dc6168ad1efc",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/console_message.go",
+      "source_sha256": "692d1d3ce5654f048d0976e545db57e176421a4b0805c3fff0d378c1f29e1fd5",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/credentials.go",
+      "source_sha256": "dd13892a3cd189a10950d6407d2efe65acf6f4dda24f7701b98dde45a3dd7c4d",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/debugger.go",
+      "source_sha256": "95b1be2c73a5713cc179d5e8372bab1fcba019652ea9a2e09a5aeda2432d7476",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/dialog.go",
+      "source_sha256": "0ac9339031f9a7f315cc40532bed0d36d44659173083cce1c7a0bf983b7dcf52",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/disposable.go",
+      "source_sha256": "caabe5df02cf57c79373de1ace2ade10eea15a9a9e536ae7a4227f84f144f22f",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/download.go",
+      "source_sha256": "e9697f44b98f507030b433ad3ba3650778977ee8d8d06b5aab27b2d760d15069",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/element_handle.go",
+      "source_sha256": "3370b4fe18766d3d120c0f85f7ff9afab50d5fdecdc4b1d0744260f8233161d4",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/errors.go",
+      "source_sha256": "1b58045b31168b633e98c4b6fd85182f97fcf0d38f69a2693a27c2937bd5ceaa",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/event_emitter.go",
+      "source_sha256": "fc5a0effada20e79bbf6f236275f36d4449ce8c5a64e6f5088c1e945884a5389",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/event_emitter_test.go",
+      "source_sha256": "30eba55f12f1d8a8a95048932252812a7a34424af3d50a3ba80bad259d0422c3",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/fetch.go",
+      "source_sha256": "9ef3d12b9f6bd21e2315ae3b2c395b17c10f63d2a9efc61d76c1d70bc537ff61",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/file_chooser.go",
+      "source_sha256": "abc900bf9f618c588464d0ac7a383122cea7d9826ff128203be0890fa7b3ebec",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/frame.go",
+      "source_sha256": "ded93ff48f185c02879b19729e1375965f0e6459ab61ebec05d7054750ed98f7",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/frame_locator.go",
+      "source_sha256": "19306a5466ecec3808b6080962a7c3c5c579f549ec6d3f8a051d99966849cf81",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/generated-enums.go",
+      "source_sha256": "cb71d9b957b232299ddfe91d4812bc784edfb29b2146649894de2fa5dd4424cc",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/generated-interfaces.go",
+      "source_sha256": "d766831794a45ff2214faa652fd1c7c2e47ccaf2b87ec29de22865bde73de52d",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/generated-structs.go",
+      "source_sha256": "43a0f0bcc51d6b946f496f6f6ed1daa8593402f6c0aa35b3f35889ba02f1718d",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/glob.go",
+      "source_sha256": "635891a66a901aba16c63b3241505c35b95bc301bee81fd7b1ae069c73a59575",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/glob_test.go",
+      "source_sha256": "70e4c79a4583c99349a1722faddc878539b6313fa2ddab0f65ae60f9e21dde75",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/go.mod",
+      "source_sha256": "755e83d264703fc6b0bdce94ec159cd3a7e229c5c85418029c89cad58b2c37da",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/go.sum",
+      "source_sha256": "07b39a80c1d0550c500039856573b5387830ef0bc465f85ff32131ccb6268856",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/goid.go",
+      "source_sha256": "7c95ffc7cf4fde7daef2b8a903e67d1b73e2e527132d6e935675b17c529aaa8c",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/har_router.go",
+      "source_sha256": "85d77f3e7ca0b6c54b936735c6c8bcf09907773d4ffe64485c9180d68d81f736",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/helpers.go",
+      "source_sha256": "c465189c7eab3f861ffbe18b10212a86e174a09f760b6fac22dc4307c2a8a2d7",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/helpers_test.go",
+      "source_sha256": "a593cc02ef1120da2270fc61b3bc453ffb0119a99eab3815aff979e63cd88f98",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/input.go",
+      "source_sha256": "2a200403603c542ce21aa151219b645d06b31173c90f1c3e0fee5157899312fd",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/input_files_helper.go",
+      "source_sha256": "97ca12d97b0cfedd90e523f2ba9a8be48387d258f8422199d0e59cd0e486a02b",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/internal/safe/map.go",
+      "source_sha256": "f3982502474ee0e4ac2f1011445b65cb9ed455f4254593b267523d7e953b63bc",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/js_handle.go",
+      "source_sha256": "c114d9d2f5e886cd2dcac087c6fdacea31e6ab27528028277be441f5349b2dbc",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/jsonPipe.go",
+      "source_sha256": "111afb2e2f0ce0e783a9ae1a0e3fd567a0bba0e2d87d2b76ea3175b1510c3ff8",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/jsonPipe_test.go",
+      "source_sha256": "1c09eab91c73c6b94b4d0a9884f4977add2e5aec9cdbb3f7ffbdf2d0871f205e",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/local_utils.go",
+      "source_sha256": "825aca06d97e7660f7a3b4ca66b2a707ab30e844d7ca979f9e76cbc1cde269f4",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/locator.go",
+      "source_sha256": "5b512aac7cbd369a948eb88fe5a0bc2cca1b6e9b3436a2b20c9c13a1a4177015",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/locator_assertions.go",
+      "source_sha256": "79941886a819833a63fea33982cd1843215199cf3d6554480a9765131ef8aa42",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/locator_helpers.go",
+      "source_sha256": "35ed6ac6ec418e4fa12b7f6af739646ed07c06ec2deedfd4d781f71940e9c56e",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/mime_types.go",
+      "source_sha256": "b31631656376a0300135a51c8478c8432aee6d6f09dcb2a25ae9f12f6017ecd8",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/network.go",
+      "source_sha256": "6e7982656dea91ecf173dac4231e9cd2255f2eacb9241277a00dc7ab31b9c7bd",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/network_test.go",
+      "source_sha256": "936dacb17f4192863c23f4ed0933b09243df595931c1a3e46d49ba8d2a350daf",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/objectFactory.go",
+      "source_sha256": "c692710835e09690cd703cdec19aa1b5f788a35f4d100cc6695aff1b82ee6d9f",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/owned_har_close.go",
+      "source_sha256": "bf96da14bfdc93ad0455bf12a85e1e23675172a58603c25d30059fcc3fee6db6",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/owned_har_close_test.go",
+      "source_sha256": "0dbb40baf32f2ba3424d8943af5c99d9a7b21df2a11015fab88f571383c05484",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/page.go",
+      "source_sha256": "1cce4f395474c5ca607b85fbbef99493436012ef5b59cabd162ba89b86a250ea",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/page_assertions.go",
+      "source_sha256": "1057baacf0c374b8ad1ee142ff90d02ca0b2951bff82299d7c9dc9f8f080d8d4",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/playwright.go",
+      "source_sha256": "a5a9e43348877d0b613742822b2826c16363436f8317e00851956da787088e40",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/request.go",
+      "source_sha256": "574aa784fd224c41c2c107ea07258dd8e072a970610d9dc4327665684f22d9d2",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/response.go",
+      "source_sha256": "971934c347eb775c37c04c7085fdd80613440440337f11da547c2b023a623ab1",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/route.go",
+      "source_sha256": "94063bcb37429517f495406eccf45d70fddbf4e8f32b5c823518ef8a2238952e",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/run.go",
+      "source_sha256": "132aab827689596c4fbd8715943a3004b369a15d339f456f0e0ae93ec3a42d63",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/run_test.go",
+      "source_sha256": "cc5b657b428b6f9d77ec498a2f672329aeebbbb1836ac8c962c28dfad3df1654",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/run_unix.go",
+      "source_sha256": "f6365a7e3d75c06188883369598aee6aee7e0467f14756127ad1bfa091f67681",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/run_win.go",
+      "source_sha256": "c54832107aa36afc760b4efd5d303d7c16ddcf56cc84d144c7f872fa0afd2394",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/screencast.go",
+      "source_sha256": "b7e7e3c8b12cfbf9d755daa3794118fe97c30917e975641d947c4852dc811b8d",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/selectors.go",
+      "source_sha256": "d444b4f2104d44c060dbac78919d169ccac5ea23c4de422e9fb939a910b06dd2",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/selectors_internal_test.go",
+      "source_sha256": "7754ee84512bf71b41e94a6fa966156e51c1c84d184c94c974d46c63e0c4c8ac",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/stream.go",
+      "source_sha256": "7c0a86625491999bac66b9db0facb867af4a8127af8d0e85fae6b88a25934f0d",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/tracing.go",
+      "source_sha256": "9a5fed9c6851016e6c8965f81bb381864b80a23ca78ff78d42e15e5174a4f6d2",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/transport.go",
+      "source_sha256": "24750ccab39f8b6d24cc3850e7c55af865f2ee6cdf0ffa180fdeddf13781f565",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/type_helpers.go",
+      "source_sha256": "fdfd77df58dd06543e9092550869711e6fc7465fc0d766ad628f0779c643e2db",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/type_helpers_test.go",
+      "source_sha256": "7c96fbdd3f60ef8ceb1174d8c5dea34cdf850038e24027f524d67a8608beb29e",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/video.go",
+      "source_sha256": "84c4637e20050dfba23ebf4c014f806c100c2d4f50c2df8458765dc4f1baafbc",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/waiter.go",
+      "source_sha256": "8b013d11b82f08504621707820de405db23a73c58207d485a7daab3b2a72de81",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/waiter_test.go",
+      "source_sha256": "b8c92119761d84419ff325855c7901f4625909e2ca5a6de523b497086c71bc4b",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/web_error.go",
+      "source_sha256": "82125844bee07c282b236f01290e37ba1ccd5745063e1c2f9a0c73643511a942",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/web_storage.go",
+      "source_sha256": "6830a3813c110b3db05e937291fd1dda46c87bdad2e83620fae5cdf87a2387b8",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/websocket.go",
+      "source_sha256": "5bda6f92394fd16578adce608b8389bdb2ae816f50ee294436e1d9b0d24d615a",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/websocket_route.go",
+      "source_sha256": "790b80277afe6c65e3c4f02c1b0ca2d3114d27271e98fa6792784570d6f71d4b",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/worker.go",
+      "source_sha256": "1082a6f7ae30ae27918f714b4881208bf82e64657fbaca66aa29c526ea4feeb4",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    },
+    {
+      "path": "third_party/playwright-go/writable_stream.go",
+      "source_sha256": "b651ff9e8dbdd2025eafd78c4b550a3f4495123894f6b38b864db1d39588a447",
+      "destination_sha256": null,
+      "root_head_sha256": null,
+      "component_head_sha256": null,
+      "rule": "new approved component file: refuse any existing destination"
+    }
+  ]
+}

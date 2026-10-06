@@ -1,0 +1,73 @@
+{
+  "reviewed_at": "2026-10-05T20:12:16.117328+00:00",
+  "reviewer": "/root/scenario_foundation_resume_v3",
+  "scope": "Exact v4 private lightweight feature projection, regression tests and clone/recompile callsites; concrete subsequent zero-delay correction is separate and not reviewed here",
+  "root": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+  "candidate_inventory": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/evidence/fidelity-four-findings-feature-fence-source-inventory-v4.json",
+  "candidate_inventory_sha256": "35006f45d26cf3feb40e4c5b16fe229cee16563afdc397e7cb807ee920b2c3bb",
+  "reviewed_changed_sources": [
+    {
+      "path": "pkg/api/authoring_fidelity_lifecycle_test.go",
+      "bytes": 33552,
+      "sha256": "7069a59ebe4f391015b51b0367288fa19042cdbad42d7eec44fec78da4c69af3"
+    },
+    {
+      "path": "pkg/api/distributed_placement.go",
+      "bytes": 31316,
+      "sha256": "db7f96b47a9bde2daa678014fc9b7f41d9ce0d2e46b5ca88ce01785363b5a1e2"
+    },
+    {
+      "path": "pkg/api/managed_test_build_snapshot_test.go",
+      "bytes": 15467,
+      "sha256": "52291bda7b4649b2a8764ea0ad49605e6aaed9c7bdb9272148064863e770c14b"
+    },
+    {
+      "path": "pkg/api/runner.go",
+      "bytes": 124788,
+      "sha256": "d01347dfb116eb5b9dea7ba869bd4dfb9a248b3385fa1b1600c30356925cc123"
+    },
+    {
+      "path": "pkg/api/testcreation.go",
+      "bytes": 152388,
+      "sha256": "8b32e56214ad083454496f136bb2e5856d78aefbf6098d7bed541c096b6ea7d0"
+    }
+  ],
+  "reviewed_dependency_sources": [
+    {
+      "path": "pkg/api/archive.go",
+      "sha256": "a170a3242a0e7ed1842ece4699d06f1add29050c63baf50b31d28e31bc6b7775"
+    },
+    {
+      "path": "pkg/api/tests.go",
+      "sha256": "634698cd4326c95ee9a1b15d8e27c09571cb117f935db63d2bce9fdc708512dc"
+    },
+    {
+      "path": "pkg/api/runtime_adjustment.go",
+      "sha256": "ae99c6d077680994a3e1b51bf07ffc1fb7475b9d4ca0465754c0447015951f00"
+    },
+    {
+      "path": "pkg/dsl/composition_features.go",
+      "sha256": "91dfc6b386ebd602048e3c5854f12307cf083e48b6b6ad2041e6f4ce4a62552a"
+    },
+    {
+      "path": "pkg/dsl/jmeter_compatibility.go",
+      "sha256": "8163a462fb591e5a95e9773cf018d489a7f9a4e41b98ca3c2a43b8d97464a096"
+    },
+    {
+      "path": "pkg/dsl/lr_fidelity.go",
+      "sha256": "eb2791cec44caf066282ebc1f4ab6ba70fa96311a09bc4ab67f395a704a2b30e"
+    }
+  ],
+  "all_changed_hashes_match": true,
+  "findings": [],
+  "checks": [
+    "Private requiredRuntimeFeature string+requiredRuntimeFeatureKnown bool are populated only in lightweight capacity clone.",
+    "Resolver returns frozen value only for absent script; attached or freshly compiled DSL remains authoritative.",
+    "Lightweight clone retains neither executable script nor baseScript; no mutable DSL alias added.",
+    "Full selected revision-source clones keep immutable script, while compiler builds a fresh TestGroup literal and attaches final post-override script; snapshot-only fields do not propagate into the compiled copy.",
+    "Admission fingerprint keeps exact required-feature comparison and current-live recomputation; no guard disabled or ignored.",
+    "Thirteen meaningful feature cases compare complete live/snapshot fingerprints, plus actual live change invalidation, frozen/reattached script handling, sequential queued property peers and explicit results clear."
+  ],
+  "execution_claim": "Read-only review; no compiler or tests executed by this reviewer. Author owns red/fixed and SQLite/PostgreSQL qualification.",
+  "subsequent_correction_pending": "Canonical zero global-delay clear must be qualified separately after actual owned queued-source admission, preserving ordinary/scenario/iteration refusals."
+}

@@ -1,0 +1,25 @@
+{
+  "schema": "apexload.native-har.parent-review.v5",
+  "created_at_utc": "2026-10-05T22:15:19.391697+00:00",
+  "candidate_inventory_sha256": "65fae202e058f59da5b5c25b7beef494a5f14168e06ccb8e8cf4aefb58c24e1c",
+  "verified_frozen_input_count": 33,
+  "scope": "Independent static repeat review of the five changed v5 files and adjacent plan/prune/namespace cursor paths; all33 directly inventoried source/module inputs hash-verified. No full transitive or native runtime inventory claim.",
+  "resolved_prior_findings": [
+    {
+      "previous": "Mixed recorded/unrecorded batch invalidates its own ledger authorization or fails to refuse external identical replacements",
+      "resolution": "All candidates share the same cursor, including an absent initial ledger. Pre-mutation inode/record equivalence is mandatory; afterMutation checks the exact expected ledger remainder and adoption follows successful descriptor and namespace closure. Both mixed orders, all-unrecorded plans and external replacement refusal have focused normal/race evidence."
+    },
+    {
+      "previous": "Before-rename completed payload duplicated by API flat retention scanning",
+      "resolution": "One-directory plan indexes completed candidate basenames and excludes flat entries only when held candidate and scanned inode match. Both before/after rename API plan/apply fixtures assert two removals and no original/tombstone survivors. Actual API regression compilation and execution still pending."
+    }
+  ],
+  "findings": [],
+  "disposition": "No additional static findings in the v5 ownership delta. Native/API execution and final composed gates remain required before commit/qualification.",
+  "execution_limits": [
+    "Parent ran no Go tests in this review.",
+    "Agent-owned v5 filtered normal/race checks do not establish native SDK close/flush or controller API acceptance.",
+    "The API red overlay and candidate green fixture still await the heavy test window.",
+    "2 GiB HAR admission remains point-in-time accounting; aggregate active-writer growth/RSS and Windows/native platform lanes remain open."
+  ]
+}

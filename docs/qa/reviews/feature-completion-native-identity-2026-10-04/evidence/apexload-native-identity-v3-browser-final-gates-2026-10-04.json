@@ -1,0 +1,37 @@
+[
+  {
+    "gate": "build",
+    "command": [
+      "npm",
+      "run",
+      "build"
+    ],
+    "exit_code": 0,
+    "seconds": 47.229,
+    "log": "/private/tmp/apexload-native-identity-v3-browser-final-build-2026-10-04.log"
+  },
+  {
+    "gate": "dev-admin",
+    "command": [
+      "bash",
+      "scripts/run-e2e.sh",
+      "e2e/workflow-analysis-preparation.spec.ts",
+      "e2e/workflow-dashboard-analysis.spec.ts"
+    ],
+    "exit_code": 0,
+    "seconds": 68.335,
+    "log": "/private/tmp/apexload-native-identity-v3-browser-final-dev-admin-2026-10-04.log"
+  },
+  {
+    "gate": "local-auth",
+    "command": [
+      "bash",
+      "scripts/run-e2e.sh",
+      "e2e/workflow-analysis-preparation.spec.ts",
+      "e2e/workflow-dashboard-analysis.spec.ts"
+    ],
+    "exit_code": 0,
+    "seconds": 133.956,
+    "log": "/private/tmp/apexload-native-identity-v3-browser-final-local-auth-2026-10-04.log"
+  }
+]

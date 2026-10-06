@@ -1,0 +1,56 @@
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:114: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:168: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:114: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:168: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (2.40s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (1.04s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (1.36s)
+=== RUN   TestBrowserDocumentFinalizePhysicallyClosesAndJoinsOwnedNativeWorkers
+--- PASS: TestBrowserDocumentFinalizePhysicallyClosesAndJoinsOwnedNativeWorkers (0.05s)
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/stale_then_live
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/live_then_stale
+--- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders (0.00s)
+    --- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/stale_then_live (0.00s)
+    --- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/live_then_stale (0.00s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:114: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:168: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:114: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:168: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.30s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.08s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.21s)
+=== RUN   TestBrowserDocumentFinalizePhysicallyClosesAndJoinsOwnedNativeWorkers
+--- PASS: TestBrowserDocumentFinalizePhysicallyClosesAndJoinsOwnedNativeWorkers (0.05s)
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/stale_then_live
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/live_then_stale
+--- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders (0.00s)
+    --- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/stale_then_live (0.00s)
+    --- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/live_then_stale (0.00s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:114: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:168: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:114: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:168: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.29s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.08s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.21s)
+=== RUN   TestBrowserDocumentFinalizePhysicallyClosesAndJoinsOwnedNativeWorkers
+--- PASS: TestBrowserDocumentFinalizePhysicallyClosesAndJoinsOwnedNativeWorkers (0.05s)
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/stale_then_live
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/live_then_stale
+--- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders (0.00s)
+    --- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/stale_then_live (0.00s)
+    --- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/live_then_stale (0.00s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/protocol/browser	3.325s

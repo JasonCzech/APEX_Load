@@ -1,0 +1,33 @@
+{
+  "name": "native-har-browser-short-suite-1",
+  "argv": [
+    "go",
+    "test",
+    "./pkg/protocol/browser",
+    "-short",
+    "-count=1"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "exit_code": 0,
+  "elapsed_seconds": 23.286,
+  "recorded_at_utc": "2026-10-05T21:20:21.832335+00:00",
+  "log_path": "/private/tmp/native-har-browser-short-suite-1.log",
+  "log_sha256": "d4cc5f6d93e6b8c12d007fdb36828c8dd1d9c9bc6d8563f42f7f83874a190579",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4025,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "raw_receipt_sha256": "2f205e95642a9130f2423c0a192da2ab93f62dcef16d7c8cb24a217943cc55ef",
+  "repository_inventory_before_sha256": "2da1f4a6ceca8da8a033ea1c05c9d5fda8b4cb81f6bbbd20d58016ec836f1b56",
+  "repository_inventory_after_sha256": "2da1f4a6ceca8da8a033ea1c05c9d5fda8b4cb81f6bbbd20d58016ec836f1b56",
+  "qualification_disposition": "Historical green broad short suite. Some existing native tests omit short guards and used the auto runtime gate; no per-test verbose output, so this does not prove browser-free execution or required-mode native acceptance.",
+  "receipt_scope_note": "Compact durable receipt retains original private receipt SHA, source count/stability and inventory digests. Full 4,000+ repository inventories remain in the named private raw receipt; direct review inventories are copied separately. Neither inventory includes complete module-cache/native dependencies.",
+  "outcome": "green-scoped"
+}

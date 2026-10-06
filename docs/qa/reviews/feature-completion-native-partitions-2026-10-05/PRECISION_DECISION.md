@@ -1,0 +1,7 @@
+# Canonical native query window decision — 2026-10-05
+
+The initial slice contract preserved existing counter boundary rules and proposed disabling time pruning for raw submicrosecond windows. Physical native review found a pre-existing seam: SQL cast timestamps to microseconds while gap filling used the original nanosecond origin. A valid submicrosecond query could therefore erase actual values into missing buckets or add an extra endpoint bucket. Keeping that seam would make full-scan/pruned parity misleading.
+
+The corrective boundary is explicit and tested. The contained child obtains the actual SQL-cast bounds, reports them through a private typed proof, and fills only that grid. The parent validates bounds, count, precision and deadline. Dataset API queries/comparisons and managed overlays disclose one UTC microsecond window, align both sides before bucketing, and preserve original source timestamps and run start. Native fixtures cover positive and pre-epoch timestamps, offsets and collapsed windows against actual SQL casts. The public API refuses a collapsed effective window; the lower-level native operation retains its bounded empty result.
+
+This does not add counter predecessor lookback, prorate incomplete publication rates, average percentile scalars or change raw [from,to) versus merged-publication (from,to] cohort membership. Whole-publication coverage remains authoritative. Artifact selection is separate from physical scan-byte/RSS/scale claims. The 1 GiB and five-platform acceptance remain open.

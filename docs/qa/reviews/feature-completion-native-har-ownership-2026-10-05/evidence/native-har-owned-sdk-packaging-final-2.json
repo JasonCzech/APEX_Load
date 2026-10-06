@@ -1,0 +1,36 @@
+{
+  "name": "native-har-owned-sdk-packaging-final-2",
+  "argv": [
+    "go",
+    "test",
+    "-v",
+    "./scripts",
+    "-run",
+    "Test(OwnedHARSDKForkIntegrityAndPackaging|RecordingCIChangeAndTrustBoundary|ContainerBuildIsSelfContainedAndProfiled|AuthoritativeCIWorkflowContract)$",
+    "-count=3",
+    "-timeout=90s"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "exit_code": 0,
+  "elapsed_seconds": 1.414,
+  "recorded_at_utc": "2026-10-06T00:18:03.394683+00:00",
+  "log_path": "/private/tmp/native-har-owned-sdk-packaging-final-2.log",
+  "log_sha256": "c3960b0c62220517ecc7e0e06fae4cda1bbb4ca6cd245f4b15875f118bebb8c5",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4114,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "raw_receipt_sha256": "948440f6e22429cc21b1c3af3800751370705a8f9ed526d17058ace37587504b",
+  "repository_inventory_before_sha256": "4b41ca6214fc38cba07f8c7ca020e8388c4e6ec29b88516b0caf5526cf0a4b32",
+  "repository_inventory_after_sha256": "4b41ca6214fc38cba07f8c7ca020e8388c4e6ec29b88516b0caf5526cf0a4b32",
+  "qualification_disposition": "Historical v6 packaging/pin/workflow green. Subsequent full docs gate found broken relative upstream README links; refreshed v7 packaging/doc checks are final.",
+  "receipt_scope_note": "Compact durable receipt retains original private receipt SHA, source count/stability and inventory digests. Full 4,000+ repository inventories remain in the named private raw receipt; direct review inventories are copied separately. Neither inventory includes complete module-cache/native dependencies.",
+  "outcome": "green-scoped"
+}

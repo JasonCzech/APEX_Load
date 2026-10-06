@@ -10,9 +10,19 @@ import (
 // depth budget. The visiting set still fences cycles; other models retain the
 // general recursion limit, including arbitrary user-authored structures.
 func completeBoundedEvidenceModel(pkg, name string) bool {
+	if pkg == "" || pkg == "api" {
+		switch name {
+		case "TelemetryPolicyEvidence", "TelemetryBudgetPolicy", "TelemetryStageBudget", "BrowserResourcePage", "BrowserResourcePageItem", "BrowserResourcePageLocator", "BrowserResourcePagePopulation", "BrowserResourcePageCoverage":
+			return true
+		}
+	}
 	if pkg == "protocol" {
 		switch name {
-		case "GRPCDiagnostics", "GRPCSummary", "WebSocketDiagnostics", "WebSocketSummary", "ServerTelemetry":
+		case "GRPCDiagnostics", "GRPCSummary", "WebSocketDiagnostics", "WebSocketSummary", "ServerTelemetry",
+			"BrowserResourceEvidence", "BrowserResourcePhase", "BrowserResourceBytes",
+			"BrowserRuntimeCohort", "BrowserDocumentObservation", "BrowserDocumentEvidence",
+			"BrowserDocumentSummary", "BrowserDocumentMetricSummary", "BrowserMetricDistribution",
+			"BrowserRuntimeMetricAvailability", "BrowserRuntimeMetricCapability":
 			return true
 		}
 	}

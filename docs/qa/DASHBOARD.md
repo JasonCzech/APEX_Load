@@ -26,7 +26,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Tier-0
 | AKS cutover gates passed | 0 | 0 | 10 |
 | Tier-0 assertions GREEN | 0 | 12 | 12 |
 | Tier-0 assertions PARTIAL/MISSING | 12 | 0 | 0 |
-| Playwright spec files | 3 | 66 | assertion-driven |
+| Playwright spec files | 3 | 68 | assertion-driven |
 | Go statement coverage | 77.01% | 77.01% | ratchet |
 | Go coverage floor enforced | 0 | 0 | 1 |
 | Packages with no test file | 6 | 6 | 3 |
@@ -45,7 +45,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Tier-0
 
 | GREEN | PARTIAL | MISSING | Total |
 |---:|---:|---:|---:|
-| 713 | 0 | 0 | 713 |
+| 714 | 0 | 0 | 714 |
 
 ## Gate tiers
 

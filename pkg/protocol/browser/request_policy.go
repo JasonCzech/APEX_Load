@@ -348,7 +348,7 @@ func cloneRequestHeaders(headers map[string]string) map[string]string {
 	return cloned
 }
 
-func (b *Browser) rememberResourceValidator(rawURL string, headers map[string]string) {
+func (b *Browser) rememberResourceValidator(rawURL string, headers map[string]string, expectedGeneration ...string) {
 	rawURL = boundedtext.TruncateUTF8(strings.TrimSpace(rawURL), maxBrowserResourceURLBytes)
 	etag := boundedtext.TruncateUTF8(headerValue(headers, "etag"), maxBrowserResourceETagBytes)
 	if rawURL == "" || etag == "" {
@@ -356,6 +356,9 @@ func (b *Browser) rememberResourceValidator(rawURL string, headers map[string]st
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if len(expectedGeneration) > 0 && (b.closing || expectedGeneration[0] != "" && expectedGeneration[0] != b.evidence.generation) {
+		return
+	}
 	if b.resourceValidators == nil {
 		b.resourceValidators = make(map[string]string)
 	}

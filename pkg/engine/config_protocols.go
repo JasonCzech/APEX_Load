@@ -474,6 +474,20 @@ func appendNetworkConfig(cfg map[string]any, script *dsl.Script) {
 
 func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 	browserCfg := script.Config.Browser
+	if browserCfg.CaptureDocumentMetrics != nil {
+		cfg["browser_capture_document_metrics"] = *browserCfg.CaptureDocumentMetrics
+	}
+	policy := "persistent_context"
+	if browserEmulationNewUserEachIteration(script.Config) {
+		policy = "cookies_each_iteration"
+		if script.Config.BrowserEmulation.Cache.ClearCacheForNewUser == nil || *script.Config.BrowserEmulation.Cache.ClearCacheForNewUser {
+			policy = "cookies_and_cache_each_iteration"
+		}
+	}
+	if browserCfg.NewUserPerIter != nil && *browserCfg.NewUserPerIter {
+		policy = "context_each_iteration"
+	}
+	cfg["browser_runtime_new_user_policy"] = policy
 	if browserCfg.StorageState != "" {
 		cfg["browser_storage_state"] = browserCfg.StorageState
 	}

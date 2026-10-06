@@ -1,0 +1,7 @@
+
+> apexload-dashboard@0.1.0 build
+> tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && vite build --outDir ../pkg/api/static --emptyOutDir
+
+src/types/domainContracts.test.ts(679,77): error TS2344: Type '"run_logic_goals"' does not satisfy the constraint '"Expected: literal string: run_logic_goals, Actual: literal string: browser_document_capture_requested"'.
+src/types/scriptsContract.test.ts(74,55): error TS2344: Type '"headless" | "device_profile" | "touch_mode" | "orientation" | "storage_state" | "system_language" | "available_screen_width" | "available_screen_height" | "engine" | "slow_mo_ms" | ... 22 more ... | "capture_document_metrics"' does not satisfy the constraint '"Expected: literal string: timezone, Actual: never" | "Expected: literal string: user_agent, Actual: never" | "Expected: literal string: traceparent, Actual: never" | ... 29 more ... | "Expected: literal string: capture_document_metrics, Actual: never"'.
+  Type '"headless"' is not assignable to type '"Expected: literal string: timezone, Actual: never" | "Expected: literal string: user_agent, Actual: never" | "Expected: literal string: traceparent, Actual: never" | ... 29 more ... | "Expected: literal string: capture_document_metrics, Actual: never"'.

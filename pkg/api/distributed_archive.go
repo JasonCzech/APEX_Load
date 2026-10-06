@@ -407,6 +407,7 @@ type remoteArchiveBundle struct {
 	manifest                  RunArchiveManifest
 	transactionsPath          string
 	resourcesPath             string
+	browserDocumentsPath      string
 	summariesPath             string
 	transferStageRoot         string
 	transferLease             *archiveTransferLease
@@ -724,15 +725,30 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundleTargetForSource(ct
 	if err != nil {
 		return remoteArchiveBundle{}, false, fmt.Errorf("validate archive manifest from %s: %w", target, err)
 	}
+	if err := validateBrowserDocumentManifest(&manifest, true); err != nil {
+		return remoteArchiveBundle{}, false, fmt.Errorf("validate browser document manifest from %s: %w", target, err)
+	}
 	paths := []string{filepath.Join(targetDir, "transactions.jsonl"), filepath.Join(targetDir, "resources.jsonl"), filepath.Join(targetDir, "interval_summaries.jsonl")}
 	names := []string{transactionsName, resourcesName, summariesName}
 	labels := []string{"transaction", "resource", "interval summaries"}
+	documentsPath := ""
+	if manifest.BrowserDocumentsFile != "" {
+		documentsPath = filepath.Join(targetDir, browserDocumentsFileName)
+		paths = append(paths, documentsPath)
+		names = append(names, manifest.BrowserDocumentsFile)
+		labels = append(labels, "browser documents")
+	}
 	for i := range paths {
 		if _, err := fetchRemoteArchiveArtifactFileForSource(targetCtx, client, testID, names[i], sourceIdentity, paths[i], remoteArchiveArtifactMaxBytes, budget); err != nil {
 			return remoteArchiveBundle{}, false, fmt.Errorf("fetch %s archive from %s: %w", labels[i], target, err)
 		}
 	}
-	return remoteArchiveBundle{target: target, region: strings.TrimSpace(b.regionForTarget(target)), manifest: manifest, manifestData: append([]byte(nil), manifestBuffer.Bytes()...), transactionsPath: paths[0], resourcesPath: paths[1], summariesPath: paths[2], transferStageRoot: transferStageRoot}, false, nil
+	if documentsPath != "" {
+		if err := forEachBrowserDocumentArtifact(targetCtx, targetDir, browserDocumentsFileName, manifest.BrowserDocumentsSHA256, manifest.BrowserDocumentRecordCount, func(*protocol.BrowserDocumentEvidence) error { return nil }); err != nil {
+			return remoteArchiveBundle{}, false, fmt.Errorf("validate browser documents from %s: %w", target, err)
+		}
+	}
+	return remoteArchiveBundle{target: target, region: strings.TrimSpace(b.regionForTarget(target)), manifest: manifest, manifestData: append([]byte(nil), manifestBuffer.Bytes()...), browserDocumentsPath: documentsPath, transactionsPath: paths[0], resourcesPath: paths[1], summariesPath: paths[2], transferStageRoot: transferStageRoot}, false, nil
 }
 
 func remoteArchiveTargetTimeout(base time.Duration) time.Duration {
@@ -930,14 +946,25 @@ func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []rem
 
 		}
 	}
+	if test != nil {
+		manifest.BrowserDocumentCaptureRequested = groupsRequestBrowserDocumentCapture(test.Groups)
+	}
 	manifest.SLAEvaluated, manifest.SLABreached, manifest.SLADetails = distributedArchiveSLA(tr, test)
 	for index, bundle := range bundles {
 		if index == 0 || bundle.manifest.CreatedAt.Before(manifest.CreatedAt) {
 			manifest.CreatedAt = bundle.manifest.CreatedAt
 		}
+		if test == nil {
+			manifest.BrowserDocumentCaptureRequested = manifest.BrowserDocumentCaptureRequested || bundle.manifest.BrowserDocumentCaptureRequested
+		}
 		manifest.TransactionCount += bundle.manifest.TransactionCount
 		manifest.ResourceSampleCount += bundle.manifest.ResourceSampleCount
 		manifest.IntervalSummaryCount += bundle.manifest.IntervalSummaryCount
+		if bundle.manifest.BrowserDocumentsFile != "" {
+			manifest.BrowserDocumentsFile = browserDocumentsFileName
+			manifest.BrowserDocumentsParquetFile = browserDocumentsParquetFileName
+			manifest.BrowserDocumentRecordCount += bundle.manifest.BrowserDocumentRecordCount
+		}
 		mergeRunArchiveMessageDetailCapture(&manifest, bundle.manifest.MessageDetailCapture)
 		if manifest.InitialProvenance == nil && bundle.manifest.InitialProvenance != nil {
 			initial := maskRunArchiveProvenance(*bundle.manifest.InitialProvenance)
@@ -1166,7 +1193,7 @@ func writeMergedRemoteArchiveFilesWithBudget(rootDir string, manifest *RunArchiv
 		return err
 	}
 	manifest.IntervalSummaryCount = count
-	return nil
+	return mergeRemoteBrowserDocuments(rootDir, manifest, bundles, budget)
 }
 
 const (
@@ -1658,6 +1685,7 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 			aggregate.Transactions = mergeIntervalTransactions(aggregate.Transactions, record.Transactions)
 			aggregate.ByRegion = mergeIntervalTransactions(aggregate.ByRegion, record.ByRegion)
 			aggregate.Browser = mergeRemoteArchiveSummaryBrowser(aggregate.Browser, record.Browser)
+			protocol.MergeBrowserDocumentSummaries(&aggregate.BrowserDocuments, browserDocumentsForLive(record.BrowserDocuments, record.Browser != nil || len(record.BrowserByDevice) > 0))
 			aggregate.BrowserByDevice = mergeRemoteArchiveSummaryBrowserByDevice(aggregate.BrowserByDevice, record.BrowserByDevice)
 			aggregate.Telemetry = mergeRemoteArchiveSummaryTelemetry(aggregate.Telemetry, record.Telemetry)
 			aggregate.TelemetryStatus = mergeRemoteArchiveSummaryTelemetryStatus(aggregate.TelemetryStatus, record.TelemetryStatus)

@@ -1,0 +1,36 @@
+{
+  "name": "native-har-browser-race-3",
+  "argv": [
+    "go",
+    "test",
+    "-race",
+    "./pkg/protocol/browser",
+    "-run",
+    "TestHAROwnership|TestFinalizeHARCapture|TestApplyHARCapture|TestDiscardHARWorking|TestHARMonitor|TestClosePreserves|TestRuntimeHARRetention|TestBrowserContextOptions|TestBrowserClose|TestBrowserDocumentFinalize|TestBrowserDocumentFinalizerFrameErrorIsolation",
+    "-short",
+    "-count=2"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "exit_code": 0,
+  "elapsed_seconds": 13.84,
+  "recorded_at_utc": "2026-10-05T21:37:58.866711+00:00",
+  "log_path": "/private/tmp/native-har-browser-race-3.log",
+  "log_sha256": "ea348b4190fb34cff37ce935229ffb1b418e618cda83469a39174f3fdbda3f95",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4029,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "raw_receipt_sha256": "ceb0ef4c6551b80cd12f8b80bea84e7b30507e21e14fc39f1398f1de3bf51096",
+  "repository_inventory_before_sha256": "d59f85acfac637c8c3469ac633c130d8cfbc9cc5f83a5f2da2b78b671b9c29b6",
+  "repository_inventory_after_sha256": "d59f85acfac637c8c3469ac633c130d8cfbc9cc5f83a5f2da2b78b671b9c29b6",
+  "qualification_disposition": "Historical green/check superseded by subsequent source changes unless named as final candidate qualification in README.",
+  "receipt_scope_note": "Compact durable receipt retains original private receipt SHA, source count/stability and inventory digests. Full 4,000+ repository inventories remain in the named private raw receipt; direct review inventories are copied separately. Neither inventory includes complete module-cache/native dependencies.",
+  "outcome": "green-scoped"
+}

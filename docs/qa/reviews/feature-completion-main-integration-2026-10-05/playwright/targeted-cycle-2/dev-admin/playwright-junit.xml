@@ -1,0 +1,96 @@
+<testsuites id="" name="" tests="2" failures="0" skipped="0" errors="2" time="465.63236900000004">
+<testsuite name="command-center-details.spec.ts" timestamp="2026-10-06T05:24:30.648Z" hostname="" tests="2" failures="0" skipped="0" time="219.657" errors="2">
+<testcase name="advanced details returns to the same run without losing cockpit edits or graph mode" classname="command-center-details.spec.ts" time="159.417">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|command-center-details-adv-a5691-cockpit-edits-or-graph-mode/test-failed-1.png]]
+
+[[ATTACHMENT|command-center-details-adv-a5691-cockpit-edits-or-graph-mode/error-context.md]]
+]]>
+</system-out>
+<system-err>
+<![CDATA[[liveRun] abort for 9a40b5a9-bf2e-4611-aac6-34b46dc40182 failed: TimeoutError: apiRequestContext.post: Timeout 15000ms exceeded.
+Call log:
+[2m  - → POST http://127.0.0.1:18471/api/v1/tests/9a40b5a9-bf2e-4611-aac6-34b46dc40182/abort[22m
+[2m    - user-agent: Playwright/1.61.1 (arm64; macOS 27.0) node/22.22 CI/1[22m
+[2m    - accept: */*[22m
+[2m    - accept-encoding: gzip,deflate,br[22m
+
+[liveRun] delete test for 9a40b5a9-bf2e-4611-aac6-34b46dc40182 failed: TimeoutError: apiRequestContext.delete: Timeout 15000ms exceeded.
+Call log:
+[2m  - → DELETE http://127.0.0.1:18471/api/v1/tests/9a40b5a9-bf2e-4611-aac6-34b46dc40182[22m
+[2m    - user-agent: Playwright/1.61.1 (arm64; macOS 27.0) node/22.22 CI/1[22m
+[2m    - accept: */*[22m
+[2m    - accept-encoding: gzip,deflate,br[22m
+
+]]>
+</system-err>
+<error message="apiRequestContext.post: Timeout 15000ms exceeded." type="TimeoutError">
+<![CDATA[  command-center-details.spec.ts:27:1 › advanced details returns to the same run without losing cockpit edits or graph mode 
+
+    TimeoutError: apiRequestContext.post: Timeout 15000ms exceeded.
+    Call log:
+      - → POST http://127.0.0.1:18471/api/v1/tests/9a40b5a9-bf2e-4611-aac6-34b46dc40182/start
+        - user-agent: Playwright/1.61.1 (arm64; macOS 27.0) node/22.22 CI/1
+        - accept: */*
+        - accept-encoding: gzip,deflate,br
+
+
+       at support/liveRun.ts:116
+
+      114 |
+      115 |   try {
+    > 116 |     await requireOk(await request.post(`/api/v1/tests/${testId}/start`), 'start e2e run')
+          |                                   ^
+      117 |     await waitForLiveTraffic(request, testId, readyTimeoutMs)
+      118 |   } catch (error) {
+      119 |     await abortLiveRun(request, run)
+        at startLiveRun (/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/support/liveRun.ts:116:35)
+        at /Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/command-center-details.spec.ts:13:21
+        at /Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/command-center-details.spec.ts:29:15
+
+    Test timeout of 30000ms exceeded.
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/targeted-cycle-2/dev-admin/command-center-details-adv-a5691-cockpit-edits-or-graph-mode/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/targeted-cycle-2/dev-admin/command-center-details-adv-a5691-cockpit-edits-or-graph-mode/error-context.md
+]]>
+</error>
+</testcase>
+<testcase name="runtime workspace keeps essential metrics readable and settings in an opaque drawer" classname="command-center-details.spec.ts" time="60.24">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|command-center-details-run-b0569-ettings-in-an-opaque-drawer/test-failed-1.png]]
+]]>
+</system-out>
+<system-err>
+<![CDATA[[liveRun] delete test for e2e41cde-5db4-42f2-bb2d-d05287e4c853 failed: TimeoutError: apiRequestContext.delete: Timeout 15000ms exceeded.
+Call log:
+[2m  - → DELETE http://127.0.0.1:18471/api/v1/tests/e2e41cde-5db4-42f2-bb2d-d05287e4c853[22m
+[2m    - user-agent: Playwright/1.61.1 (arm64; macOS 27.0) node/22.22 CI/1[22m
+[2m    - accept: */*[22m
+[2m    - accept-encoding: gzip,deflate,br[22m
+
+]]>
+</system-err>
+<error message="Test timeout of 30000ms exceeded." type="Error">
+<![CDATA[  command-center-details.spec.ts:57:1 › runtime workspace keeps essential metrics readable and settings in an opaque drawer 
+
+    Test timeout of 30000ms exceeded.
+
+    Tearing down "seedLiveRun" exceeded the test timeout of 30000ms.
+
+    Fixture "trace recording" timeout of 30000ms exceeded during teardown.
+
+    Error: End of central directory record signature not found. Either not a zip file, or file is truncated.
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/targeted-cycle-2/dev-admin/command-center-details-run-b0569-ettings-in-an-opaque-drawer/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</error>
+</testcase>
+</testsuite>
+</testsuites>

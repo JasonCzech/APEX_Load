@@ -1,0 +1,539 @@
+{
+  "captured_utc": "2026-10-05T13:32:51.960080+00:00",
+  "profile": "local-auth",
+  "scope": "Three selected actual-controller/UI evidence workflows from the successful eight-workflow affected repeat against the corrected controller and unchanged final full-cycle embedded bundle. The six reviewed backend correction inputs are checked alongside frontend/build inputs. Document measurements are bounded synthetic fixtures; native measurement acquisition is qualified separately. Successful JSON attachments are physically retained by this JSON reporter. This index derives from those original bodies and immutable PNG files; no successful trace is claimed.",
+  "reporter": {
+    "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-corrected-controller-local-results-final-1.json",
+    "bytes": 36389,
+    "sha256": "2f7d9a06bca83b84a98127b97c46eaa35d0367af23b0cc1fa0c96ec6cf99774f",
+    "stats": {
+      "startTime": "2026-10-05T13:27:20.423Z",
+      "duration": 78871.493,
+      "expected": 8,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    }
+  },
+  "verified_frozen_inputs": [
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/frontend-document-chart-cycle-build-source-inventory.json",
+      "receipt_sha256": "c0a5ba4b447779a67d7fc272749ff4313ac614374cd549c7564036c7ccfcaf9c",
+      "file_count": 1508,
+      "files_list_sha256": "671411253c0184e5f20e58c42da72dd4df848edf1eb9176a474659878299c135"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/frontend-document-chart-cycle-final-embedded-inventory.json",
+      "receipt_sha256": "cdc296fe182630d0410a66fae97d78997342e4e51cc8c424d845a70405144c30",
+      "file_count": 247,
+      "files_list_sha256": "d21effd983b4274051016e6045cf48cc223e2ed0311ca5cf23dbf60efc9b5c44"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-document-loss-identity-reviewed-final-source-inventory.json",
+      "receipt_sha256": "d0e114df039f9537ee000a944e6012361d2edd138ebcba8e06eee29cfb68330e",
+      "file_count": 6,
+      "files_list_sha256": "89e5a591bc4456c992b1e7ef4c41997117e72ca7dd3024134c076eb1fecbc4e0"
+    }
+  ],
+  "workflows": [
+    {
+      "title": "Author creates, reverses, validates, edits source and saves without losing context",
+      "file": "workflow-author-experience.spec.ts",
+      "line": 76,
+      "status": "passed",
+      "duration_ms": 12348,
+      "started_utc": "2026-10-05T13:27:31.104Z",
+      "attachments": [
+        {
+          "name": "rapid-target-edit-before-frame",
+          "content_type": "application/json",
+          "body_sha256": "2641da724db0fc7f961a016594915468c17b9b7a27db9b805401b3a40944faee",
+          "value": {
+            "owner": "Actions \u203a Create orderscript.actions[0] \u00b7 Current draft",
+            "active": {
+              "tag": "INPUT",
+              "field": "target",
+              "value": "/orders",
+              "start": 0,
+              "end": 7
+            },
+            "target": "/orders",
+            "queued_frames": 13
+          }
+        },
+        {
+          "name": "rapid-target-edit-after-frame",
+          "content_type": "application/json",
+          "body_sha256": "cbfd2ba58e15db1b21ca857980bb34a5f3a3cbbca391b3b303b25e146ce94e3f",
+          "value": {
+            "owner": "Actions \u203a Create orderscript.actions[0] \u00b7 Current draft",
+            "active": {
+              "tag": "INPUT",
+              "field": "target",
+              "value": "/orders",
+              "start": 0,
+              "end": 7
+            },
+            "target": "/orders",
+            "queued_frames": 0
+          }
+        }
+      ]
+    },
+    {
+      "title": "live document populations preserve overlapping provisional history, actual cohorts and missing-peer coverage",
+      "file": "workflow-browser-resource-evidence.spec.ts",
+      "line": 358,
+      "status": "passed",
+      "duration_ms": 9307,
+      "started_utc": "2026-10-05T13:28:21.145Z",
+      "attachments": [
+        {
+          "name": "browser-document-live-overview.png-before-geometry",
+          "content_type": "application/json",
+          "body_sha256": "a0fd89fadda6180132872e345b02547841e66d049a66d9158f4136aa0286c882",
+          "value": {
+            "left": 93,
+            "right": 731,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 636,
+            "clientWidth": 636,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 147,
+            "headingLeft": 114,
+            "headingRight": 710,
+            "headingTop": 1061.578125,
+            "headingBottom": 1084.375,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-live-overview.png-table-geometry",
+          "content_type": "application/json",
+          "body_sha256": "b1740701fb78b96d37974dc45f9333a4321041651ceb31e4851d18246f0fe936",
+          "value": {
+            "ownerWidth": 596,
+            "tableWidth": 1600,
+            "headerWidth": 80
+          }
+        },
+        {
+          "name": "browser-document-live-overview.png-after-geometry",
+          "content_type": "application/json",
+          "body_sha256": "a0fd89fadda6180132872e345b02547841e66d049a66d9158f4136aa0286c882",
+          "value": {
+            "left": 93,
+            "right": 731,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 636,
+            "clientWidth": 636,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 147,
+            "headingLeft": 114,
+            "headingRight": 710,
+            "headingTop": 1061.578125,
+            "headingBottom": 1084.375,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-live-overview.png-geometry",
+          "content_type": "application/json",
+          "body_sha256": "add625602784ab9b0d86f439c3a2504e43a54d7f6be7d73f55c1b5bf3428887c",
+          "value": {
+            "before": {
+              "left": 93,
+              "right": 731,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 636,
+              "clientWidth": 636,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 147,
+              "headingLeft": 114,
+              "headingRight": 710,
+              "headingTop": 1061.578125,
+              "headingBottom": 1084.375,
+              "headingHit": true
+            },
+            "after": {
+              "left": 93,
+              "right": 731,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 636,
+              "clientWidth": 636,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 147,
+              "headingLeft": 114,
+              "headingRight": 710,
+              "headingTop": 1061.578125,
+              "headingBottom": 1084.375,
+              "headingHit": true
+            }
+          }
+        },
+        {
+          "name": "browser-document-live-keyboard-before",
+          "content_type": "application/json",
+          "body_sha256": "adfd9671143fde64eb61222ff494523c78279a36a83bf1cccddb36d069e278ea",
+          "value": {
+            "scrollLeft": 0,
+            "scrollWidth": 1600,
+            "clientWidth": 596,
+            "mainScrollLeft": 0
+          }
+        },
+        {
+          "name": "browser-document-live-keyboard-after",
+          "content_type": "application/json",
+          "body_sha256": "82326fe185909eb49d307933a8d9bced9d37726d87f47bdd5c5da4774d363842",
+          "value": {
+            "scrollLeft": 32,
+            "scrollWidth": 1600,
+            "clientWidth": 596,
+            "mainScrollLeft": 0
+          }
+        },
+        {
+          "name": "browser-document-live.png-before-geometry",
+          "content_type": "application/json",
+          "body_sha256": "4b2bd4c48f6366a805da6f0acba32f0a46c7e522a257c2e0fa9c8153cf2b4668",
+          "value": {
+            "left": 93,
+            "right": 731,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 636,
+            "clientWidth": 636,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 147,
+            "headingLeft": 114,
+            "headingRight": 710,
+            "headingTop": 486.578125,
+            "headingBottom": 509.375,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-live.png-table-geometry",
+          "content_type": "application/json",
+          "body_sha256": "b1740701fb78b96d37974dc45f9333a4321041651ceb31e4851d18246f0fe936",
+          "value": {
+            "ownerWidth": 596,
+            "tableWidth": 1600,
+            "headerWidth": 80
+          }
+        },
+        {
+          "name": "browser-document-live.png-after-geometry",
+          "content_type": "application/json",
+          "body_sha256": "4b2bd4c48f6366a805da6f0acba32f0a46c7e522a257c2e0fa9c8153cf2b4668",
+          "value": {
+            "left": 93,
+            "right": 731,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 636,
+            "clientWidth": 636,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 147,
+            "headingLeft": 114,
+            "headingRight": 710,
+            "headingTop": 486.578125,
+            "headingBottom": 509.375,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-live.png-geometry",
+          "content_type": "application/json",
+          "body_sha256": "890a15d7142625dd658ec645d1c0a77ce41ad224a12f4885e55a6c1380a26e4c",
+          "value": {
+            "before": {
+              "left": 93,
+              "right": 731,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 636,
+              "clientWidth": 636,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 147,
+              "headingLeft": 114,
+              "headingRight": 710,
+              "headingTop": 486.578125,
+              "headingBottom": 509.375,
+              "headingHit": true
+            },
+            "after": {
+              "left": 93,
+              "right": 731,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 636,
+              "clientWidth": 636,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 147,
+              "headingLeft": 114,
+              "headingRight": 710,
+              "headingTop": 486.578125,
+              "headingBottom": 509.375,
+              "headingHit": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "title": "archive document evidence retains latest pending, censored and unavailable measurements independently from actions",
+      "file": "workflow-browser-resource-evidence.spec.ts",
+      "line": 398,
+      "status": "passed",
+      "duration_ms": 8529,
+      "started_utc": "2026-10-05T13:28:30.475Z",
+      "attachments": [
+        {
+          "name": "browser-document-archive-overview.png-before-geometry",
+          "content_type": "application/json",
+          "body_sha256": "f793a14d80294d01f370df7d665ce9b5a6245f2ad23cc148b9991df1c08f8fbc",
+          "value": {
+            "left": 118,
+            "right": 706,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 586,
+            "clientWidth": 586,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 127,
+            "headingLeft": 139,
+            "headingRight": 685,
+            "headingTop": 163.734375,
+            "headingBottom": 186.53125,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-archive-overview.png-table-geometry",
+          "content_type": "application/json",
+          "body_sha256": "8337b2e3dbda843c69ba73e86b72abb5ea50b9ce6078265a2f02f828f3894b39",
+          "value": {
+            "ownerWidth": 546,
+            "tableWidth": 1600,
+            "headerWidth": 80
+          }
+        },
+        {
+          "name": "browser-document-archive-overview.png-after-geometry",
+          "content_type": "application/json",
+          "body_sha256": "f793a14d80294d01f370df7d665ce9b5a6245f2ad23cc148b9991df1c08f8fbc",
+          "value": {
+            "left": 118,
+            "right": 706,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 586,
+            "clientWidth": 586,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 127,
+            "headingLeft": 139,
+            "headingRight": 685,
+            "headingTop": 163.734375,
+            "headingBottom": 186.53125,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-archive-overview.png-geometry",
+          "content_type": "application/json",
+          "body_sha256": "fce3e30f73cc1ec56bca5fb7fca520e6a05068a3b466fcc49b53c5f4d92dc7e3",
+          "value": {
+            "before": {
+              "left": 118,
+              "right": 706,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 586,
+              "clientWidth": 586,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 127,
+              "headingLeft": 139,
+              "headingRight": 685,
+              "headingTop": 163.734375,
+              "headingBottom": 186.53125,
+              "headingHit": true
+            },
+            "after": {
+              "left": 118,
+              "right": 706,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 586,
+              "clientWidth": 586,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 127,
+              "headingLeft": 139,
+              "headingRight": 685,
+              "headingTop": 163.734375,
+              "headingBottom": 186.53125,
+              "headingHit": true
+            }
+          }
+        },
+        {
+          "name": "browser-document-archive-keyboard-before",
+          "content_type": "application/json",
+          "body_sha256": "df5d81531f7da33cf5101007b7d3fffe1eb0b5ad0679e9c9bf83127dda3f1d47",
+          "value": {
+            "scrollLeft": 0,
+            "scrollWidth": 1600,
+            "clientWidth": 546,
+            "mainScrollLeft": 0
+          }
+        },
+        {
+          "name": "browser-document-archive-keyboard-after",
+          "content_type": "application/json",
+          "body_sha256": "d744c8602d0050cad15b9fa753613478fb2a8ce182c30ac5b167369ab6819e9f",
+          "value": {
+            "scrollLeft": 38,
+            "scrollWidth": 1600,
+            "clientWidth": 546,
+            "mainScrollLeft": 0
+          }
+        },
+        {
+          "name": "browser-document-archive.png-before-geometry",
+          "content_type": "application/json",
+          "body_sha256": "f793a14d80294d01f370df7d665ce9b5a6245f2ad23cc148b9991df1c08f8fbc",
+          "value": {
+            "left": 118,
+            "right": 706,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 586,
+            "clientWidth": 586,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 127,
+            "headingLeft": 139,
+            "headingRight": 685,
+            "headingTop": 163.734375,
+            "headingBottom": 186.53125,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-archive.png-table-geometry",
+          "content_type": "application/json",
+          "body_sha256": "8337b2e3dbda843c69ba73e86b72abb5ea50b9ce6078265a2f02f828f3894b39",
+          "value": {
+            "ownerWidth": 546,
+            "tableWidth": 1600,
+            "headerWidth": 80
+          }
+        },
+        {
+          "name": "browser-document-archive.png-after-geometry",
+          "content_type": "application/json",
+          "body_sha256": "f793a14d80294d01f370df7d665ce9b5a6245f2ad23cc148b9991df1c08f8fbc",
+          "value": {
+            "left": 118,
+            "right": 706,
+            "viewport": 760,
+            "viewportHeight": 1600,
+            "scrollWidth": 586,
+            "clientWidth": 586,
+            "ownerLeft": 64,
+            "ownerRight": 760,
+            "topbarBottom": 127,
+            "headingLeft": 139,
+            "headingRight": 685,
+            "headingTop": 163.734375,
+            "headingBottom": 186.53125,
+            "headingHit": true
+          }
+        },
+        {
+          "name": "browser-document-archive.png-geometry",
+          "content_type": "application/json",
+          "body_sha256": "fce3e30f73cc1ec56bca5fb7fca520e6a05068a3b466fcc49b53c5f4d92dc7e3",
+          "value": {
+            "before": {
+              "left": 118,
+              "right": 706,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 586,
+              "clientWidth": 586,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 127,
+              "headingLeft": 139,
+              "headingRight": 685,
+              "headingTop": 163.734375,
+              "headingBottom": 186.53125,
+              "headingHit": true
+            },
+            "after": {
+              "left": 118,
+              "right": 706,
+              "viewport": 760,
+              "viewportHeight": 1600,
+              "scrollWidth": 586,
+              "clientWidth": 586,
+              "ownerLeft": 64,
+              "ownerRight": 760,
+              "topbarBottom": 127,
+              "headingLeft": 139,
+              "headingRight": 685,
+              "headingTop": 163.734375,
+              "headingBottom": 186.53125,
+              "headingHit": true
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-corrected-controller-final-proof-1/local-auth/workflow-author-experience-50289-aves-without-losing-context/author-operator-experience.png",
+      "bytes": 180591,
+      "sha256": "7380f9c2fc32a29877c56c0bb4d426b947eacdc6bc6056850153dcef7b2c87a4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-corrected-controller-final-proof-1/local-auth/workflow-browser-resource--6abc2--independently-from-actions/browser-document-archive-overview.png",
+      "bytes": 259937,
+      "sha256": "4229bd46f08cbe925d88f924bffbc3e3590f5abbec37b8a308b4a19a7da971b4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-corrected-controller-final-proof-1/local-auth/workflow-browser-resource--6abc2--independently-from-actions/browser-document-archive.png",
+      "bytes": 237520,
+      "sha256": "c8ddf6955ed406d8f9e5cbe767c29d2939946d34d188b4f13757df526cb858c5"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-corrected-controller-final-proof-1/local-auth/workflow-browser-resource--814c4-s-and-missing-peer-coverage/browser-document-live-overview.png",
+      "bytes": 301613,
+      "sha256": "191e07db307cd56be5bf254caddc46afc00306db49eda01d9032a273d55c8888"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/browser-corrected-controller-final-proof-1/local-auth/workflow-browser-resource--814c4-s-and-missing-peer-coverage/browser-document-live.png",
+      "bytes": 311143,
+      "sha256": "31ae3b3e12418ac668137b4a5584c6490a7c90221eed3cefa2b27f3b22413042"
+    }
+  ]
+}

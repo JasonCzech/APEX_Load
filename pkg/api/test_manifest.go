@@ -24,6 +24,7 @@ const (
 )
 
 type TestRunManifest struct {
+	TelemetryPolicy                *TelemetryPolicyEvidence               `json:"telemetry_policy,omitempty"`
 	SchemaVersion                  string                                 `json:"schema_version"`
 	TestID                         string                                 `json:"test_id"`
 	RefKey                         string                                 `json:"ref_key,omitempty"`
@@ -183,6 +184,7 @@ func maskTestRunManifest(manifest *TestRunManifest) *TestRunManifest {
 		return nil
 	}
 	masked := *manifest
+	masked.TelemetryPolicy = cloneTelemetryPolicyEvidence(manifest.TelemetryPolicy)
 	masked.Archive = maskTestRunManifestArchive(manifest.Archive)
 	masked.InitialConfiguration = maskTestRunManifestConfiguration(manifest.InitialConfiguration)
 	masked.CurrentConfiguration = maskTestRunManifestConfiguration(manifest.CurrentConfiguration)
@@ -315,7 +317,16 @@ func (tr *TestRunner) buildTestManifestForManagedTest(test *ManagedTest, request
 		}
 	}
 
+	policyInitial := test.initialArchiveProvenance
+	if archiveManifest != nil {
+		policyInitial = archiveManifest.InitialProvenance
+	} else if policyInitial == nil {
+		if record, err := tr.storedTestRecord(test.ID); err == nil && record != nil && normalizeProjectID(record.ProjectID) == normalizeProjectID(test.ProjectID) {
+			policyInitial = decodeStoredInitialProvenance(record.InitialProvenance)
+		}
+	}
 	manifest := &TestRunManifest{
+		TelemetryPolicy:                telemetryPolicyEvidenceFromProvenance(policyInitial),
 		SchemaVersion:                  testRunManifestSchemaVersion,
 		TestID:                         test.ID,
 		RefKey:                         test.RefKey,

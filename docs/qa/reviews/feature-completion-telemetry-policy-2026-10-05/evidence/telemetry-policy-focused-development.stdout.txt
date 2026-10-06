@@ -1,0 +1,12 @@
+2026/10/05 06:33:54 ERROR failed to restore stored test runtime test_id=policy-run error="stored test has no groups"
+--- FAIL: TestTelemetryBudgetPolicyDurableAdmissionAndRestart (0.13s)
+    telemetry_policy_test.go:159: admission policy not retained: &api.TelemetryPolicyEvidence{Availability:"available", Reason:"", Policy:(*api.TelemetryBudgetPolicy)(0x19af33bcb080)}
+2026/10/05 06:33:54 ERROR failed to restore stored test runtime test_id=policy-run error="stored test has no groups"
+--- FAIL: TestTelemetryBudgetPolicyDurableAdmissionAndRestart (0.10s)
+    telemetry_policy_test.go:159: admission policy not retained: &api.TelemetryPolicyEvidence{Availability:"available", Reason:"", Policy:(*api.TelemetryBudgetPolicy)(0x19af348aa180)}
+2026/10/05 06:33:54 ERROR failed to restore stored test runtime test_id=policy-run error="stored test has no groups"
+--- FAIL: TestTelemetryBudgetPolicyDurableAdmissionAndRestart (0.10s)
+    telemetry_policy_test.go:159: admission policy not retained: &api.TelemetryPolicyEvidence{Availability:"available", Reason:"", Policy:(*api.TelemetryBudgetPolicy)(0x19af344a7740)}
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/api	2.680s
+FAIL

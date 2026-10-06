@@ -2,7 +2,7 @@ import type { MonitorBinding } from '../types/appdynamics'
 import { GeneratorAssignmentSettings, GoalConfig, RuntimeJavaVuserSettings, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode, TrafficProfile } from '../types'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import { ScenarioRuntimeSettings } from './scenarioDraftUtils'
-import { BrowserConfig, BrowserEmulationConfig, ErrorHandlingConfig, HTTPConfig, LogConfig, PacingConfig, RunLogicConfig, ThinkTimeConfig, WebRuntimeConfig } from '../types/scripts'
+import { BrowserConfig, BrowserEmulationConfig, ErrorHandlingConfig, HTTPConfig, LogConfig, PacingConfig, RunLogicConfig, ThinkTimeConfig, WebRuntimeConfig, WebSocketConfig, ScriptResultsConfig } from '../types/scripts'
 
 export type ScenarioGroupPayload = {
   name?: string
@@ -54,6 +54,8 @@ export type ScenarioUpsertPayload = {
     log?: LogConfig
     run_logic?: RunLogicConfig
     http?: HTTPConfig
+    results?: ScriptResultsConfig
+    websocket?: WebSocketConfig
     web_runtime?: WebRuntimeConfig
     browser_config?: BrowserConfig
     browser_emulation?: BrowserEmulationConfig
@@ -123,6 +125,10 @@ type CreateTestPayloadInput = ScenarioPayloadInput & {
   releaseId?: string
   scenarioId?: string
   revisionSourceTestId?: string
+  /** Private source presence; never emitted as an API field. */
+  sourceGoalConfigPresent?: boolean
+  sourceRuntimeSettingsPresent?: boolean
+  sourceStartDelayPresent?: boolean
   projectId?: string
   folderId?: string | null
   dataPools?: ScenarioDataPoolBinding[]
@@ -278,32 +284,17 @@ function normalizeSelectedTargets(targets?: string[]) {
 
 
 export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: GoalConfig = {}): GoalConfig | undefined {
-	const monitorRules = goalConfig.monitor_rules === undefined ? undefined : structuredClone(goalConfig.monitor_rules)
-	const transactionRules = goalConfig.transaction_rules?.map(rule => ({ ...rule }))
-	const transactionResponseTimeSLA = goalConfig.transaction_response_time_sla_ms
-	if (scenarioMode !== 'goal_oriented') {
-		const payload: GoalConfig = {
-			...(monitorRules !== undefined ? { monitor_rules: monitorRules } : {}),
-			...(transactionResponseTimeSLA !== undefined ? { transaction_response_time_sla_ms: transactionResponseTimeSLA } : {}),
-			...(transactionRules?.length ? { transaction_rules: transactionRules } : {}),
-			...(goalConfig.early_stop ? { early_stop: structuredClone(goalConfig.early_stop) } : {}),
-			...(goalConfig.workload_shape_config ? { workload_shape_config: structuredClone(goalConfig.workload_shape_config) } : {}),
-		}
-		return Object.keys(payload).length ? payload : undefined
-	}
-
   const hasValue = (value: number | undefined) => value !== undefined && value !== null
+  // Guardrails are authored configuration in both modes. Runtime mode decides
+  // their execution behavior; changing the workload must not erase the receipt.
   const payload: GoalConfig = {
-		...(monitorRules !== undefined ? { monitor_rules: monitorRules } : {}),
-		...(transactionResponseTimeSLA !== undefined ? { transaction_response_time_sla_ms: transactionResponseTimeSLA } : {}),
-    ...(hasValue(goalConfig.target_average_tps) ? { target_average_tps: goalConfig.target_average_tps } : {}),
+    ...(goalConfig.monitor_rules !== undefined ? { monitor_rules: structuredClone(goalConfig.monitor_rules) } : {}),
+    ...(hasValue(goalConfig.transaction_response_time_sla_ms) ? { transaction_response_time_sla_ms: goalConfig.transaction_response_time_sla_ms } : {}),
     ...(hasValue(goalConfig.p95_latency_ms) ? { p95_latency_ms: goalConfig.p95_latency_ms } : {}),
     ...(hasValue(goalConfig.max_error_pct) ? { max_error_pct: goalConfig.max_error_pct } : {}),
     ...(hasValue(goalConfig.max_avg_server_processing_ms) ? { max_avg_server_processing_ms: goalConfig.max_avg_server_processing_ms } : {}),
     ...(hasValue(goalConfig.max_avg_transfer_ms) ? { max_avg_transfer_ms: goalConfig.max_avg_transfer_ms } : {}),
     ...(hasValue(goalConfig.max_error_count) ? { max_error_count: goalConfig.max_error_count } : {}),
-    ...(hasValue(goalConfig.min_vusers) ? { min_vusers: goalConfig.min_vusers } : {}),
-    ...(hasValue(goalConfig.max_vusers) ? { max_vusers: goalConfig.max_vusers } : {}),
     ...(hasValue(goalConfig.max_lcp_ms) ? { max_lcp_ms: goalConfig.max_lcp_ms } : {}),
     ...(hasValue(goalConfig.max_inp_ms) ? { max_inp_ms: goalConfig.max_inp_ms } : {}),
     ...(hasValue(goalConfig.max_cls) ? { max_cls: goalConfig.max_cls } : {}),
@@ -312,15 +303,17 @@ export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: G
     ...(hasValue(goalConfig.max_partition_skew_pct) ? { max_partition_skew_pct: goalConfig.max_partition_skew_pct } : {}),
     ...(hasValue(goalConfig.max_redelivery_rate_pct) ? { max_redelivery_rate_pct: goalConfig.max_redelivery_rate_pct } : {}),
     ...(hasValue(goalConfig.max_dead_letter_rate_pct) ? { max_dead_letter_rate_pct: goalConfig.max_dead_letter_rate_pct } : {}),
-		...(transactionRules?.length ? { transaction_rules: transactionRules } : {}),
-		...(goalConfig.early_stop ? { early_stop: structuredClone(goalConfig.early_stop) } : {}),
-		...(goalConfig.workload_shape_config ? { workload_shape_config: structuredClone(goalConfig.workload_shape_config) } : {}),
-    ...(goalConfig.stop_on_sla_breach ? { stop_on_sla_breach: true } : {}),
-    ...(goalConfig.stop_on_max_errors ? { stop_on_max_errors: true } : {}),
-    ...(goalConfig.sla_breach_window ? { sla_breach_window: goalConfig.sla_breach_window } : {}),
+    ...(goalConfig.transaction_rules !== undefined ? { transaction_rules: structuredClone(goalConfig.transaction_rules) } : {}),
+    ...(goalConfig.early_stop !== undefined ? { early_stop: structuredClone(goalConfig.early_stop) } : {}),
+    ...(goalConfig.workload_shape_config !== undefined ? { workload_shape_config: structuredClone(goalConfig.workload_shape_config) } : {}),
+    ...(goalConfig.stop_on_sla_breach !== undefined ? { stop_on_sla_breach: goalConfig.stop_on_sla_breach } : {}),
+    ...(goalConfig.stop_on_max_errors !== undefined ? { stop_on_max_errors: goalConfig.stop_on_max_errors } : {}),
+    ...(goalConfig.sla_breach_window !== undefined ? { sla_breach_window: goalConfig.sla_breach_window } : {}),
+    ...(scenarioMode === 'goal_oriented' && hasValue(goalConfig.target_average_tps) ? { target_average_tps: goalConfig.target_average_tps } : {}),
+    ...(scenarioMode === 'goal_oriented' && hasValue(goalConfig.min_vusers) ? { min_vusers: goalConfig.min_vusers } : {}),
+    ...(scenarioMode === 'goal_oriented' && hasValue(goalConfig.max_vusers) ? { max_vusers: goalConfig.max_vusers } : {}),
   }
-
-  return Object.keys(payload).length > 0 ? payload : undefined
+  return Object.keys(payload).length ? payload : undefined
 }
 
 // hasJavaVuserOverride mirrors isJavaVuserSettingsEmpty (runtimeSettingsModel):
@@ -374,7 +367,7 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
 
   const javaVuser = hasJavaVuserOverride(runtimeSettings.java_vuser) ? runtimeSettings.java_vuser : undefined
 
-  if ((!hasCanonicalRunLogic && runtimeSettings.iterations === undefined) && !pacing && !thinkTime && !browser && (!hasCanonicalLog && !runtimeSettings.log_level) && (!hasCanonicalRunLogic && !runtimeSettings.auto_transactions) && !hasErrorHandling && !runtimeSettings.log && !runtimeSettings.run_logic && !runtimeSettings.http && !runtimeSettings.web_runtime && !runtimeSettings.browser_config && !runtimeSettings.browser_emulation && !javaVuser && !runtimeSettings.base_url && !runtimeSettings.env && !runtimeSettings.redaction_rules) {
+  if ((!hasCanonicalRunLogic && runtimeSettings.iterations === undefined) && !pacing && !thinkTime && !browser && (!hasCanonicalLog && !runtimeSettings.log_level) && (!hasCanonicalRunLogic && !runtimeSettings.auto_transactions) && !hasErrorHandling && !runtimeSettings.log && !runtimeSettings.run_logic && !runtimeSettings.http && runtimeSettings.results === undefined && runtimeSettings.websocket === undefined && !runtimeSettings.web_runtime && !runtimeSettings.browser_config && !runtimeSettings.browser_emulation && !javaVuser && !runtimeSettings.base_url && !runtimeSettings.env && !runtimeSettings.redaction_rules) {
     return undefined
   }
 
@@ -399,6 +392,8 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
     ...(runtimeSettings.log !== undefined ? { log: runtimeSettings.log } : {}),
     ...(runtimeSettings.run_logic !== undefined ? { run_logic: runtimeSettings.run_logic } : {}),
     ...(runtimeSettings.http !== undefined ? { http: runtimeSettings.http } : {}),
+    ...(runtimeSettings.results !== undefined ? { results: structuredClone(runtimeSettings.results) } : {}),
+    ...(runtimeSettings.websocket !== undefined ? { websocket: structuredClone(runtimeSettings.websocket) } : {}),
     ...(runtimeSettings.web_runtime !== undefined ? { web_runtime: runtimeSettings.web_runtime } : {}),
     ...(runtimeSettings.browser_config !== undefined ? { browser_config: runtimeSettings.browser_config } : {}),
     ...(runtimeSettings.browser_emulation !== undefined ? { browser_emulation: runtimeSettings.browser_emulation } : {}),
@@ -440,8 +435,14 @@ export function buildScenarioUpsertPayload(input: ScenarioUpsertPayloadInput): S
 }
 
 export function buildCreateTestPayload(input: CreateTestPayloadInput): CreateTestPayload {
+ const execution = buildScenarioExecutionPayload(input)
  return {
-  ...buildScenarioExecutionPayload(input),
+  ...execution,
+  // The create API uses absent goal_config to inherit a revision source. A
+  // source-owned config that was explicitly emptied must instead replace it.
+  ...(input.revisionSourceTestId && input.sourceGoalConfigPresent && execution.goal_config === undefined ? { goal_config: {} } : {}),
+  ...(input.revisionSourceTestId && input.sourceRuntimeSettingsPresent && execution.runtime_settings === undefined ? { runtime_settings: {} } : {}),
+  ...(input.revisionSourceTestId && input.sourceStartDelayPresent && execution.start_delay === undefined ? { start_delay: '0s' } : {}),
   ...(input.monitorBindings !== undefined ? {monitor_bindings: structuredClone(input.monitorBindings)} : {}),
   ...(input.name ? {name: input.name} : {}),
   ...(input.projectId ? {project_id: input.projectId} : {}),

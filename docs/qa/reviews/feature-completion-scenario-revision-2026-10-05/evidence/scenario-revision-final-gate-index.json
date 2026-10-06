@@ -1,0 +1,796 @@
+{
+  "scope": "AUTH-1 scenario durable storage foundation plus explicit refusal of currently unavailable public save capability",
+  "source_inventory": "evidence/scenario-revision-final-source-inventory.json",
+  "source_inventory_sha256": "a832fc33213abf654601039ec71a5de3eb0377fc3e54e49730f22647d3877c8f",
+  "final_gates": [
+    {
+      "label": "storage-final-all-normal",
+      "command": [
+        "go",
+        "test",
+        "./pkg/storage",
+        "-count=1"
+      ],
+      "duration_seconds": 52.089,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "receipt": "evidence/storage-final-all-normal.json",
+      "receipt_sha256": "fac45544bb6cafa3e167e8cce22e5ba0d259da7e2eb62b0ae2d3ce090ca60a1e",
+      "log": "evidence/storage-final-all-normal.log",
+      "log_sha256": "a31551c13fe3b0f0936e96a18749767fc3c10f7e11e49ad6da08e9e418841245"
+    },
+    {
+      "label": "storage-final-scenario-and-script-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "./pkg/storage",
+        "-run",
+        "^(TestScenario(ContentRevision|Authoring|RevisionMigration38|RevisionMissing)|TestScript(ContentRevision|Authoring)|TestTerminationModeSQLiteLegacyMigration|TestSQLiteScenario)",
+        "-count=1"
+      ],
+      "duration_seconds": 76.433,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "receipt": "evidence/storage-final-scenario-and-script-race.json",
+      "receipt_sha256": "fcc7b70bbe0dd81a0b42bbcf00682410cce0e4080774b1528617e15b87909482",
+      "log": "evidence/storage-final-scenario-and-script-race.log",
+      "log_sha256": "f936002f4aaf3fea416b972e463aff9dfdbabd271b5a6c86e252daa708eba417"
+    },
+    {
+      "label": "storage-final-actual-postgres-normal",
+      "command": [
+        "go",
+        "test",
+        "-tags",
+        "postgres_integration",
+        "./pkg/storage",
+        "-run",
+        "^TestPostgresScenarioContentRevisionIntegration$",
+        "-count=1",
+        "-v"
+      ],
+      "duration_seconds": 26.132,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "receipt": "evidence/storage-final-actual-postgres-normal.json",
+      "receipt_sha256": "50f8e2c021387e3faa64cd6fc51386fb6b4eed7dc33c2efd0279be5bb3ea25e1",
+      "log": "evidence/storage-final-actual-postgres-normal.log",
+      "log_sha256": "476c5807a1065542fc1a86624c347a5dae0cab9c68fd742238ed649b74fe72e2"
+    },
+    {
+      "label": "storage-final-actual-postgres-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags",
+        "postgres_integration",
+        "./pkg/storage",
+        "-run",
+        "^TestPostgresScenarioContentRevisionIntegration$",
+        "-count=1",
+        "-v"
+      ],
+      "duration_seconds": 55.674,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "receipt": "evidence/storage-final-actual-postgres-race.json",
+      "receipt_sha256": "2108a5d39ea75a0d5f4bc7d89b919ccd80b9ebcbb814e0b2fe9fd22b0be26bbf",
+      "log": "evidence/storage-final-actual-postgres-race.log",
+      "log_sha256": "4ece071e56b142ba9fa55a729f21990bf5179a0f7e9c6f76f5ee121265975d29"
+    },
+    {
+      "label": "foundation-policy-api-normal-1",
+      "command": [
+        "go",
+        "test",
+        "./pkg/api",
+        "-run",
+        "^(TestScenarioSavePolicyUnavailable.*|TestProjectAndFolderHandlers|TestProjectCRUDCannotBypassGitHubPolicySystemAdminBoundary|TestProjectHandlers.*|TestScriptAuthoringAPIStrictPolicyAndHeaderAdmission|TestScenarioUpdateCannotMoveAcrossProjects|TestScenarioUpdatePreservesMaskedSecretsAcrossReorder|TestScenarioRuntimeCredentialsAreGovernedAndPersistOnlyReferences)$",
+        "-count=3",
+        "-timeout=30m"
+      ],
+      "duration_seconds": 1049.903,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "source_inventory": {
+        "file": "foundation-go-inventory-aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7.json",
+        "sha256": "aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7",
+        "file_count": 4014
+      },
+      "receipt": "evidence/foundation-policy-api-normal-1.json",
+      "receipt_sha256": "9d001351e1dac0cec6e637011b7883022bf7a5818f881e3a9db9b2818cad0a0a",
+      "log": "evidence/foundation-policy-api-normal-1.stdout.txt",
+      "log_sha256": "7f896bb6606a1913f9c29422ae5550797daab1dbb8b044207acbb6dc38e5dc94",
+      "generated_before": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "452d94321bed98bc441333a7a702554e0aa395ccc6720ae6d5e2186934a9d7cc"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "452d94321bed98bc441333a7a702554e0aa395ccc6720ae6d5e2186934a9d7cc"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "62dc9076a281679319c6ce35ef1f9de8d20ba6e31edaf926183f564d5f889768"
+        }
+      ],
+      "generated_after": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "452d94321bed98bc441333a7a702554e0aa395ccc6720ae6d5e2186934a9d7cc"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "452d94321bed98bc441333a7a702554e0aa395ccc6720ae6d5e2186934a9d7cc"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "62dc9076a281679319c6ce35ef1f9de8d20ba6e31edaf926183f564d5f889768"
+        }
+      ]
+    },
+    {
+      "label": "foundation-policy-api-race-2",
+      "command": [
+        "go",
+        "test",
+        "./pkg/api",
+        "-race",
+        "-run",
+        "^(TestScenarioSavePolicyUnavailable.*|TestProjectAndFolderHandlers|TestProjectCRUDCannotBypassGitHubPolicySystemAdminBoundary|TestProjectHandlers.*|TestScriptAuthoringAPIStrictPolicyAndHeaderAdmission|TestScenarioUpdateCannotMoveAcrossProjects|TestScenarioUpdatePreservesMaskedSecretsAcrossReorder|TestScenarioRuntimeCredentialsAreGovernedAndPersistOnlyReferences)$",
+        "-count=2",
+        "-timeout=30m"
+      ],
+      "duration_seconds": 1384.786,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "source_inventory": {
+        "file": "foundation-go-inventory-aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7.json",
+        "sha256": "aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7",
+        "file_count": 4014
+      },
+      "receipt": "evidence/foundation-policy-api-race-2.json",
+      "receipt_sha256": "54bfeacf74d2813becec7c41cad85ab1c38eeff70e34cf83cd0711d232591517",
+      "log": "evidence/foundation-policy-api-race-2.stdout.txt",
+      "log_sha256": "80b1157d60649c571ba410337f3600b71f938565724630a30c87dba867175363",
+      "generated_before": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "452d94321bed98bc441333a7a702554e0aa395ccc6720ae6d5e2186934a9d7cc"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "452d94321bed98bc441333a7a702554e0aa395ccc6720ae6d5e2186934a9d7cc"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "62dc9076a281679319c6ce35ef1f9de8d20ba6e31edaf926183f564d5f889768"
+        }
+      ],
+      "generated_after": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "452d94321bed98bc441333a7a702554e0aa395ccc6720ae6d5e2186934a9d7cc"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "452d94321bed98bc441333a7a702554e0aa395ccc6720ae6d5e2186934a9d7cc"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "62dc9076a281679319c6ce35ef1f9de8d20ba6e31edaf926183f564d5f889768"
+        }
+      ]
+    },
+    {
+      "label": "foundation-api-generation-2",
+      "command": [
+        "go",
+        "generate",
+        "./pkg/api"
+      ],
+      "duration_seconds": 34.733,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "source_inventory": {
+        "file": "foundation-go-inventory-aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7.json",
+        "sha256": "aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7",
+        "file_count": 4014
+      },
+      "receipt": "evidence/foundation-api-generation-2.json",
+      "receipt_sha256": "5accc0070e2b388d2bd8078acccef3b55deb502c6f6201e61f1006c88cb6f294",
+      "log": "evidence/foundation-api-generation-2.stdout.txt",
+      "log_sha256": "fd343376a624d0fe1d7429363a13a2f9db5f25daa2e2de536b20e336639d5b46",
+      "generated_before": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "452d94321bed98bc441333a7a702554e0aa395ccc6720ae6d5e2186934a9d7cc"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "452d94321bed98bc441333a7a702554e0aa395ccc6720ae6d5e2186934a9d7cc"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "62dc9076a281679319c6ce35ef1f9de8d20ba6e31edaf926183f564d5f889768"
+        }
+      ],
+      "generated_after": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "f5c1608228714cb60a440ab39685ade9249ebf24cad430c82df76a74337a0ed9"
+        }
+      ]
+    },
+    {
+      "label": "foundation-typescript-generation-2",
+      "command": [
+        "go",
+        "run",
+        "./cmd/openapits",
+        "-in",
+        "docs/swagger.yaml",
+        "-out",
+        "dashboard/src/types/generated/openapi.ts"
+      ],
+      "duration_seconds": 0.708,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "source_inventory": {
+        "file": "foundation-go-inventory-aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7.json",
+        "sha256": "aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7",
+        "file_count": 4014
+      },
+      "receipt": "evidence/foundation-typescript-generation-2.json",
+      "receipt_sha256": "b39297a4beb091ef48d84da3b3fb0142c33f83e480ed1de6c708e5397a5d30e3",
+      "log": "evidence/foundation-typescript-generation-2.stdout.txt",
+      "log_sha256": "c4fb751d9a266221ff3e6bfed222f74564615d536a5d67449f72656f82b63a14",
+      "generated_before": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "f5c1608228714cb60a440ab39685ade9249ebf24cad430c82df76a74337a0ed9"
+        }
+      ],
+      "generated_after": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "f5c1608228714cb60a440ab39685ade9249ebf24cad430c82df76a74337a0ed9"
+        }
+      ]
+    },
+    {
+      "label": "foundation-generated-freshness-3",
+      "command": [
+        "go",
+        "test",
+        "./pkg/api",
+        "./cmd/openapits",
+        "-run",
+        "^(TestSwaggerYAMLIsFresh|TestEndpointCatalogJSONIsFresh|TestGeneratedAPIContractMatrixIsFresh|TestGeneratedSwaggerIsValid|TestGeneratedOpenAPIRoutesUseCrossPackageSchemas|Test.*Fresh.*)$",
+        "-count=1",
+        "-timeout=30m"
+      ],
+      "duration_seconds": 80.94,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "source_inventory": {
+        "file": "foundation-go-inventory-aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7.json",
+        "sha256": "aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7",
+        "file_count": 4014
+      },
+      "receipt": "evidence/foundation-generated-freshness-3.json",
+      "receipt_sha256": "98fd63e2f9be77699b0c0e5a2f347b1e9f56efe5ac5ccd135e2492fe52f9707c",
+      "log": "evidence/foundation-generated-freshness-3.stdout.txt",
+      "log_sha256": "bbbd06a495d62e89d6f3022b5c2b094a5d0aefa00bcde8ae3af707b45363f489",
+      "generated_before": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "f5c1608228714cb60a440ab39685ade9249ebf24cad430c82df76a74337a0ed9"
+        }
+      ],
+      "generated_after": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "f5c1608228714cb60a440ab39685ade9249ebf24cad430c82df76a74337a0ed9"
+        }
+      ]
+    },
+    {
+      "label": "foundation-final-diff-check-2",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "duration_seconds": 0.45,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "source_inventory": {
+        "file": "foundation-go-inventory-aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7.json",
+        "sha256": "aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7",
+        "file_count": 4014
+      },
+      "receipt": "evidence/foundation-final-diff-check-2.json",
+      "receipt_sha256": "37513a4ca4632a6ca9643b297ae55e521d19448ae1b8add0b92c9cb0b11c2ee7",
+      "log": "evidence/foundation-final-diff-check-2.stdout.txt",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "generated_before": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "f5c1608228714cb60a440ab39685ade9249ebf24cad430c82df76a74337a0ed9"
+        }
+      ],
+      "generated_after": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "f5c1608228714cb60a440ab39685ade9249ebf24cad430c82df76a74337a0ed9"
+        }
+      ]
+    },
+    {
+      "label": "foundation-final-docs-check-3",
+      "command": [
+        "python3",
+        "scripts/check-docs.py"
+      ],
+      "duration_seconds": 0.713,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "source_inventory": {
+        "file": "foundation-go-inventory-aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7.json",
+        "sha256": "aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7",
+        "file_count": 4014
+      },
+      "receipt": "evidence/foundation-final-docs-check-3.json",
+      "receipt_sha256": "dc997989c9baa337b97b1249a756786146f52492cecb008ac0d33fc88078ab18",
+      "log": "evidence/foundation-final-docs-check-3.stdout.txt",
+      "log_sha256": "949712c86e3e571bfff40e2810f9d78ae7b5b8dcbdec0d99278083e72144c9c9",
+      "generated_before": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "f5c1608228714cb60a440ab39685ade9249ebf24cad430c82df76a74337a0ed9"
+        }
+      ],
+      "generated_after": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "f5c1608228714cb60a440ab39685ade9249ebf24cad430c82df76a74337a0ed9"
+        }
+      ]
+    }
+  ],
+  "historical_gates_retained": [
+    {
+      "label": "storage-all-normal-initial",
+      "exit_code": 1,
+      "receipt": "evidence/storage-all-normal-initial.json",
+      "log_sha256": "d5a8cb34968df9e0ebd15c9220bf3f8656b5c0a96143822a87cfc00cfb1ca609"
+    },
+    {
+      "label": "storage-all-normal-repeat1",
+      "exit_code": 0,
+      "receipt": "evidence/storage-all-normal-repeat1.json",
+      "log_sha256": "ad93f71eba63efd8eb132f2eb83f26fbad8f21998e366b6f849622fc073d6799"
+    },
+    {
+      "label": "storage-foundation-compile-fingerprint-red",
+      "exit_code": 1,
+      "receipt": "evidence/storage-foundation-compile-fingerprint-red.json",
+      "log_sha256": "b1300b19025ef9924b5c53a729f47a4fec822063ff4b2627259be218cecd13a2"
+    },
+    {
+      "label": "storage-scenario-actual-postgres-initial",
+      "exit_code": 1,
+      "receipt": "evidence/storage-scenario-actual-postgres-initial.json",
+      "log_sha256": "bfada96d9ea8ea3c5842e827a5b91e4eb14582b6560b4254220833cb919d6f11"
+    },
+    {
+      "label": "storage-scenario-actual-postgres-repeat1",
+      "exit_code": 0,
+      "receipt": "evidence/storage-scenario-actual-postgres-repeat1.json",
+      "log_sha256": "4b91d67c058c2c4740e6181267c14ab0f439cac19bfa81b5d9c9f8fa2bab3288"
+    },
+    {
+      "label": "storage-scenario-fingerprint-final-shape-red",
+      "exit_code": 1,
+      "receipt": "evidence/storage-scenario-fingerprint-final-shape-red.json",
+      "log_sha256": "926043ca16a037b605b0359e8dd8e83c1d5120be0f57a2e4db2faeec796f2278"
+    },
+    {
+      "label": "storage-scenario-foundation-expanded-units",
+      "exit_code": 0,
+      "receipt": "evidence/storage-scenario-foundation-expanded-units.json",
+      "log_sha256": "b31dab3e0370f6526cce3ff136521d0238c995020a3ffcec42ec786297e52f27"
+    },
+    {
+      "label": "storage-scenario-foundation-units-initial",
+      "exit_code": 1,
+      "receipt": "evidence/storage-scenario-foundation-units-initial.json",
+      "log_sha256": "13c520d31b2d0cf110297d85e97be90286f1e196a9c92b11c48c4945502cd3cd"
+    },
+    {
+      "label": "storage-scenario-foundation-units-repeat1",
+      "exit_code": 0,
+      "receipt": "evidence/storage-scenario-foundation-units-repeat1.json",
+      "log_sha256": "412eed32f86718faee336de99767dfaf8cbd791b71d873041af361fdf7604e18"
+    },
+    {
+      "label": "foundation-api-generation-1",
+      "command": [
+        "go",
+        "generate",
+        "./pkg/api"
+      ],
+      "duration_seconds": 32.924,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "source_inventory": {
+        "file": "foundation-go-inventory-f66d1f39e1adb6fe750d16da3d2cc09c67f776c191c0bc5d5a9a71b22af2a109.json",
+        "sha256": "f66d1f39e1adb6fe750d16da3d2cc09c67f776c191c0bc5d5a9a71b22af2a109",
+        "file_count": 4010
+      },
+      "receipt": "evidence/foundation-api-generation-1.json",
+      "receipt_sha256": "e973d149166cfd01f961e67aa4e03844ebb36b08680afbc3f58ffbb1f94a13e4",
+      "log": "evidence/foundation-api-generation-1.stdout.txt",
+      "log_sha256": "fd343376a624d0fe1d7429363a13a2f9db5f25daa2e2de536b20e336639d5b46"
+    },
+    {
+      "label": "foundation-typescript-generation-1",
+      "command": [
+        "go",
+        "run",
+        "./cmd/openapits",
+        "-in",
+        "docs/swagger.yaml",
+        "-out",
+        "dashboard/src/types/generated/openapi.ts"
+      ],
+      "duration_seconds": 0.674,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "source_inventory": {
+        "file": "foundation-go-inventory-f66d1f39e1adb6fe750d16da3d2cc09c67f776c191c0bc5d5a9a71b22af2a109.json",
+        "sha256": "f66d1f39e1adb6fe750d16da3d2cc09c67f776c191c0bc5d5a9a71b22af2a109",
+        "file_count": 4010
+      },
+      "receipt": "evidence/foundation-typescript-generation-1.json",
+      "receipt_sha256": "091cc3a3d985c9b4d632760eeec41ae56cef6e1ecab7100be5b0fa4a1e342e96",
+      "log": "evidence/foundation-typescript-generation-1.stdout.txt",
+      "log_sha256": "c4fb751d9a266221ff3e6bfed222f74564615d536a5d67449f72656f82b63a14"
+    },
+    {
+      "label": "foundation-generated-freshness-1",
+      "command": [
+        "go",
+        "test",
+        "./pkg/api",
+        "./cmd/openapits",
+        "-run",
+        "^(TestSwaggerYAMLIsFresh|TestEndpointCatalogJSONIsFresh|TestGeneratedAPIContractMatrixIsFresh|TestGeneratedSwaggerIsValid|TestGeneratedOpenAPIRoutesUseCrossPackageSchemas|Test.*Fresh.*)$",
+        "-count=1",
+        "-timeout=30m"
+      ],
+      "duration_seconds": 71.353,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "source_inventory": {
+        "file": "foundation-go-inventory-f66d1f39e1adb6fe750d16da3d2cc09c67f776c191c0bc5d5a9a71b22af2a109.json",
+        "sha256": "f66d1f39e1adb6fe750d16da3d2cc09c67f776c191c0bc5d5a9a71b22af2a109",
+        "file_count": 4010
+      },
+      "receipt": "evidence/foundation-generated-freshness-1.json",
+      "receipt_sha256": "39a273e08cdefbffdde18314db4e164b72c7e11209160d5db45c99846a185d9c",
+      "log": "evidence/foundation-generated-freshness-1.stdout.txt",
+      "log_sha256": "7fd40c645e37eda22b8c354d4aa12d51970f25fc44cdac6a83656e9c23e73de8"
+    },
+    {
+      "label": "foundation-final-docs-check",
+      "command": [
+        "python3",
+        "scripts/check-docs.py"
+      ],
+      "duration_seconds": 0.468,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "receipt": "evidence/foundation-final-docs-check.json",
+      "receipt_sha256": "956af38cb6c79eb5c54cb21e74d1f0a81fafe6a91d25af73a9d0e6ae5fbbf5c9",
+      "log": "evidence/foundation-final-docs-check.log",
+      "log_sha256": "949712c86e3e571bfff40e2810f9d78ae7b5b8dcbdec0d99278083e72144c9c9"
+    },
+    {
+      "label": "foundation-final-diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "duration_seconds": 0.284,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "receipt": "evidence/foundation-final-diff-check.json",
+      "receipt_sha256": "aa507ee541a0da1502dffd3a88338a4d20780860e26a92898254c2705795f340",
+      "log": "evidence/foundation-final-diff-check.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "foundation-final-docs-check-2",
+      "command": [
+        "python3",
+        "scripts/check-docs.py"
+      ],
+      "duration_seconds": 0.603,
+      "exit_code": 0,
+      "source_bookends_match": true,
+      "source_inventory": {
+        "file": "foundation-go-inventory-aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7.json",
+        "sha256": "aaec84fec912776fb41d91dec433c82c49ce2e29f261e21630eed547d459e7b7",
+        "file_count": 4014
+      },
+      "receipt": "evidence/foundation-final-docs-check-2.json",
+      "receipt_sha256": "9cb24887a1d4b9c384f55c18e6508f8b2bfa70edcec764bfae7ecb6def20fe5c",
+      "log": "evidence/foundation-final-docs-check-2.stdout.txt",
+      "log_sha256": "949712c86e3e571bfff40e2810f9d78ae7b5b8dcbdec0d99278083e72144c9c9",
+      "generated_before": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "f5c1608228714cb60a440ab39685ade9249ebf24cad430c82df76a74337a0ed9"
+        }
+      ],
+      "generated_after": [
+        {
+          "path": "docs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "docs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "pkg/api/apidocs/swagger.yaml",
+          "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+        },
+        {
+          "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+          "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+        },
+        {
+          "path": "dashboard/src/types/generated/openapi.ts",
+          "sha256": "f5c1608228714cb60a440ab39685ade9249ebf24cad430c82df76a74337a0ed9"
+        }
+      ]
+    }
+  ],
+  "pending": [
+    "Full composed Go integration merge gate on the final composed release",
+    "Public canonical scenario authoring GET/PUT with final transaction policy/source dependency admission and permission/publication/secret integration",
+    "Dashboard paired authority/recovery and both-auth actual browser qualification",
+    "Inherited source-runtime copy dependency CAS, stable group identities, create idempotency and checkpoint retirement"
+  ],
+  "corrective_source_inventory": "evidence/scenario-revision-policy-guard-openapi-final-source-inventory.json",
+  "corrective_source_inventory_sha256": "808fe3bb36588053dd7818acc43e072ec65e792f66eb8921e146ac63b3f75507",
+  "corrective_independent_review": "evidence/scenario-revision-policy-guard-openapi-root-independent-source-review.json",
+  "corrective_independent_review_sha256": "3296c2cc313a2eef24eb814629cd2af0fc77b02d4316d5312efe648b8cce7675",
+  "generated_contract_final_review": "evidence/scenario-revision-generated-contract-final-source-review.json",
+  "generated_contract_final_review_sha256": "770511b8dc48d72b6e4775a05a274a06573edb957d64db696e16705e5b5076bc",
+  "closed_release_finding": "Public project true enablement now refuses 400; externally seeded strict policy and explicitly requested If-Match saves refuse 503 without save side effects. Full conditional save support and raced final-transaction policy activation are not implemented or advertised.",
+  "interrupted_attempts_retained": [
+    {
+      "receipt": "evidence/foundation-policy-api-race-1-interrupted-observation.json",
+      "receipt_sha256": "b42d68d557d9ce49bc09108344f67ba6d6fba4f47c8152987d5d32e706bfb571",
+      "status": "interrupted-not-acceptance",
+      "exit_code": null,
+      "duration_seconds": null
+    },
+    {
+      "receipt": "evidence/foundation-generated-freshness-2-interrupted-observation.json",
+      "receipt_sha256": "782dcf1ba8d16a9639e963b59410e7ba759b1628fa915f418ad38f52854ef6ba",
+      "status": "interrupted-not-acceptance",
+      "exit_code": null,
+      "duration_seconds": null
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "label": "frontend-identity-browser-auth-final",
+  "command": [
+    "env",
+    "APEXLOAD_E2E_PROFILE=local-auth",
+    "APEXLOAD_E2E_PORT=18472",
+    "APEXLOAD_E2E_OUTPUT_ROOT=test-results/native-identity-final",
+    "scripts/run-e2e.sh",
+    "workflow-analysis-preparation.spec.ts"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "started_utc": "2026-10-05T03:44:09.357181+00:00",
+  "finished_utc": "2026-10-05T03:45:52.722628+00:00",
+  "duration_seconds": 103.365,
+  "exit_code": 0,
+  "profile": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "APEXLOAD_ANALYSIS_MEMORY_LIMIT": "512MiB",
+    "APEXLOAD_ANALYSIS_SPILL_LIMIT": "128MiB",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_AUTH_PORT": "18472"
+  },
+  "log_bytes": 2219,
+  "log_sha256": "76f80c0365f0fc35765dc22c22cdf4d60a968db01b6e3ae0c0f0733a3d915a40"
+}

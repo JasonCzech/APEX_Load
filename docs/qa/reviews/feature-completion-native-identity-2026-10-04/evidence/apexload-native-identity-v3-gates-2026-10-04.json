@@ -1,0 +1,62 @@
+[
+  {
+    "gate": "generate-api",
+    "command": [
+      "go",
+      "generate",
+      "./pkg/api"
+    ],
+    "exit_code": 0,
+    "seconds": 216.841,
+    "log": "/private/tmp/apexload-native-identity-v3-generate-api-2026-10-04.log"
+  },
+  {
+    "gate": "analysis-default",
+    "command": [
+      "go",
+      "test",
+      "-parallel=1",
+      "-count=1",
+      "-timeout=20m",
+      "-ldflags=-s -w",
+      "./pkg/analysis",
+      "./pkg/analysis/duckdb"
+    ],
+    "exit_code": 0,
+    "seconds": 64.329,
+    "log": "/private/tmp/apexload-native-identity-v3-analysis-default-2026-10-04.log"
+  },
+  {
+    "gate": "analysis-default-race",
+    "command": [
+      "go",
+      "test",
+      "-parallel=1",
+      "-count=1",
+      "-timeout=20m",
+      "-ldflags=-s -w",
+      "-race",
+      "./pkg/analysis",
+      "./pkg/analysis/duckdb"
+    ],
+    "exit_code": 0,
+    "seconds": 72.862,
+    "log": "/private/tmp/apexload-native-identity-v3-analysis-default-race-2026-10-04.log"
+  },
+  {
+    "gate": "duckdb-native",
+    "command": [
+      "go",
+      "test",
+      "-parallel=1",
+      "-count=1",
+      "-timeout=20m",
+      "-ldflags=-s -w",
+      "-tags=analytics_duckdb",
+      "./pkg/analysis/duckdb"
+    ],
+    "exit_code": 1,
+    "seconds": 92.902,
+    "log": "/private/tmp/apexload-native-identity-v3-duckdb-native-2026-10-04.log"
+  }
+]

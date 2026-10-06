@@ -106,6 +106,7 @@ export function buildRuntimeSettingsDraft(settings?: RuntimeSettingsOverride): S
     run_logic: cloneValue(settings?.run_logic),
     http: cloneValue(settings?.http),
     results: cloneValue(settings?.results),
+    websocket: cloneValue(settings?.websocket),
     web_runtime: cloneValue(settings?.web_runtime),
     browser_config: cloneValue(settings?.browser_config),
     browser_emulation: cloneValue(settings?.browser_emulation),
@@ -229,19 +230,17 @@ export function buildDefaultScenarioGroup(scripts: StoredScript[]): ScenarioDraf
 export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undefined, scripts: StoredScript[]): ScenarioDraftState {
   return {
     name: initialScenario?.name || '',
-    duration: initialScenario?.duration || '1m',
+    duration: initialScenario?.duration ?? '1m',
+    ...(initialScenario?.terminationMode ? { terminationMode: initialScenario.terminationMode } : {}),
     startDelay: initialScenario?.startDelay || '',
     scenarioMode: initialScenario?.scenarioMode || 'vuser_driven',
     scriptShakeout: Boolean(initialScenario?.scriptShakeout),
     resourceBaseline: Boolean(initialScenario?.resourceBaseline),
     assignment: cloneGeneratorAssignment(initialScenario?.assignment),
-    goalConfig: {
-      ...initialScenario?.goalConfig,
-			transaction_rules: initialScenario?.goalConfig?.transaction_rules?.map(rule => ({ ...rule })),
-      stop_on_sla_breach: initialScenario?.goalConfig?.stop_on_sla_breach ?? false,
-      stop_on_max_errors: initialScenario?.goalConfig?.stop_on_max_errors ?? false,
-      sla_breach_window: initialScenario?.goalConfig?.sla_breach_window || '30s',
-    },
+    // Defaults belong to a new draft, never to an existing authored snapshot.
+    goalConfig: initialScenario
+      ? structuredClone(initialScenario.goalConfig)
+      : { stop_on_sla_breach: false, stop_on_max_errors: false, sla_breach_window: '30s' },
     runtimeSettings: cloneRuntimeSettingsDraft(initialScenario?.runtimeSettings),
     groups: initialScenario?.groups.length
       ? initialScenario.groups.map(cloneScenarioGroup)
@@ -304,19 +303,21 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
   return {
     name: test.name,
     duration: test.duration,
+    ...(test.termination_mode ? { terminationMode: test.termination_mode } : {}),
     startDelay: test.start_delay || '',
     scenarioMode: test.scenario_mode || 'vuser_driven',
     scriptShakeout: Boolean(test.script_shakeout),
     resourceBaseline: Boolean(test.resource_baseline),
     assignment: cloneGeneratorAssignment(test.assignment),
-    goalConfig: {
-      ...test.goal_config,
-			transaction_rules: test.goal_config?.transaction_rules?.map(rule => ({ ...rule })),
-      sla_breach_window: test.goal_config?.sla_breach_window || '',
-    },
+    goalConfig: structuredClone(test.goal_config ?? {}),
     runtimeSettings: buildRuntimeSettingsDraft(test.runtime_settings),
     groups,
     revisionContext: {
+      ...(test.goal_config != null ? { sourceGoalConfigPresent: true } : {}),
+      ...(test.runtime_settings != null ? { sourceRuntimeSettingsPresent: true } : {}),
+      ...(test.start_delay?.trim() ? { sourceStartDelayPresent: true } : {}),
+      ...(test.elk_capture?.connection_id ? { elkConnectionId: test.elk_capture.connection_id } : {}),
+      ...(test.dynatrace_capture?.connection_id ? { dynatraceConnectionId: test.dynatrace_capture.connection_id } : {}),
       ...(test.monitor_bindings ? { monitorBindings: test.monitor_bindings.sources.map(binding => ({ ...binding })) } : {}),
       sourceTestId: test.id,
       applicationId: test.application_id,

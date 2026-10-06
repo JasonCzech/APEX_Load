@@ -1,0 +1,23 @@
+{
+  "reviewed_at_utc": "2026-10-05T13:57:31.242318+00:00",
+  "worktree": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "scope": "Read-only actual archive manifest identity and bounded authenticated RefKey canonicalization; no source edits or test runs.",
+  "result": "No additional actionable finding.",
+  "review_notes": [
+    "Actual api.RunArchiveReport manifest.test_id is authoritative; top/nested conflicts and decoded duplicate keys fail closed.",
+    "Historical omitted/empty identity is explicitly historical-requested-unverified.",
+    "Canonical-vs-requested mismatch requires one exact authenticated, bounded, no-redirect canonical id/ref_key/project check; no second read for live alias echoes.",
+    "Cancellation is rechecked before output, identity errors omit response bodies, and output omits unrelated context."
+  ],
+  "owner_inventory_sha256": "4ab9f5131e6cf0060a3af1695349b4cccdb39e33f79ef516ec673d6127d251ea",
+  "files": [
+    {
+      "path": "cmd/apexctl/browser_document_evidence.go",
+      "sha256": "ef3d8fc1ab3aa0b0bd7b5edc9da77f220b57a9325d2e2887e9062a41de6041c9"
+    },
+    {
+      "path": "cmd/apexctl/browser_document_evidence_test.go",
+      "sha256": "bd50e1425b59cd43ea6151cc34f98bb2f6118dc505aca23c897a5db8670c70c7"
+    }
+  ]
+}

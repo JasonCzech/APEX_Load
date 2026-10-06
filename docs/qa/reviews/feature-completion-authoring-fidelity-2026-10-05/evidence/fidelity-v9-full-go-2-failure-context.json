@@ -1,0 +1,701 @@
+{
+  "gate": "fidelity-v9-full-go-2",
+  "receipt_sha256": "14bb66c6e9b42250fc1831b48feed2f9bdf629f51dc064bd55d1d85110b67e35",
+  "raw_log_sha256": "20a8b551c9ab2d8afe6b776f14992a5f7ca205c95bd28919cd154bdea232f2cd",
+  "duration_seconds": 1592.586,
+  "exit_code": 1,
+  "source_count": 5221,
+  "source_bookends_equal": true,
+  "embed_count": 251,
+  "embed_bookends_equal": true,
+  "native_runtime_policy": "require",
+  "failed_packages": [
+    "FAIL\tgithub.com/jasonczech/apexload/pkg/api\t744.854s",
+    "FAIL\tgithub.com/jasonczech/apexload/pkg/protocol/browser\t29.780s"
+  ],
+  "disposition": "Unqualified. Five archive cases have explicit disk-reserve server errors (two remote cases share source-side errors); historical secret archive case only retains HTTP 500 and did not reach masking assertions. Two distributed timing failures and repeated actual WebKit INP finality require diagnosis. No guards, test thresholds, skips or source files were changed during this run.",
+  "failure_contexts": [
+    {
+      "start_line": 1341,
+      "end_line": 1358,
+      "lines": [
+        {
+          "number": 1341,
+          "text": "2026/10/05 17:59:56 WARN generator execution epoch keeper renewal failed generation=91 error=\"renew generator gen-a execution generation: lost generator is unreachable\""
+        },
+        {
+          "number": 1342,
+          "text": "2026/10/05 17:59:57 WARN generator execution epoch keeper renewal failed generation=91 error=\"renew generator gen-a execution generation: lost generator is unreachable\""
+        },
+        {
+          "number": 1343,
+          "text": "2026/10/05 17:59:57 WARN generator execution epoch keeper renewal failed generation=91 error=\"renew generator gen-a execution generation: lost generator is unreachable\""
+        },
+        {
+          "number": 1344,
+          "text": "2026/10/05 18:00:01 WARN generator execution epoch keeper renewal failed generation=91 error=\"renew generator gen-a execution generation: lost generator is unreachable\\nrenew generator gen-b execution generation: rpc error: code = DeadlineExceeded desc = context deadline exceeded\""
+        },
+        {
+          "number": 1345,
+          "text": "2026/10/05 18:00:01 WARN generator execution epoch keeper renewal failed generation=91 error=\"renew generator gen-a execution generation: lost generator is unreachable\\nrenew generator gen-b execution generation: rpc error: code = Unavailable desc = generator is draining\""
+        },
+        {
+          "number": 1346,
+          "text": "2026/10/05 18:00:01 ERROR generator execution drain escalated event=generator_execution_drain_escalated test_id=run-evacuation-dead-source-survives execution_generation=91 reason=controller_stop_unquiesced outstanding_executions=1"
+        },
+        {
+          "number": 1347,
+          "text": "--- FAIL: TestGeneratorLossEvacuationSurvivesDeadSourceAndKeepsTheRunOnItsReplacement (9.23s)"
+        },
+        {
+          "number": 1348,
+          "text": "    distributed_resilience_test.go:1141: cleanup StopTest: rpc error: code = DeadlineExceeded desc = wait for stopped execution: controller_stop_unquiesced: context deadline exceeded"
+        },
+        {
+          "number": 1349,
+          "text": "2026/10/05 18:00:04 INFO test execution resumed pause_duration=97.398792ms"
+        },
+        {
+          "number": 1350,
+          "text": "2026/10/05 18:00:04 INFO execution leadership acquired owner=adoption-controller/1"
+        },
+        {
+          "number": 1351,
+          "text": "2026/10/05 18:00:04 INFO test duration adjusted new_duration=49.99999975s"
+        },
+        {
+          "number": 1352,
+          "text": "2026/10/05 18:00:04 INFO run continuity armed test_id=run-provision-survivor execution_generation=1 adoption_implemented=true"
+        },
+        {
+          "number": 1353,
+          "text": "2026/10/05 18:00:05 INFO test execution resumed pause_duration=98.195583ms"
+        },
+        {
+          "number": 1354,
+          "text": "2026/10/05 18:00:06 INFO execution leadership acquired owner=adoption-controller/1"
+        },
+        {
+          "number": 1355,
+          "text": "2026/10/05 18:00:06 INFO execution leadership acquired owner=adoption-controller/1"
+        },
+        {
+          "number": 1356,
+          "text": "2026/10/05 18:00:06 INFO execution leadership acquired owner=adoption-controller/1"
+        },
+        {
+          "number": 1357,
+          "text": "2026/10/05 18:00:06 INFO execution leadership acquired owner=adoption-controller/1"
+        },
+        {
+          "number": 1358,
+          "text": "2026/10/05 18:00:07 INFO execution leadership acquired owner=adoption-controller/1"
+        }
+      ]
+    },
+    {
+      "start_line": 1363,
+      "end_line": 1380,
+      "lines": [
+        {
+          "number": 1363,
+          "text": "2026/10/05 18:00:10 ERROR distributed terminal transition remains retryable after bounded persistence retries test_id=0fc303a0-1651-4326-9cc7-aeb64801f80e status=FAILED error=\"persist terminal test state: sql: database is closed\""
+        },
+        {
+          "number": 1364,
+          "text": "2026/10/05 18:00:10 ERROR failed to collect best-effort archive after distributed terminal outcome test_id=0fc303a0-1651-4326-9cc7-aeb64801f80e status=FAILED error=\"sql: database is closed\""
+        },
+        {
+          "number": 1365,
+          "text": "2026/10/05 18:00:10 ERROR failed to persist terminal test state; terminal side effects deferred test_id=0fc303a0-1651-4326-9cc7-aeb64801f80e status=FAILED error=\"persist terminal test state: sql: database is closed\""
+        },
+        {
+          "number": 1366,
+          "text": "2026/10/05 18:00:10 WARN terminal transition retry failed test_id=0fc303a0-1651-4326-9cc7-aeb64801f80e transition=FAILED error=\"persist terminal test state: sql: database is closed\""
+        },
+        {
+          "number": 1367,
+          "text": "2026/10/05 18:00:10 WARN quarantine incomplete retained generator archive path=/private/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-api-archive-2232368751/ordering-generator/0fc303a0-1651-4326-9cc7-aeb64801f80e error=\"statat manifest.json: no such file or directory\""
+        },
+        {
+          "number": 1368,
+          "text": "2026/10/05 18:00:10 INFO scenario schedule overrides the script per-vuser iteration cap group=group script_id=ordering-script script_iterations=1"
+        },
+        {
+          "number": 1369,
+          "text": "--- FAIL: TestDistributedSetupRPCsReceiveIndependentTimeoutBudgets (3.08s)"
+        },
+        {
+          "number": 1370,
+          "text": "    distributed_start_ordering_test.go:189: distributed startup became terminal: status=FAILED error=assign work for group \"group\" on \"bufnet\": rpc error: code = DeadlineExceeded desc = stream terminated by RST_STREAM with error code: CANCEL"
+        },
+        {
+          "number": 1371,
+          "text": "2026/10/05 18:00:14 INFO scenario schedule overrides the script per-vuser iteration cap group=group script_id=ordering-script script_iterations=1"
+        },
+        {
+          "number": 1372,
+          "text": "2026/10/05 18:00:15 WARN distributed metrics stream stopped test_id=afe4b2db-5ab5-4c8b-9ab0-5fa51cc4ce29 error=\"rpc error: code = Unavailable desc = error reading from server: EOF\""
+        },
+        {
+          "number": 1373,
+          "text": "2026/10/05 18:00:15 ERROR failed to persist terminal test state; terminal side effects deferred test_id=afe4b2db-5ab5-4c8b-9ab0-5fa51cc4ce29 status=FAILED error=\"persist terminal test state: sql: database is closed\""
+        },
+        {
+          "number": 1374,
+          "text": "2026/10/05 18:00:15 ERROR distributed terminal transition remains retryable after bounded persistence retries test_id=afe4b2db-5ab5-4c8b-9ab0-5fa51cc4ce29 status=FAILED error=\"persist terminal test state: sql: database is closed\""
+        },
+        {
+          "number": 1375,
+          "text": "2026/10/05 18:00:15 ERROR failed to collect best-effort archive after distributed terminal outcome test_id=afe4b2db-5ab5-4c8b-9ab0-5fa51cc4ce29 status=FAILED error=\"sql: database is closed\""
+        },
+        {
+          "number": 1376,
+          "text": "2026/10/05 18:00:15 ERROR failed to persist terminal test state; terminal side effects deferred test_id=afe4b2db-5ab5-4c8b-9ab0-5fa51cc4ce29 status=FAILED error=\"persist terminal test state: sql: database is closed\""
+        },
+        {
+          "number": 1377,
+          "text": "2026/10/05 18:00:15 WARN terminal transition retry failed test_id=afe4b2db-5ab5-4c8b-9ab0-5fa51cc4ce29 transition=FAILED error=\"persist terminal test state: sql: database is closed\""
+        },
+        {
+          "number": 1378,
+          "text": "2026/10/05 18:00:15 WARN goal-oriented scale failed test_id=distributed-goal-superseded-at-admission group=buyers target_vusers=13 error=\"distributed goal scale became stale before admission: publication revision 1 no longer owns run distributed-goal-superseded-at-admission\""
+        },
+        {
+          "number": 1379,
+          "text": "2026/10/05 18:00:16 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 1380,
+          "text": "2026/10/05 18:00:18 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        }
+      ]
+    },
+    {
+      "start_line": 5358,
+      "end_line": 5430,
+      "lines": [
+        {
+          "number": 5358,
+          "text": "2026/10/05 18:05:05 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5359,
+          "text": "2026/10/05 18:05:05 INFO http request method=GET path=/api/v1/library/remotes status=200 duration_ms=0 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 5360,
+          "text": "2026/10/05 18:05:05 WARN failed to persist audit event action=library.export resource_type=library_bundle resource_id=21a58cc5-48d2-4db0-905a-bdce3c2a0b9f error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5361,
+          "text": "2026/10/05 18:05:05 WARN object activity persistence failed path=/api/v1/library/export error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5362,
+          "text": "2026/10/05 18:05:05 INFO http request method=POST path=/api/v1/library/export status=200 duration_ms=0 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 5363,
+          "text": "2026/10/05 18:05:05 INFO http request method=GET path=/api/v1/library/catalog status=200 duration_ms=0 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 5364,
+          "text": "2026/10/05 18:05:05 ERROR internal server error ref=dc762f678f8fcb9d status=500 detail=\"failed to build archive bundle: archive download free space would fall below reserve 1073741824\""
+        },
+        {
+          "number": 5365,
+          "text": "2026/10/05 18:05:05 INFO http request method=GET path=/api/v1/library/results/dee5374d-48e0-41a3-ac0d-0b9f00841675/archive status=500 duration_ms=5 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 5366,
+          "text": "--- FAIL: TestLibraryResultArchiveStreamsAndImportsMultipart (0.02s)"
+        },
+        {
+          "number": 5367,
+          "text": "    library_federation_test.go:584: archive stream status = 500 body={\"error\":\"internal server error\",\"ref\":\"dc762f678f8fcb9d\"}"
+        },
+        {
+          "number": 5368,
+          "text": "2026/10/05 18:05:05 WARN failed to persist audit event action=library.remote.create resource_type=library_remote resource_id=89c68f1c-711d-4c93-b7ce-ecc7497852b8 error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5369,
+          "text": "2026/10/05 18:05:05 WARN object activity persistence failed path=/api/v1/library/remotes error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5370,
+          "text": "2026/10/05 18:05:05 INFO http request method=POST path=/api/v1/library/remotes status=201 duration_ms=0 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 5371,
+          "text": "2026/10/05 18:05:05 INFO http request method=GET path=/api/v1/library/catalog status=200 duration_ms=0 remote=127.0.0.1:54627"
+        },
+        {
+          "number": 5372,
+          "text": "2026/10/05 18:05:05 INFO http request method=GET path=/api/v1/library/remotes/89c68f1c-711d-4c93-b7ce-ecc7497852b8/catalog status=200 duration_ms=1 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 5373,
+          "text": "2026/10/05 18:05:05 WARN failed to persist audit event action=library.remote.create resource_type=library_remote resource_id=2683c1d3-8c2f-4f5e-b59d-d281397b4f3d error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5374,
+          "text": "2026/10/05 18:05:05 WARN object activity persistence failed path=/api/v1/library/remotes error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5375,
+          "text": "2026/10/05 18:05:05 INFO http request method=POST path=/api/v1/library/remotes status=201 duration_ms=0 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 5376,
+          "text": "2026/10/05 18:05:05 WARN failed to persist audit event action=library.export resource_type=library_bundle resource_id=b0f72737-9e07-416b-8186-62bba27f16eb error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5377,
+          "text": "2026/10/05 18:05:05 WARN object activity persistence failed path=/api/v1/library/export error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5378,
+          "text": "2026/10/05 18:05:05 INFO http request method=POST path=/api/v1/library/export status=200 duration_ms=0 remote=127.0.0.1:54629"
+        },
+        {
+          "number": 5379,
+          "text": "2026/10/05 18:05:05 ERROR internal server error ref=6ea24170cf0eb158 status=500 detail=\"failed to build archive bundle: archive download free space would fall below reserve 1073741824\""
+        },
+        {
+          "number": 5380,
+          "text": "2026/10/05 18:05:05 INFO http request method=GET path=/api/v1/library/results/dbf9e7f9-7d58-418d-9fe6-0af8c4175a61/archive status=500 duration_ms=7 remote=127.0.0.1:54630"
+        },
+        {
+          "number": 5381,
+          "text": "2026/10/05 18:05:05 ERROR internal server error ref=5e2d2df18a1b0ecb status=502 detail=\"remote library archive returned 500 Internal Server Error\""
+        },
+        {
+          "number": 5382,
+          "text": "2026/10/05 18:05:05 INFO http request method=POST path=/api/v1/library/remotes/2683c1d3-8c2f-4f5e-b59d-d281397b4f3d/pull status=502 duration_ms=8 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 5383,
+          "text": "--- FAIL: TestLibraryRemotePullAndPushResultArchivesBetweenControllers (0.02s)"
+        },
+        {
+          "number": 5384,
+          "text": "    library_federation_test.go:794: pull result status = 502 body={\"error\":\"internal server error\",\"ref\":\"5e2d2df18a1b0ecb\"}"
+        },
+        {
+          "number": 5385,
+          "text": "2026/10/05 18:05:05 WARN failed to persist audit event action=library.remote.create resource_type=library_remote resource_id=6db324b1-4f81-4c52-a959-abfd67b92f94 error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5386,
+          "text": "2026/10/05 18:05:05 WARN object activity persistence failed path=/api/v1/library/remotes error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5387,
+          "text": "2026/10/05 18:05:05 INFO http request method=POST path=/api/v1/library/remotes status=201 duration_ms=0 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 5388,
+          "text": "2026/10/05 18:05:05 WARN failed to persist audit event action=library.import_archive resource_type=library_bundle resource_id=a04bce60-cf58-4ad5-a132-a623bb6a9d00 error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5389,
+          "text": "2026/10/05 18:05:05 WARN object activity persistence failed path=/api/v1/library/import/archive error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5390,
+          "text": "2026/10/05 18:05:05 INFO http request method=POST path=/api/v1/library/import/archive status=201 duration_ms=3 remote=127.0.0.1:54632"
+        },
+        {
+          "number": 5391,
+          "text": "2026/10/05 18:05:05 WARN failed to persist audit event action=library.push resource_type=library_bundle resource_id=a04bce60-cf58-4ad5-a132-a623bb6a9d00 error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5392,
+          "text": "2026/10/05 18:05:05 WARN object activity persistence failed path=/api/v1/library/remotes/6db324b1-4f81-4c52-a959-abfd67b92f94/push error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5393,
+          "text": "2026/10/05 18:05:05 INFO http request method=POST path=/api/v1/library/remotes/6db324b1-4f81-4c52-a959-abfd67b92f94/push status=200 duration_ms=3 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 5394,
+          "text": "2026/10/05 18:05:05 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5395,
+          "text": "2026/10/05 18:05:05 INFO http request method=POST path=/api/v1/library/remotes status=201 duration_ms=0 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 5396,
+          "text": "2026/10/05 18:05:05 WARN failed to persist audit event action=library.export resource_type=library_bundle resource_id=02237ceb-003f-42f4-9c26-f82ec75bfacc error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5397,
+          "text": "2026/10/05 18:05:05 WARN object activity persistence failed path=/api/v1/library/export error=\"audit persistence is unavailable\""
+        },
+        {
+          "number": 5398,
+          "text": "2026/10/05 18:05:05 INFO http request method=POST path=/api/v1/library/export status=200 duration_ms=0 remote=127.0.0.1:54634"
+        },
+        {
+          "number": 5399,
+          "text": "2026/10/05 18:05:05 ERROR internal server error ref=d422b684d022f2f6 status=500 detail=\"failed to build archive bundle: archive download free space would fall below reserve 1073741824\""
+        },
+        {
+          "number": 5400,
+          "text": "2026/10/05 18:05:05 INFO http request method=GET path=/api/v1/library/results/2c97ef27-5dac-4f75-a8e1-e434965a0e5d/archive status=500 duration_ms=9 remote=127.0.0.1:54635"
+        },
+        {
+          "number": 5401,
+          "text": "2026/10/05 18:05:05 ERROR internal server error ref=34fe631b7a30e834 status=502 detail=\"remote library archive returned 500 Internal Server Error\""
+        },
+        {
+          "number": 5402,
+          "text": "2026/10/05 18:05:05 INFO http request method=POST path=/api/v1/library/remotes/5bf54e8a-86c4-4496-870a-9b28e22811ba/pull status=502 duration_ms=11 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 5403,
+          "text": "--- FAIL: TestPulledResultRetainsDestinationIdentityArchiveAndHashAfterRemoteDisconnect (0.10s)"
+        },
+        {
+          "number": 5404,
+          "text": "    library_federation_test.go:1006: pull result status = 502 body={\"error\":\"internal server error\",\"ref\":\"34fe631b7a30e834\"}"
+        },
+        {
+          "number": 5405,
+          "text": "2026/10/05 18:05:05 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5406,
+          "text": "2026/10/05 18:05:05 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5407,
+          "text": "2026/10/05 18:05:05 WARN imported script but failed to persist library link script_id=24e096ef-b2f0-5fac-9115-c499a2d400e8 error=\"persist library sync links: injected link persistence failure\""
+        },
+        {
+          "number": 5408,
+          "text": "2026/10/05 18:05:05 WARN terminal transition retry failed test_id=archive:queued-elsewhere transition=archive_finalize error=\"test queued-elsewhere is not durably terminal yet\""
+        },
+        {
+          "number": 5409,
+          "text": "2026/10/05 18:05:05 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5410,
+          "text": "2026/10/05 18:05:05 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5411,
+          "text": "2026/10/05 18:05:05 ERROR internal server error ref=47773e26991cdd78 status=500 detail=\"failed to build archive bundle: archive download free space would fall below reserve 1073741824\""
+        },
+        {
+          "number": 5412,
+          "text": "2026/10/05 18:05:05 INFO http request method=GET path=/api/v1/library/results/18cd1b94-6f19-4f14-8ca8-a6f848dba9a8/archive status=500 duration_ms=12 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 5413,
+          "text": "--- FAIL: TestLibraryImportClaimSerializesSameIdentityUntilFailedBundleRollsBack (0.02s)"
+        },
+        {
+          "number": 5414,
+          "text": "    library_import_atomic_test.go:493: archive export = 500 {\"error\":\"internal server error\",\"ref\":\"47773e26991cdd78\"}"
+        },
+        {
+          "number": 5415,
+          "text": "2026/10/05 18:05:05 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5416,
+          "text": "2026/10/05 18:05:06 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5417,
+          "text": "2026/10/05 18:05:06 ERROR internal server error ref=ad0d3314fd8d79c8 status=500 detail=\"failed to build archive bundle: archive download free space would fall below reserve 1073741824\""
+        },
+        {
+          "number": 5418,
+          "text": "2026/10/05 18:05:06 INFO http request method=GET path=/api/v1/library/results/4a32a8b8-5cbe-4ba6-b448-dd4d4a67ce1d/archive status=500 duration_ms=12 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 5419,
+          "text": "--- FAIL: TestExpiredLibraryImportClaimRecoversResultRowArchiveAndLink (0.02s)"
+        },
+        {
+          "number": 5420,
+          "text": "    library_import_atomic_test.go:691: archive export = 500 {\"error\":\"internal server error\",\"ref\":\"ad0d3314fd8d79c8\"}"
+        },
+        {
+          "number": 5421,
+          "text": "2026/10/05 18:05:06 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5422,
+          "text": "2026/10/05 18:05:06 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5423,
+          "text": "2026/10/05 18:05:06 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5424,
+          "text": "2026/10/05 18:05:06 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5425,
+          "text": "2026/10/05 18:05:06 WARN terminal transition retry failed test_id=archive:queued-elsewhere transition=archive_finalize error=\"test queued-elsewhere is not durably terminal yet\""
+        },
+        {
+          "number": 5426,
+          "text": "2026/10/05 18:05:06 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5427,
+          "text": "2026/10/05 18:05:06 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5428,
+          "text": "2026/10/05 18:05:06 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5429,
+          "text": "2026/10/05 18:05:07 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 5430,
+          "text": "2026/10/05 18:05:07 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        }
+      ]
+    },
+    {
+      "start_line": 6548,
+      "end_line": 6568,
+      "lines": [
+        {
+          "number": 6548,
+          "text": "2026/10/05 18:08:13 INFO http request method=DELETE path=/api/v1/projects/proj-a/monitoring/prometheus-connections/c5d5f8e6-bbb4-4d35-b5b0-b1834134a973 status=409 duration_ms=0 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 6549,
+          "text": "2026/10/05 18:08:13 INFO http request method=DELETE path=/api/v1/projects/proj-a/monitoring/prometheus-connections/c5d5f8e6-bbb4-4d35-b5b0-b1834134a973 status=204 duration_ms=0 remote=192.0.2.1:1234"
+        },
+        {
+          "number": 6550,
+          "text": "2026/10/05 18:08:13 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 6551,
+          "text": "2026/10/05 18:08:13 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 6552,
+          "text": "2026/10/05 18:08:13 WARN terminal transition retry failed test_id=archive:queued-elsewhere transition=archive_finalize error=\"test queued-elsewhere is not durably terminal yet\""
+        },
+        {
+          "number": 6553,
+          "text": "2026/10/05 18:08:13 WARN encrypted project secret store is unavailable error=\"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key\""
+        },
+        {
+          "number": 6554,
+          "text": "--- FAIL: TestHistoricalArchiveSecretSurfacesAreMasked (0.02s)"
+        },
+        {
+          "number": 6555,
+          "text": "    security_library_hardening_test.go:405: GET /api/v1/tests/b48208b8-9d75-477f-bfb4-0cf3531cc26c/archive status = 500 body={\"error\":\"internal server error\",\"ref\":\"25387080258ea034\"}"
+        },
+        {
+          "number": 6556,
+          "text": "FAIL"
+        },
+        {
+          "number": 6557,
+          "text": "FAIL\tgithub.com/jasonczech/apexload/pkg/api\t744.854s"
+        },
+        {
+          "number": 6558,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/api/testexec\t0.439s"
+        },
+        {
+          "number": 6559,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/appdynamics\t0.263s"
+        },
+        {
+          "number": 6560,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/buildinfo\t0.108s"
+        },
+        {
+          "number": 6561,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/collectoragent\t25.905s"
+        },
+        {
+          "number": 6562,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/compute\t0.105s"
+        },
+        {
+          "number": 6563,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/compute/aws\t0.357s"
+        },
+        {
+          "number": 6564,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/compute/azure\t0.363s"
+        },
+        {
+          "number": 6565,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/config\t0.095s"
+        },
+        {
+          "number": 6566,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/controller\t0.285s"
+        },
+        {
+          "number": 6567,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/convert/agentforce\t0.281s"
+        },
+        {
+          "number": 6568,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/convert/asyncapi\t0.382s"
+        }
+      ]
+    },
+    {
+      "start_line": 6631,
+      "end_line": 6663,
+      "lines": [
+        {
+          "number": 6631,
+          "text": "?   \tgithub.com/jasonczech/apexload/pkg/monitorprovider\t[no test files]"
+        },
+        {
+          "number": 6632,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/netpolicy\t0.114s"
+        },
+        {
+          "number": 6633,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/perfevidence\t3.144s"
+        },
+        {
+          "number": 6634,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/prometheus\t0.172s"
+        },
+        {
+          "number": 6635,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol\t0.475s"
+        },
+        {
+          "number": 6636,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol/aura\t0.134s"
+        },
+        {
+          "number": 6637,
+          "text": "--- FAIL: TestBrowserDocumentActualNativeIdentityAndNoInteraction (1.14s)"
+        },
+        {
+          "number": 6638,
+          "text": "    --- FAIL: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (1.06s)"
+        },
+        {
+          "number": 6639,
+          "text": "        document_actual_integration_test.go:114: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin"
+        },
+        {
+          "number": 6640,
+          "text": "        document_actual_integration_test.go:159: independent frame INP finality missing"
+        },
+        {
+          "number": 6641,
+          "text": "        document_actual_integration_test.go:59: owned fixture diagnostics documents=7 frames=5 issued=6 browser_version=26.5 errors=[]"
+        },
+        {
+          "number": 6642,
+          "text": "2026/10/05 18:14:49 ERROR could not resolve BindingCall error=\"playwright: target closed: Target page, context or browser has been closed\""
+        },
+        {
+          "number": 6643,
+          "text": "2026/10/05 18:14:56 INFO browser HAR artifact captured policy=always path=/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestHARCaptureAlwaysPersistsScrubbedArtifact4179035667/001/apexload_browser_1791238496507516000_scrubbed.har sensitivity=scrubbed error_seen=false sla_breach_seen=false manual_seen=false"
+        },
+        {
+          "number": 6644,
+          "text": "2026/10/05 18:14:56 INFO browser HAR artifact captured policy=always path=/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestFinalizeHARCaptureRedactsLowEntropyRuntimeSecrets1548626762/001/apexload_browser_runtime_scrubbed.har sensitivity=scrubbed error_seen=false sla_breach_seen=false manual_seen=false"
+        },
+        {
+          "number": 6645,
+          "text": "2026/10/05 18:14:56 INFO browser HAR artifact captured policy=always path=/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestFinalizeHARCaptureRedactsPercentEncodedRuntimeSecrets4033816247/001/apexload_browser_encoded_scrubbed.har sensitivity=scrubbed error_seen=false sla_breach_seen=false manual_seen=false"
+        },
+        {
+          "number": 6646,
+          "text": "2026/10/05 18:14:57 INFO browser HAR artifact captured policy=on_error path=/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestHARCaptureOnErrorKeepsFailingSessions377116777/001/apexload_browser_1791238496613219000_scrubbed.har sensitivity=scrubbed error_seen=true sla_breach_seen=false manual_seen=false"
+        },
+        {
+          "number": 6647,
+          "text": "2026/10/05 18:14:57 INFO browser HAR artifact captured policy=manual path=/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestHARCaptureManualKeepsOnlyRequestedSessions2804843859/001/apexload_browser_1791238497523098000_scrubbed.har sensitivity=scrubbed error_seen=false sla_breach_seen=false manual_seen=true"
+        },
+        {
+          "number": 6648,
+          "text": "2026/10/05 18:15:03 WARN browser selector self-healed action=\"Click Checkout\" primary_selector=#checkout healed_selector=\"[data-testid=\\\"checkout\\\"]\" candidate_kind=css candidate_confidence=95"
+        },
+        {
+          "number": 6649,
+          "text": "2026/10/05 18:15:04 WARN browser selector self-healed action=\"Click Checkout\" primary_selector=#checkout healed_selector=\"[data-testid=\\\"checkout\\\"]\" candidate_kind=css candidate_confidence=95"
+        },
+        {
+          "number": 6650,
+          "text": "2026/10/05 18:15:07 WARN browser selector self-healed action=\"Click Missing\" primary_selector=#missing healed_selector=#fallback candidate_kind=css candidate_confidence=95"
+        },
+        {
+          "number": 6651,
+          "text": "FAIL"
+        },
+        {
+          "number": 6652,
+          "text": "FAIL\tgithub.com/jasonczech/apexload/pkg/protocol/browser\t29.780s"
+        },
+        {
+          "number": 6653,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol/bruno\t1.506s"
+        },
+        {
+          "number": 6654,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol/builtin\t0.370s"
+        },
+        {
+          "number": 6655,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol/database\t0.338s"
+        },
+        {
+          "number": 6656,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol/eventhubs\t0.276s"
+        },
+        {
+          "number": 6657,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol/grpc\t0.750s"
+        },
+        {
+          "number": 6658,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol/http\t4.455s"
+        },
+        {
+          "number": 6659,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol/java_http\t0.220s"
+        },
+        {
+          "number": 6660,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol/java_vuser\t4.707s"
+        },
+        {
+          "number": 6661,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol/jms\t5.384s"
+        },
+        {
+          "number": 6662,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol/jsonextract\t0.107s"
+        },
+        {
+          "number": 6663,
+          "text": "ok  \tgithub.com/jasonczech/apexload/pkg/protocol/kafka\t15.488s"
+        }
+      ]
+    }
+  ]
+}

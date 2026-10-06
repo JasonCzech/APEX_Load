@@ -1,0 +1,10 @@
+--- FAIL: TestHAROwnershipTerminalPlanRetiresUnchangedBatchAndRejectsExternalReplacement (0.14s)
+    --- FAIL: TestHAROwnershipTerminalPlanRetiresUnchangedBatchAndRejectsExternalReplacement/unchanged_batch (0.07s)
+        har_ownership_final_review_test.go:59: batch's own durable ledger update invalidated untouched authorized payload browser HAR physical ownership remains unproven
+--- FAIL: TestHAROwnershipTeardownUsesOneOverallBudget (4.06s)
+    har_ownership_final_review_test.go:92: teardown spent fresh per-phase budgets 4.001901041s
+--- FAIL: TestHAROwnershipNamespaceRejectsWorkDirectoryReplacementAfterLockWait (0.01s)
+    har_ownership_final_review_test.go:154: waiter accepted a replaced namespace directory <nil>
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/protocol/browser	4.399s
+FAIL

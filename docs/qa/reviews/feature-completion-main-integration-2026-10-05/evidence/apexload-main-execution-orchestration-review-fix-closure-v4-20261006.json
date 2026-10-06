@@ -1,0 +1,199 @@
+{
+  "schema": "apexload.private-execution-orchestration-static-review-fix-closure.v4",
+  "at_utc": "2026-10-06T05:03:15.601585+00:00",
+  "reviewer": "/root/authoring_fidelity_resume_v3",
+  "result": "self-review clean; independent peer repeat pending",
+  "scope": "Temporary application and execution helpers only. No helper run, qualification result or application claim. Original active gates/receipts are preserved.",
+  "inputs_before": [
+    {
+      "path": "/private/tmp/apexload-main-apply-reviewed-fixes-v1-20261006.py",
+      "bytes": 4570,
+      "sha256": "6c7a683e7cca5dc5fac908d23648d8551385dfe19f1644ef3d62f2b05d9a06fe"
+    },
+    {
+      "path": "/private/tmp/apexload-main-apply-reviewed-fixes-v2-20261006.py",
+      "bytes": 5161,
+      "sha256": "54f53b8966a769541d0bedffb873d402e73f14bc98d7ddc02c79d0188b0a9d0c"
+    },
+    {
+      "path": "/private/tmp/apexload-main-apply-reviewed-fixes-v1-v2-20261006.diff",
+      "bytes": 2562,
+      "sha256": "188c9b50b2e6b83971f026ce2c750da693c3c4e0d07e41a1b58cd15636174af1"
+    },
+    {
+      "path": "/private/tmp/apexload-main-dashboard-parallel-cycle-v1-20261006.py",
+      "bytes": 4665,
+      "sha256": "410dba14954b934c5d732f955dabbee8309e2673bcaeaa1891833eac6cf38162"
+    },
+    {
+      "path": "/private/tmp/apexload-main-dashboard-parallel-cycle-v2-20261006.py",
+      "bytes": 10153,
+      "sha256": "e0c019310b1c2e201f12d977b338eec751f8afc4f0cd9a9f65cfa21473b2c199"
+    },
+    {
+      "path": "/private/tmp/apexload-main-dashboard-parallel-cycle-v1-v2-20261006.diff",
+      "bytes": 13486,
+      "sha256": "f43cabe5a8ecb824ae43f5ca138c70de132decdb41858fec4b1b75892c8db08c"
+    },
+    {
+      "path": "/private/tmp/apexload-main-integration-gate-v1-20261005.py",
+      "bytes": 5251,
+      "sha256": "2900557402cd633cead394e1eac734f327d50cfa1aa51ffd5895afcaffb95bd5"
+    },
+    {
+      "path": "/private/tmp/apexload-main-integration-gate-v2-20261006.py",
+      "bytes": 5288,
+      "sha256": "0ac61e46c9b56b77c4494aae3072ab19fbc5e6b2e06c1989b9d451760e3ad990"
+    },
+    {
+      "path": "/private/tmp/apexload-main-integration-gate-v3-executed-4ad9cfbb-20261006.py",
+      "bytes": 9452,
+      "sha256": "4ad9cfbbdca7cd5705eac2c54dc82dbb1d911206b0c9c2d6a6b8aab15682d7d0"
+    },
+    {
+      "path": "/private/tmp/apexload-main-integration-gate-v3-20261006.py",
+      "bytes": 9519,
+      "sha256": "ddd9d7aadb2ab67e0fee64b9cd683a3e127150cdad6ea1965f672241d88c7d5e"
+    },
+    {
+      "path": "/private/tmp/apexload-main-integration-gate-v3-executed-vs-current-20261006.diff",
+      "bytes": 709,
+      "sha256": "18de6a42021fa501fea28435a84eba3c2434e89dec03ea9dcd20c627626309e2"
+    },
+    {
+      "path": "/private/tmp/apexload-main-integration-gate-v4-20261006.py",
+      "bytes": 9587,
+      "sha256": "d186c69109218016d4ea0ddabc79728e9ce8e2b9919be25a93dbc842841a8f54"
+    },
+    {
+      "path": "/private/tmp/apexload-main-integration-gate-v3-v4-exclusive-creation-20261006.diff",
+      "bytes": 3295,
+      "sha256": "9b675512f63352b0cb23bc2bf52cf69e4941413066c8b62e9b125ba891d1d135"
+    },
+    {
+      "path": "/private/tmp/apexload-main-dashboard-profile-concurrency-static-assessment-20261006.json",
+      "bytes": 34313,
+      "sha256": "282e9f29b1f73be80299b0e30c6d4d027559817a473ac5ddd05259f2590faef6"
+    }
+  ],
+  "inputs_after": [
+    {
+      "path": "/private/tmp/apexload-main-apply-reviewed-fixes-v1-20261006.py",
+      "bytes": 4570,
+      "sha256": "6c7a683e7cca5dc5fac908d23648d8551385dfe19f1644ef3d62f2b05d9a06fe"
+    },
+    {
+      "path": "/private/tmp/apexload-main-apply-reviewed-fixes-v2-20261006.py",
+      "bytes": 5161,
+      "sha256": "54f53b8966a769541d0bedffb873d402e73f14bc98d7ddc02c79d0188b0a9d0c"
+    },
+    {
+      "path": "/private/tmp/apexload-main-apply-reviewed-fixes-v1-v2-20261006.diff",
+      "bytes": 2562,
+      "sha256": "188c9b50b2e6b83971f026ce2c750da693c3c4e0d07e41a1b58cd15636174af1"
+    },
+    {
+      "path": "/private/tmp/apexload-main-dashboard-parallel-cycle-v1-20261006.py",
+      "bytes": 4665,
+      "sha256": "410dba14954b934c5d732f955dabbee8309e2673bcaeaa1891833eac6cf38162"
+    },
+    {
+      "path": "/private/tmp/apexload-main-dashboard-parallel-cycle-v2-20261006.py",
+      "bytes": 10153,
+      "sha256": "e0c019310b1c2e201f12d977b338eec751f8afc4f0cd9a9f65cfa21473b2c199"
+    },
+    {
+      "path": "/private/tmp/apexload-main-dashboard-parallel-cycle-v1-v2-20261006.diff",
+      "bytes": 13486,
+      "sha256": "f43cabe5a8ecb824ae43f5ca138c70de132decdb41858fec4b1b75892c8db08c"
+    },
+    {
+      "path": "/private/tmp/apexload-main-integration-gate-v1-20261005.py",
+      "bytes": 5251,
+      "sha256": "2900557402cd633cead394e1eac734f327d50cfa1aa51ffd5895afcaffb95bd5"
+    },
+    {
+      "path": "/private/tmp/apexload-main-integration-gate-v2-20261006.py",
+      "bytes": 5288,
+      "sha256": "0ac61e46c9b56b77c4494aae3072ab19fbc5e6b2e06c1989b9d451760e3ad990"
+    },
+    {
+      "path": "/private/tmp/apexload-main-integration-gate-v3-executed-4ad9cfbb-20261006.py",
+      "bytes": 9452,
+      "sha256": "4ad9cfbbdca7cd5705eac2c54dc82dbb1d911206b0c9c2d6a6b8aab15682d7d0"
+    },
+    {
+      "path": "/private/tmp/apexload-main-integration-gate-v3-20261006.py",
+      "bytes": 9519,
+      "sha256": "ddd9d7aadb2ab67e0fee64b9cd683a3e127150cdad6ea1965f672241d88c7d5e"
+    },
+    {
+      "path": "/private/tmp/apexload-main-integration-gate-v3-executed-vs-current-20261006.diff",
+      "bytes": 709,
+      "sha256": "18de6a42021fa501fea28435a84eba3c2434e89dec03ea9dcd20c627626309e2"
+    },
+    {
+      "path": "/private/tmp/apexload-main-integration-gate-v4-20261006.py",
+      "bytes": 9587,
+      "sha256": "d186c69109218016d4ea0ddabc79728e9ce8e2b9919be25a93dbc842841a8f54"
+    },
+    {
+      "path": "/private/tmp/apexload-main-integration-gate-v3-v4-exclusive-creation-20261006.diff",
+      "bytes": 3295,
+      "sha256": "9b675512f63352b0cb23bc2bf52cf69e4941413066c8b62e9b125ba891d1d135"
+    },
+    {
+      "path": "/private/tmp/apexload-main-dashboard-profile-concurrency-static-assessment-20261006.json",
+      "bytes": 34313,
+      "sha256": "282e9f29b1f73be80299b0e30c6d4d027559817a473ac5ddd05259f2590faef6"
+    }
+  ],
+  "original_findings": [
+    {
+      "priority": "P2",
+      "finding": "Default SIGTERM bypasses Python exception/finally, orphaning owned profile processes; exception cleanup signals only shell then waits unboundedly.",
+      "fix": "Inner handler records cancellation, ownership registration is uninterrupted, wait loops observe it, owned process groups receive bounded TERM/KILL cleanup, direct children physically join and scratch is retained if completion remains unproven."
+    },
+    {
+      "priority": "P2",
+      "finding": "Outer gate also lacks signal forwarding/join for its child, so inner cleanup may never receive cancellation.",
+      "fix": "Fresh V3/V4 own exactly one child process group and forward/join within bounded grace, preserving RED cancellation/lifecycle receipt and original inventories."
+    },
+    {
+      "priority": "P2",
+      "finding": "Draft-only blocked signal mask can propagate into exec children.",
+      "fix": "Removed all signal masking before execution; non-raising handlers and bounded wait polling preserve ordinary child masks."
+    },
+    {
+      "priority": "P2",
+      "finding": "Late cancellation just after final wait can record successful status.",
+      "fix": "Inner data.failed and outer exit code explicitly include any recorded cancellation."
+    },
+    {
+      "priority": "P2",
+      "finding": "Exclusive-creation preflight without exclusive final open can replace raw evidence on duplicate-label race.",
+      "fix": "V4 log.open(xb), receipt.open(x); original V3 not modified once parent reported active execution."
+    }
+  ],
+  "additional_hardening": [
+    "Application V2 pins both reviewed UI metadata inputs and every patch before first mutation; asserts exact dependent resize intermediate hash.",
+    "Inner wrapper refuses preexisting profile logs/artifacts before any execution.",
+    "Settled empty owned stage groups are cached and never re-probed/signalled later, avoiding reuse of old PGIDs."
+  ],
+  "static_checks": [
+    "All helpers AST parse without execution.",
+    "Outer digest/inventory/embedded function ASTs exactly equal V2.",
+    "Outer recorded environment keys exactly equal V2 including TMPDIR and APEXLOAD_IMPORT_ASSET_DIR.",
+    "Exact npm typecheck/lint/full test/build order and unfiltered unchanged run-e2e commands, real profiles/ports/private0700temp/importroots/profile-suffixedoutputs retained.",
+    "No repository script, test retry, worker, test deadline, source guard, native fixture or acceptance policy changed."
+  ],
+  "executed_v3_reconciliation": {
+    "parent_reported_start_sha256": "4ad9cfbbdca7cd5705eac2c54dc82dbb1d911206b0c9c2d6a6b8aab15682d7d0",
+    "exact_reconstructed_source": "/private/tmp/apexload-main-integration-gate-v3-executed-4ad9cfbb-20261006.py",
+    "immutable_current_v3_sha256": "ddd9d7aadb2ab67e0fee64b9cd683a3e127150cdad6ea1965f672241d88c7d5e",
+    "delta": "Two late-cancellation-status lines only; normal focused execution/source inventories unchanged. The active gate final __file__ digest describes current bytes, not the independently recorded startup bytes; retain this supplement.",
+    "no_active_helper_mutation_after_parent_freeze": true
+  },
+  "findings_remaining": [],
+  "execution": "Only /private/tmp helper/metadata creation and static reads/AST parsing; no helper execution, owned ROOT source/Git/staging/build/test/cache mutation."
+}

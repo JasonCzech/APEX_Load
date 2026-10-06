@@ -10,11 +10,10 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-// importPublicationAssetKey is deliberately local to the API layer. Durable
-// import claims remain recovery evidence rather than becoming part of the
-// public script model or the storage schema.
+// Storage and the API share only the narrow publication key/predicate. Rich
+// recovery metadata remains in the API and never enters executable scripts.
 func importPublicationAssetKey(kind, id string) string {
-	return normalizeLibraryKind(kind) + "\x00" + strings.TrimSpace(id)
+	return storage.LibraryImportAssetKey(kind, id)
 }
 
 func (tr *TestRunner) setImportPublicationSnapshot(store storage.Store, loader func() (map[string]struct{}, error)) {
@@ -277,6 +276,14 @@ func (tr *TestRunner) revalidatePublishedScriptSnapshot(snapshot *StoredScript) 
 	store := tr.importPublicationStore
 	tr.importPublicationMu.RUnlock()
 	if store == nil {
+		return nil, false
+	}
+	if snapshot.ContentRevision != "" {
+		if authoringStore, supported := tr.scriptStore.(storage.ScriptAuthoringStore); supported {
+			current, err := authoringStore.GetScriptAuthoringSnapshot(snapshot.ID)
+			unchanged := err == nil && current != nil && current.Script != nil && snapshot.Script != nil && current.ContentRevision == snapshot.ContentRevision && current.Script.ProjectID == snapshot.Script.ProjectID && current.Script.CreatedAt.Equal(snapshot.Script.CreatedAt)
+			return snapshot, unchanged
+		}
 		return nil, false
 	}
 	current, err := store.GetScript(snapshot.ID)

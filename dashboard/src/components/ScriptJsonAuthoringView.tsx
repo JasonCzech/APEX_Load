@@ -47,6 +47,8 @@ import {
   type ScriptJsonStatus,
 } from './scriptEditorJsonModel'
 
+const sourceEditorBasicSetup = { lineNumbers: true, foldGutter: true, highlightActiveLine: true, highlightActiveLineGutter: true }
+
 export interface ScriptCodePaneProps {
   value: string
   status: ScriptJsonStatus
@@ -103,6 +105,9 @@ export function ScriptCodePane({
   onRequestParameterize,
 }: ScriptCodePaneProps) {
   const viewRef = useRef<EditorView | null>(null)
+  const onDocumentChangeRef = useRef(onChange)
+  onDocumentChangeRef.current = onChange
+  const handleDocumentChange = useCallback((nextValue: string) => onDocumentChangeRef.current(nextValue), [])
   const parameterNavigationRef = useRef<{ name?: string; editorReadyVersion: number }>({ editorReadyVersion: -1 })
   const [jsonEditEnabled, setJsonEditEnabled] = useState(false)
   const [editorReadyVersion, setEditorReadyVersion] = useState(0)
@@ -282,16 +287,11 @@ export function ScriptCodePane({
       >
         <CodeMirror
           value={value}
-          onChange={onChange}
+          onChange={handleDocumentChange}
           extensions={extensions}
           theme="none"
           editable={allowDirectEdit && jsonEditEnabled}
-          basicSetup={{
-            lineNumbers: true,
-            foldGutter: true,
-            highlightActiveLine: true,
-            highlightActiveLineGutter: true,
-          }}
+          basicSetup={sourceEditorBasicSetup}
           onCreateEditor={view => {
             viewRef.current = view
             setEditorReadyVersion(version => version + 1)

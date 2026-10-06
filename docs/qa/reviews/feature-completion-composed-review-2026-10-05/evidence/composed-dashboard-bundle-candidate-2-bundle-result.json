@@ -1,0 +1,1714 @@
+{
+  "node": "v22.22.0",
+  "executable": "/Users/jasonczech/.npm/_npx/6d82ddbdd7da268b/node_modules/node/bin/node",
+  "deterministicBuildTime": "1970-01-01T00:00:00.000Z",
+  "result": {
+    "root": "/private/tmp/apexload-composed-dashboard-candidate-kqNDFg",
+    "groups": {
+      ".js": {
+        "label": "JavaScript",
+        "maxAssetBytes": 665600,
+        "maxAssetGzipBytes": 225280,
+        "maxTotalBytes": 5557452.8,
+        "maxTotalGzipBytes": 1494220.8,
+        "assets": [
+          {
+            "path": "assets/ACCESS_SURFACES-muvlJqac.js",
+            "bytes": 7837,
+            "gzipBytes": 3385
+          },
+          {
+            "path": "assets/accessDestinations-DlVocFYc.js",
+            "bytes": 373,
+            "gzipBytes": 267
+          },
+          {
+            "path": "assets/AccessNavigation-B7IZZOhN.js",
+            "bytes": 837,
+            "gzipBytes": 451
+          },
+          {
+            "path": "assets/AccessPage-DtsLDIJk.js",
+            "bytes": 88577,
+            "gzipBytes": 20596
+          },
+          {
+            "path": "assets/ActivityPage-ItWKgKAr.js",
+            "bytes": 4059,
+            "gzipBytes": 1426
+          },
+          {
+            "path": "assets/ADMIN_USER_GUIDE-1kiS30LD.js",
+            "bytes": 28129,
+            "gzipBytes": 10779
+          },
+          {
+            "path": "assets/apexDslSemanticHighlighting-CLhH6zVF.js",
+            "bytes": 10319,
+            "gzipBytes": 3169
+          },
+          {
+            "path": "assets/API_USER_GUIDE-trnJ5kUi.js",
+            "bytes": 50240,
+            "gzipBytes": 16994
+          },
+          {
+            "path": "assets/apiGuideNavigation-CewZNyd0.js",
+            "bytes": 752,
+            "gzipBytes": 352
+          },
+          {
+            "path": "assets/ApiGuidePage-DcQNm6mk.js",
+            "bytes": 7481,
+            "gzipBytes": 3289
+          },
+          {
+            "path": "assets/APPLICATION_USER_GUIDE-DPOCt8hH.js",
+            "bytes": 57369,
+            "gzipBytes": 21808
+          },
+          {
+            "path": "assets/ApplicationRepositoryPage-DiXIYN1y.js",
+            "bytes": 47004,
+            "gzipBytes": 13220
+          },
+          {
+            "path": "assets/archiveHistorySampling-5QnVuSSo.js",
+            "bytes": 25,
+            "gzipBytes": 45
+          },
+          {
+            "path": "assets/AuditEventTable-iHLSY9nG.js",
+            "bytes": 11290,
+            "gzipBytes": 3846
+          },
+          {
+            "path": "assets/AuraOutcomeReview-Cil6Fpcf.js",
+            "bytes": 9385,
+            "gzipBytes": 2847
+          },
+          {
+            "path": "assets/AUTH_RBAC_OPERATIONS_RUNBOOK-D2xvKMcd.js",
+            "bytes": 26630,
+            "gzipBytes": 10573
+          },
+          {
+            "path": "assets/AUTHORING_SCENARIO_FIDELITY-CL3KjcDi.js",
+            "bytes": 6047,
+            "gzipBytes": 2522
+          },
+          {
+            "path": "assets/boundedAllSettled-BizE4W-U.js",
+            "bytes": 13484,
+            "gzipBytes": 4543
+          },
+          {
+            "path": "assets/BROWSER_DOCUMENT_EVIDENCE-BU-pkLQ8.js",
+            "bytes": 8912,
+            "gzipBytes": 3871
+          },
+          {
+            "path": "assets/BrowserBreakdownChart-wMgQ2Zj_.js",
+            "bytes": 11472,
+            "gzipBytes": 4312
+          },
+          {
+            "path": "assets/BrowserRecorderControlPanel-B8xTcLMo.js",
+            "bytes": 45631,
+            "gzipBytes": 12818
+          },
+          {
+            "path": "assets/BrowserReplayProgress-CF6NSL1C.js",
+            "bytes": 7321,
+            "gzipBytes": 2547
+          },
+          {
+            "path": "assets/BrowserResourceInspector-CboFw5Us.js",
+            "bytes": 23441,
+            "gzipBytes": 6632
+          },
+          {
+            "path": "assets/browserRuntimeSummary-sXEBIPbd.js",
+            "bytes": 331,
+            "gzipBytes": 237
+          },
+          {
+            "path": "assets/brunoFolderOptions-CoUowwa5.js",
+            "bytes": 627,
+            "gzipBytes": 380
+          },
+          {
+            "path": "assets/BrunoImport-CSs8Qa_6.js",
+            "bytes": 92862,
+            "gzipBytes": 23745
+          },
+          {
+            "path": "assets/captureConnectionModel-75-cnkGL.js",
+            "bytes": 2791,
+            "gzipBytes": 943
+          },
+          {
+            "path": "assets/CaptureSelectionHelp-BCgoBniE.js",
+            "bytes": 4055,
+            "gzipBytes": 1714
+          },
+          {
+            "path": "assets/catalogPagination-tWt7GjCl.js",
+            "bytes": 615,
+            "gzipBytes": 358
+          },
+          {
+            "path": "assets/chartTooltipTheme-BUAhhHiK.js",
+            "bytes": 230,
+            "gzipBytes": 172
+          },
+          {
+            "path": "assets/CICD_INTEGRATION-BNx7y9AD.js",
+            "bytes": 24327,
+            "gzipBytes": 9265
+          },
+          {
+            "path": "assets/CloudTestParityDashboard-Dj37XqYu.js",
+            "bytes": 4654,
+            "gzipBytes": 1645
+          },
+          {
+            "path": "assets/CLUSTERS_AND_CLOUD-BeECwoD3.js",
+            "bytes": 36840,
+            "gzipBytes": 14030
+          },
+          {
+            "path": "assets/codeLineWrapPreference-BBY_8d3U.js",
+            "bytes": 828,
+            "gzipBytes": 431
+          },
+          {
+            "path": "assets/CommandCenterPrototype-BNFnyhBe.js",
+            "bytes": 132301,
+            "gzipBytes": 36371
+          },
+          {
+            "path": "assets/commandCenterPrototypeFixtures-B4_yEMbZ.js",
+            "bytes": 12307,
+            "gzipBytes": 4015
+          },
+          {
+            "path": "assets/confirmAction-BTa2-TxZ.js",
+            "bytes": 1678,
+            "gzipBytes": 780
+          },
+          {
+            "path": "assets/ConfirmDestructiveModal-CRvRGTXe.js",
+            "bytes": 2717,
+            "gzipBytes": 1083
+          },
+          {
+            "path": "assets/ConfirmRunActionModal-CzGkAaau.js",
+            "bytes": 72324,
+            "gzipBytes": 20789
+          },
+          {
+            "path": "assets/contentFingerprint-iGP11c2_.js",
+            "bytes": 974,
+            "gzipBytes": 574
+          },
+          {
+            "path": "assets/CreateTestModal-C5IpGS5h.js",
+            "bytes": 26014,
+            "gzipBytes": 8239
+          },
+          {
+            "path": "assets/credentialPreviewPolicy-BG2-ANtk.js",
+            "bytes": 1344,
+            "gzipBytes": 676
+          },
+          {
+            "path": "assets/DashboardPage-BwhKAmbH.js",
+            "bytes": 100996,
+            "gzipBytes": 28180
+          },
+          {
+            "path": "assets/DesktopApiResourceLink-Cm58j_l8.js",
+            "bytes": 2786,
+            "gzipBytes": 1278
+          },
+          {
+            "path": "assets/dropIngestFeedback-CAzfmvEu.js",
+            "bytes": 2028,
+            "gzipBytes": 951
+          },
+          {
+            "path": "assets/DSL_ACTION_REFERENCE-5Vdb4gBL.js",
+            "bytes": 127601,
+            "gzipBytes": 16090
+          },
+          {
+            "path": "assets/DurationField-BiAKzCfJ.js",
+            "bytes": 1842,
+            "gzipBytes": 916
+          },
+          {
+            "path": "assets/ENTERPRISE_PLATFORM_RUNBOOK-Dme5KFBw.js",
+            "bytes": 21364,
+            "gzipBytes": 7867
+          },
+          {
+            "path": "assets/EnterpriseArchiveImport-IcMqGJ3H.js",
+            "bytes": 157129,
+            "gzipBytes": 43904
+          },
+          {
+            "path": "assets/errorUtils-CAMAVZM4.js",
+            "bytes": 9161,
+            "gzipBytes": 3673
+          },
+          {
+            "path": "assets/executionPresentation-DWyUijaC.js",
+            "bytes": 1548,
+            "gzipBytes": 701
+          },
+          {
+            "path": "assets/fleetCatalogModel-D8-iPkxB.js",
+            "bytes": 66941,
+            "gzipBytes": 13337
+          },
+          {
+            "path": "assets/GitHubSyncModal-Bk47XgGO.js",
+            "bytes": 12678,
+            "gzipBytes": 4430
+          },
+          {
+            "path": "assets/goalConfigValidation-ghI0aCxG.js",
+            "bytes": 41546,
+            "gzipBytes": 11055
+          },
+          {
+            "path": "assets/HELP_CENTER-B-RkdVxh.js",
+            "bytes": 22541,
+            "gzipBytes": 9050
+          },
+          {
+            "path": "assets/HELP_DSL_OPERATOR_GUIDE-Dd1bgXCB.js",
+            "bytes": 23614,
+            "gzipBytes": 9297
+          },
+          {
+            "path": "assets/http-version-model-CLExTfAQ.js",
+            "bytes": 1091,
+            "gzipBytes": 513
+          },
+          {
+            "path": "assets/HttpRequestDefaultsEditor-C6i3OOFL.js",
+            "bytes": 42694,
+            "gzipBytes": 11381
+          },
+          {
+            "path": "assets/ImportConversionDetails-CNa_5v8u.js",
+            "bytes": 778,
+            "gzipBytes": 384
+          },
+          {
+            "path": "assets/ImportCoverageButton-CxfJBmhY.js",
+            "bytes": 1299,
+            "gzipBytes": 594
+          },
+          {
+            "path": "assets/ImportDestinationFolder-CGOlCTir.js",
+            "bytes": 5034,
+            "gzipBytes": 1924
+          },
+          {
+            "path": "assets/ImportDropzone-46FxX44l.js",
+            "bytes": 3270,
+            "gzipBytes": 1473
+          },
+          {
+            "path": "assets/ImportIssueSeverityTag-CtRaCOvA.js",
+            "bytes": 268,
+            "gzipBytes": 222
+          },
+          {
+            "path": "assets/ImportIssueWorkspace-KsTscrZB.js",
+            "bytes": 11833,
+            "gzipBytes": 4107
+          },
+          {
+            "path": "assets/importReviewGeneration-DkK29g0F.js",
+            "bytes": 645,
+            "gzipBytes": 394
+          },
+          {
+            "path": "assets/ImportReviewSectionHeader-BTXi6a-E.js",
+            "bytes": 402,
+            "gzipBytes": 230
+          },
+          {
+            "path": "assets/ImportReviewTabs-Defkyyo-.js",
+            "bytes": 1476,
+            "gzipBytes": 734
+          },
+          {
+            "path": "assets/ImportSaveConfirmation-CGJMg4tM.js",
+            "bytes": 709,
+            "gzipBytes": 391
+          },
+          {
+            "path": "assets/importSaveUtils-DR2h-ndZ.js",
+            "bytes": 134,
+            "gzipBytes": 124
+          },
+          {
+            "path": "assets/ImportWorkflowGuide-Db0EQ619.js",
+            "bytes": 867,
+            "gzipBytes": 511
+          },
+          {
+            "path": "assets/index-Ct_UJeBv.js",
+            "bytes": 214620,
+            "gzipBytes": 62382
+          },
+          {
+            "path": "assets/IssueDetailsDialog-DzMEqIMJ.js",
+            "bytes": 2835,
+            "gzipBytes": 1184
+          },
+          {
+            "path": "assets/JMeterImport-BJx9rq0a.js",
+            "bytes": 39007,
+            "gzipBytes": 11871
+          },
+          {
+            "path": "assets/libraryFederationUtils-CWH23TFG.js",
+            "bytes": 1068,
+            "gzipBytes": 587
+          },
+          {
+            "path": "assets/LibraryToolbar-hfVY5nmN.js",
+            "bytes": 535,
+            "gzipBytes": 298
+          },
+          {
+            "path": "assets/LinkedCodePane-DC6TQyci.js",
+            "bytes": 5152,
+            "gzipBytes": 2398
+          },
+          {
+            "path": "assets/LoadImpact3DHeatmap-C8Kvfpwq.js",
+            "bytes": 12181,
+            "gzipBytes": 4463
+          },
+          {
+            "path": "assets/loadImpactModel-D5Ccnrne.js",
+            "bytes": 5155,
+            "gzipBytes": 1821
+          },
+          {
+            "path": "assets/LOADRUNNER_COVERAGE-DIXr1WEk.js",
+            "bytes": 44488,
+            "gzipBytes": 9742
+          },
+          {
+            "path": "assets/MarkdownRenderer-DgstTJdj.js",
+            "bytes": 3375,
+            "gzipBytes": 1428
+          },
+          {
+            "path": "assets/MonitoringPage-DZ30X4-V.js",
+            "bytes": 170133,
+            "gzipBytes": 42679
+          },
+          {
+            "path": "assets/monitorProviderModel-Bqor7OQj.js",
+            "bytes": 1581,
+            "gzipBytes": 651
+          },
+          {
+            "path": "assets/monitorTimelineModel-gjPKnqqP.js",
+            "bytes": 2378,
+            "gzipBytes": 1023
+          },
+          {
+            "path": "assets/NewTestPage-X-Q9OALf.js",
+            "bytes": 132893,
+            "gzipBytes": 31626
+          },
+          {
+            "path": "assets/NewTestReadiness-DblXpuLL.js",
+            "bytes": 9642,
+            "gzipBytes": 3361
+          },
+          {
+            "path": "assets/newTestRunModel-BjvTMp0G.js",
+            "bytes": 18862,
+            "gzipBytes": 5744
+          },
+          {
+            "path": "assets/newTestScheduleFormat-BluT_3C1.js",
+            "bytes": 5614,
+            "gzipBytes": 2318
+          },
+          {
+            "path": "assets/ObjectArchiveControls-DDV9LZUv.js",
+            "bytes": 952,
+            "gzipBytes": 595
+          },
+          {
+            "path": "assets/ObjectHistory-EAs1lC4o.js",
+            "bytes": 4052,
+            "gzipBytes": 1569
+          },
+          {
+            "path": "assets/OBSERVABILITY_INTEGRATIONS-Df5oAz28.js",
+            "bytes": 33691,
+            "gzipBytes": 12537
+          },
+          {
+            "path": "assets/observerGroupModel-IGUhoNKX.js",
+            "bytes": 1738,
+            "gzipBytes": 753
+          },
+          {
+            "path": "assets/OracleEBusinessReviewImport-4X9bUhIZ.js",
+            "bytes": 8076,
+            "gzipBytes": 3021
+          },
+          {
+            "path": "assets/PageViewToggle-D9_VxmQg.js",
+            "bytes": 687,
+            "gzipBytes": 421
+          },
+          {
+            "path": "assets/PanelToggle-hmdYbc1r.js",
+            "bytes": 952,
+            "gzipBytes": 581
+          },
+          {
+            "path": "assets/ParameterizationReview-TW4nF0Nc.js",
+            "bytes": 12502,
+            "gzipBytes": 4080
+          },
+          {
+            "path": "assets/PersonalSettings-DTdSl32W.js",
+            "bytes": 4601,
+            "gzipBytes": 1623
+          },
+          {
+            "path": "assets/PodCapacityMeter-DWpPZMZ2.js",
+            "bytes": 712,
+            "gzipBytes": 426
+          },
+          {
+            "path": "assets/projectSecretsNavigation-Q6D7LqDx.js",
+            "bytes": 343,
+            "gzipBytes": 237
+          },
+          {
+            "path": "assets/prometheusConnectionModel-DXHZzmvh.js",
+            "bytes": 3995,
+            "gzipBytes": 1562
+          },
+          {
+            "path": "assets/PrometheusPanelCard-Cqdrdj3O.js",
+            "bytes": 35963,
+            "gzipBytes": 11259
+          },
+          {
+            "path": "assets/PrometheusRunEvidence-CnXi7kv_.js",
+            "bytes": 11304,
+            "gzipBytes": 4007
+          },
+          {
+            "path": "assets/PrometheusSourceFields-Bk6cFc6L.js",
+            "bytes": 22262,
+            "gzipBytes": 6553
+          },
+          {
+            "path": "assets/protectedImportSession-CzrTIT6t.js",
+            "bytes": 37247,
+            "gzipBytes": 11707
+          },
+          {
+            "path": "assets/PROTOCOL_SUPPORT-ClZiS6fY.js",
+            "bytes": 70713,
+            "gzipBytes": 25547
+          },
+          {
+            "path": "assets/ProtocolAssetImport-C30fa3fv.js",
+            "bytes": 72343,
+            "gzipBytes": 19171
+          },
+          {
+            "path": "assets/README-BlQhA3fH.js",
+            "bytes": 6560,
+            "gzipBytes": 2576
+          },
+          {
+            "path": "assets/README-Bs5T7Kk4.js",
+            "bytes": 28175,
+            "gzipBytes": 10465
+          },
+          {
+            "path": "assets/README-CExAgoH0.js",
+            "bytes": 5436,
+            "gzipBytes": 2424
+          },
+          {
+            "path": "assets/README-DKI4WiOz.js",
+            "bytes": 11856,
+            "gzipBytes": 4912
+          },
+          {
+            "path": "assets/README-Do7TAtmp.js",
+            "bytes": 7648,
+            "gzipBytes": 3462
+          },
+          {
+            "path": "assets/README-DTgI1E_t.js",
+            "bytes": 7026,
+            "gzipBytes": 2628
+          },
+          {
+            "path": "assets/README-qoqbi6C4.js",
+            "bytes": 9174,
+            "gzipBytes": 3296
+          },
+          {
+            "path": "assets/recording-agent-BwInhde1.js",
+            "bytes": 11392,
+            "gzipBytes": 4829
+          },
+          {
+            "path": "assets/RecordingEnvironmentReview-HqLQB4cg.js",
+            "bytes": 6410,
+            "gzipBytes": 2060
+          },
+          {
+            "path": "assets/RecordingStudio-C_TozvzV.js",
+            "bytes": 102996,
+            "gzipBytes": 24239
+          },
+          {
+            "path": "assets/RepairSuggestionList-BdTAxHAp.js",
+            "bytes": 1106,
+            "gzipBytes": 533
+          },
+          {
+            "path": "assets/ReplayPreflightCard-qORLmnrt.js",
+            "bytes": 12942,
+            "gzipBytes": 4287
+          },
+          {
+            "path": "assets/reportPresentation-BdFNY_WH.js",
+            "bytes": 955,
+            "gzipBytes": 484
+          },
+          {
+            "path": "assets/repositoryGuideMarkdown-DcMa8ib6.js",
+            "bytes": 2315,
+            "gzipBytes": 1032
+          },
+          {
+            "path": "assets/RepositoryGuidePage-C88EeSxg.js",
+            "bytes": 259,
+            "gzipBytes": 207
+          },
+          {
+            "path": "assets/ResourceSnapshotList-7mkoTByo.js",
+            "bytes": 19008,
+            "gzipBytes": 5810
+          },
+          {
+            "path": "assets/ResultsPage-AgmRmb97.js",
+            "bytes": 46640,
+            "gzipBytes": 13783
+          },
+          {
+            "path": "assets/RETAINED_RESOURCE_INSPECTION-C_QKd2aN.js",
+            "bytes": 6614,
+            "gzipBytes": 2880
+          },
+          {
+            "path": "assets/rolldown-runtime-QTnfLwEv.js",
+            "bytes": 694,
+            "gzipBytes": 422
+          },
+          {
+            "path": "assets/RunMonitoring-ClQp90o5.js",
+            "bytes": 82440,
+            "gzipBytes": 19713
+          },
+          {
+            "path": "assets/runReportModel-qEPKAaEk.js",
+            "bytes": 4300,
+            "gzipBytes": 1735
+          },
+          {
+            "path": "assets/RunReportPage-D4zEj2Fe.js",
+            "bytes": 112525,
+            "gzipBytes": 30572
+          },
+          {
+            "path": "assets/RUNTIME_SETTINGS_PARITY-DK6-x-UZ.js",
+            "bytes": 12728,
+            "gzipBytes": 5190
+          },
+          {
+            "path": "assets/SalesforceCorrelationReview-Bf5ABNvW.js",
+            "bytes": 11407,
+            "gzipBytes": 3332
+          },
+          {
+            "path": "assets/salesforceReviewSummary-CRDWwiDW.js",
+            "bytes": 596,
+            "gzipBytes": 339
+          },
+          {
+            "path": "assets/SampleScriptImport-7rzujzBM.js",
+            "bytes": 34058,
+            "gzipBytes": 10642
+          },
+          {
+            "path": "assets/scenarioDraftUtils-C-uVIl-A.js",
+            "bytes": 7302,
+            "gzipBytes": 2285
+          },
+          {
+            "path": "assets/scenarioPayloadUtils-B-fNJujy.js",
+            "bytes": 88725,
+            "gzipBytes": 17685
+          },
+          {
+            "path": "assets/schedulingCatalogModel-BN2Hw9v1.js",
+            "bytes": 349,
+            "gzipBytes": 213
+          },
+          {
+            "path": "assets/SCRIPT_DEBUGGER_GUIDE--5Pujxrv.js",
+            "bytes": 20798,
+            "gzipBytes": 8307
+          },
+          {
+            "path": "assets/scriptDraftFactories-Ba-auNtB.js",
+            "bytes": 6113,
+            "gzipBytes": 1777
+          },
+          {
+            "path": "assets/ScriptEditor-BiE_Um2X.js",
+            "bytes": 643267,
+            "gzipBytes": 163097
+          },
+          {
+            "path": "assets/ScriptEditor-ClUR8Uq-.js",
+            "bytes": 85120,
+            "gzipBytes": 20454
+          },
+          {
+            "path": "assets/scriptEditorImportModel-D7PC9FAP.js",
+            "bytes": 12817,
+            "gzipBytes": 4554
+          },
+          {
+            "path": "assets/scriptEditorRuntimeSettingsModel-BAj1nXFb.js",
+            "bytes": 19843,
+            "gzipBytes": 6500
+          },
+          {
+            "path": "assets/scriptEditorUtils-Cryi0sxB.js",
+            "bytes": 12612,
+            "gzipBytes": 4786
+          },
+          {
+            "path": "assets/ScriptImportReview-CztoRm15.js",
+            "bytes": 71161,
+            "gzipBytes": 22156
+          },
+          {
+            "path": "assets/ScriptsAuthoringSurface-CuIlrTpe.js",
+            "bytes": 13936,
+            "gzipBytes": 4404
+          },
+          {
+            "path": "assets/ScriptSecretBindingsDialog-D-QFaMf3.js",
+            "bytes": 14226,
+            "gzipBytes": 5007
+          },
+          {
+            "path": "assets/ScriptsPage-FiWtSJ1V.js",
+            "bytes": 136369,
+            "gzipBytes": 35383
+          },
+          {
+            "path": "assets/SecondsFromMillisecondsInput-BuG9FCyo.js",
+            "bytes": 617,
+            "gzipBytes": 425
+          },
+          {
+            "path": "assets/secretBindingUtils-B0n1oK74.js",
+            "bytes": 1876,
+            "gzipBytes": 874
+          },
+          {
+            "path": "assets/SecretReferenceValueControl-MSQhO6bX.js",
+            "bytes": 1281,
+            "gzipBytes": 620
+          },
+          {
+            "path": "assets/SeriesChartExport-ZaOBzVRq.js",
+            "bytes": 5142,
+            "gzipBytes": 2291
+          },
+          {
+            "path": "assets/SettingsPage-CigZDkXh.js",
+            "bytes": 440375,
+            "gzipBytes": 94921
+          },
+          {
+            "path": "assets/settingsPageFormatters-CQ_MU9wo.js",
+            "bytes": 4788,
+            "gzipBytes": 1840
+          },
+          {
+            "path": "assets/settingsSectionLayout-P5B6lYMx.js",
+            "bytes": 3357,
+            "gzipBytes": 1189
+          },
+          {
+            "path": "assets/soapFaultUtils-DoAHnnnm.js",
+            "bytes": 646,
+            "gzipBytes": 299
+          },
+          {
+            "path": "assets/SortHeader-Dtmv_9FT.js",
+            "bytes": 441,
+            "gzipBytes": 312
+          },
+          {
+            "path": "assets/SortIndicator-D2hBpxoz.js",
+            "bytes": 287,
+            "gzipBytes": 222
+          },
+          {
+            "path": "assets/SourceCodeViewer-H1cpZY04.js",
+            "bytes": 2434,
+            "gzipBytes": 1243
+          },
+          {
+            "path": "assets/SourceMappingReview-B2C3fEMb.js",
+            "bytes": 72654,
+            "gzipBytes": 21281
+          },
+          {
+            "path": "assets/sourceSecretSession-BnmeYFpE.js",
+            "bytes": 1574,
+            "gzipBytes": 719
+          },
+          {
+            "path": "assets/sourceSecretSessionLifecycle-B9Ly6IEa.js",
+            "bytes": 1574,
+            "gzipBytes": 681
+          },
+          {
+            "path": "assets/StatusBadge-Ct1Yyttd.js",
+            "bytes": 646,
+            "gzipBytes": 406
+          },
+          {
+            "path": "assets/SwaggerDocsPage-BsX84vGO.js",
+            "bytes": 17629,
+            "gzipBytes": 5599
+          },
+          {
+            "path": "assets/TabList-8o_hVPMJ.js",
+            "bytes": 833,
+            "gzipBytes": 500
+          },
+          {
+            "path": "assets/TELEMETRY_POLICY_RECEIPTS-BYlMlxwJ.js",
+            "bytes": 3357,
+            "gzipBytes": 1671
+          },
+          {
+            "path": "assets/testCatalogPagination-CISUYoI-.js",
+            "bytes": 1670,
+            "gzipBytes": 669
+          },
+          {
+            "path": "assets/TestExecution-C1uJ-X5P.js",
+            "bytes": 29213,
+            "gzipBytes": 8846
+          },
+          {
+            "path": "assets/TestExecution-DSD_1JxL.js",
+            "bytes": 134900,
+            "gzipBytes": 34353
+          },
+          {
+            "path": "assets/TestExecutionScenarioEditor-Z0RfAyy2.js",
+            "bytes": 2967,
+            "gzipBytes": 1496
+          },
+          {
+            "path": "assets/TestHub-Bs2izMfd.js",
+            "bytes": 307687,
+            "gzipBytes": 75813
+          },
+          {
+            "path": "assets/testStatusUtils-p-ZKDSyN.js",
+            "bytes": 823,
+            "gzipBytes": 443
+          },
+          {
+            "path": "assets/thinkTimeConfig-hLK8W9Iq.js",
+            "bytes": 2118,
+            "gzipBytes": 837
+          },
+          {
+            "path": "assets/ThinkTimeMultiplierInput-BJ92Z1rR.js",
+            "bytes": 1765,
+            "gzipBytes": 855
+          },
+          {
+            "path": "assets/timeUtils-Df7WRUWg.js",
+            "bytes": 2607,
+            "gzipBytes": 1167
+          },
+          {
+            "path": "assets/trafficProfilePreviewModel-5QPhLZjV.js",
+            "bytes": 2097,
+            "gzipBytes": 957
+          },
+          {
+            "path": "assets/TransactionResponseTimeSLASettings-DAxxISfj.js",
+            "bytes": 9654,
+            "gzipBytes": 2269
+          },
+          {
+            "path": "assets/TransactionResponseTimeSLATable-Bzg3uvwv.js",
+            "bytes": 180953,
+            "gzipBytes": 43077
+          },
+          {
+            "path": "assets/useApi-BSoxo0c9.js",
+            "bytes": 29064,
+            "gzipBytes": 5943
+          },
+          {
+            "path": "assets/useApiGuideTopbarContribution-DXWdvvaN.js",
+            "bytes": 29180,
+            "gzipBytes": 7832
+          },
+          {
+            "path": "assets/useConfluenceApi-DqaU-AMm.js",
+            "bytes": 1381,
+            "gzipBytes": 453
+          },
+          {
+            "path": "assets/useGitHubApi-DwIhV2AL.js",
+            "bytes": 1852,
+            "gzipBytes": 743
+          },
+          {
+            "path": "assets/useLibraryPagination-CH2vEiyO.js",
+            "bytes": 1483,
+            "gzipBytes": 691
+          },
+          {
+            "path": "assets/UserSettingsPage-BMoml8jQ.js",
+            "bytes": 2674,
+            "gzipBytes": 1235
+          },
+          {
+            "path": "assets/useSystemApi-B7UzQlSA.js",
+            "bytes": 8694,
+            "gzipBytes": 2403
+          },
+          {
+            "path": "assets/useTestApi-BNdNSiJp.js",
+            "bytes": 55934,
+            "gzipBytes": 12683
+          },
+          {
+            "path": "assets/vendor-codemirror-core-s2JpMpJh.js",
+            "bytes": 392026,
+            "gzipBytes": 124114
+          },
+          {
+            "path": "assets/vendor-codemirror-languages-DDr3Xpo2.js",
+            "bytes": 231035,
+            "gzipBytes": 82404
+          },
+          {
+            "path": "assets/vendor-recharts-BVNH5pj3.js",
+            "bytes": 281119,
+            "gzipBytes": 68966
+          },
+          {
+            "path": "assets/vendor-three-B5Sef2aV.js",
+            "bytes": 530510,
+            "gzipBytes": 130679
+          },
+          {
+            "path": "assets/vendor-virtual-Dw3kycdi.js",
+            "bytes": 23302,
+            "gzipBytes": 7030
+          },
+          {
+            "path": "assets/vendor-wrUsueTb.js",
+            "bytes": 268264,
+            "gzipBytes": 89086
+          },
+          {
+            "path": "assets/vite-preload-helper-Czpn1I53.js",
+            "bytes": 1196,
+            "gzipBytes": 675
+          },
+          {
+            "path": "assets/workspace-shared-o0BAllop.js",
+            "bytes": 17578,
+            "gzipBytes": 6757
+          },
+          {
+            "path": "assets/YAMLImportChooser-ytSUPXfj.js",
+            "bytes": 2423,
+            "gzipBytes": 973
+          }
+        ],
+        "totalBytes": 7329939,
+        "totalGzipBytes": 2045677
+      },
+      ".css": {
+        "label": "CSS",
+        "maxAssetBytes": 215040,
+        "maxAssetGzipBytes": 34816,
+        "maxTotalBytes": 720896,
+        "maxTotalGzipBytes": 123904,
+        "assets": [
+          {
+            "path": "assets/ApplicationRepositoryPage-C1WLl1n0.css",
+            "bytes": 1307,
+            "gzipBytes": 493
+          },
+          {
+            "path": "assets/AuditEventTable-DROhFeSe.css",
+            "bytes": 19857,
+            "gzipBytes": 3795
+          },
+          {
+            "path": "assets/AuraOutcomeReview-UBdX_Vah.css",
+            "bytes": 1279,
+            "gzipBytes": 484
+          },
+          {
+            "path": "assets/BrowserRecorderControlPanel-BgO6GJuL.css",
+            "bytes": 25174,
+            "gzipBytes": 4493
+          },
+          {
+            "path": "assets/BrowserResourceInspector-Bh5xYEU6.css",
+            "bytes": 1866,
+            "gzipBytes": 666
+          },
+          {
+            "path": "assets/BrunoImport-B0j0fHDb.css",
+            "bytes": 20933,
+            "gzipBytes": 3792
+          },
+          {
+            "path": "assets/CloudTestParityDashboard-4r_r3ASn.css",
+            "bytes": 1764,
+            "gzipBytes": 608
+          },
+          {
+            "path": "assets/CommandCenterPrototype-BVgBZLMm.css",
+            "bytes": 50563,
+            "gzipBytes": 8118
+          },
+          {
+            "path": "assets/ConfirmDestructiveModal-CxLQQ3xI.css",
+            "bytes": 1724,
+            "gzipBytes": 616
+          },
+          {
+            "path": "assets/ConfirmRunActionModal-BX9Zdhbi.css",
+            "bytes": 509,
+            "gzipBytes": 279
+          },
+          {
+            "path": "assets/CreateTestModal-DJV6g75s.css",
+            "bytes": 9445,
+            "gzipBytes": 1938
+          },
+          {
+            "path": "assets/DashboardPage-BUJetac8.css",
+            "bytes": 34899,
+            "gzipBytes": 5932
+          },
+          {
+            "path": "assets/dropIngestFeedback-DUUA4QtW.css",
+            "bytes": 2800,
+            "gzipBytes": 953
+          },
+          {
+            "path": "assets/DurationField-B_ub1sLA.css",
+            "bytes": 1564,
+            "gzipBytes": 580
+          },
+          {
+            "path": "assets/EnterpriseArchiveImport-Biyr4fMF.css",
+            "bytes": 35138,
+            "gzipBytes": 6247
+          },
+          {
+            "path": "assets/fleetCatalogModel-w4HN7506.css",
+            "bytes": 2002,
+            "gzipBytes": 675
+          },
+          {
+            "path": "assets/goalConfigValidation-BE7PUXFe.css",
+            "bytes": 3177,
+            "gzipBytes": 785
+          },
+          {
+            "path": "assets/ImportConversionDetails-DLyZ8JSc.css",
+            "bytes": 1821,
+            "gzipBytes": 586
+          },
+          {
+            "path": "assets/ImportCoverageButton-BYNvbRJ4.css",
+            "bytes": 1050,
+            "gzipBytes": 463
+          },
+          {
+            "path": "assets/ImportDestinationFolder-CK9LkLXC.css",
+            "bytes": 1980,
+            "gzipBytes": 588
+          },
+          {
+            "path": "assets/ImportDropzone-CG8q9bYn.css",
+            "bytes": 1101,
+            "gzipBytes": 464
+          },
+          {
+            "path": "assets/ImportIssueSeverityTag-BiEGrRpe.css",
+            "bytes": 803,
+            "gzipBytes": 357
+          },
+          {
+            "path": "assets/ImportReviewTabs--_VrLDSs.css",
+            "bytes": 1487,
+            "gzipBytes": 574
+          },
+          {
+            "path": "assets/ImportReviewWorkspace-D9-buGdT.css",
+            "bytes": 6665,
+            "gzipBytes": 1481
+          },
+          {
+            "path": "assets/ImportWorkflowGuide-BJLDAho0.css",
+            "bytes": 815,
+            "gzipBytes": 368
+          },
+          {
+            "path": "assets/index-DThayXjV.css",
+            "bytes": 204677,
+            "gzipBytes": 33191
+          },
+          {
+            "path": "assets/IssueDetailsDialog-DQB9nOsl.css",
+            "bytes": 1924,
+            "gzipBytes": 747
+          },
+          {
+            "path": "assets/MonitoringPage-CStp8bo8.css",
+            "bytes": 4799,
+            "gzipBytes": 1258
+          },
+          {
+            "path": "assets/NewTestPage-BNQrlDwi.css",
+            "bytes": 4119,
+            "gzipBytes": 1036
+          },
+          {
+            "path": "assets/ObjectHistory-D9eJ_IIg.css",
+            "bytes": 838,
+            "gzipBytes": 379
+          },
+          {
+            "path": "assets/ParameterizationReview-DpuvOWBY.css",
+            "bytes": 4466,
+            "gzipBytes": 1084
+          },
+          {
+            "path": "assets/parityPanels-CUViZcrB.css",
+            "bytes": 8173,
+            "gzipBytes": 1901
+          },
+          {
+            "path": "assets/protectedImportSession-_V-PzXwU.css",
+            "bytes": 12944,
+            "gzipBytes": 2698
+          },
+          {
+            "path": "assets/ProtocolAssetImport-CFaFnO7b.css",
+            "bytes": 1665,
+            "gzipBytes": 579
+          },
+          {
+            "path": "assets/RecordingEnvironmentReview-CEhy5ApB.css",
+            "bytes": 718,
+            "gzipBytes": 326
+          },
+          {
+            "path": "assets/ReplayPreflightCard-D0yVG4Nf.css",
+            "bytes": 2155,
+            "gzipBytes": 690
+          },
+          {
+            "path": "assets/ResourceSnapshotList-ChyqeYnU.css",
+            "bytes": 4709,
+            "gzipBytes": 1282
+          },
+          {
+            "path": "assets/ResultsPage-DgC0LnIv.css",
+            "bytes": 1158,
+            "gzipBytes": 482
+          },
+          {
+            "path": "assets/RunMonitoring-vXAl1K3b.css",
+            "bytes": 1863,
+            "gzipBytes": 388
+          },
+          {
+            "path": "assets/RunReportPage-BBAvd8_A.css",
+            "bytes": 21861,
+            "gzipBytes": 4265
+          },
+          {
+            "path": "assets/SalesforceCorrelationReview-BKHifG9M.css",
+            "bytes": 820,
+            "gzipBytes": 315
+          },
+          {
+            "path": "assets/SampleScriptImport-Bd-FtVc2.css",
+            "bytes": 12293,
+            "gzipBytes": 2199
+          },
+          {
+            "path": "assets/ScriptEditor-C0zCPHev.css",
+            "bytes": 189359,
+            "gzipBytes": 28296
+          },
+          {
+            "path": "assets/ScriptImportReview-BbAOD1v2.css",
+            "bytes": 2486,
+            "gzipBytes": 703
+          },
+          {
+            "path": "assets/ScriptImportReview-D2SjkAKU.css",
+            "bytes": 13942,
+            "gzipBytes": 2485
+          },
+          {
+            "path": "assets/ScriptSecretBindingsDialog-CQsAlfP9.css",
+            "bytes": 2037,
+            "gzipBytes": 713
+          },
+          {
+            "path": "assets/ScriptsPage-BdLCWmJ_.css",
+            "bytes": 530,
+            "gzipBytes": 269
+          },
+          {
+            "path": "assets/SeriesChartExport-Do8wDXaB.css",
+            "bytes": 349,
+            "gzipBytes": 236
+          },
+          {
+            "path": "assets/SettingsPage-h8xGlPcr.css",
+            "bytes": 1348,
+            "gzipBytes": 500
+          },
+          {
+            "path": "assets/SourceCodeViewer-ItWiInDB.css",
+            "bytes": 366,
+            "gzipBytes": 201
+          },
+          {
+            "path": "assets/SourceMappingReview-OkUiA-bE.css",
+            "bytes": 13844,
+            "gzipBytes": 2895
+          },
+          {
+            "path": "assets/StatusBadge-B490_RqN.css",
+            "bytes": 608,
+            "gzipBytes": 306
+          },
+          {
+            "path": "assets/TestExecution-ClZvYj3Z.css",
+            "bytes": 3331,
+            "gzipBytes": 943
+          },
+          {
+            "path": "assets/TestExecution-D6rN6Udo.css",
+            "bytes": 84611,
+            "gzipBytes": 13093
+          },
+          {
+            "path": "assets/TestHub-DLU7hNkh.css",
+            "bytes": 4537,
+            "gzipBytes": 1261
+          },
+          {
+            "path": "assets/TestHub-QIM6J8jd.css",
+            "bytes": 45990,
+            "gzipBytes": 7199
+          },
+          {
+            "path": "assets/TransactionResponseTimeSLATable-D7oEAnzg.css",
+            "bytes": 10633,
+            "gzipBytes": 2627
+          },
+          {
+            "path": "assets/useApiGuideTopbarContribution-DT3vxhYt.css",
+            "bytes": 6284,
+            "gzipBytes": 1681
+          },
+          {
+            "path": "assets/useLibraryPagination-B1Y_Bhrs.css",
+            "bytes": 499,
+            "gzipBytes": 281
+          },
+          {
+            "path": "assets/workspace-shared-4nFlWYWF.css",
+            "bytes": 12186,
+            "gzipBytes": 2761
+          }
+        ],
+        "totalBytes": 911845,
+        "totalGzipBytes": 164605
+      }
+    },
+    "routes": [
+      {
+        "id": "initial-shell",
+        "label": "Initial shell",
+        "entryKey": "index.html",
+        "maxGzipBytes": 189440,
+        "forbiddenAssets": [
+          "codemirror",
+          "vendor-three",
+          "ScriptEditor"
+        ],
+        "assets": [
+          {
+            "path": "assets/index-Ct_UJeBv.js",
+            "gzipBytes": 62382
+          },
+          {
+            "path": "assets/rolldown-runtime-QTnfLwEv.js",
+            "gzipBytes": 422
+          },
+          {
+            "path": "assets/vendor-wrUsueTb.js",
+            "gzipBytes": 89086
+          },
+          {
+            "path": "assets/accessDestinations-DlVocFYc.js",
+            "gzipBytes": 267
+          },
+          {
+            "path": "assets/apiGuideNavigation-CewZNyd0.js",
+            "gzipBytes": 352
+          },
+          {
+            "path": "assets/workspace-shared-o0BAllop.js",
+            "gzipBytes": 6757
+          },
+          {
+            "path": "assets/useApi-BSoxo0c9.js",
+            "gzipBytes": 5943
+          },
+          {
+            "path": "assets/useTestApi-BNdNSiJp.js",
+            "gzipBytes": 12683
+          },
+          {
+            "path": "assets/useSystemApi-B7UzQlSA.js",
+            "gzipBytes": 2403
+          },
+          {
+            "path": "assets/errorUtils-CAMAVZM4.js",
+            "gzipBytes": 3673
+          },
+          {
+            "path": "assets/testStatusUtils-p-ZKDSyN.js",
+            "gzipBytes": 443
+          },
+          {
+            "path": "assets/vite-preload-helper-Czpn1I53.js",
+            "gzipBytes": 675
+          }
+        ],
+        "totalGzipBytes": 185086,
+        "entryFile": null
+      },
+      {
+        "id": "scripts-library",
+        "label": "Scripts library route",
+        "entryFile": "ScriptsPage-.*\\.js$",
+        "maxGzipBytes": 230400,
+        "forbiddenAssets": [
+          "codemirror",
+          "ScriptEditor"
+        ],
+        "entryKey": "src/components/ScriptsPage.tsx",
+        "assets": [
+          {
+            "path": "assets/ScriptsPage-FiWtSJ1V.js",
+            "gzipBytes": 35383
+          },
+          {
+            "path": "assets/rolldown-runtime-QTnfLwEv.js",
+            "gzipBytes": 422
+          },
+          {
+            "path": "assets/vendor-wrUsueTb.js",
+            "gzipBytes": 89086
+          },
+          {
+            "path": "assets/workspace-shared-o0BAllop.js",
+            "gzipBytes": 6757
+          },
+          {
+            "path": "assets/useApi-BSoxo0c9.js",
+            "gzipBytes": 5943
+          },
+          {
+            "path": "assets/useTestApi-BNdNSiJp.js",
+            "gzipBytes": 12683
+          },
+          {
+            "path": "assets/useSystemApi-B7UzQlSA.js",
+            "gzipBytes": 2403
+          },
+          {
+            "path": "assets/errorUtils-CAMAVZM4.js",
+            "gzipBytes": 3673
+          },
+          {
+            "path": "assets/vite-preload-helper-Czpn1I53.js",
+            "gzipBytes": 675
+          },
+          {
+            "path": "assets/TabList-8o_hVPMJ.js",
+            "gzipBytes": 500
+          },
+          {
+            "path": "assets/confirmAction-BTa2-TxZ.js",
+            "gzipBytes": 780
+          },
+          {
+            "path": "assets/SortIndicator-D2hBpxoz.js",
+            "gzipBytes": 222
+          },
+          {
+            "path": "assets/ObjectHistory-EAs1lC4o.js",
+            "gzipBytes": 1569
+          },
+          {
+            "path": "assets/sourceSecretSession-BnmeYFpE.js",
+            "gzipBytes": 719
+          },
+          {
+            "path": "assets/secretBindingUtils-B0n1oK74.js",
+            "gzipBytes": 874
+          },
+          {
+            "path": "assets/brunoFolderOptions-CoUowwa5.js",
+            "gzipBytes": 380
+          },
+          {
+            "path": "assets/PageViewToggle-D9_VxmQg.js",
+            "gzipBytes": 421
+          },
+          {
+            "path": "assets/timeUtils-Df7WRUWg.js",
+            "gzipBytes": 1167
+          },
+          {
+            "path": "assets/useLibraryPagination-CH2vEiyO.js",
+            "gzipBytes": 691
+          },
+          {
+            "path": "assets/testCatalogPagination-CISUYoI-.js",
+            "gzipBytes": 669
+          },
+          {
+            "path": "assets/settingsSectionLayout-P5B6lYMx.js",
+            "gzipBytes": 1189
+          },
+          {
+            "path": "assets/projectSecretsNavigation-Q6D7LqDx.js",
+            "gzipBytes": 237
+          },
+          {
+            "path": "assets/useGitHubApi-DwIhV2AL.js",
+            "gzipBytes": 743
+          },
+          {
+            "path": "assets/ObjectArchiveControls-DDV9LZUv.js",
+            "gzipBytes": 595
+          },
+          {
+            "path": "assets/boundedAllSettled-BizE4W-U.js",
+            "gzipBytes": 4543
+          },
+          {
+            "path": "assets/index-Ct_UJeBv.js",
+            "gzipBytes": 62382
+          },
+          {
+            "path": "assets/accessDestinations-DlVocFYc.js",
+            "gzipBytes": 267
+          },
+          {
+            "path": "assets/apiGuideNavigation-CewZNyd0.js",
+            "gzipBytes": 352
+          },
+          {
+            "path": "assets/testStatusUtils-p-ZKDSyN.js",
+            "gzipBytes": 443
+          },
+          {
+            "path": "assets/LibraryToolbar-hfVY5nmN.js",
+            "gzipBytes": 298
+          },
+          {
+            "path": "assets/libraryFederationUtils-CWH23TFG.js",
+            "gzipBytes": 587
+          },
+          {
+            "path": "assets/scriptDraftFactories-Ba-auNtB.js",
+            "gzipBytes": 1777
+          },
+          {
+            "path": "assets/ScriptSecretBindingsDialog-D-QFaMf3.js",
+            "gzipBytes": 5007
+          },
+          {
+            "path": "assets/SecretReferenceValueControl-MSQhO6bX.js",
+            "gzipBytes": 620
+          }
+        ],
+        "totalGzipBytes": 244057
+      },
+      {
+        "id": "test-execution",
+        "label": "Test execution route",
+        "entryKey": "src/components/TestExecution.tsx",
+        "maxGzipBytes": 389120,
+        "forbiddenAssets": [
+          "codemirror",
+          "vendor-three",
+          "LoadImpact3DHeatmap"
+        ],
+        "assets": [
+          {
+            "path": "assets/TestExecution-DSD_1JxL.js",
+            "gzipBytes": 34353
+          },
+          {
+            "path": "assets/rolldown-runtime-QTnfLwEv.js",
+            "gzipBytes": 422
+          },
+          {
+            "path": "assets/vendor-wrUsueTb.js",
+            "gzipBytes": 89086
+          },
+          {
+            "path": "assets/workspace-shared-o0BAllop.js",
+            "gzipBytes": 6757
+          },
+          {
+            "path": "assets/useApi-BSoxo0c9.js",
+            "gzipBytes": 5943
+          },
+          {
+            "path": "assets/useTestApi-BNdNSiJp.js",
+            "gzipBytes": 12683
+          },
+          {
+            "path": "assets/useSystemApi-B7UzQlSA.js",
+            "gzipBytes": 2403
+          },
+          {
+            "path": "assets/errorUtils-CAMAVZM4.js",
+            "gzipBytes": 3673
+          },
+          {
+            "path": "assets/index-Ct_UJeBv.js",
+            "gzipBytes": 62382
+          },
+          {
+            "path": "assets/accessDestinations-DlVocFYc.js",
+            "gzipBytes": 267
+          },
+          {
+            "path": "assets/apiGuideNavigation-CewZNyd0.js",
+            "gzipBytes": 352
+          },
+          {
+            "path": "assets/testStatusUtils-p-ZKDSyN.js",
+            "gzipBytes": 443
+          },
+          {
+            "path": "assets/vite-preload-helper-Czpn1I53.js",
+            "gzipBytes": 675
+          },
+          {
+            "path": "assets/TabList-8o_hVPMJ.js",
+            "gzipBytes": 500
+          },
+          {
+            "path": "assets/ObjectHistory-EAs1lC4o.js",
+            "gzipBytes": 1569
+          },
+          {
+            "path": "assets/SeriesChartExport-ZaOBzVRq.js",
+            "gzipBytes": 2291
+          },
+          {
+            "path": "assets/ConfirmRunActionModal-CzGkAaau.js",
+            "gzipBytes": 20789
+          },
+          {
+            "path": "assets/vendor-recharts-BVNH5pj3.js",
+            "gzipBytes": 68966
+          },
+          {
+            "path": "assets/loadImpactModel-D5Ccnrne.js",
+            "gzipBytes": 1821
+          },
+          {
+            "path": "assets/TestExecution-C1uJ-X5P.js",
+            "gzipBytes": 8846
+          },
+          {
+            "path": "assets/confirmAction-BTa2-TxZ.js",
+            "gzipBytes": 780
+          },
+          {
+            "path": "assets/MarkdownRenderer-DgstTJdj.js",
+            "gzipBytes": 1428
+          },
+          {
+            "path": "assets/repositoryGuideMarkdown-DcMa8ib6.js",
+            "gzipBytes": 1032
+          },
+          {
+            "path": "assets/archiveHistorySampling-5QnVuSSo.js",
+            "gzipBytes": 45
+          },
+          {
+            "path": "assets/PrometheusPanelCard-Cqdrdj3O.js",
+            "gzipBytes": 11259
+          },
+          {
+            "path": "assets/chartTooltipTheme-BUAhhHiK.js",
+            "gzipBytes": 172
+          },
+          {
+            "path": "assets/ResourceSnapshotList-7mkoTByo.js",
+            "gzipBytes": 5810
+          },
+          {
+            "path": "assets/timeUtils-Df7WRUWg.js",
+            "gzipBytes": 1167
+          },
+          {
+            "path": "assets/observerGroupModel-IGUhoNKX.js",
+            "gzipBytes": 753
+          },
+          {
+            "path": "assets/DurationField-BiAKzCfJ.js",
+            "gzipBytes": 916
+          },
+          {
+            "path": "assets/RunMonitoring-ClQp90o5.js",
+            "gzipBytes": 19713
+          },
+          {
+            "path": "assets/prometheusConnectionModel-DXHZzmvh.js",
+            "gzipBytes": 1562
+          },
+          {
+            "path": "assets/monitorProviderModel-Bqor7OQj.js",
+            "gzipBytes": 651
+          },
+          {
+            "path": "assets/monitorTimelineModel-gjPKnqqP.js",
+            "gzipBytes": 1023
+          },
+          {
+            "path": "assets/PrometheusRunEvidence-CnXi7kv_.js",
+            "gzipBytes": 4007
+          },
+          {
+            "path": "assets/PrometheusSourceFields-Bk6cFc6L.js",
+            "gzipBytes": 6553
+          },
+          {
+            "path": "assets/newTestRunModel-BjvTMp0G.js",
+            "gzipBytes": 5744
+          },
+          {
+            "path": "assets/thinkTimeConfig-hLK8W9Iq.js",
+            "gzipBytes": 837
+          },
+          {
+            "path": "assets/trafficProfilePreviewModel-5QPhLZjV.js",
+            "gzipBytes": 957
+          },
+          {
+            "path": "assets/BrowserBreakdownChart-wMgQ2Zj_.js",
+            "gzipBytes": 4312
+          },
+          {
+            "path": "assets/TransactionResponseTimeSLATable-Bzg3uvwv.js",
+            "gzipBytes": 43077
+          },
+          {
+            "path": "assets/SortIndicator-D2hBpxoz.js",
+            "gzipBytes": 222
+          },
+          {
+            "path": "assets/DesktopApiResourceLink-Cm58j_l8.js",
+            "gzipBytes": 1278
+          },
+          {
+            "path": "assets/browserRuntimeSummary-sXEBIPbd.js",
+            "gzipBytes": 237
+          },
+          {
+            "path": "assets/reportPresentation-BdFNY_WH.js",
+            "gzipBytes": 484
+          },
+          {
+            "path": "assets/soapFaultUtils-DoAHnnnm.js",
+            "gzipBytes": 299
+          }
+        ],
+        "totalGzipBytes": 438539,
+        "entryFile": null
+      }
+    ],
+    "violations": [
+      "JavaScript total is 6.99 MiB (limit 5.30 MiB)",
+      "JavaScript total is 1.95 MiB gzip (limit 1.43 MiB)",
+      "CSS total is 890.47 KiB (limit 704.00 KiB)",
+      "CSS total is 160.75 KiB gzip (limit 121.00 KiB)",
+      "Scripts library route static JavaScript is 238.34 KiB gzip (limit 225.00 KiB)",
+      "Test execution route static JavaScript is 428.26 KiB gzip (limit 380.00 KiB)"
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "native-har-precreate-bounds-fixed-2",
+  "argv": [
+    "go",
+    "test",
+    "./pkg/protocol/browser",
+    "-run",
+    "TestHAROwnership|TestFinalizeHARCapture|TestApplyHARCapture|TestDiscardHARWorking|TestHARMonitor|TestClosePreserves|TestRuntimeHARRetention|TestBrowserContextOptions|TestBrowserClose",
+    "-short",
+    "-count=2"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "exit_code": 0,
+  "elapsed_seconds": 4.029,
+  "recorded_at_utc": "2026-10-05T21:18:05.724052+00:00",
+  "log_path": "/private/tmp/native-har-precreate-bounds-fixed-2.log",
+  "log_sha256": "46cc5df8c68d8f31185bad9b8e43b9fa36fb0147bc5d9690a7e7df291c8c46c0",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4024,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "raw_receipt_sha256": "e84fe5ec4f06a64ee9bc62aad50ec5aae1267c8ee9d979f67d44d24cff2cb0c1",
+  "repository_inventory_before_sha256": "2d06ab0460d7c255c377f86b23f2b1e9b31071f78fdc17ba460ddf3dfa2eb4c2",
+  "repository_inventory_after_sha256": "2d06ab0460d7c255c377f86b23f2b1e9b31071f78fdc17ba460ddf3dfa2eb4c2",
+  "qualification_disposition": "Historical green/check superseded by subsequent source changes unless named as final candidate qualification in README.",
+  "receipt_scope_note": "Compact durable receipt retains original private receipt SHA, source count/stability and inventory digests. Full 4,000+ repository inventories remain in the named private raw receipt; direct review inventories are copied separately. Neither inventory includes complete module-cache/native dependencies.",
+  "outcome": "green-scoped"
+}

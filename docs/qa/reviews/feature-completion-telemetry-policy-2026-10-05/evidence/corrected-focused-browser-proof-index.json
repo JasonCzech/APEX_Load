@@ -1,0 +1,74 @@
+{
+  "captured_at": "2026-10-05T11:53:04.532665+00:00",
+  "scope": "exact corrected focused controller/Chromium policy correctness and UI-only legacy/malformed/digest/zero-time refusal; no wall-time/clock/loss/CI qualification",
+  "profiles": [
+    {
+      "profile": "dev-admin",
+      "stats": {
+        "startTime": "2026-10-05T11:49:01.256Z",
+        "duration": 6485.2970000000005,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "gate_raw_sha256": "20c1745ccd98a2e4743b5aa6a1024b91636eeca33fb9dfb2f41d46f00eb894a1",
+      "source_unchanged": true
+    },
+    {
+      "profile": "local-auth",
+      "stats": {
+        "startTime": "2026-10-05T11:50:37.697Z",
+        "duration": 20503.92,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "gate_raw_sha256": "b62b3716ca8d6c98d66695f150d69c15970ed2d698d99c7840d6d122b055ac74",
+      "source_unchanged": true
+    }
+  ],
+  "files": [
+    {
+      "path": "corrected-focused-browser-proof/dev-admin-telemetry-policy-live-geometry.json",
+      "bytes": 160,
+      "sha256": "db46755bcbbd93c35cd29c096b22d3a5dd000bc6918db2b9268e00f03d6b20f9"
+    },
+    {
+      "path": "corrected-focused-browser-proof/dev-admin-actual-immutable-policy-receipt.json",
+      "bytes": 953,
+      "sha256": "0fe38f372893616904579433a7d78fcf7c37d767c49a75091217c79590871908"
+    },
+    {
+      "path": "corrected-focused-browser-proof/dev-admin-telemetry-policy-archive.png",
+      "bytes": 193329,
+      "sha256": "e7fb5f258ace0d83e27a72166e90bb833314b97c9d927d72e66698be1869ef32"
+    },
+    {
+      "path": "corrected-focused-browser-proof/dev-admin-telemetry-policy-live.png",
+      "bytes": 186886,
+      "sha256": "1d1588bde616d968478a966f417ed37b1ba8a18ab3eb057c259b533656354e39"
+    },
+    {
+      "path": "corrected-focused-browser-proof/local-auth-telemetry-policy-live-geometry.json",
+      "bytes": 160,
+      "sha256": "db46755bcbbd93c35cd29c096b22d3a5dd000bc6918db2b9268e00f03d6b20f9"
+    },
+    {
+      "path": "corrected-focused-browser-proof/local-auth-actual-immutable-policy-receipt.json",
+      "bytes": 953,
+      "sha256": "ffba3e1281f95d8c7e416f2b0ddbfb5005929057a0dd734e14552c6d81cb716c"
+    },
+    {
+      "path": "corrected-focused-browser-proof/local-auth-telemetry-policy-archive.png",
+      "bytes": 173927,
+      "sha256": "8b0bf1699ac508c1b7c9ac48f7cde721ffa96b5d38c38ae2670d2a8bd23424e4"
+    },
+    {
+      "path": "corrected-focused-browser-proof/local-auth-telemetry-policy-live.png",
+      "bytes": 187334,
+      "sha256": "f2ac6fe4862a3010a2ce3ea97dadd5ac6d64b9c404eb80951e601ea4b1716c0d"
+    }
+  ]
+}

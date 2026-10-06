@@ -1,0 +1,44 @@
+--- FAIL: TestBrowserResourceFinalAuthServiceAccountParityAndRevocation (0.20s)
+    --- FAIL: TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/key_rotation (0.04s)
+        archive_browser_resource_auth_test.go:117: current authorized identity was refused
+    --- FAIL: TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/read_scope (0.04s)
+        archive_browser_resource_auth_test.go:117: current authorized identity was refused
+    --- FAIL: TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/project_role (0.04s)
+        archive_browser_resource_auth_test.go:117: current authorized identity was refused
+    --- FAIL: TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/inactive (0.04s)
+        archive_browser_resource_auth_test.go:117: current authorized identity was refused
+    --- FAIL: TestBrowserResourceFinalAuthServiceAccountParityAndRevocation/expiry (0.04s)
+        archive_browser_resource_auth_test.go:117: current authorized identity was refused
+2026/10/05 11:35:54 ERROR internal server error ref=3006aa81f52a3928 status=503 detail="browser resource archive authority is unavailable"
+--- FAIL: TestBrowserResourceFinalAuthPinsPresentedKeyAcrossMiddlewareRotation (0.04s)
+    archive_browser_resource_auth_test.go:298: middleware boundary was not exercised: entered=false status=503
+2026/10/05 11:35:54 ERROR internal server error ref=5f70ca11fe123dcd status=503 detail="browser resource archive authority is unavailable"
+--- FAIL: TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware (0.04s)
+    --- FAIL: TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware/results_read (0.00s)
+        archive_browser_resource_auth_test.go:359: middleware/final scope parity changed: status503 enteredfalse
+    --- FAIL: TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware/broad_read (0.00s)
+        archive_browser_resource_auth_test.go:336: constraint failed: UNIQUE constraint failed: service_accounts.key_hash (2067)
+    --- FAIL: TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware/tests_run (0.00s)
+        archive_browser_resource_auth_test.go:336: constraint failed: UNIQUE constraint failed: service_accounts.key_hash (2067)
+    --- FAIL: TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware/revoked_after_middleware (0.00s)
+        archive_browser_resource_auth_test.go:336: constraint failed: UNIQUE constraint failed: service_accounts.key_hash (2067)
+--- FAIL: TestBrowserResourceHandlerFinalProjectIncarnationAndAuthorizationFences (0.21s)
+    --- FAIL: TestBrowserResourceHandlerFinalProjectIncarnationAndAuthorizationFences/project (0.04s)
+        archive_browser_resource_handler_test.go:119: test "resource-run" belongs to project "resource-custom-project", not "unassigned"
+--- FAIL: TestBrowserResourceLegacyPhysicalDictionaryAndMillisecondLimit (0.00s)
+    archive_browser_resource_parquet_test.go:151: browser resource source is malformed
+--- FAIL: TestBrowserResourceOpenAPIExactTypedPageAndApprovedQueryContract (0.52s)
+    openapi_browser_resource_test.go:25: page shape/presence became opaque or nullable
+2026/10/05 11:35:55 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 11:35:55 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 11:35:55 INFO http request method=POST path=/api/v1/auth/login status=200 duration_ms=49 remote=192.0.2.10:1234
+2026/10/05 11:35:55 INFO http request method=POST path=/api/v1/auth/login status=200 duration_ms=49 remote=192.0.2.10:1234
+2026/10/05 11:35:55 INFO http request method=POST path=/api/v1/auth/logout status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/05 11:35:55 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 11:35:55 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/api	4.179s
+ok  	github.com/jasonczech/apexload/pkg/storage	0.996s
+ok  	github.com/jasonczech/apexload/pkg/distributed/generatorrpc	0.472s
+ok  	github.com/jasonczech/apexload/cmd/apexctl	0.880s
+FAIL

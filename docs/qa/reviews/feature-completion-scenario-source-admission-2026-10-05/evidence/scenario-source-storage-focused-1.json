@@ -1,0 +1,86 @@
+{
+  "scope": "private source-aware scenario admission development qualification; public unsupported guards unchanged and composed acceptance remains pending",
+  "command": [
+    "go",
+    "test",
+    "-json",
+    "./pkg/storage",
+    "-run",
+    "^(TestLibraryImportPublicationProjection.*|TestScenarioSource.*)$",
+    "-count=1",
+    "-timeout=10m"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner",
+  "started_at": "2026-10-05T21:55:09.046677+00:00",
+  "finished_at": "2026-10-05T21:56:13.392910+00:00",
+  "duration_seconds": 64.346,
+  "exit_code": 1,
+  "status": "failed",
+  "raw_log": "scenario-source-storage-focused-1.stdout.txt",
+  "raw_log_bytes": 33405,
+  "raw_log_sha256": "7c0ff90cd8142731f531f0155bc30f0f30a12a6227a1473986cce24e57d02b25",
+  "source_before": {
+    "file": "scenario-source-go-inventory-2012f9bb725e774d2aa6b6a67a298530eb55836d35dde576fa2935a5f379022c.json",
+    "sha256": "2012f9bb725e774d2aa6b6a67a298530eb55836d35dde576fa2935a5f379022c",
+    "file_count": 4021
+  },
+  "source_after": {
+    "file": "scenario-source-go-inventory-2012f9bb725e774d2aa6b6a67a298530eb55836d35dde576fa2935a5f379022c.json",
+    "sha256": "2012f9bb725e774d2aa6b6a67a298530eb55836d35dde576fa2935a5f379022c",
+    "file_count": 4021
+  },
+  "source_changed": false,
+  "generated_before": [
+    {
+      "path": "docs/swagger.yaml",
+      "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+    },
+    {
+      "path": "docs/api-endpoint-catalog.json",
+      "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+    },
+    {
+      "path": "pkg/api/apidocs/swagger.yaml",
+      "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+    },
+    {
+      "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+      "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+    },
+    {
+      "path": "dashboard/src/types/generated/openapi.ts",
+      "sha256": "f5c1608228714cb60a440ab39685ade9249ebf24cad430c82df76a74337a0ed9"
+    }
+  ],
+  "generated_after": [
+    {
+      "path": "docs/swagger.yaml",
+      "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+    },
+    {
+      "path": "docs/api-endpoint-catalog.json",
+      "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+    },
+    {
+      "path": "pkg/api/apidocs/swagger.yaml",
+      "sha256": "6570fa4298698c88dfeef6b5ca2f2ab78048215fb6e96f4c3e88774d1c95a01f"
+    },
+    {
+      "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+      "sha256": "41068fa0b3d48329281fcb3962a8146e901c0a961e0ceedfe4428f31d770e2e7"
+    },
+    {
+      "path": "dashboard/src/types/generated/openapi.ts",
+      "sha256": "f5c1608228714cb60a440ab39685ade9249ebf24cad430c82df76a74337a0ed9"
+    }
+  ],
+  "helper_sha256": "19ae25a993d78fd2bd2a4682ed735ef1d55b31b115c273db69ebe59be9ae91a1",
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "2GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "NODE_OPTIONS": "--max-old-space-size=2048"
+  }
+}

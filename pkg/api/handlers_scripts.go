@@ -411,12 +411,13 @@ func (s *Server) handleDownloadScript(w http.ResponseWriter, r *http.Request) {
 // Updates an existing script in-place.
 func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	stored, ok := s.runner.GetScript(id)
-	if !ok || stored == nil {
-		writeError(w, http.StatusNotFound, "script not found")
+	stored, supported, admitted := s.loadScriptAuthoringRequest(w, r, id)
+	if !admitted {
 		return
 	}
-	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+	id = stored.ID
+	expected, mode, admitted := s.admitScriptSavePrecondition(w, r, stored, supported)
+	if !admitted {
 		return
 	}
 
@@ -484,20 +485,51 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, ok, err := s.runner.UpdateScriptDurableInProject(id, script, authorizedProjectOr(r, stored.ProjectID))
-	if err != nil {
-		if errors.Is(err, errScriptConcurrentChange) {
-			writeError(w, http.StatusConflict, err.Error())
+	details := map[string]any{"name": disclosureSafeScriptName(script.Name, script), "folder_id": script.FolderID, "save_mode": mode}
+	var operationID string
+	var err error
+	if mode == "legacy_unconditioned" && s.store != nil {
+		operationID, err = s.beginRequiredAuditOperation(r, "script.update", "script", stored.ID, stored.ProjectID, details)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "script compatibility audit unavailable; no save was attempted")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to update script: "+err.Error())
+	}
+	var updated *StoredScript
+	var ok bool
+	if expected != nil {
+		updated, ok, err = s.runner.UpdateScriptAuthoringDurable(id, script, *expected)
+	} else {
+		updated, ok, err = s.runner.UpdateScriptDurableInProject(id, script, authorizedProjectOr(r, stored.ProjectID))
+	}
+	if operationID != "" {
+		status, outcome := "failure", "unknown"
+		if err == nil && ok {
+			status, outcome = "success", "committed"
+		} else if err == nil || errors.Is(err, storage.ErrScriptAuthoringConflict) || errors.Is(err, storage.ErrScriptAuthoringPreconditionRequired) || errors.Is(err, storage.ErrScriptAuthoringNotFound) || errors.Is(err, storage.ErrScriptAuthoringInvalidRevision) {
+			outcome = "not_committed"
+		}
+		if auditErr := s.completeRequiredAuditOperation(r, operationID, "script.update", status, outcome, "script", stored.ID, stored.ProjectID, details); auditErr != nil {
+			writeScriptAuthoringSaveOutcomeUnavailable(w, false)
+			return
+		}
+		if outcome == "unknown" {
+			writeScriptAuthoringSaveOutcomeUnavailable(w, true)
+			return
+		}
+	}
+	if err != nil {
+		writeScriptAuthoringMutationError(w, err)
 		return
 	}
 	if !ok {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
-	s.recordAuditEvent(r, "script.update", "success", "script", updated.ID, updated.ProjectID, map[string]any{"name": disclosureSafeScriptName(updated.Name, updated.Script), "folder_id": updated.FolderID})
+	if operationID == "" {
+		s.recordAuditEvent(r, "script.update", "success", "script", updated.ID, updated.ProjectID, details)
+	}
+	w.Header().Set("X-APEX-Script-Save-Mode", mode)
 
 	if !s.scriptLibraryAssignments(w, []*StoredScript{updated}) {
 		return

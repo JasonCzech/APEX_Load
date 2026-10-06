@@ -1,0 +1,18 @@
+{
+  "scope": "Preserved interruption observation, not a race acceptance result",
+  "recorded_at": "2026-10-05T18:32:55.880760+00:00",
+  "prior_exec_session_id": 70722,
+  "session_recovery": "write_stdin reported Unknown process id 70722",
+  "owned_helper_process_observed": false,
+  "status": "interrupted-not-acceptance",
+  "exit_code": null,
+  "duration_seconds": null,
+  "command": null,
+  "command_unknown_reason": "The original interrupted invocation was not available to this resumed agent; no command or exit result is invented.",
+  "raw_log": "foundation-policy-api-race-1.stdout.txt",
+  "raw_log_bytes": 0,
+  "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "raw_log_mtime_utc": "2026-10-05T18:14:19.104963+00:00",
+  "source_mutation": false,
+  "next_gate_label": "foundation-policy-api-race-2"
+}

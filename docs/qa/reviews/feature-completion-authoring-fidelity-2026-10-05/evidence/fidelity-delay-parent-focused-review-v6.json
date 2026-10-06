@@ -1,0 +1,26 @@
+{
+  "schema": "apexload.authoring-delay-parent-focused-review.v1",
+  "reviewed_utc": "2026-10-05T20:34:24.801571+00:00",
+  "source_inventory_sha256": "881f11df99a5c8c7576fc10a2d40401e4389e85a0b5a6ce7c8aa6df338eb89bf",
+  "candidate_and_dependency_inputs": 62,
+  "candidate_inputs_match_after_review": true,
+  "reviewed_incremental_paths": [
+    "pkg/api/testcreation.go",
+    "pkg/api/managed_test_build_snapshot_test.go",
+    "pkg/api/managed_test_build_fence_test.go",
+    "pkg/api/authoring_fidelity_regression_test.go",
+    "pkg/api/authoring_fidelity_lifecycle_test.go",
+    "docs/guides/AUTHORING_SCENARIO_FIDELITY.md"
+  ],
+  "decisions": [
+    "Preserve positive duration and iteration delays; generic iteration validator equals HEAD.",
+    "Canonical 0s requires a privately supplied actual admitted source with matching project, identity, QUEUED/unstarted/unended state and matching supported canonical mode.",
+    "Ordinary/scenario wrappers never admit zero based only on client source ID.",
+    "EndedAt and canonical completion mode participate in existing final admission fingerprints and lightweight clones.",
+    "Required runtime feature snapshots retain full deterministic feature contract while dropping executable DSL; real attached scripts recompute.",
+    "Actual compiler/reopen and final reference-allocation barrier tests check refusal/no copy/source preservation.",
+    "Durable duration spelling/default mode normalization is compared semantically, with exact empty iteration duration retained."
+  ],
+  "findings": [],
+  "limits": "Focused review of the incremental backend admission/compatibility correction; broader frontend/source review and real current execution gates have separately retained receipts. No full program completion or target execution claim."
+}

@@ -1,0 +1,65 @@
+{
+  "scope": "Portable helper qualification and confirmed existing RCA adapter plan; no engine adoption/runtime wiring",
+  "files": [
+    {
+      "path": "candidate-inventory.json",
+      "bytes": 4064,
+      "sha256": "5975b3b01948a1308b3ccb27dddba07b3f299bf1ec05c63b58394696fc9e02b1"
+    },
+    {
+      "path": "candidate-patch-retention.json",
+      "bytes": 386,
+      "sha256": "988469c7cb1d402d62d0d4b275c4d60ccedf02bfc0002a2dab89661178ba6a51"
+    },
+    {
+      "path": "candidate.patch.gz",
+      "bytes": 8101,
+      "sha256": "acec5dd3ed7c892b0d8f634ea164e58c00c7341a4f19739181b90771aef027b6"
+    },
+    {
+      "path": "identity-docs-and-diff-check-1.json",
+      "bytes": 1828,
+      "sha256": "6761434dbd812f05db2b40a0c12bea9c1b0ed49bc8a64a8aee4a4d4bddc86b18"
+    },
+    {
+      "path": "identity-docs-and-diff-check-1.stdout.txt",
+      "bytes": 59,
+      "sha256": "3422c1e1a16a44eff2acba4a0cf8be116eddbd21ec1c0692313e7f5aadedcb24"
+    },
+    {
+      "path": "identity-staged-whitespace-red-1.json",
+      "bytes": 783,
+      "sha256": "436a8556688d4d20b44e29b563b19b4e9d34bb0d0eb189a8446cd97106aa3196"
+    },
+    {
+      "path": "identity-staged-whitespace-red-1.stdout.txt.gz",
+      "bytes": 246,
+      "sha256": "3052745afd65ccadbdbb1658a9e90816e350db59ba7031a664005c3be9e1dcbc"
+    },
+    {
+      "path": "normal.stdout.txt",
+      "bytes": 56,
+      "sha256": "ef847855c014d696ebfb35cf3efdce8469daebd8270f4408f403749f2da6d5ef"
+    },
+    {
+      "path": "parent-review.json",
+      "bytes": 3286,
+      "sha256": "415bc4175b6bf57dc09facf42205c83c7410d197b3f0a2ce137bf02e6be3e29a"
+    },
+    {
+      "path": "race.stdout.txt",
+      "bytes": 56,
+      "sha256": "0b6ffbab495073ff981807ad8bd5b589150066e7ed79f1e1a083260eaec4f894"
+    },
+    {
+      "path": "rca-adapter-plan.md",
+      "bytes": 5729,
+      "sha256": "0a3f4aaa12ee0a006ed86ad120c0bf9872ff3410d0aa2afe975e1ae8eea23ac4"
+    },
+    {
+      "path": "rca-adapter-source-inventory.json",
+      "bytes": 15166,
+      "sha256": "5d6a33c83d5fbc7361880c2e969faac2d5007133bbd982de5c734468d38c5323"
+    }
+  ]
+}

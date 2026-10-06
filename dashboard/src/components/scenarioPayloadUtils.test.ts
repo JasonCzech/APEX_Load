@@ -1,11 +1,49 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from 'vitest'
+import type { GoalConfig } from '../types/goals'
 
 import { buildGroupAssignmentPayload, buildCreateTestPayload, buildGoalConfigPayload, buildScenarioGroupPayloads, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
 import { buildInitialScenarioDraft, buildScenarioDraftFromTest, scenarioDraftReducer } from './scenarioDraftUtils'
 
 describe('scenarioPayloadUtils', () => {
+  it.each([true, false])('clears only an originally present revision-root runtime (%s)', hadRuntime => {
+    const input = { duration: '1m', startDelay: '', scenarioMode: 'vuser_driven' as const, scriptShakeout: false, resourceBaseline: false, groups: [{ name: 'orders', scriptId: 'script', vusers: 1, rampUp: '', rampDown: '', initialization: 'at_runtime' as const }], goalConfig: {}, runtimeSettings: { log_level: '', auto_transactions: '' }, revisionSourceTestId: 'source', sourceRuntimeSettingsPresent: hadRuntime }
+    const sent = buildCreateTestPayload(input)
+    if (hadRuntime) expect(sent.runtime_settings).toEqual({})
+    else expect(sent).not.toHaveProperty('runtime_settings')
+    expect(sent).not.toHaveProperty('sourceRuntimeSettingsPresent')
+    expect(buildCreateTestPayload({ ...input, runtimeSettings: { ...input.runtimeSettings, results: {} } }).runtime_settings).toEqual({ results: {} })
+    expect(buildCreateTestPayload({ ...input, revisionSourceTestId: undefined })).not.toHaveProperty('runtime_settings')
+  })
+
+  it.each([true, false])('clears only an originally nonempty revision-source start delay (%s)', hadDelay => {
+    const input = { duration: '1m', startDelay: '', scenarioMode: 'vuser_driven' as const, scriptShakeout: false, resourceBaseline: false, groups: [{ name: 'orders', scriptId: 'script', vusers: 1, rampUp: '', rampDown: '', initialization: 'at_runtime' as const }], goalConfig: {}, runtimeSettings: { log_level: '', auto_transactions: '' }, revisionSourceTestId: 'source', sourceStartDelayPresent: hadDelay }
+    const sent = buildCreateTestPayload(input)
+    if (hadDelay) expect(sent.start_delay).toBe('0s')
+    else expect(sent).not.toHaveProperty('start_delay')
+    expect(sent).not.toHaveProperty('sourceStartDelayPresent')
+    expect(buildCreateTestPayload({ ...input, startDelay: '20s' }).start_delay).toBe('20s')
+    expect(buildCreateTestPayload({ ...input, revisionSourceTestId: undefined })).not.toHaveProperty('start_delay')
+  })
+
+  it.each(['vuser_driven', 'goal_oriented'] as const)('retains every admitted common guardrail in %s submissions with owned nested values', scenarioMode => {
+    const goal: GoalConfig = { target_average_tps: 25, min_vusers: 1, max_vusers: 30, transaction_response_time_sla_ms: 0.001, p95_latency_ms: 2300, max_error_pct: 0, max_avg_server_processing_ms: 400, max_avg_transfer_ms: 125, max_error_count: 3, max_lcp_ms: 2500, max_inp_ms: 200, max_cls: 0.1, max_throttled_requests: 0, max_end_to_end_latency_ms: 500, max_partition_skew_pct: 0, max_redelivery_rate_pct: 0, max_dead_letter_rate_pct: 0, stop_on_sla_breach: false, stop_on_max_errors: false, sla_breach_window: '7s', transaction_rules: [], monitor_rules: [], early_stop: { enabled: false, error_rate_pct: 0, breach_window: '' }, workload_shape_config: {} }
+    const original = structuredClone(goal)
+    const expected = structuredClone(goal)
+    if (scenarioMode !== 'goal_oriented') { delete expected.target_average_tps; delete expected.min_vusers; delete expected.max_vusers }
+    const input = { name: 'Guardrail copy', duration: '1m', startDelay: '', scenarioMode, scriptShakeout: false, resourceBaseline: false, goalConfig: goal, runtimeSettings: { log_level: '', auto_transactions: '' }, groups: [{ name: 'orders', scriptId: 'script', vusers: 1, rampUp: '', rampDown: '', initialization: 'at_runtime' as const }] }
+    const scenario = buildScenarioUpsertPayload(input)
+    const run = buildCreateTestPayload(input)
+    expect(scenario.goal_config).toEqual(expected)
+    expect(run.goal_config).toEqual(expected)
+    scenario.goal_config!.transaction_rules!.push({ transaction: 'orders', metric: 'p95_duration_ms', comparator: 'lte', threshold: 500 })
+    scenario.goal_config!.early_stop!.error_rate_pct = 3
+    expect(goal).toEqual(original)
+    expect(run.goal_config).toEqual(expected)
+    expect(buildGoalConfigPayload(scenarioMode, {})).toBeUndefined()
+  })
+
 	it('round-trips transaction response-time defaults and group overrides in both scenario modes', () => {
 		for (const scenarioMode of ['vuser_driven', 'goal_oriented'] as const) {
 			const goalConfig = buildGoalConfigPayload(scenarioMode, { transaction_response_time_sla_ms: 3000 })

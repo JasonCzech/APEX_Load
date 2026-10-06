@@ -1,0 +1,144 @@
+{
+  "http": {
+    "test_id": "b5c58359-8977-4e94-93d1-da91a364d15b",
+    "ref_key": "LOC-RUN-20261005-017",
+    "group": "orders",
+    "group_index": 0,
+    "script_id": "0175bf3a-4dda-4d82-a8b7-f14964ded1c2",
+    "script_name": "Inherited_Fidelity_HTTP",
+    "protocol": "http",
+    "status": "QUEUED",
+    "editable": true,
+    "revision": "sha256:84c84a1367305dadafade96777802fa63e7844e3d9b74e6f71b9717a544eb3a2",
+    "editable_fields": [
+      "auto_transactions",
+      "base_url",
+      "browser",
+      "browser_config",
+      "browser_emulation",
+      "error_handling",
+      "http",
+      "iterations",
+      "java_vuser",
+      "log",
+      "log_level",
+      "pacing",
+      "results",
+      "run_logic",
+      "think_time",
+      "web_runtime",
+      "websocket"
+    ],
+    "runtime_settings": {
+      "results": {
+        "property_analytics": [
+          {
+            "name": "category",
+            "extraction": "category",
+            "values": [
+              "one"
+            ]
+          }
+        ],
+        "csv_exports": [
+          {
+            "id": "calls",
+            "file_name": "calls.csv",
+            "action_name": "orders",
+            "columns": [
+              {
+                "name": "latency",
+                "metric": "latency_ms"
+              }
+            ]
+          }
+        ],
+        "message_detail": {
+          "include_resources": false,
+          "mode": "off"
+        }
+      }
+    },
+    "script_settings": {
+      "results": {
+        "property_analytics": [
+          {
+            "name": "category",
+            "extraction": "category",
+            "values": [
+              "one"
+            ]
+          }
+        ],
+        "csv_exports": [
+          {
+            "id": "calls",
+            "file_name": "calls.csv",
+            "action_name": "orders",
+            "columns": [
+              {
+                "name": "latency",
+                "metric": "latency_ms"
+              }
+            ]
+          }
+        ]
+      },
+      "base_url": "http://127.0.0.1:65029"
+    },
+    "effective_settings": {
+      "results": {
+        "property_analytics": [
+          {
+            "name": "category",
+            "extraction": "category",
+            "values": [
+              "one"
+            ]
+          }
+        ],
+        "csv_exports": [
+          {
+            "id": "calls",
+            "file_name": "calls.csv",
+            "action_name": "orders",
+            "columns": [
+              {
+                "name": "latency",
+                "metric": "latency_ms"
+              }
+            ]
+          }
+        ],
+        "message_detail": {
+          "include_resources": false,
+          "mode": "off"
+        }
+      },
+      "error_handling": {
+        "continue_on_error": true
+      },
+      "base_url": "http://127.0.0.1:65029"
+    }
+  },
+  "submittedWS": {
+    "runtime_settings": {
+      "websocket": {
+        "callback_interval_ms": 0,
+        "read_timeout_ms": 100,
+        "compression": true
+      }
+    },
+    "fields": [
+      "websocket"
+    ],
+    "expected_revision": "sha256:2d1c9125b9b0dd024dc994cbfedf86faf77619b83da12c9dba410e04eb31ab7f"
+  },
+  "clear": {
+    "runtime_settings": {},
+    "fields": [
+      "websocket"
+    ],
+    "expected_revision": "sha256:4942798447f5913a9ce59162b890c3165fdea838c242ac288db3bd6c635ea4d7"
+  }
+}

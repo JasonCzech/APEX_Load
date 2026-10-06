@@ -220,7 +220,7 @@ func workerArrayLimit(field string, element reflect.Type) int {
 		return 1024
 	case "measures":
 		return 64
-	case "path_components", "timestamp", "value", "name_column", "derivation":
+	case "path_components", "timestamp", "value", "name_column", "derivation", "source", "host", "service", "dimensions":
 		return 16
 	case "samples":
 		return 1024 // each sample row's cells

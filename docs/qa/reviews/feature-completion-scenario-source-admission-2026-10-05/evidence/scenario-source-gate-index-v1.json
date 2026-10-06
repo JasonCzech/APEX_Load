@@ -1,0 +1,91 @@
+{
+  "scope": "Private source admission development and frozen-source storage qualification. Public guards unchanged; API/race/independent final review/composed acceptance remain pending.",
+  "source_inventory": "scenario-source-final-source-inventory-v1.json",
+  "source_inventory_sha256": "51629d52fea219f16f3ca78887e254ee78c09980a380b93c9487394b9ebe92c3",
+  "gates": [
+    {
+      "receipt": "scenario-source-storage-focused-1.json",
+      "receipt_sha256": "08ba51af95b112091387242f54d2a5e55c7aa41cb31e37610d3c19b3e691652a",
+      "status": "failed",
+      "duration_seconds": 64.346,
+      "exit_code": 1,
+      "raw_log_sha256": "7c0ff90cd8142731f531f0155bc30f0f30a12a6227a1473986cce24e57d02b25",
+      "source_changed": false,
+      "verified_counts": {
+        "top_level_runs": 7,
+        "top_level_passes": 3,
+        "including_subtest_passes": 32,
+        "skips": 0,
+        "failures": 4
+      }
+    },
+    {
+      "receipt": "scenario-source-storage-focused-2.json",
+      "receipt_sha256": "25e8665af8573adaf92317d9cfee4149e6ca64fb0cfb2e655b0c53fa1db2eb52",
+      "status": "passed",
+      "duration_seconds": 31.722,
+      "exit_code": 0,
+      "raw_log_sha256": "5f32739156dae0cf61e207ea3513fd5abc3aec570e96713777c842f674d8759a",
+      "source_changed": false,
+      "verified_counts": {
+        "top_level_runs": 23,
+        "top_level_passes": 23,
+        "including_subtest_passes": 52,
+        "skips": 0,
+        "failures": 0
+      }
+    },
+    {
+      "receipt": "scenario-source-storage-focused-3.json",
+      "receipt_sha256": "834046760f77832839fa3c4cb8168be88e8f4f89d822ddc3510d9749996e045e",
+      "status": "passed",
+      "duration_seconds": 14.231,
+      "exit_code": 0,
+      "raw_log_sha256": "a61267883bd8fb34f14863ab2da3cf83fa50b05ac036c7805457c0ac275260d7",
+      "source_changed": false,
+      "verified_counts": {
+        "top_level_runs": 23,
+        "top_level_passes": 23,
+        "including_subtest_passes": 52,
+        "skips": 0,
+        "failures": 0
+      }
+    },
+    {
+      "receipt": "scenario-source-postgres-focused-1.json",
+      "receipt_sha256": "65c492b2bb466b889c51b657b7cd276962e19f2c99d01549745017202cc15ee2",
+      "status": "passed",
+      "duration_seconds": 53.831,
+      "exit_code": 0,
+      "raw_log_sha256": "124069c06a5016229646ad9eb77af6901979bcff619ba16a4c32dd899e52b549",
+      "source_changed": false,
+      "verified_counts": {
+        "top_level_runs": 5,
+        "top_level_passes": 5,
+        "including_subtest_passes": 23,
+        "skips": 0,
+        "failures": 0
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "file": "scenario-source-parent-design-review-v2.json",
+      "sha256": "10178b77dfc691643176a2989eb8320bb603c21c9d6823da3091e07f2e9f976a",
+      "scope": "design-only"
+    },
+    {
+      "file": "scenario-source-parent-development-review-v1.json",
+      "sha256": "2d2446fe4fdfc50664df011d224a3a328b6e7587705f743771a7dba53a65c777",
+      "scope": "initial development review only"
+    }
+  ],
+  "pending": [
+    "Final independent source review/fix/review",
+    "Two-repeat frozen-source storage race",
+    "Minimal API/shared publication and affected import compatibility qualification after heavy build slot release",
+    "Parent semantic composition and full Go merge gate",
+    "Documentation/final staged diff audit",
+    "Commit/push/cache cleanup"
+  ]
+}

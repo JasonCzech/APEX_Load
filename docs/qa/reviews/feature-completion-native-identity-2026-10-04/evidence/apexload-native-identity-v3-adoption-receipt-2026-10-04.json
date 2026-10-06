@@ -1,0 +1,315 @@
+{
+  "baseline_commit": "d8d6c1ca311d395e677a5ced3d5981c3685dc68a",
+  "carrier_manifest": "ba8d43b0f148ba7e1da4be967a7ab6b805a2a61e71e6aff3b156fd5e8599b152",
+  "carrier_patch": "215b771a3a7fab3a0ebdf82c331c6686992c6da5d28f6219df797a783c290720",
+  "targets": [
+    {
+      "path": "pkg/analysis/duckdb/native.go",
+      "sha256": "88cbe6ad7da9bebe0c944b253f2eee8b613d4c6026190c44a3685c04a7eb9a8a",
+      "bytes": 19200
+    },
+    {
+      "path": "pkg/analysis/duckdb/native_identity.go",
+      "sha256": "3c44e07726d5d9a7040e6a8f049432e89575cec7e5fa21b1fcda511655b9d9cb",
+      "bytes": 4618
+    },
+    {
+      "path": "pkg/analysis/duckdb/native_identity_test.go",
+      "sha256": "6674d2f686d686be59d6480d23a6a440f8c616f6a1ad77e2a1a243f28171ae7b",
+      "bytes": 12615
+    },
+    {
+      "path": "pkg/analysis/duckdb/series_identity.go",
+      "sha256": "f467746f588b2ab120d04a2230dcab4419580e0bd1c745a08ac823ee6407dbfe",
+      "bytes": 2095
+    },
+    {
+      "path": "pkg/analysis/duckdb/series_identity_test.go",
+      "sha256": "0e641649df2c51010649135e9741d30bc126c83bcccaa5e88d3ecd53fb139c52",
+      "bytes": 3630
+    },
+    {
+      "path": "pkg/analysis/duckdb/types.go",
+      "sha256": "01d8f463e6e524e2fd0ecd081faddf09a7868f358f8dc9465b3f9ed98ee9d4ae",
+      "bytes": 4586
+    },
+    {
+      "path": "pkg/analysis/duckdb/worker_contract.go",
+      "sha256": "c2af038fa58fb4477476bca0b2a107c4e283638b4c1e9772ba6591f74fdb27aa",
+      "bytes": 14353
+    },
+    {
+      "path": "pkg/analysis/duckdb/worker_contract_test.go",
+      "sha256": "12dc797652b9505cdc6e786b022609adbf7649f715efee8ca8fb821a197f44dc",
+      "bytes": 20412
+    },
+    {
+      "path": "pkg/analysis/duckdb/worker_engine.go",
+      "sha256": "4e39adf21900eb486d2b5cf28e6884bdd191064f4e452288ad18e3a56f154499",
+      "bytes": 14632
+    },
+    {
+      "path": "pkg/analysis/duckdb/worker_framing.go",
+      "sha256": "f90e4513c4ac947122ad1f3f05756a7a49f73e2d32c98cd515ec0d079d9bd55e",
+      "bytes": 12552
+    },
+    {
+      "path": "pkg/analysis/duckdb/worker_identity_bounds_test.go",
+      "sha256": "79a19f6be22c87545b1699ff1fb2b88d090434b4c1a60f786c6aff5d95e18ec8",
+      "bytes": 2514
+    },
+    {
+      "path": "pkg/analysis/duckdb/worker_identity_snapshot_test.go",
+      "sha256": "8b88d6e4f43e47eb1d24451ac23f6d5a50a89069111ba669d30c15af63eb683c",
+      "bytes": 5058
+    },
+    {
+      "path": "pkg/analysis/duckdb/worker_result.go",
+      "sha256": "4aa7aa8386dcadfb6b0659044223b8da95a4cbb9968d1868773d45e0a872ff5c",
+      "bytes": 13509
+    },
+    {
+      "path": "pkg/analysis/parquet_identity.go",
+      "sha256": "c4a5e1c23deccb11f691ac9c9d2be46590f89a68c2c8e5bea06288c5f8629ea6",
+      "bytes": 4201
+    },
+    {
+      "path": "pkg/analysis/parquet_identity_test.go",
+      "sha256": "72ff161d17b662ad482384c493945ceb4f10b2f7b1f765b17c10dc6e27483af4",
+      "bytes": 5983
+    },
+    {
+      "path": "pkg/analysis/parquet_mapping.go",
+      "sha256": "a7628386bf7e496b7adb4c18edf9148ce36150deac1706e814c11a40def0b146",
+      "bytes": 6418
+    },
+    {
+      "path": "pkg/analysis/parquet_mapping_decode.go",
+      "sha256": "36aa30a7bbb8749b7e62c6bd8419e960d3083cc7e4b9543d841a15841855f229",
+      "bytes": 4327
+    },
+    {
+      "path": "pkg/analysis/parquet_mapping_decode_test.go",
+      "sha256": "d953296084780386de1ff9a4bfac0ee1ac3295f2a843a4e819d10d89543868ce",
+      "bytes": 5165
+    },
+    {
+      "path": "pkg/api/analysis_comparison_pipeline.go",
+      "sha256": "8155805200b9b8234f07c658e4c33da73d4f40d49bfa8ee5d38dc02ab4f51fee",
+      "bytes": 7051
+    },
+    {
+      "path": "pkg/api/analysis_comparison_pipeline_test.go",
+      "sha256": "7baec311c97514df58d9c8f70b5b76fab32d6df23a3099b219a146448f2a5439",
+      "bytes": 5924
+    },
+    {
+      "path": "pkg/api/analysis_definition_decode.go",
+      "sha256": "d239df0113b9deff280cfdd282941299e90d344f55bb0ed44515cfee3823f725",
+      "bytes": 5565
+    },
+    {
+      "path": "pkg/api/analysis_definition_decode_test.go",
+      "sha256": "9de8efa0306dca5bbc53cf567ccfc42584d2f9a318527360c247e48749312a1f",
+      "bytes": 6459
+    },
+    {
+      "path": "pkg/api/analysis_definitions.go",
+      "sha256": "05a63173861546220901e17512ca71c4d0e82eac88c94be9b4624c40671d8c3c",
+      "bytes": 4557
+    },
+    {
+      "path": "pkg/api/analysis_import_mapping_strict_native_test.go",
+      "sha256": "9e86e6f55f24e4080248c9c9a8f2cdedb461421d903d1ed49c723b26f78e92bb",
+      "bytes": 2825
+    },
+    {
+      "path": "pkg/api/analysis_imported_identity.go",
+      "sha256": "766a41847d4bcdb9dcb086d70366d8df9dcbd118fbf426ec872f67d6e0dab6f9",
+      "bytes": 3671
+    },
+    {
+      "path": "pkg/api/analysis_imported_identity_test.go",
+      "sha256": "6e52cca48beb807cb8bb6206f8e12c7a6d82aaafaccff33253ef970e90ee78c6",
+      "bytes": 6868
+    },
+    {
+      "path": "pkg/api/analysis_queries.go",
+      "sha256": "0b31b4f3133b64c91fe8849c5c11fb7e88ecf7b973b9408c94b56960e21b8be1",
+      "bytes": 16371
+    },
+    {
+      "path": "pkg/api/analysis_query_decode.go",
+      "sha256": "84c7098c4831c977c8a248c872bb35a8960a77df5591e368dae4db6ec7eb6754",
+      "bytes": 938
+    },
+    {
+      "path": "pkg/api/analysis_query_decode_native_test.go",
+      "sha256": "7c205e3200677ad4637d11d20a8f4144bf947ff15ea463d69a17f069d5370626",
+      "bytes": 1961
+    },
+    {
+      "path": "pkg/api/analysis_query_decode_test.go",
+      "sha256": "5a0505e71075858b439968c371727491448c7b416112bbcb9a7a648913f9dd76",
+      "bytes": 5531
+    },
+    {
+      "path": "pkg/api/handlers_analysis_imports.go",
+      "sha256": "5aa3835460710eab9ce85c2d533efe330c4ad71260933077306b628972eb7f68",
+      "bytes": 26172
+    },
+    {
+      "path": "pkg/api/openapi_analysis_contract.go",
+      "sha256": "f507498665b8369e3c54743f1dbd61ef332db59036b6561c4925d847858c4d58",
+      "bytes": 2335
+    },
+    {
+      "path": "pkg/api/openapi_analysis_contract_test.go",
+      "sha256": "43d047818cf5243e7ab43a59d3a06aa8bfb4ca59fac158bbf2c10534a2ab272d",
+      "bytes": 3762
+    },
+    {
+      "path": "pkg/api/openapi_contract_infer.go",
+      "sha256": "0eb8b2c3d72d9cf174d12d78929f23da1199e0e4b9ab22489c6c7a3a83758aab",
+      "bytes": 76218
+    }
+  ],
+  "preimages": [
+    {
+      "path": "pkg/analysis/duckdb/native.go",
+      "sha256": "9be094bc3c3682f5dc1c5c1ab25cd90fa8e9e6554d3be7f19b7007b38d5ec47a"
+    },
+    {
+      "path": "pkg/analysis/duckdb/native_identity.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/analysis/duckdb/native_identity_test.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/analysis/duckdb/series_identity.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/analysis/duckdb/series_identity_test.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/analysis/duckdb/types.go",
+      "sha256": "7725db600ca803fcfb7e7ed423ca0fcd1b1d7682a35e04c2dab6693c2cce8620"
+    },
+    {
+      "path": "pkg/analysis/duckdb/worker_contract.go",
+      "sha256": "8ec7191e3c9488ad565c3194fd44adaf512d0141314fb9a071860081a040a77b"
+    },
+    {
+      "path": "pkg/analysis/duckdb/worker_contract_test.go",
+      "sha256": "88365dcb2dde08a291cc460f868f0456d29cc2b328a41e9fcffad1a6d78ca362"
+    },
+    {
+      "path": "pkg/analysis/duckdb/worker_engine.go",
+      "sha256": "5bc9d87db8dc7ff8319fd74faf13ad910997761b59533b52deb11e796fa9b9ad"
+    },
+    {
+      "path": "pkg/analysis/duckdb/worker_framing.go",
+      "sha256": "611dc321df9a3be0ac9cb0bbfb589cd43f6d7e609e6d51e2ca34d3fa3d9095c4"
+    },
+    {
+      "path": "pkg/analysis/duckdb/worker_identity_bounds_test.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/analysis/duckdb/worker_identity_snapshot_test.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/analysis/duckdb/worker_result.go",
+      "sha256": "6db3255a936b2086fa76147a03f56696d3b0beca112aff4e894cb61a4cee0891"
+    },
+    {
+      "path": "pkg/analysis/parquet_identity.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/analysis/parquet_identity_test.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/analysis/parquet_mapping.go",
+      "sha256": "ccf500bd19cf157cc944335828c05b9be2321910aea1887e9af794e48e22ba4a"
+    },
+    {
+      "path": "pkg/analysis/parquet_mapping_decode.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/analysis/parquet_mapping_decode_test.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/api/analysis_comparison_pipeline.go",
+      "sha256": "6d79767f7c57efeb1e73f57854baefb73eba2983990bcc20678ce4163ddd2c26"
+    },
+    {
+      "path": "pkg/api/analysis_comparison_pipeline_test.go",
+      "sha256": "2b142eeb0ca3b4b5f8de33c4f513eab4eda2ff06866e9552fb62c1691e306131"
+    },
+    {
+      "path": "pkg/api/analysis_definition_decode.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/api/analysis_definition_decode_test.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/api/analysis_definitions.go",
+      "sha256": "fca2635bc1bca6d7cdb3b5f1d29859649c0cf9a5aca9318da29fa4a8e2112bf8"
+    },
+    {
+      "path": "pkg/api/analysis_import_mapping_strict_native_test.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/api/analysis_imported_identity.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/api/analysis_imported_identity_test.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/api/analysis_queries.go",
+      "sha256": "c61444bd72f08e2c23cdf520ac6ca0ad4cbdecafaf8b6fe7181bebd92efb1eda"
+    },
+    {
+      "path": "pkg/api/analysis_query_decode.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/api/analysis_query_decode_native_test.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/api/analysis_query_decode_test.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/api/handlers_analysis_imports.go",
+      "sha256": "20e59f3c7a3dc49e964cf179f9a40ba1fad9ecdb24413fb88acd79005c33ed48"
+    },
+    {
+      "path": "pkg/api/openapi_analysis_contract.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/api/openapi_analysis_contract_test.go",
+      "sha256": null
+    },
+    {
+      "path": "pkg/api/openapi_contract_infer.go",
+      "sha256": "ec54be29967e94e0874d15400cd8f615b18027a1cffe244cdc7c34ebbf78da0f"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "scope": "Single test-only TypeScript fixture correction after parent preflight typecheck RED; no product failure or production edits",
+  "before_manifest_sha256": "513158b0372bcc31410d5608c5e9390014ed474ca1319fe978eba0d74c5692e3",
+  "after_manifest_sha256": "771dc1658ac4df5c4aa57033135b7742d677138a795c0ae1f23d5d6baea81815",
+  "path": "dashboard/src/components/AccessStyles.test.ts",
+  "before_sha256": "f9ccc5c2999d300ffe0f7a29bacfcef3fc820dc58d7996253deaa9e071f7d27e",
+  "after_sha256": "47d04cba8be7cb07e755d8f64730d047b3f26807744125215858b9273946bce7",
+  "old_expression": "access.nodes.indexOf(cloned[0].parent!)",
+  "new_expression": "access.nodes.findIndex(node => node === cloned[0].parent)",
+  "unchanged_other_inputs": 14,
+  "assertion_retained": "Responsive cloned rule parent must occur after desktop access-workspace rule; missing parent yields -1 and cannot pass."
+}

@@ -1,0 +1,53 @@
+{
+  "recorded_at_utc": "2026-10-05T23:18:16.937984+00:00",
+  "scope": "Scoped installed SDK/driver/default Chromium and WebKit executable bookend; not full native dylib/framework/module inventory. Candidate native cohort log must be checked; no installation/download.",
+  "before_receipt": "/private/tmp/frame-finality-runtime-before-20261005.json",
+  "inputs": [
+    {
+      "path": "/Users/jasonczech/.npm/_npx/6d82ddbdd7da268b/node_modules/node/bin/node",
+      "bytes": 111673840,
+      "sha256": "913b144fdb40638b1acef7974ab3c33fbd527cc0974cb5da467ab1e6ac51b4d4"
+    },
+    {
+      "path": "/Users/jasonczech/go/pkg/mod/github.com/mxschmitt/playwright-go@v0.6100.0/browser_context.go",
+      "bytes": 31588,
+      "sha256": "fd7c22dd4d5727c55e87ed41d89fea040590d9df1c6207144c1fa4d618ea1cd1"
+    },
+    {
+      "path": "/Users/jasonczech/Library/Caches/ms-playwright-go/1.61.1/node",
+      "bytes": 120965360,
+      "sha256": "ee6fb0e015284d83a91e8ec5213f43a157f8a392b58555301682892ba928c04a"
+    },
+    {
+      "path": "/Users/jasonczech/Library/Caches/ms-playwright-go/1.61.1/package/lib/coreBundle.js",
+      "bytes": 3352379,
+      "sha256": "d90f29f93a11039767d745d141632b0f6888c434194ff0f9334b2cdab3e937ab"
+    },
+    {
+      "path": "/Users/jasonczech/Library/Caches/ms-playwright-go/1.61.1/package/browsers.json",
+      "bytes": 1939,
+      "sha256": "ee39bc924bc3d1bd895626c2910f1292d109bbfeeb5abd113acb45e1951cc942"
+    },
+    {
+      "path": "/Users/jasonczech/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+      "bytes": 159293248,
+      "sha256": "11e393326c7d20a7c56641a7c65def33ea9c280da3b0b74cf8563b07989a0ee3"
+    },
+    {
+      "path": "/Users/jasonczech/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+      "bytes": 52112,
+      "sha256": "b1b9e2dd063115031f08eadc10ed381ca0fa05b2284baff8f721d87f5f0f61b7"
+    },
+    {
+      "path": "/Users/jasonczech/Library/Caches/ms-playwright/webkit-2311/pw_run.sh",
+      "bytes": 3049,
+      "sha256": "a85baad3d8c07173ac387a59b41500c382b21ed692afe0964d29aac247ccc63b"
+    },
+    {
+      "path": "/Users/jasonczech/Library/Caches/ms-playwright/webkit-2311/Playwright.app/Contents/MacOS/Playwright",
+      "bytes": 172128,
+      "sha256": "042c3ee42aab538dfcd440892286af0d5b20707ca3c22765da41d1cc6464f762"
+    }
+  ],
+  "unchanged": true
+}

@@ -1,0 +1,206 @@
+import type { APIRequestContext, Locator } from '@playwright/test'
+import type { DashboardSystemSettings } from '/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/src/types'
+import { test, expect, seedScript, json, idOf, login, runStatus } from '/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/e2e/support/workflow'
+import { createWorkspace, scopeQuery } from '/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/e2e/support/workspace'
+
+async function writeSettings(request: APIRequestContext, value: DashboardSystemSettings) {
+  const { revision, ...body } = value
+  return await json(await request.put('/api/v1/system/settings', { data: body, headers: revision ? { 'If-Match': JSON.stringify(revision) } : {} })) as unknown as DashboardSystemSettings
+}
+
+async function captureStablePolicy(card: Locator, filename: string, label: string) {
+  await card.scrollIntoViewIfNeeded()
+  await card.evaluate(async element => {
+    const container = element.closest('.main-content')
+    if (!(container instanceof HTMLElement)) throw new Error('Policy card has no owned scroll container')
+    const toolbar = container.querySelector(':scope > .main-topbar')
+    const top = Math.max(container.getBoundingClientRect().top, toolbar?.getBoundingClientRect().bottom ?? 0) + 16
+    container.scrollTop += element.getBoundingClientRect().top - top
+    const pending: Promise<unknown>[] = []
+    for (let node: Element | null = element; node; node = node.parentElement) {
+      for (const animation of node.getAnimations()) {
+        const end = animation.effect?.getComputedTiming().endTime
+        if (typeof end === 'number' && Number.isFinite(end) && animation.playState !== 'finished') pending.push(animation.finished.catch(() => undefined))
+      }
+    }
+    await Promise.all(pending)
+  })
+  const inspect = () => card.evaluate(element => {
+    const box = element.getBoundingClientRect()
+    const container = element.closest('.main-content')
+    if (!(container instanceof HTMLElement)) return { stable: false }
+    const toolbar = container.querySelector(':scope > .main-topbar')
+    const top = Math.max(container.getBoundingClientRect().top, toolbar?.getBoundingClientRect().bottom ?? 0)
+    const clip = container.getBoundingClientRect()
+    const bottom = Math.min(innerHeight, clip.bottom)
+    const ancestors = []
+    let effectiveOpacity = 1
+    let finiteAnimations = 0
+    for (let node: Element | null = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node)
+      effectiveOpacity *= Number(style.opacity)
+      finiteAnimations += node.getAnimations().filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime) && animation.playState !== 'finished').length
+      ancestors.push({ tag: node.tagName, class: node.className, opacity: style.opacity, display: style.display, visibility: style.visibility, background_color: style.backgroundColor, background_image: style.backgroundImage })
+    }
+    const points = [[box.left + 8, box.top + 8], [box.right - 8, box.top + 8], [box.left + 8, box.bottom - 8], [box.right - 8, box.bottom - 8], [(box.left + box.right) / 2, (box.top + box.bottom) / 2]]
+    const hitPoints = points.map(([x, y]) => { const hit = document.elementFromPoint(x, y); return { x, y, owned: hit !== null && (element === hit || element.contains(hit)) } })
+    const texts = Array.from(element.querySelectorAll('h3,p,dt,dd,code')).map(node => { const style = getComputedStyle(node); return { tag: node.tagName, color: style.color, opacity: style.opacity, font_size: style.fontSize, text: node.textContent?.slice(0, 256) } })
+    const parse = (text: string): number[] | undefined => {
+      const rgb = text.match(/^rgba?\((.*)\)$/)
+      if (rgb) { const values = rgb[1].replace(/\//g, ',').split(/[ ,]+/).filter(Boolean).map(Number); if (values.length === 3) values.push(1); if (values.length === 4 && values.every(Number.isFinite)) return [values[0] / 255, values[1] / 255, values[2] / 255, values[3]] }
+      const srgb = text.match(/^color\(srgb\s+([^)]*)\)$/)
+      if (srgb) { const values = srgb[1].replace(/\//g, ' ').split(/\s+/).filter(Boolean).map(Number); if (values.length === 3) values.push(1); if (values.length === 4 && values.every(Number.isFinite)) return values }
+      return undefined
+    }
+    const over = (fg: number[], bg: number[]) => [0, 1, 2].map(index => fg[index] * fg[3] + bg[index] * (1 - fg[3])).concat(1)
+    // These are bounded computed-CSS endpoint references. Ancestor images are
+    // composed in CSS paint order; unsupported backgrounds remain unavailable.
+    let endpoints: number[][] = []
+    const unresolvedBackgrounds: string[] = []
+    const splitLayers = (image: string) => {
+      const result: string[] = []; let depth = 0; let start = 0
+      for (let i = 0; i < image.length; i++) {
+        if (image[i] === '(') depth++
+        else if (image[i] === ')') depth--
+        else if (image[i] === ',' && depth === 0) { result.push(image.slice(start, i).trim()); start = i + 1 }
+        if (depth < 0) return []
+      }
+      if (depth !== 0) return []
+      result.push(image.slice(start).trim()); return result
+    }
+    for (const ancestor of [...ancestors].reverse()) {
+      const color = parse(ancestor.background_color)
+      if (!color || color.some(value => value < 0 || value > 1)) { unresolvedBackgrounds.push('unsupported_background_color'); endpoints = []; break }
+      if (color[3] === 1) endpoints = [color]
+      else endpoints = endpoints.map(background => over(color, background))
+      const image = ancestor.background_image
+      if (image === 'none') continue
+      const layers = image.length <= 4096 ? splitLayers(image) : []
+      if (layers.length === 0 || layers.length > 4) { unresolvedBackgrounds.push('unsupported_background_layers'); endpoints = []; break }
+      // First listed CSS background image paints last, above subsequent layers.
+      for (const layer of layers.reverse()) {
+        if (layer === 'none') continue
+        if (!/^(?:linear|radial)-gradient\(.*\)$/.test(layer)) { unresolvedBackgrounds.push('unsupported_background_image'); endpoints = []; break }
+        const stops = (layer.match(/rgba?\([^)]*\)|color\(srgb[^)]*\)/g) || []).map(parse)
+        if (stops.length < 2 || stops.length > 8 || stops.some(stop => !stop || stop.some(value => value < 0 || value > 1))) { unresolvedBackgrounds.push('unsupported_gradient_stops'); endpoints = []; break }
+        if (endpoints.length * stops.length > 32) { unresolvedBackgrounds.push('background_reference_limit'); endpoints = []; break }
+        endpoints = endpoints.flatMap(background => stops.map(stop => over(stop!, background)))
+      }
+      if (unresolvedBackgrounds.length > 0) break
+    }
+    const luminance = (color: number[]) => color.slice(0, 3).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0)
+    const contrasts = texts.map(text => {
+      const foreground = parse(text.color)
+      const values = foreground ? endpoints.map(background => { const fg = [...foreground]; fg[3] *= Number(text.opacity); const a = luminance(over(fg, background)); const b = luminance(background); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) }) : []
+      return { ...text, computed_css_endpoint_reference_contrast: values }
+    })
+    const stable = Number.isFinite(effectiveOpacity) && Math.abs(effectiveOpacity - 1) < 1e-9 && finiteAnimations === 0 && ancestors.every(value => value.display !== 'none' && value.visibility === 'visible') && box.top >= top && box.bottom <= bottom && box.left >= clip.left && box.right <= Math.min(innerWidth, clip.right) && element.scrollWidth <= element.clientWidth + 1 && hitPoints.every(point => point.owned)
+    return { stable, effectiveOpacity, finiteAnimations, viewport: { width: innerWidth, height: innerHeight }, box: { left: box.left, right: box.right, top: box.top, bottom: box.bottom }, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, hitPoints, ancestors, texts: contrasts, background_reference_count: endpoints.length, background_reference_colors: endpoints, unresolved_backgrounds: unresolvedBackgrounds, contrast_scope: 'Computed CSS text colors against bounded composited ancestor/card linear and radial gradient endpoints; reference contrast only, not pixel-level or general WCAG certification.' }
+  })
+  await expect.poll(async () => (await inspect()).stable).toBe(true)
+  const geometry = await inspect()
+  expect(geometry.stable).toBe(true)
+  await test.info().attach(`telemetry-policy-${label}-stable-geometry`, { body: JSON.stringify({ browser_version: card.page().context().browser()?.version(), ...geometry }), contentType: 'application/json' })
+  if (geometry.unresolved_backgrounds?.length) throw new Error("Unsupported CSS endpoint reference")
+  expect(geometry.texts).toBeDefined()
+  for (const text of geometry.texts || []) {
+    expect(text.computed_css_endpoint_reference_contrast.length).toBeGreaterThan(0)
+    for (const contrast of text.computed_css_endpoint_reference_contrast) expect(contrast).toBeGreaterThanOrEqual(4.5)
+  }
+  await card.screenshot({ path: test.info().outputPath(filename) })
+  expect((await inspect()).stable).toBe(true)
+  return geometry
+}
+
+// Real controller admission, controlled HTTP traffic, live publications and
+// archive receipt. It does not qualify source-clock/time-coverage/CI semantics.
+test('telemetry policy remains immutable in live, archive and manifest views after settings change', async ({ page, target, trackRun }) => {
+  test.setTimeout(90_000)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const original = await json(await request.get('/api/v1/system/settings')) as unknown as DashboardSystemSettings
+  try {
+    await writeSettings(request, { ...original, general: { ...original.general, metrics_interval_seconds: 3 }, thresholds: { ...original.thresholds, max_telemetry_sample_age_ms: 17, max_telemetry_generator_lag_ms: 0 } })
+    const workspace = await createWorkspace(request)
+    const script = await seedScript(request, workspace, 'Telemetry policy HTTP fixture', target.url)
+    const id = idOf(await json(await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, name: 'Immutable telemetry policy run', duration: '30s', groups: [{ name: 'orders', script_id: script, vusers: 1 }] } })))
+    trackRun(id)
+    await json(await request.post(`/api/v1/tests/${id}/start`))
+    await expect.poll(() => runStatus(request, id)).toBe('RUNNING')
+    await expect.poll(target.count).toBeGreaterThan(0)
+    const initial = await json(await request.get(`/api/v1/tests/${id}/manifest`))
+    const evidence = initial.telemetry_policy as { availability: string; policy: { hash: string; budgets: { stage: string; limit_ms: number; enabled: boolean }[] } }
+    expect(evidence.availability).toBe('available')
+    expect(evidence.policy.hash).toMatch(/^[a-f0-9]{64}$/)
+    expect(evidence.policy.budgets.find(budget => budget.stage === 'sample_age')).toMatchObject({ limit_ms: 17, enabled: true })
+    const current = await json(await request.get('/api/v1/system/settings')) as unknown as DashboardSystemSettings
+    await writeSettings(request, { ...current, general: { ...current.general, metrics_interval_seconds: 1 }, thresholds: { ...current.thresholds, max_telemetry_sample_age_ms: 999 } })
+    await page.goto(`/#/test/${id}?tab=diagnostics&${scopeQuery(workspace)}`)
+    await page.reload()
+    const live = page.getByRole('region', { name: 'Telemetry budget policy', exact: true })
+    await expect(live).toContainText(evidence.policy.hash)
+    await expect(live).toContainText('17 ms')
+    await expect(live).toContainText('3,000 ms')
+    await expect(live).toContainText('Disabled (explicit zero)')
+    await expect(live).not.toContainText('999 ms')
+    const pipeline = page.locator('.telemetry-status-card')
+    await expect(pipeline).toContainText('Telemetry observations')
+    await expect(pipeline.locator('.goal-status-badge')).toHaveClass(/neutral/)
+    await expect(pipeline.locator('.goal-status-badge')).toHaveText(/^(Age observed|Unknown|Observed drop evidence)$/)
+    await expect(pipeline).not.toContainText('Healthy')
+    await expect(pipeline).not.toContainText('Stale')
+    await expect(pipeline).toContainText('not an exact run loss total')
+    await page.setViewportSize({ width: 760, height: 1100 })
+    await live.scrollIntoViewIfNeeded()
+    const bounds = await live.evaluate(node => { const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right, viewport: innerWidth, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth } })
+    await test.info().attach('telemetry-policy-live-geometry', { body: JSON.stringify({ viewport: page.viewportSize(), browser_version: page.context().browser()?.version(), geometry: bounds }), contentType: 'application/json' })
+    expect(bounds.left).toBeGreaterThanOrEqual(0)
+    expect(bounds.right).toBeLessThanOrEqual(bounds.viewport)
+    expect(bounds.scrollWidth).toBeLessThanOrEqual(bounds.clientWidth + 1)
+    await captureStablePolicy(live, 'telemetry-policy-live-stable.png', 'live')
+    await json(await request.post(`/api/v1/tests/${id}/abort`))
+    await expect.poll(() => runStatus(request, id)).toMatch(/^(COMPLETE|FAILED|ABORTED)$/)
+    await expect.poll(async () => (await request.get(`/api/v1/tests/${id}/archive/report`)).ok(), { timeout: 30_000 }).toBe(true)
+    const report = await json(await request.get(`/api/v1/tests/${id}/archive/report`))
+    expect(report.telemetry_policy).toEqual(evidence)
+    await test.info().attach('actual-immutable-policy-receipt', { body: JSON.stringify({ test_id: id, telemetry_policy: evidence, target_requests_observed: target.count() }), contentType: 'application/json' })
+    await page.goto(`/#/report/${id}?section=evidence&${scopeQuery(workspace)}`)
+    const archived = page.getByRole('region', { name: 'Telemetry budget policy', exact: true })
+    await expect(archived).toContainText(evidence.policy.hash)
+    await expect(archived).toContainText('17 ms')
+    await expect(archived).not.toContainText('999 ms')
+    await expect(archived).toContainText('Missing intervals remain unknown')
+    await expect(page.getByRole('heading', { name: 'Legacy telemetry classification', exact: true })).toBeVisible()
+    await expect(page.locator('.archive-metadata-summary')).toContainText('Retained legacy mixed diagnostic classifications')
+    await expect(page.locator('.archive-metadata-summary')).toContainText('exact run loss totals, or a telemetry CI verdict')
+    await captureStablePolicy(archived, 'telemetry-policy-archive-stable.png', 'archive')
+    await page.getByRole('tab', { name: 'Execution', exact: true }).click()
+    const manifest = page.getByRole('region', { name: 'Telemetry budget policy', exact: true })
+    await expect(manifest).toContainText(evidence.policy.hash)
+    await expect(manifest).toContainText('17 ms')
+  } finally {
+    const latest = await json(await request.get('/api/v1/system/settings')) as unknown as DashboardSystemSettings
+    await writeSettings(request, { ...original, revision: latest.revision })
+  }
+})
+
+
+// This helper regression is a controlled DOM/CSS paint reference, separate
+// from the genuine controller/workload case above. It does not qualify provider
+// behavior, arbitrary backgrounds or general pixel/WCAG contrast.
+test('stable capture reference follows real CSS image order and parent-child alpha', async ({ page }) => {
+  await page.setViewportSize({ width: 760, height: 1100 })
+  await page.setContent(`<style>html,body{margin:0;background:rgb(0,0,0);color:white}.main-content{position:absolute;inset:0;overflow:auto;background-color:rgb(0,0,0);background-image:linear-gradient(rgba(255,0,0,0.5),rgba(255,0,0,0.5)),linear-gradient(rgba(0,0,255,0.5),rgba(0,0,255,0.5))}section{margin:32px;padding:24px;width:640px;height:360px;box-sizing:border-box;background:rgba(0,255,0,0.25);color:white}h3,p{color:white;opacity:1}</style><main class="main-content"><section aria-label="Paint-order fixture"><h3>Controlled CSS reference</h3><p>Only this fixed uniform CSS paint case has a pixel oracle.</p></section></main>`)
+  const card = page.getByRole('region', { name: 'Paint-order fixture', exact: true })
+  const geometry = await captureStablePolicy(card, 'css-layer-order-paint.png', 'css-layer-order')
+  expect(geometry.background_reference_count).toBe(4)
+  for (const color of geometry.background_reference_colors || []) expect(color).toEqual([0.375, 0.25, 0.1875, 1])
+  const { execFileSync } = await import('node:child_process')
+  const pixel = JSON.parse(execFileSync('python3', ['-c', 'import json,sys,PIL;from PIL import Image;im=Image.open(sys.argv[1]).convert("RGB");print(json.dumps({"rgb":im.getpixel((3,3)),"decoder":PIL.__version__}))', test.info().outputPath('css-layer-order-paint.png')], { encoding: 'utf8' })) as { rgb: number[]; decoder: string }
+  // CSS/compositor quantization may round one 8-bit channel differently. A
+  // reversed red/blue layer or missing child alpha differs by many channels.
+  for (let i = 0; i < 3; i++) expect(Math.abs(pixel.rgb[i] - [96, 64, 48][i])).toBeLessThanOrEqual(1)
+  await test.info().attach('css-layer-order-pixel-reference', { body: JSON.stringify({ browser_version: page.context().browser()?.version(), pixel, expected_rgb: [96,64,48], scope: 'One controlled uniform CSS layer/alpha paint case only.' }), contentType: 'application/json' })
+  await card.evaluate(element => { (element.parentElement as HTMLElement).style.backgroundImage = 'conic-gradient(red, blue)' })
+  await expect(captureStablePolicy(card, 'unsupported-background-must-not-capture.png', 'unsupported-background')).rejects.toThrow('Unsupported CSS endpoint reference')
+})

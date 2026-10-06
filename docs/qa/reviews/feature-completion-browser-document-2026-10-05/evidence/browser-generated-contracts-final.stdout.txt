@@ -1,0 +1,6 @@
+wrote ../../docs/dsl.schema.json and ../../docs/DSL_ACTION_REFERENCE.md
+wrote ../../docs/swagger.yaml
+wrote apidocs/swagger.yaml
+wrote ../../docs/api-endpoint-catalog.json
+wrote apidocs/api-endpoint-catalog.json
+wrote ../../dashboard/src/types/generated/openapi.ts

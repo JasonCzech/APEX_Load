@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -37,6 +38,12 @@ func (s *SQLiteStore) backfillBlankScriptIDs() error {
 		if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(73194721018462)`); err != nil {
 			return fmt.Errorf("lock blank script id repair: %w", err)
 		}
+	}
+
+	// Publication admission takes this fence before project/source locks. Keep
+	// repair in the same order, even when the claims row is currently absent.
+	if err := acquireLibraryImportPublicationFenceTx(tx); err != nil {
+		return fmt.Errorf("lock blank script publication repair: %w", err)
 	}
 
 	// Do the blank classification in Go. SQL TRIM differs by dialect and only
@@ -115,16 +122,16 @@ func backfillOneBlankScriptID(tx *storeTx, oldID string) (string, error) {
 	}
 	if _, err := tx.Exec(`INSERT INTO scripts (
 		id, ref_key, name, protocol, version, project_id, folder_id,
-		generated_by, generated_from, metadata_json, config, data_sources,
+		generated_by, generated_from, metadata_json, goal_config_json, config, data_sources,
 		parameters, init, actions, teardown, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		// The old parent still owns the globally unique ref_key until the end of
 		// this transaction. Reserve the repaired parent with an empty key, then
 		// restore the exact key immediately after deleting the old parent.
 		script.ID, "", script.Name, script.Protocol, script.Version,
 		normalizeProjectID(script.ProjectID), script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
-		encoded.metadata, encoded.config, encoded.dataSources, encoded.parameters,
+		encoded.metadata, encoded.goals, encoded.config, encoded.dataSources, encoded.parameters,
 		encoded.init, encoded.actions, encoded.teardown,
 		script.CreatedAt, script.UpdatedAt,
 	); err != nil {
@@ -178,6 +185,15 @@ func backfillOneBlankScriptID(tx *storeTx, oldID string) (string, error) {
 		return "", err
 	}
 
+	if _, err := tx.Exec(`INSERT INTO script_library_assignments(item_id,application_id,revision) SELECT ?,application_id,revision FROM script_library_assignments WHERE item_id=?`, newID, oldID); err != nil {
+		return "", fmt.Errorf("copy repaired script placement: %w", err)
+	}
+	if _, err := tx.Exec(`INSERT INTO script_library_assignments_releases(item_id,release_id) SELECT ?,release_id FROM script_library_assignments_releases WHERE item_id=?`, newID, oldID); err != nil {
+		return "", fmt.Errorf("copy repaired script releases: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM script_library_assignments WHERE item_id=?`, oldID); err != nil {
+		return "", err
+	}
 	result, err := tx.Exec(`DELETE FROM scripts WHERE id = ?`, oldID)
 	if err != nil {
 		return "", fmt.Errorf("delete blank-id script after remap: %w", err)
@@ -529,12 +545,23 @@ func rewriteBlankScriptSettingsRefs(tx *storeTx, oldID, newID string) error {
 		libraryImportClaimsSettingKeyForScriptIDBackfill,
 	} {
 		var raw string
-		err := tx.QueryRow(`SELECT COALESCE(value, '') FROM app_settings WHERE key = ?`, key).Scan(&raw)
-		if errors.Is(err, sql.ErrNoRows) || strings.TrimSpace(raw) == "" {
+		if key == libraryImportClaimsSettingKeyForScriptIDBackfill {
+			snapshot, err := readLibraryImportPublicationTx(tx)
+			if err != nil {
+				return fmt.Errorf("load %s for blank script id repair: %w", key, err)
+			}
+			raw = snapshot.Raw
+		} else {
+			err := tx.QueryRow(`SELECT COALESCE(value, '') FROM app_settings WHERE key = ?`, key).Scan(&raw)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("load %s for blank script id repair: %w", key, err)
+			}
+		}
+		if strings.TrimSpace(raw) == "" {
 			continue
 		}
-		if err != nil {
-			return fmt.Errorf("load %s for blank script id repair: %w", key, err)
+		if !utf8.ValidString(raw) {
+			return fmt.Errorf("decode %s for blank script id repair: invalid UTF-8", key)
 		}
 		var entries []map[string]any
 		if err := json.Unmarshal([]byte(raw), &entries); err != nil {
@@ -589,6 +616,11 @@ func rewriteBlankScriptSettingsRefs(tx *storeTx, oldID, newID string) error {
 		payload, err := json.Marshal(entries)
 		if err != nil {
 			return err
+		}
+		if key == libraryImportClaimsSettingKeyForScriptIDBackfill {
+			if err := validateLibraryImportPublicationRaw(string(payload)); err != nil {
+				return fmt.Errorf("validate repaired import claims: %w", err)
+			}
 		}
 		if _, err := tx.Exec(`UPDATE app_settings SET value = ? WHERE key = ?`, string(payload), key); err != nil {
 			return fmt.Errorf("update %s repaired script references: %w", key, err)

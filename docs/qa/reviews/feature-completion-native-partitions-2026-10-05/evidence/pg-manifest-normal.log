@@ -1,0 +1,6 @@
+=== RUN   TestPostgresNativeAttemptTwoStoreAuthorityAndPublicationFences
+--- PASS: TestPostgresNativeAttemptTwoStoreAuthorityAndPublicationFences (0.79s)
+=== RUN   TestPostgresPartitionManifestReopenReconciliationAndRefusals
+--- PASS: TestPostgresPartitionManifestReopenReconciliationAndRefusals (0.71s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/storage	1.928s

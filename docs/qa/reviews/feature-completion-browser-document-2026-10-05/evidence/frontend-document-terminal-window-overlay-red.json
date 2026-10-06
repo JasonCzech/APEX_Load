@@ -1,0 +1,32 @@
+{
+  "label": "document-terminal-window-overlay-red",
+  "command": [
+    "go",
+    "test",
+    "-overlay=/private/tmp/apexload-browser-terminal-window-overlay.json",
+    "./pkg/engine",
+    "-run",
+    "^TestBrowserDocumentFinishedProviderPublishesPendingTerminalOverlay$",
+    "-count=1"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "started_utc": "2026-10-05T13:31:20.226240+00:00",
+  "finished_utc": "2026-10-05T13:31:34.787480+00:00",
+  "duration_seconds": 14.561,
+  "exit_code": 1,
+  "profile": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "APEXLOAD_ANALYSIS_MEMORY_LIMIT": "512MiB",
+    "APEXLOAD_ANALYSIS_SPILL_LIMIT": "128MiB",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_AUTH_PORT": "18472"
+  },
+  "log_bytes": 265,
+  "log_sha256": "35540460682e12be42d1a788bc5717af2b2cc688dc6a8adc045df3fda69cd4f3"
+}

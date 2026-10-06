@@ -18,7 +18,7 @@ func workerTestBootstrap(t *testing.T) workerBootstrap {
 	t.Helper()
 	rows := int64(3)
 	b := workerBootstrap{
-		Identity: workerIdentity{Version: 1, BuildID: strings.Repeat("a", 64), AttemptID: strings.Repeat("b", 32), Nonce: strings.Repeat("c", 64)},
+		Identity: workerIdentity{Version: workerProtocolVersion, BuildID: strings.Repeat("a", 64), AttemptID: strings.Repeat("b", 32), Nonce: strings.Repeat("c", 64)},
 		Limits:   workerLimits{Threads: 2, MemoryBytes: 2 << 30, SpillBytes: 8 << 30, InputBytes: 1024, OutputBytes: 2048, RuntimeMS: 900000},
 		Handles: []workerHandle{
 			{Handle: strings.Repeat("1", 32), Role: "input", RelativeName: "input-0000.parquet", Bytes: 100, SHA256: strings.Repeat("d", 64), Rows: &rows},
@@ -43,15 +43,17 @@ func workerTestRequest(b workerBootstrap) workerRequest {
 	}}
 }
 func workerTestNormalizeResult(b workerBootstrap) workerResult {
+	at := time.Unix(1700000000, 0).UTC()
+	stats := &analysis.NormalizedPartitionStats{Version: analysis.PartitionManifestVersion, SchemaVersion: analysis.SchemaVersion, IdentityVersion: 1, Kind: analysis.KindObservation, Unit: "ms", Rows: 2, Valid: 2, MinTime: &at, MaxTime: &at}
 	return workerResult{Status: "ok", Normalize: &workerNormalizeResult{
 		InputRows: 3, Accepted: 2, Rejected: 1,
-		Outputs:    []workerOutput{{Handle: b.Handles[1].Handle, SHA256: strings.Repeat("e", 64), Bytes: 100, Rows: 2}, {Handle: b.Handles[2].Handle, SHA256: strings.Repeat("f", 64), Bytes: 100, Rows: 1}},
+		Outputs:    []workerOutput{{Handle: b.Handles[1].Handle, SHA256: strings.Repeat("e", 64), Bytes: 100, Rows: 2, Partition: stats}, {Handle: b.Handles[2].Handle, SHA256: strings.Repeat("f", 64), Bytes: 100, Rows: 1}},
 		Rejections: []RejectionSummary{{File: 0, Measure: 0, Count: 1, Rows: []int64{2}}},
 	}}
 }
 func TestWorkerBootstrapFiniteManifestAndLimits(t *testing.T) {
 	for name, change := range map[string]func(*workerBootstrap){
-		"version":                 func(b *workerBootstrap) { b.Identity.Version = 2 },
+		"version":                 func(b *workerBootstrap) { b.Identity.Version = workerProtocolVersion + 1 },
 		"build alias":             func(b *workerBootstrap) { b.Identity.BuildID = strings.Repeat("A", 64) },
 		"attempt":                 func(b *workerBootstrap) { b.Identity.AttemptID = "foreign" },
 		"nonce":                   func(b *workerBootstrap) { b.Identity.Nonce = "short" },
@@ -104,7 +106,7 @@ func TestWorkerRequestOneOperationAndExactOutputPlan(t *testing.T) {
 			r.Normalize.OutputHandles = append(r.Normalize.OutputHandles, r.Normalize.OutputHandles[0])
 		},
 		"no rejection approval":         func(r *workerRequest) { r.Normalize.AllowRejected = false },
-		"mapping version":               func(r *workerRequest) { r.Normalize.Mapping.Version = 2 },
+		"mapping version":               func(r *workerRequest) { r.Normalize.Mapping.Version = 3 },
 		"mapping expression":            func(r *workerRequest) { r.Normalize.Mapping.Timestamp = nil },
 		"unknown aggregation semantics": func(r *workerRequest) { r.Normalize.Mapping.Measures[0].Kind = "histogram" },
 	} {
@@ -182,7 +184,7 @@ func TestWorkerPreviewTypedSamplesAndClone(t *testing.T) {
 func TestWorkerSeriesResultRetainsQueryScopeAndLineage(t *testing.T) {
 	b := workerTestBootstrap(t)
 	from := time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)
-	q := SeriesQuery{ProjectID: "project", DatasetID: "dataset", Metric: "latency", From: from, To: from.Add(time.Second), BucketSeconds: 1, Aggregation: "avg"}
+	q := SeriesQuery{ProjectID: "project", DatasetID: "dataset", Metric: "latency", SourceID: "dataset", From: from, To: from.Add(time.Second), BucketSeconds: 1, Aggregation: "avg"}
 	request := workerRequest{Series: &workerSeriesOperation{InputHandles: []string{b.Handles[0].Handle}, Query: q}}
 	value := 1.0
 	lineage, _ := analysis.ScalarBucketDerivation(analysis.MetricPoint{Kind: analysis.KindObservation}, 1, "avg")
@@ -215,7 +217,7 @@ func TestWorkerSeriesResultRetainsQueryScopeAndLineage(t *testing.T) {
 	}
 
 	// Provider provenance is admitted by the shared model for governed monitors,
-	// but a native v1 scalar worker has no authority to manufacture that origin.
+	// but a native scalar worker has no authority to manufacture that origin.
 	forged := point
 	forged.Provider = &analysis.ProviderMeasurement{Name: "appdynamics", MetricID: "published-provider", Mode: "interval_bucket", BucketStart: from, BucketEnd: from.Add(time.Second), ResolutionSeconds: 1, Statistic: "avg"}
 	if err := forged.Validate(); err != nil {
@@ -432,5 +434,24 @@ func TestWorkerAllCollectionCapsBeforeTypedAllocation(t *testing.T) {
 	}
 	if !workerRawScalarBounds([]byte(`{"text":"\uD83D\uDE00"}`)) {
 		t.Fatal("valid surrogate pair rejected")
+	}
+}
+
+func TestWorkerPreviewRefusesCaseAmbiguousPhysicalSchema(t *testing.T) {
+	bootstrap := workerTestBootstrap(t)
+	request := workerRequest{Preview: &workerPreviewOperation{InputHandle: bootstrap.Handles[0].Handle}}
+	for _, paths := range [][][]string{
+		{{"value"}, {"VALUE"}},
+		{{"labels", "source"}, {"LABELS", "host"}},
+		{{"labels", "source"}, {"labels", "SOURCE"}},
+	} {
+		columns := []analysis.ParquetColumn{}
+		for _, path := range paths {
+			columns = append(columns, analysis.ParquetColumn{Path: workerParquetPath(path), PathComponents: path, PhysicalType: "INT64"})
+		}
+		result := workerResult{Status: "ok", Preview: &workerPreviewResult{Schema: analysis.ParquetSchemaPreview{Rows: 3, FileSize: 100, Columns: columns}}}
+		if result.validate(bootstrap, request) == nil {
+			t.Fatal("ambiguous child schema claimed exact preview fidelity", columns)
+		}
 	}
 }

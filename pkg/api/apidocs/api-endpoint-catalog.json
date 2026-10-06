@@ -6426,6 +6426,16 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/browser-resources",
+      "operationId": "handleGetRunArchiveBrowserResources",
+      "summary": "Get Run Archive Browser Resources",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
       "method": "POST",
       "path": "/api/v1/tests/{id}/archive/business-keys/lookup",
       "operationId": "handleBusinessKeyLookup",

@@ -1,0 +1,74 @@
+2026/10/05 02:05:20 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:20 INFO http request method=POST path=/api/v1/scripts status=201 duration_ms=6 remote=192.0.2.1:1234
+2026/10/05 02:05:20 INFO http request method=PUT path=/api/v1/scripts/6d70a915-c032-43e3-a344-793fa61b5725 status=200 duration_ms=4 remote=192.0.2.1:1234
+2026/10/05 02:05:20 INFO http request method=PATCH path=/api/v1/scripts/6d70a915-c032-43e3-a344-793fa61b5725/move status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:20 INFO http request method=DELETE path=/api/v1/scripts/6d70a915-c032-43e3-a344-793fa61b5725 status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/05 02:05:21 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:21 INFO http request method=POST path=/api/v1/scripts status=201 duration_ms=3 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=GET path=/api/v1/scripts/authoring-api status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=PUT path=/api/v1/scripts/authoring-api status=200 duration_ms=7 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=GET path=/api/v1/scripts/authoring-api status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=PUT path=/api/v1/scripts/authoring-api status=412 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=GET path=/api/v1/scripts/authoring-api status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=PUT path=/api/v1/scripts/authoring-api status=412 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=GET path=/api/v1/scripts/authoring-api status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/05 02:05:21 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:21 INFO http request method=GET path=/api/v1/scripts/strict-script status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=PUT path=/api/v1/scripts/strict-script status=428 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=PUT path=/api/v1/scripts/strict-script status=400 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=PUT path=/api/v1/scripts/strict-script status=400 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=PUT path=/api/v1/scripts/strict-script status=400 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=PUT path=/api/v1/scripts/strict-script status=200 duration_ms=6 remote=192.0.2.1:1234
+2026/10/05 02:05:21 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:21 INFO http request method=POST path=/api/v1/scripts status=201 duration_ms=3 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=GET path=/api/v1/scripts/ordinary-id status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=POST path=/api/v1/scripts status=409 duration_ms=0 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=POST path=/api/v1/scripts status=409 duration_ms=0 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=GET path=/api/v1/scripts/ordinary-id status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=PUT path=/api/v1/scripts/ordinary-id status=200 duration_ms=7 remote=192.0.2.1:1234
+2026/10/05 02:05:21 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:21 INFO http request method=GET path=/api/v1/scripts/other-replica-script status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=PUT path=/api/v1/scripts/other-replica-script status=200 duration_ms=8 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=GET path=/api/v1/scripts/other-replica-script status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:21 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:21 INFO http request method=PUT path=/api/v1/scripts/unsupported-revision status=428 duration_ms=0 remote=192.0.2.1:1234
+2026/10/05 02:05:21 ERROR internal server error ref=34437cb9118baa54 status=503 detail="durable script content revisions unavailable"
+2026/10/05 02:05:21 INFO http request method=PUT path=/api/v1/scripts/unsupported-revision status=503 duration_ms=0 remote=192.0.2.1:1234
+--- FAIL: TestScriptAuthoringAPIUnsupportedStoreCannotBypassStrictPolicy (0.06s)
+    script_authoring_handlers_test.go:287: unsupported store mutated strict resource
+2026/10/05 02:05:21 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:21 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:21 INFO http request method=GET path=/api/v1/scripts/audit-fault status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:21 ERROR internal server error ref=1e23e15ab19e3790 status=503 detail="script compatibility audit unavailable; no save was attempted"
+2026/10/05 02:05:21 INFO http request method=PUT path=/api/v1/scripts/audit-fault status=503 duration_ms=2 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=GET path=/api/v1/scripts/audit-fault status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/05 02:05:21 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:21 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:21 INFO http request method=GET path=/api/v1/scripts/audit-fault status=200 duration_ms=2 remote=192.0.2.1:1234
+2026/10/05 02:05:21 ERROR internal server error ref=418de74762ae57f6 status=503 detail="script save outcome audit unavailable; reload the script before retrying"
+2026/10/05 02:05:21 INFO http request method=PUT path=/api/v1/scripts/audit-fault status=503 duration_ms=5 remote=192.0.2.1:1234
+2026/10/05 02:05:21 INFO http request method=GET path=/api/v1/scripts/audit-fault status=200 duration_ms=0 remote=192.0.2.1:1234
+2026/10/05 02:05:22 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:22 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:22 INFO http request method=GET path=/api/v1/scripts/audit-fault status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:22 ERROR internal server error ref=ce1685c3087c2fd8 status=503 detail="script save outcome is uncertain; reload the script before retrying"
+2026/10/05 02:05:22 INFO http request method=PUT path=/api/v1/scripts/audit-fault status=503 duration_ms=3 remote=192.0.2.1:1234
+2026/10/05 02:05:22 INFO http request method=GET path=/api/v1/scripts/audit-fault status=200 duration_ms=0 remote=192.0.2.1:1234
+--- FAIL: TestScriptAuthoringAPIRequiredAuditFailuresAndUnknownCommit (0.19s)
+    --- FAIL: TestScriptAuthoringAPIRequiredAuditFailuresAndUnknownCommit/outcome_failure (0.06s)
+        script_authoring_handlers_test.go:326: uncertain response lacks reload-before-retry guidance
+    --- FAIL: TestScriptAuthoringAPIRequiredAuditFailuresAndUnknownCommit/commit_transport_uncertainty (0.07s)
+        script_authoring_handlers_test.go:326: uncertain response lacks reload-before-retry guidance
+2026/10/05 02:05:22 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:22 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:22 INFO http request method=GET path=/api/v1/scripts/secret-fence status=200 duration_ms=1 remote=192.0.2.1:1234
+2026/10/05 02:05:22 INFO http request method=PUT path=/api/v1/scripts/secret-fence status=412 duration_ms=2 remote=192.0.2.1:1234
+2026/10/05 02:05:22 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:22 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:22 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+2026/10/05 02:05:22 INFO http request method=GET path=/api/v1/scripts/LOC-SCR-0001-v1 status=404 duration_ms=0 remote=192.0.2.1:1234
+--- FAIL: TestScriptAuthoringAPIRefKeyAcrossReplicasAndCanonicalSave (0.09s)
+    script_authoring_handlers_test.go:409: authoring GET: 404 {"error":"script not found"}
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/api	3.676s
+FAIL

@@ -1,0 +1,68 @@
+{
+  "schema": "apexload.synthetic-har-regression-source.v1",
+  "created_utc": "2026-10-05T20:05:46.406193+00:00",
+  "worktree": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "head": "08d0254b73e51e4fad3066739d1a27f0954868a0",
+  "new_source_files": [
+    "pkg/convert/sample/har_sample_shape_test.go",
+    "pkg/convert/salesforce/har_sample_shape_test.go"
+  ],
+  "files": [
+    {
+      "path": "pkg/convert/sample/har_sample_shape_test.go",
+      "bytes": 7031,
+      "sha256": "a8273a58fe81b9d7b4572ba7c2935b994c99ceb15bfca79b3a449602a7dc3765"
+    },
+    {
+      "path": "pkg/convert/salesforce/har_sample_shape_test.go",
+      "bytes": 4462,
+      "sha256": "1f0080e9e609ba74e3eecd77964e490734f9b07d841fe62ee4950435d45a596a"
+    },
+    {
+      "path": "pkg/convert/sample/har.go",
+      "bytes": 34058,
+      "sha256": "9d40cde7fb713104eff85ce2108fd805e74e385a956e30239d9d698a80a9bfa6"
+    },
+    {
+      "path": "pkg/convert/sample/converter.go",
+      "bytes": 19797,
+      "sha256": "a9d299594d35239df8dc9879764f4057ec201cb297a82ee62d2a2594f551e11b"
+    },
+    {
+      "path": "pkg/convert/sample/request_pipeline.go",
+      "bytes": 9533,
+      "sha256": "5c070103fb7481208ffbb977769b659a39bcfd1321fa9088698d3ed20f0c875c"
+    },
+    {
+      "path": "pkg/convert/salesforce/analyzer.go",
+      "bytes": 120113,
+      "sha256": "de30d371b6defd9ec443ef03e9e8e9fa025f8922b4bfc82c25ccce76c4a8bf7f"
+    },
+    {
+      "path": "pkg/convert/requestimport/response_content_capture.go",
+      "bytes": 8752,
+      "sha256": "37a6d30825a3d1e55e85646229934f0c63ece4388abb3de0423354f9776f642b"
+    },
+    {
+      "path": "pkg/convert/requestimport/http_version_capture.go",
+      "bytes": 6868,
+      "sha256": "47709091233d0a43f973bb9b33829144907debe68dacd030a2d6ee5e7151e05d"
+    },
+    {
+      "path": "pkg/protocol/http/capabilities.go",
+      "bytes": 27934,
+      "sha256": "3d16c1ce87fdf3a5cc8dd361291fdedbb242b873e9e16df86aed9df0d67160cd"
+    },
+    {
+      "path": "go.mod",
+      "bytes": 11383,
+      "sha256": "05c38d4d914dd463eadcff718550f394425eeb85721dbcab2c0fc8c8d59b2d1b"
+    },
+    {
+      "path": "go.sum",
+      "bytes": 160716,
+      "sha256": "f24fca42c52f47ee68239f16130fc02743aed90c7ba2815b3197b665db15c2c8"
+    }
+  ],
+  "limits": "Eleven directly inspected source/module inputs only, not a full Go transitive dependency inventory; two synthetic-only test files, no raw capture or product source changes."
+}

@@ -1738,6 +1738,7 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 	if err := callProtocolTeardown(tctx, vu.Proto, vu.resultPublicationRedactionConfig()); err != nil {
 		return err
 	}
+	vu.Metrics.captureBrowserProvider(vu.Proto, vu.ResultSink, vu.Group, vu.Region, vu.resultPublicationRedactionConfig())
 	vu.bindRuntimeTextRedactor()
 	config := buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", vu.secretResolver())
 	if vu.sourceSamplers != nil {

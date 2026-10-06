@@ -1,0 +1,207 @@
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (1.74s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.79s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.94s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.29s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.08s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.21s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.28s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.08s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.21s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.28s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.08s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.20s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.28s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.08s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.20s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.29s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.08s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.20s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.28s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.08s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.20s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.29s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.08s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.21s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.28s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.08s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.21s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.28s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.08s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.20s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:165: independent frame INP finality missing
+    document_actual_integration_test.go:65: owned fixture diagnostics documents=7 frames=5 issued=6 browser_version=149.0.7827.55 errors=[] observation_states=map[child_frame/cls/censored/context_closed/source_censored:1 child_frame/cls/censored/frame_detached/source_censored:2 child_frame/cls/final/graceful_end/no_observation:1 child_frame/fcp/final/graceful_end/no_observation:2 child_frame/fcp/final/pagehide/no_observation:2 child_frame/inp/censored/context_closed/source_censored:1 child_frame/inp/censored/frame_detached/source_censored:2 child_frame/inp/final/graceful_end/no_interaction:1 child_frame/lcp/censored/context_closed/source_censored:1 child_frame/lcp/censored/frame_detached/source_censored:2 child_frame/lcp/final/graceful_end/no_observation:1 child_frame/ttfb/final/metric_observed/:4 main_frame/cls/censored/context_closed/source_censored:2 main_frame/cls/final/graceful_end/no_observation:1 main_frame/fcp/final/graceful_end/no_observation:1 main_frame/fcp/final/pagehide/no_observation:2 main_frame/inp/censored/context_closed/source_censored:2 main_frame/inp/final/graceful_end/no_interaction:1 main_frame/lcp/censored/context_closed/source_censored:2 main_frame/lcp/final/graceful_end/no_observation:1 main_frame/ttfb/censored/context_closed/source_censored:1 main_frame/ttfb/final/metric_observed/:2]
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- FAIL: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.29s)
+    --- FAIL: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.09s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.20s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.27s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.08s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.20s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.28s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.07s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.20s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:165: independent frame INP finality missing
+    document_actual_integration_test.go:65: owned fixture diagnostics documents=7 frames=5 issued=6 browser_version=149.0.7827.55 errors=[] observation_states=map[child_frame/cls/censored/context_closed/source_censored:1 child_frame/cls/censored/frame_detached/source_censored:2 child_frame/cls/final/graceful_end/:1 child_frame/fcp/final/graceful_end/no_observation:1 child_frame/fcp/final/metric_observed/:1 child_frame/fcp/final/pagehide/no_observation:2 child_frame/inp/censored/context_closed/source_censored:1 child_frame/inp/censored/frame_detached/source_censored:2 child_frame/inp/final/graceful_end/no_interaction:1 child_frame/lcp/censored/frame_detached/source_censored:2 child_frame/lcp/final/graceful_end/:1 child_frame/lcp/final/graceful_end/no_observation:1 child_frame/ttfb/final/metric_observed/:4 main_frame/cls/censored/context_closed/source_censored:2 main_frame/cls/final/graceful_end/no_observation:1 main_frame/fcp/final/graceful_end/no_observation:1 main_frame/fcp/final/metric_observed/:1 main_frame/fcp/final/pagehide/no_observation:1 main_frame/inp/censored/context_closed/source_censored:2 main_frame/inp/final/graceful_end/no_interaction:1 main_frame/lcp/censored/context_closed/source_censored:2 main_frame/lcp/final/graceful_end/no_observation:1 main_frame/ttfb/censored/context_closed/source_censored:1 main_frame/ttfb/final/metric_observed/:2]
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- FAIL: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.34s)
+    --- FAIL: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.10s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.24s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:165: independent frame INP finality missing
+    document_actual_integration_test.go:65: owned fixture diagnostics documents=7 frames=5 issued=6 browser_version=149.0.7827.55 errors=[] observation_states=map[child_frame/cls/censored/context_closed/source_censored:1 child_frame/cls/censored/frame_detached/source_censored:2 child_frame/cls/final/graceful_end/no_observation:1 child_frame/fcp/final/graceful_end/no_observation:2 child_frame/fcp/final/pagehide/no_observation:2 child_frame/inp/censored/context_closed/source_censored:1 child_frame/inp/censored/frame_detached/source_censored:2 child_frame/inp/final/graceful_end/no_interaction:1 child_frame/lcp/censored/frame_detached/source_censored:2 child_frame/lcp/final/graceful_end/no_observation:2 child_frame/ttfb/final/metric_observed/:4 main_frame/cls/censored/context_closed/source_censored:2 main_frame/cls/final/graceful_end/:1 main_frame/fcp/final/metric_observed/:1 main_frame/fcp/final/pagehide/no_observation:2 main_frame/inp/censored/context_closed/source_censored:2 main_frame/inp/final/graceful_end/no_interaction:1 main_frame/lcp/censored/context_closed/source_censored:2 main_frame/lcp/final/graceful_end/:1 main_frame/ttfb/censored/context_closed/source_censored:1 main_frame/ttfb/final/metric_observed/:2]
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- FAIL: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.34s)
+    --- FAIL: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.11s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.23s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.33s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.11s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.22s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:165: independent frame INP finality missing
+    document_actual_integration_test.go:65: owned fixture diagnostics documents=7 frames=5 issued=6 browser_version=26.5 errors=[] observation_states=map[child_frame/cls/censored/context_closed/source_censored:1 child_frame/cls/censored/frame_detached/source_censored:2 child_frame/cls/final/graceful_end/unsupported:1 child_frame/fcp/final/graceful_end/no_observation:1 child_frame/fcp/final/metric_observed/:3 child_frame/inp/censored/context_closed/source_censored:1 child_frame/inp/censored/frame_detached/source_censored:2 child_frame/inp/final/graceful_end/no_interaction:1 child_frame/lcp/censored/context_closed/source_censored:1 child_frame/lcp/censored/frame_detached/source_censored:2 child_frame/lcp/final/graceful_end/:1 child_frame/ttfb/final/metric_observed/:4 main_frame/cls/censored/context_closed/source_censored:2 main_frame/cls/final/graceful_end/unsupported:1 main_frame/fcp/final/metric_observed/:2 main_frame/fcp/final/pagehide/no_observation:1 main_frame/inp/censored/context_closed/source_censored:2 main_frame/inp/final/graceful_end/no_interaction:1 main_frame/lcp/censored/context_closed/source_censored:2 main_frame/lcp/final/graceful_end/:1 main_frame/ttfb/censored/context_closed/source_censored:1 main_frame/ttfb/final/metric_observed/:2]
+--- FAIL: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.28s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.07s)
+    --- FAIL: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.20s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.27s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.08s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.20s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.28s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.08s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.20s)
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium
+    document_actual_integration_test.go:120: actual native runtime engine=chromium browser_version=149.0.7827.55 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+=== RUN   TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit
+    document_actual_integration_test.go:120: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+    document_actual_integration_test.go:174: owned target request counters: map[string]int{"/":2, "/frame":4}
+--- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.28s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/chromium (0.07s)
+    --- PASS: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.21s)
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/protocol/browser	7.740s
+FAIL

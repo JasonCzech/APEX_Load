@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+// @ts-expect-error Vitest runs in Node; the dashboard app intentionally omits Node globals.
+import { createHash } from 'node:crypto'
 import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -527,13 +529,16 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('telemetry gaps')
     const metadataBoxes = Array.from(container.querySelectorAll('.archive-metadata-box'))
     expect(metadataBoxes.map(box => box.querySelector('h3')?.textContent)).toEqual([
-      'Telemetry Health',
+      'Legacy telemetry classification',
       'Schema Compatibility',
       'Evidence Tiers',
       'Run Provenance',
       'Change Attribution',
     ])
     expect(container.textContent).toContain('1 healthy · 2 degraded · 0 breached')
+    expect(container.textContent).toContain('Retained legacy mixed diagnostic classifications')
+    expect(container.textContent).toContain('Legacy: degraded')
+    expect(container.textContent).toContain('do not establish synchronized source clocks, complete wall-time coverage, exact run loss totals, or a telemetry CI verdict')
     expect(container.textContent).toContain('Max Sample Age')
     expect(container.textContent).toContain('850ms')
     expect(container.textContent).toContain('Schema Compatibility')
@@ -595,10 +600,13 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('generator-1 · healthy · 50 available')
     expect(container.textContent).toContain('Browser Metrics')
     expect(container.textContent).toContain('UX Intelligence')
-    expect(container.textContent).toContain('Healthy · 100/100')
-    expect(container.textContent).toContain('Browser UX signals are within the current canary thresholds; weakest device is iphone_se.')
-    expect(container.textContent).toContain('Weakest: iphone_se')
-    expect(container.textContent).toContain('Largest Contentful Paint reflects perceived page-load speed.')
+    expect(container.textContent).toContain('Unscored')
+    expect(container.textContent).toContain('5/7 required fields available')
+    expect(container.querySelector('.browser-ux-card.good')).toBeNull()
+    expect(container.textContent).toContain('not a standards-qualified Core Web Vitals score')
+    expect(container.textContent).toContain('1 device summary unranked')
+    expect(container.textContent).not.toContain('Weakest complete summary:')
+    expect(container.textContent).toContain('Legacy threshold: 2500 ms to 4000 ms; weight 1/7.')
     const reportLink = container.querySelector('a[href="/api/v1/tests/test-1/report"]') as HTMLAnchorElement | null
     expect(reportLink).toBeTruthy()
     expect(reportLink?.textContent).toContain('Download Report')
@@ -1171,7 +1179,9 @@ describe('TestExecutionArchive', () => {
 
     expect(container.textContent).toContain('UX Intelligence')
     expect(container.textContent).toContain('Poor ·')
-    expect(container.textContent).toContain('UX signals need attention; weakest device is iphone_se.')
+    expect(container.textContent).toContain('observed components need attention')
+    expect(container.textContent).toContain('2 device summaries unranked')
+    expect(container.textContent).not.toContain('Weakest complete summary:')
     expect(container.textContent).toContain('LCP')
     expect(container.textContent).toContain('4300.0 ms')
     expect(container.textContent).toContain('Blocking resources')
@@ -1568,16 +1578,120 @@ describe('TestExecutionArchive', () => {
     expect(regionReads).toBe(1)
   })
 
+  it.each([null, 0, false, 'bad', []])('keeps malformed direct browser summaries %j visible without crashing', raw => {
+    const malformed = raw as unknown as NonNullable<RunArchiveReport['browser_by_device']>[string]
+    return renderArchiveView('report-browser-summary', {
+      ...archiveReport,
+      browser_by_device: { invalid_device: malformed },
+      browser_by_engine: { invalid_engine: malformed },
+      browser_by_platform: { invalid_platform: malformed },
+    }).then(() => {
+      expect(container.querySelectorAll('.browser-device-card')).toHaveLength(3)
+      expect(container.textContent).toContain('invalid_device')
+      expect(container.textContent).toContain('invalid_engine')
+      expect(container.textContent).toContain('invalid_platform')
+      expect(container.textContent).toContain('Malformed summary: expected an object')
+      expect(container.textContent).toContain('Sample count unavailable')
+      expect(container.textContent).toContain('1 device summary unranked')
+      expect(container.textContent).not.toContain('Weakest complete summary:')
+      expect(Array.from(container.querySelectorAll('.browser-device-stats')).every(node => node.textContent?.includes('LCP n/a'))).toBe(true)
+    })
+  })
+
+  it('shows independent latest document states without requiring a legacy action summary', async () => {
+    await renderArchiveView('report-browser-summary', { ...archiveReport, overview: { ...archiveReport.overview, browser: undefined },
+      browser_documents: { version: 2, metrics: [], incomplete: true, dropped_observations: 2 }, browser_document_evidence: [], browser_document_evidence_truncated: true })
+    const panel = container.querySelector('[aria-label="Browser document evidence"]')!
+    expect(panel.textContent).toContain('Archived summaries retain the latest state per source and measurement identity')
+    expect(panel.textContent).toContain('Document evidence is incomplete. 2 observations were dropped')
+    expect(panel.textContent).toContain('Additional source observations are excluded from this view')
+    expect(container.querySelector('.archive-browser-section')).toBeNull()
+  })
+
+  it('keeps old archive document evidence absent instead of deriving it from legacy browser samples', async () => {
+    await renderArchiveView('report-browser-summary', archiveReport)
+    const panel = container.querySelector('[aria-label="Browser document evidence"]')!
+    expect(panel.textContent).toContain('Document summary unavailable')
+    expect(panel.textContent).toContain('Legacy action measurements do not substitute')
+    expect(panel.querySelector('table')).toBeNull()
+  })
+
+  it('renders object-valued browser label metadata as unavailable scalar labels', async () => {
+    const value = { samples: 1, browser_engine: {}, device_platform: {}, device_tier: {} } as unknown as NonNullable<RunArchiveReport['browser_by_device']>[string]
+    await renderArchiveView('report-browser-summary', { ...archiveReport, browser_by_device: { native: value }, browser_by_engine: { native: value }, browser_by_platform: { native: value } })
+    expect(container.querySelectorAll('.browser-device-card')).toHaveLength(3)
+    expect(container.textContent).toContain('unknown · browser · unknown tier')
+    expect(container.textContent).not.toContain('[object Object]')
+    expect(Array.from(container.querySelectorAll('.browser-device-stats')).every(node => node.textContent?.includes('LCP n/a'))).toBe(true)
+  })
+
+  it.each([['absent', undefined, 'n/a'], ['observed zero', { ...archiveReport.overview.telemetry, samples: 0 }, '0']] as const)('preserves %s legacy telemetry samples without inventing zero', async (_, telemetry, samples) => {
+    await renderArchiveView('report-metadata', { ...archiveReport, overview: { ...archiveReport.overview, telemetry } } as RunArchiveReport)
+    const panel = Array.from(container.querySelectorAll('.archive-metadata-box')).find(node => node.querySelector('h3')?.textContent === 'Legacy telemetry classification')
+    const row = Array.from(panel?.querySelectorAll('.archive-compact-row') ?? []).find(node => node.querySelector('dt')?.textContent === 'Samples')
+    expect(row?.querySelector('dd')?.textContent).toBe(samples)
+    if (!telemetry) expect(panel?.textContent).toContain('Legacy: not captured')
+  })
+  it('preserves unknown legacy classification interval counts instead of manufacturing zeros', async () => {
+    const telemetry = { status: 'degraded', samples: 1 } as NonNullable<RunArchiveReport['overview']['telemetry']>
+    await renderArchiveView('report-metadata', { ...archiveReport, overview: { ...archiveReport.overview, telemetry } })
+    const panel = Array.from(container.querySelectorAll('.archive-metadata-box')).find(node => node.querySelector('h3')?.textContent === 'Legacy telemetry classification')
+    expect(panel?.textContent).toContain('n/a healthy · n/a degraded · n/a breached')
+  })
+
+  it('uses the report immutable policy receipt instead of refreshed final provenance', async () => {
+    const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+    Object.defineProperty(globalThis, 'crypto', { configurable: true, value: { subtle: { digest: async (_algorithm: string, data: Uint8Array) => Uint8Array.from(createHash('sha256').update(data).digest()).buffer } } })
+    try {
+      const policy: NonNullable<RunArchiveReport['telemetry_policy']>['policy'] = {
+        schema_version: 'apexload.telemetry_policy.v1', policy_id: 'system-telemetry-budgets', revision: 1, hash: '9946392432f9533e924fa82684a8094a9c55beaf6296d588500be28a66027629', captured_at: '2026-10-05T12:00:00Z', capture_boundary: 'execution-admission-before-staging', classification_algorithm: 'legacy-mixed-diagnostic.v1', expected_controller_publication_interval_ms: 3000, cadence_scope: 'local-controller-ticker', sustained_breach_window_ms: 15000, coverage_rule: 'retained-classifications-only;gaps-unknown',
+        budgets: [{ stage: 'sample_age', enabled: true, limit_ms: 17 }, { stage: 'generator_processing', enabled: false, limit_ms: 0 }, { stage: 'transport', enabled: true, limit_ms: 750 }, { stage: 'controller_fanout', enabled: true, limit_ms: 250 }, { stage: 'browser_render', enabled: true, limit_ms: 1e-12 }],
+      }
+      const changed = { ...policy, hash: '9ad5e50459df03837f8214c31cfe9833b0d7be94d9725d449ec7182e2e7e4c7f', budgets: policy.budgets.map(budget => budget.stage === 'sample_age' ? { ...budget, limit_ms: 999 } : budget) }
+      const report = { ...archiveReport, telemetry_policy: { availability: 'available' as const, policy }, manifest: { ...archiveReport.manifest, provenance: { ...archiveReport.manifest.provenance, telemetry_policy: changed } } }
+      await renderArchiveView('report-metadata', report)
+      const card = container.querySelector('[aria-label="Telemetry budget policy"]')
+      expect(card?.textContent).toContain('17 ms')
+      expect(card?.textContent).not.toContain('999 ms')
+      await renderArchiveView('report-metadata', { ...report, telemetry_policy: undefined })
+      expect(container.querySelector('[aria-label="Telemetry budget policy"]')?.textContent).toContain('No immutable policy receipt')
+      expect(container.querySelector('[aria-label="Retained telemetry stage budgets"]')).toBeNull()
+    } finally { if (cryptoDescriptor) Object.defineProperty(globalThis, 'crypto', cryptoDescriptor); else Reflect.deleteProperty(globalThis, 'crypto') }
+  })
+
+  it('exposes retained archive paging without requiring a report resource preview or document metrics', async () => {
+    const report = { ...archiveReport, browser_resources: [], browser_documents: undefined, browser_document_evidence: undefined }
+    await renderArchiveView('report-browser-resources', report, { ...test, project_id: 'project-1' })
+    const disclosure = container.querySelector('[aria-label="Archive resource inspection"]')!
+    const open = Array.from(disclosure.querySelectorAll('button')).find(button => button.textContent === 'Inspect retained archive resources')!
+    expect(open.disabled).toBe(false)
+    expect(open.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector('[aria-label="Retained archive resource inspector"]')).toBeNull()
+    expect(container.textContent).toContain('No resource preview was retained in this report')
+    expect(container.textContent).not.toContain('No browser resource waterfall entries were captured')
+    await renderArchiveView('report-overview', report, { ...test, project_id: 'project-1' })
+    expect(container.querySelector('[aria-label="Archive resource inspection"]')).toBeNull()
+  })
+
+  it('refuses archive paging when the report belongs to a different project', async () => {
+    await renderArchiveView('report-browser-resources', archiveReport, { ...test, project_id: 'other-project' })
+    const disclosure = container.querySelector('[aria-label="Archive resource inspection"]')!
+    expect(disclosure.querySelector('button')!.disabled).toBe(true)
+    expect(disclosure.textContent).toContain('matching archived run, project and report')
+    expect(container.querySelector('[aria-label="Retained archive resource inspector"]')).toBeNull()
+  })
+
   async function renderArchiveView(
     view: Parameters<typeof TestExecutionArchive>[0]['view'],
     report: RunArchiveReport = archiveReport,
+    testRecord: TestSummary = test,
   ) {
     await act(async () => {
       root.render(
         <TestExecutionArchive
           view={view}
           hasArchive={true}
-          test={test}
+          test={testRecord}
           archiveError=""
           archiveLoading={false}
           archiveReport={report}

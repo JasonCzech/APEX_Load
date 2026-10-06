@@ -1,0 +1,77 @@
+{
+  "schema": "apexload.network-acquisition.valid-fixture-correction.v1",
+  "created_at_utc": "2026-10-06T05:03:15.206038+00:00",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "path": "pkg/protocol/browser/network_task_completion_test.go",
+  "before_sha256": "df79d76f1ab62cc454dd377616fe7a882c9ea5f11835be1389703bdacd55b9d7",
+  "after_sha256": "4adb6f77b6f53e61aae35c21310d28635dbf1e9fc80d17a600344f579de4c6bb",
+  "diff_path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/applied-v3-valid-evidence-fixture-correction.diff",
+  "diff_sha256": "1ba41e488e0944100f3cda09a0a187b2c8a52781f271551eda832063d1b6c4eb",
+  "scope": "Test fixture only; minimum existing Clone-required evidence fields and explicit nonnil checks. No production changes, no threshold/budget/validation weakening. Independent review and focused rerun pending.",
+  "retained_red": {
+    "label": "main-network-acquisition-focused-1",
+    "exit_code": 1,
+    "duration_seconds": 33.373,
+    "raw_sha256": "b6e2bfa37d2d3b727b22d383272a6fece1ca22bf60d79be8c157f696b7922223",
+    "launch_helper_sha256": "4ad9cfbbdca7cd5705eac2c54dc82dbb1d911206b0c9c2d6a6b8aab15682d7d0",
+    "helper_sha256_reported_at_finish": "ddd9d7aadb2ab67e0fee64b9cd683a3e127150cdad6ea1965f672241d88c7d5e",
+    "helper_replacement_caveat": "Same helper path changed during execution; actual named test failure and immutable source/embed/raw outcome retained diagnostically, not a green qualification."
+  },
+  "source_bookends": [
+    {
+      "path": "pkg/protocol/browser/action_helpers.go",
+      "sha256": "c9916f043dbbc67779afecd5a248aef6e9f331721294ce4a46700a1633ff3274",
+      "bytes": 9025,
+      "changed_by_fix": false
+    },
+    {
+      "path": "pkg/protocol/browser/browser.go",
+      "sha256": "904e724e846a73919b7efaf9dd683bd42973a994d615d657ecce01707869e7b0",
+      "bytes": 11706,
+      "changed_by_fix": false
+    },
+    {
+      "path": "pkg/protocol/browser/lifecycle.go",
+      "sha256": "fc1db36243bcd6d6948216241f6646b6a4df66e56f2735d11986f03c9260de93",
+      "bytes": 3344,
+      "changed_by_fix": false
+    },
+    {
+      "path": "pkg/protocol/browser/network_task_completion.go",
+      "sha256": "1e03017d6f20867d0aec87deb9d02670a36994375e118661cadaad85609cde0f",
+      "bytes": 9108,
+      "changed_by_fix": false
+    },
+    {
+      "path": "pkg/protocol/browser/network_task_completion_test.go",
+      "sha256": "4adb6f77b6f53e61aae35c21310d28635dbf1e9fc80d17a600344f579de4c6bb",
+      "bytes": 20416,
+      "changed_by_fix": true
+    },
+    {
+      "path": "pkg/protocol/browser/result_finalization.go",
+      "sha256": "10906e63e45b2ed728c3742f54590fd34660a4762e62091ef1e93872d09389ef",
+      "bytes": 3055,
+      "changed_by_fix": false
+    },
+    {
+      "path": "pkg/protocol/browser/result_finalization_test.go",
+      "sha256": "a226c9619718c7ee5462bb26f20243276afc42a8e7fd017034ad5a6f3c0445ff",
+      "bytes": 3671,
+      "changed_by_fix": false
+    },
+    {
+      "path": "pkg/protocol/browser/runtime_context.go",
+      "sha256": "b6038156d5346e17dd94dcef13b1fe1705f36270492eceb765c469d1bbd95773",
+      "bytes": 25951,
+      "changed_by_fix": false
+    }
+  ],
+  "self_review": {
+    "required_fields": "Version=BrowserEvidenceVersion, current SourceGeneration, matching generation-prefixed RequestID, nonzero UTC ObservedAt, native TimingSource=playwright, allowed State=finished. ServiceWorker remains a real false pointer.",
+    "assertions": "Nonnil evidence and ServiceWorker pointer asserted before snapshot mutation; stored fixture remains guarded and original RequestID/false/header values checked after mutation.",
+    "findings": []
+  },
+  "tests_started_after_fix": false,
+  "independent_review_pending": true
+}

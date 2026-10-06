@@ -1080,6 +1080,80 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('iPhone 14 Pro')
   })
 
+  it('renders comparison cards from the same admitted mixed and malformed cohorts as browser charts', async () => {
+    const originalReport = apiMock.getTestArchiveReport.getMockImplementation()!
+    apiMock.getTestArchiveReport.mockImplementation(async (id: string) => {
+      const report = await originalReport(id)
+      return {
+        ...report,
+        overview: { ...report.overview, browser: { samples: 0, avg_lcp_ms: 4000, avg_inp_ms: -1 } },
+        browser_by_engine: id === 'run-a' ? {} : { broken: null, nested: { samples: 1, browser_engine: {}, avg_lcp_ms: -2, avg_inp_ms: 0 } },
+        browser_by_platform: id === 'run-a' ? {} : { broken: 5, nested: { samples: 1, device_platform: {}, browser_engine: [], avg_lcp_ms: null, avg_inp_ms: 0 } },
+        browser_by_device: id === 'run-a' ? {
+          captured: { samples: 10, browser_engine: 'chromium', device_platform: 'ios', avg_lcp_ms: 4000, avg_inp_ms: 0, avg_cls_score: 0 },
+          unavailable: { samples: 90, browser_engine: 'chromium', device_platform: 'ios', avg_inp_ms: 0, avg_cls_score: 0 },
+          alias: { samples: 1, browser_engine: 'Chromium', device_platform: 'iOS', avg_lcp_ms: 8000, avg_inp_ms: 0, avg_cls_score: 0 },
+          broken: null,
+          primitive: false,
+          nested: { samples: 1, browser_engine: {}, device_platform: {}, device_tier: {}, avg_lcp_ms: 0, avg_inp_ms: 0, avg_cls_score: 0 },
+        } : { broken: null, primitive: 5, nested: { samples: 0, browser_engine: {}, device_platform: {}, device_tier: {}, avg_lcp_ms: 4000, avg_inp_ms: -1 } },
+      }
+    })
+    await act(async () => {
+      root.render(<ResultsPage testStatuses={{}} onSelectTest={vi.fn()}
+        activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+        activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }} />)
+      await Promise.resolve()
+    })
+    const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]'))
+    expect(checkboxes).toHaveLength(2)
+    await act(async () => {
+      checkboxes.forEach(checkbox => checkbox.click())
+      await Promise.resolve()
+    })
+    await act(async () => {
+      buttonByText(container, 'Run Comparison')!.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const panels = container.querySelectorAll('.results-compare-panel')
+    expect(panels).toHaveLength(2)
+    const cards = (panel: Element) => Array.from(panel.querySelectorAll<HTMLElement>('.browser-device-card'))
+    const cohort = (panel: Element, key: string) => cards(panel).find(card => card.dataset.cohortKey === key)!
+    expect(cards(panels[0])).toHaveLength(6)
+    expect(cohort(panels[0], '["device","broken"]').textContent).toContain('Malformed summary: expected an object')
+    expect(cohort(panels[0], '["device","primitive"]').textContent).toContain('LCP n/a')
+    expect(cohort(panels[0], '["device","nested"]').textContent).toContain('unknown · browser · unknown tier')
+    expect(cohort(panels[0], '["device","nested"]').textContent).toContain('LCP 0.0 ms')
+    expect(cohort(panels[1], '["device","nested"]').textContent).toContain('LCP n/a')
+    expect(cohort(panels[1], '["device","nested"]').textContent).toContain('INP n/a')
+    // Overall cards apply the same sample population admission as the chart.
+    const overallLCP = Array.from(panels[0].querySelectorAll('.results-compare-metric')).find(metric => metric.querySelector('.results-compare-label')?.textContent === 'Avg LCP')
+    expect(overallLCP).toBeDefined()
+    expect(overallLCP!.querySelector('.results-compare-value')!.textContent).toBe('n/a')
+    for (const [mode, named, alias] of [['Engine', 'chromium', 'Chromium'], ['Platform', 'ios', 'iOS']] as const) {
+      await act(async () => {
+        buttonByText(container, mode)!.click()
+        await Promise.resolve()
+      })
+      const kind = mode.toLowerCase()
+      const mixed = cohort(panels[0], JSON.stringify([kind, named]))
+      expect(mixed.textContent).toContain('LCP n/a')
+      expect(mixed.textContent).toContain('INP 0.0 ms')
+      expect(mixed.textContent).toContain('CLS 0.000')
+      expect(mixed.textContent).toContain('Unavailable members are retained')
+      expect(mixed.textContent).not.toContain('400.0 ms')
+      expect(cohort(panels[0], JSON.stringify([kind, alias])).textContent).toContain('LCP 8000.0 ms')
+      expect(cards(panels[0])).toHaveLength(5)
+      for (const profile of ['broken', 'primitive', 'nested']) {
+        expect(cohort(panels[0], JSON.stringify([kind, 'unavailable', profile])).textContent).toContain('LCP n/a')
+      }
+      expect(cohort(panels[1], JSON.stringify([kind, 'broken'])).textContent).toContain('Malformed summary: expected an object')
+      expect(cohort(panels[1], JSON.stringify([kind, 'nested'])).textContent).toContain('LCP n/a')
+      expect(cohort(panels[1], JSON.stringify([kind, 'nested'])).textContent).toContain('INP 0.0 ms')
+    }
+  })
+
   it('keeps the active comparison from reloading during results auto-refresh', async () => {
     vi.useFakeTimers()
 

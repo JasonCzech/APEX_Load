@@ -1,0 +1,35 @@
+{
+  "name": "native-har-precreate-bounds-red-2",
+  "argv": [
+    "go",
+    "test",
+    "./pkg/protocol/browser",
+    "-run",
+    "TestHAROwnership(RawFileIsPrivate|RetentionRejects|UnjoinedRetired)",
+    "-short",
+    "-count=1"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "exit_code": 1,
+  "elapsed_seconds": 2.823,
+  "recorded_at_utc": "2026-10-05T21:17:06.318328+00:00",
+  "log_path": "/private/tmp/native-har-precreate-bounds-red-2.log",
+  "log_sha256": "e19471b8f68738db67d46e771173439e7189888251d6bf96d0beca3487a30ae7",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4024,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "raw_receipt_sha256": "00915c7a4372409b190eec5fcdb635f10ec700c07ac194d51b69ec7017c17587",
+  "repository_inventory_before_sha256": "7a57fccb6303f511ecde4f0644270fe54d670ff74650f0015b03b0db43da70ac",
+  "repository_inventory_after_sha256": "7a57fccb6303f511ecde4f0644270fe54d670ff74650f0015b03b0db43da70ac",
+  "qualification_disposition": "Superseded red production regressions: raw file not privately reserved before native admission, and oversized retention byte ceiling accepted.",
+  "receipt_scope_note": "Compact durable receipt retains original private receipt SHA, source count/stability and inventory digests. Full 4,000+ repository inventories remain in the named private raw receipt; direct review inventories are copied separately. Neither inventory includes complete module-cache/native dependencies.",
+  "outcome": "red-superseded"
+}

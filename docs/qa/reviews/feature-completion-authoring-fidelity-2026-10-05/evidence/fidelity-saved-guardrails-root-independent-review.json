@@ -1,0 +1,43 @@
+{
+  "reviewer": "root",
+  "reviewed_at": "2026-10-05T17:03:27.400723+00:00",
+  "scope": "independent source review of narrow authored guardrail shape-seed fix and actual tests; browser execution recorded separately",
+  "inventory_sha256": "6234c1e5dff5b175af69920885af7bc1986b42d4afe92befe6d8736400a102d3",
+  "files": [
+    {
+      "path": "dashboard/src/components/TestHub.tsx",
+      "bytes": 288916,
+      "sha256": "4143de7b41608f5f3af14e32df41510f8bb743110e4f8d40e82cfe510defed92"
+    },
+    {
+      "path": "dashboard/src/components/TestHub.test.tsx",
+      "bytes": 189588,
+      "sha256": "3eeb2ab1c6b9281576136e1c059576b2d39b571b979a5f6a70967a97565254f6"
+    },
+    {
+      "path": "dashboard/src/components/scenarioFidelity.test.ts",
+      "bytes": 7412,
+      "sha256": "df77806562bc3f28ee751fd229c656a5b56aa8ae60f1ce3e2b6067e5787b880d"
+    },
+    {
+      "path": "dashboard/e2e/workflow-new-test.spec.ts",
+      "bytes": 43480,
+      "sha256": "191a28ce53541a1578a4b1a8aa3648a4fd33c2ef0944fb7cfcb0370e4d6e4c72"
+    },
+    {
+      "path": "dashboard/e2e/workflow-scenario-composition.spec.ts",
+      "bytes": 15526,
+      "sha256": "9b40a1f0dcb0f3ac9d81163f135d8b25ab55fc7946f5190f3f97d5e8bf610e20"
+    }
+  ],
+  "actionable_findings": [],
+  "reviewed_behaviors": [
+    "cloned scalar-aware prior guardrails retained; only four prior shape-owned demand fields removed",
+    "explicit cloned seed fields override corresponding guardrails; omittedp95/error scalar aliases use merged values",
+    "actual edit and clone toStepped/Goal source-no-alias regressions",
+    "actual template explicit SLA and rule clearing while omitted guardrails retained",
+    "real saved-source shape-change API submit/reopen; original absence, groupSLA and zero target traffic assertions retained",
+    "queued-copy compact default load semantics and observer preserved; exact canonical response checked"
+  ],
+  "qualifies": "source review only, no runtime/whole-authoring-completion claim"
+}

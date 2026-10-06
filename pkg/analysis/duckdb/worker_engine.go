@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -40,6 +41,7 @@ func (e *Engine) Series(ctx context.Context, files []string, query SeriesQuery) 
 	if query.Validate() != nil {
 		return nil, errWorkerProtocol
 	}
+	query.Dimensions = maps.Clone(query.Dimensions)
 	a, request, err := e.prepareWorkerBounded(ctx, files, nil, &query)
 	if err != nil {
 		return nil, err
@@ -85,6 +87,7 @@ func (e *Engine) Normalize(ctx context.Context, input NormalizeRequest) (Normali
 				e.workerOutput[path] = descriptor
 				if handle.Role == "normalized" {
 					out.Files = append(out.Files, path)
+					out.Partitions = append(out.Partitions, NormalizedFilePartition{File: path, Bytes: descriptor.Bytes, SHA256: descriptor.SHA256, Stats: descriptor.Partition.Clone()})
 				} else {
 					out.RejectionFiles = append(out.RejectionFiles, path)
 				}
@@ -430,6 +433,17 @@ func workerCloneNormalizeInput(input NormalizeRequest) (NormalizeRequest, error)
 		measure := &input.Mapping.Measures[i]
 		measure.Value = append(Column{}, measure.Value...)
 		measure.NameColumn = append(Column{}, measure.NameColumn...)
+	}
+	if input.Mapping.Identity != nil {
+		identity := *input.Mapping.Identity
+		identity.Source = append(Column{}, identity.Source...)
+		identity.Host = append(Column{}, identity.Host...)
+		identity.Service = append(Column{}, identity.Service...)
+		identity.Dimensions = append([]analysis.ParquetDimensionMapping{}, identity.Dimensions...)
+		for i := range identity.Dimensions {
+			identity.Dimensions[i].Value = append(Column{}, identity.Dimensions[i].Value...)
+		}
+		input.Mapping.Identity = &identity
 	}
 	return input, nil
 }

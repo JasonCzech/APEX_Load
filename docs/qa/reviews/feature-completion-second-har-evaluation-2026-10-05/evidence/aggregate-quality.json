@@ -1,0 +1,19 @@
+{
+  "http_version_categories": {
+    "request": {
+      "unknown": 435
+    },
+    "response": {
+      "unknown": 435
+    }
+  },
+  "page_timing_categories": {
+    "onContentLoad": {
+      "missing": 404
+    },
+    "onLoad": {
+      "missing": 404
+    }
+  },
+  "distinct_referenced_page_count": 404
+}

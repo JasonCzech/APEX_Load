@@ -1,0 +1,276 @@
+Building controller...
+Starting controller on http://127.0.0.1:18471 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.kXihqzLBs7)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 6 tests using 1 worker
+
+(node:47606) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/workflow-script-editor.spec.ts:7:1 › operator edits the failed nested browser assertion and reruns without losing source fields (961ms)
+  ✘  2 e2e/workflow-script-editor.spec.ts:60:1 › authored script goals survive an unrelated editor save and canonical reopen (16.0s)
+(node:47706) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  3 e2e/workflow-script-editor.spec.ts:110:1 › two editors preserve stale drafts and require explicit revision review before reapply (16.1s)
+(node:47790) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  4 e2e/workflow-script-editor.spec.ts:187:1 › placement-only changes invalidate save authority and explicit reapply preserves the current folder (116ms)
+(node:47804) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  5 e2e/workflow-script-editor.spec.ts:214:1 › uncertain successful writes retain drafts and revoke retry authority until explicit review (105ms)
+(node:47809) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  6 e2e/workflow-script-editor.spec.ts:257:1 › library secret rebind retains exact revision authority and requires review after a real conflict (121ms)
+
+
+  1) e2e/workflow-script-editor.spec.ts:60:1 › authored script goals survive an unrelated editor save and canonical reopen 
+
+    TimeoutError: locator.press: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for locator('.script-code-pane').getByPlaceholder('Find', { exact: true })
+        - locator resolved to <input form="" value="" name="search" aria-label="Find" main-field="true" placeholder="Find" class="cm-textfield"/>
+      - elementHandle.press("Enter")
+      - element was detached from the DOM, retrying
+
+
+       97 |   const find = code.getByPlaceholder('Find', { exact: true })
+       98 |   await find.pressSequentially('goal_config')
+    >  99 |   await find.press('Enter')
+          |              ^
+      100 |   await expect(code.locator('.cm-content')).toContainText('goal_config')
+      101 |   await find.fill('')
+      102 |   await find.pressSequentially('217.5')
+        at /Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/e2e/workflow-script-editor.spec.ts:99:14
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dev-admin/workflow-script-editor-aut-7060d-r-save-and-canonical-reopen/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dev-admin/workflow-script-editor-aut-7060d-r-save-and-canonical-reopen/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/dev-admin/workflow-script-editor-aut-7060d-r-save-and-canonical-reopen/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/dev-admin/workflow-script-editor-aut-7060d-r-save-and-canonical-reopen/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) e2e/workflow-script-editor.spec.ts:110:1 › two editors preserve stale drafts and require explicit revision review before reapply 
+
+    TimeoutError: locator.fill: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for locator('.side-panel-script-name input')
+        - locator resolved to <input value="Revision fixture" placeholder="My_Test_Script"/>
+        - fill("First editor saved")
+      - attempting fill action
+        2 × waiting for element to be visible, enabled and editable
+          - element is not visible
+        - retrying fill action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and editable
+          - element is not visible
+        - retrying fill action
+          - waiting 100ms
+        30 × waiting for element to be visible, enabled and editable
+           - element is not visible
+         - retrying fill action
+           - waiting 500ms
+
+
+      130 |     await expect(firstName).toHaveValue('Revision fixture')
+      131 |     await expect(staleName).toHaveValue('Revision fixture')
+    > 132 |     await firstName.fill('First editor saved')
+          |                     ^
+      133 |     const workbench = page.getByRole('region', { name: 'Author center workbench' })
+      134 |     await workbench.getByRole('tab', { name: 'Runtime Settings' }).click()
+      135 |     await workbench.getByRole('textbox', { name: 'Base URL' }).fill('http://127.0.0.1:2')
+        at /Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/e2e/workflow-script-editor.spec.ts:132:21
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dev-admin/workflow-script-editor-two-d2399-ision-review-before-reapply/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dev-admin/workflow-script-editor-two-d2399-ision-review-before-reapply/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/dev-admin/workflow-script-editor-two-d2399-ision-review-before-reapply/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/dev-admin/workflow-script-editor-two-d2399-ision-review-before-reapply/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) e2e/workflow-script-editor.spec.ts:187:1 › placement-only changes invalidate save authority and explicit reapply preserves the current folder 
+
+    Error: {"error":"script must have at least one action; config.base_url is empty"}
+
+
+    expect(received).toBeTruthy()
+
+    Received: false
+
+       at support/workflow.ts:143
+
+      141 |
+      142 | export async function json(response: APIResponse | Response): Promise<Record<string, unknown>> {
+    > 143 |   expect(response.ok(), await response.text()).toBeTruthy()
+          |                                                ^
+      144 |   return response.json()
+      145 | }
+      146 | export function idOf(payload: Record<string, unknown>, key?: string): string {
+        at json (/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/e2e/support/workflow.ts:143:48)
+        at /Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/e2e/workflow-script-editor.spec.ts:192:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dev-admin/workflow-script-editor-pla-1c7e1-reserves-the-current-folder/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dev-admin/workflow-script-editor-pla-1c7e1-reserves-the-current-folder/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/dev-admin/workflow-script-editor-pla-1c7e1-reserves-the-current-folder/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/dev-admin/workflow-script-editor-pla-1c7e1-reserves-the-current-folder/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4) e2e/workflow-script-editor.spec.ts:214:1 › uncertain successful writes retain drafts and revoke retry authority until explicit review 
+
+    Error: {"error":"script must have at least one action; config.base_url is empty"}
+
+
+    expect(received).toBeTruthy()
+
+    Received: false
+
+       at support/workflow.ts:143
+
+      141 |
+      142 | export async function json(response: APIResponse | Response): Promise<Record<string, unknown>> {
+    > 143 |   expect(response.ok(), await response.text()).toBeTruthy()
+          |                                                ^
+      144 |   return response.json()
+      145 | }
+      146 | export function idOf(payload: Record<string, unknown>, key?: string): string {
+        at json (/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/e2e/support/workflow.ts:143:48)
+        at /Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/e2e/workflow-script-editor.spec.ts:218:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dev-admin/workflow-script-editor-unc-413bd-ority-until-explicit-review/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dev-admin/workflow-script-editor-unc-413bd-ority-until-explicit-review/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/dev-admin/workflow-script-editor-unc-413bd-ority-until-explicit-review/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/dev-admin/workflow-script-editor-unc-413bd-ority-until-explicit-review/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5) e2e/workflow-script-editor.spec.ts:257:1 › library secret rebind retains exact revision authority and requires review after a real conflict 
+
+    Error: {"error":"config.base_url is empty"}
+
+
+    expect(received).toBeTruthy()
+
+    Received: false
+
+       at support/workflow.ts:143
+
+      141 |
+      142 | export async function json(response: APIResponse | Response): Promise<Record<string, unknown>> {
+    > 143 |   expect(response.ok(), await response.text()).toBeTruthy()
+          |                                                ^
+      144 |   return response.json()
+      145 | }
+      146 | export function idOf(payload: Record<string, unknown>, key?: string): string {
+        at json (/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/e2e/support/workflow.ts:143:48)
+        at /Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/e2e/workflow-script-editor.spec.ts:261:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dev-admin/workflow-script-editor-lib-d68ba-eview-after-a-real-conflict/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dev-admin/workflow-script-editor-lib-d68ba-eview-after-a-real-conflict/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/dev-admin/workflow-script-editor-lib-d68ba-eview-after-a-real-conflict/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/dev-admin/workflow-script-editor-lib-d68ba-eview-after-a-real-conflict/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5 failed
+    e2e/workflow-script-editor.spec.ts:60:1 › authored script goals survive an unrelated editor save and canonical reopen 
+    e2e/workflow-script-editor.spec.ts:110:1 › two editors preserve stale drafts and require explicit revision review before reapply 
+    e2e/workflow-script-editor.spec.ts:187:1 › placement-only changes invalidate save authority and explicit reapply preserves the current folder 
+    e2e/workflow-script-editor.spec.ts:214:1 › uncertain successful writes retain drafts and revoke retry authority until explicit review 
+    e2e/workflow-script-editor.spec.ts:257:1 › library secret rebind retains exact revision authority and requires review after a real conflict 
+  1 passed (36.1s)
+--- controller log (last 60 lines) ---
+{"time":"2026-10-05T03:31:06.701496-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/object-repositories","status":200,"duration_ms":0,"remote":"127.0.0.1:52132"}
+{"time":"2026-10-05T03:31:06.701691-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/correlation-rulesets","status":200,"duration_ms":0,"remote":"127.0.0.1:52131"}
+{"time":"2026-10-05T03:31:06.701793-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects/b7e2768d-98c7-483d-b4af-1133cb9f43f1/folders","status":200,"duration_ms":0,"remote":"127.0.0.1:52128"}
+{"time":"2026-10-05T03:31:06.705811-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/4e37d259-72c4-423a-91f1-27750b0093a3","status":200,"duration_ms":3,"remote":"127.0.0.1:52130"}
+{"time":"2026-10-05T03:31:06.708266-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/catalog","status":200,"duration_ms":1,"remote":"127.0.0.1:52128"}
+{"time":"2026-10-05T03:31:06.709205-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/4e37d259-72c4-423a-91f1-27750b0093a3","status":200,"duration_ms":5,"remote":"127.0.0.1:52133"}
+{"time":"2026-10-05T03:31:06.710069-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/integrations/github/config","status":200,"duration_ms":0,"remote":"127.0.0.1:52131"}
+{"time":"2026-10-05T03:31:06.710201-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:52128"}
+{"time":"2026-10-05T03:31:06.711417-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:52133"}
+{"time":"2026-10-05T03:31:06.712065-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts","status":200,"duration_ms":2,"remote":"127.0.0.1:52129"}
+{"time":"2026-10-05T03:31:06.712234-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/remotes","status":200,"duration_ms":0,"remote":"127.0.0.1:52132"}
+{"time":"2026-10-05T03:31:06.712545-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/sessions","status":200,"duration_ms":0,"remote":"127.0.0.1:52130"}
+{"time":"2026-10-05T03:31:06.741903-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/actions","status":200,"duration_ms":0,"remote":"127.0.0.1:52129"}
+{"time":"2026-10-05T03:31:06.742083-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/4e37d259-72c4-423a-91f1-27750b0093a3/secret-status","status":200,"duration_ms":0,"remote":"127.0.0.1:52128"}
+{"time":"2026-10-05T03:31:06.742169-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/object-repositories","status":200,"duration_ms":0,"remote":"127.0.0.1:52131"}
+{"time":"2026-10-05T03:31:06.742273-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/components","status":200,"duration_ms":0,"remote":"127.0.0.1:52130"}
+{"time":"2026-10-05T03:31:06.757199-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/config-defaults","status":200,"duration_ms":0,"remote":"127.0.0.1:52130"}
+{"time":"2026-10-05T03:31:06.757283-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/browser-emulation-catalog","status":200,"duration_ms":0,"remote":"127.0.0.1:52131"}
+{"time":"2026-10-05T03:31:06.75772-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/runtime-settings/support-matrix","status":200,"duration_ms":0,"remote":"127.0.0.1:52129"}
+{"time":"2026-10-05T03:31:06.775816-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/4e37d259-72c4-423a-91f1-27750b0093a3/secret-status","status":200,"duration_ms":0,"remote":"127.0.0.1:52129"}
+{"time":"2026-10-05T03:31:06.776194-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/actions","status":200,"duration_ms":0,"remote":"127.0.0.1:52130"}
+{"time":"2026-10-05T03:31:06.77635-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/components","status":200,"duration_ms":0,"remote":"127.0.0.1:52128"}
+{"time":"2026-10-05T03:31:06.776496-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/object-repositories","status":200,"duration_ms":0,"remote":"127.0.0.1:52131"}
+{"time":"2026-10-05T03:31:06.778016-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:52134"}
+{"time":"2026-10-05T03:31:06.778018-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"b7e2768d-98c7-483d-b4af-1133cb9f43f1","clients":1}
+{"time":"2026-10-05T03:31:06.791494-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/config-defaults","status":200,"duration_ms":0,"remote":"127.0.0.1:52128"}
+{"time":"2026-10-05T03:31:06.791623-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/browser-emulation-catalog","status":200,"duration_ms":0,"remote":"127.0.0.1:52131"}
+{"time":"2026-10-05T03:31:06.791961-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/runtime-settings/support-matrix","status":200,"duration_ms":0,"remote":"127.0.0.1:52130"}
+{"time":"2026-10-05T03:31:06.816311-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:52135"}
+{"time":"2026-10-05T03:31:06.816318-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"b7e2768d-98c7-483d-b4af-1133cb9f43f1","clients":2}
+{"time":"2026-10-05T03:31:06.894264-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"b7e2768d-98c7-483d-b4af-1133cb9f43f1","clients":3}
+{"time":"2026-10-05T03:31:06.894262-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:52136"}
+{"time":"2026-10-05T03:31:06.928475-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:52137"}
+{"time":"2026-10-05T03:31:06.928515-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"b7e2768d-98c7-483d-b4af-1133cb9f43f1","clients":4}
+{"time":"2026-10-05T03:31:07.557309-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/scripts/validate","status":200,"duration_ms":0,"remote":"127.0.0.1:52130"}
+{"time":"2026-10-05T03:31:07.591779-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/scripts/validate","status":200,"duration_ms":0,"remote":"127.0.0.1:52130"}
+{"time":"2026-10-05T03:31:16.658791-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:52130"}
+{"time":"2026-10-05T03:31:16.705227-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:52130"}
+{"time":"2026-10-05T03:31:21.834909-04:00","level":"INFO","msg":"websocket client disconnected","clients":3}
+{"time":"2026-10-05T03:31:21.835027-04:00","level":"INFO","msg":"websocket client disconnected","clients":2}
+{"time":"2026-10-05T03:31:22.544427-04:00","level":"INFO","msg":"websocket client disconnected","clients":1}
+{"time":"2026-10-05T03:31:22.544534-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-05T03:31:23.579067-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/domains","status":201,"duration_ms":0,"remote":"127.0.0.1:52141"}
+{"time":"2026-10-05T03:31:23.58288-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/projects","status":201,"duration_ms":0,"remote":"127.0.0.1:52141"}
+{"time":"2026-10-05T03:31:23.584804-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications","status":201,"duration_ms":0,"remote":"127.0.0.1:52141"}
+{"time":"2026-10-05T03:31:23.586447-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications/8239be7f-eeda-4b21-8355-b7672d5a3957/releases","status":201,"duration_ms":0,"remote":"127.0.0.1:52141"}
+{"time":"2026-10-05T03:31:23.588246-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/projects/1f888df3-57b5-4b34-93f6-62a3257b282b/folders","status":201,"duration_ms":0,"remote":"127.0.0.1:52141"}
+{"time":"2026-10-05T03:31:23.59217-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/scripts","status":400,"duration_ms":0,"remote":"127.0.0.1:52141"}
+{"time":"2026-10-05T03:31:24.040514-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/domains","status":201,"duration_ms":0,"remote":"127.0.0.1:52142"}
+{"time":"2026-10-05T03:31:24.044296-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/projects","status":201,"duration_ms":0,"remote":"127.0.0.1:52142"}
+{"time":"2026-10-05T03:31:24.046443-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications","status":201,"duration_ms":0,"remote":"127.0.0.1:52142"}
+{"time":"2026-10-05T03:31:24.048206-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications/e179d6f6-f24f-40e0-a91f-54f9fa8db152/releases","status":201,"duration_ms":0,"remote":"127.0.0.1:52142"}
+{"time":"2026-10-05T03:31:24.05075-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/scripts","status":400,"duration_ms":0,"remote":"127.0.0.1:52142"}
+{"time":"2026-10-05T03:31:24.490258-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/domains","status":201,"duration_ms":0,"remote":"127.0.0.1:52143"}
+{"time":"2026-10-05T03:31:24.49417-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/projects","status":201,"duration_ms":0,"remote":"127.0.0.1:52143"}
+{"time":"2026-10-05T03:31:24.496183-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications","status":201,"duration_ms":0,"remote":"127.0.0.1:52143"}
+{"time":"2026-10-05T03:31:24.49775-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications/4d2d2aef-7d5b-49bc-b5ec-2a696d9b8927/releases","status":201,"duration_ms":0,"remote":"127.0.0.1:52143"}
+{"time":"2026-10-05T03:31:24.499993-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/scripts","status":400,"duration_ms":0,"remote":"127.0.0.1:52143"}
+{"time":"2026-10-05T03:31:24.598224-04:00","level":"INFO","msg":"shutting down"}
+2026/10/05 03:31:24 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"

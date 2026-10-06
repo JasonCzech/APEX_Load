@@ -1,0 +1,141 @@
+{
+  "captured_utc": "2026-10-05T09:41:21.624799+00:00",
+  "scope": "Independent read-only development review of current root-owned browser-document-finality API/archive/cache/capture-intent changes. Shared runtime/protocol code remains active; not final whole-worktree freeze or test qualification. No source edits or gates performed by reviewer.",
+  "worktree": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "reviewed_files": [
+    {
+      "path": "pkg/api/archive.go",
+      "sha256": "42d8328a5517c607391437a49276f5de47ee9c60d0b54964e3c86782cc25cd0b",
+      "bytes": 67546
+    },
+    {
+      "path": "pkg/api/archive_browser.go",
+      "sha256": "c4c337bf47aa04cb6a923f6da8d3d981a07d2862ecfd4d29d42510b18027a71d",
+      "bytes": 15069
+    },
+    {
+      "path": "pkg/api/archive_browser_documents.go",
+      "sha256": "0bdec06fef4ff75ca75a1f88eb6cb7c405d2e6dcf230032b1de9a7a2844f02ca",
+      "bytes": 14881
+    },
+    {
+      "path": "pkg/api/archive_browser_documents_test.go",
+      "sha256": "c22993de839d143bfac9d0a8f9467e6755ab81b26b828a4d14a4aa05167960e4",
+      "bytes": 24762
+    },
+    {
+      "path": "pkg/api/archive_collection_cache.go",
+      "sha256": "3b8259685606d8f88fc2f099a92f85f6c7fd1a849dae86db395b243ae4de2458",
+      "bytes": 17249
+    },
+    {
+      "path": "pkg/api/archive_collection_cache_cleanup.go",
+      "sha256": "6b4a95fd3fd38bbe4efeb021cc55fa7d5f30dabd6d46656d3153d5cccc2c028b",
+      "bytes": 14009
+    },
+    {
+      "path": "pkg/api/archive_parquet.go",
+      "sha256": "af469fc3e770e587f354e8d51a01eea215aba7be625b65f454e60a1fc5da04dc",
+      "bytes": 22469
+    },
+    {
+      "path": "pkg/api/archive_report.go",
+      "sha256": "ebfeb7e354460a54044f51e4246bea70e7b560391abfbabe11c3245805bdf103",
+      "bytes": 60787
+    },
+    {
+      "path": "pkg/api/archive_report_aggregate.go",
+      "sha256": "bd3f419c5d8887963d4f48f3c38e1920ce04231ddb97a3207fffb18f9be9bf3b",
+      "bytes": 20948
+    },
+    {
+      "path": "pkg/api/archive_writer.go",
+      "sha256": "6ccb8917911c411f929be91e8596619490eebf3a23101f6a6af3139a13585dfe",
+      "bytes": 40170
+    },
+    {
+      "path": "pkg/api/browser_document_metrics.go",
+      "sha256": "a44ecfe470c702ec9f82bd4796e638a7e76f130f8e5ce079ec0587cdff1057b7",
+      "bytes": 688
+    },
+    {
+      "path": "pkg/api/browser_document_metrics_test.go",
+      "sha256": "a665cd7d8736ec29caa7bfb7bca47a53eb7b51be0c9be4446d53b693723eb6a7",
+      "bytes": 4092
+    },
+    {
+      "path": "pkg/api/browser_resource_evidence_v2_test.go",
+      "sha256": "ec488f98d6b311668eb084b3e1d165887d8307c65693ea0a1dfe149c4dc77a1e",
+      "bytes": 9438
+    },
+    {
+      "path": "pkg/api/distributed_archive.go",
+      "sha256": "f5dfbbf789148a0297d85801449bd36261c985b3ddffa75443cffe0ede9a99a3",
+      "bytes": 102118
+    },
+    {
+      "path": "pkg/api/distributed_metrics.go",
+      "sha256": "16fd9cc65467e56aee96642e71d696a9fa214b9b4b6958367b2db2d7cdedf65b",
+      "bytes": 65211
+    },
+    {
+      "path": "pkg/api/distributed_placement.go",
+      "sha256": "ff6eaf2169606743899cc8075e6e1c08b6619fc8bf8a64181d51ed5b84eb6f73",
+      "bytes": 31212
+    },
+    {
+      "path": "pkg/api/execution_backend.go",
+      "sha256": "adc345f1e7f006f45155d68ef6e1c5a39dfad90131abc8578dc1bd62009ce78b",
+      "bytes": 37160
+    },
+    {
+      "path": "pkg/api/metrics.go",
+      "sha256": "f04b5b2409a0fbf00092ed773ff9a52eb007c15f2610fe3416ccefc94e81f8d7",
+      "bytes": 48281
+    },
+    {
+      "path": "pkg/api/persistence.go",
+      "sha256": "a632b899ccd6cc96eec173f79f2c579b50d55b92b68c415b83ffd0ef13b6a868",
+      "bytes": 104585
+    },
+    {
+      "path": "pkg/api/runner.go",
+      "sha256": "99e6fa76ae88dd5c911f07fd54d4b477dc90536c0ca7158889eaad6a6536bac9",
+      "bytes": 124217
+    },
+    {
+      "path": "pkg/api/testcreation.go",
+      "sha256": "9c1ce27e3cd018b2dfc00ae35df3a9391ced4413813b673ab98fffa4640f2ec3",
+      "bytes": 152274
+    },
+    {
+      "path": "pkg/api/tests.go",
+      "sha256": "ba4c6f53911ea11d2f8be73285184777ed38d2d70b8bd8167387e25afd08971b",
+      "bytes": 53831
+    }
+  ],
+  "resolved_findings": [
+    {
+      "finding": "Mixed legacy browser interval merged nil typed summary as neutral, publishing incomplete population as complete.",
+      "fix": "Use browserDocumentsForLive qualification in interval aggregation; actual two-source merge/archive report regression covers legacy vs HTTP."
+    },
+    {
+      "finding": "RuntimeAvailability diagnostic DTO aliased source and omitted JSON byte charge.",
+      "fix": "Typed clone owns/bounds metadata and JSON byte charge includes retained capability; regression proves ownership, byte delta, admission boundary and malformed oversized refusal."
+    }
+  ],
+  "current_findings": [],
+  "additional_checks": [
+    "typed lifecycle fanout requires a supported typed sink, does not manufacture transactions and clones per destination",
+    "strict sidecar schema/count/canonical hashes and unsafe-path rejection",
+    "distinct raw/Parquet record populations plus shared quota/durable flush before manifest publication",
+    "source-pinned bounded transfer and fourth-artifact cache receipt/cleanup proof",
+    "frozen expected browser coverage separates missing/unknown browser sources from HTTP",
+    "compiled script durability and frozen terminal/capacity/provenance intent survive compaction",
+    "resource evidence preserves source timing availability and independent request identity while bounding payloads"
+  ],
+  "limits": [
+    "Root and shared owners must freeze and run final normal/race/integration/browser gates.",
+    "Reviewed fixture content is meaningful but this receipt does not claim those gates were executed by the reviewer."
+  ]
+}

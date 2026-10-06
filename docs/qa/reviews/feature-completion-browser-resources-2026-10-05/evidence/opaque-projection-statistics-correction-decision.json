@@ -1,0 +1,61 @@
+{
+  "recorded_at": "2026-10-05T17:30:55.073951+00:00",
+  "scope": "Native resource archive reader correctness; logical decoder bounds, not process RSS or complete capture qualification",
+  "original_failures": [
+    "opaque-projection-header-initial.json",
+    "opaque-projection-generator-header-initial.json",
+    "actual-chromium-acquisition-initial.json",
+    "actual-chromium-acquisition-offset-repeat-2.json"
+  ],
+  "cause": {
+    "controller_single_transaction_projection_bytes": 49341,
+    "controller_page_header_bytes": 197404,
+    "controller_string_statistic_bytes": 197364,
+    "generator_single_transaction_projection_bytes": 34691,
+    "generator_page_header_bytes": 138804,
+    "generator_string_statistic_bytes": 138764,
+    "header_limit_bytes": 16384,
+    "pinned_writer_behavior": "Whole opaque JSON min/max values duplicated into four page statistics fields; no approved query uses lexical JSON extrema."
+  },
+  "correction": "omitstats=true only for resource_projection_json on actual controller/generator writers; preserve header/memory/source limits. Typed Thrift SIZE_LIMIT is a bounded refusal; other malformed header decoder errors use the malformed-source class; request cancellation takes precedence. Source transaction timestamps admit bounded valid RFC3339 offsets and normalize only the inspection projection to UTC.",
+  "final_gates": [
+    "opaque-projection-header-repeat.json",
+    "actual-chromium-acquisition-opaque-stats-repeat.json"
+  ],
+  "verified": {
+    "each_corrected_header_bytes": 22,
+    "each_corrected_page_string_statistics_bytes": 0,
+    "footer_lexical_extrema_absent": true,
+    "explicit_historical_large_statistics_refusal": true,
+    "genuine_engine": "Chromium149.0.7827.55",
+    "genuine_acquired_retained_observations": 81,
+    "genuine_pagination": [
+      50,
+      31
+    ],
+    "genuine_observed_zero_encoded_body": 80,
+    "genuine_observed_service_worker_false": 81,
+    "original_source_bytes_preserved": true,
+    "jsonl_and_physical_parquet_pages_and_filters_match": true,
+    "no_additional_target_requests_during_reader_queries": true
+  },
+  "review": "Parent independently reviewed current tags/error mapping/physical regressions clean; earlier child review identified and corrected the raw Thrift size-limit classification assertion seam.",
+  "source": {
+    "pkg/api/archive_parquet.go": "f6fd4d9ae1ef17f21af6f44797e018cf431c7dcd6d76e33f5f6530f0c4b7f8f7",
+    "pkg/distributed/generatorrpc/archive.go": "5cf63ea5c12aa1ab5167080f3576eabc2d1f4b40b563497f6d592de03155558b",
+    "pkg/api/archive_browser_resource_parquet.go": "4c8e32421da3d2200b1f7fdbe605c7355b63c6b28bcccfc9559c75c04bfd6e79",
+    "pkg/api/archive_browser_resource_parquet_test.go": "5ff194e49a651130ead614e60f201bc8b169fe7b2b422f0af7617ecec9d51053",
+    "pkg/api/archive_browser_resource_producer_test.go": "1cb8a28bf9be06a2733cfcbff3d555eb9cf0830bd7acb1140243dc6c852b468a",
+    "pkg/distributed/generatorrpc/archive_browser_resource_projection_test.go": "cd95481788f3b4cad93e7a0b3cee60a6cfad2488ad56bf8c4d95e618b650a417",
+    "pkg/api/archive_browser_resource_reader.go": "50b6a418a81030c29ae5c717cf2da347d13fdc5f8d89198c31cdf055f2501f34",
+    "pkg/api/archive_browser_resource_reader_test.go": "a9fa7a8036f5c4684e9a72ff2902239fd233cc20024efa80d6fbdbd2d00f736b",
+    "pkg/api/archive_browser_resource_actual_integration_test.go": "99c8b432c8d761ebe6148132926ba75f9be7864cb07c2b90d5b09735a9ce630b"
+  },
+  "pinned_sdk_files": {
+    "common/common.go": "512500096033669e3c92b94440bfe5883c2aa47416c6c564af23cbeea80dad68",
+    "layout/page.go": "f569fcc4dccf634c8205614dd904728cf9ae7f1595025957a3efa8a876d60c93",
+    "layout/chunk.go": "4cd4a69162ba087dbe28ec5e2fe7b2aa146f8b490ac45bede58a5c5f813b43a8",
+    "reader/reader.go": "1ae3daac13dcb4977acceb76320e7a26a814546cab00c04a9524a751a526fa0b"
+  },
+  "remaining": "Actual PostgreSQL/context/race/generated contracts/full repository and final UI gates remain separate pending qualifications."
+}

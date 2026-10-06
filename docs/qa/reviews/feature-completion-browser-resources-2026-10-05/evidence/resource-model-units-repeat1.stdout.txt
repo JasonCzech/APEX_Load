@@ -1,0 +1,13 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run src/components/browserResourceEvidenceModel.test.ts
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/kafka-owned-seek/Project_Stormrunner/dashboard
+
+
+ Test Files  1 passed (1)
+      Tests  58 passed (58)
+   Start at  09:48:58
+   Duration  100ms (transform 21ms, setup 17ms, import 13ms, tests 6ms, environment 0ms)
+

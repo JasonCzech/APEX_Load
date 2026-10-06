@@ -1,0 +1,60 @@
+{
+  "schema": "apexload.main-integration.QA-readme-factual-review.v1",
+  "at_utc": "2026-10-06T08:19:34.421189+00:00",
+  "reviewer": "/root/resume_integration_audit",
+  "result": "Clean within currently completed/pending scope",
+  "README_sha256": "2e77affd1f133f93a7710554313ef4497b19c6dd7b5d7e1f528bfe48cff40d66",
+  "checked_claims": [
+    "Exact existing local and remote merge identities,17local/30incoming scope corroborated by prior audit",
+    "24focused top-level;48race top-level+4subtests with original bounds",
+    "Actual nativecount2 observes81JSONL/physicalParquet and50+31API pages each, producer hash enforcement, unchanged>50fixture",
+    "Serialized realauthUI bothcases/profile passed with retainedJUnit; originalparallelRED and inference separated",
+    "Original completeUI531files/6135unitpass,dev256pass5skip1fail,local197pass1skip;8affectedcases/profile;4restrictedpersona tests passed in localauth",
+    "Interrupted actual1 emptylog/no completedreceipt unqualified",
+    "FullGo2/fullUI2/staging/commit/push explicitly pending; no broader native/provider/platform/scale qualification or HAR replay claim"
+  ],
+  "inputs": [
+    {
+      "path": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/README.md",
+      "bytes": 5210,
+      "sha256": "2e77affd1f133f93a7710554313ef4497b19c6dd7b5d7e1f528bfe48cff40d66"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/apexload-main-native-browser-api-acceptance-count2-20261006.json",
+      "bytes": 6328,
+      "sha256": "c363a5e93db2bfd54fe88c93c84ed3c3c9f0fbabda9b4a916e2d4ce56816a50b"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/apexload-main-targeted-ui-serial-qualified-20261006.json",
+      "bytes": 3634,
+      "sha256": "ee3974453a1dd4abb0a3a4ed850b389d9edfc31fb674474d8286fa8df054abaf"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/targeted-cycle-3/dev-admin/playwright-junit.xml",
+      "bytes": 613,
+      "sha256": "0123e7b6a85023eb48bfa031ec49c1a995270bff3a11e37024dbff6991a3576e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/targeted-cycle-3/local-auth/playwright-junit.xml",
+      "bytes": 626,
+      "sha256": "bc99d59ea9ae0415d5054701f081a62cd5c4f4792eef51de7c7d304e06f2439e"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/apexload-main-dashboard-full-cycle1-qualified-metadata-20261006.json",
+      "bytes": 17380,
+      "sha256": "34bebb037737816723845f7fdfdbb1b15e2e7779faa6f554bd2f9c3733a60b23"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/apexload-main-targeted-ui-readonly-diagnosis-20261006.json",
+      "bytes": 5431,
+      "sha256": "af8d7f1c94469360b66c37729a3f182f693e1229d6e2cc0e0beff5b9d9a4901f"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-network-acquisition-actual-1.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "findings": [],
+  "execution": "Read-only bounded receipts/JUnit/README review; no code/Git/source/test/build/cache mutation."
+}

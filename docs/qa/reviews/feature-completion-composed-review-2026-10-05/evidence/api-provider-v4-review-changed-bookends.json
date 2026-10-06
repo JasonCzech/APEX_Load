@@ -1,0 +1,23 @@
+{
+  "utc": "2026-10-06T01:20:31.886139+00:00",
+  "scope": "V4 review bookend changed; no clean frozen v4 receipt issued",
+  "start_path": "/private/tmp/apexload-dashboard-api-provider-review-start-v4-20261005.json",
+  "start_sha256": "b560362f0ad7e8b296c9e2193198220cc49fc81c1d9ec6496af7a63989ab5664",
+  "changes": [
+    {
+      "path": "dashboard/scripts/chunk-strategy.mjs",
+      "before_sha256": "7b3855a1dbc4407f7d8d0591f1d490a1ab14430166be82d2a24679365b0a50fb",
+      "after_sha256": "601b8bb36046d1ee13e4e7c750d767fd80ad969d75e89fa1f1000eb802bae3f0",
+      "before_bytes": 4620,
+      "after_bytes": 4665
+    },
+    {
+      "path": "dashboard/src/viteChunkStrategy.test.ts",
+      "before_sha256": "c69246b805c32e1ae0d85afd6ceb6f981d25a6ec0ab7be89b913a6891294e418",
+      "after_sha256": "76eee22271da494b0f4b63d944b01b11a118874d3aee00a37543f2cda6287d69",
+      "before_bytes": 7908,
+      "after_bytes": 7941
+    }
+  ],
+  "analysis_path": "/private/tmp/apexload-api-provider-static-analysis-v4-20261005.json"
+}

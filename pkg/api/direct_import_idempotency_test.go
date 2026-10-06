@@ -56,6 +56,17 @@ func (s *directImportRollbackTestStore) CompareAndSwapSetting(
 	return s.SQLiteStore.CompareAndSwapSetting(key, expected, value)
 }
 
+func (s *directImportRollbackTestStore) CompareAndSwapLibraryImportClaims(expected, value string) (bool, error) {
+	s.mu.Lock()
+	if s.failNextClaimCAS {
+		s.failNextClaimCAS = false
+		s.mu.Unlock()
+		return false, errors.New("injected durable claim release failure")
+	}
+	s.mu.Unlock()
+	return s.SQLiteStore.CompareAndSwapLibraryImportClaims(expected, value)
+}
+
 func (s *directImportRollbackTestStore) failClaimReleaseOnce() {
 	s.mu.Lock()
 	s.failNextClaimCAS = true

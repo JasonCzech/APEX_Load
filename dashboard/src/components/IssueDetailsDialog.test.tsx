@@ -1,12 +1,18 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import IssueDetailsDialog from './IssueDetailsDialog'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+
+function FocusHandoffHarness({ ownsDestinationFocus }: { ownsDestinationFocus: boolean }) {
+  const [open, setOpen] = useState(false)
+  return <><button data-opener onClick={() => setOpen(true)}>Open issues</button>{open && <IssueDetailsDialog title="Repair" issues={[{ id: 'one', severity: 'error', title: 'Repair target', ownsDestinationFocus, onSelect: () => undefined }]} onClose={() => setOpen(false)} />}</>
+}
 
 describe('IssueDetailsDialog', () => {
   let container: HTMLDivElement
@@ -50,6 +56,27 @@ describe('IssueDetailsDialog', () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     })
     expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it.each([false, true])('hands focus to a destination only for an explicitly marked selection: %s', async ownsDestinationFocus => {
+    await act(async () => { root.render(<FocusHandoffHarness ownsDestinationFocus={ownsDestinationFocus} />) })
+    const opener = container.querySelector<HTMLButtonElement>('[data-opener]')!
+    opener.focus(); await act(async () => { opener.click() })
+    const repair = document.querySelector<HTMLButtonElement>('.issue-details-item.selectable')!
+    repair.focus(); await act(async () => { repair.click() })
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(ownsDestinationFocus ? document.body : opener)
+  })
+
+  it.each(['Close', 'Escape'])('preserves normal return focus for %s even when an issue owns its selection destination', async exit => {
+    await act(async () => { root.render(<FocusHandoffHarness ownsDestinationFocus />) })
+    const opener = container.querySelector<HTMLButtonElement>('[data-opener]')!
+    opener.focus(); await act(async () => { opener.click() })
+    const close = document.querySelector<HTMLButtonElement>('[role="dialog"] .modal-header button')!
+    close.focus()
+    await act(async () => { if (exit === 'Escape') document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); else close.click() })
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(opener)
   })
 
   it('closes before selecting a navigable issue', () => {

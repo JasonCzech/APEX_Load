@@ -1,0 +1,11 @@
+
+> apexload-dashboard@0.1.0 lint
+> eslint . --max-warnings=0
+
+
+/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard/src/components/useDeferredScriptInspectorFocus.ts
+  29:18  warning  The ref value 'requestRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'requestRef.current' to a variable inside the effect, and use that variable in the cleanup function  react-hooks/exhaustive-deps
+
+✖ 1 problem (0 errors, 1 warning)
+
+ESLint found too many warnings (maximum: 0).

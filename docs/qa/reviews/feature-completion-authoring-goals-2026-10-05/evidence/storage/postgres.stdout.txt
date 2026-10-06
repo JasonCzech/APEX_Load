@@ -1,0 +1,10 @@
+=== RUN   TestPostgresScriptGoalConfigMigrationWritersAndReopen
+=== RUN   TestPostgresScriptGoalConfigMigrationWritersAndReopen/save
+=== RUN   TestPostgresScriptGoalConfigMigrationWritersAndReopen/conditional
+=== RUN   TestPostgresScriptGoalConfigMigrationWritersAndReopen/create-only
+--- PASS: TestPostgresScriptGoalConfigMigrationWritersAndReopen (4.40s)
+    --- PASS: TestPostgresScriptGoalConfigMigrationWritersAndReopen/save (0.05s)
+    --- PASS: TestPostgresScriptGoalConfigMigrationWritersAndReopen/conditional (0.07s)
+    --- PASS: TestPostgresScriptGoalConfigMigrationWritersAndReopen/create-only (0.01s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/storage	5.053s

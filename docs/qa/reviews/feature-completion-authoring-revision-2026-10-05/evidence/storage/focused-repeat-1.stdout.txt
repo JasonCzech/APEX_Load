@@ -1,0 +1,5 @@
+--- FAIL: TestScriptContentRevisionImportWriters (0.04s)
+    script_content_revision_test.go:751: Bruno opaque update (*storage.BrunoImportCommitResult)(nil) Bruno import changed concurrently
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/storage	1.456s
+FAIL

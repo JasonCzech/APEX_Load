@@ -227,18 +227,18 @@ func ImportSourceScriptFingerprint(script *dsl.Script) (string, error) {
 }
 
 func loadImportSourceRetentionScriptTx(tx *storeTx, scriptID string, lock bool) (*dsl.Script, error) {
-	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, COALESCE(generated_by, ''), COALESCE(generated_from, ''), COALESCE(metadata_json, '{}'), COALESCE(config, '{}'), COALESCE(data_sources, '[]'), COALESCE(parameters, '[]'), COALESCE(init, '[]'), COALESCE(actions, '[]'), COALESCE(teardown, '[]'), created_at, updated_at
+	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, COALESCE(generated_by, ''), COALESCE(generated_from, ''), COALESCE(metadata_json, '{}'), COALESCE(goal_config_json, ''), COALESCE(config, '{}'), COALESCE(data_sources, '[]'), COALESCE(parameters, '[]'), COALESCE(init, '[]'), COALESCE(actions, '[]'), COALESCE(teardown, '[]'), created_at, updated_at
 		FROM scripts WHERE id = ?`
 	if lock {
 		query += ` FOR UPDATE`
 	}
 	var script dsl.Script
-	var metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
+	var metadataJSON, goalsJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
 	err := tx.QueryRow(query, scriptID).Scan(
 		&script.ID, &script.RefKey, &script.Name, &script.Protocol, &script.Version,
 		&script.ProjectID, &script.FolderID,
 		&script.GeneratedBy, &script.GeneratedFrom,
-		&metadataJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
+		&metadataJSON, &goalsJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
 		&script.CreatedAt, &script.UpdatedAt,
 	)
 	if err != nil {
@@ -247,6 +247,7 @@ func loadImportSourceRetentionScriptTx(tx *storeTx, scriptID string, lock bool) 
 	if err := decodeStoredScriptJSON(
 		&script,
 		metadataJSON,
+		goalsJSON,
 		configJSON,
 		dataSourcesJSON,
 		parametersJSON,

@@ -1,0 +1,85 @@
+{
+  "schema": "apexload.independent-har-evaluation-review.v2",
+  "reviewed_at_utc": "2026-10-05T22:21:20.100391+00:00",
+  "scope": "Read-only repeat review of the documentation timing fix, retained historical evidence and refreshed bundle index. No HAR parsing/conversion/replay, test or network operation was rerun; no repository file was changed.",
+  "worktree": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "bundle": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-second-har-evaluation-2026-10-05",
+  "previous_review_sha256": "e0d94b712c91775a68af2814795c11e0e7d6edb272a3a08ff0dc78293bb139e9",
+  "bundle_index_sha256": "a3bce3726c3012313d50dbc09d56b1f1c24fe9f4e651fbe0d6c1ec93fa7d833e",
+  "indexed_file_count": 9,
+  "bundle_file_count_including_index": 10,
+  "all_indexed_hashes_and_sizes_match": true,
+  "all_bundle_files_accounted_for": true,
+  "reviewed_files": [
+    {
+      "path": "README.md",
+      "bytes": 4480,
+      "sha256": "3bf742b8c85bc43117fb5865572ba5a6054bb67a21ab37edec0a85efb5f793d8"
+    },
+    {
+      "path": "evidence/aggregate-quality.json",
+      "bytes": 299,
+      "sha256": "817b8e61d37759f3c0d98abde29a7cf566f31b7fc44595e0b91ac2d7cf8285c4"
+    },
+    {
+      "path": "evidence/aggregate-shape.json",
+      "bytes": 1837,
+      "sha256": "19112ccea36dd298916e78e85e505eb4af0449fbe2feb5552d5d82708ec9b837"
+    },
+    {
+      "path": "evidence/documentation-validation-v1.json",
+      "bytes": 1943,
+      "sha256": "3684ff29b125d162c9964356703b56315382f4331b95084f0dbf2b3698ca73cc"
+    },
+    {
+      "path": "evidence/independent-review-v1.json",
+      "bytes": 4547,
+      "sha256": "e0d94b712c91775a68af2814795c11e0e7d6edb272a3a08ff0dc78293bb139e9"
+    },
+    {
+      "path": "evidence/offline-probe-1.json",
+      "bytes": 5813,
+      "sha256": "a848a7251511debcdd901b52484b2565a3d18f026a99a302809aa028451fb624"
+    },
+    {
+      "path": "evidence/offline-probe-1.log",
+      "bytes": 1152,
+      "sha256": "07b2ea99bf289d1298258c862720f08fc72083beaa59aa49de072325d68237f5"
+    },
+    {
+      "path": "helpers/offline-probe-runner.py.txt",
+      "bytes": 3250,
+      "sha256": "b80a404de7440266787447a001621cd22df0923f8c62ba34f8f0a5c04fdf939a"
+    },
+    {
+      "path": "helpers/offline-probe.go.txt",
+      "bytes": 5620,
+      "sha256": "b4df7d1abef1b74e1c7802e28900a5becccbb3c0ad13ffae89e99cde03806548"
+    }
+  ],
+  "resolved_findings": [
+    {
+      "priority": 3,
+      "file": "README.md",
+      "title": "Elapsed time now identified as whole offline-probe process time",
+      "resolution": "Table labels the measurement Offline probe process and total elapsed. The reproducibility paragraph includes compilation/startup, file reads/hashing, observation parsing, conversion and source recheck and states that isolated conversion duration was not measured."
+    }
+  ],
+  "checks": [
+    "The original seven evaluation/helper artifacts are unchanged from the first independent review; only README and the two recorded review/validation receipts extend the index.",
+    "Nine indexed file hashes and lengths match; all ten files including the index are accounted for; every README local link resolves.",
+    "The exact first independent review is retained without erasing its finding or its limitations.",
+    "Scoped documentation validation truthfully records the unrelated pending authoring-fidelity local-link failure and does not advertise a clean whole-repository documentation gate.",
+    "Capture counts, aggregate-only privacy claims and offline-only qualification limits remain unchanged from the prior review."
+  ],
+  "findings": [],
+  "staging_note": {
+    "file": "evidence/offline-probe-1.log",
+    "detail": "The retained exact raw log was ignored/untracked at the first review. Parent-owned final staging audit must explicitly include this blob rather than rely on ordinary add discovery. This repeat is not a staging or commit attestation."
+  },
+  "limitations": [
+    "Original sensitive HAR was not independently reparsed; this review relies on the unchanged recorded aggregates and offline probe evidence.",
+    "No runtime replay, API persistence, native export, browser intelligence, HTTP/2 or correlation acceptance is established.",
+    "Whole-repository documentation qualification and final staged-artifact audit remain separate pending gates."
+  ]
+}

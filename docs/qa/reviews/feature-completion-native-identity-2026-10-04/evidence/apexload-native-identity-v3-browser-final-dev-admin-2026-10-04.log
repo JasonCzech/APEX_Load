@@ -1,0 +1,25 @@
+Building controller...
+Starting controller on http://127.0.0.1:18126 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.UmIy238wHo)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 14 tests using 1 worker
+
+(node:61974) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 e2e/workflow-analysis-preparation.spec.ts:10:1 › Parquet upload, mapping, query and deletion remain in project scope (1.6s)
+  ✓   2 e2e/workflow-analysis-preparation.spec.ts:107:1 › preparation readiness can renew and Start sends its immutable revision (742ms)
+  ✓   3 e2e/workflow-analysis-preparation.spec.ts:139:1 › dependency evidence selects the same UTC interval for the monitor overlay (589ms)
+  ✓   4 e2e/workflow-analysis-preparation.spec.ts:164:1 › native project panel saves and reopens through the real dashboard API (817ms)
+  ✓   5 e2e/workflow-analysis-preparation.spec.ts:194:1 › filtered archive panels save, reopen, compare, and inspect an exact time bucket (1.1s)
+  ✓   6 e2e/workflow-analysis-preparation.spec.ts:241:1 › grouped archive overlays and filtered live selections save and reopen (1.6s)
+  ✓   7 e2e/workflow-analysis-preparation.spec.ts:302:1 › timestamped run annotations save, reopen and retain delete history (2.6s)
+  ✓   8 e2e/workflow-analysis-preparation.spec.ts:327:1 › retained observation rates save and reopen with elapsed-time units (636ms)
+  ✓   9 e2e/workflow-analysis-preparation.spec.ts:351:1 › messaging management retains exact counts, denied coverage and reload (1.4s)
+  ✓  10 e2e/workflow-analysis-preparation.spec.ts:408:1 › imported comparison preserves both exact identity selectors across save and reopen (1.0s)
+  ✓  11 e2e/workflow-dashboard-analysis.spec.ts:4:1 › analysis preserves evidence gaps, saved baselines, filtered deltas and report context (1.6s)
+  ✓  12 e2e/workflow-dashboard-analysis.spec.ts:262:1 › run results labels terminal samples as historical evidence (722ms)
+  ✓  13 e2e/workflow-dashboard-analysis.spec.ts:294:1 › run results distinguishes recorded archive failure and refreshes availability (1.9s)
+  ✓  14 e2e/workflow-dashboard-analysis.spec.ts:373:1 › partial archive sources remain visible beside retained measurements and terminal outcome (691ms)
+
+  14 passed (18.4s)

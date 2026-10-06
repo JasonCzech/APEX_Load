@@ -24,6 +24,10 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+// This version binds authored mapping identity to exact canonical query selectors.
+// Build availability and operator configuration remain separately advertised.
+const analysisImportedIdentityVersion = 2
+
 const analysisUploadChunk = 4 << 20
 const analysisImportMaxBytes = int64(20 << 30)
 
@@ -128,6 +132,9 @@ type AnalysisCapabilitiesResponse struct {
 	MonitoringEnabled             bool                   `json:"monitoring_enabled"`
 	PreparationEnabled            bool                   `json:"preparation_enabled"`
 	NativeParquet                 bool                   `json:"native_parquet"`
+	PartitionManifestVersion      uint32                 `json:"partition_manifest_version"`
+	PartitionPruningAvailable     bool                   `json:"partition_pruning_available"`
+	ImportedIdentityVersion       uint32                 `json:"imported_identity_version"`
 	Enabled                       bool                   `json:"enabled"`
 	ChunkBytes                    int64                  `json:"chunk_bytes"`
 	MaxImportBytes                int64                  `json:"max_import_bytes"`
@@ -145,7 +152,7 @@ func (s *Server) handleAnalysisCapabilities(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, 200, AnalysisCapabilitiesResponse{
 		MessagingManagementEnabled: messagingManagementEnabled(project), MessagingManagementVersion: analysis.MessagingManagementVersion, MessagingManagementPacks: collectoragent.ManagementPacks(),
 		DiagnosticsEnabled: diagnosticsProjectEnabled(project), MonitoringEnabled: runMonitoringEnabled(project), PreparationEnabled: preparationProjectEnabled(project),
-		NativeParquet: analytics.Available(), Enabled: analysisProjectEnabled(project), ChunkBytes: analysisUploadChunk, MaxImportBytes: analysisImportMaxBytes,
+		NativeParquet: analytics.Available(), PartitionManifestVersion: analysis.PartitionManifestVersion, PartitionPruningAvailable: analytics.Available(), ImportedIdentityVersion: analysisImportedIdentityVersion, Enabled: analysisProjectEnabled(project), ChunkBytes: analysisUploadChunk, MaxImportBytes: analysisImportMaxBytes,
 		HeavyJobs: 1, Threads: 2, MemoryLimit: memory, SpillLimit: spill, ResourceConfigurationAccepted: accepted, MetricCatalog: analysis.Catalog(),
 	})
 }
@@ -510,13 +517,29 @@ func (s *Server) handleAnalysisMapping(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
 	var req struct {
-		Revision        int64                   `json:"revision"`
-		Mapping         analysis.ParquetMapping `json:"mapping"`
-		AllowRejected   bool                    `json:"allow_rejected"`
-		MappingID       string                  `json:"mapping_id"`
-		MappingRevision int64                   `json:"mapping_revision"`
+		Revision        int64           `json:"revision"`
+		Mapping         json.RawMessage `json:"mapping"`
+		AllowRejected   bool            `json:"allow_rejected"`
+		MappingID       string          `json:"mapping_id"`
+		MappingRevision int64           `json:"mapping_revision"`
 	}
-	if !decodeJSONBody(w, r, &req) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		var limit *http.MaxBytesError
+		if errors.As(err, &limit) {
+			writeError(w, 413, "mapping exceeds request byte limit")
+		} else {
+			writeError(w, 400, "invalid mapping request")
+		}
+		return
+	}
+	if err := decodeAnalysisDefinitionJSON(body, &req); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	mapping, err := analysis.DecodeParquetMappingDefinition(req.Mapping)
+	if err != nil {
+		writeError(w, 400, err.Error())
 		return
 	}
 	if req.Revision != in.Revision {
@@ -536,14 +559,18 @@ func (s *Server) handleAnalysisMapping(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		definition, err := definitions.GetAnalysisDefinition(in.ProjectID, req.MappingID, req.MappingRevision)
-		var mapping analysis.ParquetMapping
-		if err != nil || definition.Kind != "mapping" || definition.Deleted || json.Unmarshal(definition.Definition, &mapping) != nil || !reflect.DeepEqual(mapping, req.Mapping) {
+		if err != nil || definition.Kind != "mapping" || definition.Deleted {
+			writeError(w, 400, "saved mapping does not match this revision")
+			return
+		}
+		expectedMapping, err := analysis.DecodeParquetMappingDefinition(definition.Definition)
+		if err != nil || !reflect.DeepEqual(expectedMapping, mapping) {
 			writeError(w, 400, "saved mapping does not match this revision")
 			return
 		}
 	}
 	in.MappingID, in.MappingRevision = req.MappingID, req.MappingRevision
-	in.Mapping = &req.Mapping
+	in.Mapping = &mapping
 	in.AllowRejected = req.AllowRejected
 	in.State = "mapped"
 	in.Error = ""
@@ -727,24 +754,49 @@ func deleteAnalysisObjects(ctx context.Context, in *storage.AnalysisImport) erro
 }
 
 func (s *Server) handleAnalysisDatasetSeries(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(withAnalysisArtifactSelections(r.Context()), time.Minute)
+	defer cancel()
+	r = r.WithContext(ctx)
 	if !admitAnalysisPipeline(w) {
 		return
 	}
 	defer func() { <-analysisPipelineJobs }()
-	_, in := s.loadAnalysisImport(w, r)
+	_, in := s.loadAnalysisImportMetadata(w, r)
 	if in == nil {
+		return
+	}
+	if !analysisQueryContextLive(r.Context()) {
+		writeError(w, 409, "analytical query authority expired")
+		return
+	}
+	if s.analysisImportStore(w, in.ProjectID) == nil {
 		return
 	}
 	if in.State != "ready" {
 		writeError(w, 409, "dataset is not committed")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
 	var query analytics.SeriesQuery
-	if !decodeJSONBody(w, r, &query) {
+	if !decodeAnalysisQueryRequest(w, r, &query) {
+		return
+	}
+	if query.ProjectID != "" && query.ProjectID != in.ProjectID || query.DatasetID != "" && query.DatasetID != in.ID {
+		writeError(w, 400, "analytical query ownership does not match this dataset")
 		return
 	}
 	query.ProjectID, query.DatasetID = in.ProjectID, in.ID
+	query, err := bindImportedNativeSeriesQuery(in, query)
+	if err != nil {
+		writeError(w, 422, err.Error())
+		return
+	}
+	window := nativeAnalysisTimeWindow(query.From, query.To)
+	query.From, query.To = window.From, window.To
+	if err := query.Validate(); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	r = r.WithContext(withAnalysisTimeWindow(r.Context(), window))
 	points, err := queryAnalysisDataset(r.Context(), in, query)
 	if err != nil {
 		writeError(w, 422, err.Error())

@@ -26,7 +26,33 @@ export interface ScenarioRef {
   name: string
 }
 
+export interface ScriptAuthoringProjection {
+  projection_version: 'apexload.script_authoring.v1'
+  id: string
+  project_id: string
+  folder_id: string | null
+  content_revision: string
+  script: ScriptDefinition
+  library_placement: { application_id: string | null; release_ids: string[] }
+}
+
+// The immutable server document and its actual strong ETag are one authority.
+// Editable drafts must never receive a freshly fetched token on their own.
+export interface ScriptAuthoringBaseline {
+  projection: ScriptAuthoringProjection
+  etag: string
+}
+
+export interface ScriptSaveOptions {
+  configureSecrets?: boolean
+  retainedDraft?: ScriptDefinition
+  retainedJsonText?: string
+  retainedCreatedSecretNames?: string[]
+}
+
 export interface StoredScript {
+  content_revision?: string
+  authoring_projection?: ScriptAuthoringProjection
   archived_at?: string
   activity?: ObjectActivitySummary
   id: string

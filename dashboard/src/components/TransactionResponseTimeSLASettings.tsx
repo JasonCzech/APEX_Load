@@ -53,8 +53,8 @@ export default function TransactionResponseTimeSLASettings({
 				<input
 					className="settings-input"
 					type="number"
-					min="0.001"
-					step="0.1"
+					min="0"
+					step="any"
 					value={secondsValue(defaultMs)}
 					onChange={event => onDefaultChange(millisecondsValue(event.currentTarget.value))}
 					placeholder="e.g. 3"
@@ -92,8 +92,8 @@ export default function TransactionResponseTimeSLASettings({
 									<input
 										className="settings-input"
 										type="number"
-										min="0.001"
-										step="0.1"
+										min="0"
+										step="any"
 										value={secondsValue(group.overrideMs)}
 										onChange={event => onGroupOverrideChange(index, millisecondsValue(event.currentTarget.value))}
 									/>

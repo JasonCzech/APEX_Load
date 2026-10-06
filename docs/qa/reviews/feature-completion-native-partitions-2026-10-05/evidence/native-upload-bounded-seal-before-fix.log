@@ -1,0 +1,5 @@
+--- FAIL: TestAnalysisUploadKnownMetadataLimitStillSealsAndQueuesExactOutput (0.18s)
+    analysis_upload_writers_test.go:238: fixture does not distinguish bounded admission from raw size <nil>
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/storage	0.703s
+FAIL

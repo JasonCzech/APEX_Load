@@ -1,0 +1,29 @@
+{
+  "schema": "apexload-root-audit-output-completion-v1",
+  "passed": true,
+  "files": [
+    {
+      "path": "audit.json",
+      "bytes": 1796799,
+      "sha256": "72ef7d4e38eed711705b663c22a3bb7d65efa1506d4af98f63f12191fd5dd5ba"
+    },
+    {
+      "path": "all-paths.nul",
+      "bytes": 278586,
+      "sha256": "f0da9c98500ca11378b5dead661dcc797430b305052ad89a80a077a902f85fa1"
+    },
+    {
+      "path": "normal-paths.nul",
+      "bytes": 244265,
+      "sha256": "7feb578ccb1763d544929d8e8a728d7ba81416545809888456b78a7b7f6c5952"
+    },
+    {
+      "path": "force-paths.nul",
+      "bytes": 34321,
+      "sha256": "0cedfe9dfa68706e10e871fc6bb599e0d0446cf635ec6a4d99de0dc22ae8f7db"
+    }
+  ],
+  "pathspecs_created": true,
+  "output_permissions": "create-only files 0444; directory 0500 after completion",
+  "logical_immutability_limit": "Owner/root can change permissions; no filesystem immutable flag set."
+}

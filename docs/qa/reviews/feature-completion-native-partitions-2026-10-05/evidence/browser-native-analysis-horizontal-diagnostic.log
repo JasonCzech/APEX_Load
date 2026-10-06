@@ -1,0 +1,34 @@
+Building controller...
+Starting controller on http://127.0.0.1:18572 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.VhGeAA9Rah)...
+Controller healthy.
+Starting controller on http://127.0.0.1:18572 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.VhGeAA9Rah)...
+Controller healthy.
+Auth profile verified: local-auth.
+Error: Cannot find module '/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/native-horizontal-diagnostic/support/workspace' imported from /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/native-horizontal-diagnostic/workflow-analysis-preparation.spec.ts
+Error: No tests found.
+Make sure that arguments are regular expressions matching test files.
+You may need to escape symbols like "$" or "*" and quote the arguments.
+
+--- controller log (last 60 lines) ---
+{"time":"2026-10-05T05:00:41.71203-04:00","level":"WARN","msg":"applied TLS compatibility defaults","godebug":"x509negativeserial=1,tlsmlkem=0,tlssecpmlkem=0"}
+{"time":"2026-10-05T05:00:41.712208-04:00","level":"INFO","msg":"controller bind address resolved","addr":"127.0.0.1:18572","bind_scope":"loopback"}
+{"time":"2026-10-05T05:00:41.751754-04:00","level":"WARN","msg":"encrypted project secret store is unavailable","error":"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"}
+{"time":"2026-10-05T05:00:41.758896-04:00","level":"WARN","msg":"auth is in a bypass mode — all API endpoints are unauthenticated; do not use this configuration in production","auth_mode":"dev"}
+{"time":"2026-10-05T05:00:41.759205-04:00","level":"WARN","msg":"Bruno source retention is using a locally provisioned envelope key","key_file":"/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-import-assets/.bruno-artifact-key","remedy":"set APEXLOAD_WRAPPING_MASTER_KEY or APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID for operator-managed key custody"}
+{"time":"2026-10-05T05:00:41.773357-04:00","level":"INFO","msg":"recording proxy starting","addr":"127.0.0.1:8081"}
+{"time":"2026-10-05T05:00:41.774113-04:00","level":"INFO","msg":"apexload API server starting","addr":"127.0.0.1:18572","bound_addr":"127.0.0.1:18572"}
+{"time":"2026-10-05T05:00:42.141055-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/health","status":200,"duration_ms":0,"remote":"127.0.0.1:62724"}
+{"time":"2026-10-05T05:00:42.155875-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/settings","status":200,"duration_ms":0,"remote":"127.0.0.1:62725"}
+{"time":"2026-10-05T05:00:42.170126-04:00","level":"INFO","msg":"http request","method":"PUT","path":"/api/v1/system/settings","status":200,"duration_ms":1,"remote":"127.0.0.1:62726"}
+{"time":"2026-10-05T05:00:42.170763-04:00","level":"INFO","msg":"shutting down"}
+2026/10/05 05:00:42 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"
+{"time":"2026-10-05T05:00:42.305713-04:00","level":"WARN","msg":"applied TLS compatibility defaults","godebug":"x509negativeserial=1,tlsmlkem=0,tlssecpmlkem=0"}
+{"time":"2026-10-05T05:00:42.305854-04:00","level":"INFO","msg":"controller bind address resolved","addr":"127.0.0.1:18572","bind_scope":"loopback"}
+{"time":"2026-10-05T05:00:42.311957-04:00","level":"WARN","msg":"encrypted project secret store is unavailable","error":"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"}
+{"time":"2026-10-05T05:00:42.504081-04:00","level":"WARN","msg":"Bruno source retention is using a locally provisioned envelope key","key_file":"/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-import-assets/.bruno-artifact-key","remedy":"set APEXLOAD_WRAPPING_MASTER_KEY or APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID for operator-managed key custody"}
+{"time":"2026-10-05T05:00:42.510115-04:00","level":"INFO","msg":"recording proxy starting","addr":"127.0.0.1:8081"}
+{"time":"2026-10-05T05:00:42.51039-04:00","level":"INFO","msg":"apexload API server starting","addr":"127.0.0.1:18572","bound_addr":"127.0.0.1:18572"}
+{"time":"2026-10-05T05:00:43.220706-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/health","status":200,"duration_ms":0,"remote":"127.0.0.1:62735"}
+{"time":"2026-10-05T05:00:43.233901-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/me","status":200,"duration_ms":0,"remote":"127.0.0.1:62736"}
+{"time":"2026-10-05T05:00:43.669255-04:00","level":"INFO","msg":"shutting down"}
+2026/10/05 05:00:43 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"

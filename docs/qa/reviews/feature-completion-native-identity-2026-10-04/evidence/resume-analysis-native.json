@@ -1,0 +1,34 @@
+{
+  "label": "analysis-native",
+  "command": [
+    "go",
+    "test",
+    "-tags=analytics_duckdb",
+    "-parallel=1",
+    "-count=1",
+    "-timeout=15m",
+    "-ldflags=-s -w",
+    "./pkg/analysis",
+    "./pkg/analysis/duckdb"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "started_utc": "2026-10-05T02:40:53.761221+00:00",
+  "finished_utc": "2026-10-05T02:42:41.539098+00:00",
+  "duration_seconds": 107.777,
+  "exit_code": 1,
+  "profile": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "APEXLOAD_ANALYSIS_MEMORY_LIMIT": "512MiB",
+    "APEXLOAD_ANALYSIS_SPILL_LIMIT": "128MiB",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_AUTH_PORT": "18472"
+  },
+  "log_bytes": 701,
+  "log_sha256": "77e67558628be1be9180f3a7ad171c46a6ecb0feca73f95aa48dfe0101db980e"
+}

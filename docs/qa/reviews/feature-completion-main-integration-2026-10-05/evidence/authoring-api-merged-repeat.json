@@ -1,0 +1,122 @@
+{
+  "schema": "apexload.main-merge-authoring-api-composed-independent-review.v1",
+  "at_utc": "2026-10-06T03:48:22.623954+00:00",
+  "reviewer": "/root/authoring_fidelity_resume_v3",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "result": "clean",
+  "review_scope": "Actual merged working bytes of five requested authoring/API/prose overlap paths, both-side full diffs and source-preservation references. Generated contract conflict regeneration and execution qualification remain parent-owned.",
+  "git_identity": {
+    "head": "6bbdc9971d23bcd03e27ff6a54f30b5e0f191a43",
+    "remote_main": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+    "base": "5ea8047980f3ac5a66f5b78a96edb26d52c14fa6"
+  },
+  "scope_receipt": {
+    "path": "/private/tmp/apexload-main-integration-scope-20261005.json",
+    "sha256": "91c8fd3fd13f941dc8ca71ee5e3388b2edc58f0354c9c03a0ad6ac9bad16b3f7"
+  },
+  "prior_review": {
+    "path": "/private/tmp/apexload-main-merge-authoring-api-readonly-reconciliation-20261005.json",
+    "sha256": "9abae81e64ba3741ed625cead382c913551ffb47d6c6ec4cf89d7961c8f09b2b"
+  },
+  "working_bookends_match": true,
+  "merged_files": [
+    {
+      "path": "dashboard/src/hooks/api/useScriptApi.ts",
+      "merged_bytes": 76646,
+      "merged_sha256": "5e03b985121748fdd022304aa19194ef3228d5cdae77dcb6da2d68c5c8bc9171",
+      "base_sha256": "4ca01ab481b077a671064d1bdbf1aabbfd7f7132019c5cb0e69826e988edbe23",
+      "local_sha256": "ce25b7385cc0805d366c84174f64d1344955b12a7f5163d63c4f135ecbbd47e1",
+      "remote_sha256": "018697bef5509350aa2516f8e52d01e6651f0f0a81c4ccb9fc6e97abe188c55a",
+      "nonintersecting_source_edit_union_equals_working": true,
+      "local_edit_spans": 11,
+      "remote_edit_spans": 2
+    },
+    {
+      "path": "dashboard/src/types/scripts.ts",
+      "merged_bytes": 30453,
+      "merged_sha256": "6bdad82b1d75448f8685bdea82136a1986ac374e17143dbb08b5295adfb5e11b",
+      "base_sha256": "a5f994a9c7d1a32556ddc5e233dc9b49125e5e7f1a67a15cc948432da88b9c5f",
+      "local_sha256": "af5f9ed0f6a59292911561ec646e97f230937b074e40ef43225a5cf4c3e29735",
+      "remote_sha256": "feb960ed663a1a1d118ebf7fcfe955567be9927643521380cfaad3d7640ef52e",
+      "nonintersecting_source_edit_union_equals_working": true,
+      "local_edit_spans": 1,
+      "remote_edit_spans": 4
+    },
+    {
+      "path": "pkg/api/handlers_scripts.go",
+      "merged_bytes": 25476,
+      "merged_sha256": "435661968d2efb68f314d859fca7d6bf3c929a355aee522cf76c88614c0a2dbe",
+      "base_sha256": "863114b72f7f2d43266be5353d028ea1f0476366547f96647fafe01e272ca34a",
+      "local_sha256": "6bcf63898ccdcb413176602866ab1f23e763c53b15095a7441e1a3555f635286",
+      "remote_sha256": "3e81940319aa23cfeb320e0ea36950b1c2c2c1ecc9bf41384e45ad7b37939d36",
+      "nonintersecting_source_edit_union_equals_working": true,
+      "local_edit_spans": 5,
+      "remote_edit_spans": 3
+    },
+    {
+      "path": "pkg/api/openapi_contract_infer.go",
+      "merged_bytes": 84344,
+      "merged_sha256": "1b5276a03a4bfb91dc269f27e739ece2fe986f1d054736ef2785dad343507dd6",
+      "base_sha256": "7b1ea9e633146e6d8bdce75e6800ee1f508be6bd81bb13a41f8218b526b9ae58",
+      "local_sha256": "13ab761dd51b88a61cdf7d81ac7da6dca25b6395a0dab10e0773d5c0f140feb3",
+      "remote_sha256": "bcda30c5dec32b0fa6cec2fda88ec913b14f02b50d2c8f7d0bac6f780b8198ee",
+      "nonintersecting_source_edit_union_equals_working": true,
+      "local_edit_spans": 7,
+      "remote_edit_spans": 1
+    },
+    {
+      "path": "docs/SCRIPT_LIFECYCLE.md",
+      "merged_bytes": 28073,
+      "merged_sha256": "881a95284e7862f35ec8a552aa8a52872f3fcb9bd51f32aa59ff559bf1a6e803",
+      "base_sha256": "dc004d5acdd03879ee8710d1a35140a492be5c348fdd2f8b2ae5ff438e834004",
+      "local_sha256": "d68ff0941b044fc2ec7dbbee5f329f4cdbaad70a466b49695e29c865e14a1b79",
+      "remote_sha256": "8dad017c69b857fdd94d406ed778496c837879a6db56d6fcac615b069d6a0937",
+      "nonintersecting_source_edit_union_equals_working": true,
+      "local_edit_spans": 1,
+      "remote_edit_spans": 1
+    }
+  ],
+  "reference_preservation": [
+    {
+      "path": "pkg/api/script_authoring_projection.go",
+      "equals_git_object": "6bbdc9971d23bcd03e27ff6a54f30b5e0f191a43",
+      "bytes": 17274,
+      "sha256": "53be157bf7908cb1c8b1366540fddf0618cd8626e710340e35973496b4f5f733"
+    },
+    {
+      "path": "pkg/api/library_import_claims.go",
+      "equals_git_object": "6bbdc9971d23bcd03e27ff6a54f30b5e0f191a43",
+      "bytes": 48184,
+      "sha256": "5c80701dbf7a1fdfc21bacc9192e7f122bea424cb34abcfe3b3361804b785631"
+    },
+    {
+      "path": "pkg/engine/vuser_source_actions.go",
+      "equals_git_object": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "bytes": 50075,
+      "sha256": "8a09f8ad370f153bca6c31914278610645446690bf154ac7f8bd299058991672"
+    },
+    {
+      "path": "pkg/convert/enterprisearchive/utility_actions.go",
+      "equals_git_object": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "bytes": 32487,
+      "sha256": "f702c6972818255007cd03f92232d6a7f320604f74d2be3e80ca4ddda1db9c2c"
+    },
+    {
+      "path": "pkg/api/handlers_import_har.go",
+      "equals_git_object": "da1d6dd00ffdd250c630de7a73328a08040571a1",
+      "bytes": 10660,
+      "sha256": "97c37e3f825b02c1ae329bd88ea1a077f9a788b4ea3f09a08d8e3ba7e52c9a35"
+    }
+  ],
+  "review_conclusions": [
+    "Every local and remote edit in all five focused paths is retained byte-exact as the union of nonintersecting base-relative edits; no unrelated text change or conflict marker was introduced.",
+    "Local authoring baseline/If-Match/conditioned acknowledgment and pure rebind identity checks survive alongside remote HAR salvage form option.",
+    "Conditioned script admission, privacy, final durable CAS and compatibility audit/outcome mode survive alongside remote HAR salvage and client-generated UUID declarations.",
+    "Local browser document capability and incoming HTTP assertion/Aura/think-time/Java delimiter types are all present.",
+    "Local API inference hooks and source nullability remain alongside boolean salvage_truncated; generated output itself is not qualified by this review.",
+    "Durable authoring prose and word-based parameter suggestion prose both survive intact.",
+    "Local authoring/publication references remain byte-identical to local head; incoming exact parameter-value whitespace and HAR import wiring remain byte-identical to remote main."
+  ],
+  "findings": [],
+  "execution": "Read-only Git-object and working-source inspection; no tests, builds, source edits, staging, Git writes or cache cleanup. No broad199-file incoming review or generated-contract freshness claim."
+}

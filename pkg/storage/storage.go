@@ -1108,11 +1108,19 @@ type Project struct {
 	UpdatedAt  time.Time       `json:"updated_at"`
 }
 
+// ProjectAuthoringPolicy applies only to ordinary PUT script/scenario saves. Other
+// authored mutations retain their independently declared compatibility policy.
+type ProjectAuthoringPolicy struct {
+	RequireScriptSaveIfMatch   bool `json:"require_script_save_if_match,omitempty"`
+	RequireScenarioSaveIfMatch bool `json:"require_scenario_save_if_match,omitempty"`
+}
+
 type ProjectSettings struct {
-	RedactionRules     []engine.RedactionRule `json:"redaction_rules,omitempty"`
-	MaxConcurrentTests int                    `json:"max_concurrent_tests,omitempty"`
-	MaxVUsers          int                    `json:"max_vusers,omitempty"`
-	GitHub             GitHubProjectPolicy    `json:"github,omitempty"`
+	Authoring          *ProjectAuthoringPolicy `json:"authoring,omitempty"`
+	RedactionRules     []engine.RedactionRule  `json:"redaction_rules,omitempty"`
+	MaxConcurrentTests int                     `json:"max_concurrent_tests,omitempty"`
+	MaxVUsers          int                     `json:"max_vusers,omitempty"`
+	GitHub             GitHubProjectPolicy     `json:"github,omitempty"`
 	// Per-test hard caps (reject at creation, not queue). MaxVUsersPerTest bounds
 	// a single test's VUser count; MaxTestDurationMinutes bounds a single test's
 	// duration. Zero means no limit.

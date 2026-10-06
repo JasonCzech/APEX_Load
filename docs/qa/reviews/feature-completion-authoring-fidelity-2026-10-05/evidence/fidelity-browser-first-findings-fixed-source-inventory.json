@@ -1,0 +1,24 @@
+{
+  "schema": "apexload.qa.review-fix-source.v1",
+  "captured_at_utc": "2026-10-05T15:28:19.795572+00:00",
+  "scope": "Authored GoalConfig cloned without invented early-stop defaults; intentional fresh defaults belong only to emptyScenarioForm. Actual TestHub rename presence/source ownership fixtures; honest UI RESERVED serialization plus separate API-seeded canonical QUEUED and CommandCenter copy, exact app/release scope. No runtime/Go changes.",
+  "meaningful_red_raw_sha256": "4eec6c51ebb09411149c6848777fe444c8f7aa2d99b74d250938537dc1929747",
+  "adjacent_95_units_raw_sha256": "bc6c44dc2a7c76f119133c8116b084c33dc23537aaff71ca3ff93e7f919b9a07",
+  "files": [
+    {
+      "path": "dashboard/src/components/TestHub.tsx",
+      "bytes": 288617,
+      "sha256": "031728965ac56aa20c369b85cbf7101e63c6bea6d27ea1f4b63d8bd3244565fa"
+    },
+    {
+      "path": "dashboard/src/components/TestHub.test.tsx",
+      "bytes": 178518,
+      "sha256": "2eb498ea95555c58b555a4b3ddffdd4b6ec146d58373a32ba04f7270641660b2"
+    },
+    {
+      "path": "dashboard/e2e/workflow-new-test.spec.ts",
+      "bytes": 42778,
+      "sha256": "b687b844e896adf746d4d952ac809ddf4fbc6beba942ea37f4bc7cc3e9e377d0"
+    }
+  ]
+}

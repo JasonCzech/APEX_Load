@@ -1,0 +1,33 @@
+{
+  "label": "document-loss-and-run-identity-red",
+  "command": [
+    "go",
+    "test",
+    "./pkg/engine",
+    "./pkg/api",
+    "./cmd/apexctl",
+    "-run",
+    "TestBrowserDocument(LossUnitsPublishWithoutActions|ProviderCapacityPublishesUnknownCoverage|ObservationLossDeltasIgnoreRequestLoss|ArchiveLossUnitsAndImmutableSource|ArchiveObservationLossDeltasIgnoreRequestLoss|CLIRejectsDifferentReturnedRun|CLIAbsentReturnedIdentityKeepsLegacyFallback)$",
+    "-count=1"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "started_utc": "2026-10-05T13:00:28.412431+00:00",
+  "finished_utc": "2026-10-05T13:01:50.984297+00:00",
+  "duration_seconds": 82.572,
+  "exit_code": 1,
+  "profile": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "APEXLOAD_ANALYSIS_MEMORY_LIMIT": "512MiB",
+    "APEXLOAD_ANALYSIS_SPILL_LIMIT": "128MiB",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_AUTH_PORT": "18472"
+  },
+  "log_bytes": 18891,
+  "log_sha256": "45b2e61f1c8d2b33762fafe4a27ee5a74a248bea84dad6396fcd8877fc23fe49"
+}

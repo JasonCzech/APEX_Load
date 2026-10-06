@@ -953,6 +953,13 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	// is staged. The stored snapshot survives controller restart/failover and is
 	// never replaced by later scale, duration, or runtime-control mutations.
 	initialProvenance := maskRunArchiveProvenance(buildRunArchiveProvenance(tr, test))
+	if initialProvenance.TelemetryPolicy == nil {
+		initialProvenance.TelemetryPolicy = captureTelemetryBudgetPolicy(initialProvenance.ExecutionSettings, true, time.Now())
+	}
+	if initialProvenance.TelemetryPolicy == nil {
+		tr.failTestBeforeRunAndLog(test, "resolve telemetry policy: invalid settings")
+		return
+	}
 	if _, persistInitialErr := tr.persistInitialArchiveProvenance(test, &initialProvenance); persistInitialErr != nil {
 		tr.failTestBeforeRunAndLog(test, fmt.Sprintf("persist initial archive provenance: %v", persistInitialErr))
 		return

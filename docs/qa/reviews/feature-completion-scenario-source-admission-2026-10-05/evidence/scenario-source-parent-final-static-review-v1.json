@@ -1,0 +1,21 @@
+{
+  "schema": "apexload.scenario-source.parent-final-static-review.v1",
+  "created_at_utc": "2026-10-05T22:14:45.451862+00:00",
+  "worktree": "/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner",
+  "candidate_inventory_sha256": "51629d52fea219f16f3ca78887e254ee78c09980a380b93c9487394b9ebe92c3",
+  "verified_frozen_source_and_dependency_count": 28,
+  "scope": "Independent final static review of all eleven changed/new production/test files, admission factoring and relevant existing project/script/pool lock helpers. Five production files remain identical to the previously reviewed development implementation. All seventeen direct dependencies hash-verified; no full transitive inventory claim.",
+  "reviewed_behaviors": [
+    "Exact source set, project, incarnation and authored nonce admission, sorted source/pool locks and cloned caller input",
+    "Initial durable source snapshots and final publication-before-project-before-scenario/source locks",
+    "Raw publication hash plus presence equality and currently prepared direct-import refusal even with unchanged source nonce",
+    "Create collision never adopts a winner; failed update preserves durable authored rows",
+    "Optional private methods preserve ordinary nil-admission behavior and public unsupported capability guards",
+    "Shared bounded projection rejects ambiguous Unicode-fold keys/null/wrong scalar types while retaining rich API owner/lease validation",
+    "Independent SQLite stores, real prepared unmutated import claims, lifecycle and delete/recreate refusals",
+    "Actual PostgreSQL observable nine lock boundaries, blocked source writers through commit and raw repair inversion fail-closed outcomes"
+  ],
+  "findings": [],
+  "disposition": "No additional static findings in the private source-admission scope. Focused race/API and final composed merge gates remain required.",
+  "execution_limits": "This parent review ran no Go tests. Final normal/actual PostgreSQL green evidence is owned by the implementation agent; it does not replace pending API/race qualification."
+}

@@ -44,8 +44,8 @@ func (workerNativeExecutor) execute(ctx context.Context, a *workerAttempt, r wor
 		return workerResult{Status: "ok", Preview: &typed}, err
 	}
 	if r.Series != nil {
-		points, err := e.childNativeSeries(ctx, paths(r.Series.InputHandles), r.Series.Query)
-		return workerResult{Status: "ok", Points: &points}, err
+		points, bounds, err := e.childNativeSeriesBounds(ctx, paths(r.Series.InputHandles), r.Series.Query)
+		return workerResult{Status: "ok", Points: &points, SeriesBounds: &bounds}, err
 	}
 	for _, id := range r.Normalize.OutputHandles {
 		for _, h := range a.bootstrap.Handles {
@@ -97,9 +97,26 @@ func (workerNativeExecutor) execute(ctx context.Context, a *workerAttempt, r wor
 				if err != nil {
 					return workerResult{}, err
 				}
+				if role == "normalized" {
+					for _, part := range result.Partitions {
+						if part.File == source {
+							if out.Partition != nil {
+								return workerResult{}, errWorkerProtocol
+							}
+							stats := part.Stats.Clone()
+							out.Partition = &stats
+						}
+					}
+					if out.Partition == nil {
+						return workerResult{}, errWorkerProtocol
+					}
+				}
 				typed.Outputs = append(typed.Outputs, out)
 			}
 		}
+	}
+	if err := workerBoundPartitionMetadata(typed.Outputs); err != nil {
+		return workerResult{}, err
 	}
 	out := workerResult{Status: "ok", Normalize: &typed}
 	if out.validate(a.bootstrap, r) != nil {

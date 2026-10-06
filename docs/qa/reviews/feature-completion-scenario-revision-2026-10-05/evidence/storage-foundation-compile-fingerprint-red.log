@@ -1,0 +1,5 @@
+--- FAIL: TestSchemaReleaseFingerprintIsCurrent (0.00s)
+    schema_migrations_test.go:12: schema convergence fingerprint = 20d60622f078acfa7392b47049e136fb8a766a850af1da999f1f789e1fe198a0, want pending; append a schema release before accepting schema changes
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/storage	0.531s
+FAIL

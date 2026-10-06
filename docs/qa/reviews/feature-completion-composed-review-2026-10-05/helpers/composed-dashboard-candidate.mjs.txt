@@ -1,0 +1,24 @@
+import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+const root = '/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner';
+const label = process.argv[2];
+if (!/^[a-z0-9-]+$/.test(label || '')) throw new Error('Exact bounded gate label required');
+const evidence = join(root, 'docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence');
+const output = await mkdtemp('/private/tmp/apexload-composed-dashboard-candidate-');
+console.log(JSON.stringify({ label, candidateOutput: output, retention: 'Owned temporary build retained for dependency-graph review; cleanup deferred until review joins.' }));
+const status = await new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, [join(root, 'dashboard/node_modules/vite/bin/vite.js'), 'build', '--manifest', '--outDir', output, '--emptyOutDir'], {
+    cwd: join(root, 'dashboard'), stdio: 'inherit', env: { ...process.env, APEXLOAD_UX_BUILD_TIME: '1970-01-01T00:00:00.000Z', APEXLOAD_VITE_BUILD_TIME: '1970-01-01T00:00:00.000Z' },
+  });
+  child.on('error', reject); child.on('exit', (code, signal) => resolve({ code, signal }));
+});
+if (status.code !== 0 || status.signal) throw new Error(`Owned Vite build failed: ${JSON.stringify(status)}`);
+const checker = await import(pathToFileURL(join(root, 'dashboard/scripts/check-bundle-budget.mjs')));
+const result = await checker.inspectBundle(output, checker.DEFAULT_BUNDLE_BUDGETS, checker.DEFAULT_ROUTE_BUDGETS);
+const portable = { ...result, routes: result.routes.map(route => ({ ...route, entryFile: route.entryFile?.source ?? null, forbiddenAssets: route.forbiddenAssets?.map(pattern => pattern.source) ?? [] })) };
+await writeFile(join(evidence, label + '-bundle-result.json'), JSON.stringify({ node: process.version, executable: process.execPath, deterministicBuildTime: '1970-01-01T00:00:00.000Z', result: portable }, null, 2) + '\n', { flag: 'wx' });
+await writeFile(join(evidence, label + '-manifest.json'), await readFile(join(output, '.vite/manifest.json')), { flag: 'wx' });
+process.stdout.write(checker.formatBundleReport(result));
+process.exitCode = result.violations.length ? 1 : 0;

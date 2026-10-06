@@ -1,0 +1,499 @@
+{
+  "cache_root": "/private/tmp/apexload-feature-completion-resume-go-cache",
+  "selection": "obsolete pre-noon API package archives from superseded qualification candidates; current post-noon archives and dependencies retained",
+  "cutoff_utc": "2026-10-05T12:00:00Z",
+  "selected": [
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/95/953da6b7f7496b5793039cf586e86bc3b9d77e8809d529fb89886b7c30c3c641-d",
+      "size_bytes": 550237860,
+      "mtime_ns": 1791185573401142000,
+      "package_export_size_bytes": 3542975
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/68/6824fdaf2b3d8dc5fedb8000c327d0f13723764b1a053c9bd372dcf1dd3561e1-d",
+      "size_bytes": 558546544,
+      "mtime_ns": 1791181887513991000,
+      "package_export_size_bytes": 3539253
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/57/5738824d75a0715bfcb49042400347a49f1aff6cb20a92fe850a6586e2994b11-d",
+      "size_bytes": 571567252,
+      "mtime_ns": 1791186865216975000,
+      "package_export_size_bytes": 3541155
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/6f/6fb086a6ea32535b1f8ee4a5bf289b9e1b2bcb46c68848e7369034871cea4342-d",
+      "size_bytes": 637770688,
+      "mtime_ns": 1791199945275944000,
+      "package_export_size_bytes": 3531801
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/9e/9edbe7f907ae239f4da5816905a29424f5dfe3d33df5e6ca78e6544d6ef7b25a-d",
+      "size_bytes": 573789952,
+      "mtime_ns": 1791199570908912000,
+      "package_export_size_bytes": 3553301
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/9e/9e67ec7530d62c642400331385c159dcb86e0bdd07ebd01f7e5eccd3b0fd6d94-d",
+      "size_bytes": 571560422,
+      "mtime_ns": 1791186635059311000,
+      "package_export_size_bytes": 3540643
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/6a/6aa698d0eb98aa64472e1ed641a80901f85c68d55cd0ef86d5155e76c443e28a-d",
+      "size_bytes": 573356042,
+      "mtime_ns": 1791198596693391000,
+      "package_export_size_bytes": 3552852
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/32/32bda3b3dcb0e28c5997c399f6d21cc6f9bdd67afa1f6dc4bab86a7163c47fbb-d",
+      "size_bytes": 576261370,
+      "mtime_ns": 1791181948824716000,
+      "package_export_size_bytes": 3541906
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/35/3531f6e77c08011118bb1f53a1654cd0b9461239a86385218447d72ff729bfca-d",
+      "size_bytes": 571211810,
+      "mtime_ns": 1791180580710695000,
+      "package_export_size_bytes": 3539696
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/69/69b5c978e22807f59e14fdfb537a941b7d3f34c962ee8e6cb390b3e917dec2f8-d",
+      "size_bytes": 571773664,
+      "mtime_ns": 1791189125736369000,
+      "package_export_size_bytes": 3541933
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/69/69ea2bfcfd4869b9027dd1e721841479b5318dfbae01cbe22d3ee2262ad4b6b6-d",
+      "size_bytes": 559144652,
+      "mtime_ns": 1791189000323500000,
+      "package_export_size_bytes": 3578624
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/56/56591f9fefcf8ee559021c26eff0171edd0bf711d87078889e984d159976aa34-d",
+      "size_bytes": 550505544,
+      "mtime_ns": 1791193418419400000,
+      "package_export_size_bytes": 3555202
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/5f/5f080a54cae407bc46174aac6f50380abdbddf344e5ab80ea9104956850d4f91-d",
+      "size_bytes": 572239016,
+      "mtime_ns": 1791196567222302000,
+      "package_export_size_bytes": 3551480
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/33/33a390923b8cdbdb94aeca500f107edde0c780f5f50302fce16be86e6ff9a309-d",
+      "size_bytes": 571773038,
+      "mtime_ns": 1791188161787261000,
+      "package_export_size_bytes": 3541933
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/9d/9d6af4862e202afece28471263ee88ead39689c7f44006d91298bb4c53338ea7-d",
+      "size_bytes": 559080660,
+      "mtime_ns": 1791194969398467000,
+      "package_export_size_bytes": 3555997
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/9c/9c948bdca82f3e9e7c6edcc7cdbe402c036ac6570a0236ed1943f6331f26057e-d",
+      "size_bytes": 635245500,
+      "mtime_ns": 1791185582070191000,
+      "package_export_size_bytes": 3518701
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/bb/bb611d3a0e5f9031a7ca0044327aa0053ec94dfd90787b93c36212d7cafa23ec-d",
+      "size_bytes": 635174974,
+      "mtime_ns": 1791181381772776000,
+      "package_export_size_bytes": 3518070
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/b4/b4feec4ea6e1fffe1546ec9cd4c02519b0fc595ba8cdcdac250d202f8fde7e2c-d",
+      "size_bytes": 635201722,
+      "mtime_ns": 1791182067712459000,
+      "package_export_size_bytes": 3518374
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/a5/a5481cd75bdc192b9cf79b55d561ced2c9d1eada08ce3fb473822031f5110d21-d",
+      "size_bytes": 572237482,
+      "mtime_ns": 1791196419671716000,
+      "package_export_size_bytes": 3551480
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/a5/a5172b7d9d5fbc431535e06509b9739fdad3b39390f73cff8fadcafb20307aad-d",
+      "size_bytes": 550130736,
+      "mtime_ns": 1791190477980720000,
+      "package_export_size_bytes": 3550913
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/bd/bd5aa01f2afad1b202d9257515788f88a465100a15704e339337b35c4b5cca47-d",
+      "size_bytes": 573298226,
+      "mtime_ns": 1791197882876781000,
+      "package_export_size_bytes": 3553143
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/d1/d1aa7b23aeef6f32b9446e275e029953372212a17465b0cb45d19f64c397468f-d",
+      "size_bytes": 621871064,
+      "mtime_ns": 1791189920969341000,
+      "package_export_size_bytes": 3524288
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/ab/ab6da06c4791bd2463e87e1b65241f184203f67e8c28d938f1554aa865367aca-d",
+      "size_bytes": 573427596,
+      "mtime_ns": 1791199081854064000,
+      "package_export_size_bytes": 3553133
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/c7/c754ccc5dad20600d5dc5a4ce9a542a269641e2511303b049302a887d3d76970-d",
+      "size_bytes": 559144652,
+      "mtime_ns": 1791189709877973000,
+      "package_export_size_bytes": 3578624
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/c9/c9159a15629c6d5966e8fda8f87cfb3ded8f75204688d233fa4e58db186999b9-d",
+      "size_bytes": 560125936,
+      "mtime_ns": 1791196073664732000,
+      "package_export_size_bytes": 3555997
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/fd/fda7686c59347111372f9b517ac39b05429c2d63b2009d69f7081a8314858d6f-d",
+      "size_bytes": 549959992,
+      "mtime_ns": 1791168349270665000,
+      "package_export_size_bytes": 3538384
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/fe/fe3be480f9e9261768373a999284b8f5d0d6c316b9683951aa48d4d493a9d77b-d",
+      "size_bytes": 550080464,
+      "mtime_ns": 1791189405416668000,
+      "package_export_size_bytes": 3545601
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/c1/c1bf915b8bad4b4fa539460c62cf998e7d5c3a311d0ffec92fe806e05ca5e361-d",
+      "size_bytes": 558501734,
+      "mtime_ns": 1791176722206244000,
+      "package_export_size_bytes": 3538971
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/29/29b28b647813a7a5754b86b597771df0f28d7af851ea21ee38c6a11dd3d31fb8-d",
+      "size_bytes": 558457958,
+      "mtime_ns": 1791169214287322000,
+      "package_export_size_bytes": 3538384
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/1f/1fbdf8d5d74e8c757461d2e59a77c3a1521ef5bc7cdeec9dc8ec6a896d766626-d",
+      "size_bytes": 571580244,
+      "mtime_ns": 1791187839607453000,
+      "package_export_size_bytes": 3541155
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/80/80d53c0fcac85db9acae904a51a043764b334af70199362d6f34c88fc2314284-d",
+      "size_bytes": 571493598,
+      "mtime_ns": 1791181514820558000,
+      "package_export_size_bytes": 3539858
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/19/19dca1a9096f9a70c2e36986e4b1344aa3bb72848e1f353f136d0511a04814f6-d",
+      "size_bytes": 559142580,
+      "mtime_ns": 1791187381573191000,
+      "package_export_size_bytes": 3578624
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/4d/4d69c5e1d186bcb0de072ccffa01441fe2dc8ea95231a9772f6300f069d35254-d",
+      "size_bytes": 573358048,
+      "mtime_ns": 1791198893615951000,
+      "package_export_size_bytes": 3552852
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/4d/4d8a5ad92d7fbf271cf4fa578ad3e5ee278b9d12f8aed55ff8588b3f3c42134d-d",
+      "size_bytes": 550098848,
+      "mtime_ns": 1791189507990239000,
+      "package_export_size_bytes": 3545765
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/75/7561d54d5e95d6e0f0722b365a20211c85fc9f5f404e1cd2b2a71924e66f2a2c-d",
+      "size_bytes": 573345150,
+      "mtime_ns": 1791198068049847000,
+      "package_export_size_bytes": 3552684
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/81/81b7dbe66b6103aac6a402f8a01170a78a3fac44ca8514f5ba87074939814bc8-d",
+      "size_bytes": 571521212,
+      "mtime_ns": 1791185209788692000,
+      "package_export_size_bytes": 3540327
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/86/8636e9ac9f2eed5b5a0972f1b17e5063025d002877443f54f24384f7c82d7c25-d",
+      "size_bytes": 571519068,
+      "mtime_ns": 1791184995829072000,
+      "package_export_size_bytes": 3540327
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/72/72206cd2050c68bf8cb86b5ec8cb235c77b4a4211b25e3d2efba6f01a41f623f-d",
+      "size_bytes": 558903588,
+      "mtime_ns": 1791187543462638000,
+      "package_export_size_bytes": 3545937
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/43/4385634ba7f4238fec807e691a017035570273ea6c2597cf86cfbedaff4a3a9f-d",
+      "size_bytes": 558905886,
+      "mtime_ns": 1791195239183302000,
+      "package_export_size_bytes": 3545937
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/38/380aa844acff2ea64edee098b1dc2db499d8d7e082ced3fe5dd04fcfdbb0a3c1-d",
+      "size_bytes": 565281628,
+      "mtime_ns": 1791179221872642000,
+      "package_export_size_bytes": 3537531
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/00/008304944ffd7f430dc932cb8ad8b7b8fd95356805a306fb47a26683c538d63a-d",
+      "size_bytes": 558870598,
+      "mtime_ns": 1791186631753871000,
+      "package_export_size_bytes": 3545427
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/9a/9ab651bffe238cb768973012bb831e281d8566d737d9be694fff7f28de5e450a-d",
+      "size_bytes": 558905814,
+      "mtime_ns": 1791192802048924000,
+      "package_export_size_bytes": 3545937
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/9a/9a50058bb02477cb53372c8f85cbcc108c8d41e3b01257631f85906cccb780cb-d",
+      "size_bytes": 550494100,
+      "mtime_ns": 1791193031354459000,
+      "package_export_size_bytes": 3555042
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/5d/5de2014d6162d8395fe95d7a640d6dbd6d77abdca367dc579ddb5752df7b4449-d",
+      "size_bytes": 560127866,
+      "mtime_ns": 1791201206535598000,
+      "package_export_size_bytes": 3555997
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/3a/3a8904caa0cb84574c3d0a0ebcfe939f49c550bad374cf88c1021e6746f30c35-d",
+      "size_bytes": 550376918,
+      "mtime_ns": 1791191885376345000,
+      "package_export_size_bytes": 3553669
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/54/54c23099e1bb57cf85763200f67b499e08a57faa3ba16fc984e970510cb02a40-d",
+      "size_bytes": 571500438,
+      "mtime_ns": 1791181646708480000,
+      "package_export_size_bytes": 3540000
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/30/309b212d11255182a9a3ac0b43b9ea11012579614784b24b1986f8dfb0aa18f4-d",
+      "size_bytes": 635515540,
+      "mtime_ns": 1791188245778664000,
+      "package_export_size_bytes": 3520307
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/30/305f95648d338e528e42d0437e848b8563e06053274114dda431e043306a0249-d",
+      "size_bytes": 565238532,
+      "mtime_ns": 1791178380623328000,
+      "package_export_size_bytes": 3536029
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/30/30df1a221c2bd93b08da7ff07c04f0f558fd6f66bba67a3af08f46cf86e77a84-d",
+      "size_bytes": 640460850,
+      "mtime_ns": 1791182137318007000,
+      "package_export_size_bytes": 3520280
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/5e/5e9d0537c8e66f31ea2c4f5392ceda12a474799a525eefb21e01b1df998eba32-d",
+      "size_bytes": 621372024,
+      "mtime_ns": 1791176892780286000,
+      "package_export_size_bytes": 3517319
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/39/3919feed2aa70326fdb4fab4aa8bbd6b5fe06b712defefb7446b26861c427407-d",
+      "size_bytes": 558870712,
+      "mtime_ns": 1791186713074286000,
+      "package_export_size_bytes": 3545427
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/99/99fb6a42f4094ab2f245312ab1ff4921719d4cafc72062d28712de4ca34c8708-d",
+      "size_bytes": 558905660,
+      "mtime_ns": 1791190012586095000,
+      "package_export_size_bytes": 3545937
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/52/5218c04127f58f46f226c26e659f0c4bd230ea32d74ac90e167acf1830316ce2-d",
+      "size_bytes": 550478668,
+      "mtime_ns": 1791192769729510000,
+      "package_export_size_bytes": 3554878
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/64/64e211bb1ccd4416dfdb06a535868717832ae96a50e6d6558500589fcbf89f7c-d",
+      "size_bytes": 573769064,
+      "mtime_ns": 1791199434119852000,
+      "package_export_size_bytes": 3553133
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/bf/bf6cc1928a8cfde3ea0475e2111462d5147223365ca6ac76ff500656519a3761-d",
+      "size_bytes": 558176534,
+      "mtime_ns": 1791174525026187000,
+      "package_export_size_bytes": 3533695
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/bf/bf1425d6528aaf2fbcfaf4d5539d90642e62fcc2720fb3e69fc37de0a924516d-d",
+      "size_bytes": 571213086,
+      "mtime_ns": 1791181100537154000,
+      "package_export_size_bytes": 3539696
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/d3/d3900cff61b35176467822e62c586d5d29965511f7b7e0b33f3edc559f29e8d6-d",
+      "size_bytes": 565272948,
+      "mtime_ns": 1791179017065532000,
+      "package_export_size_bytes": 3537038
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/a7/a7e78fe763cbb5bc8dc497d09fa1eac60afb41db7e7c5996b0388c8f8400f58d-d",
+      "size_bytes": 565389306,
+      "mtime_ns": 1791179559592272000,
+      "package_export_size_bytes": 3538553
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/b6/b6481212f4e55a1829222d3a5dea19ee8990167df6742d04c47f39f3ca350438-d",
+      "size_bytes": 635298756,
+      "mtime_ns": 1791187005671414000,
+      "package_export_size_bytes": 3519529
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/b7/b7baecc6b59d27f55d0ec1e2eef758a274369c829c87f5551561eaab41abbf2f-d",
+      "size_bytes": 549698930,
+      "mtime_ns": 1791173251538496000,
+      "package_export_size_bytes": 3533695
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/a6/a695b4adb82a37dd20ca9c23d1e41e969422fac438a766bfec8aa48eaf6fd45a-d",
+      "size_bytes": 573834752,
+      "mtime_ns": 1791200264119777000,
+      "package_export_size_bytes": 3553465
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/b9/b94a5d2bcf258ddc4dda594226e2e3e2466eaaa7caf08adfda9ba72d0a34529b-d",
+      "size_bytes": 550177788,
+      "mtime_ns": 1791184170005443000,
+      "package_export_size_bytes": 3541264
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/a1/a1f6e7c78302c1fb08214a3b556c299278b66613c7b3ca72e5723098a259ec7b-d",
+      "size_bytes": 558499334,
+      "mtime_ns": 1791175929001755000,
+      "package_export_size_bytes": 3538971
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/cc/cc0b4d674968794cdef0345e365d2b126f73b4725d8900eb5f883babcbd2f700-d",
+      "size_bytes": 550306900,
+      "mtime_ns": 1791185921282506000,
+      "package_export_size_bytes": 3544074
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/f9/f99070b85dfc7a2a10262802862c401ae89260f1893a183c32c688c4289fc805-d",
+      "size_bytes": 572242670,
+      "mtime_ns": 1791196741596011000,
+      "package_export_size_bytes": 3551480
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/e8/e84be3a0d71e7fbd8a7259597be2e2c4bc97109707963fe20068b3911e5e9278-d",
+      "size_bytes": 558546544,
+      "mtime_ns": 1791179230120983000,
+      "package_export_size_bytes": 3539253
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/41/4105a3692cb8876ac1bac4afa6a1472adf94a5578e266bbd09dbe25d9e85bfcb-d",
+      "size_bytes": 623195914,
+      "mtime_ns": 1791196640759615000,
+      "package_export_size_bytes": 3534327
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/83/832969c5a42a9297d6ad71b79b85f557b9ffe18f62eed4d81e9e8ccad03d2356-d",
+      "size_bytes": 571773824,
+      "mtime_ns": 1791192580334437000,
+      "package_export_size_bytes": 3541933
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/77/77656166be93ea7807ea8cb4cbf4083cc9b04d151a99d14cce716f681d460c42-d",
+      "size_bytes": 550542734,
+      "mtime_ns": 1791194147492045000,
+      "package_export_size_bytes": 3555488
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/4a/4ac0908924d3f798ca44674e17c7d821c708d783ca1939820f1709b2593d99f2-d",
+      "size_bytes": 571481878,
+      "mtime_ns": 1791181226634560000,
+      "package_export_size_bytes": 3539696
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/4a/4a40f5f6f34e50afc52fb4d77120622fad7a459272e1b4c76dd4c3e09f15bea7-d",
+      "size_bytes": 573790772,
+      "mtime_ns": 1791199697261653000,
+      "package_export_size_bytes": 3553301
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/24/24088d668f837fb99a6b9890f743b90cba5770a779127a72993e60dac9fae3a4-d",
+      "size_bytes": 620977396,
+      "mtime_ns": 1791173572796094000,
+      "package_export_size_bytes": 3512046
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/23/23936acec996a66b14989c06c393e34e7f8a0972504ec40d5c2743ddade356c6-d",
+      "size_bytes": 558905166,
+      "mtime_ns": 1791186989780274000,
+      "package_export_size_bytes": 3545766
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/15/15c956ff6299656fb931ca837f2197ac14a25f13425d9e825b3eeddc57959c54-d",
+      "size_bytes": 570966398,
+      "mtime_ns": 1791180307218486000,
+      "package_export_size_bytes": 3539531
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/15/15f06022d09b06ce139dc9278ffd8af0e5b30275f480ccc427812f01b8b92057-d",
+      "size_bytes": 560126404,
+      "mtime_ns": 1791197398835101000,
+      "package_export_size_bytes": 3555997
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/12/12518dbc4fdcc24aac90cf89f53eca0a56d7a540cc3a1f24109a13ff350cc6af-d",
+      "size_bytes": 550426840,
+      "mtime_ns": 1791184659265757000,
+      "package_export_size_bytes": 3574126
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/8c/8c33bcb160f6ad2c983883c0351c42f71ce9a9740f939d698e9ea308d396957c-d",
+      "size_bytes": 559134622,
+      "mtime_ns": 1791187081776848000,
+      "package_export_size_bytes": 3578453
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/8c/8c072e9d975363daabbb1f504c05fb43d4f43948d585c62ba736a2d56ec57154-d",
+      "size_bytes": 571564664,
+      "mtime_ns": 1791186749246419000,
+      "package_export_size_bytes": 3541155
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/76/76bfb484123c597072ced689f8ebe421543f9419265022317855467a4d963c2b-d",
+      "size_bytes": 558896178,
+      "mtime_ns": 1791187155720882000,
+      "package_export_size_bytes": 3545766
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/2e/2e6c6c720e30005e337e489adf772511083c64b7cb07cc596b925c8bda42971d-d",
+      "size_bytes": 637803364,
+      "mtime_ns": 1791200133611735000,
+      "package_export_size_bytes": 3531801
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/47/47382ab6e1120a2b1c133af944a1e02ae18036b61f7cab960ceeab6b2f804a39-d",
+      "size_bytes": 613068590,
+      "mtime_ns": 1791168716028435000,
+      "package_export_size_bytes": 3548907
+    },
+    {
+      "path": "/private/tmp/apexload-feature-completion-resume-go-cache/8e/8ec0e09ed009a78a648ced3ae1fd95aacc08f75f48c42107c877988ff61545e4-d",
+      "size_bytes": 550396948,
+      "mtime_ns": 1791192103819237000,
+      "package_export_size_bytes": 3553993
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+import datetime,hashlib,json,re,subprocess,sys,time
+from pathlib import Path
+root=Path('/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner')
+label=sys.argv[1]; command=sys.argv[2:]
+paths=set()
+for folder in ['dashboard/src','dashboard/e2e']:
+ paths.update(p.relative_to(root).as_posix() for p in (root/folder).rglob('*') if p.is_file() and not p.is_symlink())
+for name in ['dashboard/package.json','dashboard/package-lock.json','dashboard/tsconfig.json','dashboard/tsconfig.node.json','dashboard/vite.config.ts','dashboard/playwright.config.ts','docs/help-content-catalog.json','docs/dsl.schema.json','docs/swagger.yaml','docs/api-endpoint-catalog.json']:
+ if (root/name).is_file(): paths.add(name)
+help_source=(root/'dashboard/src/helpContent.ts').read_text()
+paths.update(re.findall(r"'\.\./\.\./([^']+)'",help_source))
+def inventory():
+ return [{'path':p,'bytes':(root/p).stat().st_size,'sha256':hashlib.sha256((root/p).read_bytes()).hexdigest()} for p in sorted(paths)]
+before=inventory(); start=time.monotonic()
+log=Path('/private/tmp')/(label+'.log')
+with log.open('wb') as out:
+ result=subprocess.run(command,cwd=root,stdout=out,stderr=subprocess.STDOUT)
+after=inventory(); elapsed=time.monotonic()-start
+receipt={'schema':'apexload.composed-frontend-check.v1','created_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'worktree':str(root),'head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root).decode().strip(),'command':command,'exit_code':result.returncode,'duration_seconds':round(elapsed,3),'raw_log_path':str(log),'raw_log_sha256':hashlib.sha256(log.read_bytes()).hexdigest(),'source_before':before,'source_after':after,'source_unchanged':before==after,'scope':'Frontend unit or documentation qualification of the current resource/Help composition; author product source is not integrated yet. No runtime browser, full repository or release acceptance claim.'}
+p=Path('/private/tmp')/(label+'.json'); p.write_text(json.dumps(receipt,indent=2)+'\n')
+print(json.dumps({'label':label,'exit_code':result.returncode,'duration_seconds':round(elapsed,3),'source_unchanged':before==after,'source_inputs':len(before),'receipt_sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'raw_log_sha256':receipt['raw_log_sha256']}),flush=True)
+if result.returncode: print(log.read_text(errors='replace')[-5000:],flush=True)
+sys.exit(result.returncode or (0 if before==after else 2))

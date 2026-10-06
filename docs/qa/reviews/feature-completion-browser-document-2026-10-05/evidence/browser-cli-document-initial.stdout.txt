@@ -1,0 +1,7 @@
+--- FAIL: TestBrowserDocumentCLIReadsDistinctLiveAndArchivePopulations (0.00s)
+    browser_document_evidence_test.go:27: invalid fixture
+--- FAIL: TestBrowserDocumentCLIReadsDistinctLiveAndArchivePopulations (0.00s)
+    browser_document_evidence_test.go:27: invalid fixture
+FAIL
+FAIL	github.com/jasonczech/apexload/cmd/apexctl	0.923s
+FAIL

@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "kafka_version": "3.9.2",
+  "image_index": "sha256:05b4616e0702ef2729327705d54ad6b50ea70b271c4b730fabd2320789fb7b02",
+  "platform": "linux/arm64",
+  "platform_manifest": "sha256:ddc235acd57d0fec5b21eedd46dcaf4e89a7569ff1c9890c5597c6d9561c59b0",
+  "profile": "single-kraft-broker",
+  "suite": "owned-seek",
+  "memory_bytes": 1610612736,
+  "cpus": 1,
+  "data_guard_bytes": 2147483648,
+  "created_resources": [
+    "apexload-kafka-owned-seek-58357e16cd34",
+    "apexload-kafka-owned-seek-58357e16cd34-config",
+    "apexload-kafka-owned-seek-58357e16cd34-data",
+    "apexload-kafka-owned-seek-58357e16cd34:container"
+  ],
+  "status": "failed",
+  "free_before_bytes": 110459711488,
+  "peak_data_bytes": 307200,
+  "test_log_created": true,
+  "test_exit": 1,
+  "test_group_reaped": true,
+  "failure": "genuine Kafka test failed; see sanitized test log",
+  "broker_diagnostics": [],
+  "test_log_withheld_or_redacted": false,
+  "duration_seconds": 54.661,
+  "cleanup": [
+    {
+      "resource": "apexload-kafka-owned-seek-58357e16cd34",
+      "exit": 0
+    },
+    {
+      "resource": "apexload-kafka-owned-seek-58357e16cd34-config",
+      "exit": 0
+    },
+    {
+      "resource": "apexload-kafka-owned-seek-58357e16cd34-data",
+      "exit": 0
+    },
+    {
+      "resource": "apexload-kafka-owned-seek-58357e16cd34",
+      "exit": 0
+    }
+  ],
+  "cleanup_verified": true,
+  "scratch_removed": true,
+  "free_after_bytes": 109550567424
+}

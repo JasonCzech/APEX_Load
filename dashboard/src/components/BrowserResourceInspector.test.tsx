@@ -1,0 +1,73 @@
+// @vitest-environment jsdom
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
+import { describe, expect, it, vi } from 'vitest'
+import BrowserResourceInspector from './BrowserResourceInspector'
+import { resourcePageFixture } from './browserResourcePage.testFixtures'
+import type { BrowserResourcePageLoader } from './useBrowserResourcePage'
+const props = { testID: 'run-one', projectID: 'project-one', sourceIdentity: 'source-one' }
+const button = (node: HTMLElement, text: string) => Array.from(node.querySelectorAll('button')).find(element => element.textContent === text)!
+
+describe('retained browser resource inspector', () => {
+  it('renders zero, false, nanoseconds, overlapping native phases and independent availability', async () => {
+    const node = document.createElement('div'); const root = createRoot(node); const loader: BrowserResourcePageLoader = async () => resourcePageFixture()
+    try {
+      await act(async () => root.render(<BrowserResourceInspector {...props} loadPage={loader} />))
+      expect(node.textContent).toContain('Native browser request details appear only when explicitly retained');
+      expect(node.textContent).toContain('80 retained entry observations'); expect(node.textContent).toContain('Manifest and artifact integrity verified')
+      expect(node.textContent).toContain('2026-10-05T12:00:00.123456789Z'); expect(node.textContent).toContain('0 ms / 0 B')
+      expect(node.textContent).toContain('false (observed)'); expect(node.textContent).toContain('0 ms · clock unverified'); expect(node.textContent).toContain('may overlap')
+      expect(node.querySelector('.measured-point')).not.toBeNull()
+      expect(node.querySelector('.browser-resource-phase-bar')?.getAttribute('style')).toContain('width: 0%')
+      const table = node.querySelector('[aria-label="Retained archive resources table"]')!; expect(table.getAttribute('tabindex')).toBe('0')
+      expect(node.querySelectorAll('tbody tr')).toHaveLength(1)
+    } finally { await act(async () => root.unmount()) }
+  })
+  it('paginates with the exact cursor then retries the first page without carrying transport state into filters', async () => {
+    const node = document.createElement('div'); const root = createRoot(node); const loader = vi.fn(async () => resourcePageFixture()) as BrowserResourcePageLoader
+    try {
+      await act(async () => root.render(<BrowserResourceInspector {...props} loadPage={loader} />))
+      await act(async () => button(node, 'Next resource page').click())
+      expect(vi.mocked(loader).mock.calls[1][2].cursor).toBe(`payload.${'A'.repeat(43)}`); expect(node.textContent).toContain('Page 2:')
+      await act(async () => button(node, 'First page / retry').click()); expect(vi.mocked(loader).mock.calls[2][2]).not.toHaveProperty('cursor'); expect(node.textContent).toContain('Page 1:')
+      await act(async () => button(node, 'First page / retry').click()); expect(loader).toHaveBeenCalledTimes(4)
+      await act(async () => node.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+      expect(vi.mocked(loader).mock.calls[4][2]).toEqual({ limit: 50, sort_by: 'capture_order', sort_dir: 'asc' })
+    } finally { await act(async () => root.unmount()) }
+  })
+  it('names selectable controls independently of option text and applies draft page size only on submit', async () => {
+    const node = document.createElement('div'); const root = createRoot(node); const loader = vi.fn(async () => resourcePageFixture()) as BrowserResourcePageLoader
+    try {
+      await act(async () => root.render(<BrowserResourceInspector {...props} loadPage={loader} />))
+      for (const name of ['Failure classification', 'Sort retained observations', 'Sort direction', 'Resources per page', 'Native request state']) {
+        expect(node.querySelector(`select[aria-label="${name}"]`)).not.toBeNull()
+      }
+      const size = node.querySelector<HTMLSelectElement>('select[aria-label="Resources per page"]')!
+      expect(size.value).toBe('50')
+      await act(async () => { size.value = '25'; size.dispatchEvent(new Event('change', { bubbles: true })) })
+      expect(loader).toHaveBeenCalledOnce()
+      await act(async () => node.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+      expect(vi.mocked(loader).mock.calls[1][2]).toEqual({ limit: 25, sort_by: 'capture_order', sort_dir: 'asc' })
+    } finally { await act(async () => root.unmount()) }
+  })
+  it('shows explicit unavailable, filter-zero and legacy integrity without a healthy zero verdict', async () => {
+    const node = document.createElement('div'); const root = createRoot(node)
+    const loader: BrowserResourcePageLoader = async () => { const page = resourcePageFixture(); page.items = []; delete page.next_cursor; page.source_integrity = 'legacy_scan_fingerprint'; page.population = { availability: 'unavailable', transaction_records: 2, retained_entry_observations: null, matched_retained_observations: null }; return page }
+    try {
+      await act(async () => root.render(<BrowserResourceInspector {...props} loadPage={loader} />))
+      expect(node.textContent).toContain('resource projection is unavailable'); expect(node.textContent).toContain('producer integrity is unverified'); expect(node.textContent).not.toContain('0 retained entry observations'); expect(node.textContent).not.toContain('0 retained observations')
+      const zero: BrowserResourcePageLoader = async () => { const page = resourcePageFixture(); page.items = []; delete page.next_cursor; page.population.matched_retained_observations = 0; return page }
+      await act(async () => root.render(<BrowserResourceInspector {...props} loadPage={zero} />)); expect(node.textContent).toContain('0 match these filters out of 80'); expect(node.textContent).toContain('No retained observations match')
+    } finally { await act(async () => root.unmount()) }
+  })
+  it('does not expose a rejected response or a previous run after switching archive owners', async () => {
+    const node = document.createElement('div'); const root = createRoot(node)
+    const loader: BrowserResourcePageLoader = async id => ({ ...resourcePageFixture(), test_id: id, items: [{ ...resourcePageFixture().items[0], url: id }] })
+    try {
+      await act(async () => root.render(<BrowserResourceInspector {...props} loadPage={loader} />)); expect(node.textContent).toContain('run-one')
+      await act(async () => root.render(<BrowserResourceInspector {...props} testID="run-two" loadPage={loader} />)); expect(node.textContent).not.toContain('run-one'); expect(node.textContent).toContain('run-two')
+      const malformed: BrowserResourcePageLoader = async () => ({ ...resourcePageFixture(), test_id: 'secret-foreign-run' })
+      await act(async () => root.render(<BrowserResourceInspector {...props} loadPage={malformed} />)); expect(node.textContent).toContain('Unable to load'); expect(node.textContent).not.toContain('secret-foreign-run'); expect(button(node, 'Next resource page').disabled).toBe(true)
+    } finally { await act(async () => root.unmount()) }
+  })
+})

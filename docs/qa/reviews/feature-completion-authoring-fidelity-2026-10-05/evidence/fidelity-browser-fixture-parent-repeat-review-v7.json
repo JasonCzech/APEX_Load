@@ -1,0 +1,27 @@
+{
+  "schema": "apexload.authoring-browser-fixture-repeat-review.v1",
+  "reviewed_utc": "2026-10-05T20:43:42.847124+00:00",
+  "v6_inventory_sha256": "881f11df99a5c8c7576fc10a2d40401e4389e85a0b5a6ce7c8aa6df338eb89bf",
+  "v7_inventory_sha256": "d2cbc44d186bf66f5e24ad0492a7b3144f457d46900faa272b1fd64c811706c1",
+  "changed_paths": [
+    "dashboard/e2e/workflow-new-test.spec.ts",
+    "dashboard/e2e/workflow-scenario-composition.spec.ts"
+  ],
+  "all_candidate_dependency_hashes_match": true,
+  "input_count": 62,
+  "reviewed_corrections": [
+    "Capture selectors remain scoped to the exact queued-copy dialog and use the combobox role with the established label prefix.",
+    "Submit selectors match the anchored Create Revised Copy group-count label.",
+    "Message detail controls remain scoped to the exact group Runtime Settings dialog, with combobox role/name prefixes.",
+    "Ending load targets the exact Ending load level VUsers spinbutton in the intended wizard step."
+  ],
+  "retained_oracles": [
+    "Actual wire payload and canonical reopen checks",
+    "Original queued source and scripts unchanged",
+    "Explicit capture/goal/runtime/WebSocket clear semantics",
+    "No target HTTP traffic while queued",
+    "Single-flight POST/late-edit receipt guard checks remain in the unchanged surrounding fixture"
+  ],
+  "findings": [],
+  "limits": "Focused static review of two fixture-only files and unchanged product/dependency hashes. Failed prior browser attempt remains retained; both-profile current runtime repeat qualification is separate and pending."
+}

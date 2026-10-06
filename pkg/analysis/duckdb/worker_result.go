@@ -14,7 +14,7 @@ import (
 )
 
 func (r workerResult) validate(b workerBootstrap, request workerRequest) error {
-	if request.validate(b) != nil {
+	if request.validate(b) != nil || r.SeriesBounds != nil && (request.Series == nil || r.Status != "ok") {
 		return errWorkerProtocol
 	}
 	n := 0
@@ -50,7 +50,7 @@ func (r workerResult) validate(b workerBootstrap, request workerRequest) error {
 		}
 		input, _ := b.handle(request.Preview.InputHandle, "input")
 		s := r.Preview.Schema
-		if s.Rows < 0 || s.FileSize != input.Bytes || input.Rows != nil && s.Rows != *input.Rows || len(s.Columns) < 1 || len(s.Columns) > 1024 || len(r.Preview.Samples) > 20 || int64(len(r.Preview.Samples)) > s.Rows {
+		if s.Rows < 0 || s.FileSize != input.Bytes || input.Rows != nil && s.Rows != *input.Rows || len(s.Columns) < 1 || len(s.Columns) > 1024 || len(r.Preview.Samples) > 20 || int64(len(r.Preview.Samples)) > s.Rows || analysis.ValidateParquetSQLSchema(s) != nil {
 			return errWorkerProtocol
 		}
 		seen := map[string]bool{}
@@ -109,8 +109,13 @@ func (r workerResult) validate(b workerBootstrap, request workerRequest) error {
 			return errWorkerProtocol
 		}
 		q := request.Series.Query
+		bounds, err := workerAdmitSeriesBounds(q, r.SeriesBounds)
+		if err != nil {
+			return err
+		}
 		var previous time.Time
-		maxPoints := int(math.Ceil(q.To.Sub(q.From).Seconds() / float64(q.BucketSeconds)))
+		var identityPoint analysis.MetricPoint
+		maxPoints := int(math.Ceil(bounds.To.Sub(bounds.From).Seconds() / float64(q.BucketSeconds)))
 		if len(*r.Points) != 0 && len(*r.Points) != maxPoints {
 			return errWorkerProtocol
 		}
@@ -118,9 +123,10 @@ func (r workerResult) validate(b workerBootstrap, request workerRequest) error {
 		for _, point := range *r.Points {
 			if inputKind == "" {
 				inputKind, unit = point.InputKind, point.Unit
+				identityPoint = point
 			}
 			lineage, err := analysis.ScalarBucketDerivation(analysis.MetricPoint{Kind: point.InputKind}, q.BucketSeconds, q.Aggregation)
-			if err != nil || !slices.Equal(lineage, point.Derivation) || point.InputKind != inputKind || point.Unit != unit || point.Population != "" || point.MetricVersion != "" || point.Provider != nil || !point.ReceivedAt.IsZero() || point.Quality != analysis.QualityValid && point.Quality != analysis.QualityMissing || point.Kind != analysis.KindGauge || point.Source != q.DatasetID || point.RunID != "" || point.ScenarioID != "" || point.Host != "" || point.Service != "" || len(point.Dimensions) != 0 || point.RelativeTimeMS != nil || point.ActiveRuntimeMS != nil || point.Validate() != nil || point.ProjectID != q.ProjectID || point.DatasetID != q.DatasetID || point.MetricName != q.Metric || point.TimestampUTC.Before(q.From) || !point.TimestampUTC.Before(q.To) || !previous.IsZero() && !point.TimestampUTC.After(previous) || point.TimestampUTC.Sub(q.From)%(time.Duration(q.BucketSeconds)*time.Second) != 0 {
+			if err != nil || !slices.Equal(lineage, point.Derivation) || point.InputKind != inputKind || point.Unit != unit || point.Population != "" || point.MetricVersion != "" || point.Provider != nil || !point.ReceivedAt.IsZero() || point.Quality != analysis.QualityValid && point.Quality != analysis.QualityMissing || point.Kind != analysis.KindGauge || !nativeSeriesIdentityMatches(q, point) || !sameNativeSeriesIdentity(identityPoint, point) || point.RunID != "" || point.ScenarioID != "" || point.RelativeTimeMS != nil || point.ActiveRuntimeMS != nil || point.Validate() != nil || point.ProjectID != q.ProjectID || point.DatasetID != q.DatasetID || point.MetricName != q.Metric || point.TimestampUTC.Before(bounds.From) || !point.TimestampUTC.Before(bounds.To) || !previous.IsZero() && !point.TimestampUTC.After(previous) || point.TimestampUTC.Sub(bounds.From)%(time.Duration(q.BucketSeconds)*time.Second) != 0 {
 				return errWorkerProtocol
 			}
 			previous = point.TimestampUTC
@@ -222,13 +228,23 @@ func (r workerNormalizeResult) validate(b workerBootstrap, op workerNormalizeOpe
 			return errWorkerProtocol
 		}
 		if plan.Role == "normalized" {
+			unit, _, unitErr := unitScale(op.Mapping.Measures[plan.Measure].Unit)
+			if out.Partition == nil || out.Partition.Validate() != nil || out.Partition.Rows != out.Rows || out.Partition.IdentityVersion != op.Mapping.Version || out.Partition.Kind != op.Mapping.Measures[plan.Measure].Kind || unitErr != nil || out.Partition.Unit != unit || out.Partition.IdentityVersion == 1 && out.Partition.Identity != nil && out.Partition.Identity.Source != op.DatasetID {
+				return errWorkerProtocol
+			}
 			normalizedRows, err = workerAdd(normalizedRows, out.Rows)
 		} else {
+			if out.Partition != nil {
+				return errWorkerProtocol
+			}
 			rejectionRows, err = workerAdd(rejectionRows, out.Rows)
 		}
 		if err != nil {
 			return err
 		}
+	}
+	if _, err := analysis.MarshalBoundedAnalysisJSON(r.Outputs, analysis.MaxPartitionManifestBytes); err != nil {
+		return errWorkerProtocol
 	}
 	if normalizedRows != r.Accepted || rejectionRows != r.Rejected {
 		return errWorkerProtocol

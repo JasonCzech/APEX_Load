@@ -41,6 +41,7 @@ func publishAnalysisAPIFixture(t *testing.T, store storage.AnalysisImportStore, 
 	if prepare != nil {
 		prepare(in, attempt)
 	}
+	addAnalysisPublicationFixtureManifest(t, in)
 	digest, err := storage.AnalysisAttemptResultDigest(*in)
 	if err != nil {
 		t.Fatal(err)
@@ -53,4 +54,36 @@ func publishAnalysisAPIFixture(t *testing.T, store storage.AnalysisImportStore, 
 		t.Fatal(err)
 	}
 	return ready
+}
+
+// Metadata-only publication fixtures do not claim a native physical producer.
+// Their explicit synthetic row/size proof lets authority tests enter the real
+// required publication transaction without weakening production admission.
+func addAnalysisPublicationFixtureManifest(t *testing.T, in *storage.AnalysisImport) {
+	t.Helper()
+	if in.PartitionManifestVersion == 0 {
+		return
+	}
+	if in.Mapping == nil || len(in.Mapping.Measures) == 0 {
+		t.Fatal("fixture mapping unavailable")
+	}
+	measure := in.Mapping.Measures[0]
+	unit, _, err := analysis.NormalizeUnit(measure.Unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Unix(1700000000, 0).UTC()
+	parts := make([]analysis.NormalizedPartition, 0, len(in.Normalized))
+	for i, key := range in.Normalized {
+		stats := analysis.NormalizedPartitionStats{Version: 1, SchemaVersion: analysis.SchemaVersion, IdentityVersion: in.Mapping.Version, Kind: measure.Kind, Unit: unit}
+		if i == 0 && in.Accepted > 0 {
+			stats.Rows, stats.Valid = in.Accepted, in.Accepted
+			stats.MinTime, stats.MaxTime = &at, &at
+		}
+		parts = append(parts, analysis.NormalizedPartition{ObjectKey: key, SHA256: in.NormalizedSHA256[key], Bytes: 12, Stats: stats})
+	}
+	in.PartitionManifest, err = analysis.NewNormalizedPartitionManifest(in.ProjectID, in.ID, *in.Mapping, parts)
+	if err != nil {
+		t.Fatal(err)
+	}
 }

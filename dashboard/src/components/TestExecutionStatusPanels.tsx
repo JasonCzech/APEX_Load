@@ -1,13 +1,19 @@
+import TelemetryPolicy from './TelemetryPolicy'
 import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, CapacityAdvisory, GoalStatus, GroupLiveMetrics, LiveCapacityStatus, TelemetryHealth, TestSummary, TxMetrics } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
-import { formatBrowserEngineLabel, formatDevicePlatformLabel } from './browserBreakdownModel'
+import { browserMetricRecord, finiteBrowserMetric, formatBrowserSampleCount, formatBrowserEngineLabel, formatDevicePlatformLabel } from './browserBreakdownModel'
+import BrowserUXAssessment from './BrowserUXAssessment'
+import BrowserDocumentEvidencePanel from './BrowserDocumentEvidencePanel'
+import type { BrowserDocumentSummary } from '../types/browserDocumentEvidence'
 
 interface LiveMetricsSummary {
+  browser_documents?: BrowserDocumentSummary | null
   tps?: number
   target_tps?: number
   throughput_gap_pct?: number
   throughput_target_missed?: boolean
   active_vusers?: number
+  telemetry_policy?: import('../types/telemetryPolicy').TelemetryPolicyEvidence
   telemetry?: TelemetryHealth
   browser?: BrowserLiveMetrics
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
@@ -37,7 +43,7 @@ function formatGoalReason(value?: string): string {
 }
 
 function formatSampleAge(value?: number): string {
-  if (value === undefined) return 'unknown'
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return 'unknown'
   if (value < 2000) return `${Math.round(value)} ms`
   return `${(value / 1000).toFixed(2)} s`
 }
@@ -50,13 +56,13 @@ function formatTelemetryTime(value?: string): string {
 }
 
 function formatBrowserMetric(value: number | undefined, suffix = '', digits = 1): string {
-  if (value === undefined) return 'n/a'
-  return `${value.toFixed(digits)}${suffix}`
+  const observed = finiteBrowserMetric(value)
+  return observed === undefined ? 'n/a' : `${observed.toFixed(digits)}${suffix}`
 }
 
 function formatBrowserScore(value: number | undefined): string {
-  if (value === undefined) return 'n/a'
-  return value.toFixed(3)
+  const observed = finiteBrowserMetric(value)
+  return observed === undefined ? 'n/a' : observed.toFixed(3)
 }
 
 function formatThroughputGap(value?: number): string {
@@ -154,28 +160,21 @@ function throughputBadgeLabel(metrics?: LiveMetricsSummary): string {
   return 'On Target'
 }
 
-function telemetryBadgeClass(metrics?: LiveMetricsSummary): 'healthy' | 'warning' | 'danger' {
-  const telemetry = metrics?.telemetry
-  if (!telemetry) return 'healthy'
-  if ((telemetry.websocket_dropped_messages ?? 0) > 0 || (telemetry.websocket_dropped_events ?? 0) > 0) {
-    return 'danger'
-  }
-  if ((telemetry.end_to_end_age_ms ?? telemetry.sample_age_ms ?? 0) > 2000) {
-    return 'warning'
-  }
-  return 'healthy'
+function observedTelemetryCount(value?: number): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
 }
 
-function telemetryBadgeLabel(metrics?: LiveMetricsSummary): string {
+function formatObservedTelemetryCount(value?: number): string {
+  const count = observedTelemetryCount(value)
+  return count === undefined ? 'unknown' : count.toLocaleString()
+}
+
+function telemetryObservationLabel(metrics?: LiveMetricsSummary): string {
   const telemetry = metrics?.telemetry
   if (!telemetry) return 'Unknown'
-  if ((telemetry.websocket_dropped_messages ?? 0) > 0 || (telemetry.websocket_dropped_events ?? 0) > 0) {
-    return 'Degraded'
-  }
-  if ((telemetry.end_to_end_age_ms ?? telemetry.sample_age_ms ?? 0) > 2000) {
-    return 'Stale'
-  }
-  return 'Healthy'
+  if ((observedTelemetryCount(telemetry.websocket_dropped_messages) ?? 0) > 0 || (observedTelemetryCount(telemetry.websocket_dropped_events) ?? 0) > 0) return 'Observed drop evidence'
+  const age = [telemetry.end_to_end_age_ms, telemetry.sample_age_ms].find(value => typeof value === 'number' && Number.isFinite(value) && value >= 0)
+  return age === undefined ? 'Unknown' : 'Age observed'
 }
 
 export default function TestExecutionStatusPanels({
@@ -188,7 +187,7 @@ export default function TestExecutionStatusPanels({
   groupMetrics,
   groupColors,
 }: Props) {
-  const browserDevices = Object.entries(metrics?.browser_by_device ?? {})
+  const browserDevices = Object.entries(metrics?.browser_by_device ?? {}).map(([profile, value]) => [profile, { ...browserMetricRecord(value), malformed: !browserMetricRecord(value) }] as const)
   const capacityAdvisory = test.capacity_advisory
   const capacityStatus = metrics?.capacity_status
   const protocolRows = capacityProtocolRows(test, capacityStatus)
@@ -311,15 +310,17 @@ export default function TestExecutionStatusPanels({
         </div>
       ) : null}
 
+      {metrics && <TelemetryPolicy evidence={metrics.telemetry_policy} />}
+
       {metrics?.telemetry && (
         <div className="goal-status-card telemetry-status-card">
           <div className="goal-status-header">
             <div>
-              <h3 className="goal-status-title">Telemetry Health</h3>
-              <p className="goal-status-subtitle">{['COMPLETE', 'FAILED', 'ABORTED'].includes(test.status) ? 'Historical telemetry snapshot. Health describes the captured sample, not the current connection.' : 'Freshness and delivery pressure for the live metrics pipeline.'}</p>
+              <h3 className="goal-status-title">Telemetry observations</h3>
+              <p className="goal-status-subtitle">{['COMPLETE', 'FAILED', 'ABORTED'].includes(test.status) ? 'Retained historical pipeline observations, not current connection health.' : 'Observed ages and delivery counters for the metrics pipeline.'}</p>
             </div>
-            <div className={`goal-status-badge ${telemetryBadgeClass(metrics)}`}>
-              {telemetryBadgeLabel(metrics)}
+            <div className="goal-status-badge neutral">
+              {telemetryObservationLabel(metrics)}
             </div>
           </div>
 
@@ -369,18 +370,23 @@ export default function TestExecutionStatusPanels({
               <span className="goal-status-value">{formatTelemetryTime(metrics.telemetry.client_received_at)}</span>
             </div>
             <div className="goal-status-metric">
-              <span className="goal-status-label">History Window</span>
-              <span className="goal-status-value">{metrics.telemetry.history_points ?? 0}</span>
+              <span className="goal-status-label">Retained history points</span>
+              <span className="goal-status-value">{formatObservedTelemetryCount(metrics.telemetry.history_points)}</span>
             </div>
             <div className="goal-status-metric">
-              <span className="goal-status-label">WS Clients</span>
-              <span className="goal-status-value">{metrics.telemetry.websocket_clients ?? 0}</span>
+              <span className="goal-status-label">Observed WS clients</span>
+              <span className="goal-status-value">{formatObservedTelemetryCount(metrics.telemetry.websocket_clients)}</span>
             </div>
             <div className="goal-status-metric">
-              <span className="goal-status-label">WS Drops</span>
-              <span className="goal-status-value">{(metrics.telemetry.websocket_dropped_messages ?? 0) + (metrics.telemetry.websocket_dropped_events ?? 0)}</span>
+              <span className="goal-status-label">Observed WS message drops</span>
+              <span className="goal-status-value">{formatObservedTelemetryCount(metrics.telemetry.websocket_dropped_messages)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Observed WS event drops</span>
+              <span className="goal-status-value">{formatObservedTelemetryCount(metrics.telemetry.websocket_dropped_events)}</span>
             </div>
           </div>
+          <p>Drop counters are cumulative controller observations, not an exact run loss total. Age observations do not establish synchronized clocks, complete time coverage, or a telemetry verdict.</p>
         </div>
       )}
 
@@ -391,8 +397,8 @@ export default function TestExecutionStatusPanels({
               <h3 className="goal-status-title">Browser UX Signals</h3>
               <p className="goal-status-subtitle">Client-side timings captured from browser actions and normalized by device profile.</p>
             </div>
-            <div className="goal-status-badge healthy">
-              {metrics.browser.samples} samples
+            <div className="goal-status-badge neutral">
+              {formatBrowserSampleCount(metrics.browser.samples)}
             </div>
           </div>
 
@@ -439,14 +445,17 @@ export default function TestExecutionStatusPanels({
             </div>
           </div>
 
+          <BrowserUXAssessment summary={metrics.browser} devices={metrics.browser_by_device} />
+
           {browserDevices.length > 0 && (
             <div className="browser-device-grid">
               {browserDevices.map(([profile, deviceMetrics]) => (
                 <div key={profile} className="browser-device-card">
                   <div className="browser-device-header">
                     <span className="browser-device-name">{profile}</span>
-                    <span className="browser-device-tier">{formatDevicePlatformLabel(deviceMetrics.device_platform)} · {formatBrowserEngineLabel(deviceMetrics.browser_engine)} · {deviceMetrics.device_tier || 'unknown'} tier</span>
+                    <span className="browser-device-tier">{formatDevicePlatformLabel(deviceMetrics.device_platform)} · {formatBrowserEngineLabel(deviceMetrics.browser_engine)} · {typeof deviceMetrics.device_tier === 'string' && deviceMetrics.device_tier ? deviceMetrics.device_tier : 'unknown'} tier</span>
                   </div>
+                  {deviceMetrics.malformed && <p className="archive-section-copy">Malformed summary: expected an object.</p>}
                   <div className="browser-device-stats">
                     <span>TTFB {formatBrowserMetric(deviceMetrics.avg_ttfb_ms, ' ms')}</span>
                     <span>FCP {formatBrowserMetric(deviceMetrics.avg_fcp_ms, ' ms')}</span>
@@ -459,6 +468,10 @@ export default function TestExecutionStatusPanels({
             </div>
           )}
         </div>
+      )}
+
+      {(metrics?.browser_documents != null || metrics?.browser || test.groups?.some(group => group.protocol === 'browser')) && (
+        <BrowserDocumentEvidencePanel summary={metrics?.browser_documents} summaryMode="live-history" />
       )}
 
       {isGoalOriented && (

@@ -1,0 +1,46 @@
+{
+  "version": 2,
+  "date_utc": "2026-10-06T02:29:00.161123+00:00",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "purpose": "Guarded proposal only; reviewer wrote /private/tmp drafts/patch and did not apply to ROOT. Parent must join active full Go before application.",
+  "patch": {
+    "path": "/private/tmp/apexload-route-contract-test-only-fix-v2-20261005.patch",
+    "sha256": "4be952b2ead8b062aa2fe2cddf6a0ccc10b774fa6133e1bd351ce31194eb15bf",
+    "bytes": 4626
+  },
+  "files": [
+    {
+      "path": "pkg/api/route_catalog_characterization_test.go",
+      "expected_before_sha256": "162f2d18c0f4f6df2240f8b945a7f913719c633f07e50238d0148da0b5c287a1",
+      "expected_before_bytes": 177524,
+      "proposed_after_path": "/private/tmp/apexload-route-contract-test-only-fix-v2-20261005/route_catalog_characterization_test.go",
+      "expected_after_sha256": "c4f13e7d9ed0e3a80b706d8f69a33273b36618e92ad841deb9186fa07c796451",
+      "expected_after_bytes": 177783
+    },
+    {
+      "path": "pkg/api/route_registry_test.go",
+      "expected_before_sha256": "f7b400d18177e1225f9b16e531146329ccd45b845d745c967887179d73a36478",
+      "expected_before_bytes": 25491,
+      "proposed_after_path": "/private/tmp/apexload-route-contract-test-only-fix-v2-20261005/route_registry_test.go",
+      "expected_after_sha256": "a868e8c31216d7bde96eeb60bfe50e40f3300ee605a86fc1e4798faa85779ca2",
+      "expected_after_bytes": 27490
+    }
+  ],
+  "root_sources_unchanged": true,
+  "root_changed_paths": [],
+  "production_source_changed": false,
+  "tests_builds_gofmt_staging_commits_cache_cleanup_performed": false,
+  "self_review": [
+    "Exactly one explicit RBAC-only golden added; all old goldens and equality/unknown-route failure remain.",
+    "Exactly one modular archive expected count17\u219218 changed; discovered handler, generic auth, catalog uniqueness/no legacy-rule assertions remain.",
+    "Dedicated new contract subtest checks runtime/documented viewer policy using exact durable resolver via existing assertAccessRequirementEqual; nil ServiceAccountScopeLookup is part of that equality.",
+    "Concrete request still requires results:read; modular spec pins authenticated middleware, actual handler identity and exact10s rather than following a mutable timeout constant.",
+    "Existing occupied SQL deadline and actual middleware scope/revocation tests unchanged."
+  ],
+  "qualification": "Proposed source only, not executed or accepted; original full-Go failures retained.",
+  "previous_draft_receipt": {
+    "path": "/private/tmp/apexload-route-contract-test-only-fix-20261005.json",
+    "sha256": "9ff4b4b77fd9c2b418d3ba740aa2fc68eb6d082960c538f8d04e6b622db9c869"
+  },
+  "delta_from_unpublished_v1": "Align the one new golden string with its existing neighbor; no behavior change. Original draft remains retained in /private/tmp."
+}

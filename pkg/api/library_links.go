@@ -178,7 +178,7 @@ func hashLibraryScenario(scenario *StoredScenario) string {
 	if scenario == nil {
 		return hashCanonical(nil)
 	}
-	req := createScenarioRequestFromStored(maskStoredScenario(scenario))
+	req := portableScenarioRequestFromStored(maskStoredScenario(scenario))
 	return hashCanonical(req)
 }
 

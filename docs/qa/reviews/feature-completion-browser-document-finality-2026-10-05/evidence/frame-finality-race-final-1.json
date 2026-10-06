@@ -1,0 +1,44 @@
+{
+  "name": "frame-finality-race-final-1",
+  "argv": [
+    "go",
+    "test",
+    "-race",
+    "./pkg/protocol/browser",
+    "-run",
+    "TestBrowserDocumentBootstrap|TestBrowserDocumentFinalize|TestBrowserDocumentCurrentFrameMerge|TestBrowserDocumentFinalizerFrameErrorIsolation|TestBrowserVitalsPinnedLibraryDigest",
+    "-count=3",
+    "-timeout=45s"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "head": "9b5b9e29a48950591f9e06d7acb7d2d3095cae4b",
+  "exit_code": 0,
+  "elapsed_seconds": 4.693,
+  "recorded_at_utc": "2026-10-05T23:13:38.843383+00:00",
+  "log_path": "/private/tmp/frame-finality-race-final-1.log",
+  "log_sha256": "b46f291b9f52edb870e345fb62fc02dd267e7a9c638f303bd7a7c3dea63c7f50",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4054,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "APEXLOAD_BROWSER_TESTS": null
+  },
+  "sources_before_inventory": {
+    "path": "repository-go-module-inventory-a4381f380b817e14df904c16858386c54a5834decab3f209c47db9710346f0f2.json",
+    "entries": 4054,
+    "sha256": "0eaf10a76aac0e4971ebdeffd8f83655df186db62cf96b8170ccd9802759e8a2"
+  },
+  "sources_after_inventory": {
+    "path": "repository-go-module-inventory-a4381f380b817e14df904c16858386c54a5834decab3f209c47db9710346f0f2.json",
+    "entries": 4054,
+    "sha256": "0eaf10a76aac0e4971ebdeffd8f83655df186db62cf96b8170ccd9802759e8a2"
+  },
+  "original_private_tmp_receipt_sha256": "0f902c7247bfdd6143eb70bc89de1276649d9a1a8989736f0cadca6563e5d72a",
+  "qualification_status": "final green: affected deterministic tests with race detector, three repetitions",
+  "preserved_raw_output": "frame-finality-race-final-1.stdout.txt"
+}

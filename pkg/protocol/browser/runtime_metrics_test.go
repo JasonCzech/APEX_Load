@@ -2,6 +2,7 @@ package browser
 
 import (
 	"encoding/json"
+	"math"
 	"testing"
 	"time"
 
@@ -165,5 +166,38 @@ func TestParseProcessSamples(t *testing.T) {
 	}
 	if samples[2].CPUTimeSeconds != 183845 {
 		t.Fatalf("sample[2].CPUTimeSeconds = %v, want 183845", samples[2].CPUTimeSeconds)
+	}
+}
+
+func TestBrowserRuntimeAvailabilityPreservesObservedZeroAndUnavailableFields(t *testing.T) {
+	b := &Browser{engine: "webkit"}
+	metrics := protocol.ClientMetrics{RuntimeAvailability: b.runtimeMetricAvailability()}
+	if metrics.RuntimeAvailability.Clone() == nil {
+		t.Fatal("fixed unavailable source capabilities malformed")
+	}
+	for _, m := range metrics.RuntimeAvailability.Metrics {
+		if m.Available {
+			t.Fatal("unmeasured legacy zero claimed available")
+		}
+	}
+	b.applyCDPPerformanceMetrics(map[string]any{"metrics": []any{map[string]any{"name": "LayoutCount", "value": float64(0)}, map[string]any{"name": "ScriptDuration", "value": math.NaN()}}}, &metrics)
+	for _, m := range metrics.RuntimeAvailability.Metrics {
+		switch m.Metric {
+		case "layout_count":
+			if !m.Available || m.Source != "cdp" || m.UnavailableReason != "" {
+				t.Fatal("native observed zero lost")
+			}
+		case "script_duration_ms":
+			if m.Available {
+				t.Fatal("invalid native value became available")
+			}
+		case "browser_process_cpu_pct", "browser_process_mem_mb":
+			if m.Available || m.Scope != "driver_process_tree" {
+				t.Fatal("driver process tree qualified as page CPU/RSS")
+			}
+		}
+	}
+	if metrics.RuntimeAvailability.Clone() == nil {
+		t.Fatal("observed source capability malformed")
 	}
 }

@@ -1,0 +1,6 @@
+
+/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/dashboard/src/components/browserDocumentEvidenceModel.ts
+  25:147  error  Unexpected control character(s) in regular expression: \x00  no-control-regex
+
+✖ 1 problem (1 error, 0 warnings)
+

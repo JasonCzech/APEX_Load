@@ -1,0 +1,58 @@
+{
+  "captured_utc": "2026-10-05T12:05:32.467254+00:00",
+  "status": "failed_then_explicitly_interrupted",
+  "qualification": "Not a full passing browser cycle. Source/static remain frozen for the separately running Go gate.",
+  "interruption_reason": "Parent authorized stopping the owned browser cycle after the confirmed imported-comparison card overflow failure. The corrected full cycle will cover remaining cases after the exact canonical chart fix.",
+  "owned_shutdown": {
+    "signaled_pid": 39603,
+    "signal": "SIGINT",
+    "receipt_helper_pid": 27436,
+    "controller_pid": 39557,
+    "controller_ports": [
+      18471,
+      18472
+    ],
+    "ports_released": "lsof -nP -iTCP:18471 -iTCP:18472 -sTCP:LISTEN returned1 with empty output after wrapper completion"
+  },
+  "execution_receipt": {
+    "path": "docs/qa/reviews/feature-completion-browser-document-2026-10-05/evidence/frontend-document-full-cycle-focus-fixed-final-1.json",
+    "sha256": "2d71559aabd1e5036fa4cb65f84c71bf486c1c884b59609079bf99e300032d57",
+    "exit_code": 1,
+    "duration_seconds": 1531.179,
+    "log_sha256": "ad85ad2f84f5796472163e06635fb0fbb6a5bba96f77ab745046967f1e0591cf"
+  },
+  "completed_checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "unit_files_passed": 513,
+    "unit_tests_passed": 5687,
+    "dev_admin": {
+      "passed": 238,
+      "skipped": 5
+    },
+    "local_auth_partial": {
+      "passed": 86,
+      "failed": 1,
+      "interrupted": 1,
+      "skipped": 1,
+      "did_not_run": 81
+    }
+  },
+  "decisive_failure": "frontend-native-chart-overflow-failure-inspection.json",
+  "frozen_bookends": [
+    {
+      "before": "frontend-document-focus-cycle-build-source-inventory.json",
+      "after": "frontend-document-focus-interrupted-source-bookend.json",
+      "count": 1508,
+      "files_list_sha256": "73186bdaa6c2b93b1e0728e967fc9d3a109f096175b82b87e6e02b4a031cb8fc",
+      "file_set_and_hash_mismatches": 0
+    },
+    {
+      "before": "frontend-document-focus-cycle-final-embedded-inventory.json",
+      "after": "frontend-document-focus-interrupted-embedded-bookend.json",
+      "count": 247,
+      "files_list_sha256": "c26cbe2cbf8b1e850b53d2d72fcc9f99c9ebbdedd066465f8756d46b4f9d3693",
+      "file_set_and_hash_mismatches": 0
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "schema": "apexload.serialized-targeted-ui-qualified.v1",
+  "scope": "Both unchanged command-center details cases qualified against real controller browser workflows with original deadlines and retries=0. No full-suite or historical-resource-cause claim. Original parallel RED evidence is retained separately.",
+  "profiles": [
+    {
+      "profile": "dev-admin",
+      "receipt_path": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-dashboard-targeted-details-dev-admin-3.json",
+      "receipt_sha256": "d08b75bb9a29bb10b2a9ca293bf13a7e9ad724b6da440791a68b8b5066dde284",
+      "log_sha256": "802d2117261c774e8ffd35515e5ba0984fa05dbfa5effb994cecc57c3bcee0aa",
+      "duration_seconds": 29.796,
+      "execution_lifecycle": {
+        "owned_child_pid": 53317,
+        "owned_child_process_group": 53317,
+        "owned_child_physically_joined": true,
+        "owned_child_group_empty": true,
+        "cancelled_signal": null,
+        "cleanup_escalated": false,
+        "errors": [],
+        "scope": "Only this gate-owned direct child/process group; the inner UI wrapper separately owns and joins its profile groups. No claim about unrelated processes."
+      },
+      "junit_path": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/targeted-cycle-3/dev-admin/playwright-junit.xml",
+      "junit_sha256": "0123e7b6a85023eb48bfa031ec49c1a995270bff3a11e37024dbff6991a3576e",
+      "junit_counts": {
+        "id": "",
+        "name": "",
+        "tests": "2",
+        "failures": "0",
+        "skipped": "0",
+        "errors": "0",
+        "time": "9.328676"
+      },
+      "exact_testcases": [
+        "advanced details returns to the same run without losing cockpit edits or graph mode",
+        "runtime workspace keeps essential metrics readable and settings in an opaque drawer"
+      ],
+      "source_and_embedded_stable": true
+    },
+    {
+      "profile": "local-auth",
+      "receipt_path": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-dashboard-targeted-details-local-auth-3.json",
+      "receipt_sha256": "f6ab7974627d7afe73334b3c6b75c3746179559ca79c8fadd430b7df3856d142",
+      "log_sha256": "007e57138e7c457c2e9a843348e5cd53bc4d0c857955c4f41d51eefae4fd93a4",
+      "duration_seconds": 39.785,
+      "execution_lifecycle": {
+        "owned_child_pid": 53467,
+        "owned_child_process_group": 53467,
+        "owned_child_physically_joined": true,
+        "owned_child_group_empty": true,
+        "cancelled_signal": null,
+        "cleanup_escalated": false,
+        "errors": [],
+        "scope": "Only this gate-owned direct child/process group; the inner UI wrapper separately owns and joins its profile groups. No claim about unrelated processes."
+      },
+      "junit_path": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/targeted-cycle-3/local-auth/playwright-junit.xml",
+      "junit_sha256": "bc99d59ea9ae0415d5054701f081a62cd5c4f4792eef51de7c7d304e06f2439e",
+      "junit_counts": {
+        "id": "",
+        "name": "",
+        "tests": "2",
+        "failures": "0",
+        "skipped": "0",
+        "errors": "0",
+        "time": "21.418682999999998"
+      },
+      "exact_testcases": [
+        "advanced details returns to the same run without losing cockpit edits or graph mode",
+        "runtime workspace keeps essential metrics readable and settings in an opaque drawer"
+      ],
+      "source_and_embedded_stable": true
+    }
+  ],
+  "scratch_receipt": "/private/tmp/apexload-main-targeted-cycle3-owned-scratch-20261006.json",
+  "source_changes_made": false,
+  "caches_cleaned": false
+}

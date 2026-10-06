@@ -1,0 +1,116 @@
+Building controller...
+Starting controller on http://127.0.0.1:18471 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.ejg1dfDKGz)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 6 tests using 1 worker
+
+(node:52767) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/workflow-script-editor.spec.ts:7:1 › operator edits the failed nested browser assertion and reruns without losing source fields (914ms)
+  ✘  2 e2e/workflow-script-editor.spec.ts:61:1 › authored script goals survive an unrelated editor save and canonical reopen (16.0s)
+(node:52862) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  3 e2e/workflow-script-editor.spec.ts:112:1 › two editors preserve stale drafts and require explicit revision review before reapply (1.2s)
+  ✓  4 e2e/workflow-script-editor.spec.ts:192:1 › placement-only changes invalidate save authority and explicit reapply preserves the current folder (651ms)
+  ✓  5 e2e/workflow-script-editor.spec.ts:220:1 › uncertain successful writes retain drafts and revoke retry authority until explicit review (683ms)
+  ✓  6 e2e/workflow-script-editor.spec.ts:267:1 › library secret rebind retains exact revision authority and requires review after a real conflict (2.6s)
+
+
+  1) e2e/workflow-script-editor.spec.ts:61:1 › authored script goals survive an unrelated editor save and canonical reopen 
+
+    TimeoutError: locator.pressSequentially: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for locator('.script-code-pane').getByPlaceholder('Find', { exact: true })
+        - locator resolved to <input form="" value="" name="search" aria-label="Find" main-field="true" placeholder="Find" class="cm-textfield"/>
+      - elementHandle.type("goal_config")
+      - element was detached from the DOM, retrying
+
+
+       98 |   await code.getByRole('button', { name: 'Find', exact: true }).click()
+       99 |   const find = code.getByPlaceholder('Find', { exact: true })
+    > 100 |   await find.pressSequentially('goal_config')
+          |              ^
+      101 |   await code.getByRole('button', { name: 'next', exact: true }).click()
+      102 |   await expect(code.locator('.cm-content')).toContainText('goal_config')
+      103 |   await find.fill('')
+        at /Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/e2e/workflow-script-editor.spec.ts:100:14
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dev-admin/workflow-script-editor-aut-7060d-r-save-and-canonical-reopen/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dev-admin/workflow-script-editor-aut-7060d-r-save-and-canonical-reopen/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/dev-admin/workflow-script-editor-aut-7060d-r-save-and-canonical-reopen/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/dev-admin/workflow-script-editor-aut-7060d-r-save-and-canonical-reopen/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    e2e/workflow-script-editor.spec.ts:61:1 › authored script goals survive an unrelated editor save and canonical reopen 
+  5 passed (23.0s)
+--- controller log (last 60 lines) ---
+{"time":"2026-10-05T03:46:03.683045-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"0f0cefbd-d2f1-4813-b52d-4c29f7b943aa","clients":1}
+{"time":"2026-10-05T03:46:03.685912-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/fb6e3336-3108-49e2-a736-a8e2abfe1133/secrets/OLD_REFERENCE/usage","status":200,"duration_ms":1,"remote":"127.0.0.1:57423"}
+{"time":"2026-10-05T03:46:04.691922-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/scripts/secret-references/rebind","status":200,"duration_ms":1,"remote":"127.0.0.1:57387"}
+{"time":"2026-10-05T03:46:04.694019-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705","status":200,"duration_ms":1,"remote":"127.0.0.1:57387"}
+{"time":"2026-10-05T03:46:04.700379-04:00","level":"INFO","msg":"http request","method":"PUT","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705","status":200,"duration_ms":5,"remote":"127.0.0.1:57387"}
+{"time":"2026-10-05T03:46:04.708749-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications/fb6e3336-3108-49e2-a736-a8e2abfe1133/secrets/status","status":200,"duration_ms":0,"remote":"127.0.0.1:57425"}
+{"time":"2026-10-05T03:46:04.708768-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects/0f0cefbd-d2f1-4813-b52d-4c29f7b943aa/secrets","status":200,"duration_ms":0,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:04.709213-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705/secret-status","status":200,"duration_ms":0,"remote":"127.0.0.1:57427"}
+{"time":"2026-10-05T03:46:04.710872-04:00","level":"INFO","msg":"http request","method":"PUT","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705","status":412,"duration_ms":2,"remote":"127.0.0.1:57423"}
+{"time":"2026-10-05T03:46:04.712472-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/fb6e3336-3108-49e2-a736-a8e2abfe1133/secrets/EXISTING_REFERENCE/usage","status":200,"duration_ms":0,"remote":"127.0.0.1:57423"}
+{"time":"2026-10-05T03:46:04.754848-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705","status":200,"duration_ms":1,"remote":"127.0.0.1:57423"}
+{"time":"2026-10-05T03:46:05.039112-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications/fb6e3336-3108-49e2-a736-a8e2abfe1133/secrets/status","status":200,"duration_ms":0,"remote":"127.0.0.1:57427"}
+{"time":"2026-10-05T03:46:05.039398-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects/0f0cefbd-d2f1-4813-b52d-4c29f7b943aa/secrets","status":200,"duration_ms":0,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:05.039604-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705/secret-status","status":200,"duration_ms":0,"remote":"127.0.0.1:57423"}
+{"time":"2026-10-05T03:46:05.058115-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/fb6e3336-3108-49e2-a736-a8e2abfe1133/secrets/EXISTING_REFERENCE/usage","status":200,"duration_ms":0,"remote":"127.0.0.1:57423"}
+{"time":"2026-10-05T03:46:05.087615-04:00","level":"INFO","msg":"http request","method":"PUT","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705","status":200,"duration_ms":6,"remote":"127.0.0.1:57423"}
+{"time":"2026-10-05T03:46:05.123981-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts","status":200,"duration_ms":0,"remote":"127.0.0.1:57423"}
+{"time":"2026-10-05T03:46:05.129444-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications/fb6e3336-3108-49e2-a736-a8e2abfe1133/secrets/status","status":200,"duration_ms":0,"remote":"127.0.0.1:57423"}
+{"time":"2026-10-05T03:46:05.133488-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705","status":200,"duration_ms":1,"remote":"127.0.0.1:57387"}
+{"time":"2026-10-05T03:46:05.136799-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705","status":200,"duration_ms":1,"remote":"127.0.0.1:57387"}
+{"time":"2026-10-05T03:46:05.146331-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705","status":200,"duration_ms":3,"remote":"127.0.0.1:57423"}
+{"time":"2026-10-05T03:46:05.152037-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/object-repositories","status":200,"duration_ms":0,"remote":"127.0.0.1:57423"}
+{"time":"2026-10-05T03:46:05.15241-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/correlation-rulesets","status":200,"duration_ms":0,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:05.152581-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects/0f0cefbd-d2f1-4813-b52d-4c29f7b943aa/folders","status":200,"duration_ms":0,"remote":"127.0.0.1:57427"}
+{"time":"2026-10-05T03:46:05.153675-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/integrations/github/config","status":200,"duration_ms":0,"remote":"127.0.0.1:57426"}
+{"time":"2026-10-05T03:46:05.1549-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/remotes","status":200,"duration_ms":1,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:05.155359-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/sessions","status":200,"duration_ms":1,"remote":"127.0.0.1:57426"}
+{"time":"2026-10-05T03:46:05.15544-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:05.156326-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/catalog","status":200,"duration_ms":3,"remote":"127.0.0.1:57427"}
+{"time":"2026-10-05T03:46:05.157322-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705","status":200,"duration_ms":4,"remote":"127.0.0.1:57425"}
+{"time":"2026-10-05T03:46:05.157791-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts","status":200,"duration_ms":4,"remote":"127.0.0.1:57424"}
+{"time":"2026-10-05T03:46:05.158526-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705","status":200,"duration_ms":5,"remote":"127.0.0.1:57423"}
+{"time":"2026-10-05T03:46:05.16222-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications/fb6e3336-3108-49e2-a736-a8e2abfe1133/secrets/status","status":200,"duration_ms":0,"remote":"127.0.0.1:57423"}
+{"time":"2026-10-05T03:46:05.240437-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/object-repositories","status":200,"duration_ms":0,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:05.24088-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/actions","status":200,"duration_ms":0,"remote":"127.0.0.1:57426"}
+{"time":"2026-10-05T03:46:05.241105-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705/secret-status","status":200,"duration_ms":0,"remote":"127.0.0.1:57427"}
+{"time":"2026-10-05T03:46:05.241172-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/projects/0f0cefbd-d2f1-4813-b52d-4c29f7b943aa/secrets/status","status":200,"duration_ms":0,"remote":"127.0.0.1:57423"}
+{"time":"2026-10-05T03:46:05.241584-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/components","status":200,"duration_ms":0,"remote":"127.0.0.1:57424"}
+{"time":"2026-10-05T03:46:05.241781-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/config-defaults","status":200,"duration_ms":0,"remote":"127.0.0.1:57425"}
+{"time":"2026-10-05T03:46:05.241906-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/browser-emulation-catalog","status":200,"duration_ms":0,"remote":"127.0.0.1:57426"}
+{"time":"2026-10-05T03:46:05.241906-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/runtime-settings/support-matrix","status":200,"duration_ms":0,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:05.302378-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects/0f0cefbd-d2f1-4813-b52d-4c29f7b943aa/secrets","status":200,"duration_ms":0,"remote":"127.0.0.1:57425"}
+{"time":"2026-10-05T03:46:05.302426-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications/fb6e3336-3108-49e2-a736-a8e2abfe1133/secrets/status","status":200,"duration_ms":0,"remote":"127.0.0.1:57426"}
+{"time":"2026-10-05T03:46:05.302932-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705/secret-status","status":200,"duration_ms":0,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:05.312854-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/fb6e3336-3108-49e2-a736-a8e2abfe1133/secrets/EXISTING_REFERENCE/usage","status":200,"duration_ms":0,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:05.373824-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:57429"}
+{"time":"2026-10-05T03:46:05.373831-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"0f0cefbd-d2f1-4813-b52d-4c29f7b943aa","clients":2}
+{"time":"2026-10-05T03:46:05.849419-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/scripts/secret-references/rebind","status":200,"duration_ms":1,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:05.874618-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/projects/0f0cefbd-d2f1-4813-b52d-4c29f7b943aa/secrets/status","status":200,"duration_ms":0,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:05.927968-04:00","level":"INFO","msg":"http request","method":"PUT","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705","status":200,"duration_ms":6,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:05.943281-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705/secret-status","status":200,"duration_ms":0,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:05.951754-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts","status":200,"duration_ms":0,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:05.951793-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/authoring/sessions","status":200,"duration_ms":0,"remote":"127.0.0.1:57426"}
+{"time":"2026-10-05T03:46:05.952951-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/718a705c-a1e2-4a33-b884-61ef7d9cd705","status":200,"duration_ms":2,"remote":"127.0.0.1:57387"}
+{"time":"2026-10-05T03:46:05.956042-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/projects/0f0cefbd-d2f1-4813-b52d-4c29f7b943aa/secrets/status","status":200,"duration_ms":0,"remote":"127.0.0.1:57426"}
+{"time":"2026-10-05T03:46:05.956119-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications/fb6e3336-3108-49e2-a736-a8e2abfe1133/secrets/status","status":200,"duration_ms":0,"remote":"127.0.0.1:57422"}
+{"time":"2026-10-05T03:46:06.049753-04:00","level":"INFO","msg":"websocket client disconnected","clients":1}
+{"time":"2026-10-05T03:46:06.049845-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-05T03:46:06.085607-04:00","level":"INFO","msg":"shutting down"}
+2026/10/05 03:46:06 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"

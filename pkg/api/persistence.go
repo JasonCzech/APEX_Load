@@ -1311,6 +1311,9 @@ func trimTerminalManagedTestRuntime(test *ManagedTest) {
 		if group.script != nil || group.baseScript != nil || len(group.sharedDataSources) > 0 || len(group.redactionRules) > 0 {
 			test.terminalGroupRuntimeTrimmed = true
 		}
+		if group.script != nil {
+			group.BrowserDocumentCaptureRequested = len(dsl.RequiredBrowserRuntimeFeatures(group.script)) > 0
+		}
 		group.script = nil
 		group.baseScript = nil
 		group.sharedDataSources = nil
@@ -1442,6 +1445,7 @@ func storedScenarioToStorage(stored *StoredScenario) *storage.Scenario {
 		ID:               stored.ID,
 		RefKey:           stored.RefKey,
 		Name:             stored.Name,
+		WorkloadShapeID:  stored.WorkloadShapeID,
 		Duration:         stored.Duration,
 		StartDelay:       stored.StartDelay,
 		TerminationMode:  stored.TerminationMode,

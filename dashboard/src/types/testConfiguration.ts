@@ -10,6 +10,8 @@ export interface TestGroup {
   script_name: string
   protocol: string
   role?: 'load' | 'observer'
+  /** Read-side resolved capture intent; absence does not establish coverage. */
+  browser_document_capture_requested?: boolean
   vusers: number
   target_duration?: string
   effective_end_at?: string

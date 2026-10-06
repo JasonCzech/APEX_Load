@@ -1,3 +1,4 @@
+import './Access.css'
 import { useEffect, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import type { Domain, Project, DashboardAuditEventFilter, DashboardUserActivityResponse } from '../types'

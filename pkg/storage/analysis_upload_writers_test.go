@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/analysis"
 )
 
 func uploadWriterFixture(t *testing.T, s *SQLiteStore) *AnalysisImport {
@@ -199,31 +200,99 @@ func TestAnalysisUploadCancelAndProjectDeleteRetainExactUnjoinedIntent(t *testin
 }
 func TestAnalysisUploadKnownMetadataLimitStillSealsAndQueuesExactOutput(t *testing.T) {
 	s, _, _ := monitorFixture(t)
-	in := uploadWriterFixture(t, s)
-	raw, err := json.Marshal(in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	in.Error = strings.Repeat("x", (2<<20)-len(raw)-80)
-	in, err = s.SaveAnalysisImport(*in, in.Revision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	w, err := s.BeginAnalysisUploadWriter(t.Context(), uploadWriterRequest(in))
-	if err != nil {
-		t.Fatal(err)
-	}
-	closed, err := s.CompleteAnalysisUploadWriter(t.Context(), in.ProjectID, w.ID, true)
-	if err != nil || !closed.PhysicallyClosed || closed.State != "abandoned" || closed.Rejection != "metadata_limit" {
-		t.Fatal("known refusal retained unresolved writer", closed, err)
-	}
-	current, err := s.GetAnalysisImport(in.ID)
-	if err != nil || current.Revision != in.Revision || current.Files[0].Uploaded != 0 {
-		t.Fatal("limit refusal published partial cursor", current, err)
-	}
-	plan, err := s.AnalysisUploadWriterCleanupPlan(t.Context(), AnalysisCleanupJob{Kind: "upload-writer", ProjectID: in.ProjectID, ResourceID: w.ID})
-	if err != nil || plan.Blocked || len(plan.Keys) != 2 {
-		t.Fatal("metadata refusal lost cleanup plan", plan, err)
+	exerciseAnalysisUploadMetadataLimit(t, s, s)
+}
+
+// Both storage backends exercise the same admitted bound, physical seal and
+// durable refusal. A separately opened reader verifies PostgreSQL persistence.
+func exerciseAnalysisUploadMetadataLimit(t *testing.T, owner, reader *SQLiteStore) {
+	t.Helper()
+	for _, boundedOnly := range []bool{false, true} {
+		name := "raw-and-bounded-limit"
+		if boundedOnly {
+			name = "raw-within-bounded-limit"
+		}
+		t.Run(name, func(t *testing.T) {
+			in := uploadWriterFixture(t, owner)
+			// Locate the admitted bounded metadata edge, including conservatively
+			// charged omitted fields. Plain encoded length is no longer admission.
+			low, high := 0, 2<<20
+			for low < high {
+				mid := low + (high-low+1)/2
+				trial := *in
+				trial.Error = strings.Repeat("x", mid)
+				if _, err := analysis.MarshalBoundedAnalysisJSON(trial, 2<<20); err == nil {
+					low = mid
+				} else {
+					high = mid - 1
+				}
+			}
+			// Also leave raw JSON room for the exact future chunk shape. Its owned
+			// UUID has fixed length; the margin covers timestamp encoding length.
+			rawCandidate := *in
+			rawCandidate.Error = "x"
+			rawCandidate.Files = append([]AnalysisImportFile(nil), in.Files...)
+			shape := AnalysisUploadWriter{ID: uuid.Nil.String(), ProjectID: in.ProjectID, ImportID: in.ID, FileID: in.Files[0].ID, Offset: 0, Bytes: 100, SHA256: strings.Repeat("a", 64)}
+			rawCandidate.Files[0].Chunks = []AnalysisChunk{{Offset: shape.Offset, Size: shape.Bytes, SHA256: shape.SHA256, ObjectKey: analysisUploadObjectKey(shape)}}
+			rawCandidate.Files[0].Uploaded = shape.Bytes
+			rawCandidate.Revision++
+			rawShape, err := json.Marshal(rawCandidate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if boundedOnly {
+				low = min(low, (2<<20)-len(rawShape)+1) - 16
+				if low < 1 {
+					t.Fatal("metadata boundary fixture has no padding budget")
+				}
+			}
+			in.Error = strings.Repeat("x", low)
+			in, err = owner.SaveAnalysisImport(*in, in.Revision)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !boundedOnly {
+				oneMore := *in
+				oneMore.Error += "x"
+				if _, err := analysis.MarshalBoundedAnalysisJSON(oneMore, 2<<20); err == nil {
+					t.Fatal("fixture did not preserve the exact admitted parent boundary")
+				}
+			}
+			w, err := owner.BeginAnalysisUploadWriter(t.Context(), uploadWriterRequest(in))
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate := *in
+			candidate.Files = append([]AnalysisImportFile(nil), in.Files...)
+			candidate.Files[0].Chunks = []AnalysisChunk{{Offset: w.Offset, Size: w.Bytes, SHA256: w.SHA256, ObjectKey: w.ObjectKey}}
+			candidate.Files[0].Uploaded += w.Bytes
+			candidate.Revision++
+			if _, err := analysis.MarshalBoundedAnalysisJSON(candidate, 2<<20); err == nil {
+				t.Fatal("fixture does not cross the bounded publication limit")
+			}
+			// This edge specifically requires the completion path to use the same
+			// admission as the durable metadata writer rather than raw JSON size.
+			raw, err := json.Marshal(candidate)
+			if err != nil || boundedOnly && len(raw) > 2<<20 || !boundedOnly && len(raw) <= 2<<20 {
+				t.Fatal("fixture does not isolate its declared admission boundary", len(raw), err)
+			}
+			closed, err := owner.CompleteAnalysisUploadWriter(t.Context(), in.ProjectID, w.ID, true)
+			if err != nil || !closed.PhysicallyClosed || closed.State != "abandoned" || closed.Rejection != "metadata_limit" {
+				t.Fatal("known refusal retained unresolved writer", closed, err)
+			}
+			current, err := reader.GetAnalysisImport(in.ID)
+			if err != nil || current.Revision != in.Revision || current.Files[0].Uploaded != 0 {
+				t.Fatal("limit refusal published partial cursor", current, err)
+			}
+			retained, err := reader.ResolveAnalysisUploadWriter(t.Context(), in.ProjectID, in.ID, w.ID)
+			if err != nil || !retained.PhysicallyClosed || retained.State != "abandoned" || retained.Rejection != "metadata_limit" {
+				t.Fatal("known limit refusal did not durably seal exact writer", retained, err)
+			}
+			plan, err := reader.AnalysisUploadWriterCleanupPlan(t.Context(), AnalysisCleanupJob{Kind: "upload-writer", ProjectID: in.ProjectID, ResourceID: w.ID})
+			if err != nil || plan.Blocked || !reflect.DeepEqual(plan.Keys, []string{w.TemporaryKey, w.ObjectKey}) {
+				t.Fatal("metadata refusal lost exact cleanup plan", plan, err)
+			}
+		})
 	}
 }
 func TestAnalysisUploadMalformedRetainedPlansAndKeysFailClosed(t *testing.T) {

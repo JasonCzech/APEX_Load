@@ -102,7 +102,7 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).not.toContain('Dead-letter rate')
   })
 
-  it('renders telemetry freshness and websocket health details when available', async () => {
+  it('renders telemetry ages and separate observed websocket drop counts when available', async () => {
     await act(async () => {
       root.render(
         <TestExecutionStatusPanels
@@ -145,7 +145,7 @@ describe('TestExecutionStatusPanels', () => {
       )
     })
 
-    expect(container.textContent).toContain('Telemetry Health')
+    expect(container.textContent).toContain('Telemetry observations')
     expect(container.textContent).toContain('Sample Age')
     expect(container.textContent).toContain('1250 ms')
     expect(container.textContent).toContain('Generator Lag')
@@ -158,12 +158,12 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('End-to-End Age')
     expect(container.textContent).toContain('Generator Publish')
     expect(container.textContent).toContain('Controller Receive')
-    expect(container.textContent).toContain('History Window')
+    expect(container.textContent).toContain('Retained history points')
     expect(container.textContent).toContain('75')
-    expect(container.textContent).toContain('WS Clients')
+    expect(container.textContent).toContain('Observed WS clients')
     expect(container.textContent).toContain('3')
-    expect(container.textContent).toContain('WS Drops')
-    expect(container.textContent).toContain('Degraded')
+    expect(container.textContent).toContain('Observed WS message drops')
+    expect(container.textContent).toContain('Observed drop evidence')
   })
 
   it('renders browser UX signals and per-device summaries when available', async () => {
@@ -214,6 +214,10 @@ describe('TestExecutionStatusPanels', () => {
     })
 
     expect(container.textContent).toContain('Browser UX Signals')
+    expect(container.querySelector('.browser-metrics-card .goal-status-badge')?.classList.contains('healthy')).toBe(false)
+    expect(container.textContent).toContain('Unscored')
+    expect(container.textContent).toContain('5/7 required fields available')
+    expect(container.textContent).toContain('not a standards-qualified Core Web Vitals score')
     expect(container.textContent).toContain('Avg FCP')
     expect(container.textContent).toContain('120.0 ms')
     expect(container.textContent).toContain('Avg CLS')
@@ -432,4 +436,73 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('120 tx · 2 errors · 150.0 ms p95')
     expect(container.querySelector('[aria-label="eu-west activity 80 transactions"]')).toBeTruthy()
   })
+
+  it.each([null, 0, false, 'bad', []])('renders malformed live device %j as unavailable without losing its source key', async raw => {
+    await act(async () => root.render(<TestExecutionStatusPanels
+      isGoalOriented={false} goalDescription="" test={{ id: 'malformed-run', groups: [], total_vusers: 1 } as never}
+      metrics={{ browser: { samples: 1 }, browser_by_device: { invalid_device: raw as never } }}
+      isMultiGroup={false} groupMetrics={[]} groupColors={[]}
+    />))
+    expect(container.querySelectorAll('.browser-device-card')).toHaveLength(1)
+    expect(container.textContent).toContain('invalid_device')
+    expect(container.textContent).toContain('Malformed summary: expected an object')
+    expect(container.textContent).toContain('1 device summary unranked')
+    expect(container.textContent).not.toContain('Weakest complete summary:')
+    expect(container.querySelector('.browser-device-stats')?.textContent).toContain('LCP n/a')
+    expect(container.querySelector('.browser-metrics-card .goal-status-badge')?.classList.contains('healthy')).toBe(false)
+  })
+
+  it('renders object-valued live browser labels through the scalar guards', async () => {
+    await act(async () => root.render(<TestExecutionStatusPanels
+      isGoalOriented={false} goalDescription="" test={{ id: 'malformed-labels', groups: [], total_vusers: 1 } as never}
+      metrics={{ browser: { samples: 1 }, browser_by_device: { native: { samples: 1, browser_engine: {}, device_platform: {}, device_tier: {} } as never } }}
+      isMultiGroup={false} groupMetrics={[]} groupColors={[]}
+    />))
+    expect(container.querySelector('.browser-device-tier')?.textContent).toBe('unknown · browser · unknown tier')
+    expect(container.textContent).not.toContain('[object Object]')
+    expect(container.textContent).toContain('Unscored')
+  })
+  it.each([
+    ['missing observations', {}, 'Unknown', 'unknown'],
+    ['observed zero age', { sample_age_ms: 0 }, 'Age observed', '0 ms'],
+    ['observed old age', { sample_age_ms: 9999 }, 'Age observed', '10.00 s'],
+    ['NaN is unknown', { sample_age_ms: NaN }, 'Unknown', 'unknown'],
+    ['negative age is unknown', { sample_age_ms: -1 }, 'Unknown', 'unknown'],
+    ['negative drops are unknown', { websocket_dropped_messages: -1 }, 'Unknown', 'unknown'],
+    ['observed drop without age', { websocket_dropped_events: 2 }, 'Observed drop evidence', 'unknown'],
+  ])('does not derive health from %s', async (_, telemetry, badge, age) => {
+    await act(async () => root.render(<TestExecutionStatusPanels isGoalOriented={false} goalDescription="" test={{ id: 'run', status: 'RUNNING', groups: [], total_vusers: 1 } as never} metrics={{ telemetry }} isMultiGroup={false} groupMetrics={[]} groupColors={[]} />))
+    const card = container.querySelector('.telemetry-status-card')
+    expect(card?.querySelector('.goal-status-badge')?.textContent).toBe(badge)
+    expect(card?.querySelector('.goal-status-badge')?.className).toContain('neutral')
+    const sampleAge = Array.from(card?.querySelectorAll('.goal-status-metric') ?? []).find(node => node.textContent?.startsWith('Sample Age'))
+    expect(sampleAge?.textContent).toContain(age)
+    expect(card?.textContent).not.toContain('Healthy')
+    expect(card?.textContent).not.toContain('Stale')
+    expect(card?.textContent).toContain('not an exact run loss total')
+    expect(card?.textContent).toContain('do not establish synchronized clocks')
+  })
+
+  it('renders an independent incomplete document population without legacy browser Samples', async () => {
+    await act(async () => root.render(<TestExecutionStatusPanels
+      isGoalOriented={false} goalDescription="" test={{ id: 'document-run', groups: [], total_vusers: 1 } as never}
+      metrics={{ browser_documents: { version: 2, metrics: [], incomplete: true, dropped_observations: 0 } }}
+      isMultiGroup={false} groupMetrics={[]} groupColors={[]}
+    />))
+    const panel = container.querySelector('[aria-label="Browser document evidence"]')!
+    expect(panel.textContent).toContain('Live intervals retain first-seen provisional history')
+    expect(panel.textContent).toContain('Document evidence is incomplete. 0 observations were dropped')
+    expect(panel.textContent).toContain('No document metric tuples were recorded')
+    expect(container.querySelector('.browser-metrics-card')).toBeNull()
+  })
+
+  it('shows requested browser evidence as unavailable while old peers provide no document contract', async () => {
+    await act(async () => root.render(<TestExecutionStatusPanels
+      isGoalOriented={false} goalDescription="" test={{ id: 'old-peer-run', groups: [{ protocol: 'browser' }], total_vusers: 1 } as never}
+      metrics={{}} isMultiGroup={false} groupMetrics={[]} groupColors={[]}
+    />))
+    expect(container.querySelector('[aria-label="Browser document evidence"]')?.textContent).toContain('Document summary unavailable')
+    expect(container.textContent).not.toContain('0 eligible final document measurements')
+  })
+
 })

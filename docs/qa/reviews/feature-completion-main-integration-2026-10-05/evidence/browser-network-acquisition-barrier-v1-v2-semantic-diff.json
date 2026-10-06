@@ -1,0 +1,45 @@
+{
+  "schema": "apexload.private-patch-semantic-delta.v1",
+  "created_at_utc": "2026-10-06T04:36:00.396769+00:00",
+  "scope": "Temporary patch/comment and retained report correction only; no source application, Git mutation, builds/tests or cache cleanup.",
+  "v1": {
+    "patch_path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v1.patch",
+    "patch_sha256": "5464d99232b2b9f66d5fd35461dd63477981b7ad39441e1a96b09901a8cd0af1",
+    "manifest_path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v1.manifest.json",
+    "manifest_sha256": "1029579a4694be8d846f884b712ab8d624f6d3d9df759f01db793590754403f1",
+    "exact_changed_sources_retained": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/v1-source-checkpoint"
+  },
+  "v2": {
+    "patch_path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v2.patch",
+    "patch_sha256": "0e9ab9c815ee67496f3b799b4327e86ce790c89080a3e6b3badf450951450ef1",
+    "manifest_path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v2.manifest.json",
+    "manifest_sha256": "362a02dabdc1527efa18961da29f94c8ab8bad3fd72f2a2d831e2994f0e18d29"
+  },
+  "source_delta": {
+    "path": "pkg/protocol/browser/network_task_completion.go",
+    "before_sha256": "51becb5382f820b5f6dccd2f131f114a7ee00c7bb6c15bad2313b62cd26575a3",
+    "after_sha256": "b8e3a0a9d83da3f6b9f096bb1353f91d2bdf06896103987a1be47ba7016d4316",
+    "diff_path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v1-v2-comment-only.diff",
+    "diff_sha256": "e87f84e9d8fa2cbb3b4b87acf496fe6b047b3eb74e4d52f4765263bfbce40648",
+    "only_two_comment_lines_replaced": true,
+    "code_identical_after_exact_comment_removal": true
+  },
+  "unchanged_sources": [
+    "pkg/protocol/browser/action_helpers.go",
+    "pkg/protocol/browser/browser.go",
+    "pkg/protocol/browser/lifecycle.go",
+    "pkg/protocol/browser/network_task_completion_test.go",
+    "pkg/protocol/browser/result_finalization.go",
+    "pkg/protocol/browser/result_finalization_test.go",
+    "pkg/protocol/browser/runtime_context.go"
+  ],
+  "reports_corrected": [
+    "Actual evidence\u2192handlers\u2192page\u2192worker initialization order.",
+    "Generation authority describes action/admission identity rather than inaccurately asserting current startup precedes evidence.",
+    "Original successful Teardown/join\u2192Init contract and private-retirement vs physical-worker-stop limit."
+  ],
+  "all_root_inputs_and_dependencies_stable": true,
+  "v1_patch_manifest_preserved": true,
+  "tests_builds_run": false,
+  "qualification_pending": true
+}

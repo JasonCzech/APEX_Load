@@ -673,6 +673,7 @@ describe('hand-written domain types versus the generated Go contract', () => {
 
   it('keeps test-group types aligned with GET /tests/{id}', () => {
     expectTypeOf<Invented<TestGroup, GeneratedTestGroup>>().toEqualTypeOf<never>()
+    expectTypeOf<TestGroup['browser_document_capture_requested']>().toEqualTypeOf<GeneratedTestGroup['browser_document_capture_requested']>()
     // Known, deliberate gap: the controller serves per-group run-logic goals
     // that no dashboard surface reads yet. Naming it here means the *next*
     // field the Go side adds fails this assertion instead of disappearing.

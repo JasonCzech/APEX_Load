@@ -126,7 +126,7 @@ func TestWebSocketAuthorizerRejectsRotatedServiceAccountKey(t *testing.T) {
 	account := &storage.ServiceAccount{
 		ID:           "svc-ws",
 		Name:         "WS",
-		KeyHash:      "initial-key-hash",
+		KeyHash:      hashAPIKey("initial-ws-transport-key"),
 		Active:       true,
 		ProjectRoles: map[string][]string{"project-ws": {RoleViewer}},
 		Scopes:       []string{"read"},
@@ -140,12 +140,13 @@ func TestWebSocketAuthorizerRejectsRotatedServiceAccountKey(t *testing.T) {
 	enableTrustedHeaderAuth(t, server)
 	serviceIdentity := &AuthenticatedServiceAccount{ID: account.ID, Name: account.Name, Scopes: account.Scopes}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/ws?project_id=project-ws", nil)
+	req.Header.Set("X-APEXLoad-API-Key", "initial-ws-transport-key")
 	req = withAuthenticatedContext(req, authResolution{User: authenticatedUserFromServiceAccount(account), ServiceAccount: serviceIdentity})
 	authorized := server.websocketAuthorizer(req, "project-ws")
 	if !authorized() {
 		t.Fatal("active service account should authorize websocket")
 	}
-	if err := store.RotateServiceAccountKey(account.ID, "rotated-key-hash", now.Add(time.Minute)); err != nil {
+	if err := store.RotateServiceAccountKey(account.ID, hashAPIKey("rotated-ws-transport-key"), now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	if authorized() {
@@ -166,7 +167,7 @@ func TestWebSocketAuthorizerRechecksServiceAccountScopes(t *testing.T) {
 	account := &storage.ServiceAccount{
 		ID:           "svc-ws-scopes",
 		Name:         "Scoped WS",
-		KeyHash:      "unchanged-key-hash",
+		KeyHash:      hashAPIKey("unchanged-ws-transport-key"),
 		Active:       true,
 		ProjectRoles: map[string][]string{"project-ws": {RoleViewer}},
 		Scopes:       []string{"read"},
@@ -180,6 +181,7 @@ func TestWebSocketAuthorizerRechecksServiceAccountScopes(t *testing.T) {
 	enableTrustedHeaderAuth(t, server)
 	serviceIdentity := &AuthenticatedServiceAccount{ID: account.ID, Name: account.Name, Scopes: account.Scopes}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/ws?project_id=project-ws", nil)
+	req.Header.Set("X-APEXLoad-API-Key", "unchanged-ws-transport-key")
 	req = withAuthenticatedContext(req, authResolution{User: authenticatedUserFromServiceAccount(account), ServiceAccount: serviceIdentity})
 	authorized := server.websocketAuthorizer(req, "project-ws")
 	if !authorized() {
@@ -216,5 +218,75 @@ func TestHubRejectsRegistrationAfterStop(t *testing.T) {
 	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 	if _, _, err := conn.ReadMessage(); err == nil {
 		t.Fatal("websocket registered after hub shutdown")
+	}
+}
+
+// Authentication succeeds first, then the durable key rotates before socket
+// construction. The old request must not acquire the new credential's authority.
+func TestWebSocketAuthorizerPinsPresentedCredentialAcrossAdmissionRotation(t *testing.T) {
+	for _, header := range []string{"api_key", "bearer"} {
+		t.Run(header, func(t *testing.T) {
+			store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "websocket-boundary.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = store.Close() })
+			now := time.Now().UTC()
+			oldKey, newKey := "old-ws-boundary-key", "new-ws-boundary-key"
+			account := &storage.ServiceAccount{ID: "ws-boundary-account", Name: "WebSocket boundary", KeyHash: hashAPIKey(oldKey), Active: true,
+				ProjectRoles: map[string][]string{storage.DefaultProjectID: {RoleViewer}}, Scopes: []string{"read"}, CreatedAt: now, UpdatedAt: now}
+			if err := store.SaveServiceAccount(account); err != nil {
+				t.Fatal(err)
+			}
+			server := &Server{store: store, runner: &TestRunner{settings: SystemSettings{Auth: AuthSettings{Mode: authModeTrustedHeaders}}}}
+			rotate, entered := false, false
+			protected := authMiddleware(func() AuthSettings { return AuthSettings{Mode: authModeTrustedHeaders} }, store, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				entered = true
+				identity, ok := AuthenticatedServiceAccountFromContext(r.Context())
+				if !ok || identity == nil || identity.ID != account.ID {
+					t.Fatal("genuine middleware account was not admitted")
+				}
+				if rotate {
+					if err := store.RotateServiceAccountKey(account.ID, hashAPIKey(newKey), now.Add(time.Minute)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if server.websocketAuthorizer(r, storage.DefaultProjectID)() {
+					w.WriteHeader(http.StatusOK)
+				} else {
+					w.WriteHeader(http.StatusForbidden)
+				}
+			}))
+			request := func(key string) int {
+				entered = false
+				r := httptest.NewRequest(http.MethodGet, "/api/v1/ws?project_id="+storage.DefaultProjectID, nil)
+				if header == "api_key" {
+					r.Header.Set("X-APEXLoad-API-Key", key)
+				} else {
+					r.Header.Set("Authorization", "Bearer "+key)
+				}
+				response := httptest.NewRecorder()
+				protected.ServeHTTP(response, r)
+				return response.Code
+			}
+			if status := request(oldKey); !entered || status != http.StatusOK {
+				t.Fatalf("fresh admitted key status=%d entered=%v", status, entered)
+			}
+			rotate = true
+			if status := request(oldKey); !entered || status != http.StatusForbidden {
+				t.Fatalf("rotated admitted key status=%d entered=%v", status, entered)
+			}
+			rotate = false
+			if status := request(oldKey); entered || status != http.StatusUnauthorized {
+				t.Fatalf("revoked credential admission status=%d entered=%v", status, entered)
+			}
+			if status := request(newKey); !entered || status != http.StatusOK {
+				t.Fatalf("new credential admission status=%d entered=%v", status, entered)
+			}
+			missing := withAuthenticatedContext(httptest.NewRequest(http.MethodGet, "/api/v1/ws", nil), authResolution{User: authenticatedUserFromServiceAccount(account), ServiceAccount: &AuthenticatedServiceAccount{ID: account.ID, Scopes: []string{"read"}}})
+			if server.websocketAuthorizer(missing, storage.DefaultProjectID)() {
+				t.Fatal("account context without a presented credential minted authority")
+			}
+		})
 	}
 }

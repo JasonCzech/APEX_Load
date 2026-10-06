@@ -1,0 +1,87 @@
+{
+  "recorded_at": "2026-10-05T21:30:42.107423+00:00",
+  "state": "source_frozen_awaiting_parent_review_no_commit",
+  "worktree": "/Users/jasonczech/.codex/worktrees/native-rca-identity/Project_Stormrunner",
+  "branch": "codex/native-rca-identity",
+  "base_head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "status": " M pkg/analysis/points.go\n M pkg/analysis/prometheus_buckets.go\n?? pkg/analysis/series_identity.go\n?? pkg/analysis/series_identity_test.go\n",
+  "sources": [
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/native-rca-identity/Project_Stormrunner/pkg/analysis/points.go",
+      "repository_path": "pkg/analysis/points.go",
+      "bytes": 19974,
+      "sha256": "9414093d0babb468176f19db34ebcf6d89fe7afa1f5d572e371065ae02ee3cd8"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/native-rca-identity/Project_Stormrunner/pkg/analysis/prometheus_buckets.go",
+      "repository_path": "pkg/analysis/prometheus_buckets.go",
+      "bytes": 5272,
+      "sha256": "5c1b2e7c1f871a92d9eb19f050a0f374364ad3cf3f8a8f0737633188b7b6174f"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/native-rca-identity/Project_Stormrunner/pkg/analysis/series_identity.go",
+      "repository_path": "pkg/analysis/series_identity.go",
+      "bytes": 8822,
+      "sha256": "d5a859bf467da52af4748a88ddfc01e3c3101e574c86fcdf2fcca13a36c7098d"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/native-rca-identity/Project_Stormrunner/pkg/analysis/series_identity_test.go",
+      "repository_path": "pkg/analysis/series_identity_test.go",
+      "bytes": 20299,
+      "sha256": "d13e2100b94d1fa3845f467318baa4f826f40ea8b037a797e643d7b5f60d4355"
+    }
+  ],
+  "patch": {
+    "path": "/private/tmp/apexload-native-rca-identity-candidate-20261005.patch",
+    "sha256": "cfb2e5020058d13db4de2338c6e1bb74b2c86950a3f73de5e1a6a460b3da2f90"
+  },
+  "tests": [
+    {
+      "command": "go test ./pkg/analysis",
+      "exit_code": 0,
+      "log": "/private/tmp/apexload-native-rca-identity-normal-20261005.txt",
+      "sha256": "ef847855c014d696ebfb35cf3efdce8469daebd8270f4408f403749f2da6d5ef",
+      "output": "ok  \tgithub.com/jasonczech/apexload/pkg/analysis\t0.269s"
+    },
+    {
+      "command": "go test -race ./pkg/analysis",
+      "exit_code": 0,
+      "log": "/private/tmp/apexload-native-rca-identity-race-20261005.txt",
+      "sha256": "0b6ffbab495073ff981807ad8bd5b589150066e7ed79f1e1a083260eaec4f894",
+      "output": "ok  \tgithub.com/jasonczech/apexload/pkg/analysis\t1.625s"
+    }
+  ],
+  "diff_check": "passed",
+  "self_review": {
+    "rounds": [
+      "review",
+      "fix",
+      "review"
+    ],
+    "fixes": [
+      "Corrected test-only population fixture to existing PopulationAction.",
+      "Kept distribution scalar-adapter eligibility distinct from declared semantics compatibility.",
+      "Preserved direct compatiblePrometheusProvenance dimensions/dispatch behavior; extended direct comparator parity tests."
+    ],
+    "final": "No unresolved findings in owned helper scope. Parent independent review remains required."
+  },
+  "protected_engine_inventory": {
+    "path": "/private/tmp/apexload-rca-native-adapter-sources-20261005.json",
+    "sha256": "5d6a33c83d5fbc7361880c2e969faac2d5007133bbd982de5c734468d38c5323"
+  },
+  "adapter_plan": {
+    "path": "/private/tmp/apexload-rca-native-adapter-plan-20261005.md",
+    "sha256": "0a3f4aaa12ee0a006ed86ad120c0bf9872ff3410d0aa2afe975e1ae8eea23ac4"
+  },
+  "limits": [
+    "No runtime RCA/native adapter adoption, engine/core/job implementation, REST API, IPC, SchemaVersion or CatalogVersion changes.",
+    "No protected engine or primary source mutations/tests/processes.",
+    "No native/API/controller/full-Go/dashboard execution; those gates are parent-owned.",
+    "No commit/push.",
+    "1 GiB, platform, restart and HA acceptance remain open; only 10 GB acceptance waived."
+  ],
+  "cache": {
+    "GOCACHE": "/private/tmp/apexload-native-rca-identity-gocache",
+    "cleanup": "retained while parent review/follow-up fixes remain; shared cache untouched"
+  }
+}

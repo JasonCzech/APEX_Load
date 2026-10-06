@@ -9,6 +9,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+// Implementations adopt the owned record's authoritative InitialProvenance only
+// after a successful INITIALIZING commit; a failed write leaves it unchanged.
 type deploymentLeaseTestStartPersistence interface {
 	SaveTestStartIfNoDeploymentLease(test *storage.TestRecord, deploymentLeaseName, authorizedDeploymentOwnerID, authorizedDeploymentTokenHash string) error
 	SaveTestStartIfExecutionLeaseHeldAndNoDeploymentLease(test *storage.TestRecord, executionLeaseName, executionLeaseOwnerID, deploymentLeaseName, authorizedDeploymentOwnerID, authorizedDeploymentTokenHash string) (bool, error)

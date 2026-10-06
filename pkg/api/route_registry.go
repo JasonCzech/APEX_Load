@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"time"
 )
 
 // apiRouteMiddlewareProfile names the common middleware stacks used by the
@@ -26,6 +27,9 @@ type apiRouteSpec struct {
 	Handler           apiRouteHandlerBinder
 	Access            *accessRequirement
 	MiddlewareProfile apiRouteMiddlewareProfile
+	// RequestTimeout starts before authentication/project resolution. Zero retains
+	// the existing route behavior; contextual readers must still honor cancellation.
+	RequestTimeout time.Duration
 	// DocumentDerivedServiceAccountScope mirrors whether the pre-migration
 	// OpenAPI access text included the route's derived service-account scope. All
 	// runtime catalog rules still receive an explicit scope gate.
@@ -84,9 +88,9 @@ func (s *Server) registerAPIRouteCatalog(catalog apiRouteCatalog, stack apiRoute
 		handler := route.Handler(s)
 		switch route.MiddlewareProfile {
 		case apiRouteMiddlewarePublic:
-			handler = stack.cors(stack.log(handler))
+			handler = stack.cors(stack.log(withAPIRouteRequestTimeout(handler, route.RequestTimeout)))
 		case apiRouteMiddlewareAuthenticated:
-			handler = stack.cors(stack.log(stack.auth(handler)))
+			handler = stack.cors(stack.log(withAPIRouteRequestTimeout(stack.auth(handler), route.RequestTimeout)))
 		default:
 			panic("api: unsupported route middleware profile")
 		}

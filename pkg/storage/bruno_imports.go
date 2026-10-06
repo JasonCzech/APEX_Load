@@ -44,6 +44,7 @@ type ImportSourceRevision struct {
 
 type BrunoImportCommit struct {
 	Script                   *dsl.Script
+	ExpectedScriptAuthoring  *ScriptAuthoringPrecondition `json:"-"`
 	ExpectedScriptUpdatedAt  *time.Time
 	ExpectedActiveRevisionID string
 	RawArtifact              ImportSourceArtifact
@@ -57,9 +58,10 @@ type BrunoImportCommit struct {
 }
 
 type BrunoImportCommitResult struct {
-	Script   *dsl.Script           `json:"script"`
-	Revision *ImportSourceRevision `json:"revision"`
-	Created  bool                  `json:"created"`
+	AuthoringSnapshot *ScriptAuthoringSnapshot `json:"-"`
+	Script            *dsl.Script              `json:"script"`
+	Revision          *ImportSourceRevision    `json:"revision"`
+	Created           bool                     `json:"created"`
 }
 
 // BrunoNativeImportBatch is the durable receipt for a create-only native
@@ -127,3 +129,11 @@ type BrunoNativeImportStore interface {
 type BrunoArtifactReferenceChecker interface {
 	IsBrunoArtifactBackendKeyReferenced(backendKey string) (bool, error)
 }
+
+// ScriptImportSourceAuthoringStore retains the independent active-source fence
+// while optionally claiming the script authored-content nonce in the same TX.
+type ScriptImportSourceAuthoringStore interface {
+	ActivateImportSourceRevisionIfScriptCurrent(scriptID, projectID, revisionID, expectedActiveRevisionID string, expected ScriptAuthoringPrecondition) (*ImportSourceRevision, *ScriptAuthoringSnapshot, error)
+}
+
+var _ ScriptImportSourceAuthoringStore = (*SQLiteStore)(nil)

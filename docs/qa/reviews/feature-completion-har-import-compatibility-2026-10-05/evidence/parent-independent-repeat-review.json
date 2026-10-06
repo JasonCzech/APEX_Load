@@ -1,0 +1,23 @@
+{
+  "schema": "apexload.har-compatibility-parent-repeat-review.v1",
+  "reviewed_utc": "2026-10-05T20:20:38.495909+00:00",
+  "source_inventory_sha256": "2d8cf914ac8a389148dba4bc053c0af9adc83a0db00cdfa9f204da1c80cd3ff7",
+  "direct_inputs_unchanged": true,
+  "direct_input_count": 11,
+  "reviewed_test_files": [
+    "pkg/convert/sample/har_sample_shape_test.go",
+    "pkg/convert/salesforce/har_sample_shape_test.go"
+  ],
+  "reviewed_behaviors": [
+    "Logical HAR text/base64 storage is decoded once despite captured gzip framing.",
+    "Binary and unavailable response content retain distinct provenance and private correlation semantics.",
+    "Source timing gaps, timezone precision and original ordinals survive parsing.",
+    "Unsupported textual HTTP versions retain typed quality observations and do not acquire an invented execution gate.",
+    "Explicit unavailable-content provenance retains the established review gate.",
+    "Repeated companion requests match by source request body and shared decoded observations.",
+    "Analysis does not mutate the authored script or capture bytes.",
+    "Fixtures use newly invented values and do not contain the supplied capture."
+  ],
+  "findings": [],
+  "limits": "Source review of two new test files and eleven direct source/module inputs; affected normal/race and original offline-probe qualification are separate receipts. No API upload, runtime replay, native HAR export, full repository or program acceptance claim."
+}

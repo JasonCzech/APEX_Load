@@ -1,0 +1,364 @@
+{
+  "original": {
+    "activity": {
+      "creator": {
+        "id": "create:scenario:ac8abfed-2f01-4302-9202-a323135ea31f:2026-10-05T20:59:08.929558Z",
+        "action": "create",
+        "actor_type": "user",
+        "actor_subject": "local:admin",
+        "actor_display_name": "Local System Administrator",
+        "project_id": "4a6c13c6-d3a8-4c83-9273-9e97d21f7b1c",
+        "resource_type": "scenario",
+        "resource_id": "ac8abfed-2f01-4302-9202-a323135ea31f",
+        "resource_name": "Fidelity original",
+        "status": "success",
+        "created_at": "2026-10-05T20:59:08.929558Z"
+      }
+    },
+    "created_at": "2026-10-05T20:59:08.929558Z",
+    "duration": "1m",
+    "goal_config": {
+      "transaction_response_time_sla_ms": 0.001,
+      "workload_shape_config": {
+        "closed_vuser": {
+          "scenario": {
+            "peak_vusers": 4,
+            "ramp_down": "0s",
+            "ramp_down_enabled": false,
+            "ramp_up": "10s",
+            "sustain": "50s"
+          },
+          "scope": "scenario"
+        }
+      }
+    },
+    "id": "ac8abfed-2f01-4302-9202-a323135ea31f",
+    "library_assignment": {
+      "application": null,
+      "releases": [],
+      "revision": 0
+    },
+    "name": "Fidelity original",
+    "project_id": "4a6c13c6-d3a8-4c83-9273-9e97d21f7b1c",
+    "ref_key": "LOC-SCN-0002",
+    "runtime_settings": {
+      "results": {
+        "message_detail": {
+          "include_resources": false,
+          "mode": "off"
+        }
+      },
+      "websocket": {}
+    },
+    "scenario_mode": "vuser_driven",
+    "script_count": 2,
+    "scripts": [
+      {
+        "initialization": "at_once",
+        "name": "orders",
+        "order": 0,
+        "protocol": "http",
+        "ramp_down": "4s",
+        "ramp_up": "3s",
+        "role": "load",
+        "runtime_settings": {
+          "results": {
+            "csv_exports": [
+              {
+                "action_name": "orders",
+                "columns": [
+                  {
+                    "metric": "latency_ms",
+                    "name": "latency"
+                  }
+                ],
+                "file_name": "calls.csv",
+                "id": "calls"
+              }
+            ],
+            "property_analytics": [
+              {
+                "extraction": "category",
+                "name": "category",
+                "values": [
+                  "one",
+                  "two"
+                ]
+              }
+            ]
+          },
+          "websocket": {}
+        },
+        "script_id": "63699c74-ba20-418e-80a1-97e5e8cd275a",
+        "script_name": "Fidelity_HTTP",
+        "start_offset": "1s",
+        "transaction_response_time_sla_ms": 1250,
+        "vusers": 2
+      },
+      {
+        "initialization": "at_runtime",
+        "name": "staged",
+        "order": 1,
+        "protocol": "http",
+        "role": "load",
+        "runtime_settings": {
+          "results": {},
+          "websocket": {}
+        },
+        "script_id": "63699c74-ba20-418e-80a1-97e5e8cd275a",
+        "script_name": "Fidelity_HTTP",
+        "stages": [
+          {
+            "duration": "50s",
+            "target_vusers": 2,
+            "type": "hold"
+          }
+        ],
+        "start_offset": "2s",
+        "transaction_response_time_sla_ms": 1500,
+        "vusers": 2
+      }
+    ],
+    "updated_at": "2026-10-05T20:59:08.929681Z",
+    "workload_shape_id": "closed-vuser"
+  },
+  "submitted": {
+    "duration": "1m",
+    "scenario_mode": "vuser_driven",
+    "script_shakeout": false,
+    "resource_baseline": false,
+    "assignment": {
+      "mode": "auto"
+    },
+    "groups": [
+      {
+        "script_id": "63699c74-ba20-418e-80a1-97e5e8cd275a",
+        "vusers": 2,
+        "initialization": "at_once",
+        "name": "orders",
+        "transaction_response_time_sla_ms": 1250,
+        "ramp_up": "3s",
+        "ramp_down": "4s",
+        "start_offset": "1s",
+        "runtime_settings": {
+          "results": {
+            "csv_exports": [
+              {
+                "action_name": "orders",
+                "columns": [
+                  {
+                    "metric": "latency_ms",
+                    "name": "latency"
+                  }
+                ],
+                "file_name": "calls.csv",
+                "id": "calls"
+              }
+            ],
+            "property_analytics": [
+              {
+                "extraction": "category",
+                "name": "category",
+                "values": [
+                  "one",
+                  "two"
+                ]
+              }
+            ]
+          },
+          "websocket": {}
+        }
+      },
+      {
+        "script_id": "63699c74-ba20-418e-80a1-97e5e8cd275a",
+        "vusers": 2,
+        "initialization": "at_runtime",
+        "name": "staged",
+        "transaction_response_time_sla_ms": 1500,
+        "start_offset": "2s",
+        "stages": [
+          {
+            "type": "hold",
+            "duration": "50s",
+            "target_vusers": 2
+          }
+        ],
+        "runtime_settings": {
+          "results": {},
+          "websocket": {}
+        }
+      }
+    ],
+    "goal_config": {
+      "transaction_response_time_sla_ms": 0.001,
+      "workload_shape_config": {
+        "closed_vuser": {
+          "scenario": {
+            "peak_vusers": 4,
+            "ramp_down": "0s",
+            "ramp_down_enabled": false,
+            "ramp_up": "10s",
+            "sustain": "50s"
+          },
+          "scope": "scenario"
+        }
+      }
+    },
+    "runtime_settings": {
+      "results": {
+        "message_detail": {
+          "include_resources": false,
+          "mode": "off"
+        }
+      },
+      "websocket": {}
+    },
+    "data_pools": [],
+    "name": "Fidelity renamed only",
+    "project_id": "4a6c13c6-d3a8-4c83-9273-9e97d21f7b1c",
+    "workload_shape_id": "closed-vuser"
+  },
+  "reopened": {
+    "activity": {
+      "creator": {
+        "id": "create:scenario:ac8abfed-2f01-4302-9202-a323135ea31f:2026-10-05T20:59:08.929558Z",
+        "action": "create",
+        "actor_type": "user",
+        "actor_subject": "local:admin",
+        "actor_display_name": "Local System Administrator",
+        "project_id": "4a6c13c6-d3a8-4c83-9273-9e97d21f7b1c",
+        "resource_type": "scenario",
+        "resource_id": "ac8abfed-2f01-4302-9202-a323135ea31f",
+        "resource_name": "Fidelity original",
+        "status": "success",
+        "created_at": "2026-10-05T20:59:08.929558Z"
+      },
+      "last_modifier": {
+        "id": "e93f726f-460d-46f1-ac72-aa8670ee3e66",
+        "action": "modify",
+        "actor_type": "user",
+        "actor_subject": "local:admin",
+        "actor_display_name": "Local System Administrator",
+        "project_id": "4a6c13c6-d3a8-4c83-9273-9e97d21f7b1c",
+        "resource_type": "scenario",
+        "resource_id": "ac8abfed-2f01-4302-9202-a323135ea31f",
+        "resource_name": "Fidelity renamed only",
+        "status": "success",
+        "changed_fields": [
+          "assignment",
+          "name"
+        ],
+        "created_at": "2026-10-05T20:59:09.237457Z"
+      }
+    },
+    "assignment": {
+      "mode": "auto"
+    },
+    "created_at": "2026-10-05T20:59:08.929558Z",
+    "duration": "1m",
+    "goal_config": {
+      "transaction_response_time_sla_ms": 0.001,
+      "workload_shape_config": {
+        "closed_vuser": {
+          "scenario": {
+            "peak_vusers": 4,
+            "ramp_down": "0s",
+            "ramp_down_enabled": false,
+            "ramp_up": "10s",
+            "sustain": "50s"
+          },
+          "scope": "scenario"
+        }
+      }
+    },
+    "id": "ac8abfed-2f01-4302-9202-a323135ea31f",
+    "library_assignment": {
+      "application": null,
+      "releases": [],
+      "revision": 0
+    },
+    "name": "Fidelity renamed only",
+    "project_id": "4a6c13c6-d3a8-4c83-9273-9e97d21f7b1c",
+    "ref_key": "LOC-SCN-0002",
+    "runtime_settings": {
+      "results": {
+        "message_detail": {
+          "include_resources": false,
+          "mode": "off"
+        }
+      },
+      "websocket": {}
+    },
+    "scenario_mode": "vuser_driven",
+    "script_count": 2,
+    "scripts": [
+      {
+        "initialization": "at_once",
+        "name": "orders",
+        "order": 0,
+        "protocol": "http",
+        "ramp_down": "4s",
+        "ramp_up": "3s",
+        "role": "load",
+        "runtime_settings": {
+          "results": {
+            "csv_exports": [
+              {
+                "action_name": "orders",
+                "columns": [
+                  {
+                    "metric": "latency_ms",
+                    "name": "latency"
+                  }
+                ],
+                "file_name": "calls.csv",
+                "id": "calls"
+              }
+            ],
+            "property_analytics": [
+              {
+                "extraction": "category",
+                "name": "category",
+                "values": [
+                  "one",
+                  "two"
+                ]
+              }
+            ]
+          },
+          "websocket": {}
+        },
+        "script_id": "63699c74-ba20-418e-80a1-97e5e8cd275a",
+        "script_name": "Fidelity_HTTP",
+        "start_offset": "1s",
+        "transaction_response_time_sla_ms": 1250,
+        "vusers": 2
+      },
+      {
+        "initialization": "at_runtime",
+        "name": "staged",
+        "order": 1,
+        "protocol": "http",
+        "role": "load",
+        "runtime_settings": {
+          "results": {},
+          "websocket": {}
+        },
+        "script_id": "63699c74-ba20-418e-80a1-97e5e8cd275a",
+        "script_name": "Fidelity_HTTP",
+        "stages": [
+          {
+            "duration": "50s",
+            "target_vusers": 2,
+            "type": "hold"
+          }
+        ],
+        "start_offset": "2s",
+        "transaction_response_time_sla_ms": 1500,
+        "vusers": 2
+      }
+    ],
+    "updated_at": "2026-10-05T20:59:09.23687Z",
+    "workload_shape_id": "closed-vuser"
+  }
+}

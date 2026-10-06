@@ -1,0 +1,2 @@
+import original from '/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard/playwright.config'
+export default { ...original, testDir: '/private/tmp/apexload-telemetry-stable-capture', testMatch: 'workflow-telemetry-policy-stable.spec.ts', testIgnore: [], reporter: [['list'], ['json', { outputFile: `${process.env.APEXLOAD_E2E_OUTPUT_ROOT}/${process.env.APEXLOAD_E2E_PROFILE}/report.json` }]] }

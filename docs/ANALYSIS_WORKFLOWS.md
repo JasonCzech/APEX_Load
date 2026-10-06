@@ -137,6 +137,11 @@ values. Timestamp mappings require an explicit timezone and encoding. Offset
 text requires `timestamp_offset`; local wall timestamps use `timestamp`.
 Units are normalized before comparison. Saved mappings retain immutable
 revisions, and imports record the selected revision when one is used.
+Mapping version 2 preserves source, host, service and exact bounded dimensions.
+The workspace exposes separate identity filters for ordinary series and both
+comparison sides; saved definitions retain the executed selectors. See
+[imported measurement identities](ANALYSIS_IDENTITY.md) for nested scalar paths,
+legacy mapping behavior, quality admission and saved-bound precision.
 
 Percentiles require raw observations. Summary-only percentiles are never averaged
 or treated as transaction samples. Counters require explicit rate conversion;
@@ -151,6 +156,30 @@ align UTC buckets. Lagged correlation reports paired bucket count, coverage and
 an optional coefficient; constant or insufficient evidence stays unscored.
 Correlation is association, never proof of causation. Saved comparison
 definitions are revisioned and recheck ownership when used.
+
+New normalization attempts retain a versioned producer manifest in the existing
+import metadata and sealed publication receipt. Each normalized object has its
+verified hash, size, row/quality counts, UTC time range and any proven constant
+metric/full identity. Queries select objects from this immutable proof before
+artifact access. Mixed or unknown categories, and nonempty all-missing files,
+remain eligible for scanning; historical datasets without manifests use full
+scans. Present invalid manifests fail explicitly. File names and independently
+varying marginal dimensions do not establish a joint identity.
+
+Successful native query responses may include `artifact_selections`: exact
+selected/pruned object counts and staged/avoided artifact bytes, tied to the
+dataset revision and manifest digest. These are verified artifact geometry,
+not DuckDB physical scan bytes, memory consumption or elapsed performance.
+Selection never grants later read authority: scope, association, revision and
+deadline are checked again before response publication.
+
+Canonical Parquet timestamps use microseconds. Dataset queries, comparisons
+and overlays apply the same UTC microsecond window to both analytical sides
+and report requested and effective bounds in optional `time_window` metadata.
+Retained source timestamps and run start times remain unchanged. A window that
+collapses at this precision is refused at the API. Whole-publication rate
+coverage rules still apply: rounding a boundary cannot prorate a partial
+publication into a complete observed interval.
 
 Low-level CLI workflows support descriptors and JSON mappings without loading a
 whole Parquet file into memory:
@@ -188,7 +217,7 @@ Cancellation deadlines do not release an unresolved process, descriptor or
 publication owner. The watchdog retains uncertainty until actual closure and
 SQL acknowledgement; platform hard containment and restart qualification remain
 separate gates. Concurrent requests receive explicit busy, resource,
-cancellation or size-limit errors. SQLite/PostgreSQL schema 29 records exact
+cancellation or size-limit errors. SQLite/PostgreSQL schema 33 records exact
 attempt ownership, sealed publication and cleanup. Process-local retry records
 bind the immutable SQL and artifact namespaces and retain ambiguous outcomes;
 they are not proof of cross-process or cross-host writer termination.
@@ -693,8 +722,8 @@ MCP tools keep returning v1.
   `run_rca_bundle`, `run_rca_check_narration`, `run_rca_critiques` and
   `run_rca_critique_add`.
 
-Schema release 37 (`rca-analysis-revisions`) adds `rca_evidence_revisions`
-and `rca_analyses`; release 39 (`rca-critiques`) adds `rca_critiques`.
+Schema release 40 (`rca-analysis-revisions`) adds `rca_evidence_revisions`
+and `rca_analyses`; release 42 (`rca-critiques`) adds `rca_critiques`.
 
 ## Business keys
 
@@ -717,7 +746,7 @@ operator types in. Projects opt in with `APEXLOAD_BUSINESS_KEY_PROJECTS`.
   request keeps a digest of every mapped value in `extraction_digests`: an
   HMAC-SHA-256 under a key of the project's own, created on first use and
   stored wrapped by the controller's key wrapper (`business_key_project_keys`,
-  schema release 38). Groups whose effective script sets
+  schema release 41). Groups whose effective script sets
   `config.log.redact_run_evidence` keep only the digest; other groups also
   keep the value, as before. A group whose script cannot be read is treated as
   redacting. Remote generators never hold the key: the controller digests

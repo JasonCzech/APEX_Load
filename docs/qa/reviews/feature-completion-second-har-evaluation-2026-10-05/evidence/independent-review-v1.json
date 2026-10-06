@@ -1,0 +1,78 @@
+{
+  "schema": "apexload.independent-har-evaluation-review.v1",
+  "reviewed_at_utc": "2026-10-05T22:16:46.193406+00:00",
+  "scope": "Read-only review of recorded aggregate evaluation, helper/receipt/raw-output consistency, counts, privacy and limits. No capture parse/conversion/replay/network test was rerun and no repository file was changed.",
+  "worktree": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "bundle_index_sha256": "047180a6b4515415c86bb196282b23e6cec442c77ca876e575685bfd01502b5a",
+  "indexed_file_count": 7,
+  "bundle_file_count_including_index": 8,
+  "all_indexed_hashes_and_sizes_match": true,
+  "reviewed_files": [
+    {
+      "path": "README.md",
+      "bytes": 4272,
+      "sha256": "4356a2b2c363ee0e9a5a489a6fb6a8a989320b2893fb7838ef5913a60d8892fe"
+    },
+    {
+      "path": "evidence/aggregate-quality.json",
+      "bytes": 299,
+      "sha256": "817b8e61d37759f3c0d98abde29a7cf566f31b7fc44595e0b91ac2d7cf8285c4"
+    },
+    {
+      "path": "evidence/aggregate-shape.json",
+      "bytes": 1837,
+      "sha256": "19112ccea36dd298916e78e85e505eb4af0449fbe2feb5552d5d82708ec9b837"
+    },
+    {
+      "path": "evidence/offline-probe-1.json",
+      "bytes": 5813,
+      "sha256": "a848a7251511debcdd901b52484b2565a3d18f026a99a302809aa028451fb624"
+    },
+    {
+      "path": "evidence/offline-probe-1.log",
+      "bytes": 1152,
+      "sha256": "07b2ea99bf289d1298258c862720f08fc72083beaa59aa49de072325d68237f5"
+    },
+    {
+      "path": "helpers/offline-probe-runner.py.txt",
+      "bytes": 3250,
+      "sha256": "b80a404de7440266787447a001621cd22df0923f8c62ba34f8f0a5c04fdf939a"
+    },
+    {
+      "path": "helpers/offline-probe.go.txt",
+      "bytes": 5620,
+      "sha256": "b4df7d1abef1b74e1c7802e28900a5becccbb3c0ad13ffae89e99cde03806548"
+    }
+  ],
+  "probe_receipt_sha256": "a848a7251511debcdd901b52484b2565a3d18f026a99a302809aa028451fb624",
+  "raw_log_sha256": "07b2ea99bf289d1298258c862720f08fc72083beaa59aa49de072325d68237f5",
+  "raw_summary_matches_receipt": true,
+  "helper_hash_matches_receipt_and_current_private_program": true,
+  "eleven_recorded_source_module_hashes_match_before_after_and_current": true,
+  "checks": [
+    "435 retained requests/actions/observations/content-provenance records reconcile; zero filtered/skipped; content counts 425+3+7 reconcile to 435.",
+    "MIME and every timing category sum to 435; page timing missing 404 matches page count; request/response unknown versions 435 agree with reported conversion quality.",
+    "407 base64 markers,428 response texts,425 complete text+3 complete binary,433 request-cookie entries and144 authorization entries are consistently stated as aggregate capture facts.",
+    "Assertion count 435 is supported by current sample converter generating only status assertions in this path; no assertions were executed.",
+    "Aggregate raw output contains fixed classifications, counts, hashes and scope only; helper emits neither executable script nor private observation bodies.",
+    "The eleven-file input inventory and default-HTTP transport counter are explicitly scoped and not presented as full transitive/network sandbox/browser/replay acceptance."
+  ],
+  "findings": [
+    {
+      "priority": 3,
+      "file": "README.md",
+      "line": 18,
+      "title": "Name the elapsed time as total offline-probe process time",
+      "detail": "The 10.882-second receipt measures the complete go run process, including potential compilation, file reads/hashes, private observation parsing, conversion and source recheck. The table labels this Offline conversion; use Offline probe process or Offline evaluation elapsed so it is not mistaken for measured Convert duration."
+    }
+  ],
+  "staging_note": {
+    "file": "evidence/offline-probe-1.log",
+    "detail": "The raw log exists with the exact indexed hash but is currently ignored by .gitignore:125 (*.log) and untracked. Final publication must explicitly include it (force-add or equivalent audited staging), otherwise README and bundle index would reference missing committed evidence."
+  },
+  "limitations": [
+    "Aggregate shape and quality were compared against stored aggregates and conversion evidence; the original sensitive HAR was not independently reparsed in this review.",
+    "The completed raw output is aggregate-only; this review does not attest arbitrary future stderr or custom network transport behavior.",
+    "This is metadata/offline conversion evidence, not replay/API persistence/native browser/export/HTTP2/correlation acceptance."
+  ]
+}

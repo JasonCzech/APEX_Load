@@ -1,0 +1,52 @@
+{
+  "qualification_scope": "dashboard-source-and-bundled-guides-only; backend and native acquisition qualify separately",
+  "command": [
+    "scripts/run-e2e.sh",
+    "workflow-retained-resource-inspector.spec.ts",
+    "workflow-help.spec.ts",
+    "--grep",
+    "retained resource"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/kafka-owned-seek/Project_Stormrunner",
+  "started_at": "2026-10-05T17:30:36.716011+00:00",
+  "finished_at": "2026-10-05T17:31:16.731096+00:00",
+  "duration_seconds": 40.015,
+  "exit_code": 0,
+  "status": "passed",
+  "raw_log": "resource-fixed-ui-dev-3.stdout.txt",
+  "raw_log_bytes": 1143,
+  "raw_log_sha256": "454b5046eaa661ed3fa0537b694fbeb62cd4826406dd42d7ad0eaef8d4578311",
+  "source_before": {
+    "file": "frontend-source-inventory-e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c.json",
+    "sha256": "e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c",
+    "file_count": 1485
+  },
+  "source_after": {
+    "file": "frontend-source-inventory-e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c.json",
+    "sha256": "e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c",
+    "file_count": 1485
+  },
+  "source_changed": false,
+  "embed_before": {
+    "file": "frontend-embed-inventory-baa6376c1d471d6b82e5ead43fcdb6854325830b779c125a5bee6ce972690a37.json",
+    "sha256": "baa6376c1d471d6b82e5ead43fcdb6854325830b779c125a5bee6ce972690a37",
+    "file_count": 248
+  },
+  "embed_after": {
+    "file": "frontend-embed-inventory-baa6376c1d471d6b82e5ead43fcdb6854325830b779c125a5bee6ce972690a37.json",
+    "sha256": "baa6376c1d471d6b82e5ead43fcdb6854325830b779c125a5bee6ce972690a37",
+    "file_count": 248
+  },
+  "helper_sha256": "a502e0e4694aa16275ef613ec8e96d23fdf95475ae48153644994060c18a8ceb",
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18971",
+    "APEXLOAD_E2E_PROFILE": "dev-admin",
+    "APEXLOAD_E2E_OUTPUT_ROOT": "/private/tmp/apexload-browser-resource-ui-repeat-3"
+  }
+}

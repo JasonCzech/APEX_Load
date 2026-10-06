@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -19,9 +20,9 @@ import (
 )
 
 const (
-	libraryImportClaimsSettingKey  = "library.import_claims.v1"
-	maxLibraryImportClaims         = 10_000
-	maxLibraryImportClaimsRawBytes = 64 << 20
+	libraryImportClaimsSettingKey  = storage.LibraryImportClaimsSettingKey
+	maxLibraryImportClaims         = storage.MaxLibraryImportClaims
+	maxLibraryImportClaimsRawBytes = storage.MaxLibraryImportClaimsRawBytes
 	libraryImportClaimCASRetries   = 8
 )
 
@@ -561,7 +562,7 @@ func (s *Server) mutateLibraryImportClaims(mutate func(*[]libraryImportClaim) (b
 		return nil
 	}
 	for attempt := 0; attempt < libraryImportClaimCASRetries; attempt++ {
-		raw, err := s.store.GetSetting(libraryImportClaimsSettingKey)
+		raw, err := libraryImportClaimsRaw(s.store)
 		if err != nil {
 			return err
 		}
@@ -579,6 +580,16 @@ func (s *Server) mutateLibraryImportClaims(mutate func(*[]libraryImportClaim) (b
 		}
 		if len(payload) > maxLibraryImportClaimsRawBytes {
 			return fmt.Errorf("library import claims exceed the %d-byte limit", maxLibraryImportClaimsRawBytes)
+		}
+		if publication, ok := s.store.(storage.LibraryImportPublicationStore); ok {
+			updated, err := publication.CompareAndSwapLibraryImportClaims(raw, string(payload))
+			if err != nil {
+				return err
+			}
+			if updated {
+				return nil
+			}
+			continue
 		}
 		if cas, ok := s.store.(librarySettingsCASStore); ok {
 			updated, err := cas.CompareAndSwapSetting(libraryImportClaimsSettingKey, raw, string(payload))
@@ -598,12 +609,34 @@ func (s *Server) mutateLibraryImportClaims(mutate func(*[]libraryImportClaim) (b
 	return fmt.Errorf("library import claims changed concurrently; retry")
 }
 
+// Qualified stores bound the SQL read before returning claims bytes. Legacy
+// adapters retain their existing reader, without gaining publication fencing.
+func libraryImportClaimsRaw(store storage.Store) (string, error) {
+	if publication, ok := store.(storage.LibraryImportPublicationStore); ok {
+		snapshot, err := publication.GetLibraryImportPublicationSnapshot()
+		if err != nil {
+			return "", err
+		}
+		if snapshot == nil {
+			return "", fmt.Errorf("library import publication snapshot unavailable")
+		}
+		return snapshot.Raw, nil
+	}
+	return store.GetSetting(libraryImportClaimsSettingKey)
+}
+
 func decodeLibraryImportClaims(raw string) ([]libraryImportClaim, error) {
 	if len(raw) > maxLibraryImportClaimsRawBytes {
 		return nil, fmt.Errorf("library import claims exceed the %d-byte limit", maxLibraryImportClaimsRawBytes)
 	}
+	if !utf8.ValidString(raw) {
+		return nil, fmt.Errorf("library import claims contain invalid UTF-8")
+	}
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
+	}
+	if _, err := storage.ParseLibraryImportPublication(raw); err != nil {
+		return nil, err
 	}
 	var claims []libraryImportClaim
 	if err := json.Unmarshal([]byte(raw), &claims); err != nil {
@@ -689,7 +722,7 @@ func (s *Server) loadLibraryImportClaims() ([]libraryImportClaim, error) {
 		defer libraryImportClaimsMu.Unlock()
 		return cloneLibraryImportClaims(memoryLibraryImportClaims[s]), nil
 	}
-	raw, err := s.store.GetSetting(libraryImportClaimsSettingKey)
+	raw, err := libraryImportClaimsRaw(s.store)
 	if err != nil {
 		return nil, err
 	}
@@ -699,8 +732,8 @@ func (s *Server) loadLibraryImportClaims() ([]libraryImportClaim, error) {
 func pendingDirectImportAssetsFromClaims(claims []libraryImportClaim) map[string]struct{} {
 	pending := make(map[string]struct{})
 	for _, claim := range claims {
-		if claim.Committed || !claim.Prepared || strings.TrimSpace(claim.LocalItemID) == "" ||
-			!strings.HasPrefix(strings.TrimSpace(claim.RemoteID), "direct-import:") {
+		facts := storage.LibraryImportClaimFacts{Committed: claim.Committed, Prepared: claim.Prepared, LocalItemID: claim.LocalItemID, RemoteID: claim.RemoteID, Kind: claim.Kind}
+		if !facts.PendingDirectImport() {
 			continue
 		}
 		pending[importPublicationAssetKey(claim.Kind, claim.LocalItemID)] = struct{}{}
@@ -728,7 +761,7 @@ func getPublishedImportScript(store storage.Store, id string) (*dsl.Script, erro
 	if err != nil || script == nil {
 		return script, err
 	}
-	raw, err := store.GetSetting(libraryImportClaimsSettingKey)
+	raw, err := libraryImportClaimsRaw(store)
 	if err != nil {
 		return nil, fmt.Errorf("read direct-import publication state: %w", err)
 	}
@@ -757,7 +790,7 @@ func listPublishedImportScripts(store storage.Store, projectID string, folderID 
 	if err != nil {
 		return nil, err
 	}
-	raw, err := store.GetSetting(libraryImportClaimsSettingKey)
+	raw, err := libraryImportClaimsRaw(store)
 	if err != nil {
 		return nil, fmt.Errorf("read direct-import publication state: %w", err)
 	}
@@ -820,7 +853,7 @@ func getPublishedImportScenario(store storage.Store, id string) (*storage.Scenar
 	if err != nil || scenario == nil {
 		return scenario, scripts, err
 	}
-	raw, err := store.GetSetting(libraryImportClaimsSettingKey)
+	raw, err := libraryImportClaimsRaw(store)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read direct-import publication state: %w", err)
 	}
@@ -1058,6 +1091,9 @@ func (s *Server) libraryScenarioRecoveryHash(scenario *StoredScenario) string {
 
 func (s *Server) libraryScenarioRequestRecoveryHash(req CreateScenarioRequest) string {
 	req = cloneScenarioRequestForLibrary(req)
+	// Preserve semantically default historical receipts without discarding any
+	// non-default authored mode, shape, runtime section or group SLA evidence.
+	req = normalizePortableScenarioRequestDefaults(req)
 	req.ScenarioMode = normalizeScenarioMode(req.ScenarioMode)
 	req.RuntimeSettings = maskRuntimeSettings(req.RuntimeSettings)
 	for index := range req.Groups {

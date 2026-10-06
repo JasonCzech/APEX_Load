@@ -1,0 +1,33 @@
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard
+
+ ❯ src/components/ResultsPage.test.tsx (22 tests | 1 failed) 381ms
+     × renders comparison cards from the same admitted mixed and malformed cohorts as browser charts 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/ResultsPage.test.tsx > ResultsPage > renders comparison cards from the same admitted mixed and malformed cohorts as browser charts
+AssertionError: expected [] to have a length of 2 but got +0
+
+- Expected
++ Received
+
+- 2
++ 0
+
+ ❯ src/components/ResultsPage.test.tsx:1107:24
+    1105|     })
+    1106|     const checkboxes = Array.from(container.querySelectorAll<HTMLInput…
+    1107|     expect(checkboxes).toHaveLength(2)
+       |                        ^
+    1108|     await act(async () => {
+    1109|       checkboxes.forEach(checkbox => checkbox.click())
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 5 passed (6)
+      Tests  1 failed | 96 passed (97)
+   Start at  01:34:47
+   Duration  3.32s (transform 388ms, setup 57ms, import 750ms, tests 753ms, environment 1.38s)
+

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/analysis"
 )
 
 const AnalysisUploadWriterVersion = 1
@@ -280,11 +281,10 @@ func (s *SQLiteStore) CompleteAnalysisUploadWriter(ctx context.Context, project,
 		// A known metadata-limit refusal must still durably seal the physically
 		// joined writer and queue its exact plan; retrying publication cannot grow
 		// a bounded metadata row and must not retain the parent forever.
-		raw, encodeErr := json.Marshal(in)
-		if encodeErr != nil {
-			return nil, ErrAnalysisAuthority
-		}
-		if len(raw) > 2<<20 {
+		// Use the exact preflight of the durable metadata writer. Raw JSON
+		// length can fit while its conservative escaped metadata budget does
+		// not; that known refusal must still seal and queue the closed owner.
+		if _, encodeErr := analysis.MarshalBoundedAnalysisJSON(in, 2<<20); encodeErr != nil {
 			eligible = false
 			w.Rejection = "metadata_limit"
 		}

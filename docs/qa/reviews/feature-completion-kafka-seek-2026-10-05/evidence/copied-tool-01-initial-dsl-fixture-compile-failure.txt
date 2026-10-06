@@ -1,0 +1,5 @@
+ok  	github.com/jasonczech/apexload/pkg/protocol/kafka	0.353s
+# github.com/jasonczech/apexload/pkg/dsl [github.com/jasonczech/apexload/pkg/dsl.test]
+pkg/dsl/validate_kafka_commit_group_test.go:46:71: undefined: ControlConfig
+FAIL	github.com/jasonczech/apexload/pkg/dsl [build failed]
+FAIL

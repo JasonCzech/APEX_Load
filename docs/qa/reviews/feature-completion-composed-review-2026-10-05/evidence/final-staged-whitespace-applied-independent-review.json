@@ -1,0 +1,92 @@
+{
+  "schema": "apexload.final-staged-whitespace-applied-independent-review.v1",
+  "at_utc": "2026-10-06T03:35:58.575239+00:00",
+  "reviewer": "/root/authoring_fidelity_resume_v3",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "scope": "Read-only classification of original staged whitespace report and exact applied guide EOF correction. No builds, tests, source edits, staging, commits, or cache mutations.",
+  "result": "clean",
+  "report": {
+    "path": "/private/tmp/apexload-final-staged-verification-v3-20261005.whitespace.txt",
+    "sha256": "3681668f8598dfb558b3d2e303db735830d608a4086d53e5f4385d4634e2aab8",
+    "warnings": 292,
+    "paths": 144,
+    "classification": {
+      "generated_dashboard_asset": {
+        "warnings": 1,
+        "paths": 1
+      },
+      "owned_guide": {
+        "warnings": 1,
+        "paths": 1
+      },
+      "retained_qa_evidence": {
+        "warnings": 289,
+        "paths": 141
+      },
+      "verbatim_upstream_readme": {
+        "warnings": 1,
+        "paths": 1
+      }
+    },
+    "unclassified_paths": [],
+    "diagnostic_types": {
+      "new blank line at EOF.": 105,
+      "trailing whitespace.": 132,
+      "space before tab in indent.": 55
+    }
+  },
+  "reviewed_files": [
+    {
+      "path": "docs/guides/BROWSER_HAR_WORKING_OWNERSHIP.md",
+      "working_bytes": 7008,
+      "working_sha256": "50aaffb45155b7c00b14257b1a05ccf07777a09c53fdb5c7a5f1d925ddb094bb",
+      "staged_bytes": 7009,
+      "staged_sha256": "a537d068d773f5d351ca8dfbabef333edb9174f1d67ecffc7a09817e7c6a4846",
+      "working_final_lf_count": 1,
+      "staged_final_lf_count": 2,
+      "working_equals_staged": false
+    },
+    {
+      "path": "pkg/api/static/assets/ScriptEditor-CF22Lio2.js",
+      "working_bytes": 643352,
+      "working_sha256": "34699f323b55f5962481180ca1f0a2eda35619ab12c3af334e728eda6b430424",
+      "staged_bytes": 643352,
+      "staged_sha256": "34699f323b55f5962481180ca1f0a2eda35619ab12c3af334e728eda6b430424",
+      "working_final_lf_count": 0,
+      "staged_final_lf_count": 0,
+      "working_equals_staged": true
+    },
+    {
+      "path": "third_party/playwright-go/README.upstream.txt",
+      "working_bytes": 7697,
+      "working_sha256": "10ad6ed78db64fe19b2d704b6f4d811f47879cdebf53172f6a8a6ec2fd9ed04e",
+      "staged_bytes": 7697,
+      "staged_sha256": "10ad6ed78db64fe19b2d704b6f4d811f47879cdebf53172f6a8a6ec2fd9ed04e",
+      "working_final_lf_count": 1,
+      "staged_final_lf_count": 1,
+      "working_equals_staged": true
+    }
+  ],
+  "guide_correction": {
+    "verified": "Staged original minus exactly one terminal LF equals current working guide; all preceding 7008 bytes unchanged.",
+    "working_correction_is_already_applied": true,
+    "remove_another_lf": false,
+    "staging_state": "Original 7009-byte guide remains in index; parent owns explicit final one-row supplement and staging.",
+    "parent_fix_receipt": {
+      "path": "/private/tmp/apexload-final-doc-whitespace-fix-20261005.json",
+      "sha256": "52dbe11f14c24ea99b5812b30fe61f626ee01c7c2d33cee2dfea0919e9ea8888"
+    }
+  },
+  "preservation": {
+    "remaining_warnings": 291,
+    "required": "Preserve retained raw QA, generated dashboard asset, and verbatim upstream README byte-for-byte. Their whitespace is not an implementation finding.",
+    "raw_matched_content_printed": false,
+    "raw_qa_files_independently_rehashed_in_this_review": false,
+    "raw_qa_integrity_basis": "Parent staged blob/working/mode/deletion audit and retained evidence provenance; this review independently classified all diagnostic paths."
+  },
+  "gate_context": {
+    "docs": "Parent reports final scripts/check-docs.py physically joined PASS for 212 Markdown files; reviewer did not execute it.",
+    "product_gates": "Parent reports all product/code/docs reviews and gates clean; this receipt does not add a product execution claim."
+  },
+  "findings": []
+}

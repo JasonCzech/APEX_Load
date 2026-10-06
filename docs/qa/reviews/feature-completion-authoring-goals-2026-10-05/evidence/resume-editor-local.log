@@ -1,0 +1,33 @@
+Building controller...
+Starting controller on http://127.0.0.1:18476 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.WAXh99vVGT)...
+Controller healthy.
+Starting controller on http://127.0.0.1:18476 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.WAXh99vVGT)...
+Controller healthy.
+Auth profile verified: local-auth.
+Error: No tests found.
+Make sure that arguments are regular expressions matching test files.
+You may need to escape symbols like "$" or "*" and quote the arguments.
+
+--- controller log (last 60 lines) ---
+{"time":"2026-10-05T00:25:04.420336-04:00","level":"WARN","msg":"applied TLS compatibility defaults","godebug":"x509negativeserial=1,tlsmlkem=0,tlssecpmlkem=0"}
+{"time":"2026-10-05T00:25:04.422592-04:00","level":"INFO","msg":"controller bind address resolved","addr":"127.0.0.1:18476","bind_scope":"loopback"}
+{"time":"2026-10-05T00:25:04.655653-04:00","level":"WARN","msg":"encrypted project secret store is unavailable","error":"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"}
+{"time":"2026-10-05T00:25:04.677354-04:00","level":"WARN","msg":"auth is in a bypass mode — all API endpoints are unauthenticated; do not use this configuration in production","auth_mode":"dev"}
+{"time":"2026-10-05T00:25:04.679078-04:00","level":"WARN","msg":"Bruno source retention is using a locally provisioned envelope key","key_file":"/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-import-assets/.bruno-artifact-key","remedy":"set APEXLOAD_WRAPPING_MASTER_KEY or APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID for operator-managed key custody"}
+{"time":"2026-10-05T00:25:04.722942-04:00","level":"WARN","msg":"recording proxy disabled","error":"listen recording proxy on 127.0.0.1:8081: listen tcp 127.0.0.1:8081: bind: address already in use"}
+{"time":"2026-10-05T00:25:04.724649-04:00","level":"INFO","msg":"apexload API server starting","addr":"127.0.0.1:18476","bound_addr":"127.0.0.1:18476"}
+{"time":"2026-10-05T00:25:04.947019-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/health","status":200,"duration_ms":0,"remote":"127.0.0.1:53965"}
+{"time":"2026-10-05T00:25:04.970563-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/settings","status":200,"duration_ms":0,"remote":"127.0.0.1:53966"}
+{"time":"2026-10-05T00:25:04.998936-04:00","level":"INFO","msg":"http request","method":"PUT","path":"/api/v1/system/settings","status":200,"duration_ms":3,"remote":"127.0.0.1:53967"}
+{"time":"2026-10-05T00:25:05.00004-04:00","level":"INFO","msg":"shutting down"}
+2026/10/05 00:25:05 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"
+{"time":"2026-10-05T00:25:05.249814-04:00","level":"WARN","msg":"applied TLS compatibility defaults","godebug":"x509negativeserial=1,tlsmlkem=0,tlssecpmlkem=0"}
+{"time":"2026-10-05T00:25:05.250894-04:00","level":"INFO","msg":"controller bind address resolved","addr":"127.0.0.1:18476","bind_scope":"loopback"}
+{"time":"2026-10-05T00:25:05.265451-04:00","level":"WARN","msg":"encrypted project secret store is unavailable","error":"wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"}
+{"time":"2026-10-05T00:25:05.59463-04:00","level":"WARN","msg":"Bruno source retention is using a locally provisioned envelope key","key_file":"/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-import-assets/.bruno-artifact-key","remedy":"set APEXLOAD_WRAPPING_MASTER_KEY or APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID for operator-managed key custody"}
+{"time":"2026-10-05T00:25:05.634321-04:00","level":"WARN","msg":"recording proxy disabled","error":"listen recording proxy on 127.0.0.1:8081: listen tcp 127.0.0.1:8081: bind: address already in use"}
+{"time":"2026-10-05T00:25:05.635808-04:00","level":"INFO","msg":"apexload API server starting","addr":"127.0.0.1:18476","bound_addr":"127.0.0.1:18476"}
+{"time":"2026-10-05T00:25:06.051607-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/health","status":200,"duration_ms":0,"remote":"127.0.0.1:53969"}
+{"time":"2026-10-05T00:25:06.068883-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/me","status":200,"duration_ms":0,"remote":"127.0.0.1:53970"}
+{"time":"2026-10-05T00:25:07.21252-04:00","level":"INFO","msg":"shutting down"}
+2026/10/05 00:25:07 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"

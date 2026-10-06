@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	workerProtocolVersion    = 1
+	workerProtocolVersion    = 3
 	workerMaxFrameBytes      = 8 << 20
 	workerMaxInputs          = 1024
 	workerMaxOutputs         = 2048
@@ -89,10 +89,11 @@ type workerPreviewResult struct {
 	Samples [][]workerCell                `json:"samples"`
 }
 type workerOutput struct {
-	Handle string `json:"handle"`
-	SHA256 string `json:"sha256"`
-	Bytes  int64  `json:"bytes"`
-	Rows   int64  `json:"rows"`
+	Partition *analysis.NormalizedPartitionStats `json:"partition,omitempty"`
+	Handle    string                             `json:"handle"`
+	SHA256    string                             `json:"sha256"`
+	Bytes     int64                              `json:"bytes"`
+	Rows      int64                              `json:"rows"`
 }
 type workerNormalizeResult struct {
 	Outputs    []workerOutput     `json:"outputs"`
@@ -101,7 +102,12 @@ type workerNormalizeResult struct {
 	Rejected   int64              `json:"rejected"`
 	InputRows  int64              `json:"input_rows"`
 }
+type workerSeriesBounds struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+}
 type workerResult struct {
+	SeriesBounds   *workerSeriesBounds     `json:"series_bounds,omitempty"`
 	Status         string                  `json:"status"`         // ok, cancelled, error
 	Code           string                  `json:"code,omitempty"` // fixed reason, never native error text
 	CancelSequence uint64                  `json:"cancel_sequence,omitempty"`
@@ -345,6 +351,21 @@ func validateWorkerMapping(m Mapping) error {
 		}
 		if len(measure.NameColumn) > 0 && appendPath(measure.NameColumn) != nil {
 			return errWorkerProtocol
+		}
+	}
+	if m.Identity != nil {
+		if len(m.Identity.Dimensions) > 16 {
+			return errWorkerProtocol
+		}
+		for _, path := range []Column{m.Identity.Source, m.Identity.Host, m.Identity.Service} {
+			if len(path) > 0 && appendPath(path) != nil {
+				return errWorkerProtocol
+			}
+		}
+		for _, d := range m.Identity.Dimensions {
+			if appendPath(d.Value) != nil {
+				return errWorkerProtocol
+			}
 		}
 	}
 	if !workerText(m.Timezone, 256) || m.Validate(analysis.ParquetSchemaPreview{Columns: columns}) != nil {

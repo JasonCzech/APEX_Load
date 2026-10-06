@@ -111,10 +111,11 @@ type assignmentStagePlan struct {
 }
 
 type preparedAssignmentStage struct {
-	execution     *groupExecution
-	writer        *archiveRecorder
-	createdWriter bool
-	javaCapacity  javaVuserCapacityObservation
+	execution                       *groupExecution
+	writer                          *archiveRecorder
+	createdWriter                   bool
+	browserDocumentCaptureRequested bool
+	javaCapacity                    javaVuserCapacityObservation
 }
 
 // AssignWork is the transport facade for the two-phase staging transition:
@@ -762,6 +763,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	coordinator.finishPendingStageLocked(request.GetTestId(), plan.token)
 	if prepared != nil && prepared.writer != nil {
 		prepared.writer.bindExecution(request.GetExecutionGeneration(), request.GetGroupName(), ArchiveSourceIdentity(request.GetTestId(), request.GetRunSupervisionToken(), request.GetArchiveSourceTarget()))
+		prepared.writer.bindBrowserDocumentCapture(prepared.browserDocumentCaptureRequested)
 	}
 	coordinator.scheduleStageExpiryLocked(service, request.GetTestId())
 	return service.metricsBatchLocked(request.GetTestId()), service.availableCapacityLocked(), nil
@@ -1007,6 +1009,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if err := json.Unmarshal(plan.scriptContent, &script); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "decode script: %v", err)
 	}
+	prepared.browserDocumentCaptureRequested = len(dsl.RequiredBrowserRuntimeFeatures(&script)) > 0
 	if len(request.GetRunCorrelationOrigins()) > 0 {
 		if err := engine.ValidateRunCorrelationHeaders(&script, request.GetTestId()); err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -1308,7 +1311,7 @@ func javaVuserDistributedContainmentError(capabilities protocol.RuntimeCapabilit
 
 func requiredRuntimeFeature(script *dsl.Script) string {
 	base := requiredBaseRuntimeFeature(script)
-	for _, feature := range append(dsl.RequiredMessagingRuntimeFeatures(script), dsl.RequiredCompositionRuntimeFeatures(script)...) {
+	for _, feature := range append(append(dsl.RequiredMessagingRuntimeFeatures(script), dsl.RequiredCompositionRuntimeFeatures(script)...), dsl.RequiredBrowserRuntimeFeatures(script)...) {
 		if base != "" {
 			base += "+"
 		}

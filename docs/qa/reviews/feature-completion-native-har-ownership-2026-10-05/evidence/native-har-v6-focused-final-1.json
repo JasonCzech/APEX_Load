@@ -1,0 +1,37 @@
+{
+  "name": "native-har-v6-focused-final-1",
+  "argv": [
+    "go",
+    "test",
+    "-v",
+    "./pkg/protocol/browser",
+    "-run",
+    "TestHAROwnership|TestFinalizeHARCapture|TestApplyHARCapture|TestDiscardHARWorking|TestHARMonitor|TestClosePreserves|TestRuntimeHARRetention|TestBrowserContextOptions|TestBrowserClose|TestBrowserDocumentFinalize|TestBrowserDocumentFinalizerFrameErrorIsolation|TestBrowserDocumentBootstrapJoinsLifecycleReceipts|TestBrowserDocumentCurrentFrameMerge",
+    "-short",
+    "-count=2",
+    "-timeout=120s"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "exit_code": 0,
+  "elapsed_seconds": 10.806,
+  "recorded_at_utc": "2026-10-06T00:03:08.514470+00:00",
+  "log_path": "/private/tmp/native-har-v6-focused-final-1.log",
+  "log_sha256": "c7a1bf7cbcdbd6653aeeffef775761cb10c35a2daadd85cd64a420cac91e2caf",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4114,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "raw_receipt_sha256": "78ef6affeb6af735b9ca05e8370d09c7613dbca9e891920871346fd7e063a8a3",
+  "repository_inventory_before_sha256": "4b41ca6214fc38cba07f8c7ca020e8388c4e6ec29b88516b0caf5526cf0a4b32",
+  "repository_inventory_after_sha256": "4b41ca6214fc38cba07f8c7ca020e8388c4e6ec29b88516b0caf5526cf0a4b32",
+  "qualification_disposition": "Current v6 affected browser ownership/capture/retention/finality regressions twice; short mode explicitly skips eight native invocations.",
+  "receipt_scope_note": "Compact durable receipt retains original private receipt SHA, source count/stability and inventory digests. Full 4,000+ repository inventories remain in the named private raw receipt; direct review inventories are copied separately. Neither inventory includes complete module-cache/native dependencies.",
+  "outcome": "green-scoped"
+}

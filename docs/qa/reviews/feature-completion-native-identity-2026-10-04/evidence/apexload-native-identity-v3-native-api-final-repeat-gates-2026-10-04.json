@@ -1,0 +1,53 @@
+[
+  {
+    "gate": "identity-version-duckdb-native-final-repeat",
+    "command": [
+      "go",
+      "test",
+      "-parallel=1",
+      "-count=1",
+      "-timeout=20m",
+      "-ldflags=-s -w",
+      "-tags=analytics_duckdb",
+      "./pkg/analysis/duckdb"
+    ],
+    "exit_code": 0,
+    "seconds": 84.573,
+    "log": "/private/tmp/apexload-native-identity-v3-identity-version-duckdb-native-final-repeat-2026-10-04.log"
+  },
+  {
+    "gate": "identity-version-duckdb-native-race-final-repeat",
+    "command": [
+      "go",
+      "test",
+      "-parallel=1",
+      "-count=1",
+      "-timeout=20m",
+      "-ldflags=-s -w",
+      "-race",
+      "-tags=analytics_duckdb",
+      "./pkg/analysis/duckdb"
+    ],
+    "exit_code": 0,
+    "seconds": 179.559,
+    "log": "/private/tmp/apexload-native-identity-v3-identity-version-duckdb-native-race-final-repeat-2026-10-04.log"
+  },
+  {
+    "gate": "identity-api-native-race-final-repeat",
+    "command": [
+      "go",
+      "test",
+      "-parallel=1",
+      "-count=1",
+      "-timeout=20m",
+      "-ldflags=-s -w",
+      "-race",
+      "-tags=analytics_duckdb",
+      "-run=^(TestImported|TestDatasetSeriesIdentity|TestSavedV2|TestSavedDefinition|TestHistoricalSavedMapping|TestAnalyticalDefinition|TestAnalysis|TestOpenAPIClosedAnalytical|TestNativeSeriesHandler|TestImportMappingWrite|TestNativeComparison|TestNativeEvidence|TestNativePipeline|TestSavedAnalysis)",
+      "./pkg/api"
+    ],
+    "exit_code": 0,
+    "seconds": 294.847,
+    "log": "/private/tmp/apexload-native-identity-v3-identity-api-native-race-final-repeat-2026-10-04.log"
+  }
+]

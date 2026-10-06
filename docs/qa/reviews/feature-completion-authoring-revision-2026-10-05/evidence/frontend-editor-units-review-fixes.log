@@ -1,0 +1,38 @@
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard
+
+ ❯ src/components/ScriptEditor.test.tsx (200 tests | 2 failed) 12388ms
+     × adopts version/ref-key normalization after its own unblurred cell flush 33ms
+     × retains a focused cell typed during save through canonical parent echo and the next save 33ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/ScriptEditor.test.tsx > ScriptEditor > adopts version/ref-key normalization after its own unblurred cell flush
+TypeError: Cannot read properties of null (reading 'focus')
+ ❯ src/components/ScriptEditor.test.tsx:7328:34
+
+ ❯ Proxy.act node_modules/react/cjs/react.development.js:2512:16
+ ❯ src/components/ScriptEditor.test.tsx:7328:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/ScriptEditor.test.tsx > ScriptEditor > retains a focused cell typed during save through canonical parent echo and the next save
+TypeError: Cannot read properties of null (reading 'focus')
+ ❯ src/components/ScriptEditor.test.tsx:7347:35
+    7345|     await act(async () => { container.querySelector<HTMLButtonElement>…
+    7346|     const cell = () => container.querySelector<HTMLInputElement>('inpu…
+    7347|     await act(async () => { cell().focus(); changeInputValue(cell(), '…
+       |                                   ^
+    7348|     const saved = savedAuthoringFixture({ ...pair.projection.script, n…
+    7349|     await act(async () => { complete(saved) })
+ ❯ Proxy.act node_modules/react/cjs/react.development.js:2512:16
+ ❯ src/components/ScriptEditor.test.tsx:7347:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 8 passed (9)
+      Tests  2 failed | 384 passed (386)
+   Start at  03:11:35
+   Duration  17.91s (transform 1.28s, setup 90ms, import 1.64s, tests 13.41s, environment 2.17s)
+

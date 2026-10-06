@@ -1,0 +1,80 @@
+{
+  "utc": "2026-10-06T00:57:28.482251+00:00",
+  "scope": "Diagnostic committed baseline, all original failure/success bytes retained; not current composition acceptance.",
+  "files": [
+    {
+      "path": "snapshot-before.json",
+      "sha256": "fb2971a84435992baed14acf54edc6e77d7411afb5fde966f8a796c14bcd9427",
+      "bytes": 338597,
+      "source": "/private/tmp/apexload-committed-dashboard-baseline-9b5b9e29-rqh0ko61/snapshot-before.json"
+    },
+    {
+      "path": "snapshot-before-v2.json",
+      "sha256": "01d730c4cb4b71ec9182ae2d077645d6c2b36c8589635f8214655a91f3b859d8",
+      "bytes": 339099,
+      "source": "/private/tmp/apexload-committed-dashboard-baseline-9b5b9e29-rqh0ko61/snapshot-before-v2.json"
+    },
+    {
+      "path": "baseline-receipt.json",
+      "sha256": "9fba4faa848979195d20feca9b5c2eef865c788ac8854aaba91616c9bb86aac5",
+      "bytes": 1585,
+      "source": "/private/tmp/apexload-committed-dashboard-baseline-9b5b9e29-rqh0ko61/baseline-receipt.json"
+    },
+    {
+      "path": "baseline-receipt-v2.json",
+      "sha256": "3d28f12af6646b9c95ccb53cb90c14304dba7564bd65449832a3d6d3021b49ec",
+      "bytes": 44725,
+      "source": "/private/tmp/apexload-committed-dashboard-baseline-9b5b9e29-rqh0ko61/baseline-receipt-v2.json"
+    },
+    {
+      "path": "bundle-result-v2.json",
+      "sha256": "b294c0eec6e6736a9bde9bf6995dad688202508328ac26479bca35add1fb6698",
+      "bytes": 47961,
+      "source": "/private/tmp/apexload-committed-dashboard-baseline-9b5b9e29-rqh0ko61/bundle-result-v2.json"
+    },
+    {
+      "path": "comparison-calibration-review.json",
+      "sha256": "9e77027ad316006f0a53f1af007acdba125ee3cdf3ae13b5f6566c841fa2ef78",
+      "bytes": 5025,
+      "source": "/private/tmp/apexload-committed-dashboard-baseline-9b5b9e29-rqh0ko61/comparison-calibration-review.json"
+    },
+    {
+      "path": "inspect-baseline.mjs.txt",
+      "sha256": "6a1147acec3c8f21567657fbd67b0591693f736605e8b51be256a1c3bb003d24",
+      "bytes": 967,
+      "source": "/private/tmp/apexload-committed-dashboard-baseline-9b5b9e29-rqh0ko61/inspect-baseline.mjs"
+    },
+    {
+      "path": "vite-build.raw.txt.gz",
+      "sha256": "6f273c3e3e46adff8d2671abb5c937fea41d3a4a9be39234f275d75ada536ca8",
+      "bytes": 876,
+      "raw_bytes": 3351,
+      "raw_sha256": "87ce9e21c11c7a3897039956426b6ceddeb8173d6503f7c0569cf8cdd8f3cef1",
+      "source": "/private/tmp/apexload-committed-dashboard-baseline-9b5b9e29-rqh0ko61/vite-build.raw.txt",
+      "encoding": "deterministic gzip mtime0; exact raw bytes"
+    },
+    {
+      "path": "vite-build-v2.raw.txt.gz",
+      "sha256": "545cb5d63e1ceebc67b099758ddcdb43ff2217eac5c3b719faeaadd6e751fc9e",
+      "bytes": 6356,
+      "raw_bytes": 25377,
+      "raw_sha256": "140b0047a4d02eb63b88d87efe3127e203c5955b024b47e75f24b000237201db",
+      "source": "/private/tmp/apexload-committed-dashboard-baseline-9b5b9e29-rqh0ko61/vite-build-v2.raw.txt",
+      "encoding": "deterministic gzip mtime0; exact raw bytes"
+    },
+    {
+      "path": "bundle-report-v2.raw.txt.gz",
+      "sha256": "c469b77dface00f19f03aebe15634c4aab425d189cfa272e92d780a0839e0d07",
+      "bytes": 469,
+      "raw_bytes": 1225,
+      "raw_sha256": "77d08a07b861691fadd128ee0d0091f2863e8b4444f5a3982783ef840c4ae65c",
+      "source": "/private/tmp/apexload-committed-dashboard-baseline-9b5b9e29-rqh0ko61/bundle-report-v2.raw.txt",
+      "encoding": "deterministic gzip mtime0; exact raw bytes"
+    },
+    {
+      "path": "README.md",
+      "sha256": "a0a3ccb3ea2af937b2343d6459c09d14cf907542533244f8ba4f235cece768a8",
+      "bytes": 2068
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run src/components/CreateTestModal.test.tsx -t safe source capture|source selections|empty queued-copy goal
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard
+
+ ❯ src/components/CreateTestModal.test.tsx (23 tests | 5 failed | 18 skipped) 314ms
+     × retains safe source capture IDs through strict mount, unrelated edit and actual copy submission 121ms
+     × retains missing source selections until capture is explicitly turned off 53ms
+     × retains failed source selections until capture is explicitly turned off 36ms
+     × submits an empty queued-copy goal only when clearing an originally present config (true) 61ms
+     × submits an empty queued-copy goal only when clearing an originally present config (false) 41ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/CreateTestModal.test.tsx > CreateTestModal > retains safe source capture IDs through strict mount, unrelated edit and actual copy submission
+AssertionError: expected '' to be 'source-elk' // Object.is equality
+
+- Expected
++ Received
+
+- source-elk
+
+ ❯ src/components/CreateTestModal.test.tsx:435:56
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  src/components/CreateTestModal.test.tsx > CreateTestModal > retains missing source selections until capture is explicitly turned off
+ FAIL  src/components/CreateTestModal.test.tsx > CreateTestModal > retains failed source selections until capture is explicitly turned off
+AssertionError: expected '' not to be '' // Object.is equality
+ ❯ src/components/CreateTestModal.test.tsx:454:32
+    452|     for (const label of ['Elastic log capture', 'Dynatrace SaaS captur…
+    453|       const select = captureSelect(label)
+    454|       expect(select.value).not.toBe('')
+       |                                ^
+    455|       expect(select.selectedOptions[0].textContent).toContain('review …
+    456|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  src/components/CreateTestModal.test.tsx > CreateTestModal > submits an empty queued-copy goal only when clearing an originally present config (true)
+AssertionError: expected { stop_on_sla_breach: false, …(2) } to deeply equal {}
+
+- Expected
++ Received
+
+- {}
++ {
++   "sla_breach_window": "30s",
++   "stop_on_max_errors": false,
++   "stop_on_sla_breach": false,
++ }
+
+ ❯ src/components/CreateTestModal.test.tsx:476:45
+    474|     expect(apiMock.createTest).toHaveBeenCalledOnce()
+    475|     const sent = JSON.parse(JSON.stringify(apiMock.createTest.mock.cal…
+    476|     if (hadConfig) expect(sent.goal_config).toEqual({})
+       |                                             ^
+    477|     else expect(sent).not.toHaveProperty('goal_config')
+    478|     expect(source.goal_config).toEqual(hadConfig ? { p95_latency_ms: 1…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  src/components/CreateTestModal.test.tsx > CreateTestModal > submits an empty queued-copy goal only when clearing an originally present config (false)
+AssertionError: expected { duration: '1m', …(10) } to not have property "goal_config"
+
+- Expected:
+undefined
+
++ Received:
+{
+  "sla_breach_window": "30s",
+  "stop_on_max_errors": false,
+  "stop_on_sla_breach": false,
+}
+
+ ❯ src/components/CreateTestModal.test.tsx:477:27
+    475|     const sent = JSON.parse(JSON.stringify(apiMock.createTest.mock.cal…
+    476|     if (hadConfig) expect(sent.goal_config).toEqual({})
+    477|     else expect(sent).not.toHaveProperty('goal_config')
+       |                           ^
+    478|     expect(source.goal_config).toEqual(hadConfig ? { p95_latency_ms: 1…
+    479|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 18 skipped (23)
+   Start at  13:47:10
+   Duration  2.01s (transform 627ms, setup 50ms, import 762ms, tests 314ms, environment 726ms)
+

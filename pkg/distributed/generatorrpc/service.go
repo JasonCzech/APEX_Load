@@ -281,6 +281,7 @@ type transactionBuffer struct {
 }
 
 type metricsAggregateSet struct {
+	BrowserDocuments  *protocol.BrowserDocumentSummary
 	MessagingProgress *protocol.MessagingProgressSnapshot
 	NativeVersion     uint32
 	Fleet             *MetricAggregate
@@ -1587,6 +1588,11 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 				features = append(features, FeatureMessagingRuntimeQuiescenceV1)
 			}
 		}
+		if normalized == "browser" {
+			if _, ok := instance.(protocol.BrowserDocumentEvidenceProvider); ok {
+				features = append(features, FeatureBrowserDocumentEvidenceV2)
+			}
+		}
 		if normalized == "websocket" {
 			features = append(features, FeatureWebSocketDiagnosticsV1)
 		}
@@ -1937,6 +1943,7 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 	}
 	_ = writer.RecordIntervalSummary(archiveIntervalSummary{
 		Messaging:           archiveMessagingFromBatch(batch),
+		BrowserDocuments:    browserDocumentsFromJSON(batch.GetBrowserDocumentSummaryJson(), batch.GetBrowserDocumentSummaryVersion()),
 		MessagingProgress:   messagingProgressFromJSON(batch.GetMessagingProgressJson(), batch.GetMessagingProgressVersion()),
 		CompletedIterations: batch.GetStats().GetCompletedIterations(),
 		Timestamp:           time.UnixMilli(batch.TimestampUnixMs),
@@ -2388,32 +2395,34 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		}
 	}
 	return &pb.MetricsBatch{
-		MessagingProgressJson:    messagingProgressJSON(aggregates.MessagingProgress),
-		MessagingProgressVersion: messagingProgressVersion(aggregates.MessagingProgress),
-		TestId:                   testID,
-		ExecutionGeneration:      executionGeneration,
-		GeneratorId:              s.generatorID,
-		TimestampUnixMs:          time.Now().UnixMilli(),
-		WindowMs:                 windowMs,
-		Transactions:             protoTransactions,
-		Stats:                    toProtoStats(stats),
-		Groups:                   groups,
-		LifecycleState:           lifecycleState,
-		LifecycleError:           lifecycleError,
-		Telemetry:                protoTelemetry,
-		TransactionMetrics:       metricAggregatesToProto(aggregates.Transactions),
-		DependencyMetrics:        metricAggregatesToProto(aggregates.Dependencies),
-		SoapMetrics:              metricAggregatesToProto(aggregates.SOAP),
-		NetworkProfileMetrics:    metricAggregatesToProto(aggregates.NetworkProfiles),
-		ActionMetrics:            metricAggregatesToProto(aggregates.Actions),
-		ActionDimensionMetrics:   metricAggregatesToProto(aggregates.ActionDimensions),
-		ActionPropertyMetrics:    metricAggregatesToProto(aggregates.ActionProperties),
-		ActionMetricsVersion:     aggregates.NativeVersion,
-		PropertyMetrics:          metricAggregatesToProto(aggregates.Properties),
-		RegionMetrics:            metricAggregatesToProto(aggregates.Regions),
-		FleetMetrics:             metricAggregateToProto(aggregates.Fleet),
-		BrowserMetrics:           browserMetricsToProto(aggregates.Browser),
-		BrowserDeviceMetrics:     browserDeviceMetricsToProto(aggregates.BrowserByDevice),
+		BrowserDocumentSummaryJson:    browserDocumentsJSON(aggregates.BrowserDocuments),
+		BrowserDocumentSummaryVersion: browserDocumentsVersion(aggregates.BrowserDocuments),
+		MessagingProgressJson:         messagingProgressJSON(aggregates.MessagingProgress),
+		MessagingProgressVersion:      messagingProgressVersion(aggregates.MessagingProgress),
+		TestId:                        testID,
+		ExecutionGeneration:           executionGeneration,
+		GeneratorId:                   s.generatorID,
+		TimestampUnixMs:               time.Now().UnixMilli(),
+		WindowMs:                      windowMs,
+		Transactions:                  protoTransactions,
+		Stats:                         toProtoStats(stats),
+		Groups:                        groups,
+		LifecycleState:                lifecycleState,
+		LifecycleError:                lifecycleError,
+		Telemetry:                     protoTelemetry,
+		TransactionMetrics:            metricAggregatesToProto(aggregates.Transactions),
+		DependencyMetrics:             metricAggregatesToProto(aggregates.Dependencies),
+		SoapMetrics:                   metricAggregatesToProto(aggregates.SOAP),
+		NetworkProfileMetrics:         metricAggregatesToProto(aggregates.NetworkProfiles),
+		ActionMetrics:                 metricAggregatesToProto(aggregates.Actions),
+		ActionDimensionMetrics:        metricAggregatesToProto(aggregates.ActionDimensions),
+		ActionPropertyMetrics:         metricAggregatesToProto(aggregates.ActionProperties),
+		ActionMetricsVersion:          aggregates.NativeVersion,
+		PropertyMetrics:               metricAggregatesToProto(aggregates.Properties),
+		RegionMetrics:                 metricAggregatesToProto(aggregates.Regions),
+		FleetMetrics:                  metricAggregateToProto(aggregates.Fleet),
+		BrowserMetrics:                browserMetricsToProto(aggregates.Browser),
+		BrowserDeviceMetrics:          browserDeviceMetricsToProto(aggregates.BrowserByDevice),
 	}
 }
 
@@ -2705,6 +2714,9 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 	}
 	aggregates := aggregateWindow.finalize(windowMs)
 	if snapshotOK {
+		if changes.sourceSnapshot {
+			aggregates.BrowserDocuments = snapshot.BrowserDocuments.Clone()
+		}
 		aggregates.MessagingProgress = snapshot.MessagingProgress.Clone()
 	} else if previous != nil {
 		aggregates.MessagingProgress = previous.aggregates.MessagingProgress.Clone()
@@ -2794,6 +2806,7 @@ func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapsho
 	}
 	exec.metricsMu.Lock()
 	stored := metrics
+	stored.aggregates.BrowserDocuments = metrics.aggregates.BrowserDocuments.Clone()
 	stored.aggregates.MessagingProgress = metrics.aggregates.MessagingProgress.Clone()
 	stored.transactions = append([]TransactionMetric(nil), metrics.transactions...)
 	stored.transactionResponseTimeSLA = append([]engine.TransactionResponseTimeSLACompliance(nil), metrics.transactionResponseTimeSLA...)
@@ -2802,7 +2815,7 @@ func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapsho
 }
 
 func metricsAggregateSetHasEvidence(aggregates metricsAggregateSet) bool {
-	return aggregates.MessagingProgress != nil || aggregates.Fleet != nil || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Actions) > 0 || len(aggregates.ActionDimensions) > 0 || len(aggregates.ActionProperties) > 0 || len(aggregates.Properties) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
+	return aggregates.BrowserDocuments != nil || aggregates.MessagingProgress != nil || aggregates.Fleet != nil || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Actions) > 0 || len(aggregates.ActionDimensions) > 0 || len(aggregates.ActionProperties) > 0 || len(aggregates.Properties) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
 }
 
 func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName string, metrics executionMetricsSnapshot) {
@@ -3032,6 +3045,7 @@ func mergeSnapshotSideChannelAggregates(out *metricsAggregateSet, snapshot engin
 	if out == nil {
 		return
 	}
+	out.BrowserDocuments = snapshot.BrowserDocuments.Clone()
 	out.MessagingProgress = snapshot.MessagingProgress.Clone()
 	out.NetworkProfiles = engineActionMetricsToAggregates(snapshot.ByNetworkProfile)
 	if snapshot.ByAction != nil {
@@ -3169,6 +3183,7 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 	browsers := make([]*BrowserMetrics, 0)
 	browserDevices := make([]BrowserDeviceMetrics, 0)
 	for _, value := range values {
+		protocol.MergeBrowserDocumentSummaries(&out.BrowserDocuments, value.BrowserDocuments)
 		if value.MessagingProgress != nil {
 			protocol.MergeMessagingProgress(&out.MessagingProgress, value.MessagingProgress)
 		}
@@ -3608,4 +3623,20 @@ func (s *Service) nowTime() time.Time {
 		return time.Now()
 	}
 	return s.now()
+}
+
+func (s *combinedSink) RecordBrowserDocumentEvidence(evidence *protocol.BrowserDocumentEvidence) error {
+	supported := false
+	for _, sink := range s.sinks {
+		if target, ok := sink.(engine.BrowserDocumentEvidenceSink); ok {
+			supported = true
+			if err := target.RecordBrowserDocumentEvidence(evidence.Clone()); err != nil {
+				return err
+			}
+		}
+	}
+	if !supported {
+		return fmt.Errorf("browser document archive sink is unavailable")
+	}
+	return nil
 }

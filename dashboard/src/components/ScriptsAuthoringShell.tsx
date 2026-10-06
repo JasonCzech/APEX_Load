@@ -112,6 +112,11 @@ export default function ScriptsAuthoringShell({
             authoringNotice={authoringState.authoringNotice}
             editingId={authoringState.editingId}
             editingScript={authoringState.editingScript}
+            editingAuthoring={authoringState.editingAuthoring}
+            editingRetainedDraft={authoringState.editingRetainedDraft}
+            editingRetainedNeedsReview={authoringState.editingRetainedNeedsReview}
+            editingRetainedJsonText={authoringState.editingRetainedJsonText}
+            editingRetainedCreatedSecretNames={authoringState.editingRetainedCreatedSecretNames}
             editingActivity={authoringState.editingActivity}
             projectId={projectId}
             activeProject={activeProject}

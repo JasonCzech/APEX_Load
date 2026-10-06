@@ -1,0 +1,120 @@
+{
+  "scope": "Exact frozen private source-admission composition; 17 destination dependencies verified unchanged, 11 sources copied. Focused API and composed gates pending.",
+  "sources": [
+    {
+      "path": "pkg/api/import_publication_visibility.go",
+      "sha256": "16f9e391ad31ee303576f31c6ded37196316fb0895b6ca556e4407910eca0306"
+    },
+    {
+      "path": "pkg/api/library_import_claims.go",
+      "sha256": "c782ee5fce3ab9bf7dfadadd34bac695069c1f6e80f46414ede8923589de4dad"
+    },
+    {
+      "path": "pkg/api/scenario_source_publication_test.go",
+      "sha256": "3ad797fd28f5b43b32142524aa2d9da5f5d9553f220bc355ff2284eb98db46d2"
+    },
+    {
+      "path": "pkg/storage/library_import_publication_projection.go",
+      "sha256": "a8343a1ce49a05cb434b95c3af2db722c6df95fbc8730c8e755d7fd167fc19ef"
+    },
+    {
+      "path": "pkg/storage/library_import_publication_projection_test.go",
+      "sha256": "229ab77011624d995773e62b28d3e773c967569f7713df22c706adc360cfa00f"
+    },
+    {
+      "path": "pkg/storage/scenario_content_revision.go",
+      "sha256": "be1ed1847de746e778b6a2de3c6b90b9a46fdf3b284ab3456801ffe3730d668a"
+    },
+    {
+      "path": "pkg/storage/scenario_source_admission.go",
+      "sha256": "99a68c3e8048cebe3b06045800cabdf2ba6f77b2c40cd6b4ce48eecc3d335b23"
+    },
+    {
+      "path": "pkg/storage/scenario_source_admission_postgres_integration_test.go",
+      "sha256": "a26c8d6126c1b6b5eb928b4424d7df1c25ebd8cef10a9e54569c84e975a52eb8"
+    },
+    {
+      "path": "pkg/storage/scenario_source_admission_test.go",
+      "sha256": "9ccb5211eef5449a4aa0dc874c5c2639d705c738a67fbf885a854ad242709111"
+    },
+    {
+      "path": "pkg/storage/scenario_source_concurrency_test.go",
+      "sha256": "dde7045e4d407ef57318d270210eb803d357d4aa273b23910c612598b09fe7b4"
+    },
+    {
+      "path": "pkg/storage/scenario_source_lifecycle_test.go",
+      "sha256": "8232d62ccb4d1af8cb59f1960a71d0aac84ee94a9074e264a8f55ea60846348f"
+    }
+  ],
+  "dependencies": [
+    {
+      "path": "pkg/storage/library_import_publication.go",
+      "sha256": "b2c3ddbef2ea3e2a0b08401029809cdbb6ddc5a07e084605b4a4f8aa53b935bf"
+    },
+    {
+      "path": "pkg/storage/script_content_revision.go",
+      "sha256": "c086a2ee76eea6cd858edb6aea389639ac1e61498d241af2416cfb34e647bc9f"
+    },
+    {
+      "path": "pkg/storage/sqlite_project_integrity.go",
+      "sha256": "772cdc3577826f44d445f8bb10df94add17731de89284c09a87ae6f91f87161d"
+    },
+    {
+      "path": "pkg/storage/sqlite_scenarios.go",
+      "sha256": "87104a4535e44b2ca2942884fe21988e75c766220e2303ab55d8e420fed4e8f6"
+    },
+    {
+      "path": "pkg/storage/object_archives.go",
+      "sha256": "e3f0248fffa4e21ebe1a368a8ec5d524f80f1c5d67c444b719c7e6bf99d72dbf"
+    },
+    {
+      "path": "pkg/storage/scenario_content_revision_tracking.go",
+      "sha256": "5ada59d37cdb1d1ad8da901f1e278a070ce798a73b71907ee770ab8fa8e9e8c5"
+    },
+    {
+      "path": "pkg/storage/sqlite_scripts.go",
+      "sha256": "215b9c354216e6e4b983c594f25619a016aed95ad52f204181275969ed9496ed"
+    },
+    {
+      "path": "pkg/storage/storage.go",
+      "sha256": "1d2ce90b46bc27252d0c4f413f30c2a1fb611e5fb0f542945bc100e3539ed5fc"
+    },
+    {
+      "path": "pkg/storage/scenario_content_revision_test.go",
+      "sha256": "9000e941dda78b28bc7fdafce1eab3c2e378439177ee0beac5ef65a8091f506e"
+    },
+    {
+      "path": "pkg/storage/scenario_content_revision_postgres_integration_test.go",
+      "sha256": "ba59515493b37573c5ce95fccf5792dc55564195e9d0f040f114f3eaba60bcd1"
+    },
+    {
+      "path": "pkg/storage/library_import_publication_postgres_integration_test.go",
+      "sha256": "7922f0c5bd29db3294cc763b97f88f453207bca0719b627fbe6a9981875b846f"
+    },
+    {
+      "path": "pkg/api/library_links.go",
+      "sha256": "575749f02a83f959f2f4462c2e304dc98e7eb5965a04c78d2d247ad6a083a952"
+    },
+    {
+      "path": "pkg/api/create_import_transaction.go",
+      "sha256": "c240caf9c0312deb6f0046ed6bc2519e87525e7587eae0ef714b9c216cfc53d6"
+    },
+    {
+      "path": "pkg/api/direct_import_idempotency.go",
+      "sha256": "aed6b50b659eef0df40e2900dfd729f8fe0148726099a3dc4ca68489d7d211c6"
+    },
+    {
+      "path": "pkg/api/direct_import_idempotency_test.go",
+      "sha256": "e1372e97b650b8dee3bb326adcb0ef4cd0a353ed60cfc14546ad7c7b03497133"
+    },
+    {
+      "path": "go.mod",
+      "sha256": "05c38d4d914dd463eadcff718550f394425eeb85721dbcab2c0fc8c8d59b2d1b"
+    },
+    {
+      "path": "go.sum",
+      "sha256": "f24fca42c52f47ee68239f16130fc02743aed90c7ba2815b3197b665db15c2c8"
+    }
+  ],
+  "qa_files": 32
+}

@@ -1,0 +1,9 @@
+{
+  "captured_utc": "2026-10-05T10:46:09.323867+00:00",
+  "stage": "Actual full npm test:cycle build completed; before both-profile browser qualification",
+  "source_inputs": 1506,
+  "source_files_list_sha256": "ab32fda7be4c9966da233c72a660519d834e7d2a8befa1d47275bfc435bcfa41",
+  "source_mismatches": [],
+  "embedded_inventory": "frontend-document-cycle-final-embedded-inventory.json",
+  "forbid_further_application_or_embedded_rebuild": true
+}

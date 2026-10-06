@@ -235,7 +235,7 @@ func runtimeSettingsFromScriptConfig(config dsl.ScriptConfig) *RuntimeSettingsOv
 		errorHandling := config.ErrorHandling
 		projected.ErrorHandling = &errorHandling
 	}
-	if config.Results.MessageDetail != nil {
+	if !reflect.ValueOf(config.Results).IsZero() {
 		projected.Results = cloneViaJSON(&config.Results)
 	}
 	if !reflect.ValueOf(config.Log).IsZero() {

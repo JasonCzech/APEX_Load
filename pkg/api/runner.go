@@ -798,7 +798,9 @@ type TestGroup struct {
 	stageDriven     bool
 	initialVUsers   int
 	currentVUsers   int
-	script          *dsl.Script
+	// Frozen execution intent survives terminal compaction and durable run snapshots.
+	BrowserDocumentCaptureRequested bool `json:"browser_document_capture_requested,omitempty"`
+	script                          *dsl.Script
 	// scheduleOverriddenScriptIterations is the script-sourced per-VUser
 	// iteration cap that applyScheduleIterationAuthority removed from the
 	// compiled script because the scenario schedule owns run length (0 = none).
@@ -815,6 +817,11 @@ type TestGroup struct {
 	runtimeResourcePlanKnown   bool
 	runtimeResourcePlanError   string
 	messagingRuntimeFeatures   []string
+	// requiredRuntimeFeature is the complete compact feature contract captured
+	// only by a lightweight capacity snapshot that drops executable scripts.
+	// A present script always remains authoritative when resolving features.
+	requiredRuntimeFeature      string
+	requiredRuntimeFeatureKnown bool
 	// baseScript is the immutable executable input before test/group runtime
 	// overrides. It lets a revised queued copy apply intentional runtime edits
 	// without recompiling mutable script or data-pool resources. Older rows may
@@ -850,6 +857,7 @@ type RunLogicGoalSnapshot struct {
 }
 
 type LiveMetrics struct {
+	BrowserDocuments    *protocol.BrowserDocumentSummary      `json:"browser_documents,omitempty"`
 	MessagingProgress   *protocol.MessagingProgressSnapshot   `json:"messaging_progress,omitempty"`
 	Messaging           map[string]*protocol.MessagingSummary `json:"messaging,omitempty"`
 	NativeEvidence      *storage.NativeIntervalEvidence       `json:"native_evidence,omitempty"`
@@ -895,6 +903,7 @@ type LiveMetrics struct {
 	BrowserByDevice            map[string]*BrowserDeviceLiveMetrics  `json:"browser_by_device,omitempty"`
 	GoalStatus                 *GoalStatus                           `json:"goal_status,omitempty"`
 	CapacityStatus             *LiveCapacityStatus                   `json:"capacity_status,omitempty"`
+	TelemetryPolicy            *TelemetryPolicyEvidence              `json:"telemetry_policy,omitempty"`
 	TelemetryStatus            *TelemetryRunHealth                   `json:"telemetry_status,omitempty"`
 	Telemetry                  *TelemetryHealth                      `json:"telemetry,omitempty"`
 	Resources                  *engine.SystemResources               `json:"resources,omitempty"`
@@ -1310,6 +1319,8 @@ type GroupLiveMetrics struct {
 }
 
 type StoredScript struct {
+	ContentRevision     string                     `json:"content_revision,omitempty"`
+	AuthoringProjection *ScriptAuthoringProjection `json:"authoring_projection,omitempty"`
 	ArchivedAt          *time.Time                 `json:"archived_at,omitempty"`
 	Activity            *ObjectActivitySummary     `json:"activity,omitempty"`
 	LibraryAssignment   *storage.LibraryAssignment `json:"library_assignment,omitempty"`

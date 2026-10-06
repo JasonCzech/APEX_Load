@@ -1,53 +1,100 @@
 package browser
 
-import "github.com/mxschmitt/playwright-go"
+import (
+	"context"
+	"errors"
+	"github.com/mxschmitt/playwright-go"
+)
 
-func (b *Browser) close() {
+func (b *Browser) close() error { return b.closeWithContext(context.Background()) }
+
+func (b *Browser) closeWithContext(ctx context.Context) error {
+	var closeErr error
+	b.censorDocumentEvidence(nil, "context_closed")
 	b.mu.Lock()
 	b.closing = true
+	b.retireNetworkWorkersLocked()
 	requestPolicyStop := b.requestPolicyStop
 	b.requestPolicyStop = nil
 	cdp := b.pwCDP
 	b.pwCDP = nil
 	b.pwCDPPage = nil
 	b.cdpInstallGeneration++
+	owner := b.harOwner
 	page := b.pwPage
 	b.pwPage = nil
 	b.mu.Unlock()
 	if requestPolicyStop != nil {
 		close(requestPolicyStop)
 	}
-	if cdp != nil {
+	if cdp != nil && owner == nil {
 		_ = cdp.Detach()
 	}
-	if page != nil {
-		_ = page.Close()
-	}
-	if context := b.takeBrowserContext(); context != nil {
-		_ = context.Close() // flushes the context HAR recording
-	}
-	// Keep the limiter active through Playwright's final HAR flush.
-	b.mu.Lock()
-	monitorStop := b.harMonitorStop
-	b.harMonitorStop = nil
-	b.mu.Unlock()
-	if monitorStop != nil {
-		close(monitorStop)
-		b.harMonitorWG.Wait()
+	if owner != nil {
 		b.mu.Lock()
-		b.harLimitExceeded = nil
+		monitorStop := b.harMonitorStop
+		b.harMonitorStop = nil
+		workerStop := b.networkWorkerStop
+		b.networkWorkerStop = nil
+		b.networkTasks = nil
 		b.mu.Unlock()
+		if workerStop != nil {
+			close(workerStop)
+		}
+		owner.startRuntimeJoin(func() {
+			if cdp != nil {
+				owner.recordRuntimeError(cdp.Detach())
+			}
+			<-owner.closeDone
+			if monitorStop != nil {
+				close(monitorStop)
+			}
+			b.harMonitorWG.Wait()
+			b.networkWorkerWG.Wait()
+			b.mu.Lock()
+			if b.harOwner == owner {
+				b.harLimitExceeded = nil
+			}
+			b.mu.Unlock()
+		})
+		owner.startClose()
+	} else {
+		if page != nil {
+			closeErr = errors.Join(closeErr, page.Close())
+		}
+		if browserContext := b.takeBrowserContext(); browserContext != nil {
+			closeErr = errors.Join(closeErr, browserContext.Close())
+		}
 	}
-	b.mu.Lock()
-	workerStop := b.networkWorkerStop
-	b.networkWorkerStop = nil
-	b.networkTasks = nil
-	b.mu.Unlock()
-	if workerStop != nil {
-		close(workerStop)
-		b.networkWorkerWG.Wait()
+	if owner == nil {
+		// Keep the limiter active through Playwright's final HAR flush.
+		b.mu.Lock()
+		monitorStop := b.harMonitorStop
+		b.harMonitorStop = nil
+		b.mu.Unlock()
+		if monitorStop != nil {
+			close(monitorStop)
+			b.harMonitorWG.Wait()
+			b.mu.Lock()
+			b.harLimitExceeded = nil
+			b.mu.Unlock()
+		}
+		b.mu.Lock()
+		workerStop := b.networkWorkerStop
+		b.networkWorkerStop = nil
+		b.networkTasks = nil
+		b.mu.Unlock()
+		if workerStop != nil {
+			close(workerStop)
+			b.networkWorkerWG.Wait()
+		}
 	}
-	if artifactPath := b.finalizeHARCapture(); artifactPath != "" {
+	artifactPath, harErr := b.finalizeHARCaptureContext(ctx)
+	closeErr = errors.Join(closeErr, harErr)
+	if owner != nil && !owner.retiredSuccessfully() {
+		return errors.Join(closeErr, errHAROwnershipUnproven)
+	}
+	if artifactPath != "" {
 		// Retained artifacts are independently swept by the configured retention
 		// policy. In particular, do not delete an earlier failing iteration when
 		// new_user_per_iteration tears down a later browser session.
@@ -70,6 +117,14 @@ func (b *Browser) close() {
 	b.networkMetadataBytes = 0
 	b.pages = nil
 	b.resetWSEvents()
+	if owner != nil {
+		b.mu.Lock()
+		if b.harOwner == nil {
+			b.pwContext = nil
+		}
+		b.mu.Unlock()
+	}
+	return closeErr
 }
 
 func (b *Browser) stopRequestPolicyWaiters() {

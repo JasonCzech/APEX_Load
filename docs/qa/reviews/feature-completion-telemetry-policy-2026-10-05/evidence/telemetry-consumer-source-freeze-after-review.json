@@ -1,0 +1,75 @@
+{
+  "captured_at": "2026-10-05T11:29:16.094271+00:00",
+  "scope": "owned CLI/dashboard telemetry policy consumers after digest/neutral-observations review fixes; browser/controller gates pending backend freeze",
+  "inventory_sha256": "0164564a5fd750b72cea411cfa970a28e036314f63d880864923f99afbeaeb83",
+  "files": [
+    {
+      "path": "cmd/apexctl/analysis_workflows.go",
+      "sha256": "d2865f745b085a36d9f87a8321da345db5795bba4ea1aa27c038f40f2ed50088"
+    },
+    {
+      "path": "cmd/apexctl/telemetry_policy.go",
+      "sha256": "c0a2f058862387437bfcd6a68e70eff85e312c0bfe8f5bcaba3414a0a6dbbb51"
+    },
+    {
+      "path": "cmd/apexctl/telemetry_policy_test.go",
+      "sha256": "ba972975fde9a32ef86574e8603fff20bc7688672afddf983fd123e9fdd11f35"
+    },
+    {
+      "path": "dashboard/e2e/workflow-telemetry-policy.spec.ts",
+      "sha256": "10e73999cd30efbd02c22af8ed2763ce8fbdf1b445048a111bea8ac8a29b9baf"
+    },
+    {
+      "path": "dashboard/playwright.config.ts",
+      "sha256": "950aef5db4cede03ad4a99497991e8b02db278b2042e2e7d046390936ee92f8a"
+    },
+    {
+      "path": "dashboard/src/components/TelemetryPolicy.test.tsx",
+      "sha256": "9a5ac61a7e7f6bb6266dcf5c5a01fa93f8d5aed4e5895425aeeb021c6e308467"
+    },
+    {
+      "path": "dashboard/src/components/TelemetryPolicy.tsx",
+      "sha256": "3f5884b435af82a2c6ddf145af73243edc5a4ada478425ab0601c94a363b7bfa"
+    },
+    {
+      "path": "dashboard/src/components/TestExecutionArchive.test.tsx",
+      "sha256": "95f98f1d5ac652f9594ef5ee5aaa176c97239cd83a4e50814634bad49f12fe07"
+    },
+    {
+      "path": "dashboard/src/components/TestExecutionArchive.tsx",
+      "sha256": "9ea7f66e046e13cbbdb481100544344876b2353d63ff98ec60bb9a8f5e3ee4a7"
+    },
+    {
+      "path": "dashboard/src/components/TestExecutionManifestCard.tsx",
+      "sha256": "beb8f24742377d855b269d8877190baee5a12a9197a2aaf3f969d2dfc5dd2168"
+    },
+    {
+      "path": "dashboard/src/components/TestExecutionStatusPanels.test.tsx",
+      "sha256": "3727368e610fe5be5431d3d265cf1a724c0eefeb4e1fe555d274c938f0830b64"
+    },
+    {
+      "path": "dashboard/src/components/TestExecutionStatusPanels.tsx",
+      "sha256": "974405225d633b1b4b5d9d5beb059052f9fee4c9c70151654cded9e27383e2c2"
+    },
+    {
+      "path": "dashboard/src/components/runReport/RunExecutionDetails.tsx",
+      "sha256": "ad105e5b0fcbb8e804a00359b3f8c1495ad8ce270c06b53fa877dc9096227777"
+    },
+    {
+      "path": "dashboard/src/components/telemetryPolicyModel.test.ts",
+      "sha256": "30916b4d16397351f8ac45c4a9ee1bfddfee49c4ee7ccfeb72289b400800a269"
+    },
+    {
+      "path": "dashboard/src/components/telemetryPolicyModel.ts",
+      "sha256": "2a4761b2070903fa6a143838d89adfae2a0986ece45dbb45cdbf1bd4b4b0ef70"
+    },
+    {
+      "path": "dashboard/src/types.ts",
+      "sha256": "767379f076296e87ab408a83e3c540657d7b540b3e727891abca1038ca25598a"
+    },
+    {
+      "path": "dashboard/src/types/telemetryPolicy.ts",
+      "sha256": "d952e4e72ba3b198d8589b4792179e8c786d12732fe90bc992c5a20c7f1c16c6"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { authoringFixture, savedAuthoringFixture } from '../../test/scriptAuthoringFixtures'
 // @vitest-environment jsdom
 
 import { act } from 'react'
@@ -7,9 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 vi.mock('../apiClient', () => ({
   apiFetch: vi.fn(),
   request: vi.fn(),
+  requestWithResponse: vi.fn(),
 }))
 
-import { apiFetch, request } from '../apiClient'
+import { apiFetch, request, requestWithResponse } from '../apiClient'
 import { useScriptApi } from './useScriptApi'
 import type { ApplyParameterizationRequest } from '../../types/scriptImports'
 
@@ -44,6 +46,91 @@ describe('useScriptApi import wrappers', () => {
     vi.useRealTimers()
     vi.restoreAllMocks()
     vi.clearAllMocks()
+  })
+
+  it('serializes the complete shared scenario shape for create and save, including explicit clears and advanced group fields', async () => {
+    const payload = {
+      name: 'Iteration snapshot', project_id: 'project', workload_shape_id: '', duration: '', termination_mode: 'iterations' as const, start_delay: '2s',
+      runtime_settings: { results: { message_detail: { mode: 'off' as const, include_resources: false } }, websocket: { callback_interval_ms: 0, compression: false, reconnect: false } },
+      groups: [{ name: 'group', script_id: 'script', vusers: 1, iterations: 3, start_offset: '4s', initialization: 'at_once' as const, transaction_response_time_sla_ms: 1250, runtime_settings: { results: {}, websocket: {} } }],
+    }
+    await api.createScenario(payload)
+    expect(request).toHaveBeenLastCalledWith('/scenarios', expect.objectContaining({ method: 'POST', body: JSON.stringify(payload) }))
+    await api.updateScenario('scenario', payload)
+    expect(request).toHaveBeenLastCalledWith('/scenarios/scenario', expect.objectContaining({ method: 'PUT', body: JSON.stringify(payload) }))
+    expect(payload.workload_shape_id).toBe('')
+    expect(payload.groups[0].runtime_settings).toEqual({ results: {}, websocket: {} })
+  })
+
+  it('loads a strict paired authoring projection through the bounded envelope', async () => {
+    const pair = authoringFixture()
+    ;(requestWithResponse as Mock).mockResolvedValueOnce({ body: pair.projection, headers: new Headers({ ETag: pair.etag }) })
+    expect(await api.getScriptAuthoring('script-1', 'project-1')).toEqual(pair)
+    expect(requestWithResponse).toHaveBeenCalledWith('/scripts/script-1?view=authoring', expect.objectContaining({ timeoutMs: 30_000, maxResponseBytes: 12 << 20 }))
+  })
+
+  it('sends the exact observed tag outside DSL and accepts only a final conditioned receipt', async () => {
+    const pair = authoringFixture()
+    const saved = savedAuthoringFixture({ name: 'Edited' })
+    ;(requestWithResponse as Mock).mockResolvedValueOnce({ body: saved, headers: new Headers({ 'X-APEX-Script-Save-Mode': 'conditioned' }) })
+    expect(await api.updateScript('script-1', saved.script!, pair)).toEqual(saved)
+    const [url, options] = (requestWithResponse as Mock).mock.calls[(requestWithResponse as Mock).mock.calls.length - 1]
+    expect(url).toBe('/scripts/script-1')
+    expect(options.headers).toEqual({ 'If-Match': pair.etag })
+    expect(JSON.parse(options.body)).toEqual({ script: saved.script })
+    expect(options.body).not.toContain('scr-v1-')
+  })
+
+  it.each([undefined, 'legacy_unconditioned'])('refuses a successful write without a protected save-mode receipt (%s)', async mode => {
+    const headers = new Headers()
+    if (mode) headers.set('X-APEX-Script-Save-Mode', mode)
+    ;(requestWithResponse as Mock).mockResolvedValueOnce({ body: savedAuthoringFixture(), headers })
+    await expect(api.updateScript('script-1', authoringFixture().projection.script, authoringFixture())).rejects.toThrow('save outcome could not be verified')
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('refuses an old controller which ignores the authoring query', async () => {
+    ;(requestWithResponse as Mock).mockResolvedValueOnce({ body: savedAuthoringFixture(), headers: new Headers({ ETag: authoringFixture().etag }) })
+    await expect(api.getScriptAuthoring('script-1', 'project-1')).rejects.toThrow('supported paired authoring revision')
+  })
+
+  it('sends only the observed authoring tag for a protected pure secret rebind', async () => {
+    const pair = authoringFixture()
+    ;(request as Mock).mockResolvedValueOnce({ script: pair.projection.script, changed_locations: [], changed_count: 0 })
+    await api.rebindScriptSecretReference(pair.projection.script, 'OLD', 'NEW', pair)
+    expect(request).toHaveBeenLastCalledWith('/scripts/secret-references/rebind', expect.objectContaining({
+      headers: { 'If-Match': pair.etag }, timeoutMs: 30_000, maxResponseBytes: 12 << 20,
+      body: JSON.stringify({ script: pair.projection.script, old_name: 'OLD', new_name: 'NEW' }),
+    }))
+    expect((request as Mock).mock.calls[(request as Mock).mock.calls.length - 1]?.[1].body).not.toContain('scr-v1-')
+    ;(request as Mock).mockClear()
+    expect(() => api.rebindScriptSecretReference(pair.projection.script, 'OLD', 'NEW', { ...pair, etag: '"unpaired"' })).toThrow('supported paired authoring revision')
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('keeps pure rebind authored changes while removing read-only server clocks only for paired clients', async () => {
+    const pair = authoringFixture()
+    const transformed = { ...pair.projection.script, created_at: '0001-01-01T00:00:00Z', updated_at: '0001-01-01T00:00:00Z',
+      archived_at: 'readonly-marker', actions: [{ name: 'Authored rebind', type: 'request', target: '/',
+        headers: { Authorization: '{{secret.NEW}}' }, metadata: { created_at: 'authored nested marker' } }] }
+    const helperResult = { script: transformed, changed_locations: ['/actions/0/headers/Authorization'], changed_count: 1 }
+    ;(request as Mock).mockResolvedValue(helperResult)
+    const normalized = await api.rebindScriptSecretReference(pair.projection.script, 'OLD', 'NEW', pair)
+    expect(normalized.script).toEqual({ ...pair.projection.script, actions: transformed.actions })
+    expect(normalized.changed_locations).toEqual(helperResult.changed_locations)
+    expect(normalized.changed_count).toBe(1)
+    expect(transformed.created_at).toBe('0001-01-01T00:00:00Z')
+    expect(pair.projection.script.actions).toEqual([])
+    expect((request as Mock).mock.calls[(request as Mock).mock.calls.length - 1]?.[1].headers).toEqual({ 'If-Match': pair.etag })
+    const legacy = await api.rebindScriptSecretReference(pair.projection.script, 'OLD', 'NEW')
+    expect(legacy).toBe(helperResult)
+    expect((request as Mock).mock.calls[(request as Mock).mock.calls.length - 1]?.[1].headers).toBeUndefined()
+  })
+
+  it.each([{ id: 'other-script' }, { project_id: 'other-project' }])('refuses a paired helper result for a different resource (%s)', override => {
+    const pair = authoringFixture()
+    ;(request as Mock).mockResolvedValueOnce({ script: { ...pair.projection.script, ...override }, changed_locations: [], changed_count: 0 })
+    return expect(api.rebindScriptSecretReference(pair.projection.script, 'OLD', 'NEW', pair)).rejects.toThrow('different script or project')
   })
 
   it('preserves exact Aura action routes and encoding metadata in the apply request', async () => {

@@ -1,0 +1,15 @@
+{
+  "scope": "Prepared offline only; no API compiler/test executed. Exact v4 API source reconstructed by removing only v5 deduplication, SHA matches frozen parent-review inventory. To reproduce pre-rename duplicate with the current adjacent test once coordinated API slot opens, use go test -overlay; current worktree/freeze remains unchanged.",
+  "inputs": [
+    {
+      "path": "/private/tmp/native-har-v4-api-retention-before-dedup-20261005.go",
+      "sha256": "9d9c55f5bc7d1b53524abd772a00b4742350b644e96cffb3117ba364b2b7a27d",
+      "bytes": 7364
+    },
+    {
+      "path": "/private/tmp/native-har-api-pre-dedup-overlay-20261005.json",
+      "sha256": "025415f154d9598ff3ff4c4a178788194b95aac83e6b79d6dac170ac61284710",
+      "bytes": 213
+    }
+  ]
+}

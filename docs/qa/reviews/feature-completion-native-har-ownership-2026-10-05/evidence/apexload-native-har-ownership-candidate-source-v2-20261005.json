@@ -1,0 +1,133 @@
+{
+  "root": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "created_at_utc": "2026-10-05T21:19:44.201028+00:00",
+  "scope": "Parent v2 static-review freeze: 17 changed/new source and test files, plus 8 direct supporting module/filelock/native-pool/fixture references. Browser focused and race checks passed; native and heavy API checks remain pending. This is not a full transitive source or runtime inventory.",
+  "sources": [
+    {
+      "path": "go.mod",
+      "bytes": 11383,
+      "sha256": "05c38d4d914dd463eadcff718550f394425eeb85721dbcab2c0fc8c8d59b2d1b"
+    },
+    {
+      "path": "go.sum",
+      "bytes": 160716,
+      "sha256": "f24fca42c52f47ee68239f16130fc02743aed90c7ba2815b3197b665db15c2c8"
+    },
+    {
+      "path": "pkg/api/har_artifact_ownership_test.go",
+      "bytes": 4980,
+      "sha256": "1318d5d85fe364f8fe5b90c8dfe1aa46914d576139986df94387d021a755af87"
+    },
+    {
+      "path": "pkg/api/har_artifact_retention.go",
+      "bytes": 7404,
+      "sha256": "f55226c50501527bce13619446c54de4fb1e9a2f084488e4a90df02f62c7e337"
+    },
+    {
+      "path": "pkg/api/har_artifact_retention_test.go",
+      "bytes": 6709,
+      "sha256": "5ac730ad8545796f20294ee3882c6dc9e12098388cd23f3dc76331c1b2c9721a"
+    },
+    {
+      "path": "pkg/internal/filelock/context.go",
+      "bytes": 3158,
+      "sha256": "31f1682d87707ae3406327a005b346d96c7c3a9f25b5a5e9a5c41fbd7d868f0b"
+    },
+    {
+      "path": "pkg/internal/filelock/filelock_unix.go",
+      "bytes": 1400,
+      "sha256": "a9d477790b3402842a54d30c05cc4d237461af92368f877a65bc3c277aee0ec5"
+    },
+    {
+      "path": "pkg/internal/filelock/filelock_windows.go",
+      "bytes": 1260,
+      "sha256": "e2f7c92017efc06ba53b62ee9bf85584a28493297337eb13b9e29dfecf18dee0"
+    },
+    {
+      "path": "pkg/protocol/browser/browser.go",
+      "bytes": 11330,
+      "sha256": "757ccd50cd42a9b2e98f8e9b9808b5cd944cf75b7c26e3d858da3d775d407439"
+    },
+    {
+      "path": "pkg/protocol/browser/har_capture.go",
+      "bytes": 10364,
+      "sha256": "3d7df2b254fdaffd8e04f334d06d394ec7b38074d6bd8df5a0e5a79b6434418a"
+    },
+    {
+      "path": "pkg/protocol/browser/har_capture_integration_test.go",
+      "bytes": 11594,
+      "sha256": "7ff3d019e6e22d2edcd4beb1462c50230fabf78bc6dfe3f263624bd07579a875"
+    },
+    {
+      "path": "pkg/protocol/browser/har_limit_test.go",
+      "bytes": 1169,
+      "sha256": "154f6e609bdf853475de3eb5fc02e65882919092b5b7cafc76e244fe39e6d630"
+    },
+    {
+      "path": "pkg/protocol/browser/har_ownership_contract_test.go",
+      "bytes": 5231,
+      "sha256": "386cabc2e54d0ff665c3e2e940cf5ebf21440c5fceba99d6f4881dcf82dc5d0d"
+    },
+    {
+      "path": "pkg/protocol/browser/har_ownership_native_test.go",
+      "bytes": 6900,
+      "sha256": "844120e5ec035a0ef25716d46473bbe11c51136822fa4b175329b71023a45f56"
+    },
+    {
+      "path": "pkg/protocol/browser/har_ownership_review_test.go",
+      "bytes": 8016,
+      "sha256": "50124cf4ff6d869820a554e3b7838183c42e3d1d385285e840c894438347bbf3"
+    },
+    {
+      "path": "pkg/protocol/browser/har_retention.go",
+      "bytes": 6054,
+      "sha256": "9b70d60dba76d4863bf3a2cd7428aff97284c594187199a23763930f3f9c565d"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_fs.go",
+      "bytes": 7119,
+      "sha256": "a944d254df8b2ad86bfa959d0497256342a2f5f9a90b8e0d198ffdbc25a03ef2"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_lease.go",
+      "bytes": 20135,
+      "sha256": "7764608820429a024fbe8171712a1bf92a02b2dbc3570d3d2a2619b1d6c3f81b"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_lease_test.go",
+      "bytes": 15339,
+      "sha256": "a8cadecc3f3d8f81c9598ce37e8ac137fc63849704a06f10143553d3d0ec3a6c"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_security_other.go",
+      "bytes": 266,
+      "sha256": "ffb7a6c90850f88b145cb03e59ebdd27628583afcd974d0a3b1448e9eb36b2e0"
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_security_unix.go",
+      "bytes": 500,
+      "sha256": "10a8a996fc55a3d5dfff590a62625b3b5a653147d85d07497090d44c1cfba9dd"
+    },
+    {
+      "path": "pkg/protocol/browser/lifecycle.go",
+      "bytes": 3312,
+      "sha256": "3ccd8452412ba87da48ad3a4178caadd8770672f88d693a14974e9e36c4df881"
+    },
+    {
+      "path": "pkg/protocol/browser/pool.go",
+      "bytes": 5541,
+      "sha256": "2dd3fc5b3493285cde1d53c9a3a5a5fe52295b5d7fb06d52a216fe39a9fdde7a"
+    },
+    {
+      "path": "pkg/protocol/browser/runtime_context.go",
+      "bytes": 26106,
+      "sha256": "4ad56f15bd279bf5121631bf8620825b64061e9549c3d11cdfa56503522cb5c4"
+    },
+    {
+      "path": "pkg/protocol/browser/runtime_gate_test.go",
+      "bytes": 18614,
+      "sha256": "85cd6ff4b1b0eefbc4b3e2e0aaf489cf829b13578c16a91bbe89953fc09d73b9"
+    }
+  ]
+}

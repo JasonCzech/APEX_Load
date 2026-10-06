@@ -1,0 +1,8 @@
+=== RUN   TestBrowserResourceActualCompletionAcrossActions
+=== RUN   TestBrowserResourceActualCompletionAcrossActions/chromium
+=== RUN   TestBrowserResourceActualCompletionAcrossActions/webkit
+--- PASS: TestBrowserResourceActualCompletionAcrossActions (4.65s)
+    --- PASS: TestBrowserResourceActualCompletionAcrossActions/chromium (2.82s)
+    --- PASS: TestBrowserResourceActualCompletionAcrossActions/webkit (1.82s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/protocol/browser	4.946s

@@ -87,7 +87,8 @@ func (s *Server) writeNativeDatasetSeries(w http.ResponseWriter, r *http.Request
 		writeError(w, 409, "analytical query authority expired")
 		return false
 	}
-	writeJSON(w, 200, map[string]any{"points": points, "dataset_id": captured.ID, "rejected_rows": captured.Rejected})
+	response := AnalysisDatasetSeriesResponse{TimeWindow: completedAnalysisTimeWindow(r.Context()), Points: points, DatasetID: captured.ID, RejectedRows: captured.Rejected, ArtifactSelections: completedAnalysisArtifactSelections(r.Context())}
+	writeJSON(w, 200, response)
 	return true
 }
 

@@ -1,0 +1,136 @@
+{
+  "scope": "Read-only exact access-class token inventory across TSX string/template literal AST nodes; not full rendered DOM or browser acceptance",
+  "tsxFilesExamined": 360,
+  "consumers": [
+    {
+      "path": "src/components/AccessIssuedKeyModal.tsx",
+      "classes": [
+        "access-copy-status",
+        "access-issued-examples",
+        "access-issued-key-box",
+        "access-issued-modal",
+        "access-modal-header",
+        "access-modal-overlay"
+      ],
+      "sha256": "52b1bc6aef3f6ea8d571f9aeedbcec713899ee2383bef7a396af6869fb9606aa"
+    },
+    {
+      "path": "src/components/AccessNavigation.tsx",
+      "classes": [
+        "access-navigation"
+      ],
+      "sha256": "442c347b1a98d74909d83ebe9db2459ce9c35d78b02052ed58a891f7c9fbe5d6"
+    },
+    {
+      "path": "src/components/AccessPage.tsx",
+      "classes": [
+        "access-account-actions",
+        "access-accounts-table",
+        "access-activity-filter-toolbar",
+        "access-alert",
+        "access-attention-badge",
+        "access-attention-banner",
+        "access-badge-row",
+        "access-binding-add-actions",
+        "access-binding-draft-grid",
+        "access-binding-draft-heading",
+        "access-binding-draft-list",
+        "access-binding-draft-row",
+        "access-binding-editor",
+        "access-binding-list",
+        "access-binding-row",
+        "access-chip",
+        "access-chip-row",
+        "access-column-choice",
+        "access-columns-compact",
+        "access-control-section",
+        "access-danger-action",
+        "access-data-table",
+        "access-detail-grid",
+        "access-empty-state",
+        "access-field-error",
+        "access-flag-badge",
+        "access-form-actions",
+        "access-form-grid",
+        "access-header-actions",
+        "access-inspector",
+        "access-inspector-title",
+        "access-muted",
+        "access-onboarding-help",
+        "access-page",
+        "access-pagination",
+        "access-pagination-actions",
+        "access-pagination-toolbar",
+        "access-panel",
+        "access-panel-header",
+        "access-permission-badge",
+        "access-preset-card",
+        "access-preset-grid",
+        "access-project-checkbox",
+        "access-project-role-list",
+        "access-project-role-row",
+        "access-query-summary",
+        "access-readonly-section",
+        "access-review",
+        "access-review-priority",
+        "access-review-table",
+        "access-row-meta",
+        "access-row-primary",
+        "access-section-heading",
+        "access-simulator",
+        "access-simulator-result",
+        "access-status-badge",
+        "access-subtab",
+        "access-subtab-row",
+        "access-tab",
+        "access-tab-row",
+        "access-table-actions",
+        "access-table-chip",
+        "access-table-panel",
+        "access-table-stack",
+        "access-table-toolbar",
+        "access-table-wrap",
+        "access-user-management",
+        "access-users-table",
+        "access-workspace",
+        "access-workspace-full"
+      ],
+      "sha256": "dbff095fb5757b2bb1b8407360abc1aacd6dd35329a27efb08f60c940059ceed"
+    },
+    {
+      "path": "src/components/AccessUsagePanel.tsx",
+      "classes": [
+        "access-data-table",
+        "access-pagination",
+        "access-panel-header",
+        "access-row-primary",
+        "access-table-toolbar",
+        "access-table-wrap",
+        "access-usage-table"
+      ],
+      "sha256": "b9c7266b39dcdf863f02d06238acb8ca886a090825e0c8d6a9e7f15a6c0c17a0"
+    },
+    {
+      "path": "src/components/AuditEventTable.tsx",
+      "classes": [
+        "access-data-table",
+        "access-empty-state",
+        "access-row-meta",
+        "access-row-primary",
+        "access-status-badge",
+        "access-table-stack",
+        "access-table-wrap"
+      ],
+      "sha256": "529d0611a8092e5db7efed69d6017d0b6c9c8e3be13d796fac03fde0231b95f3"
+    },
+    {
+      "path": "src/components/CapacityCommitments.tsx",
+      "classes": [
+        "access-data-table",
+        "access-table-wrap"
+      ],
+      "sha256": "c0a34469b55c1a4a212bff03a90238db20d60d694d4393bed8da41fddd876dc0"
+    }
+  ],
+  "priorInventoryCorrection": "Original broad regex falsely matched access-muted inside swagger-access-muted; SwaggerDocsPage import removed and original source restored; all swagger-prefixed styles remain global."
+}

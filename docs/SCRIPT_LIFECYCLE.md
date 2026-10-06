@@ -483,3 +483,69 @@ ends of the same mechanism — detected statically at import, executed dynamical
 
 See also [`DSL_ACTION_REFERENCE.md`](DSL_ACTION_REFERENCE.md) for the full per-action-type
 field contract and [`dsl.schema.json`](dsl.schema.json) for the JSON Schema.
+
+## Durable script authoring saves
+
+Editor clients read the versioned authoring view of a stored script. The response
+pairs the authored DSL and application/release placement with an opaque content
+revision and one strong `ETag`. Keep that document and tag together. Script
+`version`, timestamps, library display names and activity are separate metadata;
+they cannot supply a save precondition. The default enriched read remains
+available for library context and does not carry a strong authoring ETag.
+
+Send the exact authoring tag as `If-Match` on an ordinary script update. The
+controller checks it before credential reconciliation and again within the
+mutation transaction. Changes to executable content, authored metadata or
+application/release placement invalidate an older tag. A stale save returns
+412; malformed, weak, wildcard or multiple tags return 400. Foreign resources
+remain 404 before precondition details are evaluated. Successful writes return
+the coherent final `authoring_projection` and `content_revision`, with
+`X-APEX-Script-Save-Mode: conditioned`. They do not attach an ETag to the enriched
+response body.
+
+During the compatibility window, older ordinary PUT callers may omit the tag.
+Store-backed compatibility saves require a durable audit intent and outcome and
+return `legacy_unconditioned` mode; they do not protect an old client draft from
+changes made before admission. Project administrators can set
+`settings.authoring.require_script_save_if_match` to require a tag for ordinary
+script PUT. Missing tags then return 428. A store that cannot provide durable
+revisions cannot bypass this policy or accept a requested conditioned save.
+This policy does not yet make scenario, folder, source or placement operations
+require the new script header.
+
+An ambiguous persistence outcome or failed outcome audit returns a fixed 503
+response with `script_save_outcome_unknown` or
+`script_save_outcome_audit_unavailable`. The write may already have committed:
+retain the local draft, reload current authored state explicitly and inspect it
+before retrying. A stale response cannot grant permission to overwrite a newer
+draft. Clients must not downgrade a failed conditioned save to an unconditional
+write.
+
+Ordinary creation is create-only. A supplied primary ID is matched exactly;
+reference aliases are accepted for reads and updates, not interpreted as a
+creation destination. An existing owned ID returns 409 and a foreign/private
+ID remains hidden. Protected import and authoring-approval workflows retain
+their existing receipt/replay contracts. Ordinary 24-hour creation idempotency,
+scenario revision parity and the complete shared-owner/lifecycle matrix remain
+open in [AUTH-1–AUTH-3](FEATURE_COMPLETION_SPEC.md#auth-1-two-shared-owners-and-revision-safety).
+
+The generated [OpenAPI contract](swagger.yaml) describes the authoring read and
+save representations and error headers. Content revisions are server-owned
+metadata and never become executable DSL fields.
+
+The secret-reference rebind helper remains a pure draft transformation. Authoring
+clients pass the same observed strong `If-Match` tag; stale authored content or
+placement returns 412 and unavailable revision support fails explicitly. The
+helper transforms exact executable references without saving the script or issuing
+a new ETag. Keep the observed pair for the transformed local draft and use it on
+the subsequent conditioned save. Requests without the authoring tag retain the
+legacy `UpdatedAt` check and can return 409; an omitted timestamp is not proof of
+an observed authored revision.
+
+The dashboard retains the observed baseline independently of its editable draft.
+A stale save, uncertain server outcome, lost response or unqualified save receipt
+keeps the draft and disables another save until explicit reconciliation. Load the
+current authored baseline, inspect Diff, then Reapply selected local edits before
+saving with the newly observed tag. Reload and Reapply do not write by themselves.
+Conditioned secret-rebind responses exclude read timestamps and library context,
+so conflict diffs reflect authored changes.

@@ -1,0 +1,31 @@
+{
+  "label": "units-helper-read-context",
+  "command": [
+    "./node_modules/.bin/vitest",
+    "run",
+    "src/hooks/api/useScriptApi.test.tsx",
+    "src/utils/scriptAuthoringRevision.test.ts",
+    "src/components/ScriptSecretBindingsDialog.test.tsx",
+    "src/components/StoredScriptSecretBindingsDialog.test.tsx"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/authoring-content-revision/Project_Stormrunner/dashboard",
+  "started_utc": "2026-10-05T08:13:14.034602+00:00",
+  "finished_utc": "2026-10-05T08:13:15.899610+00:00",
+  "duration_seconds": 1.865,
+  "exit_code": 1,
+  "profile": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "APEXLOAD_ANALYSIS_MEMORY_LIMIT": "512MiB",
+    "APEXLOAD_ANALYSIS_SPILL_LIMIT": "128MiB",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_AUTH_PORT": "18472"
+  },
+  "log_bytes": 1509,
+  "log_sha256": "e1b0b4726ad78fb56f03b2b87d5c9d61bda4c31f2dd0d1c87a6aa3f8db0f8080"
+}

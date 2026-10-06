@@ -1,0 +1,36 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run src/components/TestHub.test.tsx
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard
+
+ ❯ src/components/TestHub.test.tsx (111 tests | 4 failed) 2978ms
+     × preserves owned SLA and rules when a saved-source edit selects Stepped Ramp 28ms
+     × preserves owned SLA and rules when a saved-source clone selects Stepped Ramp 26ms
+     × preserves owned SLA and rules when a saved-source edit selects Goal-Driven Scenario 24ms
+     × preserves owned SLA and rules when a saved-source clone selects Goal-Driven Scenario 29ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source edit selects Stepped Ramp
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source clone selects Stepped Ramp
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source edit selects Goal-Driven Scenario
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source clone selects Goal-Driven Scenario
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ src/components/TestHub.test.tsx:1934:20
+    1932|     await flushPromises()
+    1933|     const writer = operation === 'edit' ? apiMock.updateScenario : api…
+    1934|     expect(writer).toHaveBeenCalledOnce()
+       |                    ^
+    1935|     const payload = writer.mock.calls[0][operation === 'edit' ? 1 : 0]
+    1936|     expect(payload.workload_shape_id).toBe(shapeId)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 107 passed (111)
+   Start at  12:55:52
+   Duration  4.96s (transform 1.15s, setup 35ms, import 1.38s, tests 2.98s, environment 485ms)
+

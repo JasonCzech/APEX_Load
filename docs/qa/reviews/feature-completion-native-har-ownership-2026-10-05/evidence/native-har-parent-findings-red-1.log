@@ -1,0 +1,22 @@
+--- FAIL: TestHAROwnershipBlockedDetachRetainsExactJoinAndReturnsDeadline (0.18s)
+    har_ownership_review_test.go:40: blocked SDK detach prevented Teardown deadline
+--- FAIL: TestHAROwnershipGoexitNeverInventsCompletion (0.43s)
+    --- FAIL: TestHAROwnershipGoexitNeverInventsCompletion/closer (0.41s)
+        har_ownership_review_test.go:78: Goexit did not finish its error receipt
+        har_ownership_review_test.go:83: Goexit stranded exact closer receipt
+    --- FAIL: TestHAROwnershipGoexitNeverInventsCompletion/redactor (0.01s)
+        har_ownership_review_test.go:73: Goexit became successful finalization <nil>
+    --- FAIL: TestHAROwnershipGoexitNeverInventsCompletion/runtime_join (0.01s)
+        har_ownership_review_test.go:73: Goexit became successful finalization <nil>
+        har_ownership_review_test.go:86: Goexit released physical ownership
+        har_ownership_review_test.go:89: Goexit permitted raw cleanup without join proof stat /private/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestHAROwnershipGoexitNeverInventsCompletionruntime_join2188059680/001/.apexload-har-work/373235b3c82f494546b1f3796eed7aac/working.har: no such file or directory
+--- FAIL: TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration (0.02s)
+    --- FAIL: TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration/resume (0.01s)
+        har_ownership_review_test.go:116: proven joined interrupted retirement was not recognized
+    --- FAIL: TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration/replacement (0.01s)
+        har_ownership_review_test.go:116: proven joined interrupted retirement was not recognized
+--- FAIL: TestHAROwnershipCompletedRetentionHasBoundedScan (0.04s)
+    har_ownership_review_test.go:158: open /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestHAROwnershipCompletedRetentionHasBoundedScan3498124718/001/unowned-aaaaaa͸: illegal byte sequence
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/protocol/browser	0.827s
+FAIL

@@ -1,0 +1,66 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run src/components/TestHub.test.tsx -t preserves owned SLA and rules
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard
+
+ ❯ src/components/TestHub.test.tsx (111 tests | 4 failed | 107 skipped) 209ms
+     × preserves owned SLA and rules when a saved-source edit selects Stepped Ramp 112ms
+     × preserves owned SLA and rules when a saved-source clone selects Stepped Ramp 46ms
+     × preserves owned SLA and rules when a saved-source edit selects Open Arrival Rate 26ms
+     × preserves owned SLA and rules when a saved-source clone selects Open Arrival Rate 23ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source edit selects Stepped Ramp
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source clone selects Stepped Ramp
+AssertionError: expected { early_stop: { …(3) }, …(1) } to match object { …(4) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+@@ -2,16 +2,6 @@
+    "early_stop": {
+      "breach_window": "",
+      "enabled": false,
+      "error_rate_pct": 0,
+    },
+-   "monitor_rules": [],
+-   "transaction_response_time_sla_ms": 0.001,
+-   "transaction_rules": [
+-     {
+-       "comparator": "lte",
+-       "metric": "p95_duration_ms",
+-       "threshold": 1250,
+-       "transaction": "orders",
+-     },
+-   ],
+  }
+
+ ❯ src/components/TestHub.test.tsx:1932:33
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source edit selects Open Arrival Rate
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source clone selects Open Arrival Rate
+AssertionError: expected undefined to be defined
+ ❯ selectManualShapeByName src/components/TestHub.test.tsx:235:18
+    233|     }
+    234|     const card = findCard()
+    235|     expect(card).toBeDefined()
+       |                  ^
+    236|     if (!card) return
+    237|     const manualButton = Array.from(card.querySelectorAll('button')).f…
+ ❯ src/components/TestHub.test.tsx:1925:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 107 skipped (111)
+   Start at  12:51:29
+   Duration  3.60s (transform 1.96s, setup 74ms, import 2.28s, tests 209ms, environment 843ms)
+

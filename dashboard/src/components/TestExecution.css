@@ -4285,3 +4285,35 @@
 @media (max-width: 900px) {
   .advanced-fact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* A sample counter and unavailable legacy fields do not express health. */
+.goal-status-badge.neutral,
+.browser-ux-card.unscored,
+.browser-ux-signal.unscored {
+  color: var(--text-secondary);
+  border-color: var(--border);
+  background: var(--subtle-fill);
+}
+
+.browser-ux-card,
+.browser-ux-card > *,
+.browser-ux-signal-grid > * {
+  min-width: 0;
+}
+
+.browser-ux-header,
+.browser-ux-signal-row {
+  flex-wrap: wrap;
+}
+
+.browser-ux-qualification {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.browser-ux-qualification summary {
+  cursor: pointer;
+}

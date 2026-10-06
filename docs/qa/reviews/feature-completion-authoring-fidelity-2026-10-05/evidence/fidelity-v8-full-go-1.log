@@ -1,0 +1,152 @@
+?   	github.com/jasonczech/apexload/api/proto	[no test files]
+ok  	github.com/jasonczech/apexload/cmd/apexbench	0.456s
+ok  	github.com/jasonczech/apexload/cmd/apexctl	12.436s
+ok  	github.com/jasonczech/apexload/cmd/apexfault-target	0.359s
+ok  	github.com/jasonczech/apexload/cmd/apexload-collector-agent	0.140s
+ok  	github.com/jasonczech/apexload/cmd/apexload-java-host-broker	0.171s
+ok  	github.com/jasonczech/apexload/cmd/apexload-java-host-facade	0.168s
+ok  	github.com/jasonczech/apexload/cmd/apexload-java-host-supervisor	0.174s
+ok  	github.com/jasonczech/apexload/cmd/apexload-java-vuser-runner	0.135s
+?   	github.com/jasonczech/apexload/cmd/apexload-record-agent	[no test files]
+ok  	github.com/jasonczech/apexload/cmd/controller	0.861s
+?   	github.com/jasonczech/apexload/cmd/dslschema	[no test files]
+ok  	github.com/jasonczech/apexload/cmd/generator	1.406s
+ok  	github.com/jasonczech/apexload/cmd/openapits	14.346s
+?   	github.com/jasonczech/apexload/cmd/swaggergen	[no test files]
+ok  	github.com/jasonczech/apexload/cmd/webcoverage	0.356s
+ok  	github.com/jasonczech/apexload/deployments/k8s	3.174s
+ok  	github.com/jasonczech/apexload/desktop	1.606s
+--- FAIL: TestGeneratedDashboardIsFresh (1.35s)
+    status_inventory_test.go:665: QA dashboard freshness: exit status 1
+        DASHBOARD.md is stale; run scripts/qa-generate-dashboard.py
+FAIL
+FAIL	github.com/jasonczech/apexload/docs/qa	2.152s
+ok  	github.com/jasonczech/apexload/pkg/analysis	0.170s
+ok  	github.com/jasonczech/apexload/pkg/analysis/duckdb	43.690s
+ok  	github.com/jasonczech/apexload/pkg/api	578.367s
+ok  	github.com/jasonczech/apexload/pkg/api/testexec	0.405s
+ok  	github.com/jasonczech/apexload/pkg/appdynamics	0.245s
+ok  	github.com/jasonczech/apexload/pkg/buildinfo	0.101s
+ok  	github.com/jasonczech/apexload/pkg/collectoragent	25.735s
+ok  	github.com/jasonczech/apexload/pkg/compute	0.101s
+ok  	github.com/jasonczech/apexload/pkg/compute/aws	0.379s
+ok  	github.com/jasonczech/apexload/pkg/compute/azure	0.377s
+ok  	github.com/jasonczech/apexload/pkg/config	0.113s
+ok  	github.com/jasonczech/apexload/pkg/controller	0.307s
+ok  	github.com/jasonczech/apexload/pkg/convert/agentforce	0.309s
+ok  	github.com/jasonczech/apexload/pkg/convert/asyncapi	0.396s
+ok  	github.com/jasonczech/apexload/pkg/convert/brokerconfig	0.365s
+ok  	github.com/jasonczech/apexload/pkg/convert/bruno	0.743s
+ok  	github.com/jasonczech/apexload/pkg/convert/cloudtest	0.292s
+?   	github.com/jasonczech/apexload/pkg/convert/convertresult	[no test files]
+ok  	github.com/jasonczech/apexload/pkg/convert/convertutil	0.083s
+ok  	github.com/jasonczech/apexload/pkg/convert/correlate	3.356s
+ok  	github.com/jasonczech/apexload/pkg/convert/credentialpolicy	0.121s
+ok  	github.com/jasonczech/apexload/pkg/convert/devweb	0.516s
+?   	github.com/jasonczech/apexload/pkg/convert/diag	[no test files]
+ok  	github.com/jasonczech/apexload/pkg/convert/enterprisearchive	7.016s
+ok  	github.com/jasonczech/apexload/pkg/convert/eventhubscapture	0.376s
+ok  	github.com/jasonczech/apexload/pkg/convert/grafana	0.121s
+ok  	github.com/jasonczech/apexload/pkg/convert/har	0.323s
+ok  	github.com/jasonczech/apexload/pkg/convert/importcontract	0.566s
+ok  	github.com/jasonczech/apexload/pkg/convert/importreview	0.302s
+ok  	github.com/jasonczech/apexload/pkg/convert/jmeter	0.546s
+ok  	github.com/jasonczech/apexload/pkg/convert/k6	0.333s
+ok  	github.com/jasonczech/apexload/pkg/convert/mulesoft	0.307s
+ok  	github.com/jasonczech/apexload/pkg/convert/openapi	0.413s
+ok  	github.com/jasonczech/apexload/pkg/convert/paramize	1.540s
+ok  	github.com/jasonczech/apexload/pkg/convert/postman	0.386s
+ok  	github.com/jasonczech/apexload/pkg/convert/raml	0.285s
+ok  	github.com/jasonczech/apexload/pkg/convert/recorderjson	0.276s
+ok  	github.com/jasonczech/apexload/pkg/convert/requestimport	0.368s
+ok  	github.com/jasonczech/apexload/pkg/convert/salesforce	4.431s
+ok  	github.com/jasonczech/apexload/pkg/convert/sample	0.663s
+ok  	github.com/jasonczech/apexload/pkg/convert/sharedvalue	0.343s
+ok  	github.com/jasonczech/apexload/pkg/convert/sourceview	0.128s
+ok  	github.com/jasonczech/apexload/pkg/convert/srcparse	0.100s
+ok  	github.com/jasonczech/apexload/pkg/convert/tmpl	0.095s
+ok  	github.com/jasonczech/apexload/pkg/convert/trueclient	0.451s
+ok  	github.com/jasonczech/apexload/pkg/convert/uniquify	0.339s
+ok  	github.com/jasonczech/apexload/pkg/convert/wsdl	0.384s
+ok  	github.com/jasonczech/apexload/pkg/credential	0.099s
+ok  	github.com/jasonczech/apexload/pkg/debugserver	0.143s
+ok  	github.com/jasonczech/apexload/pkg/distributed/generatorrpc	40.815s
+ok  	github.com/jasonczech/apexload/pkg/dsl	0.444s
+ok  	github.com/jasonczech/apexload/pkg/dsl/schemagen	0.489s
+ok  	github.com/jasonczech/apexload/pkg/dslwalk	0.420s
+ok  	github.com/jasonczech/apexload/pkg/dynatrace	5.376s
+ok  	github.com/jasonczech/apexload/pkg/engine	45.610s
+ok  	github.com/jasonczech/apexload/pkg/fileasset	0.176s
+ok  	github.com/jasonczech/apexload/pkg/identitypolicy	0.100s
+ok  	github.com/jasonczech/apexload/pkg/importartifact	5.363s
+ok  	github.com/jasonczech/apexload/pkg/importsession	0.126s
+ok  	github.com/jasonczech/apexload/pkg/internal/archiveingest	0.183s
+ok  	github.com/jasonczech/apexload/pkg/internal/archivequota	8.924s
+ok  	github.com/jasonczech/apexload/pkg/internal/aurafixture	0.243s
+ok  	github.com/jasonczech/apexload/pkg/internal/aurapayload	0.149s
+ok  	github.com/jasonczech/apexload/pkg/internal/bodyencoding	0.119s
+ok  	github.com/jasonczech/apexload/pkg/internal/boundedcache	0.112s
+ok  	github.com/jasonczech/apexload/pkg/internal/boundedtext	0.110s
+ok  	github.com/jasonczech/apexload/pkg/internal/contentdecode	0.274s
+ok  	github.com/jasonczech/apexload/pkg/internal/diskspace	0.113s
+ok  	github.com/jasonczech/apexload/pkg/internal/filelock	0.320s
+ok  	github.com/jasonczech/apexload/pkg/internal/subprocessguard	0.111s
+ok  	github.com/jasonczech/apexload/pkg/internal/zipbounds	0.111s
+ok  	github.com/jasonczech/apexload/pkg/javarunner	5.266s
+ok  	github.com/jasonczech/apexload/pkg/javarunner/broker	3.223s
+ok  	github.com/jasonczech/apexload/pkg/javasidecar	27.449s
+ok  	github.com/jasonczech/apexload/pkg/keywrap	0.157s
+ok  	github.com/jasonczech/apexload/pkg/kubeops	0.311s
+?   	github.com/jasonczech/apexload/pkg/monitorprovider	[no test files]
+ok  	github.com/jasonczech/apexload/pkg/netpolicy	0.098s
+ok  	github.com/jasonczech/apexload/pkg/perfevidence	3.160s
+ok  	github.com/jasonczech/apexload/pkg/prometheus	0.153s
+ok  	github.com/jasonczech/apexload/pkg/protocol	0.531s
+ok  	github.com/jasonczech/apexload/pkg/protocol/aura	0.113s
+--- FAIL: TestBrowserDocumentActualNativeIdentityAndNoInteraction (0.99s)
+    --- FAIL: TestBrowserDocumentActualNativeIdentityAndNoInteraction/webkit (0.90s)
+        document_actual_integration_test.go:114: actual native runtime engine=webkit browser_version=26.5 viewport=1280x900 platform=darwin
+        document_actual_integration_test.go:159: independent frame INP finality missing
+        document_actual_integration_test.go:59: owned fixture diagnostics documents=7 frames=5 issued=6 browser_version=26.5 errors=[]
+2026/10/05 17:19:52 ERROR could not resolve BindingCall error="playwright: target closed: Target page, context or browser has been closed"
+2026/10/05 17:19:59 INFO browser HAR artifact captured policy=always path=/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestHARCaptureAlwaysPersistsScrubbedArtifact1355873638/001/apexload_browser_1791235198926287000_scrubbed.har sensitivity=scrubbed error_seen=false sla_breach_seen=false manual_seen=false
+2026/10/05 17:19:59 INFO browser HAR artifact captured policy=always path=/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestFinalizeHARCaptureRedactsLowEntropyRuntimeSecrets3453244471/001/apexload_browser_runtime_scrubbed.har sensitivity=scrubbed error_seen=false sla_breach_seen=false manual_seen=false
+2026/10/05 17:19:59 INFO browser HAR artifact captured policy=always path=/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestFinalizeHARCaptureRedactsPercentEncodedRuntimeSecrets4066150057/001/apexload_browser_encoded_scrubbed.har sensitivity=scrubbed error_seen=false sla_breach_seen=false manual_seen=false
+2026/10/05 17:20:00 INFO browser HAR artifact captured policy=on_error path=/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestHARCaptureOnErrorKeepsFailingSessions631734107/001/apexload_browser_1791235199129420000_scrubbed.har sensitivity=scrubbed error_seen=true sla_breach_seen=false manual_seen=false
+2026/10/05 17:20:00 INFO browser HAR artifact captured policy=manual path=/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/TestHARCaptureManualKeepsOnlyRequestedSessions3594593394/001/apexload_browser_1791235200147978000_scrubbed.har sensitivity=scrubbed error_seen=false sla_breach_seen=false manual_seen=true
+2026/10/05 17:20:07 WARN browser selector self-healed action="Click Checkout" primary_selector=#checkout healed_selector="[data-testid=\"checkout\"]" candidate_kind=css candidate_confidence=95
+2026/10/05 17:20:07 WARN browser selector self-healed action="Click Checkout" primary_selector=#checkout healed_selector="[data-testid=\"checkout\"]" candidate_kind=css candidate_confidence=95
+2026/10/05 17:20:10 WARN browser selector self-healed action="Click Missing" primary_selector=#missing healed_selector=#fallback candidate_kind=css candidate_confidence=95
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/protocol/browser	30.409s
+ok  	github.com/jasonczech/apexload/pkg/protocol/bruno	1.484s
+ok  	github.com/jasonczech/apexload/pkg/protocol/builtin	0.345s
+ok  	github.com/jasonczech/apexload/pkg/protocol/database	0.345s
+ok  	github.com/jasonczech/apexload/pkg/protocol/eventhubs	0.275s
+ok  	github.com/jasonczech/apexload/pkg/protocol/grpc	0.747s
+ok  	github.com/jasonczech/apexload/pkg/protocol/http	4.825s
+ok  	github.com/jasonczech/apexload/pkg/protocol/java_http	0.227s
+ok  	github.com/jasonczech/apexload/pkg/protocol/java_vuser	4.292s
+ok  	github.com/jasonczech/apexload/pkg/protocol/jms	5.436s
+ok  	github.com/jasonczech/apexload/pkg/protocol/jsonextract	0.124s
+ok  	github.com/jasonczech/apexload/pkg/protocol/kafka	15.498s
+ok  	github.com/jasonczech/apexload/pkg/protocol/messaging	0.105s
+ok  	github.com/jasonczech/apexload/pkg/protocol/network	0.341s
+ok  	github.com/jasonczech/apexload/pkg/protocol/soap	0.259s
+ok  	github.com/jasonczech/apexload/pkg/protocol/websocket	0.428s
+ok  	github.com/jasonczech/apexload/pkg/recordagent	0.845s
+ok  	github.com/jasonczech/apexload/pkg/recorder	6.181s
+ok  	github.com/jasonczech/apexload/pkg/recorder/browser	20.935s
+ok  	github.com/jasonczech/apexload/pkg/refkey	0.109s
+ok  	github.com/jasonczech/apexload/pkg/runtimetuning	0.096s
+ok  	github.com/jasonczech/apexload/pkg/scriptdisclosure	5.456s
+ok  	github.com/jasonczech/apexload/pkg/scrub	0.382s
+ok  	github.com/jasonczech/apexload/pkg/secretstore	1.605s
+ok  	github.com/jasonczech/apexload/pkg/selector	0.111s
+ok  	github.com/jasonczech/apexload/pkg/storage	66.933s
+ok  	github.com/jasonczech/apexload/pkg/telemetry	0.197s
+ok  	github.com/jasonczech/apexload/pkg/trafficprofile	0.294s
+ok  	github.com/jasonczech/apexload/runners/java_vuser	41.440s
+ok  	github.com/jasonczech/apexload/scripts	38.818s
+ok  	github.com/jasonczech/apexload/scripts/fault_s3_probe	0.182s
+FAIL

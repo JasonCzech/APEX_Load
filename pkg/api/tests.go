@@ -1091,6 +1091,7 @@ func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {
 		return nil
 	}
 	cloned := *metrics
+	cloned.BrowserDocuments = metrics.BrowserDocuments.Clone()
 	cloned.NativeEvidence = storage.CloneNativeIntervalEvidence(metrics.NativeEvidence)
 	cloned.StatisticalFindings = append([]StatisticalFinding(nil), metrics.StatisticalFindings...)
 	cloned.ObservationValidUntil = cloneTimePtr(metrics.ObservationValidUntil)
@@ -1111,6 +1112,7 @@ func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {
 	cloned.BrowserByDevice = cloneBrowserByDeviceMetrics(metrics.BrowserByDevice)
 	cloned.GoalStatus = cloneGoalStatus(metrics.GoalStatus)
 	cloned.CapacityStatus = cloneLiveCapacityStatus(metrics.CapacityStatus)
+	cloned.TelemetryPolicy = cloneTelemetryPolicyEvidence(metrics.TelemetryPolicy)
 	cloned.TelemetryStatus = cloneTelemetryRunHealth(metrics.TelemetryStatus)
 	cloned.Telemetry = cloneTelemetryHealth(metrics.Telemetry)
 	cloned.Resources = cloneSystemResources(metrics.Resources)

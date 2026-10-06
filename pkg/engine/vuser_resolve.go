@@ -211,6 +211,7 @@ func (vu *VUser) bindRuntimeTextRedactor() {
 	}
 	vu.runtimeRedaction.Store(vu.resultPublicationRedactionConfig())
 	bindProtocolRuntimeRedaction(vu.Proto, func() *RedactionConfig { return vu.runtimeRedaction.Load() })
+	vu.Metrics.bindBrowserDocumentRedaction(vu.Proto, func() *RedactionConfig { return vu.runtimeRedaction.Load() })
 }
 
 // bindProtocolRuntimeRedaction installs the evidence gate before protocol Init
