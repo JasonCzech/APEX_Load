@@ -932,7 +932,7 @@ func runLogicRunActionNames(content string) (map[string]struct{}, bool) {
 // but only actions placed in the Run tree execute; importing the rest sent
 // requests LoadRunner never sends. Their functions stay parseable for calls
 // from executed actions. Without a readable run logic every action is kept.
-func withoutUnscheduledRunActions(declarations []SourceActionFile, rc *RuntimeConfig, files map[string]string) ([]SourceActionFile, []string) {
+func withoutUnscheduledRunActions(declarations []SourceActionFile, rc *RuntimeConfig, files map[string]string) ([]SourceActionFile, []SourceActionFile) {
 	if rc == nil || strings.TrimSpace(rc.selectedRunLogicFile) == "" {
 		return declarations, nil
 	}
@@ -945,21 +945,17 @@ func withoutUnscheduledRunActions(declarations []SourceActionFile, rc *RuntimeCo
 		return declarations, nil
 	}
 	kept := make([]SourceActionFile, 0, len(declarations))
-	var skipped []string
+	var skipped []SourceActionFile
 	for _, declaration := range declarations {
 		if normalizeSourcePhase(declaration.Phase) != "action" {
 			kept = append(kept, declaration)
 			continue
 		}
-		actionName := strings.TrimSpace(declaration.Function)
-		if actionName == "" {
-			actionName = strings.TrimSuffix(path.Base(declaration.Name), path.Ext(declaration.Name))
-		}
-		if _, runs := scheduled[strings.ToLower(actionName)]; runs {
+		if _, runs := scheduled[strings.ToLower(declaredSourceActionName(declaration))]; runs {
 			kept = append(kept, declaration)
 			continue
 		}
-		skipped = append(skipped, actionName)
+		skipped = append(skipped, declaration)
 	}
 	if len(skipped) > 0 && len(kept) == countNonRunDeclarations(declarations) {
 		// A run logic naming none of the declared actions is a mismatch, not
@@ -968,6 +964,15 @@ func withoutUnscheduledRunActions(declarations []SourceActionFile, rc *RuntimeCo
 		return declarations, nil
 	}
 	return kept, skipped
+}
+
+// declaredSourceActionName is a declaration's VuGen action name: its .usr [Actions]
+// key, or the file's base name.
+func declaredSourceActionName(declaration SourceActionFile) string {
+	if name := strings.TrimSpace(declaration.Function); name != "" {
+		return name
+	}
+	return strings.TrimSuffix(path.Base(declaration.Name), path.Ext(declaration.Name))
 }
 
 func countNonRunDeclarations(declarations []SourceActionFile) int {
