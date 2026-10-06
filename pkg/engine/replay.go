@@ -1582,9 +1582,11 @@ func applyReplayActionThinkTime(
 	ignoreThinkTime bool,
 	globalThinkCfg protocol.ThinkTimeConfig,
 ) bool {
-	if ignoreThinkTime || !action.ThinkTimeAfter {
+	if (ignoreThinkTime && !action.ThinkTime.Force) || !action.ThinkTimeAfter {
 		// No wait was attempted, so an already-expired action/teardown context
-		// must not be misreported as cancellation during think time.
+		// must not be misreported as cancellation during think time. A forced
+		// delay (lr_force_think_time) waits even when replay ignores think time,
+		// as it does in VuGen.
 		return true
 	}
 	thinkCfg := resolveActionThinkTime(globalThinkCfg, action.ThinkTime)

@@ -489,7 +489,7 @@ func parseFunctionBlock(block string, filename string, lineNum int, endLine int,
 		parseWebRegFind(&fn, inner)
 	case "web_link", "web_image", "web_image_check":
 		parseWebLinkImage(&fn, inner)
-	case "lr_think_time":
+	case "lr_think_time", "lr_force_think_time":
 		parseLRThinkTime(&fn, inner)
 	case "lr_start_transaction", "lr_end_transaction":
 		if len(fn.RawArgs) > 0 {
@@ -1607,7 +1607,7 @@ func isASCIIWhitespace(ch byte) bool {
 
 // extractThinkTime extracts think time value in seconds from an lr_think_time call.
 func ExtractThinkTimeSeconds(fn ParsedFunction) (float64, bool) {
-	if fn.Name != "lr_think_time" {
+	if fn.Name != "lr_think_time" && fn.Name != "lr_force_think_time" {
 		return 0, false
 	}
 	secStr, ok := fn.Args["seconds"]

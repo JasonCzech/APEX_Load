@@ -9244,6 +9244,9 @@
     "ThinkTimeConfig": {
       "additionalProperties": false,
       "properties": {
+        "force": {
+          "type": "boolean"
+        },
         "ignore": {
           "type": "boolean"
         },

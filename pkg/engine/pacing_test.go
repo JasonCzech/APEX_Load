@@ -586,3 +586,30 @@ func TestEditedPercentagePolicyCapsRecordedCallsIndependently(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveActionThinkTimeForceIgnoresScriptPolicy(t *testing.T) {
+	global := protocol.ThinkTimeConfig{Type: "random_percentage", MinPercent: 10, MaxPercent: 20, Multiplier: 0.5, LimitMs: 100, Ignore: true}
+	cfg := resolveActionThinkTime(global, dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 2000, Force: true})
+	if got := computeThinkTime(cfg); got != 2*time.Second {
+		t.Fatalf("forced delay = %s, want exactly 2s regardless of ignore, multiplier, limit and percentage", got)
+	}
+	if got := computeThinkTime(resolveActionThinkTime(global, dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 2000})); got != 0 {
+		t.Fatalf("unforced delay = %s, want the script's ignore setting to apply", got)
+	}
+}
+
+func TestReplayIgnoreThinkTimeStillWaitsForForcedDelay(t *testing.T) {
+	// A canceled context makes an attempted wait report interruption, which
+	// shows whether replay tried to wait at all.
+	vu := &VUser{Script: &dsl.Script{}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	forced := dsl.Action{ThinkTimeAfter: true, ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 1000, Force: true}}
+	if applyReplayActionThinkTime(ctx, vu, forced, true, protocol.ThinkTimeConfig{}) {
+		t.Fatal("replay skipped a forced delay when ignoring think time")
+	}
+	forced.ThinkTime.Force = false
+	if !applyReplayActionThinkTime(ctx, vu, forced, true, protocol.ThinkTimeConfig{}) {
+		t.Fatal("replay waited for an unforced delay while ignoring think time")
+	}
+}

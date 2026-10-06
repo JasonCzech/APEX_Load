@@ -37,6 +37,7 @@ lr_eval_string_ext,parameter,executable
 lr_eval_string_ext_free,parameter,native_noop
 lr_exit,runtime,executable
 lr_fail_trans_with_error,transaction,executable
+lr_force_think_time,runtime,executable
 lr_free_parameter,parameter,native_noop
 lr_get_attrib_double,attribute,review_only
 lr_get_attrib_long,attribute,review_only

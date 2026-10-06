@@ -477,7 +477,10 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				result.Stats.Transactions++
 			}
 
-		case "lr_think_time":
+		case "lr_think_time", "lr_force_think_time":
+			// lr_force_think_time waits whatever the think-time settings say,
+			// so it always keeps its own action with a forced delay.
+			force := fn.Name == "lr_force_think_time"
 			sec, ok := ExtractThinkTimeSeconds(fn)
 			prev := actionAtPhaseIndex(result.Script, lastExecutablePhase, lastExecutableIndex)
 			adjacent := prev != nil &&
@@ -490,9 +493,9 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			// is selected only after import. A single adjacent wait can stay on its
 			// predecessor; leading and consecutive waits need their own markers.
 			if ok && sec >= 0 && !math.IsNaN(waitMs) && !math.IsInf(waitMs, 0) && waitMs <= dsl.MaxConfiguredProtocolTimeoutMS &&
-				(!adjacent || prev.ThinkTimeAfter || (opts.RuntimeSettings != nil && opts.RuntimeSettings.ThinkTime.Type == "random_percentage")) {
+				(force || !adjacent || prev.ThinkTimeAfter || (opts.RuntimeSettings != nil && opts.RuntimeSettings.ThinkTime.Type == "random_percentage")) {
 				action, mode, _ := convertSourceFunctionAction(fn)
-				action.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: waitMs}
+				action.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: waitMs, Force: force}
 				action.ThinkTimeAfter = true
 				appendTrackedSourceAction(fn, action, mode, "Preserved this recorded delay separately so percentage sampling and caps remain independent after runtime settings change.")
 				result.Stats.ThinkTimes++
@@ -507,7 +510,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				result.Stats.ContributorFunctions++
 				recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 			} else {
-				result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d lr_think_time could not be placed as an exact wait; using zero delay and requiring review", fn.Filename, fn.LineNumber))
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d %s could not be placed as an exact wait; using zero delay and requiring review", fn.Filename, fn.LineNumber, fn.Name))
 				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.unplaced_think_times", "Think Time", "config", "review_only", "Dynamic, malformed, or unplaceable think time; zero-delay fallback requires review.", SourceFunctionSupportReviewOnly))
 				recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
 			}

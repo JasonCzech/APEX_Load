@@ -393,3 +393,29 @@ func TestConvertFindAssertionHonorsTextFlags(t *testing.T) {
 		t.Fatalf("warnings = %#v, want the unsupported-flag warning", result.Warnings)
 	}
 }
+
+// lr_force_think_time waits whatever the think-time settings say.
+func TestConvertForceThinkTimeKeepsAForcedDelay(t *testing.T) {
+	source := `Action()
+{
+	web_url("home", "URL=https://example.com/", LAST);
+	lr_force_think_time(2);
+	return 0;
+}
+`
+	parsed, err := ParseActionFile("Action.c", source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{ScriptName: "Forced"})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	actions := result.Script.Actions
+	if len(actions) != 2 || actions[0].ThinkTimeAfter {
+		t.Fatalf("actions = %#v, want the forced wait kept as its own action", actions)
+	}
+	if got := actions[1].ThinkTime; !actions[1].ThinkTimeAfter || got.Type != "fixed" || got.MeanMs != 2000 || !got.Force {
+		t.Fatalf("think time = %+v, want a forced 2000 ms fixed delay", got)
+	}
+}

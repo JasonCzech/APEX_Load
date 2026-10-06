@@ -242,6 +242,8 @@ export interface ThinkTimeConfig {
   multiplier?: number
   limit_ms?: number
   ignore?: boolean
+  // An action delay applied exactly whatever the think-time settings say (lr_force_think_time).
+  force?: boolean
 }
 
 export interface PacingConfig {

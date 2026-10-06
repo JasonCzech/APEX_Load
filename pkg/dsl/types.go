@@ -935,6 +935,10 @@ type ThinkTimeConfig struct {
 	Multiplier float64 `json:"multiplier,omitempty" jsonschema:"exclusiveMinimum=0,maximum=100"` // omitted/0 in Go inherits 1; authored JSON must be >0
 	LimitMs    float64 `json:"limit_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`        // max think time cap (0 = no limit)
 	Ignore     bool    `json:"ignore,omitempty"`                                                 // skip all think times
+	// Force applies this delay exactly whatever the script's think-time
+	// settings (ignore, multiplier, limit, percentage) say, as LoadRunner's
+	// lr_force_think_time does. Meaningful on an action's think_time only.
+	Force bool `json:"force,omitempty"`
 }
 
 type PacingConfig struct {
