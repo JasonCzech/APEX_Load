@@ -1445,7 +1445,7 @@ func projectScriptString(value string, ctx scriptProjectionContext) string {
 			return value
 		}
 	}
-	if ctx.metadata && isPortableImportProvenanceIdentifierKey(ctx.key) {
+	if ctx.metadata && (isPortableImportProvenanceIdentifierKey(ctx.key) || isSourceLocationProvenance(ctx.key, value)) {
 		return scrub.ValueURL(value, scrub.Policy{})
 	}
 	if isSecretReferenceKey(ctx.key) && isNamedSecretReference(value) {
@@ -2915,4 +2915,24 @@ func maskRestoredImportBodies(projected, source *dsl.Script) {
 		}
 		return nil
 	})
+}
+
+var (
+	sourceFileNamePattern   = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_ .\-\\/]{0,510}\.[A-Za-z]{1,5}$`)
+	sourceIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,255}$`)
+)
+
+// isSourceLocationProvenance reports an imported action's source file name or
+// C function/action name. Long descriptive names (Action_Store_08_Activation
+// _Phone17.c) look token-shaped to the bare-token heuristic, which masked them
+// as [REDACTED].c; a value of that exact shape names a source location, not a
+// credential.
+func isSourceLocationProvenance(key, value string) bool {
+	switch normalizeScriptFieldName(key) {
+	case "sourcefile":
+		return sourceFileNamePattern.MatchString(value)
+	case "sourcefunction", "sourceactionname":
+		return sourceIdentifierPattern.MatchString(value)
+	}
+	return false
 }
