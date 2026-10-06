@@ -7762,6 +7762,7 @@ export interface operations {
             "preparation_enabled": boolean;
             "resource_configuration_accepted": boolean;
             "spill_limit": string;
+            "summary_statistics"?: Array<string>;
             "threads": number;
           };
         };
@@ -7824,8 +7825,12 @@ export interface operations {
                 "kind": string;
                 "name"?: string;
                 "name_column"?: Array<string>;
+                "sample_count_column"?: Array<string>;
+                "sample_sum_column"?: Array<string>;
+                "statistic"?: string;
                 "unit": string;
                 "value": Array<string>;
+                "window_seconds"?: number;
               }>;
               "timestamp": Array<string>;
               "timestamp_encoding": string;
@@ -7920,8 +7925,12 @@ export interface operations {
                 "kind": string;
                 "name"?: string;
                 "name_column"?: Array<string>;
+                "sample_count_column"?: Array<string>;
+                "sample_sum_column"?: Array<string>;
+                "statistic"?: string;
                 "unit": string;
                 "value": Array<string>;
+                "window_seconds"?: number;
               }>;
               "timestamp": Array<string>;
               "timestamp_encoding": string;
@@ -8094,6 +8103,7 @@ export interface operations {
               "kind": string;
               "metric_name": string;
               "metric_version"?: string;
+              "missing_reason"?: string;
               "population"?: string;
               "project_id": string;
               "provider"?: ({
@@ -8192,6 +8202,7 @@ export interface operations {
               "kind": string;
               "metric_name": string;
               "metric_version"?: string;
+              "missing_reason"?: string;
               "population"?: string;
               "project_id": string;
               "provider"?: ({
@@ -8344,6 +8355,7 @@ export interface operations {
               "kind": string;
               "metric_name": string;
               "metric_version"?: string;
+              "missing_reason"?: string;
               "population"?: string;
               "project_id": string;
               "provider"?: ({
@@ -8726,8 +8738,12 @@ export interface operations {
               "kind"?: string;
               "name"?: string;
               "name_column"?: Array<string>;
+              "sample_count_column"?: Array<string>;
+              "sample_sum_column"?: Array<string>;
+              "statistic"?: string;
               "unit"?: string;
               "value"?: Array<string>;
+              "window_seconds"?: number;
             }>;
             "timestamp"?: Array<string>;
             "timestamp_encoding"?: string;
@@ -8992,8 +9008,12 @@ export interface operations {
               "kind"?: string;
               "name"?: string;
               "name_column"?: Array<string>;
+              "sample_count_column"?: Array<string>;
+              "sample_sum_column"?: Array<string>;
+              "statistic"?: string;
               "unit"?: string;
               "value"?: Array<string>;
+              "window_seconds"?: number;
             }>;
             "timestamp"?: Array<string>;
             "timestamp_encoding"?: string;
@@ -10182,8 +10202,12 @@ export interface operations {
                 "kind": string;
                 "name"?: string;
                 "name_column"?: Array<string>;
+                "sample_count_column"?: Array<string>;
+                "sample_sum_column"?: Array<string>;
+                "statistic"?: string;
                 "unit": string;
                 "value": Array<string>;
+                "window_seconds"?: number;
               }>;
               "timestamp": Array<string>;
               "timestamp_encoding": string;
@@ -10319,8 +10343,12 @@ export interface operations {
                 "kind": string;
                 "name"?: string;
                 "name_column"?: Array<string>;
+                "sample_count_column"?: Array<string>;
+                "sample_sum_column"?: Array<string>;
+                "statistic"?: string;
                 "unit": string;
                 "value": Array<string>;
+                "window_seconds"?: number;
               }>;
               "timestamp": Array<string>;
               "timestamp_encoding": string;
@@ -10456,8 +10484,12 @@ export interface operations {
                 "kind": string;
                 "name"?: string;
                 "name_column"?: Array<string>;
+                "sample_count_column"?: Array<string>;
+                "sample_sum_column"?: Array<string>;
+                "statistic"?: string;
                 "unit": string;
                 "value": Array<string>;
+                "window_seconds"?: number;
               }>;
               "timestamp": Array<string>;
               "timestamp_encoding": string;
@@ -10684,8 +10716,12 @@ export interface operations {
               "kind"?: string;
               "name"?: string;
               "name_column"?: Array<string>;
+              "sample_count_column"?: Array<string>;
+              "sample_sum_column"?: Array<string>;
+              "statistic"?: string;
               "unit"?: string;
               "value"?: Array<string>;
+              "window_seconds"?: number;
             }>;
             "timestamp"?: Array<string>;
             "timestamp_encoding"?: string;
@@ -11617,6 +11653,7 @@ export interface operations {
             "kind"?: string;
             "metric_name"?: string;
             "metric_version"?: string;
+            "missing_reason"?: string;
             "population"?: string;
             "project_id"?: string;
             "provider"?: ({
@@ -50116,6 +50153,7 @@ export interface operations {
               "kind"?: string;
               "metric_name"?: string;
               "metric_version"?: string;
+              "missing_reason"?: string;
               "population"?: string;
               "project_id"?: string;
               "provider"?: ({
@@ -90100,6 +90138,7 @@ export interface operations {
                   "kind": string;
                   "metric_name": string;
                   "metric_version"?: string;
+                  "missing_reason"?: string;
                   "population"?: string;
                   "project_id": string;
                   "provider"?: ({
@@ -124488,6 +124527,7 @@ export interface operations {
             "kind"?: string;
             "metric_name"?: string;
             "metric_version"?: string;
+            "missing_reason"?: string;
             "population"?: string;
             "project_id"?: string;
             "provider"?: ({

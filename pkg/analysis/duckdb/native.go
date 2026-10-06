@@ -276,13 +276,15 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 					name = "try_cast(" + column(measure.NameColumn) + " AS VARCHAR)"
 				}
 				value := column(measure.Value)
+				scaleText := strconv.FormatFloat(scale, 'g', -1, 64)
 				identityProjection, identityCanonical, identityValid := nativeIdentityProjection(request.Mapping, request.DatasetID)
-				projection := "SELECT " + identityProjection + ", file_row_number AS source_row, " + timestampExpression(request.Mapping) + " AS timestamp_utc, " + name + " AS metric_name, try_cast(" + value + " AS DOUBLE)*" + strconv.FormatFloat(scale, 'g', -1, 64) + " AS value, (" + value + " IS NULL) AS was_null FROM read_parquet(" + literal(path) + ", hive_partitioning=false, file_row_number=true)"
+				summaryProjection, summaryCanonical, summaryValid := nativeSummaryProjection(measure, scaleText)
+				projection := "SELECT " + identityProjection + summaryProjection + ", file_row_number AS source_row, " + timestampExpression(request.Mapping) + " AS timestamp_utc, " + name + " AS metric_name, try_cast(" + value + " AS DOUBLE)*" + scaleText + " AS value, (" + value + " IS NULL) AS was_null FROM read_parquet(" + literal(path) + ", hive_partitioning=false, file_row_number=true)"
 				if _, err := db.ExecContext(ctx, "CREATE OR REPLACE TEMP VIEW mapped AS "+projection); err != nil {
 					return err
 				}
 				valid := "timestamp_utc IS NOT NULL AND isfinite(timestamp_utc) AND timestamp_utc>=TIMESTAMPTZ '0001-01-01 00:00:00+00' AND timestamp_utc<TIMESTAMPTZ '10000-01-01 00:00:00+00' AND " + nativeRequiredIdentityText("metric_name", 256) + " AND (was_null OR (value IS NOT NULL AND isfinite(value)))"
-				valid += " AND " + identityValid
+				valid += " AND " + identityValid + summaryValid
 				var accepted, rejected int64
 				if err := db.QueryRowContext(ctx, "SELECT count(*) FILTER(WHERE "+valid+"), count(*) FILTER(WHERE NOT coalesce(("+valid+"),false)) FROM mapped").Scan(&accepted, &rejected); err != nil {
 					return err
@@ -325,7 +327,7 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 					return fmt.Errorf("file %d measure %d contains %d rejected rows; explicit acceptance required", i, j, rejected)
 				}
 				out := filepath.Join(dir, fmt.Sprintf("part-%04d-%02d.parquet", i, j))
-				query := "COPY (SELECT " + literal(analysis.SchemaVersion) + " AS schema_version, " + literal(request.ProjectID) + " AS project_id, " + literal(request.DatasetID) + " AS dataset_id, " + identityCanonical + ", timestamp_utc, metric_name, " + literal(measure.Kind) + " AS kind, " + literal(unit) + " AS unit, value, CASE WHEN was_null THEN 'missing' ELSE 'valid' END AS quality FROM mapped WHERE " + valid + ") TO " + literal(out) + " (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 122880)"
+				query := "COPY (SELECT " + literal(analysis.SchemaVersion) + " AS schema_version, " + literal(request.ProjectID) + " AS project_id, " + literal(request.DatasetID) + " AS dataset_id, " + identityCanonical + ", timestamp_utc, metric_name, " + literal(measure.Kind) + " AS kind, " + literal(unit) + " AS unit, value, CASE WHEN was_null THEN 'missing' ELSE 'valid' END AS quality" + summaryCanonical + " FROM mapped WHERE " + valid + ") TO " + literal(out) + " (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 122880)"
 				if _, err := db.ExecContext(ctx, query); err != nil {
 					return err
 				}
@@ -395,12 +397,12 @@ func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q 
 		if err != nil {
 			return err
 		}
-		var schemaVersion, kind, unit, source, host, service, dimensionsJSON string
-		var identityVersion int
+		var schemaVersion, kind, unit, source, host, service, dimensionsJSON, statistic string
+		var identityVersion, windowSeconds int
 		count := 0
 		for rows.Next() {
 			count++
-			if err := rows.Scan(&schemaVersion, &kind, &unit, &identityVersion, &source, &host, &service, &dimensionsJSON); err != nil {
+			if err := rows.Scan(&schemaVersion, &kind, &unit, &identityVersion, &source, &host, &service, &dimensionsJSON, &statistic, &windowSeconds); err != nil {
 				rows.Close()
 				return err
 			}
@@ -411,6 +413,15 @@ func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q 
 			return scanErr
 		}
 		if count == 0 {
+			// No rows for this statistic. Rows of other declared statistics mean
+			// the request asked a summary for something it never reported.
+			var declared int64
+			if err := db.QueryRowContext(ctx, nativeSeriesOtherStatisticsSQL(table, q)).Scan(&declared); err != nil {
+				return err
+			}
+			if declared != 0 {
+				return errors.New("a summary series reports only its declared statistics")
+			}
 			return nil
 		}
 		if count != 1 {
@@ -434,22 +445,37 @@ func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q 
 		if !nativeSeriesIdentityMatches(q, identityPoint) {
 			return errors.New("normalized identity does not match selected query scope")
 		}
-		if err := analysis.ValidateScalarAggregation(kind, q.Aggregation); err != nil {
-			return err
-		}
-		lineage, err := analysis.ScalarBucketDerivation(analysis.MetricPoint{Kind: kind}, q.BucketSeconds, q.Aggregation)
-		if err != nil {
-			return err
-		}
-		querySQL, err := nativeSeriesAggregationSQL(table, q, kind)
-		if err != nil {
-			return err
-		}
-		if q.Aggregation == "count" {
-			unit = "count"
-		}
-		if q.Aggregation == "rate" {
-			unit += "/s"
+		var lineage []analysis.DerivationStep
+		var querySQL string
+		if kind == analysis.KindSummary {
+			if err := analysis.ValidateSummaryAggregation(statistic, windowSeconds, q.BucketSeconds, q.Aggregation); err != nil {
+				return err
+			}
+			if lineage, err = analysis.SummaryBucketDerivation(statistic, windowSeconds, q.BucketSeconds); err != nil {
+				return err
+			}
+			if querySQL, err = nativeSummaryAggregationSQL(table, q, statistic, windowSeconds); err != nil {
+				return err
+			}
+		} else {
+			if statistic != "" || windowSeconds != 0 {
+				return errors.New("summary declaration on a non-summary measurement")
+			}
+			if err := analysis.ValidateScalarAggregation(kind, q.Aggregation); err != nil {
+				return err
+			}
+			if lineage, err = analysis.ScalarBucketDerivation(analysis.MetricPoint{Kind: kind}, q.BucketSeconds, q.Aggregation); err != nil {
+				return err
+			}
+			if querySQL, err = nativeSeriesAggregationSQL(table, q, kind); err != nil {
+				return err
+			}
+			if q.Aggregation == "count" {
+				unit = "count"
+			}
+			if q.Aggregation == "rate" {
+				unit += "/s"
+			}
 		}
 		rows, err = db.QueryContext(ctx, querySQL)
 		if err != nil {
@@ -459,7 +485,12 @@ func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q 
 		for rows.Next() {
 			var at time.Time
 			var value sql.NullFloat64
-			if err := rows.Scan(&at, &value); err != nil {
+			var reason string
+			targets := []any{&at, &value}
+			if kind == analysis.KindSummary {
+				targets = append(targets, &reason)
+			}
+			if err := rows.Scan(targets...); err != nil {
 				return err
 			}
 			if len(points) >= analysis.MaxSeriesPoints {
@@ -470,6 +501,8 @@ func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q 
 				v := value.Float64
 				p.Value = &v
 				p.Quality = analysis.QualityValid
+			} else {
+				p.MissingReason = reason
 			}
 			if err := p.Validate(); err != nil {
 				return err

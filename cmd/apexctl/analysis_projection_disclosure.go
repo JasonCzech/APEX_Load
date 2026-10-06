@@ -35,24 +35,30 @@ func analysisCLIHistoricalProjectionDisclosure(object map[string]json.RawMessage
 			if err != nil {
 				return err
 			}
+			projected := []string{"value", "name_column", "sample_count_column", "sample_sum_column"}
 			for key := range fields {
-				for _, field := range []string{"value", "name_column"} {
+				for _, field := range projected {
 					if key != field && strings.EqualFold(key, field) {
 						return errors.New("ambiguous historical projected measurement metadata")
 					}
 				}
 			}
 			measure := analysis.ParquetMeasure{}
-			for _, field := range []string{"value", "name_column"} {
+			for _, field := range projected {
 				if raw, ok := fields[field]; ok {
 					path, err := analysisCLIHistoricalColumnPath(raw)
 					if err != nil {
 						return err
 					}
-					if field == "value" {
+					switch field {
+					case "value":
 						measure.Value = path
-					} else {
+					case "name_column":
 						measure.NameColumn = path
+					case "sample_count_column":
+						measure.SampleCountColumn = path
+					default:
+						measure.SampleSumColumn = path
 					}
 				}
 			}

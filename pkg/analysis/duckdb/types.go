@@ -128,6 +128,10 @@ func (q SeriesQuery) Validate() error {
 	if err := validateNativeSeriesIdentity(q); err != nil {
 		return err
 	}
+	if analysis.ValidSummaryStatistic(q.Aggregation) {
+		// A declared summary's statistic; the engine checks it against the data.
+		return nil
+	}
 	return analysis.ValidateScalarAggregationName(q.Aggregation)
 }
 

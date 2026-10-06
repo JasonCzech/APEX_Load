@@ -51,7 +51,7 @@ func (m ParquetMapping) ValidateDisclosure() error {
 		}
 	}
 	for _, measure := range m.Measures {
-		for _, path := range []ParquetColumnPath{measure.Value, measure.NameColumn} {
+		for _, path := range []ParquetColumnPath{measure.Value, measure.NameColumn, measure.SampleCountColumn, measure.SampleSumColumn} {
 			if len(path) != 0 {
 				if err := ValidateParquetProjectedColumn(path); err != nil {
 					return err

@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -144,6 +145,9 @@ type AnalysisCapabilitiesResponse struct {
 	SpillLimit                    string                 `json:"spill_limit"`
 	ResourceConfigurationAccepted bool                   `json:"resource_configuration_accepted"`
 	MetricCatalog                 analysis.MetricCatalog `json:"metric_catalog"`
+	// SummaryStatistics lists the statistics a summary measure may declare;
+	// absent on controllers that import summaries only as display values.
+	SummaryStatistics []string `json:"summary_statistics,omitempty"`
 }
 
 func (s *Server) handleAnalysisCapabilities(w http.ResponseWriter, r *http.Request) {
@@ -154,6 +158,7 @@ func (s *Server) handleAnalysisCapabilities(w http.ResponseWriter, r *http.Reque
 		DiagnosticsEnabled: diagnosticsProjectEnabled(project), MonitoringEnabled: runMonitoringEnabled(project), PreparationEnabled: preparationProjectEnabled(project),
 		NativeParquet: analytics.Available(), PartitionManifestVersion: analysis.PartitionManifestVersion, PartitionPruningAvailable: analytics.Available(), ImportedIdentityVersion: analysisImportedIdentityVersion, Enabled: analysisProjectEnabled(project), ChunkBytes: analysisUploadChunk, MaxImportBytes: analysisImportMaxBytes,
 		HeavyJobs: 1, Threads: 2, MemoryLimit: memory, SpillLimit: spill, ResourceConfigurationAccepted: accepted, MetricCatalog: analysis.Catalog(),
+		SummaryStatistics: slices.Clone(analysis.SummaryStatistics),
 	})
 }
 
@@ -539,6 +544,10 @@ func (s *Server) handleAnalysisMapping(w http.ResponseWriter, r *http.Request) {
 	}
 	mapping, err := analysis.DecodeParquetMappingDefinition(req.Mapping)
 	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	if err := mapping.RequireDeclaredSummaries(); err != nil {
 		writeError(w, 400, err.Error())
 		return
 	}

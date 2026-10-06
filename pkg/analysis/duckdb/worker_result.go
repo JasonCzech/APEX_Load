@@ -120,13 +120,15 @@ func (r workerResult) validate(b workerBootstrap, request workerRequest) error {
 			return errWorkerProtocol
 		}
 		inputKind, unit := "", ""
+		var firstLineage []analysis.DerivationStep
 		for _, point := range *r.Points {
 			if inputKind == "" {
 				inputKind, unit = point.InputKind, point.Unit
 				identityPoint = point
+				firstLineage = point.Derivation
 			}
-			lineage, err := analysis.ScalarBucketDerivation(analysis.MetricPoint{Kind: point.InputKind}, q.BucketSeconds, q.Aggregation)
-			if err != nil || !slices.Equal(lineage, point.Derivation) || point.InputKind != inputKind || point.Unit != unit || point.Population != "" || point.MetricVersion != "" || point.Provider != nil || !point.ReceivedAt.IsZero() || point.Quality != analysis.QualityValid && point.Quality != analysis.QualityMissing || point.Kind != analysis.KindGauge || !nativeSeriesIdentityMatches(q, point) || !sameNativeSeriesIdentity(identityPoint, point) || point.RunID != "" || point.ScenarioID != "" || point.RelativeTimeMS != nil || point.ActiveRuntimeMS != nil || point.Validate() != nil || point.ProjectID != q.ProjectID || point.DatasetID != q.DatasetID || point.MetricName != q.Metric || point.TimestampUTC.Before(bounds.From) || !point.TimestampUTC.Before(bounds.To) || !previous.IsZero() && !point.TimestampUTC.After(previous) || point.TimestampUTC.Sub(bounds.From)%(time.Duration(q.BucketSeconds)*time.Second) != 0 {
+			lineage, err := workerSeriesLineage(point, q)
+			if err != nil || !slices.Equal(lineage, point.Derivation) || !slices.Equal(firstLineage, point.Derivation) || point.InputKind != inputKind || point.Unit != unit || point.Population != "" || point.MetricVersion != "" || point.Provider != nil || !point.ReceivedAt.IsZero() || point.Quality != analysis.QualityValid && point.Quality != analysis.QualityMissing || point.Kind != analysis.KindGauge || !nativeSeriesIdentityMatches(q, point) || !sameNativeSeriesIdentity(identityPoint, point) || point.RunID != "" || point.ScenarioID != "" || point.RelativeTimeMS != nil || point.ActiveRuntimeMS != nil || point.Validate() != nil || point.ProjectID != q.ProjectID || point.DatasetID != q.DatasetID || point.MetricName != q.Metric || point.TimestampUTC.Before(bounds.From) || !point.TimestampUTC.Before(bounds.To) || !previous.IsZero() && !point.TimestampUTC.After(previous) || point.TimestampUTC.Sub(bounds.From)%(time.Duration(q.BucketSeconds)*time.Second) != 0 {
 				return errWorkerProtocol
 			}
 			previous = point.TimestampUTC
@@ -138,6 +140,24 @@ func (r workerResult) validate(b workerBootstrap, request workerRequest) error {
 	}
 	return r.Normalize.validate(b, *request.Normalize)
 }
+
+// workerSeriesLineage recomputes the lineage a child must report. A summary
+// series carries its source window in its first step; the statistic must be
+// the requested aggregation.
+func workerSeriesLineage(point analysis.MetricPoint, q SeriesQuery) ([]analysis.DerivationStep, error) {
+	if point.InputKind != analysis.KindSummary {
+		if point.MissingReason != "" {
+			return nil, errWorkerProtocol
+		}
+		return analysis.ScalarBucketDerivation(analysis.MetricPoint{Kind: point.InputKind}, q.BucketSeconds, q.Aggregation)
+	}
+	statistic, window, ok := analysis.SummaryWindowFromDerivation(point.Derivation)
+	if !ok || statistic != q.Aggregation {
+		return nil, errWorkerProtocol
+	}
+	return analysis.SummaryBucketDerivation(statistic, window, q.BucketSeconds)
+}
+
 func (c workerCell) validate() error {
 	n := 0
 	for _, p := range []bool{c.Boolean != nil, c.Number != nil, c.Timestamp != nil} {

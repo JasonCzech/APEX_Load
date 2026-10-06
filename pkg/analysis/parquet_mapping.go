@@ -16,6 +16,13 @@ type ParquetMeasure struct {
 	NameColumn ParquetColumnPath `json:"name_column,omitempty"`
 	Kind       string            `json:"kind"`
 	Unit       string            `json:"unit"`
+	// Summary declaration: the statistic each value already is, the source
+	// window it covers (the timestamp is the window start), and optional
+	// per-window sample count and sample sum columns. Summary-only.
+	Statistic         string            `json:"statistic,omitempty"`
+	WindowSeconds     int               `json:"window_seconds,omitempty"`
+	SampleCountColumn ParquetColumnPath `json:"sample_count_column,omitempty"`
+	SampleSumColumn   ParquetColumnPath `json:"sample_sum_column,omitempty"`
 }
 type ParquetMapping struct {
 	Version           int                     `json:"version"`
@@ -35,7 +42,7 @@ func (m ParquetMapping) ValidateDefinition() error {
 	if len(m.Measures) < 1 || len(m.Measures) > 64 || m.Identity != nil && len(m.Identity.Dimensions) > maxDimensions {
 		return errors.New("mapping definition exceeds collection bounds")
 	}
-	schema := ParquetSchemaPreview{Columns: make([]ParquetColumn, 0, 1+2*len(m.Measures)+3+maxDimensions)}
+	schema := ParquetSchemaPreview{Columns: make([]ParquetColumn, 0, 1+4*len(m.Measures)+3+maxDimensions)}
 	add := func(path ParquetColumnPath) error {
 		if len(path) < 1 || len(path) > 16 {
 			return errors.New("mapping definition column path exceeds bounds")
@@ -55,9 +62,11 @@ func (m ParquetMapping) ValidateDefinition() error {
 		if err := add(measure.Value); err != nil {
 			return err
 		}
-		if len(measure.NameColumn) != 0 {
-			if err := add(measure.NameColumn); err != nil {
-				return err
+		for _, path := range []ParquetColumnPath{measure.NameColumn, measure.SampleCountColumn, measure.SampleSumColumn} {
+			if len(path) != 0 {
+				if err := add(path); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -124,7 +133,10 @@ func (m ParquetMapping) Validate(schema ParquetSchemaPreview) error {
 	if err := m.Identity.validate(check); err != nil {
 		return err
 	}
-	seen := map[string]bool{}
+	// A constant metric name is unique, except that summary measures may share
+	// one name when each declares a different statistic (p50/p95/p99 columns
+	// of one latency). The query's aggregation then selects the statistic.
+	seen := map[string][]string{}
 	long := map[string]bool{}
 	for _, measure := range m.Measures {
 		if err := check(measure.Value); err != nil {
@@ -142,14 +154,19 @@ func (m ParquetMapping) Validate(schema ParquetSchemaPreview) error {
 				return errors.New("duplicate long-table measurement")
 			}
 			long[string(identity)] = true
-		} else if strings.TrimSpace(measure.Name) == "" || len(measure.Name) > 256 || !utf8.ValidString(measure.Name) || strings.ContainsRune(measure.Name, 0) || seen[measure.Name] {
+		} else if strings.TrimSpace(measure.Name) == "" || len(measure.Name) > 256 || !utf8.ValidString(measure.Name) || strings.ContainsRune(measure.Name, 0) || !distinctWideMeasure(seen[measure.Name], measure) {
 			return errors.New("wide metric names must be nonempty, bounded, and unique")
 		}
-		seen[measure.Name] = true
+		if len(measure.NameColumn) == 0 {
+			seen[measure.Name] = append(seen[measure.Name], measure.Statistic)
+		}
 		switch measure.Kind {
 		case KindGauge, KindCounter, KindObservation, KindSummary:
 		default:
 			return errors.New("unsupported scalar measurement semantics")
+		}
+		if err := measure.validateSummaryFields(check); err != nil {
+			return err
 		}
 		if _, _, err := NormalizeUnit(measure.Unit); err != nil {
 			return err
@@ -157,6 +174,24 @@ func (m ParquetMapping) Validate(schema ParquetSchemaPreview) error {
 	}
 	return nil
 }
+
+// distinctWideMeasure admits a constant name already used only by declared
+// summaries with other statistics.
+func distinctWideMeasure(existing []string, measure ParquetMeasure) bool {
+	if len(existing) == 0 {
+		return true
+	}
+	if !measure.declaredSummary() {
+		return false
+	}
+	for _, statistic := range existing {
+		if statistic == "" || statistic == measure.Statistic {
+			return false
+		}
+	}
+	return true
+}
+
 func slicesEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

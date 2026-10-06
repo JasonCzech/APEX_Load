@@ -128,7 +128,11 @@ func (s *Server) handleAnalysisDefinitions(w http.ResponseWriter, r *http.Reques
 				return
 			}
 		} else if kind == "mapping" {
-			if _, err := analysis.DecodeParquetMappingDefinition(in.Definition); err != nil {
+			mapping, err := analysis.DecodeParquetMappingDefinition(in.Definition)
+			if err == nil {
+				err = mapping.RequireDeclaredSummaries()
+			}
+			if err != nil {
 				writeError(w, 400, err.Error())
 				return
 			}

@@ -349,8 +349,10 @@ func validateWorkerMapping(m Mapping) error {
 		if appendPath(measure.Value) != nil {
 			return errWorkerProtocol
 		}
-		if len(measure.NameColumn) > 0 && appendPath(measure.NameColumn) != nil {
-			return errWorkerProtocol
+		for _, path := range []Column{measure.NameColumn, measure.SampleCountColumn, measure.SampleSumColumn} {
+			if len(path) > 0 && appendPath(path) != nil {
+				return errWorkerProtocol
+			}
 		}
 	}
 	if m.Identity != nil {

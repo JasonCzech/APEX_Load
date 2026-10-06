@@ -74,6 +74,11 @@ func (q AnalysisComparisonRequest) validate() error {
 		}
 		switch s.Aggregation {
 		case "avg", "min", "max", "sum", "count", "rate", "p50", "p95", "p99":
+		case "p75", "p90", "p999":
+			// Only an imported summary can declare these statistics.
+			if s.DatasetID == "" {
+				return errors.New("unsupported aggregation")
+			}
 		default:
 			return errors.New("unsupported aggregation")
 		}

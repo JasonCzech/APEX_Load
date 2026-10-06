@@ -44,7 +44,7 @@ func walkParquetMappingObject(d *json.Decoder, kind string) error {
 	if err != nil || token != json.Delim('{') {
 		return errors.New("mapping fields require objects")
 	}
-	var seen [7]string
+	var seen [9]string
 	count := 0
 	for d.More() {
 		if count == len(seen) {
@@ -62,10 +62,10 @@ func walkParquetMappingObject(d *json.Decoder, kind string) error {
 		}
 		seen[count], count = key, count+1
 		switch {
-		case kind == "mapping" && key == "version":
+		case kind == "mapping" && key == "version", kind == "measure" && key == "window_seconds":
 			token, err := d.Token()
 			if _, ok := token.(json.Number); err != nil || !ok {
-				return errors.New("mapping version must be an integer")
+				return errors.New("mapping version and summary window must be integers")
 			}
 		case kind == "mapping" && key == "identity":
 			err = walkParquetMappingObject(d, "identity")
@@ -73,9 +73,9 @@ func walkParquetMappingObject(d *json.Decoder, kind string) error {
 			err = walkParquetMappingArray(d, "measure", 64)
 		case kind == "identity" && key == "dimensions":
 			err = walkParquetMappingArray(d, "dimension", maxDimensions)
-		case kind == "mapping" && key == "timestamp", kind == "identity" && (key == "source" || key == "host" || key == "service"), kind == "measure" && (key == "value" || key == "name_column"), kind == "dimension" && key == "value":
+		case kind == "mapping" && key == "timestamp", kind == "identity" && (key == "source" || key == "host" || key == "service"), kind == "measure" && (key == "value" || key == "name_column" || key == "sample_count_column" || key == "sample_sum_column"), kind == "dimension" && key == "value":
 			err = walkParquetMappingArray(d, "scalar", 16)
-		case kind == "mapping" && (key == "timestamp_encoding" || key == "timezone"), kind == "measure" && (key == "name" || key == "kind" || key == "unit"), kind == "dimension" && key == "name":
+		case kind == "mapping" && (key == "timestamp_encoding" || key == "timezone"), kind == "measure" && (key == "name" || key == "kind" || key == "unit" || key == "statistic"), kind == "dimension" && key == "name":
 			limit := 256
 			if kind == "dimension" {
 				limit = maxDimensionBytes

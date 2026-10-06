@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"maps"
 	"strings"
 	"unicode/utf8"
@@ -97,6 +98,32 @@ func bindImportedNativeSeriesQuery(in *storage.AnalysisImport, query analytics.S
 	if err := query.Validate(); err != nil {
 		return analytics.SeriesQuery{}, err
 	}
+	if in.Mapping != nil {
+		if err := validateImportedSummaryQuery(*in.Mapping, query); err != nil {
+			return analytics.SeriesQuery{}, err
+		}
+	}
 	query.Dimensions = maps.Clone(query.Dimensions)
 	return query, nil
+}
+
+// validateImportedSummaryQuery explains a summary request that cannot be
+// answered before any data is staged. Long-table summaries name metrics from
+// data, so the engine applies the same rules to those.
+func validateImportedSummaryQuery(mapping analysis.ParquetMapping, query analytics.SeriesQuery) error {
+	declared, legacy := mapping.SummaryDeclarations(query.Metric)
+	if len(declared) == 0 {
+		if legacy {
+			return analysis.ErrSummaryStatisticUnknown
+		}
+		return nil
+	}
+	statistics := make([]string, 0, len(declared))
+	for _, declaration := range declared {
+		if declaration.Statistic == query.Aggregation {
+			return analysis.ValidateSummaryAggregation(declaration.Statistic, declaration.WindowSeconds, query.BucketSeconds, query.Aggregation)
+		}
+		statistics = append(statistics, declaration.Statistic)
+	}
+	return fmt.Errorf("%s is a precomputed summary; request one of its declared statistics: %s", query.Metric, strings.Join(statistics, ", "))
 }

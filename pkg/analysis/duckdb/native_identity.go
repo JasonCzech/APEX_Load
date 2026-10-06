@@ -75,7 +75,21 @@ func nativeIdentityTable(paths []string) (string, error) {
 		} else if columns["host"] || columns["service"] || columns["dimensions_json"] {
 			return "", errors.New("normalized artifact has unversioned identity columns")
 		}
-		parts = append(parts, "SELECT schema_version, project_id, dataset_id, source, timestamp_utc, metric_name, kind, unit, value, quality, "+identity+" FROM read_parquet("+literal(path)+", hive_partitioning=false)")
+		// Only declared summaries write summary columns; every other artifact,
+		// including all earlier ones, reads as having no declaration.
+		summary := "'' AS summary_statistic, CAST(0 AS INTEGER) AS summary_window_seconds, CAST(NULL AS DOUBLE) AS summary_sample_count, CAST(NULL AS DOUBLE) AS summary_sample_sum"
+		present := 0
+		for _, name := range nativeSummaryColumns {
+			if columns[name] {
+				present++
+			}
+		}
+		if present == len(nativeSummaryColumns) {
+			summary = strings.Join(nativeSummaryColumns, ", ")
+		} else if present != 0 {
+			return "", errors.New("normalized artifact has incomplete summary columns")
+		}
+		parts = append(parts, "SELECT schema_version, project_id, dataset_id, source, timestamp_utc, metric_name, kind, unit, value, quality, "+identity+", "+summary+" FROM read_parquet("+literal(path)+", hive_partitioning=false)")
 	}
 	return "(" + strings.Join(parts, " UNION ALL ") + ")", nil
 }
@@ -101,3 +115,34 @@ func nativeRequiredIdentityText(alias string, maxBytes int) string {
 	space := literal("\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000")
 	return alias + " IS NOT NULL AND length(trim(" + alias + "," + space + "))>=1 AND octet_length(encode(" + alias + "))<=" + strconv.Itoa(maxBytes) + " AND NOT contains(" + alias + ",chr(0))"
 }
+
+var nativeSummaryColumns = []string{"summary_statistic", "summary_window_seconds", "summary_sample_count", "summary_sample_sum"}
+
+// nativeSummaryProjection maps a declared summary's sample columns and writes
+// its declaration into each canonical row. Sample sums share the value unit
+// and scale; sample counts are unitless. Other measures add nothing.
+func nativeSummaryProjection(measure Measure, scale string) (projection, canonical, valid string) {
+	if measure.Kind != analysis.KindSummary || measure.Statistic == "" {
+		return "", "", ""
+	}
+	sample := func(alias string, path Column, scaled bool) string {
+		if len(path) == 0 {
+			return ", CAST(NULL AS DOUBLE) AS " + alias + ", TRUE AS " + alias + "_was_null"
+		}
+		expr := "try_cast(" + column(path) + " AS DOUBLE)"
+		if scaled {
+			expr += "*" + scale
+		}
+		return ", " + expr + " AS " + alias + ", (" + column(path) + " IS NULL) AS " + alias + "_was_null"
+	}
+	projection = sample("sample_count", measure.SampleCountColumn, false) + sample("sample_sum", measure.SampleSumColumn, true)
+	canonical = ", " + literal(measure.Statistic) + " AS summary_statistic, CAST(" + strconv.Itoa(measure.WindowSeconds) + " AS INTEGER) AS summary_window_seconds, CASE WHEN was_null THEN NULL ELSE sample_count END AS summary_sample_count, CASE WHEN was_null THEN NULL ELSE sample_sum END AS summary_sample_sum"
+	valid = " AND (sample_count_was_null OR (sample_count IS NOT NULL AND isfinite(sample_count) AND sample_count>=0)) AND (sample_sum_was_null OR (sample_sum IS NOT NULL AND isfinite(sample_sum)))"
+	if measure.Statistic == "count" {
+		valid += " AND (was_null OR value>=0)"
+	}
+	return projection, canonical, valid
+}
+
+// nativeSummarySamplesValid admits canonical summary sample columns.
+const nativeSummarySamplesValid = "(summary_sample_count IS NULL OR (isfinite(summary_sample_count) AND summary_sample_count>=0)) AND (summary_sample_sum IS NULL OR isfinite(summary_sample_sum))"

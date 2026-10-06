@@ -20440,6 +20440,10 @@ paths:
                     type: boolean
                   spill_limit:
                     type: string
+                  summary_statistics:
+                    type: array
+                    items:
+                      type: string
                   threads:
                     type: integer
                     format: int64
@@ -20694,6 +20698,8 @@ paths:
                         metric_name:
                           type: string
                         metric_version:
+                          type: string
+                        missing_reason:
                           type: string
                         population:
                           type: string
@@ -20972,6 +20978,8 @@ paths:
                         metric_name:
                           type: string
                         metric_version:
+                          type: string
+                        missing_reason:
                           type: string
                         population:
                           type: string
@@ -22149,12 +22157,25 @@ paths:
                               type: array
                               items:
                                 type: string
+                            sample_count_column:
+                              type: array
+                              items:
+                                type: string
+                            sample_sum_column:
+                              type: array
+                              items:
+                                type: string
+                            statistic:
+                              type: string
                             unit:
                               type: string
                             value:
                               type: array
                               items:
                                 type: string
+                            window_seconds:
+                              type: integer
+                              format: int64
                           required:
                             - kind
                             - unit
@@ -22680,6 +22701,8 @@ paths:
                         metric_name:
                           type: string
                         metric_version:
+                          type: string
+                        missing_reason:
                           type: string
                         population:
                           type: string
@@ -23681,12 +23704,25 @@ paths:
                               type: array
                               items:
                                 type: string
+                            sample_count_column:
+                              type: array
+                              items:
+                                type: string
+                            sample_sum_column:
+                              type: array
+                              items:
+                                type: string
+                            statistic:
+                              type: string
                             unit:
                               type: string
                             value:
                               type: array
                               items:
                                 type: string
+                            window_seconds:
+                              type: integer
+                              format: int64
                           required:
                             - kind
                             - unit
@@ -24044,12 +24080,25 @@ paths:
                               type: array
                               items:
                                 type: string
+                            sample_count_column:
+                              type: array
+                              items:
+                                type: string
+                            sample_sum_column:
+                              type: array
+                              items:
+                                type: string
+                            statistic:
+                              type: string
                             unit:
                               type: string
                             value:
                               type: array
                               items:
                                 type: string
+                            window_seconds:
+                              type: integer
+                              format: int64
                           required:
                             - kind
                             - unit
@@ -24408,12 +24457,25 @@ paths:
                               type: array
                               items:
                                 type: string
+                            sample_count_column:
+                              type: array
+                              items:
+                                type: string
+                            sample_sum_column:
+                              type: array
+                              items:
+                                type: string
+                            statistic:
+                              type: string
                             unit:
                               type: string
                             value:
                               type: array
                               items:
                                 type: string
+                            window_seconds:
+                              type: integer
+                              format: int64
                           required:
                             - kind
                             - unit
@@ -24722,12 +24784,25 @@ paths:
                               type: array
                               items:
                                 type: string
+                            sample_count_column:
+                              type: array
+                              items:
+                                type: string
+                            sample_sum_column:
+                              type: array
+                              items:
+                                type: string
+                            statistic:
+                              type: string
                             unit:
                               type: string
                             value:
                               type: array
                               items:
                                 type: string
+                            window_seconds:
+                              type: integer
+                              format: int64
                           required:
                             - kind
                             - unit
@@ -25193,12 +25268,25 @@ paths:
                             type: array
                             items:
                               type: string
+                          sample_count_column:
+                            type: array
+                            items:
+                              type: string
+                          sample_sum_column:
+                            type: array
+                            items:
+                              type: string
+                          statistic:
+                            type: string
                           unit:
                             type: string
                           value:
                             type: array
                             items:
                               type: string
+                          window_seconds:
+                            type: integer
+                            format: int64
                         additionalProperties: false
                     timestamp:
                       type: array
@@ -25448,12 +25536,25 @@ paths:
                             type: array
                             items:
                               type: string
+                          sample_count_column:
+                            type: array
+                            items:
+                              type: string
+                          sample_sum_column:
+                            type: array
+                            items:
+                              type: string
+                          statistic:
+                            type: string
                           unit:
                             type: string
                           value:
                             type: array
                             items:
                               type: string
+                          window_seconds:
+                            type: integer
+                            format: int64
                         additionalProperties: false
                     timestamp:
                       type: array
@@ -25927,12 +26028,25 @@ paths:
                             type: array
                             items:
                               type: string
+                          sample_count_column:
+                            type: array
+                            items:
+                              type: string
+                          sample_sum_column:
+                            type: array
+                            items:
+                              type: string
+                          statistic:
+                            type: string
                           unit:
                             type: string
                           value:
                             type: array
                             items:
                               type: string
+                          window_seconds:
+                            type: integer
+                            format: int64
                         additionalProperties: false
                     timestamp:
                       type: array
@@ -58565,6 +58679,8 @@ paths:
                             type: string
                           metric_version:
                             type: string
+                          missing_reason:
+                            type: string
                           population:
                             type: string
                           project_id:
@@ -59123,6 +59239,8 @@ paths:
                       metric_name:
                         type: string
                       metric_version:
+                        type: string
+                      missing_reason:
                         type: string
                       population:
                         type: string
@@ -59983,6 +60101,8 @@ paths:
                       metric_name:
                         type: string
                       metric_version:
+                        type: string
+                      missing_reason:
                         type: string
                       population:
                         type: string
@@ -408441,6 +408561,8 @@ paths:
                                   metric_name:
                                     type: string
                                   metric_version:
+                                    type: string
+                                  missing_reason:
                                     type: string
                                   population:
                                     type: string

@@ -27,7 +27,7 @@ func validateDerivation(steps []DerivationStep, qualified bool) error {
 			if qualified {
 				return errors.New("legacy derived measurement has unknown parent statistic")
 			}
-		} else if _, found := lookupOperation(step.Operation); !found {
+		} else if _, found := lookupOperation(step.Operation); !found && !ValidSummaryStatistic(step.Operation) {
 			return errors.New("unsupported typed measurement derivation")
 		}
 		if strings.TrimSpace(step.Algorithm) == "" || len(step.Algorithm) > maxMetricIdentityBytes || strings.ContainsRune(step.Algorithm, 0) || step.BucketSeconds < 0 || step.BucketSeconds > 86400 {

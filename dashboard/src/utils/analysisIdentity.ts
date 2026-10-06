@@ -218,7 +218,7 @@ export function analysisMappingDisclosureError(mapping: unknown): string | undef
       for (let index = 0; index < length; index++) {
         const measure = own(measures as object, String(index))
         if (!plain(measure)) return invalid
-        path(own(measure, 'value')); path(own(measure, 'name_column'))
+        path(own(measure, 'value')); path(own(measure, 'name_column')); path(own(measure, 'sample_count_column')); path(own(measure, 'sample_sum_column'))
       }
     }
     const identity = own(mapping, 'identity')
