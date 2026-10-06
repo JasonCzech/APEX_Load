@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/refkey"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -241,6 +242,16 @@ func (tr *TestRunner) DeleteScenarioIfUnchanged(id string, expectedUpdatedAt tim
 }
 
 func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenarioRequest, writer func(*storage.Scenario, []storage.ScenarioScript, []storage.ScenarioDataPoolBinding) error) (*StoredScenario, error) {
+	return tr.storeScenarioLockedWithSources(id, req, nil, writer)
+}
+
+// scenarioSourceBinder replaces the private build snapshot's cached group
+// sources with durable ones before compilation, so validation runs against
+// exactly the source revisions the final write claims. It runs with tr.mu
+// released and must touch only the snapshot it is given.
+type scenarioSourceBinder func(snapshot *TestRunner, groups []CreateGroupEntry) error
+
+func (tr *TestRunner) storeScenarioLockedWithSources(id string, req CreateScenarioRequest, bind scenarioSourceBinder, writer func(*storage.Scenario, []storage.ScenarioScript, []storage.ScenarioDataPoolBinding) error) (*StoredScenario, error) {
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("scenario name is required")
 	}
@@ -336,12 +347,19 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	}
 	buildSnapshot, preparedBuildRequest, buildFence := tr.managedTestBuildSnapshotLocked(buildRequest)
 	tr.mu.Unlock()
-	testGroups, engineGroups, _, err := buildSnapshot.compileManagedTestGroupsForModeWithDataSourcesLocked(
-		preparedBuildRequest.Groups,
-		preparedBuildRequest.RuntimeSettings,
-		nil,
-		preparedBuildRequest.ScenarioMode,
-	)
+	var testGroups []TestGroup
+	var engineGroups []engine.GroupConfig
+	if bind != nil {
+		err = bind(buildSnapshot, preparedBuildRequest.Groups)
+	}
+	if err == nil {
+		testGroups, engineGroups, _, err = buildSnapshot.compileManagedTestGroupsForModeWithDataSourcesLocked(
+			preparedBuildRequest.Groups,
+			preparedBuildRequest.RuntimeSettings,
+			nil,
+			preparedBuildRequest.ScenarioMode,
+		)
+	}
 	tr.mu.Lock()
 	if err != nil {
 		return nil, err
@@ -480,6 +498,15 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	)
 	if persistErr == nil {
 		rollbackProvisioning := func(commitErr error) error {
+			if errors.Is(commitErr, storage.ErrScenarioAuthoringOutcomeUnknown) {
+				// The scenario may have committed. Its commit fingerprint is the
+				// evidence recovery uses to keep or roll back the credentials, so
+				// the attempt is left to recovery instead of being undone here.
+				if runtimeSecretAttempt.ID != "" {
+					tr.scheduleRuntimeOverrideSecretAttempt(runtimeSecretAttempt.ID, runtimeSecretAttempt.LeaseExpiresAt)
+				}
+				return commitErr
+			}
 			rollbackErr := tr.rollbackRuntimeOverrideSecretAttempt(projectID, id, runtimeSecretAttempt, "scenario_persistence_failed")
 			return errors.Join(commitErr, rollbackErr)
 		}
@@ -711,6 +738,23 @@ func (tr *TestRunner) refreshScenariosForHARead(force ...bool) {
 	tr.haScenarioRefreshAt = time.Now()
 }
 
+// refreshScenariosAfterDurableMismatch reloads the scenario cache when it is
+// known to disagree with the durable rows: after a write whose commit
+// acknowledgement was lost, or when a cached clock differs from the durable
+// one. Unlike the HA read refresh it also runs on a single controller.
+func (tr *TestRunner) refreshScenariosAfterDurableMismatch() {
+	if tr == nil {
+		return
+	}
+	if tr.leadership != nil {
+		tr.refreshScenariosForHARead(true)
+		return
+	}
+	if err := tr.reloadStoredScenarios(); err != nil {
+		slog.Warn("failed to reload scenarios after a durable mismatch", "error", err)
+	}
+}
+
 // refreshScenarioScheduleContentForHARead keeps a polled schedule read coherent
 // across replicas without the unthrottled full-library reload a forced refresh
 // performs on every poll: the scheduler content version probe short-circuits
@@ -778,7 +822,7 @@ func (tr *TestRunner) DeleteScenario(id string) bool {
 	return deleted
 }
 
-func (tr *TestRunner) DeleteScenarioDurable(id string) (bool, error) {
+func (tr *TestRunner) DeleteScenarioDurable(id string, guard ...*storage.ScenarioWriterGuard) (bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	tr.beginLockHeldDurableWrite()
@@ -794,7 +838,11 @@ func (tr *TestRunner) DeleteScenarioDurable(id string) (bool, error) {
 		}
 	}
 	if tr.scenarioStore != nil {
-		if err := tr.scenarioStore.DeleteScenario(id); err != nil {
+		if guardedStore, canGuard := tr.scenarioStore.(storage.ScenarioGuardedWriterStore); canGuard && len(guard) > 0 && guard[0] != nil {
+			if err := guardedStore.DeleteScenarioGuarded(id, *guard[0]); err != nil {
+				return false, err
+			}
+		} else if err := tr.scenarioStore.DeleteScenario(id); err != nil {
 			return false, err
 		}
 	}

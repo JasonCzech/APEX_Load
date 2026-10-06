@@ -259,9 +259,20 @@ func (s *Server) writeScenarioAuthoringView(w http.ResponseWriter, r *http.Reque
 
 // updateScenarioAuthoringAggregate performs the final conditioned write. It is
 // called from the save builder's writer callback, which runs with tr.mu
-// released, and returns the snapshot read inside the write transaction.
-func updateScenarioAuthoringAggregate(store storage.ScenarioAuthoringStore, scenario *storage.Scenario, scripts []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding, expected storage.ScenarioAuthoringPrecondition) (*storage.ScenarioAuthoringSnapshot, error) {
-	result, err := store.UpdateScenarioAuthoringIfCurrent(scenario, scripts, pools, expected)
+// released, and returns the snapshot read inside the write transaction. With
+// source admission the write also claims the exact script revisions the save
+// was compiled from, their active state and the import publication state.
+func updateScenarioAuthoringAggregate(store storage.ScenarioAuthoringStore, sources *scenarioDurableSources, scenario *storage.Scenario, scripts []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding, expected storage.ScenarioAuthoringPrecondition) (*storage.ScenarioAuthoringSnapshot, error) {
+	var result *storage.ScenarioAuthoringMutationResult
+	var err error
+	if sources != nil {
+		if !sources.bound {
+			return nil, storage.ErrScenarioSourceAdmissionUnavailable
+		}
+		result, err = sources.store.UpdateScenarioAuthoringWithSourcesIfCurrent(scenario, scripts, pools, expected, sources.admission)
+	} else {
+		result, err = store.UpdateScenarioAuthoringIfCurrent(scenario, scripts, pools, expected)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -301,8 +312,14 @@ func (tr *TestRunner) UpdateScenarioAuthoringDurable(id string, req CreateScenar
 		return nil, nil, true, errScenarioAuthoringUnsupported
 	}
 	var committed *storage.ScenarioAuthoringSnapshot
-	scenario, err := tr.storeScenarioLockedWithWriter(id, req, func(scenario *storage.Scenario, scripts []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding) error {
-		snapshot, writeErr := updateScenarioAuthoringAggregate(store, scenario, scripts, pools, expected)
+	var sources *scenarioDurableSources
+	var bind scenarioSourceBinder
+	if sourceStore, admitted := tr.scenarioStore.(storage.ScenarioSourceAuthoringStore); admitted {
+		sources = &scenarioDurableSources{store: sourceStore}
+		bind = sources.bind
+	}
+	scenario, err := tr.storeScenarioLockedWithSources(id, req, bind, func(scenario *storage.Scenario, scripts []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding) error {
+		snapshot, writeErr := updateScenarioAuthoringAggregate(store, sources, scenario, scripts, pools, expected)
 		if writeErr != nil {
 			return writeErr
 		}
@@ -314,4 +331,43 @@ func (tr *TestRunner) UpdateScenarioAuthoringDurable(id string, req CreateScenar
 		return nil
 	})
 	return cloneStoredScenarioForReadLocked(scenario), committed, true, err
+}
+
+// scenarioDurableSources binds one conditioned save to durable group sources.
+// The build compiles from these sources rather than the replica's script
+// cache, and the final write claims their revisions, so a script edited,
+// archived or left unpublished by another replica refuses the save.
+type scenarioDurableSources struct {
+	store     storage.ScenarioSourceAuthoringStore
+	admission storage.ScenarioSourceAdmission
+	bound     bool
+}
+
+func (d *scenarioDurableSources) bind(snapshot *TestRunner, groups []CreateGroupEntry) error {
+	refs := make([]storage.ScenarioScript, 0, len(groups))
+	for _, group := range groups {
+		refs = append(refs, storage.ScenarioScript{ScriptID: group.ScriptID})
+	}
+	durable, err := d.store.GetScenarioSourceAuthoringSnapshot(refs)
+	if err != nil {
+		return err
+	}
+	if durable == nil {
+		return storage.ErrScenarioSourceAdmissionUnavailable
+	}
+	for _, source := range durable.Sources {
+		if source == nil || source.Script == nil {
+			return storage.ErrScenarioSourceAdmissionUnavailable
+		}
+		cached := snapshot.scripts[source.Script.ID]
+		if cached == nil {
+			// The replica does not know this source yet; reloading picks it up.
+			return storage.ErrScenarioSourceAdmissionConflict
+		}
+		replaced := *cached
+		replaced.Script = source.Script
+		snapshot.scripts[source.Script.ID] = &replaced
+	}
+	d.admission, d.bound = durable.Admission, true
+	return nil
 }

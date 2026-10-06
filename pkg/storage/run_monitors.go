@@ -898,35 +898,44 @@ func (s *SQLiteStore) GetMonitorBindings(project, scenario string) (*MonitorBind
 }
 
 func (s *SQLiteStore) SaveMonitorBindings(b MonitorBindings, expected int64) (*MonitorBindings, error) {
+	saved, _, err := s.saveMonitorBindings(b, expected, nil)
+	return saved, err
+}
+
+func (s *SQLiteStore) saveMonitorBindings(b MonitorBindings, expected int64, guard *ScenarioWriterGuard) (*MonitorBindings, string, error) {
+	fail := func(err error) (*MonitorBindings, string, error) { return nil, "", err }
 	if expected < 0 || expected >= 1<<62 {
-		return nil, ErrMonitorRevision
+		return fail(ErrMonitorRevision)
 	}
 	if len(b.Sources) > MaxRunMonitorSources {
-		return nil, errors.New("at most 32 monitor sources may be bound")
+		return fail(errors.New("at most 32 monitor sources may be bound"))
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
 	defer tx.Rollback()
 	if _, err = lockProjectForOwnedMutation(tx, b.ProjectID); err != nil {
-		return nil, err
+		return fail(err)
 	}
 	if err = validateScenarioProjectPlacement(tx, b.ScenarioID, b.ProjectID, "monitor binding"); err != nil {
-		return nil, err
+		return fail(err)
+	}
+	if err = guardScenarioWriterTx(tx, b.ScenarioID, guard); err != nil {
+		return fail(err)
 	}
 	seen := map[string]bool{}
 	for _, binding := range b.Sources {
 		if binding.SourceID == "" || seen[binding.SourceID] {
-			return nil, errors.New("monitor bindings must have unique source IDs")
+			return fail(errors.New("monitor bindings must have unique source IDs"))
 		}
 		seen[binding.SourceID] = true
 		var n int
 		if err = tx.QueryRow(`SELECT COUNT(*) FROM monitor_sources WHERE id=? AND project_id=?`, binding.SourceID, b.ProjectID).Scan(&n); err != nil {
-			return nil, err
+			return fail(err)
 		}
 		if n != 1 {
-			return nil, errors.New("monitor source unavailable in project")
+			return fail(errors.New("monitor source unavailable in project"))
 		}
 	}
 	b.Revision = expected + 1
@@ -935,7 +944,7 @@ func (s *SQLiteStore) SaveMonitorBindings(b MonitorBindings, expected int64) (*M
 	}
 	body, err := json.Marshal(b)
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
 	var result sql.Result
 	if expected == 0 {
@@ -944,17 +953,27 @@ func (s *SQLiteStore) SaveMonitorBindings(b MonitorBindings, expected int64) (*M
 		result, err = tx.Exec(`UPDATE monitor_bindings SET revision=?, payload=? WHERE scenario_id=? AND project_id=? AND revision=?`, b.Revision, string(body), b.ScenarioID, b.ProjectID, expected)
 	}
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
 	if n, err := result.RowsAffected(); err != nil {
-		return nil, err
+		return fail(err)
 	} else if n != 1 {
-		return nil, ErrMonitorRevision
+		return fail(ErrMonitorRevision)
 	}
-	if err = tx.Commit(); err != nil {
-		return nil, err
+	if guard == nil {
+		if err = tx.Commit(); err != nil {
+			return fail(err)
+		}
+		return &b, "", nil
 	}
-	return &b, nil
+	revision, err := committedScenarioRevisionTx(tx, b.ScenarioID)
+	if err != nil {
+		return fail(err)
+	}
+	if err := commitScenarioWriterTx(tx); err != nil {
+		return fail(err)
+	}
+	return &b, revision, nil
 }
 
 func validateRemoteMonitorDestination(pack, destination string) error {

@@ -150,23 +150,6 @@ func scenarioSaveIfMatchPresented(header http.Header) bool {
 	return false
 }
 
-// refuseUnconditionedScenarioWriter guards scenario writers that cannot yet
-// compare an authored-content validator inside their mutation. A presented
-// If-Match is refused rather than silently ignored; callers needing
-// stale-edit protection save the whole scenario through PUT /scenarios/{id}.
-func refuseUnconditionedScenarioWriter(w http.ResponseWriter, r *http.Request) bool {
-	if !scenarioSaveIfMatchPresented(r.Header) {
-		return false
-	}
-	reference := newErrorReference()
-	slog.Error("scenario writer condition unavailable", "ref", reference, "path", r.URL.Path)
-	writeJSON(w, http.StatusServiceUnavailable, ScenarioSaveCapabilityUnavailableError{
-		Error: "this scenario endpoint does not accept If-Match; save the scenario with PUT /api/v1/scenarios/{id} for stale-edit protection",
-		Code:  "scenario_writer_if_match_unavailable", Ref: reference,
-	})
-	return true
-}
-
 // ScenarioSaveCapabilityUnavailableError contains only fixed capability
 // guidance and an opaque log reference, never credential or persistence detail.
 type ScenarioSaveCapabilityUnavailableError struct {
@@ -199,6 +182,12 @@ func writeScenarioAuthoringMutationError(w http.ResponseWriter, err error) bool 
 		writeError(w, http.StatusBadRequest, "invalid scenario authoring precondition")
 	case errors.Is(err, storage.ErrScenarioAuthoringUnavailable), errors.Is(err, errScenarioAuthoringUnsupported):
 		writeError(w, http.StatusServiceUnavailable, "durable scenario content revisions unavailable")
+	case errors.Is(err, storage.ErrObjectArchived):
+		writeError(w, http.StatusConflict, "a scenario script is archived; restore it or remove it from the scenario")
+	case errors.Is(err, storage.ErrScenarioSourceAdmissionConflict):
+		writeError(w, http.StatusConflict, "a scenario script changed or is not yet published; reload before applying changes")
+	case errors.Is(err, storage.ErrScenarioSourceAdmissionUnavailable):
+		writeError(w, http.StatusServiceUnavailable, "scenario script sources unavailable")
 	default:
 		return false
 	}

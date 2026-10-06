@@ -43,6 +43,8 @@ type ApplyRuntimeToGroupsResponse struct {
 	Scenario *StoredScenario            `json:"scenario"`
 	Applied  int                        `json:"applied"`
 	Skipped  []ApplyRuntimeToGroupsSkip `json:"skipped,omitempty"`
+	// contentRevision is the revision a guarded write committed (its ETag).
+	contentRevision string
 }
 
 // runtimeOverrideFieldKeys is the set of Phase 1 override fields apply-to-groups can
@@ -70,14 +72,32 @@ var runtimeOverrideFieldKeys = map[string]bool{
 }
 
 func (s *Server) handleApplyScenarioRuntimeToGroups(w http.ResponseWriter, r *http.Request) {
-	if refuseUnconditionedScenarioWriter(w, r) {
+	// The mutation lookup keeps the cached updated_at so a raced HA write is
+	// reported by the writer's CAS (409), not hidden as a 404.
+	scenario, found := s.runner.getScenarioForMutation(r.PathValue("id"))
+	if !found {
+		writeError(w, http.StatusNotFound, "scenario not found")
+		return
+	}
+	admission, admitted := s.admitScenarioWriter(w, r, scenario.ID, scenario.ProjectID)
+	if !admitted {
 		return
 	}
 	var req ApplyRuntimeToGroupsRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	resp, ok, err := s.runner.ApplyScenarioRuntimeToGroups(r.PathValue("id"), req)
+	var guard *storage.ScenarioWriterGuard
+	if admission.guarded() {
+		guard = &admission.guard
+	}
+	resp, ok, err := s.runner.ApplyScenarioRuntimeToGroups(scenario.ID, req, guard)
+	if err != nil && writeScenarioWriterError(w, err) {
+		if errors.Is(err, storage.ErrScenarioAuthoringOutcomeUnknown) {
+			s.runner.refreshScenariosAfterDurableMismatch()
+		}
+		return
+	}
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, errScenarioConcurrentChange) {
@@ -90,6 +110,7 @@ func (s *Server) handleApplyScenarioRuntimeToGroups(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusNotFound, "scenario not found")
 		return
 	}
+	setScenarioWriterETag(w, resp.contentRevision)
 	resp.Scenario = maskStoredScenario(resp.Scenario)
 	s.recordAuditEvent(r, "scenario.runtime.apply_to_groups", "success", "scenario", resp.Scenario.ID, resp.Scenario.ProjectID, map[string]any{"applied": resp.Applied, "source_group": req.SourceGroup})
 	writeJSON(w, http.StatusOK, resp)
@@ -99,7 +120,7 @@ func (s *Server) handleApplyScenarioRuntimeToGroups(w http.ResponseWriter, r *ht
 // onto the requested target groups, persists the scenario, and returns the updated
 // (unmasked) scenario plus an apply/skip summary. ok=false means the scenario was
 // not found.
-func (tr *TestRunner) ApplyScenarioRuntimeToGroups(id string, req ApplyRuntimeToGroupsRequest) (*ApplyRuntimeToGroupsResponse, bool, error) {
+func (tr *TestRunner) ApplyScenarioRuntimeToGroups(id string, req ApplyRuntimeToGroupsRequest, guard ...*storage.ScenarioWriterGuard) (*ApplyRuntimeToGroupsResponse, bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	tr.beginLockHeldDurableWrite()
@@ -185,10 +206,27 @@ func (tr *TestRunner) ApplyScenarioRuntimeToGroups(id string, req ApplyRuntimeTo
 		return nil, true, fmt.Errorf("applied runtime settings are invalid: %w", err)
 	}
 
+	revision := ""
 	if tr.scenarioStore != nil {
 		toSave := storedScenarioToStorage(&updated)
 		scripts := storedScenarioRefsToStorage(&updated)
-		if store, ok := tr.scenarioStore.(conditionalScenarioPersistence); ok {
+		guardedStore, canGuard := tr.scenarioStore.(storage.ScenarioGuardedWriterStore)
+		if len(guard) > 0 && guard[0] != nil && canGuard {
+			persisted, committed, err := guardedStore.UpdateScenarioWithDataPoolBindingsGuarded(
+				toSave,
+				scripts,
+				append([]storage.ScenarioDataPoolBinding(nil), stored.DataPools...),
+				stored.UpdatedAt,
+				*guard[0],
+			)
+			if err != nil {
+				return nil, true, err
+			}
+			if !persisted {
+				return nil, true, errScenarioConcurrentChange
+			}
+			revision = committed
+		} else if store, ok := tr.scenarioStore.(conditionalScenarioPersistence); ok {
 			persisted, err := store.UpdateScenarioWithDataPoolBindingsIfUnchanged(
 				toSave,
 				scripts,
@@ -212,9 +250,10 @@ func (tr *TestRunner) ApplyScenarioRuntimeToGroups(id string, req ApplyRuntimeTo
 	tr.contentRevision++
 
 	return &ApplyRuntimeToGroupsResponse{
-		Scenario: tr.enrichScenarioSummaryLocked(&updated),
-		Applied:  applied,
-		Skipped:  skipped,
+		contentRevision: revision,
+		Scenario:        tr.enrichScenarioSummaryLocked(&updated),
+		Applied:         applied,
+		Skipped:         skipped,
 	}, true, nil
 }
 

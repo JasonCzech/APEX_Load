@@ -73,3 +73,67 @@ func TestPostgresScenarioAuthoringConditionedSaveAcrossReplicas(t *testing.T) {
 		t.Fatalf("strict policy on peer: %d %s", strict.Code, strict.Body.String())
 	}
 }
+
+func newPostgresScenarioAuthoringReplicas(t *testing.T) (*Server, *Server, *storage.PostgresStore, *storage.PostgresStore, string, func(string, int) CreateScenarioRequest) {
+	t.Helper()
+	dsn := newPostgresScriptAuthoringAPIFixture(t)
+	owner, ownerStore := openPostgresScriptAuthoringAPI(t, dsn)
+	peer, peerStore := openPostgresScriptAuthoringAPI(t, dsn)
+	create := authoringAPIRequest(t, owner, http.MethodPost, "/api/v1/scripts", map[string]any{"script": authoringAPIScript("pg-scenario-race-script")}, "")
+	if create.Code != http.StatusCreated {
+		t.Fatalf("script create: %d %s", create.Code, create.Body.String())
+	}
+	var script StoredScript
+	if err := json.Unmarshal(create.Body.Bytes(), &script); err != nil {
+		t.Fatal(err)
+	}
+	request := func(name string, vusers int) CreateScenarioRequest {
+		return CreateScenarioRequest{Name: name, Duration: "1m", Groups: []CreateGroupEntry{{ScriptID: script.ID, VUsers: vusers}}}
+	}
+	created := authoringAPIRequest(t, owner, http.MethodPost, "/api/v1/scenarios", request("Original", 1), "")
+	if created.Code != http.StatusCreated {
+		t.Fatalf("scenario create: %d %s", created.Code, created.Body.String())
+	}
+	var scenario StoredScenario
+	if err := json.Unmarshal(created.Body.Bytes(), &scenario); err != nil {
+		t.Fatal(err)
+	}
+	return owner, peer, ownerStore, peerStore, scenario.ID, request
+}
+
+// Both replicas pass admission with the same validator and meet inside
+// PostgreSQL; the row lock and in-transaction revision compare let exactly one
+// commit.
+func TestPostgresScenarioConditionedSaveRaceAcrossReplicas(t *testing.T) {
+	owner, peer, ownerStore, peerStore, scenarioID, request := newPostgresScenarioAuthoringReplicas(t)
+	exerciseScenarioReplicaRace(t, owner, peer, ownerStore.SQLiteStore, peerStore.SQLiteStore, scenarioID, request)
+}
+
+// The strict policy is enabled after the handler's early read; the PostgreSQL
+// transaction re-reads it under the project row lock and refuses both the
+// ordinary save and a guarded secondary writer.
+func TestPostgresScenarioStrictPolicyFlipIsFencedInTransaction(t *testing.T) {
+	owner, _, ownerStore, _, scenarioID, request := newPostgresScenarioAuthoringReplicas(t)
+	project, err := ownerStore.GetProject(storage.DefaultProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project.Settings.Authoring = &storage.ProjectAuthoringPolicy{RequireScenarioSaveIfMatch: true}
+	if err := ownerStore.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	owner.store = &strictPolicyAfterAdmissionStore{SQLiteStore: ownerStore.SQLiteStore}
+	before, err := ownerStore.GetScenarioAuthoringSnapshot(scenarioID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response := authoringAPIRequest(t, owner, http.MethodPut, "/api/v1/scenarios/"+scenarioID, request("Raced policy", 2), ""); response.Code != http.StatusPreconditionRequired {
+		t.Fatalf("ordinary save after policy flip: %d %s", response.Code, response.Body.String())
+	}
+	if response := authoringAPIRequest(t, owner, http.MethodPut, "/api/v1/scenarios/"+scenarioID+"/data-pools", map[string]any{"data_pools": []any{}}, ""); response.Code != http.StatusPreconditionRequired {
+		t.Fatalf("data-pool writer after policy flip: %d %s", response.Code, response.Body.String())
+	}
+	if after, err := ownerStore.GetScenarioAuthoringSnapshot(scenarioID); err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatalf("fenced writes mutated the scenario: %v", err)
+	}
+}

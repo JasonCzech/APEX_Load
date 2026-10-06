@@ -145,3 +145,51 @@ func TestAuthoringReceiptsAreScopedByActorAndPurpose(t *testing.T) {
 		}
 	}
 }
+
+// exerciseAuthoringReceiptTombstoneRestore withdraws only the tombstones a
+// refused delete wrote, never an earlier one.
+func exerciseAuthoringReceiptTombstoneRestore(t *testing.T, store *SQLiteStore) {
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	claim, err := store.ClaimAuthoringMutationReceipt(authoringReceiptInput("owner-1"), now, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteAuthoringMutationReceipt(claim.Receipt.ID, "owner-1", "rev-1", now); err != nil {
+		t.Fatal(err)
+	}
+	refused := now.Add(time.Second)
+	if err := store.TombstoneAuthoringMutationReceipts("script", "derived-script-id", "deleted", refused); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RestoreAuthoringMutationReceiptTombstones("script", "derived-script-id", "deleted", refused.Add(time.Microsecond)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimAuthoringMutationReceipt(authoringReceiptInput("owner-2"), now, time.Minute); !errors.Is(err, ErrAuthoringReceiptTombstoned) {
+		t.Fatalf("a different delete's restore withdrew the tombstone: %v", err)
+	}
+	if err := store.RestoreAuthoringMutationReceiptTombstones("script", "derived-script-id", "deleted", refused); err != nil {
+		t.Fatal(err)
+	}
+	replay, err := store.ClaimAuthoringMutationReceipt(authoringReceiptInput("owner-2"), now, time.Minute)
+	if err != nil || !replay.Replay || replay.Receipt.ResourceRevision != "rev-1" {
+		t.Fatalf("restored receipt does not replay: %#v %v", replay, err)
+	}
+	deleted := now.Add(2 * time.Second)
+	if err := store.TombstoneAuthoringMutationReceipts("script", "derived-script-id", "deleted", deleted); err != nil {
+		t.Fatal(err)
+	}
+	// A later refused delete of a recreated resource cannot revive it.
+	if err := store.TombstoneAuthoringMutationReceipts("script", "derived-script-id", "deleted", deleted.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RestoreAuthoringMutationReceiptTombstones("script", "derived-script-id", "deleted", deleted.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimAuthoringMutationReceipt(authoringReceiptInput("owner-3"), now, time.Minute); !errors.Is(err, ErrAuthoringReceiptTombstoned) {
+		t.Fatalf("committed delete's tombstone was withdrawn: %v", err)
+	}
+}
+
+func TestAuthoringReceiptTombstoneRestore(t *testing.T) {
+	exerciseAuthoringReceiptTombstoneRestore(t, newAuthoringReceiptTestStore(t))
+}

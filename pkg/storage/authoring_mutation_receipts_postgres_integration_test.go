@@ -65,3 +65,8 @@ func TestPostgresAuthoringMutationReceipts(t *testing.T) {
 		t.Fatalf("concurrent owners = %d", owners)
 	}
 }
+
+func TestPostgresAuthoringReceiptTombstoneRestore(t *testing.T) {
+	store, _ := newPostgresScenarioRevisionFixture(t)
+	exerciseAuthoringReceiptTombstoneRestore(t, store)
+}

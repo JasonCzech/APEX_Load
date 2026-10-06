@@ -64179,7 +64179,7 @@ paths:
                       properties:
                         require_scenario_save_if_match:
                           type: boolean
-                          description: When true, ordinary scenario saves (PUT /api/v1/scenarios/{id}) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside the save transaction. Controllers without durable scenario revisions refuse saves under this policy with 503 scenario_save_strict_policy_unavailable.
+                          description: When true, every scenario-authored write (PUT /api/v1/scenarios/{id}, DELETE, data-pools, library-assignment, monitor-bindings and runtime/apply-to-groups) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside each write's transaction. Controllers without durable scenario revisions refuse those writes under this policy with 503 scenario_save_strict_policy_unavailable.
                         require_script_save_if_match:
                           type: boolean
                       nullable: true
@@ -64699,7 +64699,7 @@ paths:
                       properties:
                         require_scenario_save_if_match:
                           type: boolean
-                          description: When true, ordinary scenario saves (PUT /api/v1/scenarios/{id}) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside the save transaction. Controllers without durable scenario revisions refuse saves under this policy with 503 scenario_save_strict_policy_unavailable.
+                          description: When true, every scenario-authored write (PUT /api/v1/scenarios/{id}, DELETE, data-pools, library-assignment, monitor-bindings and runtime/apply-to-groups) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside each write's transaction. Controllers without durable scenario revisions refuse those writes under this policy with 503 scenario_save_strict_policy_unavailable.
                         require_script_save_if_match:
                           type: boolean
                       nullable: true
@@ -137971,7 +137971,7 @@ paths:
                 enum:
                   - "true"
             X-APEX-Original-Content-Revision:
-              description: On a replay, the authored content revision the original create produced, when recorded.
+              description: On a replay, the authored content revision the original create produced. Absent when the replay adopted a create whose response was lost, since the resource may have been edited since.
               schema:
                 type: string
         "400":
@@ -138060,7 +138060,7 @@ paths:
       parameters:
         - name: Idempotency-Key
           in: header
-          description: 'Optional retry key (16-512 visible ASCII characters), scoped to project, caller and create kind. The same key and request replay the originally created resource for 24 hours with Idempotent-Replayed: true; a changed request returns 409 idempotency_key_reused, an expired key 409 idempotency_key_expired, a deleted original 410 idempotency_resource_deleted (it is never recreated), and an in-flight duplicate 409 idempotency_request_in_progress with Retry-After. Controllers without durable receipts refuse the key with 503 idempotency_unavailable. Credential-preserving script imports are fenced by their import attestation instead.'
+          description: 'Optional retry key (16-512 visible ASCII characters), scoped to project, caller and create kind. The same key and request replay the originally created resource for 24 hours with Idempotent-Replayed: true; a changed request returns 409 idempotency_key_reused, an expired key 409 idempotency_key_expired, a deleted original 410 idempotency_resource_deleted (it is never recreated), and an in-flight duplicate 409 idempotency_request_in_progress with Retry-After. Controllers without durable receipts refuse the key with 503 idempotency_unavailable. A key is kept, never reused, while an earlier attempt may have committed; it is released for a corrected request only when the create was refused before running or a durable read proves nothing was created. A credential-preserving script import that claims a single-use import attestation is fenced by that attestation instead; one without an attestation uses the key like any other create. Since this contract, an empty or shorter key is refused with 400 idempotency_key_invalid instead of being ignored.'
           required: false
           schema:
             type: string
@@ -138081,6 +138081,11 @@ paths:
                 type: object
                 additionalProperties:
                   type: string
+          headers:
+            ETag:
+              description: The scenario-authoring-v1 validator committed by this write's own transaction, when the controller has durable scenario revisions.
+              schema:
+                type: string
         "400":
           description: Bad Request
           content:
@@ -138099,6 +138104,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
+        "412":
+          description: Precondition Failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
+        "428":
+          description: Precondition Required
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
         "500":
           description: Internal Server Error
           content:
@@ -138106,7 +138144,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "503":
-          description: Service unavailable. scenario_writer_if_match_unavailable refuses a presented If-Match this endpoint cannot honor; no mutation occurred. Other failures retain the generic error/ref body.
+          description: 'Service unavailable. scenario_save_outcome_unknown means the write may already have committed: reload before retrying and never retry automatically. scenario_writer_if_match_unavailable and scenario_save_strict_policy_unavailable are returned only by controllers without durable scenario revisions; no mutation occurred. Other failures retain the generic error/ref body.'
           content:
             application/json:
               schema:
@@ -138115,7 +138153,9 @@ paths:
                   code:
                     type: string
                     enum:
+                      - scenario_save_outcome_unknown
                       - scenario_writer_if_match_unavailable
+                      - scenario_save_strict_policy_unavailable
                   error:
                     type: string
                   ref:
@@ -138133,7 +138173,7 @@ paths:
             type: string
         - name: If-Match
           in: header
-          description: Not supported on this endpoint. Any presented If-Match is refused with 503 scenario_writer_if_match_unavailable instead of being ignored. For stale-edit protection, save the whole scenario with PUT /api/v1/scenarios/{id} and a scenario-authoring-v1 validator.
+          description: Optional. Exactly one quoted strong scenario-authoring-v1:<content_revision> tag (GET view=authoring or a previous ETag); it is compared inside this write's transaction and a stale tag returns 412. Malformed tags return 400. Without a validator the write is unconditioned unless the project's authoring.require_scenario_save_if_match policy requires one (428). Controllers without durable scenario revisions refuse a presented tag with 503 scenario_writer_if_match_unavailable and refuse every write under the strict policy with 503 scenario_save_strict_policy_unavailable.
           required: false
           schema:
             type: string
@@ -150564,6 +150604,11 @@ paths:
               schema:
                 type: object
                 additionalProperties: {}
+          headers:
+            ETag:
+              description: The scenario-authoring-v1 validator committed by this write's own transaction, when the controller has durable scenario revisions.
+              schema:
+                type: string
         "400":
           description: Bad Request
           content:
@@ -150594,12 +150639,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "412":
+          description: Precondition Failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
         "413":
           description: Request Entity Too Large
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "428":
+          description: Precondition Required
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
         "501":
           description: Not Implemented
           content:
@@ -150607,7 +150674,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "503":
-          description: Service unavailable. scenario_writer_if_match_unavailable refuses a presented If-Match this endpoint cannot honor; no mutation occurred. Other failures retain the generic error/ref body.
+          description: 'Service unavailable. scenario_save_outcome_unknown means the write may already have committed: reload before retrying and never retry automatically. scenario_writer_if_match_unavailable and scenario_save_strict_policy_unavailable are returned only by controllers without durable scenario revisions; no mutation occurred. Other failures retain the generic error/ref body.'
           content:
             application/json:
               schema:
@@ -150616,7 +150683,9 @@ paths:
                   code:
                     type: string
                     enum:
+                      - scenario_save_outcome_unknown
                       - scenario_writer_if_match_unavailable
+                      - scenario_save_strict_policy_unavailable
                   error:
                     type: string
                   ref:
@@ -150634,7 +150703,7 @@ paths:
             type: string
         - name: If-Match
           in: header
-          description: Not supported on this endpoint. Any presented If-Match is refused with 503 scenario_writer_if_match_unavailable instead of being ignored. For stale-edit protection, save the whole scenario with PUT /api/v1/scenarios/{id} and a scenario-authoring-v1 validator.
+          description: Optional. Exactly one quoted strong scenario-authoring-v1:<content_revision> tag (GET view=authoring or a previous ETag); it is compared inside this write's transaction and a stale tag returns 412. Malformed tags return 400. Without a validator the write is unconditioned unless the project's authoring.require_scenario_save_if_match policy requires one (428). Controllers without durable scenario revisions refuse a presented tag with 503 scenario_writer_if_match_unavailable and refuse every write under the strict policy with 503 scenario_save_strict_policy_unavailable.
           required: false
           schema:
             type: string
@@ -150659,6 +150728,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LibraryAssignment'
+          headers:
+            ETag:
+              description: The scenario-authoring-v1 validator committed by this write's own transaction, when the controller has durable scenario revisions.
+              schema:
+                type: string
         "400":
           description: Bad Request
           content:
@@ -150689,14 +150763,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "412":
+          description: Precondition Failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
         "413":
           description: Request Entity Too Large
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "428":
+          description: Precondition Required
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
         "503":
-          description: Service unavailable. scenario_writer_if_match_unavailable refuses a presented If-Match this endpoint cannot honor; no mutation occurred. Other failures retain the generic error/ref body.
+          description: 'Service unavailable. scenario_save_outcome_unknown means the write may already have committed: reload before retrying and never retry automatically. scenario_writer_if_match_unavailable and scenario_save_strict_policy_unavailable are returned only by controllers without durable scenario revisions; no mutation occurred. Other failures retain the generic error/ref body.'
           content:
             application/json:
               schema:
@@ -150705,7 +150801,9 @@ paths:
                   code:
                     type: string
                     enum:
+                      - scenario_save_outcome_unknown
                       - scenario_writer_if_match_unavailable
+                      - scenario_save_strict_policy_unavailable
                   error:
                     type: string
                   ref:
@@ -150723,7 +150821,7 @@ paths:
             type: string
         - name: If-Match
           in: header
-          description: Not supported on this endpoint. Any presented If-Match is refused with 503 scenario_writer_if_match_unavailable instead of being ignored. For stale-edit protection, save the whole scenario with PUT /api/v1/scenarios/{id} and a scenario-authoring-v1 validator.
+          description: Optional. Exactly one quoted strong scenario-authoring-v1:<content_revision> tag (GET view=authoring or a previous ETag); it is compared inside this write's transaction and a stale tag returns 412. Malformed tags return 400. Without a validator the write is unconditioned unless the project's authoring.require_scenario_save_if_match policy requires one (428). Controllers without durable scenario revisions refuse a presented tag with 503 scenario_writer_if_match_unavailable and refuse every write under the strict policy with 503 scenario_save_strict_policy_unavailable.
           required: false
           schema:
             type: string
@@ -150767,6 +150865,7 @@ paths:
                   - revision
                   - scenario_id
                   - sources
+                nullable: true
         "400":
           description: Bad Request
           content:
@@ -150868,6 +150967,12 @@ paths:
                   - revision
                   - scenario_id
                   - sources
+                nullable: true
+          headers:
+            ETag:
+              description: The scenario-authoring-v1 validator committed by this write's own transaction, when the controller has durable scenario revisions.
+              schema:
+                type: string
         "400":
           description: Bad Request
           content:
@@ -150886,12 +150991,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
+        "412":
+          description: Precondition Failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
         "413":
           description: Request Entity Too Large
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "428":
+          description: Precondition Required
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
         "500":
           description: Internal Server Error
           content:
@@ -150899,7 +151037,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "503":
-          description: Service unavailable. scenario_writer_if_match_unavailable refuses a presented If-Match this endpoint cannot honor; no mutation occurred. Other failures retain the generic error/ref body.
+          description: 'Service unavailable. scenario_save_outcome_unknown means the write may already have committed: reload before retrying and never retry automatically. scenario_writer_if_match_unavailable and scenario_save_strict_policy_unavailable are returned only by controllers without durable scenario revisions; no mutation occurred. Other failures retain the generic error/ref body.'
           content:
             application/json:
               schema:
@@ -150908,7 +151046,9 @@ paths:
                   code:
                     type: string
                     enum:
+                      - scenario_save_outcome_unknown
                       - scenario_writer_if_match_unavailable
+                      - scenario_save_strict_policy_unavailable
                   error:
                     type: string
                   ref:
@@ -150926,7 +151066,7 @@ paths:
             type: string
         - name: If-Match
           in: header
-          description: Not supported on this endpoint. Any presented If-Match is refused with 503 scenario_writer_if_match_unavailable instead of being ignored. For stale-edit protection, save the whole scenario with PUT /api/v1/scenarios/{id} and a scenario-authoring-v1 validator.
+          description: Optional. Exactly one quoted strong scenario-authoring-v1:<content_revision> tag (GET view=authoring or a previous ETag); it is compared inside this write's transaction and a stale tag returns 412. Malformed tags return 400. Without a validator the write is unconditioned unless the project's authoring.require_scenario_save_if_match policy requires one (428). Controllers without durable scenario revisions refuse a presented tag with 503 scenario_writer_if_match_unavailable and refuse every write under the strict policy with 503 scenario_save_strict_policy_unavailable.
           required: false
           schema:
             type: string
@@ -155744,6 +155884,11 @@ paths:
                   - applied
                   - scenario
                 nullable: true
+          headers:
+            ETag:
+              description: The scenario-authoring-v1 validator committed by this write's own transaction, when the controller has durable scenario revisions.
+              schema:
+                type: string
         "400":
           description: Bad Request
           content:
@@ -155768,14 +155913,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "412":
+          description: Precondition Failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
         "413":
           description: Request Entity Too Large
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "428":
+          description: Precondition Required
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
         "503":
-          description: Service unavailable. scenario_writer_if_match_unavailable refuses a presented If-Match this endpoint cannot honor; no mutation occurred. Other failures retain the generic error/ref body.
+          description: 'Service unavailable. scenario_save_outcome_unknown means the write may already have committed: reload before retrying and never retry automatically. scenario_writer_if_match_unavailable and scenario_save_strict_policy_unavailable are returned only by controllers without durable scenario revisions; no mutation occurred. Other failures retain the generic error/ref body.'
           content:
             application/json:
               schema:
@@ -155784,7 +155951,9 @@ paths:
                   code:
                     type: string
                     enum:
+                      - scenario_save_outcome_unknown
                       - scenario_writer_if_match_unavailable
+                      - scenario_save_strict_policy_unavailable
                   error:
                     type: string
                   ref:
@@ -155802,7 +155971,7 @@ paths:
             type: string
         - name: If-Match
           in: header
-          description: Not supported on this endpoint. Any presented If-Match is refused with 503 scenario_writer_if_match_unavailable instead of being ignored. For stale-edit protection, save the whole scenario with PUT /api/v1/scenarios/{id} and a scenario-authoring-v1 validator.
+          description: Optional. Exactly one quoted strong scenario-authoring-v1:<content_revision> tag (GET view=authoring or a previous ETag); it is compared inside this write's transaction and a stale tag returns 412. Malformed tags return 400. Without a validator the write is unconditioned unless the project's authoring.require_scenario_save_if_match policy requires one (428). Controllers without durable scenario revisions refuse a presented tag with 503 scenario_writer_if_match_unavailable and refuse every write under the strict policy with 503 scenario_save_strict_policy_unavailable.
           required: false
           schema:
             type: string
@@ -188634,7 +188803,7 @@ paths:
                 enum:
                   - "true"
             X-APEX-Original-Content-Revision:
-              description: On a replay, the authored content revision the original create produced, when recorded.
+              description: On a replay, the authored content revision the original create produced. Absent when the replay adopted a create whose response was lost, since the resource may have been edited since.
               schema:
                 type: string
         "400":
@@ -188735,7 +188904,7 @@ paths:
       parameters:
         - name: Idempotency-Key
           in: header
-          description: 'Optional retry key (16-512 visible ASCII characters), scoped to project, caller and create kind. The same key and request replay the originally created resource for 24 hours with Idempotent-Replayed: true; a changed request returns 409 idempotency_key_reused, an expired key 409 idempotency_key_expired, a deleted original 410 idempotency_resource_deleted (it is never recreated), and an in-flight duplicate 409 idempotency_request_in_progress with Retry-After. Controllers without durable receipts refuse the key with 503 idempotency_unavailable. Credential-preserving script imports are fenced by their import attestation instead.'
+          description: 'Optional retry key (16-512 visible ASCII characters), scoped to project, caller and create kind. The same key and request replay the originally created resource for 24 hours with Idempotent-Replayed: true; a changed request returns 409 idempotency_key_reused, an expired key 409 idempotency_key_expired, a deleted original 410 idempotency_resource_deleted (it is never recreated), and an in-flight duplicate 409 idempotency_request_in_progress with Retry-After. Controllers without durable receipts refuse the key with 503 idempotency_unavailable. A key is kept, never reused, while an earlier attempt may have committed; it is released for a corrected request only when the create was refused before running or a durable read proves nothing was created. A credential-preserving script import that claims a single-use import attestation is fenced by that attestation instead; one without an attestation uses the key like any other create. Since this contract, an empty or shorter key is refused with 400 idempotency_key_invalid instead of being ignored.'
           required: false
           schema:
             type: string

@@ -766,10 +766,12 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// An Idempotency-Key makes an ordinary create retry-safe. Credential-
-	// preserving imports are fenced by their single-use import attestations.
+	// An Idempotency-Key makes an ordinary create retry-safe. A credential-
+	// preserving import that claims a single-use import attestation is fenced
+	// by that attestation instead; one without an attestation to claim uses
+	// the receipt like any other create.
 	var receipt *authoringCreateAttempt
-	if !isCredentialPreservingImport(script) {
+	if !credentialPreservingImportClaimsAttestation(script) {
 		attempt, outcome := s.claimAuthoringCreate(w, r, storage.AuthoringPurposeScriptCreate, "script", script.ProjectID, script.ID, scriptCreateFingerprint(wrapper))
 		switch outcome {
 		case authoringCreateHandled:
@@ -779,6 +781,9 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		receipt = attempt
+		if receipt != nil {
+			receipt.absent = s.durableScriptAbsent
+		}
 		defer receipt.release()
 		if receipt != nil && strings.TrimSpace(script.ID) == "" {
 			script.ID = receipt.resourceID()
@@ -944,6 +949,11 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "script not found")
 			return
 		}
+		// An unclassified failure may have committed; keep the receipt so a
+		// retry adopts the script rather than reusing the key.
+		if receipt != nil {
+			receipt.outcomeUnknown = true
+		}
 		writeError(w, http.StatusInternalServerError, "failed to save script: "+err.Error())
 		return
 	}
@@ -965,6 +975,19 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	receipt.complete(stored.ContentRevision)
 	s.recordAuditEvent(r, "script.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": disclosureSafeScriptName(stored.Name, stored.Script), "folder_id": stored.FolderID})
 	writeJSON(w, http.StatusCreated, viewStoredScript(stored))
+}
+
+// credentialPreservingImportClaimsAttestation reports whether the create will
+// claim a single-use import attestation, which then fences retries.
+func credentialPreservingImportClaimsAttestation(script *dsl.Script) bool {
+	if !isCredentialPreservingImport(script) {
+		return false
+	}
+	if importDraftAttestationToken(script) != "" {
+		return true
+	}
+	fingerprint, err := fingerprintImportDraftCredentials(script)
+	return err == nil && fingerprint.HasRawCredentials
 }
 
 func (s *Server) handleListScripts(w http.ResponseWriter, r *http.Request) {

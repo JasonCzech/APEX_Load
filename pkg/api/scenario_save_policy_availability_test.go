@@ -530,9 +530,10 @@ func TestScenarioSaveMemoryOwnershipPrecedesPresentedCondition(t *testing.T) {
 	}
 }
 
-// Every scenario-scoped mutation either honors a strong authoring validator,
-// refuses a presented If-Match, or owns an independent revision contract. A
-// new writer must be classified here before it can ship.
+// Every scenario-scoped route either honors a strong authoring validator or
+// owns an independent revision contract. A new route must be classified here
+// before it can ship; writers outside this URL prefix are classified by the
+// storage writers they reach in TestEveryScenarioAuthoredWriterCallerIsClassified.
 func TestEveryScenarioWriterClassifiesIfMatch(t *testing.T) {
 	independent := map[string]string{
 		"POST /api/v1/scenarios/{id}/archive":                   "lifecycle state, not authored content",
@@ -552,7 +553,7 @@ func TestEveryScenarioWriterClassifiesIfMatch(t *testing.T) {
 		if route.Method == http.MethodGet || !strings.HasPrefix(route.Path, "/api/v1/scenarios/{id}") {
 			continue
 		}
-		if key == "PUT /api/v1/scenarios/{id}" || scenarioUnconditionedWriterRoutes[key] {
+		if key == "PUT /api/v1/scenarios/{id}" || scenarioGuardedWriterRoutes[key] {
 			continue
 		}
 		if _, ok := independent[key]; ok || strings.HasPrefix(route.Path, "/api/v1/scenarios/{id}/schedules/") {
@@ -564,7 +565,7 @@ func TestEveryScenarioWriterClassifiesIfMatch(t *testing.T) {
 	if len(unclassified) > 0 {
 		t.Fatalf("scenario writers without an If-Match classification: %v", unclassified)
 	}
-	for key := range scenarioUnconditionedWriterRoutes {
+	for key := range scenarioGuardedWriterRoutes {
 		found := false
 		for _, route := range routes {
 			found = found || route.Method+" "+route.Path == key
@@ -572,31 +573,6 @@ func TestEveryScenarioWriterClassifiesIfMatch(t *testing.T) {
 		if !found {
 			t.Fatalf("classified writer %s is not a registered route", key)
 		}
-	}
-}
-
-func TestUnconditionedScenarioWritersRefusePresentedIfMatch(t *testing.T) {
-	server, store, _, scenario := newScenarioPolicyAvailabilityFixture(t)
-	before, err := store.GetScenarioAuthoringSnapshot(scenario.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, tag, _ := requireScenarioAuthoringView(t, server, scenario.ID)
-	for key := range scenarioUnconditionedWriterRoutes {
-		method, path, _ := strings.Cut(key, " ")
-		path = strings.ReplaceAll(path, "{id}", scenario.ID)
-		response := authoringAPIRequest(t, server, method, path, map[string]any{}, tag)
-		var body struct {
-			Code string `json:"code"`
-			Ref  string `json:"ref"`
-		}
-		_ = json.Unmarshal(response.Body.Bytes(), &body)
-		if response.Code != http.StatusServiceUnavailable || body.Code != "scenario_writer_if_match_unavailable" || body.Ref == "" {
-			t.Fatalf("%s accepted or ignored If-Match: %d %s", key, response.Code, response.Body.String())
-		}
-	}
-	if after, err := store.GetScenarioAuthoringSnapshot(scenario.ID); err != nil || !reflect.DeepEqual(before, after) {
-		t.Fatalf("refused writers mutated the scenario: %v", err)
 	}
 }
 

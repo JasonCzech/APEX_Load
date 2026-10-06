@@ -16870,6 +16870,9 @@ export interface operations {
     };
     responses: {
       "200": {
+        headers: {
+          "ETag"?: string;
+        };
         content: {
           "application/json": ({
             "applied": number;
@@ -17463,15 +17466,29 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "412": {
+        content: {
+          "application/json": {
+            "error": string;
+          };
+        };
+      };
       "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "428": {
+        content: {
+          "application/json": {
+            "error": string;
+          };
+        };
+      };
       "503": {
         content: {
           "application/json": {
-            "code"?: "scenario_writer_if_match_unavailable";
+            "code"?: "scenario_save_outcome_unknown" | "scenario_writer_if_match_unavailable" | "scenario_save_strict_policy_unavailable";
             "error": string;
             "ref"?: string;
           };
@@ -45958,6 +45975,9 @@ export interface operations {
     requestBody?: never;
     responses: {
       "200": {
+        headers: {
+          "ETag"?: string;
+        };
         content: {
           "application/json": Record<string, string>;
         };
@@ -45977,6 +45997,27 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "404": {
+        content: {
+          "application/json": {
+            "error": string;
+          };
+        };
+      };
+      "412": {
+        content: {
+          "application/json": {
+            "error": string;
+          };
+        };
+      };
+      "428": {
+        content: {
+          "application/json": {
+            "error": string;
+          };
+        };
+      };
       "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -45985,7 +46026,7 @@ export interface operations {
       "503": {
         content: {
           "application/json": {
-            "code"?: "scenario_writer_if_match_unavailable";
+            "code"?: "scenario_save_outcome_unknown" | "scenario_writer_if_match_unavailable" | "scenario_save_strict_policy_unavailable";
             "error": string;
             "ref"?: string;
           };
@@ -89953,7 +89994,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": {
+          "application/json": ({
             "project_id": string;
             "revision": number;
             "scenario_id": string;
@@ -89961,7 +90002,7 @@ export interface operations {
               "required": boolean;
               "source_id": string;
             }>;
-          };
+          }) | null;
         };
       };
       "400": {
@@ -90018,8 +90059,11 @@ export interface operations {
     };
     responses: {
       "200": {
+        headers: {
+          "ETag"?: string;
+        };
         content: {
-          "application/json": {
+          "application/json": ({
             "project_id": string;
             "revision": number;
             "scenario_id": string;
@@ -90027,7 +90071,7 @@ export interface operations {
               "required": boolean;
               "source_id": string;
             }>;
-          };
+          }) | null;
         };
       };
       "400": {
@@ -90045,9 +90089,30 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "404": {
+        content: {
+          "application/json": {
+            "error": string;
+          };
+        };
+      };
+      "412": {
+        content: {
+          "application/json": {
+            "error": string;
+          };
+        };
+      };
       "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "428": {
+        content: {
+          "application/json": {
+            "error": string;
+          };
         };
       };
       "500": {
@@ -90058,7 +90123,7 @@ export interface operations {
       "503": {
         content: {
           "application/json": {
-            "code"?: "scenario_writer_if_match_unavailable";
+            "code"?: "scenario_save_outcome_unknown" | "scenario_writer_if_match_unavailable" | "scenario_save_strict_policy_unavailable";
             "error": string;
             "ref"?: string;
           };
@@ -126920,6 +126985,9 @@ export interface operations {
     };
     responses: {
       "200": {
+        headers: {
+          "ETag"?: string;
+        };
         content: {
           "application/json": components["schemas"]["LibraryAssignment"];
         };
@@ -126949,15 +127017,29 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "412": {
+        content: {
+          "application/json": {
+            "error": string;
+          };
+        };
+      };
       "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "428": {
+        content: {
+          "application/json": {
+            "error": string;
+          };
+        };
+      };
       "503": {
         content: {
           "application/json": {
-            "code"?: "scenario_writer_if_match_unavailable";
+            "code"?: "scenario_save_outcome_unknown" | "scenario_writer_if_match_unavailable" | "scenario_save_strict_policy_unavailable";
             "error": string;
             "ref"?: string;
           };
@@ -151681,6 +151763,9 @@ export interface operations {
     };
     responses: {
       "200": {
+        headers: {
+          "ETag"?: string;
+        };
         content: {
           "application/json": Record<string, unknown>;
         };
@@ -151710,9 +151795,23 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "412": {
+        content: {
+          "application/json": {
+            "error": string;
+          };
+        };
+      };
       "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "428": {
+        content: {
+          "application/json": {
+            "error": string;
+          };
         };
       };
       "501": {
@@ -151723,7 +151822,7 @@ export interface operations {
       "503": {
         content: {
           "application/json": {
-            "code"?: "scenario_writer_if_match_unavailable";
+            "code"?: "scenario_save_outcome_unknown" | "scenario_writer_if_match_unavailable" | "scenario_save_strict_policy_unavailable";
             "error": string;
             "ref"?: string;
           };

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -50,10 +51,16 @@ type authoringCreateAttempt struct {
 	// attempt may have created the object without completing the receipt.
 	resumed bool
 	// attempted is set once the durable create is called. From then on a
-	// failure may have committed, so the receipt is kept for a retry to
-	// resume instead of being abandoned.
+	// failure may have committed, so the receipt is abandoned only after a
+	// durable read proves the resource absent.
 	attempted bool
 	completed bool
+	// outcomeUnknown keeps the receipt whatever a read shows: a commit whose
+	// acknowledgement was lost may still become visible.
+	outcomeUnknown bool
+	// absent reads the store for the receipt's resource. It reports true only
+	// when the resource definitely does not exist.
+	absent func(id string) bool
 }
 
 func (attempt *authoringCreateAttempt) resourceID() string {
@@ -84,11 +91,28 @@ func (attempt *authoringCreateAttempt) complete(revision string) {
 	}
 }
 
+// fail records the create's error; an unknown commit outcome pins the
+// receipt so a retry adopts whatever committed.
+func (attempt *authoringCreateAttempt) fail(err error) {
+	if attempt != nil && errors.Is(err, storage.ErrScenarioAuthoringOutcomeUnknown) {
+		attempt.outcomeUnknown = true
+	}
+}
+
 // release abandons a receipt whose create definitely did not happen, so the
 // same key can be retried with a corrected request. Deferred by handlers.
+// Before the durable create is called this request cannot have created
+// anything; afterwards, and for a receipt resumed from an earlier attempt
+// that may have committed, only a durable read proving the resource absent
+// allows the key to be reused.
 func (attempt *authoringCreateAttempt) release() {
-	if attempt == nil || attempt.completed || attempt.attempted {
+	if attempt == nil || attempt.completed || attempt.outcomeUnknown {
 		return
+	}
+	if attempt.attempted || attempt.resumed {
+		if attempt.absent == nil || !attempt.absent(attempt.receipt.ResourceID) {
+			return
+		}
 	}
 	if _, err := attempt.store.AbandonAuthoringMutationReceipt(attempt.receipt.ID, attempt.ownerToken); err != nil {
 		slog.Warn("authoring create receipt not released", "purpose", attempt.receipt.Purpose, "error", err)
@@ -173,8 +197,11 @@ type authoringReceiptIdentity struct {
 }
 
 // authoringReceiptIdentity computes the keyed digests and the fixed resource
-// ID for one key. Digests are HMACs under a durable per-deployment key, so a
-// receipt row cannot be used to test guesses of a key or request body.
+// ID for one key. Digests are HMACs under a per-deployment key kept in the
+// settings table, so a receipt row alone cannot be used to test guesses of a
+// key or request body. The key is not wrapped: a reader of the whole database
+// holds both, and could test guesses offline (including runtime credentials
+// entered with a scenario create, which the digest covers).
 func (s *Server) authoringReceiptIdentity(r *http.Request, purpose, projectID, key, requestedID string, request any) (authoringReceiptIdentity, error) {
 	digestKey, err := s.persistentDigestKey(authoringReceiptDigestKeySetting, "authoring receipt")
 	if err != nil {
@@ -223,13 +250,23 @@ func markAuthoringReplay(w http.ResponseWriter, attempt *authoringCreateAttempt)
 }
 
 // tombstoneAuthoringReceipts must run before a script or scenario is deleted,
-// so a retry of the request that created it cannot recreate it.
-func (s *Server) tombstoneAuthoringReceipts(resourceType, resourceID string) error {
+// so a retry of the request that created it cannot recreate it. The returned
+// restore withdraws exactly these tombstones; handlers call it when the delete
+// was definitely refused, so a live resource is never reported as deleted.
+func (s *Server) tombstoneAuthoringReceipts(resourceType, resourceID string) (func(), error) {
 	store, supported := s.store.(storage.AuthoringMutationReceiptStore)
 	if s.store == nil || !supported {
-		return nil
+		return func() {}, nil
 	}
-	return store.TombstoneAuthoringMutationReceipts(resourceType, resourceID, "deleted", time.Now().UTC())
+	at := time.Now().UTC().Truncate(time.Microsecond)
+	if err := store.TombstoneAuthoringMutationReceipts(resourceType, resourceID, "deleted", at); err != nil {
+		return nil, err
+	}
+	return func() {
+		if err := store.RestoreAuthoringMutationReceiptTombstones(resourceType, resourceID, "deleted", at); err != nil {
+			slog.Warn("authoring receipt tombstone not withdrawn after a refused delete", "resource_type", resourceType, "resource_id", resourceID, "error", err)
+		}
+	}, nil
 }
 
 // replayScriptCreate answers a retried or resumed script create with the
@@ -247,26 +284,75 @@ func (s *Server) replayScriptCreate(w http.ResponseWriter, r *http.Request, atte
 	if !requireScriptAuthoringProjectMatch(w, r, stored.ProjectID) {
 		return
 	}
-	attempt.complete(stored.ContentRevision)
+	// A completed receipt already holds the original revision. Adopting an
+	// unconfirmed create cannot know it: the script may have been edited since.
+	attempt.complete("")
 	markAuthoringReplay(w, attempt)
 	writeJSON(w, http.StatusCreated, viewStoredScript(stored))
 }
 
 // replayScenarioCreate answers a retried or resumed scenario create with the
-// scenario the original request created.
+// scenario the original request created. Existence is decided by a durable
+// read, so a replica whose cache has not caught up answers 503, never 410.
 func (s *Server) replayScenarioCreate(w http.ResponseWriter, r *http.Request, attempt *authoringCreateAttempt) {
+	exists, err := s.durableScenarioExists(attempt.resourceID())
+	if err != nil {
+		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_unavailable", "the original scenario could not be read; retry later")
+		return
+	}
+	if !exists {
+		writeAuthoringIdempotencyError(w, http.StatusGone, "idempotency_resource_deleted", "the resource created with this Idempotency-Key was deleted and will not be recreated")
+		return
+	}
 	scenario, found := s.runner.GetScenario(attempt.resourceID())
 	if !found || scenario == nil {
-		writeAuthoringIdempotencyError(w, http.StatusGone, "idempotency_resource_deleted", "the resource created with this Idempotency-Key was deleted and will not be recreated")
+		s.runner.refreshScenariosAfterDurableMismatch()
+		scenario, found = s.runner.GetScenario(attempt.resourceID())
+	}
+	if !found || scenario == nil {
+		writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_unavailable", "the original scenario is not yet visible on this controller; retry later")
 		return
 	}
 	if expected, scoped := authorizedProjectFromRequest(r); scoped && normalizeProjectID(scenario.ProjectID) != expected {
 		writeError(w, http.StatusNotFound, "scenario not found")
 		return
 	}
-	attempt.complete(s.scenarioContentRevision(scenario.ID))
+	attempt.complete("")
 	markAuthoringReplay(w, attempt)
 	writeJSON(w, http.StatusCreated, maskStoredScenario(scenario))
+}
+
+// durableScenarioExists reads the store, not this replica's cache. Stores
+// without durable authoring snapshots fall back to the cache.
+func (s *Server) durableScenarioExists(id string) (bool, error) {
+	reader, supported := s.store.(storage.ScenarioAuthoringStore)
+	if s.store == nil || !supported {
+		_, found := s.runner.GetScenario(id)
+		return found, nil
+	}
+	_, err := reader.GetScenarioAuthoringSnapshot(id)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, storage.ErrScenarioAuthoringNotFound), errors.Is(err, sql.ErrNoRows):
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
+// durableScenarioAbsent reports true only when the store proves the scenario
+// does not exist.
+func (s *Server) durableScenarioAbsent(id string) bool {
+	exists, err := s.durableScenarioExists(id)
+	return err == nil && !exists
+}
+
+// durableScriptAbsent reports true only when the store proves the script does
+// not exist.
+func (s *Server) durableScriptAbsent(id string) bool {
+	stored, found, err := s.runner.GetScriptAuthoringDurable(id)
+	return err == nil && (!found || stored == nil)
 }
 
 // scenarioContentRevision returns the durable authored revision, or "" when

@@ -273,58 +273,76 @@ func createScenarioWithBindingsTx(tx *storeTx, scenario *Scenario, scripts []Sce
 // UpdateScenarioWithDataPoolBindingsIfUnchanged replaces the scenario and all
 // child rows only when updated_at still matches the caller's durable snapshot.
 func (s *SQLiteStore) UpdateScenarioWithDataPoolBindingsIfUnchanged(scenario *Scenario, scripts []ScenarioScript, bindings []ScenarioDataPoolBinding, expectedUpdatedAt time.Time) (bool, error) {
+	updated, _, err := s.updateScenarioWithDataPoolBindings(scenario, scripts, bindings, expectedUpdatedAt, nil)
+	return updated, err
+}
+
+func (s *SQLiteStore) updateScenarioWithDataPoolBindings(scenario *Scenario, scripts []ScenarioScript, bindings []ScenarioDataPoolBinding, expectedUpdatedAt time.Time, guard *ScenarioWriterGuard) (bool, string, error) {
 	if expectedUpdatedAt.IsZero() {
-		return false, errors.New("expected scenario updated_at is required")
+		return false, "", errors.New("expected scenario updated_at is required")
 	}
 	assignmentJSON, goalJSON, runtimeJSON, trafficJSON, err := prepareScenarioForSave(scenario)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	defer tx.Rollback()
 	if _, err := lockScenarioMutationProjectTx(tx, scenario.ID, scripts); err != nil {
-		return false, err
+		return false, "", err
+	}
+	if err := guardScenarioWriterTx(tx, scenario.ID, guard); err != nil {
+		return false, "", err
 	}
 	if err := validateScenarioScriptJSON(scenario.ID, scripts); err != nil {
-		return false, err
+		return false, "", err
 	}
 	if err := validateScenarioProjectRewriteTx(tx, scenario.ID, scripts); err != nil {
-		return false, err
+		return false, "", err
 	}
 	if err := ensureObjectActiveTx(tx, "scenario", scenario.ID); err != nil {
-		return false, err
+		return false, "", err
 	}
 	var currentUpdatedAt time.Time
 	var currentUpdatedRaw string
 	if err := tx.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT) FROM scenarios WHERE id = ?`, scenario.ID).Scan(&currentUpdatedAt, &currentUpdatedRaw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil
+			return false, "", nil
 		}
-		return false, err
+		return false, "", err
 	}
 	if !currentUpdatedAt.Equal(expectedUpdatedAt) {
-		return false, nil
+		return false, "", nil
 	}
 	result, err := tx.Exec(`UPDATE scenarios SET ref_key = ?, name = ?, workload_shape_id = ?, duration = ?, start_delay = ?, scenario_mode = ?, termination_mode = ?, shakeout_enabled = ?, resource_baseline_enabled = ?, assignment_json = ?, goal_config_json = ?, runtime_settings_json = ?, traffic_profile_json = ?, updated_at = ?
 		WHERE id = ? AND CAST(updated_at AS TEXT) = ?`,
 		scenario.RefKey, scenario.Name, scenario.WorkloadShapeID, scenario.Duration, scenario.StartDelay, scenario.ScenarioMode, scenario.TerminationMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(assignmentJSON), string(goalJSON), string(runtimeJSON), string(trafficJSON), scenario.UpdatedAt, scenario.ID, currentUpdatedRaw)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	rows, err := result.RowsAffected()
 	if err != nil || rows != 1 {
-		return false, err
+		return false, "", err
 	}
 	if err := replaceScenarioScriptsTx(tx, scenario.ID, scripts); err != nil {
-		return false, err
+		return false, "", err
 	}
 	if err := saveScenarioDataPoolBindingsTx(tx, scenario.ID, bindings); err != nil {
-		return false, err
+		return false, "", err
 	}
-	return true, tx.Commit()
+	if guard == nil {
+		return true, "", tx.Commit()
+	}
+	revision, err := committedScenarioRevisionTx(tx, scenario.ID)
+	if err != nil {
+		return false, "", err
+	}
+	if err := commitScenarioWriterTx(tx); err != nil {
+		return false, "", err
+	}
+	return true, revision, nil
 }
 
 // SaveScenarioWithDataPoolBindings persists the scenario, script ordering, and
@@ -453,6 +471,10 @@ func listScenarioScriptsReader(reader libraryAssignmentReader, scenarioID string
 }
 
 func (s *SQLiteStore) DeleteScenario(id string) error {
+	return s.deleteScenario(id, nil)
+}
+
+func (s *SQLiteStore) deleteScenario(id string, guard *ScenarioWriterGuard) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -460,6 +482,14 @@ func (s *SQLiteStore) DeleteScenario(id string) error {
 	defer tx.Rollback()
 	if err := lockScenarioExistingProjectTx(tx, id); err != nil {
 		return err
+	}
+	if guard != nil {
+		if err := guardScenarioWriterTx(tx, id, guard); err != nil {
+			if errors.Is(err, ErrScenarioAuthoringNotFound) && guard.Expected == nil {
+				return nil
+			}
+			return err
+		}
 	}
 	locked, err := tx.Exec(`UPDATE scenarios SET updated_at = updated_at WHERE id = ?`, id)
 	if err != nil {
@@ -585,57 +615,80 @@ func (s *SQLiteStore) SaveScenarioDataPoolBindings(scenarioID string, bindings [
 // scenario aggregate. Updating them advances scenarios.updated_at and only wins
 // when the caller still owns the durable snapshot it loaded.
 func (s *SQLiteStore) UpdateScenarioDataPoolBindingsIfUnchanged(scenarioID string, bindings []ScenarioDataPoolBinding, expectedUpdatedAt time.Time) (time.Time, bool, error) {
+	updatedAt, _, updated, err := s.updateScenarioDataPoolBindings(scenarioID, bindings, expectedUpdatedAt, nil)
+	return updatedAt, updated, err
+}
+
+// updateScenarioDataPoolBindings replaces the bindings under the updated_at
+// CAS. A conditioned guard proves currency by content revision instead, so a
+// replica whose cached clock lags still writes against the revision the
+// caller saw.
+func (s *SQLiteStore) updateScenarioDataPoolBindings(scenarioID string, bindings []ScenarioDataPoolBinding, expectedUpdatedAt time.Time, guard *ScenarioWriterGuard) (time.Time, string, bool, error) {
+	conditioned := guard != nil && guard.Expected != nil
 	scenarioID = strings.TrimSpace(scenarioID)
 	if scenarioID == "" {
-		return time.Time{}, false, errors.New("scenario id is required")
+		return time.Time{}, "", false, errors.New("scenario id is required")
 	}
-	if expectedUpdatedAt.IsZero() {
-		return time.Time{}, false, errors.New("expected scenario updated_at is required")
+	if expectedUpdatedAt.IsZero() && !conditioned {
+		return time.Time{}, "", false, errors.New("expected scenario updated_at is required")
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
-		return time.Time{}, false, err
+		return time.Time{}, "", false, err
 	}
 	defer tx.Rollback()
 	if err := lockScenarioExistingProjectTx(tx, scenarioID); err != nil {
-		return time.Time{}, false, err
+		return time.Time{}, "", false, err
+	}
+	if err := guardScenarioWriterTx(tx, scenarioID, guard); err != nil {
+		return time.Time{}, "", false, err
 	}
 	var currentUpdatedAt time.Time
 	var currentUpdatedRaw string
 	if err := tx.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT) FROM scenarios WHERE id = ?`, scenarioID).Scan(&currentUpdatedAt, &currentUpdatedRaw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return time.Time{}, false, nil
+			return time.Time{}, "", false, nil
 		}
-		return time.Time{}, false, err
+		return time.Time{}, "", false, err
 	}
-	if !currentUpdatedAt.Equal(expectedUpdatedAt) {
-		return time.Time{}, false, nil
+	if !conditioned && !currentUpdatedAt.Equal(expectedUpdatedAt) {
+		return time.Time{}, "", false, nil
 	}
 	updatedAt, err := preciseDatabaseTime(tx, s.db.dialect)
 	if err != nil {
-		return time.Time{}, false, err
+		return time.Time{}, "", false, err
 	}
 	if !updatedAt.After(currentUpdatedAt) {
 		updatedAt = currentUpdatedAt.Add(time.Microsecond)
 	}
 	if err := ensureObjectActiveTx(tx, "scenario", scenarioID); err != nil {
-		return time.Time{}, false, err
+		return time.Time{}, "", false, err
 	}
 	result, err := tx.Exec(`UPDATE scenarios SET updated_at = ? WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, updatedAt, scenarioID, currentUpdatedRaw)
 	if err != nil {
-		return time.Time{}, false, err
+		return time.Time{}, "", false, err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil || affected != 1 {
-		return time.Time{}, false, err
+		return time.Time{}, "", false, err
 	}
 	if err := saveScenarioDataPoolBindingsTx(tx, scenarioID, bindings); err != nil {
-		return time.Time{}, false, err
+		return time.Time{}, "", false, err
+	}
+	revision := ""
+	if guard != nil {
+		if revision, err = committedScenarioRevisionTx(tx, scenarioID); err != nil {
+			return time.Time{}, "", false, err
+		}
+		if err := commitScenarioWriterTx(tx); err != nil {
+			return time.Time{}, "", false, err
+		}
+		return updatedAt, revision, true, nil
 	}
 	if err := tx.Commit(); err != nil {
-		return time.Time{}, false, err
+		return time.Time{}, "", false, err
 	}
-	return updatedAt, true, nil
+	return updatedAt, revision, true, nil
 }
 
 func validateScenarioDataPoolProjectsTx(tx *storeTx, scenarioID string, bindings []ScenarioDataPoolBinding) error {

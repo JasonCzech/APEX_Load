@@ -80,6 +80,7 @@ type AuthoringMutationReceiptStore interface {
 	CompleteAuthoringMutationReceipt(id, ownerToken, resourceRevision string, now time.Time) (bool, error)
 	AbandonAuthoringMutationReceipt(id, ownerToken string) (bool, error)
 	TombstoneAuthoringMutationReceipts(resourceType, resourceID, reason string, now time.Time) error
+	RestoreAuthoringMutationReceiptTombstones(resourceType, resourceID, reason string, at time.Time) error
 }
 
 var _ AuthoringMutationReceiptStore = (*SQLiteStore)(nil)
@@ -205,8 +206,9 @@ func (s *SQLiteStore) AbandonAuthoringMutationReceipt(id, ownerToken string) (bo
 
 // TombstoneAuthoringMutationReceipts records that a resource was deleted, so
 // a later retry of the request that created it can never recreate it. Callers
-// tombstone before deleting: a failed delete leaves a tombstoned live object,
-// which refuses retries but never duplicates or resurrects a resource.
+// tombstone before deleting and withdraw the tombstone when the delete is
+// definitely refused; a delete whose outcome is unknown keeps it, which
+// refuses retries but never duplicates or resurrects a resource.
 func (s *SQLiteStore) TombstoneAuthoringMutationReceipts(resourceType, resourceID, reason string, now time.Time) error {
 	resourceType, resourceID = strings.TrimSpace(resourceType), strings.TrimSpace(resourceID)
 	if resourceType == "" || resourceID == "" {
@@ -217,6 +219,24 @@ func (s *SQLiteStore) TombstoneAuthoringMutationReceipts(resourceType, resourceI
 		now.UTC(), strings.TrimSpace(reason), now.UTC(), resourceType, resourceID)
 	if err != nil {
 		return fmt.Errorf("tombstone authoring receipts: %w", err)
+	}
+	return nil
+}
+
+// RestoreAuthoringMutationReceiptTombstones withdraws the tombstones written
+// at exactly at for this resource, after its delete was definitely refused.
+// Earlier tombstones are untouched. A withdrawn pending receipt has no owner
+// or lease, so the next retry resumes it and adopts the live resource.
+func (s *SQLiteStore) RestoreAuthoringMutationReceiptTombstones(resourceType, resourceID, reason string, at time.Time) error {
+	resourceType, resourceID = strings.TrimSpace(resourceType), strings.TrimSpace(resourceID)
+	if resourceType == "" || resourceID == "" {
+		return errors.New("authoring receipt tombstone restore requires resource type and id")
+	}
+	_, err := s.db.Exec(`UPDATE authoring_mutation_receipts SET tombstoned_at = NULL, tombstone_reason = '', updated_at = ?
+		WHERE resource_type = ? AND resource_id = ? AND tombstoned_at = ? AND tombstone_reason = ?`,
+		time.Now().UTC(), resourceType, resourceID, at.UTC(), strings.TrimSpace(reason))
+	if err != nil {
+		return fmt.Errorf("restore authoring receipt tombstones: %w", err)
 	}
 	return nil
 }

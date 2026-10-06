@@ -167,9 +167,6 @@ func (s *Server) handleMonitorBindings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, message)
 		return
 	}
-	if r.Method != http.MethodGet && refuseUnconditionedScenarioWriter(w, r) {
-		return
-	}
 	store := s.runMonitorStore(w, project)
 	if store == nil {
 		return
@@ -193,7 +190,21 @@ func (s *Server) handleMonitorBindings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b.ProjectID, b.ScenarioID = project, r.PathValue("id")
-	saved, err := store.SaveMonitorBindings(b, b.Revision)
+	admission, admitted := s.admitScenarioWriter(w, r, b.ScenarioID, project)
+	if !admitted {
+		return
+	}
+	var saved *storage.MonitorBindings
+	var revision string
+	var err error
+	if admission.guarded() {
+		saved, revision, err = admission.store.SaveMonitorBindingsGuarded(b, b.Revision, admission.guard)
+	} else {
+		saved, err = store.SaveMonitorBindings(b, b.Revision)
+	}
+	if err != nil && writeScenarioWriterError(w, err) {
+		return
+	}
 	if err != nil {
 		status := 400
 		if errors.Is(err, storage.ErrMonitorRevision) {
@@ -203,6 +214,7 @@ func (s *Server) handleMonitorBindings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAuditEvent(r, "monitor.bindings.save", "success", "scenario", b.ScenarioID, project, map[string]any{"revision": saved.Revision})
+	setScenarioWriterETag(w, revision)
 	writeJSON(w, 200, saved)
 }
 

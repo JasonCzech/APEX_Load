@@ -489,7 +489,7 @@ func TestScriptAuthoringAPIApprovedOriginsExposeOnlySafeRevisionHeaders(t *testi
 		for _, name := range exposed {
 			names[strings.TrimSpace(name)] = true
 		}
-		if len(names) != 3 || !names["ETag"] || !names["X-APEXLOAD-Audit-Status"] || !names["X-APEX-Script-Save-Mode"] || names["*"] {
+		if len(names) != 5 || !names["ETag"] || !names["X-APEXLOAD-Audit-Status"] || !names["X-APEX-Script-Save-Mode"] || !names["X-APEX-Scenario-Save-Mode"] || !names["X-APEX-Original-Content-Revision"] || names["*"] {
 			t.Fatal("safe revision headers unreadable or wildcard exposure broadened")
 		}
 		denied := httptest.NewRecorder()

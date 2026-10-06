@@ -20,7 +20,7 @@ func TestScenarioAuthoringOpenAPIContract(t *testing.T) {
 	for _, route := range []struct{ path, method string }{{"/api/v1/projects", "post"}, {"/api/v1/projects/{id}", "put"}} {
 		operation := doc.Paths[route.path][route.method]
 		policy := operation.RequestBody.Content["application/json"].Schema.Properties["settings"].Properties["authoring"].Properties["require_scenario_save_if_match"]
-		if policy.Type != "boolean" || !strings.Contains(policy.Description, "428") || !strings.Contains(policy.Description, "inside the save transaction") {
+		if policy.Type != "boolean" || !strings.Contains(policy.Description, "428") || !strings.Contains(policy.Description, "inside each write's transaction") || !strings.Contains(policy.Description, "apply-to-groups") {
 			t.Fatalf("%s %s strict scenario policy is undocumented: %#v", route.method, route.path, policy)
 		}
 	}
@@ -48,17 +48,27 @@ func TestScenarioAuthoringOpenAPIContract(t *testing.T) {
 	if !reflect.DeepEqual(body.Properties["code"].Enum, []string{"scenario_save_outcome_unknown", "scenario_save_outcome_audit_unavailable", "scenario_save_if_match_unavailable", "scenario_save_strict_policy_unavailable"}) || !reflect.DeepEqual(body.Required, []string{"error"}) || !strings.Contains(put.Responses["503"].Description, "never retry automatically") {
 		t.Fatal("scenario save outcome codes are undocumented")
 	}
-	for key := range scenarioUnconditionedWriterRoutes {
+	for key := range scenarioGuardedWriterRoutes {
 		method, path, _ := strings.Cut(key, " ")
 		operation := doc.Paths[path][strings.ToLower(method)]
-		refused := false
+		guarded := false
 		for _, parameter := range operation.Parameters {
 			if parameter.Name == "If-Match" {
-				refused = strings.Contains(parameter.Description, "refused with 503")
+				guarded = !parameter.Required && strings.Contains(parameter.Description, "scenario-authoring-v1") && strings.Contains(parameter.Description, "412") && strings.Contains(parameter.Description, "428")
 			}
 		}
-		if !refused || !reflect.DeepEqual(operation.Responses["503"].Content["application/json"].Schema.Properties["code"].Enum, []string{"scenario_writer_if_match_unavailable"}) {
-			t.Fatalf("%s does not document its If-Match refusal", key)
+		if !guarded || !reflect.DeepEqual(operation.Responses["503"].Content["application/json"].Schema.Properties["code"].Enum, []string{"scenario_save_outcome_unknown", "scenario_writer_if_match_unavailable", "scenario_save_strict_policy_unavailable"}) {
+			t.Fatalf("%s does not document its If-Match guard", key)
+		}
+		for _, status := range []string{"400", "404", "412", "428"} {
+			if _, exists := operation.Responses[status]; !exists {
+				t.Fatalf("%s response %s is undocumented", key, status)
+			}
+		}
+		if saved, exists := operation.Responses["200"]; exists {
+			if _, tagged := saved.Headers["ETag"]; !tagged {
+				t.Fatalf("%s does not document its committed ETag", key)
+			}
 		}
 	}
 	get := doc.Paths["/api/v1/scenarios/{id}"]["get"]

@@ -558,17 +558,11 @@ func (s *SQLiteStore) updateScenarioAuthoringIfCurrent(input *Scenario, groups [
 		return nil, ErrScenarioAuthoringUnavailable
 	}
 	if expected.LegacyOrdinarySave {
-		var raw string
-		if err := tx.QueryRow(`SELECT COALESCE(settings_json,'') FROM projects WHERE id=?`, owner).Scan(&raw); err != nil {
+		strict, err := scenarioStrictSavePolicyTx(tx, owner)
+		if err != nil {
 			return nil, err
 		}
-		var settings ProjectSettings
-		if raw != "" && raw != "null" {
-			if err := json.Unmarshal([]byte(raw), &settings); err != nil {
-				return nil, err
-			}
-		}
-		if settings.Authoring != nil && settings.Authoring.RequireScenarioSaveIfMatch {
+		if strict {
 			return nil, ErrScenarioAuthoringPreconditionRequired
 		}
 	}

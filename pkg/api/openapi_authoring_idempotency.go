@@ -10,7 +10,7 @@ func applyAuthoringIdempotencyContract(route discoveredRoute, contract *inferred
 	if contract == nil || route.Method != http.MethodPost || (route.Path != "/api/v1/scripts" && route.Path != "/api/v1/scenarios") {
 		return
 	}
-	description := "Optional retry key (16-512 visible ASCII characters), scoped to project, caller and create kind. The same key and request replay the originally created resource for 24 hours with Idempotent-Replayed: true; a changed request returns 409 idempotency_key_reused, an expired key 409 idempotency_key_expired, a deleted original 410 idempotency_resource_deleted (it is never recreated), and an in-flight duplicate 409 idempotency_request_in_progress with Retry-After. Controllers without durable receipts refuse the key with 503 idempotency_unavailable. Credential-preserving script imports are fenced by their import attestation instead."
+	description := "Optional retry key (16-512 visible ASCII characters), scoped to project, caller and create kind. The same key and request replay the originally created resource for 24 hours with Idempotent-Replayed: true; a changed request returns 409 idempotency_key_reused, an expired key 409 idempotency_key_expired, a deleted original 410 idempotency_resource_deleted (it is never recreated), and an in-flight duplicate 409 idempotency_request_in_progress with Retry-After. Controllers without durable receipts refuse the key with 503 idempotency_unavailable. A key is kept, never reused, while an earlier attempt may have committed; it is released for a corrected request only when the create was refused before running or a durable read proves nothing was created. A credential-preserving script import that claims a single-use import attestation is fenced by that attestation instead; one without an attestation uses the key like any other create. Since this contract, an empty or shorter key is refused with 400 idempotency_key_invalid instead of being ignored."
 	found := false
 	for i := range contract.HeaderParameters {
 		if strings.EqualFold(contract.HeaderParameters[i].Name, "Idempotency-Key") {
@@ -31,7 +31,7 @@ func applyAuthoringIdempotencyContract(route discoveredRoute, contract *inferred
 		created.Headers = map[string]oasHeader{}
 	}
 	created.Headers["Idempotent-Replayed"] = oasHeader{Description: "true when the response returns the resource an earlier request with the same Idempotency-Key created. The body is the resource as it is now.", Schema: oasParamSchema{Type: "string", Enum: []string{"true"}}}
-	created.Headers["X-APEX-Original-Content-Revision"] = oasHeader{Description: "On a replay, the authored content revision the original create produced, when recorded.", Schema: oasParamSchema{Type: "string"}}
+	created.Headers["X-APEX-Original-Content-Revision"] = oasHeader{Description: "On a replay, the authored content revision the original create produced. Absent when the replay adopted a create whose response was lost, since the resource may have been edited since.", Schema: oasParamSchema{Type: "string"}}
 	contract.Responses["201"] = created
 	body := func(codes ...string) map[string]oasMediaType {
 		return map[string]oasMediaType{"application/json": {Schema: oasSchema{Type: "object", Properties: map[string]oasSchema{"error": {Type: "string"}, "code": {Type: "string", Enum: codes}}, Required: []string{"error"}}}}

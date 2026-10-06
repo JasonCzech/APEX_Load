@@ -19,9 +19,6 @@ func (s *Server) handleScriptLibraryAssignment(w http.ResponseWriter, r *http.Re
 	s.handleLibraryAssignment(w, r, "script")
 }
 func (s *Server) handleScenarioLibraryAssignment(w http.ResponseWriter, r *http.Request) {
-	if refuseUnconditionedScenarioWriter(w, r) {
-		return
-	}
 	s.handleLibraryAssignment(w, r, "scenario")
 }
 func (s *Server) handleLibraryAssignment(w http.ResponseWriter, r *http.Request, kind string) {
@@ -53,6 +50,13 @@ func (s *Server) handleLibraryAssignment(w http.ResponseWriter, r *http.Request,
 	if !requireAuthorizedProjectMatch(w, r, projectID) {
 		return
 	}
+	var admission scenarioWriterAdmission
+	if kind == "scenario" {
+		var admitted bool
+		if admission, admitted = s.admitScenarioWriter(w, r, id, projectID); !admitted {
+			return
+		}
+	}
 	var req LibraryAssignmentRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -73,7 +77,17 @@ func (s *Server) handleLibraryAssignment(w http.ResponseWriter, r *http.Request,
 		}
 		defer release()
 	}
-	before, after, err := store.ReplaceLibraryAssignment(kind, id, authorizedProjectOr(r, projectID), applicationID, *req.ReleaseIDs, *req.ExpectedRevision)
+	var before, after *storage.LibraryAssignment
+	var revision string
+	var err error
+	if admission.guarded() {
+		before, after, revision, err = admission.store.ReplaceScenarioLibraryAssignmentGuarded(id, authorizedProjectOr(r, projectID), applicationID, *req.ReleaseIDs, *req.ExpectedRevision, admission.guard)
+	} else {
+		before, after, err = store.ReplaceLibraryAssignment(kind, id, authorizedProjectOr(r, projectID), applicationID, *req.ReleaseIDs, *req.ExpectedRevision)
+	}
+	if err != nil && kind == "scenario" && writeScenarioWriterError(w, err) {
+		return
+	}
 	if err != nil {
 		status := http.StatusInternalServerError
 		switch {
@@ -88,6 +102,7 @@ func (s *Server) handleLibraryAssignment(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	s.recordAuditEvent(r, kind+".library_assignment.update", "success", kind, id, projectID, map[string]any{"before": before, "after": after})
+	setScenarioWriterETag(w, revision)
 	writeJSON(w, http.StatusOK, after)
 }
 

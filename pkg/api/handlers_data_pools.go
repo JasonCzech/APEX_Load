@@ -746,9 +746,6 @@ func (s *Server) handleListScenarioDataPools(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleUpdateScenarioDataPools(w http.ResponseWriter, r *http.Request) {
-	if refuseUnconditionedScenarioWriter(w, r) {
-		return
-	}
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
@@ -757,6 +754,11 @@ func (s *Server) handleUpdateScenarioDataPools(w http.ResponseWriter, r *http.Re
 	scenario, ok := s.runner.GetScenario(scenarioID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "scenario not found")
+		return
+	}
+	scenarioID = scenario.ID
+	admission, admitted := s.admitScenarioWriter(w, r, scenarioID, scenario.ProjectID)
+	if !admitted {
 		return
 	}
 	var req struct {
@@ -774,15 +776,28 @@ func (s *Server) handleUpdateScenarioDataPools(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	updater, ok := s.store.(interface {
-		UpdateScenarioDataPoolBindingsIfUnchanged(string, []storage.ScenarioDataPoolBinding, time.Time) (time.Time, bool, error)
-	})
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "optimistic scenario data-pool updates are not supported by this storage backend")
-		return
+	var updatedAt time.Time
+	var revision string
+	var updated bool
+	if admission.guarded() {
+		updatedAt, revision, updated, err = admission.store.UpdateScenarioDataPoolBindingsGuarded(scenarioID, bindings, scenario.UpdatedAt, admission.guard)
+	} else {
+		updater, ok := s.store.(interface {
+			UpdateScenarioDataPoolBindingsIfUnchanged(string, []storage.ScenarioDataPoolBinding, time.Time) (time.Time, bool, error)
+		})
+		if !ok {
+			writeError(w, http.StatusNotImplemented, "optimistic scenario data-pool updates are not supported by this storage backend")
+			return
+		}
+		updatedAt, updated, err = updater.UpdateScenarioDataPoolBindingsIfUnchanged(scenarioID, bindings, scenario.UpdatedAt)
 	}
-	updatedAt, updated, err := updater.UpdateScenarioDataPoolBindingsIfUnchanged(scenarioID, bindings, scenario.UpdatedAt)
 	if err != nil {
+		if writeScenarioWriterError(w, err) {
+			if errors.Is(err, storage.ErrScenarioAuthoringOutcomeUnknown) {
+				s.runner.refreshScenariosAfterDurableMismatch()
+			}
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -792,8 +807,9 @@ func (s *Server) handleUpdateScenarioDataPools(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if !s.runner.replaceScenarioDataPools(scenarioID, bindings, scenario.UpdatedAt, updatedAt) {
-		s.runner.refreshScenariosForHARead(true)
+		s.runner.refreshScenariosAfterDurableMismatch()
 	}
+	setScenarioWriterETag(w, revision)
 	s.recordAuditEvent(r, "scenario.data_pools.update", "success", "scenario", scenarioID, scenario.ProjectID, map[string]any{"binding_count": len(bindings)})
 	writeJSON(w, http.StatusOK, map[string]any{"data_pools": bindings, "count": len(bindings)})
 }

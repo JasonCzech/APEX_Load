@@ -548,12 +548,21 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
 		return
 	}
-	// Tombstone first: a failed delete then refuses retries of the create that
-	// made this script, but can never let one recreate it.
-	if err := s.tombstoneAuthoringReceipts("script", stored.ID); err != nil {
+	// Tombstone first: a delete with an unknown outcome then refuses retries of
+	// the create that made this script, but can never let one recreate it.
+	// Every definite refusal below withdraws the tombstone.
+	restoreReceipts, tombstoneErr := s.tombstoneAuthoringReceipts("script", stored.ID)
+	if tombstoneErr != nil {
 		writeError(w, http.StatusServiceUnavailable, "script delete unavailable; no deletion was attempted")
 		return
 	}
+	outcomeUnknown := false
+	deleteCommitted := false
+	defer func() {
+		if !deleteCommitted && !outcomeUnknown {
+			restoreReceipts()
+		}
+	}()
 	var importSourceArtifacts []storage.ImportSourceArtifact
 	if importSourceStore, ok := s.store.(storage.ImportSourceStore); ok {
 		revisions, listErr := importSourceStore.ListImportSourceRevisions(id, stored.ProjectID)
@@ -587,6 +596,7 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
+		outcomeUnknown = true
 		writeError(w, http.StatusInternalServerError, "failed to delete script: "+err.Error())
 		return
 	}
@@ -594,6 +604,7 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	deleteCommitted = true
 	s.cleanupUnreferencedBrunoArtifacts(importSourceArtifacts)
 	s.recordAuditEvent(r, "script.delete", "success", "script", id, stored.ProjectID, map[string]any{"name": disclosureSafeScriptName(stored.Name, stored.Script), "folder_id": stored.FolderID})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})

@@ -36,6 +36,9 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		s.replayScenarioCreate(w, r, receipt)
 		return
 	}
+	if receipt != nil {
+		receipt.absent = s.durableScenarioAbsent
+	}
 	defer receipt.release()
 	domainID, featureID, shapeErr := s.validateScenarioWorkloadShape(req, projectID, "")
 	if errors.Is(shapeErr, errUnknownWorkloadShape) {
@@ -57,9 +60,20 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		// finds the scenario this request created instead of making another.
 		receipt.markAttempted()
 		scenario, err = s.runner.StoreScenarioWithIDCreateOnly(receipt.resourceID(), req)
+		receipt.fail(err)
+		// errScenarioConcurrentChange covers both "the ID already exists" and a
+		// concurrent content change during compilation. Only a durable read can
+		// tell an earlier attempt's scenario from a create that never happened.
 		if errors.Is(err, errScenarioConcurrentChange) && receipt.adoptsExisting() {
-			s.replayScenarioCreate(w, r, receipt)
-			return
+			exists, readErr := s.durableScenarioExists(receipt.resourceID())
+			if readErr != nil {
+				writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_unavailable", "the original scenario could not be read; retry later")
+				return
+			}
+			if exists {
+				s.replayScenarioCreate(w, r, receipt)
+				return
+			}
 		}
 	} else {
 		scenario, err = s.runner.StoreScenario(req)
@@ -67,6 +81,14 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, errServiceAccountRuntimeSecretWrite) || errors.Is(err, errUnattributedRuntimeSecretWrite) {
 			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
+		if errors.Is(err, errScenarioConcurrentChange) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		if errors.Is(err, storage.ErrScenarioAuthoringOutcomeUnknown) {
+			writeScenarioAuthoringSaveOutcomeUnavailable(w, true)
 			return
 		}
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -150,7 +172,7 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 		// cache is refreshed once; an unconditioned save on a stale replica
 		// view is refused, as the timestamp-gated save always refused it.
 		if mode == scenarioSaveModeConditioned {
-			s.runner.refreshScenariosForHARead(true)
+			s.runner.refreshScenariosAfterDurableMismatch()
 			existing, ok = s.runner.getScenarioForMutation(existing.ID)
 		}
 		if !ok || existing == nil || !existing.UpdatedAt.Equal(admission.durableUpdatedAt) {
@@ -212,6 +234,9 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if unknown {
+		// The cache still describes the pre-save state; reload it so the next
+		// save is judged against whatever actually committed.
+		s.runner.refreshScenariosAfterDurableMismatch()
 		writeScenarioAuthoringSaveOutcomeUnavailable(w, true)
 		return
 	}
@@ -371,27 +396,42 @@ func goalSizingNeedsBaseline(req GoalSizingRequest) bool {
 }
 
 func (s *Server) handleDeleteScenario(w http.ResponseWriter, r *http.Request) {
-	if refuseUnconditionedScenarioWriter(w, r) {
-		return
-	}
 	id := r.PathValue("id")
 	projectID := ""
 	if scenario, ok := s.runner.GetScenario(id); ok {
 		projectID = scenario.ProjectID
 		id = scenario.ID
 	}
-	// Tombstone first: a failed delete then refuses retries of the create that
-	// made this scenario, but can never let one recreate it.
-	if err := s.tombstoneAuthoringReceipts("scenario", id); err != nil {
+	admission, admitted := s.admitScenarioWriter(w, r, id, projectID)
+	if !admitted {
+		return
+	}
+	var guard *storage.ScenarioWriterGuard
+	if admission.guarded() {
+		guard = &admission.guard
+	}
+	// Tombstone first: a delete with an unknown outcome then refuses retries of
+	// the create that made this scenario, but can never let one recreate it. A
+	// definitely refused delete withdraws the tombstone.
+	restoreReceipts, err := s.tombstoneAuthoringReceipts("scenario", id)
+	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "scenario delete unavailable; no deletion was attempted")
 		return
 	}
-	deleted, err := s.runner.DeleteScenarioDurable(id)
+	deleted, err := s.runner.DeleteScenarioDurable(id, guard)
+	if err != nil && !errors.Is(err, storage.ErrScenarioAuthoringOutcomeUnknown) && writeScenarioWriterError(w, err) {
+		restoreReceipts()
+		return
+	}
+	if err != nil && writeScenarioWriterError(w, err) {
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete scenario: "+err.Error())
 		return
 	}
 	if !deleted {
+		restoreReceipts()
 		writeError(w, http.StatusBadRequest, "scenario not found or has results")
 		return
 	}

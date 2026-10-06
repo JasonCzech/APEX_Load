@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -128,7 +129,7 @@ func admitScenarioSourcesTx(tx *storeTx, admission *ScenarioSourceAdmission, poo
 			return ErrScenarioSourceAdmissionUnavailable
 		}
 		if err := ensureObjectActiveTx(tx, "script", c.ScriptID); err != nil {
-			return ErrScenarioSourceAdmissionUnavailable
+			return archivedSourceError(err)
 		}
 		ids = append(ids, c.ScriptID)
 	}
@@ -152,6 +153,15 @@ func admitScenarioSourcesTx(tx *storeTx, admission *ScenarioSourceAdmission, poo
 		return ErrScenarioSourceAdmissionConflict
 	}
 	return scenarioSourcesPublished(snapshot, ids)
+}
+
+// archivedSourceError keeps an archived source distinguishable, so callers can
+// ask for a restore instead of reporting the store as unavailable.
+func archivedSourceError(err error) error {
+	if errors.Is(err, ErrObjectArchived) {
+		return fmt.Errorf("%w: %w", ErrScenarioSourceAdmissionUnavailable, err)
+	}
+	return ErrScenarioSourceAdmissionUnavailable
 }
 
 func (s *SQLiteStore) GetScenarioSourceAuthoringSnapshot(groups []ScenarioScript) (*ScenarioSourceAuthoringSnapshot, error) {
@@ -180,7 +190,7 @@ func (s *SQLiteStore) GetScenarioSourceAuthoringSnapshot(groups []ScenarioScript
 	result := &ScenarioSourceAuthoringSnapshot{Admission: ScenarioSourceAdmission{ProjectID: owner}}
 	for _, id := range ids {
 		if err := ensureObjectActiveTx(tx, "script", id); err != nil {
-			return nil, ErrScenarioSourceAdmissionUnavailable
+			return nil, archivedSourceError(err)
 		}
 		snapshot, err := readScriptAuthoringSnapshotTx(tx, id)
 		if err != nil || normalizeProjectID(snapshot.Script.ProjectID) != owner {
@@ -230,7 +240,24 @@ func (s *SQLiteStore) UpdateScenarioAuthoringWithSourcesIfCurrent(input *Scenari
 		return nil, ErrScenarioSourceAdmissionUnavailable
 	}
 	result, err := s.updateScenarioAuthoringIfCurrent(input, groups, pools, expected, admission)
-	return sourceAdmissionResult(result, err)
+	return updateSourceAdmissionResult(result, err)
+}
+
+// updateSourceAdmissionResult keeps the scenario's own outcome (stale
+// revision, strict policy, missing scenario, unknown commit) inside the
+// source-admission class, so callers can still answer 412, 428, 404 or an
+// unknown outcome instead of a generic source refusal.
+func updateSourceAdmissionResult(result *ScenarioAuthoringMutationResult, err error) (*ScenarioAuthoringMutationResult, error) {
+	switch {
+	case err == nil:
+		return result, nil
+	case errors.Is(err, ErrScenarioSourceAdmissionConflict), errors.Is(err, ErrScenarioSourceAdmissionUnavailable):
+		return nil, err
+	case errors.Is(err, ErrScenarioAuthoringConflict):
+		return nil, fmt.Errorf("%w: %w", ErrScenarioSourceAdmissionConflict, err)
+	default:
+		return nil, fmt.Errorf("%w: %w", ErrScenarioSourceAdmissionUnavailable, err)
+	}
 }
 
 func lockPrivateScenarioCreateTx(tx *storeTx, id string) error {

@@ -6,9 +6,10 @@ import (
 	"strings"
 )
 
-// scenarioUnconditionedWriterRoutes cannot compare an authored-content
-// validator inside their mutation, so they refuse a presented If-Match.
-var scenarioUnconditionedWriterRoutes = map[string]bool{
+// scenarioGuardedWriterRoutes are the secondary writers of scenario-authored
+// state. Each compares an optional scenario-authoring-v1 validator inside its
+// own transaction and obeys the project's strict save policy.
+var scenarioGuardedWriterRoutes = map[string]bool{
 	http.MethodDelete + " /api/v1/scenarios/{id}":                       true,
 	http.MethodPut + " /api/v1/scenarios/{id}/data-pools":               true,
 	http.MethodPut + " /api/v1/scenarios/{id}/library-assignment":       true,
@@ -37,7 +38,7 @@ func scenarioSaveErrorBody(codes ...string) oasSchema {
 }
 
 // applyScenarioSavePolicyAvailabilityContract documents conditioned scenario
-// saves, the project strict-save policy and the writers that refuse If-Match.
+// saves, the project strict-save policy and the guarded secondary writers.
 func applyScenarioSavePolicyAvailabilityContract(route discoveredRoute, contract *inferredRouteContract) {
 	if contract == nil {
 		return
@@ -52,7 +53,7 @@ func applyScenarioSavePolicyAvailabilityContract(route discoveredRoute, contract
 			authoring, hasAuthoring := settings.Properties["authoring"]
 			policy, hasPolicy := authoring.Properties["require_scenario_save_if_match"]
 			if hasSettings && hasAuthoring && hasPolicy {
-				policy.Description = "When true, ordinary scenario saves (PUT /api/v1/scenarios/{id}) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside the save transaction. Controllers without durable scenario revisions refuse saves under this policy with 503 scenario_save_strict_policy_unavailable."
+				policy.Description = "When true, every scenario-authored write (PUT /api/v1/scenarios/{id}, DELETE, data-pools, library-assignment, monitor-bindings and runtime/apply-to-groups) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside each write's transaction. Controllers without durable scenario revisions refuse those writes under this policy with 503 scenario_save_strict_policy_unavailable."
 				authoring.Properties["require_scenario_save_if_match"] = policy
 				settings.Properties["authoring"] = authoring
 				media.Schema.Properties["settings"] = settings
@@ -60,12 +61,27 @@ func applyScenarioSavePolicyAvailabilityContract(route discoveredRoute, contract
 			}
 		}
 	}
-	if scenarioUnconditionedWriterRoutes[route.Method+" "+route.Path] {
-		setOptionalIfMatchHeader(contract, "Not supported on this endpoint. Any presented If-Match is refused with 503 scenario_writer_if_match_unavailable instead of being ignored. For stale-edit protection, save the whole scenario with PUT /api/v1/scenarios/{id} and a scenario-authoring-v1 validator.")
+	if scenarioGuardedWriterRoutes[route.Method+" "+route.Path] {
+		setOptionalIfMatchHeader(contract, "Optional. Exactly one quoted strong scenario-authoring-v1:<content_revision> tag (GET view=authoring or a previous ETag); it is compared inside this write's transaction and a stale tag returns 412. Malformed tags return 400. Without a validator the write is unconditioned unless the project's authoring.require_scenario_save_if_match policy requires one (428). Controllers without durable scenario revisions refuse a presented tag with 503 scenario_writer_if_match_unavailable and refuse every write under the strict policy with 503 scenario_save_strict_policy_unavailable.")
+		for _, status := range []string{"200", "201"} {
+			if response, exists := contract.Responses[status]; exists {
+				if response.Headers == nil {
+					response.Headers = map[string]oasHeader{}
+				}
+				response.Headers["ETag"] = oasHeader{Description: "The scenario-authoring-v1 validator committed by this write's own transaction, when the controller has durable scenario revisions.", Schema: oasParamSchema{Type: "string"}}
+				contract.Responses[status] = response
+			}
+		}
 		response := contract.Responses["503"]
-		response.Description = "Service unavailable. scenario_writer_if_match_unavailable refuses a presented If-Match this endpoint cannot honor; no mutation occurred. Other failures retain the generic error/ref body."
-		response.Content = map[string]oasMediaType{"application/json": {Schema: scenarioSaveErrorBody("scenario_writer_if_match_unavailable")}}
+		response.Description = "Service unavailable. scenario_save_outcome_unknown means the write may already have committed: reload before retrying and never retry automatically. scenario_writer_if_match_unavailable and scenario_save_strict_policy_unavailable are returned only by controllers without durable scenario revisions; no mutation occurred. Other failures retain the generic error/ref body."
+		response.Content = map[string]oasMediaType{"application/json": {Schema: scenarioSaveErrorBody("scenario_save_outcome_unknown", "scenario_writer_if_match_unavailable", "scenario_save_strict_policy_unavailable")}}
 		contract.Responses["503"] = response
+		for _, status := range []int{400, 404, 412, 428} {
+			key := strconv.Itoa(status)
+			if _, exists := contract.Responses[key]; !exists {
+				contract.Responses[key] = oasResponse{Description: http.StatusText(status), Content: map[string]oasMediaType{"application/json": {Schema: oasSchema{Type: "object", Properties: map[string]oasSchema{"error": {Type: "string"}}, Required: []string{"error"}}}}}
+			}
+		}
 		return
 	}
 	if route.Method != http.MethodPut || route.Path != "/api/v1/scenarios/{id}" {
