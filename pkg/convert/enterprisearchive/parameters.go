@@ -3,6 +3,7 @@ package enterprisearchive
 import (
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	filepath "path"
 	"regexp"
 	"sort"
@@ -347,7 +348,11 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 		values := sections[sectionName]
 		lower := make(map[string]string, len(values))
 		for key, value := range values {
-			lower[strings.ToLower(strings.TrimSpace(key))] = cleanConfigValue(value)
+			normalizedKey := strings.ToLower(strings.TrimSpace(key))
+			lower[normalizedKey] = cleanConfigValue(value)
+			if normalizedKey == "delimiter" && lower[normalizedKey] == "" {
+				lower[normalizedKey] = whitespaceParameterDelimiter(value)
+			}
 		}
 
 		name := cleanParameterName(convertutil.FirstNonEmpty(lower["paramname"], lower["name"], sectionName))
@@ -1218,7 +1223,28 @@ func firstParameterDataRowFields(content, delimiter string) []string {
 	return nil
 }
 
+// whitespaceParameterDelimiter recovers a quoted whitespace delimiter. VuGen
+// writes a tab delimiter as a literal tab between quotes (Delimiter="<TAB>"),
+// which cleanConfigValue's whitespace trimming would erase and the comma
+// default would then replace, so tab-delimited data files lost their columns.
+// It accepts the raw quoted INI value or the already-unquoted whitespace.
+func whitespaceParameterDelimiter(raw string) string {
+	value := raw
+	if trimmed := strings.TrimSpace(raw); len(trimmed) >= 2 && trimmed[0] == '"' && trimmed[len(trimmed)-1] == '"' {
+		value = trimmed[1 : len(trimmed)-1]
+	}
+	if value == "" || strings.TrimSpace(value) != "" {
+		return ""
+	}
+	r, _ := utf8.DecodeRuneInString(value)
+	return string(r)
+}
+
 func normalizeParameterDelimiter(value string) string {
+	if value != "" && strings.TrimSpace(value) == "" {
+		r, _ := utf8.DecodeRuneInString(value)
+		return string(r) // a recovered tab or space delimiter
+	}
 	value = cleanConfigValue(value)
 	switch strings.ToLower(value) {
 	case "", ",":
@@ -1301,4 +1327,44 @@ func normalizeParameterHeader(value string) string {
 		}
 		return -1
 	}, value)
+}
+
+// customParamBraces returns the project's parameter delimiters when they differ
+// from LoadRunner's default "{" and "}".
+func customParamBraces(project *ProjectConfig) (string, string, bool) {
+	if project == nil {
+		return "", "", false
+	}
+	left, right := strings.TrimSpace(project.ParamLeftBrace), strings.TrimSpace(project.ParamRightBrace)
+	if left == "" || right == "" || left == "{" && right == "}" {
+		return "", "", false
+	}
+	return left, right, true
+}
+
+// applySourceParamBraces carries custom parameter delimiters to Java Vuser
+// scripts, whose runner substitutes them in lr.eval_string. C conversion
+// recognizes only {name} references, so a C script with custom delimiters is
+// reported instead of silently keeping its references literal.
+func applySourceParamBraces(result *ConvertResult, project *ProjectConfig) {
+	left, right, custom := customParamBraces(project)
+	if result == nil || !custom {
+		return
+	}
+	_, javaProject := javaProjectConfigSignals(project)
+	warned := javaProject // Java sources are not converted by the C importer
+	for _, script := range result.effectiveScripts() {
+		if script == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") {
+			script.Config.JavaVuser.ParamLeftBrace = left
+			script.Config.JavaVuser.ParamRightBrace = right
+			continue
+		}
+		if !warned {
+			warned = true
+			result.Warnings = append(result.Warnings, fmt.Sprintf("The project uses %s and %s as parameter delimiters, but C conversion recognizes only {name} references: %sname%s references stay literal and {name} text is treated as a parameter. Review the converted references before replay.", left, right, left, right))
+		}
+	}
 }

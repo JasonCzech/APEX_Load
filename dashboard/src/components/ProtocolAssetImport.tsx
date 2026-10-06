@@ -841,6 +841,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const [baseURL, setBaseURL] = useState('')
   const [soapVersion, setSoapVersion] = useState('1.1')
   const [includeStaticAssets, setIncludeStaticAssets] = useState(false)
+  const [salvageTruncatedHAR, setSalvageTruncatedHAR] = useState(false)
   const [redactSensitive, setRedactSensitive] = useState(true)
   const [agentforceReplayReady, setAgentforceReplayReady] = useState(false)
   const [harSalesforceNative, setHARSalesforceNative] = useState(initialMode !== 'force_generic')
@@ -1083,6 +1084,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         if (kind === 'har') return guardResponse(api.importHAR(file, {
           ...options,
           include_static_assets: includeStaticAssets,
+          salvage_truncated: salvageTruncatedHAR,
           secondary_file: secondaryHARFile || undefined,
           artifact_mode: secondaryHARFile ? 'design_har_pair' : 'design_har',
           retention_days: retentionDays,
@@ -2285,6 +2287,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
               <label className="sample-toggle sample-import-span-2">
                 <input type="checkbox" checked={includeStaticAssets} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setIncludeStaticAssets(event.target.checked) }} />
                 Include static assets
+              </label>
+              <label className="sample-toggle sample-import-span-2" title="Import the complete entries of a HAR file that was cut off partway through. The script ends where the capture was cut.">
+                <input type="checkbox" checked={salvageTruncatedHAR} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setSalvageTruncatedHAR(event.target.checked) }} />
+                Recover the complete entries of a truncated HAR
               </label>
             </>
           )}

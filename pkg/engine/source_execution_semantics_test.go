@@ -1974,3 +1974,22 @@ func TestWebCacheCleanupExecutesProtocolCacheController(t *testing.T) {
 		t.Fatalf("cache clears = %d, want 1", protoStub.cacheClears)
 	}
 }
+
+func TestSourceSaveVarAppliesOffsetAndLength(t *testing.T) {
+	for _, tc := range []struct {
+		value  string
+		offset any
+		length string
+		want   string
+	}{
+		{"(501) 218-4574", 1, "3", "501"},
+		{"(501) 218-4574", float64(10), "4", "4574"},
+		{"short", 9, "3", ""},
+		{"whole", nil, "99", "whole"},
+		{"whole", nil, "2", "wh"},
+	} {
+		if got := sourceSaveVarValue(tc.value, tc.offset, tc.length); got != tc.want {
+			t.Errorf("sourceSaveVarValue(%q, %v, %q) = %q, want %q", tc.value, tc.offset, tc.length, got, tc.want)
+		}
+	}
+}

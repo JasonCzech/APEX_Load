@@ -400,13 +400,31 @@ func redactionContextForMap(value map[string]any, path string, prior redactionTr
 	prior.actionType = actionType
 	prior.headerName = ""
 	prior.nonWireMetadataPath = ""
-	if prior.httpProtocol && httpProvenanceActionPathPattern.MatchString(path) {
-		switch strings.ToLower(strings.TrimSpace(dsl.CanonicalActionType(actionType))) {
-		case "request", "get", "post", "put", "patch", "delete", "head", "options", "trace", "connect", "http_sequence", "http_oauth2_token", "source_transaction":
+	if httpProvenanceActionPathPattern.MatchString(path) {
+		switch canonical := strings.ToLower(strings.TrimSpace(dsl.CanonicalActionType(actionType))); {
+		case prior.httpProtocol && isHTTPProvenanceActionType(canonical):
+			prior.nonWireMetadataPath = path + "/metadata"
+		case isEngineProvenanceActionType(canonical):
+			// Engine actions (imported source_* steps, custom_call, control
+			// flow) run inside the engine; no protocol ever sends their
+			// metadata, whatever the script's protocol.
 			prior.nonWireMetadataPath = path + "/metadata"
 		}
 	}
 	return prior
+}
+
+func isHTTPProvenanceActionType(canonical string) bool {
+	switch canonical {
+	case "request", "get", "post", "put", "patch", "delete", "head", "options", "trace", "connect", "http_sequence", "http_oauth2_token", "source_transaction":
+		return true
+	}
+	return false
+}
+
+func isEngineProvenanceActionType(canonical string) bool {
+	spec, ok := dsl.SpecForActionType(canonical)
+	return ok && spec.EngineAction()
 }
 
 func isHeaderListEntryJSONPath(path string) bool {

@@ -1088,6 +1088,7 @@ export function useScriptApi() {
       redact_sensitive?: boolean
       salesforce_native?: boolean
       agentforce_transform?: boolean
+      salvage_truncated?: boolean
     }): Promise<HARImportResult> => {
       const formData = new FormData()
       if (options?.project_id) formData.append('project_id', options.project_id)
@@ -1099,6 +1100,7 @@ export function useScriptApi() {
       if (options?.artifact_mode) formData.append('artifact_mode', options.artifact_mode)
       if (typeof options?.retention_days === 'number') formData.append('retention_days', String(options.retention_days))
       if (typeof options?.redact_sensitive === 'boolean') formData.append('redact_sensitive', options.redact_sensitive ? 'true' : 'false')
+      if (options?.salvage_truncated) formData.append('salvage_truncated', 'true')
 
       const query = new URLSearchParams()
       if (options?.project_id) query.set('project_id', options.project_id)

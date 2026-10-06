@@ -246,7 +246,7 @@ func generateSourceSOAPBody(fn ParsedFunction, operation string) string {
 	b.WriteString(">")
 	for _, arg := range payload {
 		name := sanitizeXMLName(arg.Name)
-		value := convertParamReferences(unescapeSourceCString(arg.Value))
+		value := convertParamReferences(arg.Value)
 		if strings.HasPrefix(strings.ToLower(arg.Name), "xml:") {
 			b.WriteString(value)
 			continue
@@ -363,11 +363,11 @@ func requestContentTypeFromFunction(fn ParsedFunction) string {
 	}
 	for _, key := range []string{"ContentType", "Content-Type"} {
 		if value := firstNonEmptyArg(fn, key); strings.TrimSpace(value) != "" {
-			return unescapeSourceCString(value)
+			return value
 		}
 	}
 	if encType := firstNonEmptyArg(fn, "EncType"); strings.TrimSpace(encType) != "" && !strings.EqualFold(strings.TrimSpace(encType), "raw") {
-		return unescapeSourceCString(encType)
+		return encType
 	}
 	return ""
 }

@@ -575,7 +575,10 @@ func sourceControlArgs(fn ParsedFunction) []string {
 			if arg.Kind == "key_value" && arg.Name != "" {
 				value = arg.Name + "=" + arg.Value
 			}
-			if strings.TrimSpace(value) != "" {
+			// An empty or blank string literal is still a positional
+			// argument: dropping it shifted lr_save_string("", "p") onto
+			// its name and left "p" unsaved.
+			if strings.TrimSpace(value) != "" || arg.Kind == "string" {
 				args = append(args, value)
 			}
 		}

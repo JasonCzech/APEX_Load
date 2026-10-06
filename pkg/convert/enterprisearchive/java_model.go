@@ -113,6 +113,12 @@ func parseJavaProgram(files map[string]string) (javaProgram, []string) {
 		cls, err := parseJavaFileWithContext(name, content, context)
 		skipUndeclaredFile := false
 		if err != nil {
+			// VuGen writes vuser_init.java and vuser_end.java as a
+			// "// Do not change this file" placeholder when Actions.java owns
+			// every lifecycle method; a comment-only file is not a finding.
+			if !hasTopLevelType && strings.TrimSpace(context.scan.code) == "" {
+				continue
+			}
 			warnings = append(warnings, err.Error())
 			if len(cls.Methods) == 0 && len(cls.Unparsed) == 0 {
 				if !hasTopLevelType {

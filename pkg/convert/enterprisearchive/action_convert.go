@@ -108,13 +108,9 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 
 	// Apply body
 	if fn.Body != "" {
-		// A Java-origin body was already unescaped by the Java string parser;
-		// running the C-string unescaper again would corrupt literal backslashes.
-		if fn.JavaOrigin {
-			action.Body = fn.Body
-		} else {
-			action.Body = unescapeSourceCString(fn.Body)
-		}
+		// The C parser and the Java string parser each decode source literals
+		// exactly once; decoding again would corrupt literal backslashes.
+		action.Body = fn.Body
 		// Convert source parameter syntax {ParamName} to template syntax.
 		// Known .prm-backed parameters are rewritten from var to param after all archive files are parsed.
 		action.Body = convertParamReferences(action.Body)
@@ -385,6 +381,33 @@ func removePersistentCookie(cookies *[]ParsedCookie, fn ParsedFunction) bool {
 	}
 	*cookies = filtered
 	return removed
+}
+
+// upsertPersistentCookie mirrors the source cookie jar: adding a cookie whose
+// name, domain and path match an earlier one replaces its value instead of
+// sending both. Scripts that refresh RUM cookies before every request
+// otherwise grow a Cookie header with dozens of stale copies.
+func upsertPersistentCookie(cookies []ParsedCookie, cookie ParsedCookie) []ParsedCookie {
+	for index := range cookies {
+		if cookies[index].Name == cookie.Name &&
+			normalizedCookieDomain(cookies[index].Domain) == normalizedCookieDomain(cookie.Domain) &&
+			normalizedCookiePath(cookies[index].Path) == normalizedCookiePath(cookie.Path) {
+			cookies[index] = cookie
+			return cookies
+		}
+	}
+	return append(cookies, cookie)
+}
+
+func normalizedCookieDomain(domain string) string {
+	return strings.TrimPrefix(strings.ToLower(strings.TrimSpace(domain)), ".")
+}
+
+func normalizedCookiePath(path string) string {
+	if path = strings.TrimSpace(path); path == "" {
+		return "/"
+	}
+	return path
 }
 
 func cookieMatchesURL(cookie ParsedCookie, rawURL string) bool {

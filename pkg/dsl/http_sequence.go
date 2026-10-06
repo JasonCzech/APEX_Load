@@ -22,7 +22,82 @@ const (
 	DefaultHTTPConcurrency            = 8
 	MaxHTTPConcurrentPreparationBytes = 16 << 20
 	MaxHTTPConcurrentPreparationWork  = 64 << 20
+	// HTTPConcurrentRequestTransactionMetadataKey names a concurrent child's
+	// own transaction. A group that names one for every child records those
+	// transactions, each timed by its request, instead of a group aggregate.
+	HTTPConcurrentRequestTransactionMetadataKey = "source_request_transaction"
+	maxHTTPConcurrentRequestTransactionBytes    = 4096
 )
+
+// HTTPConcurrentRequestTransactions returns the child transaction names of a
+// group that names one for every child, or nil.
+func HTTPConcurrentRequestTransactions(children []Action) []string {
+	return httpConcurrentRequestTransactionNames(len(children), func(index int) map[string]any { return children[index].Metadata })
+}
+
+// HTTPSequenceRequestTransactions reads the child transaction names of a
+// concurrent sequence straight from its typed or JSON-decoded requests,
+// without decoding the children.
+func HTTPSequenceRequestTransactions(action Action) []string {
+	if mode, _, err := HTTPSequenceExecutionSettings(action); err != nil || mode != HTTPSequenceConcurrent {
+		return nil
+	}
+	switch requests := action.Params["requests"].(type) {
+	case []Action:
+		return HTTPConcurrentRequestTransactions(requests)
+	case []map[string]any:
+		return httpConcurrentRequestTransactionNames(len(requests), func(index int) map[string]any {
+			metadata, _ := requests[index]["metadata"].(map[string]any)
+			return metadata
+		})
+	case []any:
+		return httpConcurrentRequestTransactionNames(len(requests), func(index int) map[string]any {
+			switch child := requests[index].(type) {
+			case Action:
+				return child.Metadata
+			case map[string]any:
+				metadata, _ := child["metadata"].(map[string]any)
+				return metadata
+			}
+			return nil
+		})
+	}
+	return nil
+}
+
+func httpConcurrentRequestTransactionNames(count int, metadata func(int) map[string]any) []string {
+	if count == 0 {
+		return nil
+	}
+	names := make([]string, 0, count)
+	for index := 0; index < count; index++ {
+		name, _ := metadata(index)[HTTPConcurrentRequestTransactionMetadataKey].(string)
+		if strings.TrimSpace(name) == "" {
+			return nil
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+func validateHTTPConcurrentRequestTransactions(children []Action) error {
+	named := 0
+	for _, child := range children {
+		raw, present := child.Metadata[HTTPConcurrentRequestTransactionMetadataKey]
+		if !present {
+			continue
+		}
+		name, ok := raw.(string)
+		if !ok || strings.TrimSpace(name) == "" || len(name) > maxHTTPConcurrentRequestTransactionBytes || !utf8.ValidString(name) {
+			return fmt.Errorf("concurrent HTTP request transaction names must be nonempty text of at most %d bytes", maxHTTPConcurrentRequestTransactionBytes)
+		}
+		named++
+	}
+	if named != 0 && named != len(children) {
+		return fmt.Errorf("concurrent HTTP request transactions must name every child or none")
+	}
+	return nil
+}
 
 // HTTPSequenceExecutionSettings admits concurrency before child decoding or allocation.
 // Present settings are validated even when sequential execution is selected.
@@ -362,6 +437,9 @@ func ValidateHTTPConcurrentChildrenWithWorkLimit(children []Action, maxWork int)
 		return 0, fmt.Errorf("concurrent HTTP child count is unsupported")
 	}
 	if err := b.walk(reflect.ValueOf(children), 0, nil); err != nil {
+		return 0, err
+	}
+	if err := validateHTTPConcurrentRequestTransactions(children); err != nil {
 		return 0, err
 	}
 	outputs := make(map[string]string)

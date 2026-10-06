@@ -10,7 +10,7 @@ func TestLegacyActionParserAcceptsBoundedLargeLines(t *testing.T) {
 	parsed, err := parseActionFileLegacy("Action.c", `Action()
 {
 web_custom_request("large", "Body=`+largeValue+`", LAST);
-}`)
+}`, nil)
 	if err != nil {
 		t.Fatalf("parseActionFileLegacy: %v", err)
 	}
@@ -26,7 +26,7 @@ web_custom_request("request",
     "Body=literal ); text",
     "URL=https://example.test/orders",
     LAST);
-}`)
+}`, nil)
 	if err != nil {
 		t.Fatalf("parseActionFileLegacy: %v", err)
 	}

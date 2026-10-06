@@ -57,7 +57,8 @@ export function groupImportFindings(findings: ImportFinding[], script: ScriptDef
     if (finding.code === 'import_review_required' && findings.some(f => f.code === 'restored_body_required' && f.action_path === finding.action_path)) continue
     const category = findingCategory(finding.code)
     const path = finding.action_path || ''
-    const blocking = finding.gate === 'execution' || finding.severity === 'blocker' || /^(missing_producer:|restored_body_required$|encrypted_proxy_password$|legacy_tls_replacement$)/.test(finding.code)
+    // A missing producer blocks only when the server gates it: replay sends most placeholders with a warning.
+    const blocking = finding.gate === 'execution' || finding.severity === 'blocker' || /^(restored_body_required|encrypted_proxy_password|legacy_tls_replacement)$/.test(finding.code)
     const action = actions.get(path)
     // Keep branch scopes and parameter namespaces separate. Grouping never applies a bulk repair.
     const controlIndex = path.lastIndexOf('.control.')

@@ -1,0 +1,220 @@
+{
+  "schema": "apexload.browser-network-acquisition-private-independent-repeat-review.v3",
+  "at_utc": "2026-10-06T04:42:25.967646+00:00",
+  "reviewer": "/root/authoring_fidelity_resume_v3",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "result": "clean scoped static repeat; exactV3 remains temporary unapplied/uncompiled/untested",
+  "versions": {
+    "1": {
+      "manifest_path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v1.manifest.json",
+      "manifest_sha256": "1029579a4694be8d846f884b712ab8d624f6d3d9df759f01db793590754403f1",
+      "patch_path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v1.patch",
+      "patch_sha256": "5464d99232b2b9f66d5fd35461dd63477981b7ad39441e1a96b09901a8cd0af1"
+    },
+    "2": {
+      "manifest_path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v2.manifest.json",
+      "manifest_sha256": "362a02dabdc1527efa18961da29f94c8ab8bad3fd72f2a2d831e2994f0e18d29",
+      "patch_path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v2.patch",
+      "patch_sha256": "0e9ab9c815ee67496f3b799b4327e86ce790c89080a3e6b3badf450951450ef1"
+    },
+    "3": {
+      "manifest_path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v3.manifest.json",
+      "manifest_sha256": "84a78bd1048a90b06a01b61f0b0e6f63f1199b7068df99111d62574e82a5ec04",
+      "patch_path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v3.patch",
+      "patch_sha256": "91f4299ca482618eb1637ee58a47119dc61a6d49d0e59499960e191597c8758d"
+    }
+  },
+  "prior_v1_review": {
+    "path": "/private/tmp/apexload-browser-network-acquisition-authoring-independent-review-v1-20261006.json",
+    "sha256": "b2567eb3e1f168e667ff59bd2de8eb4ff7a4160620b168124f41bfb9e7edce12"
+  },
+  "source_hash_bookends": [
+    {
+      "path": "pkg/protocol/browser/action_helpers.go",
+      "v1_sha256": "c9916f043dbbc67779afecd5a248aef6e9f331721294ce4a46700a1633ff3274",
+      "v2_sha256": "c9916f043dbbc67779afecd5a248aef6e9f331721294ce4a46700a1633ff3274",
+      "v3_sha256": "c9916f043dbbc67779afecd5a248aef6e9f331721294ce4a46700a1633ff3274",
+      "root_before_sha256": "3407fe6adefa9d9977761d525fd790d4eb24d90c0ba519990125d31bb97f9d65",
+      "root_before_unapplied": true
+    },
+    {
+      "path": "pkg/protocol/browser/browser.go",
+      "v1_sha256": "904e724e846a73919b7efaf9dd683bd42973a994d615d657ecce01707869e7b0",
+      "v2_sha256": "904e724e846a73919b7efaf9dd683bd42973a994d615d657ecce01707869e7b0",
+      "v3_sha256": "904e724e846a73919b7efaf9dd683bd42973a994d615d657ecce01707869e7b0",
+      "root_before_sha256": "601ce7ef533024d00b4b4bafd94341780a6f07648cbb1d8fbaeb1a44693e2030",
+      "root_before_unapplied": true
+    },
+    {
+      "path": "pkg/protocol/browser/lifecycle.go",
+      "v1_sha256": "fc1db36243bcd6d6948216241f6646b6a4df66e56f2735d11986f03c9260de93",
+      "v2_sha256": "fc1db36243bcd6d6948216241f6646b6a4df66e56f2735d11986f03c9260de93",
+      "v3_sha256": "fc1db36243bcd6d6948216241f6646b6a4df66e56f2735d11986f03c9260de93",
+      "root_before_sha256": "3ccd8452412ba87da48ad3a4178caadd8770672f88d693a14974e9e36c4df881",
+      "root_before_unapplied": true
+    },
+    {
+      "path": "pkg/protocol/browser/network_task_completion.go",
+      "v1_sha256": "51becb5382f820b5f6dccd2f131f114a7ee00c7bb6c15bad2313b62cd26575a3",
+      "v2_sha256": "b8e3a0a9d83da3f6b9f096bb1353f91d2bdf06896103987a1be47ba7016d4316",
+      "v3_sha256": "1e03017d6f20867d0aec87deb9d02670a36994375e118661cadaad85609cde0f",
+      "root_before_sha256": null,
+      "root_before_unapplied": true
+    },
+    {
+      "path": "pkg/protocol/browser/network_task_completion_test.go",
+      "v1_sha256": "faed885d9a791db26ede724ddc847c76e455c1037e797525ab5862fc8dd1e2fb",
+      "v2_sha256": "faed885d9a791db26ede724ddc847c76e455c1037e797525ab5862fc8dd1e2fb",
+      "v3_sha256": "df79d76f1ab62cc454dd377616fe7a882c9ea5f11835be1389703bdacd55b9d7",
+      "root_before_sha256": null,
+      "root_before_unapplied": true
+    },
+    {
+      "path": "pkg/protocol/browser/result_finalization.go",
+      "v1_sha256": "10906e63e45b2ed728c3742f54590fd34660a4762e62091ef1e93872d09389ef",
+      "v2_sha256": "10906e63e45b2ed728c3742f54590fd34660a4762e62091ef1e93872d09389ef",
+      "v3_sha256": "10906e63e45b2ed728c3742f54590fd34660a4762e62091ef1e93872d09389ef",
+      "root_before_sha256": "932bba30871e883cfa4c7da55f1e55fa65764973bd8aed5328591f393f6761bd",
+      "root_before_unapplied": true
+    },
+    {
+      "path": "pkg/protocol/browser/result_finalization_test.go",
+      "v1_sha256": "a226c9619718c7ee5462bb26f20243276afc42a8e7fd017034ad5a6f3c0445ff",
+      "v2_sha256": "a226c9619718c7ee5462bb26f20243276afc42a8e7fd017034ad5a6f3c0445ff",
+      "v3_sha256": "a226c9619718c7ee5462bb26f20243276afc42a8e7fd017034ad5a6f3c0445ff",
+      "root_before_sha256": "00b852ccb7cf5f386b446375f50ecb3502f51d813f1d8680a62fd17fc21346a8",
+      "root_before_unapplied": true
+    },
+    {
+      "path": "pkg/protocol/browser/runtime_context.go",
+      "v1_sha256": "b6038156d5346e17dd94dcef13b1fe1705f36270492eceb765c469d1bbd95773",
+      "v2_sha256": "b6038156d5346e17dd94dcef13b1fe1705f36270492eceb765c469d1bbd95773",
+      "v3_sha256": "b6038156d5346e17dd94dcef13b1fe1705f36270492eceb765c469d1bbd95773",
+      "root_before_sha256": "ef6e62ee9b3f39e2867126018700af1f08107b6a734740841242eb13165e49ec",
+      "root_before_unapplied": true
+    }
+  ],
+  "root_inputs_and_dependencies": [
+    {
+      "path": "pkg/protocol/browser/browser.go",
+      "sha256": "601ce7ef533024d00b4b4bafd94341780a6f07648cbb1d8fbaeb1a44693e2030",
+      "bytes": 11619
+    },
+    {
+      "path": "pkg/protocol/browser/runtime_context.go",
+      "sha256": "ef6e62ee9b3f39e2867126018700af1f08107b6a734740841242eb13165e49ec",
+      "bytes": 26127
+    },
+    {
+      "path": "pkg/protocol/browser/action_helpers.go",
+      "sha256": "3407fe6adefa9d9977761d525fd790d4eb24d90c0ba519990125d31bb97f9d65",
+      "bytes": 9066
+    },
+    {
+      "path": "pkg/protocol/browser/result_finalization.go",
+      "sha256": "932bba30871e883cfa4c7da55f1e55fa65764973bd8aed5328591f393f6761bd",
+      "bytes": 2579
+    },
+    {
+      "path": "pkg/protocol/browser/lifecycle.go",
+      "sha256": "3ccd8452412ba87da48ad3a4178caadd8770672f88d693a14974e9e36c4df881",
+      "bytes": 3312
+    },
+    {
+      "path": "pkg/api/archive_browser_resource_actual_integration_test.go",
+      "sha256": "99c8b432c8d761ebe6148132926ba75f9be7864cb07c2b90d5b09735a9ce630b",
+      "bytes": 13382
+    },
+    {
+      "path": "pkg/protocol/browser/result_finalization_test.go",
+      "sha256": "00b852ccb7cf5f386b446375f50ecb3502f51d813f1d8680a62fd17fc21346a8",
+      "bytes": 2817
+    },
+    {
+      "path": "pkg/protocol/browser/runtime_resource_bounds_test.go",
+      "sha256": "8ea803c45b23dbc31e6efb0fe1d401b84ca65c4574fab879567152af44b21e7f",
+      "bytes": 2006
+    },
+    {
+      "path": "pkg/protocol/browser/runtime_metrics.go",
+      "sha256": "1dde110a2d68137a3a682efe3b0bae116d5083e55591d97620c455e19aa88ea7",
+      "bytes": 16004
+    },
+    {
+      "path": "pkg/protocol/browser/runtime_metrics_test.go",
+      "sha256": "5ab846c28897005fdb3d09817ef7b30e0b6a149b2c966a4fc4486750a91819d1",
+      "bytes": 7068
+    },
+    {
+      "path": "pkg/protocol/browser/document_evidence.go",
+      "sha256": "289c73f0c59bc1781e71c85da18c59f4bca9dc6dee7f58a3f73ad347ee988603",
+      "bytes": 19723
+    },
+    {
+      "path": "pkg/protocol/browser_evidence.go",
+      "sha256": "c96651302063eb1b16fb177b6d901fdb9c1dabf616d7d4b05afc554bfa990b3c",
+      "bytes": 33446
+    },
+    {
+      "path": "pkg/protocol/protocol.go",
+      "sha256": "c3aa26db966e81e50a24f2d02572b1477a48106eea2a8cafa61bf805c5bde301",
+      "bytes": 43316
+    },
+    {
+      "path": "pkg/engine/vuser.go",
+      "sha256": "e9a2afa3f85872e062e5a55be6fa7736e001ebc36783414f7d0d12f8d94b07f5",
+      "bytes": 62106
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_lease.go",
+      "sha256": "f2796acd7f62416782c602ffe257441aea8080d9f476bad254dabca91ccf5b97",
+      "bytes": 26158
+    }
+  ],
+  "exact_delta_checks": {
+    "v1_v2_changed_paths": [
+      "pkg/protocol/browser/network_task_completion.go"
+    ],
+    "v1_v2_only_two_comment_lines": true,
+    "v2_v3_changed_paths": [
+      "pkg/protocol/browser/network_task_completion.go",
+      "pkg/protocol/browser/network_task_completion_test.go"
+    ],
+    "v2_v3_executable_production_delta": "Only networkMetadataContextReason now switch-samples ctx.Err exactly once.",
+    "v2_v3_test_delta": "One sync import and deterministic real-WithCancel wrapper/wait-level regression appended. All18prior tests retained.",
+    "provided_diff_equals_independently_regenerated_actual_diff": true,
+    "v1_v2_diff": {
+      "path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v1-v2-comment-only.diff",
+      "sha256": "e87f84e9d8fa2cbb3b4b87acf496fe6b047b3eb74e4d52f4765263bfbce40648"
+    },
+    "v2_v3_diff": {
+      "path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v2-v3-status-snapshot.diff",
+      "sha256": "9143ecf43460f7c548cad2b3880b2cb35eaf093f1549b418146559b8ba5a796c"
+    }
+  },
+  "review_conclusions": [
+    "One status read prevents nil\u2192context.Canceled transition from being mislabeled metadata_timeout; nil/cancelled/deadline cases remain coherent.",
+    "Regression wrapper samples real parent.Err then synchronously invokes parent cancel exactly once; first status returns nil, subsequent unfinished-receipt select has only ctx.Done ready and must return cancelled. This exercises real context lifecycle and preserves open receipt without timing sleeps.",
+    "V2 two-read helper would label that exact synchronous transition metadata_timeout; this is static deterministic reasoning, not an executed red test claim.",
+    "All acquisition owner/generation/admission/bounds/completion/partial evidence/lifecycle/clone/nonoptin behavior reviewed inV1 remains byte-identical outside the narrow helper delta and comment correction.",
+    "Startup-order comment now avoids inaccurate current initialization-before-evidence claim; existing Teardown/join\u2192Init and private-retirement vs physical-worker-stop limitations remain explicit.",
+    "Native80-resource>50oracle, existing CPU duration denominator, metadata5s deadline, parent cancellation and WarningCodes propagation are unchanged."
+  ],
+  "new_test_count": 19,
+  "new_regression": "TestNetworkCompletionCancellationAfterInitialStatusSamplingIsCancelled",
+  "ui_patches_frozen": [
+    {
+      "path": "/private/tmp/apexload-main-command-center-resize-offsets-test-only-20261006.patch",
+      "sha256": "8346a55027174a7e891506ab7266be3d19a400e3664d22e31a2f5cda30eab0a8",
+      "unchanged": true
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-local-auth-coverage-additional-20261006.patch",
+      "sha256": "74f2026197f49db1289e3daac322ae6b463eac6d58e473d45d6f96448dfc8277",
+      "unchanged": true
+    }
+  ],
+  "findings": [],
+  "qualification": "Root must retain original failure evidence, guarded apply only after original jobs physically join, execute affected normal/race/native/API gates and full required suites. This review adds no execution qualification.",
+  "execution": "No ROOT source edits, tests/builds, Git writes/staging/commits or cache mutations. Only fresh /private/tmp repeat-review metadata written."
+}

@@ -1,0 +1,50 @@
+[
+  {
+    "source": "/private/tmp/apexload-main-integration-gate-v3-executed-4ad9cfbb-20261006.py",
+    "destination": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/helpers/apexload-main-integration-gate-v3-executed-4ad9cfbb-20261006.py",
+    "bytes": 9452,
+    "sha256": "4ad9cfbbdca7cd5705eac2c54dc82dbb1d911206b0c9c2d6a6b8aab15682d7d0"
+  },
+  {
+    "source": "/private/tmp/apexload-main-integration-gate-v3-20261006.py",
+    "destination": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/helpers/apexload-main-integration-gate-v3-20261006.py",
+    "bytes": 9519,
+    "sha256": "ddd9d7aadb2ab67e0fee64b9cd683a3e127150cdad6ea1965f672241d88c7d5e"
+  },
+  {
+    "source": "/private/tmp/apexload-main-integration-gate-v4-20261006.py",
+    "destination": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/helpers/apexload-main-integration-gate-v4-20261006.py",
+    "bytes": 9587,
+    "sha256": "d186c69109218016d4ea0ddabc79728e9ce8e2b9919be25a93dbc842841a8f54"
+  },
+  {
+    "source": "/private/tmp/apexload-main-dashboard-parallel-cycle-v2-20261006.py",
+    "destination": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/helpers/apexload-main-dashboard-parallel-cycle-v2-20261006.py",
+    "bytes": 10153,
+    "sha256": "e0c019310b1c2e201f12d977b338eec751f8afc4f0cd9a9f65cfa21473b2c199"
+  },
+  {
+    "source": "/private/tmp/apexload-main-execution-orchestration-review-fix-closure-v4-20261006.json",
+    "destination": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/apexload-main-execution-orchestration-review-fix-closure-v4-20261006.json",
+    "bytes": 9548,
+    "sha256": "efc1934e40dca0f3a8b98b0a7929f2088d10ce0f566c98b417a2cf95130240d1"
+  },
+  {
+    "source": "/private/tmp/apexload-main-corrected-helpers-independent-review-red-20261006.json",
+    "destination": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/apexload-main-corrected-helpers-independent-review-red-20261006.json",
+    "bytes": 2205,
+    "sha256": "7e5133324d2ee7f63421a45e96f9897cb6014fed6d22dcbc6e4d2f0d63394b38"
+  },
+  {
+    "source": "/private/tmp/apexload-main-corrected-helpers-independent-repeat-clean-v4-20261006.json",
+    "destination": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/apexload-main-corrected-helpers-independent-repeat-clean-v4-20261006.json",
+    "bytes": 4734,
+    "sha256": "609239042775fa4bf1a62b3cb41df3fd4f315dc4a6413890f00c5fb1f9cfee1c"
+  },
+  {
+    "source": "/private/tmp/apexload-network-acquisition-applied-review-v3-20261006.json",
+    "destination": "docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/apexload-network-acquisition-applied-review-v3-20261006.json",
+    "bytes": 4642,
+    "sha256": "c41a6984a85140b99dc28509fe7bceb91c87b8aeb8bb7a377f81720ba9412dc0"
+  }
+]

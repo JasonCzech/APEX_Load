@@ -32,7 +32,7 @@ func convertSourceVerification(fn ParsedFunction) dsl.Action {
 	if scope == "" {
 		scope = "noresource"
 	}
-	a.Params["text"] = convertParamReferences(unescapeSourceCString(text))
+	a.Params["text"] = convertParamReferences(text)
 	a.Params["scope"] = scope
 	a.Params["case_insensitive"] = sourceFlagsInclude(flags, "IC")
 	failureMode := firstNonEmptyArg(fn, "Fail")

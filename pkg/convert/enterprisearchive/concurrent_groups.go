@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
@@ -13,6 +14,7 @@ import (
 )
 
 const sourceConcurrentMarkerKey = "__source_concurrent_marker"
+const sourceConcurrentTransactionKey = "__source_concurrent_transaction"
 const maxSourceConcurrencyWork = 64 << 20
 const maxSourceConcurrencyDetails = 1024
 
@@ -26,20 +28,34 @@ type sourceConcurrentMarker struct {
 	start    bool
 	requests int
 	reason   string
+	// A start marker tracks per-request transaction wrappers: VuGen can wrap
+	// each request of a group in its own lr_start/lr_end_transaction pair.
+	wrapper         string // open wrapper transaction name
+	wrapperOpen     bool
+	wrapperRequests int
+	wrapped         int   // requests inside a closed wrapper
+	wrapperMarkers  []int // function indices of the wrapper pairs
+	// requestTransactions marks a group whose every request has its own
+	// transaction; it records those transactions instead of an aggregate.
+	requestTransactions bool
 }
 type sourceConcurrentPlan struct {
 	markers        map[int]*sourceConcurrentMarker
-	groups         int
-	native         int
-	review         int
-	markerCount    int
-	omittedDetails int
-	limited        bool
-	workRemaining  int
+	wrapperMarkers map[int]bool // folded per-request transaction calls
+	// requestTransactionGroups counts converted groups that record a
+	// transaction per request.
+	requestTransactionGroups int
+	groups                   int
+	native                   int
+	review                   int
+	markerCount              int
+	omittedDetails           int
+	limited                  bool
+	workRemaining            int
 }
 
 func planSourceConcurrentGroups(functions []ParsedFunction, actions []*ParsedAction) *sourceConcurrentPlan {
-	plan := &sourceConcurrentPlan{markers: make(map[int]*sourceConcurrentMarker), workRemaining: maxSourceConcurrencyWork}
+	plan := &sourceConcurrentPlan{markers: make(map[int]*sourceConcurrentMarker), wrapperMarkers: make(map[int]bool), workRemaining: maxSourceConcurrencyWork}
 	unsafeFiles := map[string]bool{}
 	for _, action := range actions {
 		if action != nil && len(action.ParseFailures) > 0 {
@@ -114,6 +130,14 @@ func planSourceConcurrentGroups(functions []ParsedFunction, actions []*ParsedAct
 					start.reason = "empty_group"
 				} else if start.requests > dsl.MaxHTTPConcurrentChildren {
 					start.reason = "child_limit"
+				} else if start.wrapperOpen || start.wrapped != 0 && start.wrapped != start.requests {
+					start.reason = "transaction_wrapper_review"
+				}
+			}
+			if start.reason == "" && start.wrapped != 0 {
+				start.requestTransactions = true
+				for _, marker := range start.wrapperMarkers {
+					plan.wrapperMarkers[marker] = true
 				}
 			}
 			info.reason = start.reason
@@ -137,8 +161,20 @@ func planSourceConcurrentGroups(functions []ParsedFunction, actions []*ParsedAct
 			start.reason = "source_parse_review"
 		} else if !sourceConcurrentSameScope(start.fn, fn) {
 			start.reason = "cross_source_scope"
-		} else if !sourceConcurrentRequestFunction(fn.Name) && !sourceConcurrentContributorFunction(fn.Name) {
+		} else if fn.Name == "lr_start_transaction" || fn.Name == "lr_end_transaction" {
+			start.reason = trackSourceConcurrentTransactionWrapper(start, fn, index)
+		} else if sourceConcurrentRequestFunction(fn.Name) {
+			if start.wrapperOpen {
+				start.wrapperRequests++
+			}
+		} else if !sourceConcurrentContributorFunction(fn.Name) {
 			start.reason = "source_operation_barrier"
+		} else if start.wrapperOpen && start.wrapperRequests > 0 {
+			// A registration after the wrapped request belongs to the next one.
+			start.reason = "transaction_wrapper_review"
+		}
+		if start.reason == "" && start.wrapperRequests > 1 {
+			start.reason = "transaction_wrapper_review"
 		}
 	}
 	if active >= 0 {
@@ -148,6 +184,32 @@ func planSourceConcurrentGroups(functions []ParsedFunction, actions []*ParsedAct
 	// A paired start needs its final count; unsupported nested starts/endpoints
 	// remain review even when another group's end happens to be nearby.
 	return plan
+}
+
+// trackSourceConcurrentTransactionWrapper accepts a transaction pair that
+// wraps exactly one request of the group and ends with LR_AUTO, so its status
+// is the request's own outcome. Nested, unnamed, mismatched or explicitly
+// statused pairs remain review cases.
+func trackSourceConcurrentTransactionWrapper(start *sourceConcurrentMarker, fn ParsedFunction, index int) string {
+	name := convertutil.FirstNonEmpty(sourceControlArgAt(fn, 0), fn.StepName)
+	if strings.TrimSpace(name) == "" || len(name) > 4096 {
+		return "transaction_wrapper_review"
+	}
+	if fn.Name == "lr_start_transaction" {
+		if start.wrapperOpen || len(sourceControlArgs(fn)) > 1 {
+			return "transaction_wrapper_review"
+		}
+		start.wrapper, start.wrapperOpen, start.wrapperRequests = name, true, 0
+		start.wrapperMarkers = append(start.wrapperMarkers, index)
+		return ""
+	}
+	if !start.wrapperOpen || name != start.wrapper || start.wrapperRequests != 1 || len(sourceControlArgs(fn)) != 2 || strings.TrimSpace(sourceControlArgAt(fn, 1)) != "LR_AUTO" {
+		return "transaction_wrapper_review"
+	}
+	start.wrapper, start.wrapperOpen, start.wrapperRequests = "", false, 0
+	start.wrapped++
+	start.wrapperMarkers = append(start.wrapperMarkers, index)
+	return ""
 }
 
 func sourceConcurrentScopeCost(fn ParsedFunction) int {
@@ -197,7 +259,7 @@ func sourceConcurrentScopeSupported(fn ParsedFunction) bool {
 		return false
 	}
 	if len(fn.Conditions) > 0 {
-		expr, ok := translateSourceConditionChain(fn.Conditions)
+		expr, ok := translateSourceConditionChain(expandCLocalFrames(fn.Conditions, fn.cLocals))
 		if !ok || dsl.ValidateConditionExpression(expr) != nil {
 			return false
 		}
@@ -206,7 +268,7 @@ func sourceConcurrentScopeSupported(fn ParsedFunction) bool {
 		return false
 	}
 	if len(fn.Loops) == 1 {
-		_, ok := translateSourceLoopHeader(fn.Loops[0])
+		_, ok := translateSourceLoopHeader(expandCLocalReferences(fn.Loops[0], fn.cLocals))
 		return ok
 	}
 	return true
@@ -284,6 +346,29 @@ func appendSourceConcurrentMarker(result *ConvertResult, fn ParsedFunction, inde
 		plan.omittedDetails++
 	}
 }
+
+// tagSourceConcurrentTransaction marks the action just emitted for a planned
+// per-request transaction wrapper, so the group fold can turn the pair into its
+// request's own transaction.
+func tagSourceConcurrentTransaction(result *ConvertResult, fn ParsedFunction, index int, plan *sourceConcurrentPlan) {
+	if plan == nil || !plan.wrapperMarkers[index] {
+		return
+	}
+	emitted := actionAtPhaseIndex(result.Script, fn.Phase, actionCountForPhase(result.Script, fn.Phase)-1)
+	if emitted == nil {
+		return
+	}
+	if emitted.Metadata == nil {
+		emitted.Metadata = map[string]any{}
+	}
+	emitted.Metadata[sourceConcurrentTransactionKey] = index
+}
+
+func sourceConcurrentTransactionAction(action dsl.Action) bool {
+	_, ok := action.Metadata[sourceConcurrentTransactionKey].(int)
+	return ok
+}
+
 func lenSourceConcurrencyDetails(script *dsl.Script) int {
 	preserved := ensureEnterpriseArchiveImportPreserved(script)
 	switch values := preserved["source_concurrent_groups"].(type) {
@@ -303,6 +388,7 @@ func structureSourceConcurrentGroups(result *ConvertResult, plan *sourceConcurre
 		return
 	}
 	paths := map[string]string{}
+	foldedTransactions := map[string]bool{} // pre-fold paths of folded wrapper calls
 	fold := func(actions []dsl.Action, phase string) []dsl.Action {
 		out := make([]dsl.Action, 0, len(actions))
 		for i := 0; i < len(actions); {
@@ -313,6 +399,7 @@ func structureSourceConcurrentGroups(result *ConvertResult, plan *sourceConcurre
 				next := sourceReviewActionPath(phase, len(out))
 				paths[old] = next
 				action := actions[i]
+				delete(action.Metadata, sourceConcurrentTransactionKey)
 				if marker {
 					delete(action.Metadata, sourceConcurrentMarkerKey)
 					if info != nil && info.reason == "" {
@@ -324,7 +411,11 @@ func structureSourceConcurrentGroups(result *ConvertResult, plan *sourceConcurre
 				continue
 			}
 			end := i + 1
-			for end < len(actions) && end-i <= dsl.MaxHTTPConcurrentChildren+1 {
+			limit := dsl.MaxHTTPConcurrentChildren + 1
+			if info.requestTransactions {
+				limit = 3*dsl.MaxHTTPConcurrentChildren + 1 // each request between its wrapper pair
+			}
+			for end < len(actions) && end-i <= limit {
 				if otherIndex, isMarker := sourceConcurrentActionMarker(actions[end]); isMarker {
 					other := plan.markers[otherIndex]
 					if other != nil && !other.start && other.group == info.group {
@@ -334,8 +425,30 @@ func structureSourceConcurrentGroups(result *ConvertResult, plan *sourceConcurre
 				end++
 			}
 			reason := "missing_end"
-			if end < len(actions) && end-i <= dsl.MaxHTTPConcurrentChildren+1 {
-				reason = sourceConcurrentChildrenReason(result.Script, actions[i+1:end], info.requests, plan)
+			// Per-request transaction wrappers fold into their requests: each
+			// child keeps its transaction name and records it at runtime.
+			var children []dsl.Action
+			childSourceIndex := make([]int, 0, end-i)
+			if end < len(actions) && end-i <= limit {
+				transaction := ""
+				for index := i + 1; index < end; index++ {
+					if sourceConcurrentTransactionAction(actions[index]) {
+						continue
+					}
+					child := actions[index]
+					if info.requestTransactions {
+						transaction, _ = child.Metadata["source_transaction"].(string)
+						if transaction == "" {
+							reason = "transaction_wrapper_review"
+							break
+						}
+					}
+					children = append(children, child)
+					childSourceIndex = append(childSourceIndex, index)
+				}
+				if reason == "missing_end" {
+					reason = sourceConcurrentChildrenReason(result.Script, children, info.requests, plan)
+				}
 			}
 			if reason != "" {
 				old := sourceReviewActionPath(phase, i)
@@ -348,18 +461,45 @@ func structureSourceConcurrentGroups(result *ConvertResult, plan *sourceConcurre
 				continue
 			}
 			wrapperPath := sourceReviewActionPath(phase, len(out))
-			children := append([]dsl.Action(nil), actions[i+1:end]...)
+			children = append([]dsl.Action(nil), children...)
 			for childIndex := range children {
 				child := &children[childIndex]
 				child.Metadata = cloneSourceAnyMap(child.Metadata)
 				for _, key := range []string{sourceFlowConditionKey, sourceFlowConditionExprKey, sourceFlowConditionIDKey, sourceFlowLoopKey, sourceFlowLoopExprKey, sourceFlowLoopCountKey, sourceFlowLoopIDKey} {
 					delete(child.Metadata, key)
 				}
-				paths[sourceReviewActionPath(phase, i+1+childIndex)] = fmt.Sprintf("%s.params.requests[%d]", wrapperPath, childIndex)
+				if info.requestTransactions {
+					child.Metadata[dsl.HTTPConcurrentRequestTransactionMetadataKey] = child.Metadata["source_transaction"]
+				}
+				paths[sourceReviewActionPath(phase, childSourceIndex[childIndex])] = fmt.Sprintf("%s.params.requests[%d]", wrapperPath, childIndex)
+			}
+			// A folded wrapper pair maps to the request it wraps: registrations
+			// emit no action, so each pair is start, request, end in order.
+			childAt := make(map[int]int, len(childSourceIndex))
+			for childIndex, sourceIndex := range childSourceIndex {
+				childAt[sourceIndex] = childIndex
+			}
+			for index := i + 1; index < end; index++ {
+				if !sourceConcurrentTransactionAction(actions[index]) {
+					continue
+				}
+				childIndex, wrapsNext := childAt[index+1]
+				if !wrapsNext {
+					childIndex = childAt[index-1]
+				}
+				old := sourceReviewActionPath(phase, index)
+				paths[old] = fmt.Sprintf("%s.params.requests[%d]", wrapperPath, childIndex)
+				foldedTransactions[old] = true
 			}
 			metadata := cloneSourceAnyMap(children[0].Metadata)
 			if metadata == nil {
 				metadata = map[string]any{}
+			}
+			if info.requestTransactions {
+				// The group is not the first request's transaction.
+				for _, key := range []string{"source_transaction", "source_subtransaction", "source_action_name", dsl.HTTPConcurrentRequestTransactionMetadataKey} {
+					delete(metadata, key)
+				}
 			}
 			for key, value := range actions[i].Metadata {
 				if key != sourceConcurrentMarkerKey {
@@ -393,6 +533,9 @@ func structureSourceConcurrentGroups(result *ConvertResult, plan *sourceConcurre
 			}
 			out = append(out, wrapper)
 			plan.native++
+			if info.requestTransactions {
+				plan.requestTransactionGroups++
+			}
 			i = end + 1
 		}
 		return out
@@ -400,6 +543,13 @@ func structureSourceConcurrentGroups(result *ConvertResult, plan *sourceConcurre
 	result.Script.Init = fold(result.Script.Init, "init")
 	result.Script.Actions = fold(result.Script.Actions, "action")
 	result.Script.Teardown = fold(result.Script.Teardown, "teardown")
+	if len(foldedTransactions) > 0 {
+		for index := range result.SourceReview.Mappings {
+			if mapping := &result.SourceReview.Mappings[index]; foldedTransactions[mapping.TargetPath] {
+				mapping.Notes = "Folded into the concurrent request's own transaction, timed by that request."
+			}
+		}
+	}
 	remapSourceReviewTargets(result, paths)
 	plan.review = plan.groups - plan.native
 	preserved := ensureEnterpriseArchiveImportPreserved(result.Script)
@@ -408,6 +558,9 @@ func structureSourceConcurrentGroups(result *ConvertResult, plan *sourceConcurre
 	// authoritative outcome. Never mark every preserved marker native wholesale.
 	if plan.review > 0 || plan.markerCount != plan.native*2 || plan.limited {
 		result.Warnings = append(result.Warnings, "Source concurrent groups include explicit review cases; no concurrent timing parity is claimed for those cases.")
+	}
+	if plan.requestTransactionGroups > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%d source concurrent group(s) wrap each request in its own transaction. APEX times each transaction by its own request; LoadRunner runs a group's requests together at web_concurrent_end, so compare these transaction times with care.", plan.requestTransactionGroups))
 	}
 }
 func sourceConcurrentActionMarker(action dsl.Action) (int, bool) {

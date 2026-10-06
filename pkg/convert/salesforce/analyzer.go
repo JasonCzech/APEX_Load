@@ -215,8 +215,15 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 		if !outcomes.Complete {
 			review.Warnings = append(review.Warnings, "Aura baseline analysis is incomplete; review missing responses, malformed or unmatched actions, and analysis limits before controlled replay.")
 		}
-		if outcomes.StateCounts[aura.Error]+outcomes.StateCounts[aura.Incomplete]+outcomes.StateCounts[aura.Aborted] > 0 {
-			review.Warnings = append(review.Warnings, "Captured Aura responses contain unsuccessful action states; review baseline failures before controlled replay.")
+		failed := outcomes.StateCounts[aura.Error] + outcomes.StateCounts[aura.Incomplete] + outcomes.StateCounts[aura.Aborted]
+		if outcomes.RecordedFailureActions > 0 {
+			review.Warnings = append(review.Warnings, fmt.Sprintf("%d Aura action(s) in %d request(s) already failed in the recording. Replay still requires success and labels these failures \"also failed in the recording\"; to accept the recorded outcome for all of them, set the script's HTTP setting \"Aura actions that failed in the recording\" to \"Accept the recorded outcome\".", outcomes.RecordedFailureActions, outcomes.RecordedFailureBatches))
+		}
+		if frameworkErrors := outcomes.IssueCounts[aura.InvalidSession] + outcomes.IssueCounts[aura.ClientOutOfSync] + outcomes.IssueCounts[aura.FrameworkError]; frameworkErrors > 0 {
+			review.Warnings = append(review.Warnings, fmt.Sprintf("%d captured Aura response(s) were framework errors (invalid session: %d, client out of sync: %d, other: %d); the recording already failed at those requests, so repair or re-record it before controlled replay.", frameworkErrors, outcomes.IssueCounts[aura.InvalidSession], outcomes.IssueCounts[aura.ClientOutOfSync], outcomes.IssueCounts[aura.FrameworkError]))
+		}
+		if failed > outcomes.RecordedFailureActions {
+			review.Warnings = append(review.Warnings, "Captured Aura responses contain unsuccessful action states that could not be matched to the imported request; review those baseline failures before controlled replay.")
 		}
 		if opts.BuildNative && outcomes.InvalidRequests > 0 {
 			review.Blockers = append(review.Blockers, "Imported Aura requests could not be validated; native replay is gated until those request envelopes are repaired.")
@@ -250,11 +257,14 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 	review.Parameterizations, parameterWarnings = auraMessageParameterizationsChecked(refs, correlations)
 	review.Warnings = append(review.Warnings, parameterWarnings...)
 	if opts.BuildNative {
-		preview, err := buildNativePreview(script, refs, entries, matches, correlations)
+		preview, err := buildNativePreview(script, refs, entries, matches, correlations, review.AuraOutcomes.RecordedFailures())
 		if err != nil {
 			return nil, err
 		}
 		review.NativePreview = preview
+		if warning := auraTokenProvenanceWarning(preview.Script, correlations); warning != "" {
+			review.Warnings = append(review.Warnings, warning)
+		}
 		if preview.CorrelationCoverage != nil && len(correlationWarnings) > 0 {
 			preview.referenceCatalog.base.Complete = false
 			preview.CorrelationCoverage.Complete = false
@@ -1098,7 +1108,7 @@ func prepareCorrelationNames(correlations []correlate.Correlation, refs []action
 	return out, registry
 }
 
-func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry, matches map[int]int, correlations []correlate.Correlation) (*NativePreview, error) {
+func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry, matches map[int]int, correlations []correlate.Correlation, recordedAuraFailures map[string][]aura.RecordedOutcome) (*NativePreview, error) {
 	clone, err := cloneScript(script)
 	if err != nil {
 		return nil, err
@@ -1139,7 +1149,11 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 				// Replace the legacy generated substring guards with validation of
 				// the actual outgoing request IDs and every response action.
 				removeLegacyAuraAssertions(ref.Action)
-				addAssertionIfMissing(ref.Action, dsl.Assertion{Type: "aura_actions_success"})
+				assertion := dsl.Assertion{Type: "aura_actions_success"}
+				if recorded := recordedAuraFailures[ref.ActionPath]; len(recorded) > 0 {
+					assertion.Expected = aura.Baseline{Recorded: recorded}
+				}
+				addAssertionIfMissing(ref.Action, assertion)
 			} else {
 				const code = "salesforce_aura_request_requires_review"
 				importreview.ApplyToAction(ref.Action, []importreview.Finding{{
@@ -2149,14 +2163,22 @@ type salesforceCorrelationBudget struct {
 	maxSearchBytes       int64
 	maxConstructionBytes int64
 	// requests caches each observation's searchable request surfaces for the
-	// one analysis this budget belongs to.
-	requests     *correlate.RequestSearch
-	requestsSize int
+	// observation slice this budget's analysis searches.
+	requests      *correlate.RequestSearch
+	requestsFirst *correlate.Observation
+	requestsSize  int
 }
 
+// requestSearch returns the cached surfaces for observations, rebuilding them
+// when a different slice (not merely a different length) is passed.
 func (budget *salesforceCorrelationBudget) requestSearch(observations []correlate.Observation) *correlate.RequestSearch {
-	if budget.requests == nil || budget.requestsSize != len(observations) {
+	var first *correlate.Observation
+	if len(observations) > 0 {
+		first = &observations[0]
+	}
+	if budget.requests == nil || budget.requestsFirst != first || budget.requestsSize != len(observations) {
 		budget.requests = correlate.NewRequestSearch(observations)
+		budget.requestsFirst = first
 		budget.requestsSize = len(observations)
 	}
 	return budget.requests

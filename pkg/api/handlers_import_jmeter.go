@@ -130,7 +130,7 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 		writeError(w, http.StatusBadRequest, "empty file uploaded")
 		return nil, false
 	}
-	if isJMeterZipUpload(fileName, contentType) {
+	if isJMeterZipUpload(fileName, contentType, data) {
 		documents, zipSidecars, err := readJMeterZipImportAll(data)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "failed to read JMeter ZIP: "+err.Error())
@@ -169,10 +169,16 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 	}, true
 }
 
-func isJMeterZipUpload(fileName string, contentType string) bool {
-	return strings.EqualFold(filepath.Ext(fileName), ".zip") ||
+// isJMeterZipUpload reports whether the upload is a ZIP of JMX plans. A
+// LoadRunner Enterprise JMeter script arrives as a .usz (a ZIP holding the .jmx
+// and VuGen project files); a JMX document is XML and never starts with the
+// ZIP local-file signature.
+func isJMeterZipUpload(fileName string, contentType string, data []byte) bool {
+	ext := filepath.Ext(fileName)
+	return strings.EqualFold(ext, ".zip") || strings.EqualFold(ext, ".usz") ||
 		strings.HasPrefix(contentType, "application/zip") ||
-		strings.HasPrefix(contentType, "application/x-zip-compressed")
+		strings.HasPrefix(contentType, "application/x-zip-compressed") ||
+		bytes.HasPrefix(data, []byte("PK\x03\x04"))
 }
 
 func readJMeterZipImport(data []byte) ([]byte, string, map[string][]byte, error) {

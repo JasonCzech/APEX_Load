@@ -439,7 +439,7 @@ func TestHTTPSequenceAggregateExtractionBudgetFailsClosed(t *testing.T) {
 	}
 	result, err := vu.executeHTTPSequenceAction(context.Background(), dsl.Action{
 		Name: "sequence", Type: "http_sequence", Params: map[string]any{"requests": requests},
-	}, dsl.ErrorHandlingConfig{})
+	}, dsl.ErrorHandlingConfig{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +531,7 @@ func TestHTTPSequenceCarriesChildThinkTimeWithoutInflatingResponseDuration(t *te
 			{Name: "first", Type: "GET", Method: "GET", Target: "/", ThinkTimeAfter: true, ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 20}},
 			{Name: "second", Type: "GET", Method: "GET", Target: "/next"},
 		}},
-	}, dsl.ErrorHandlingConfig{})
+	}, dsl.ErrorHandlingConfig{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

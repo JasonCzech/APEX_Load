@@ -229,11 +229,11 @@ func (b *MemoryBudget) release(n int64) {
 	b.mu.Unlock()
 }
 
-// acquire reserves n bytes, waiting up to wait (and while ctx is live) for
-// other readers to release workspace. A request larger than the whole budget
-// fails immediately. The retry and the wait-channel creation share b.mu with
-// release's notification, so a release between them cannot be missed.
-func (b *MemoryBudget) acquire(ctx context.Context, n int64, wait time.Duration) (time.Duration, error) {
+// acquire reserves n bytes, waiting up to wait (and while ctx is live and done
+// is open) for other readers to release workspace. A request larger than the
+// whole budget fails immediately. The retry and the wait-channel creation share
+// b.mu with release's notification, so a release between them cannot be missed.
+func (b *MemoryBudget) acquire(ctx context.Context, done <-chan struct{}, n int64, wait time.Duration) (time.Duration, error) {
 	if b.reserve(n) {
 		return 0, nil
 	}
@@ -267,6 +267,10 @@ func (b *MemoryBudget) acquire(ctx context.Context, n int64, wait time.Duration)
 		case <-ctx.Done():
 			b.waitNanos.Add(int64(time.Since(start)))
 			return time.Since(start), failure(Canceled)
+		case <-done:
+			// Close holds readMu only after this wait ends, so it must end now.
+			b.waitNanos.Add(int64(time.Since(start)))
+			return time.Since(start), failure(Canceled)
 		}
 	}
 }
@@ -290,7 +294,10 @@ type Reader struct {
 	sourceOnce  sync.Once
 	closeOnce   sync.Once
 	stopContext func() bool
-	waited      time.Duration
+	// closing is closed by Close so a Read waiting for admission (while it
+	// holds readMu) gives up instead of stalling Close.
+	closing chan struct{}
+	waited  time.Duration
 }
 
 // NewReader takes ownership of source, including on validation failure. Header
@@ -310,7 +317,7 @@ func NewReader(ctx context.Context, source io.ReadCloser, values []string, limit
 		_ = source.Close()
 		return nil, err
 	}
-	r := &Reader{ctx: ctx, source: source, limits: limits, encodings: encodings}
+	r := &Reader{ctx: ctx, source: source, limits: limits, encodings: encodings, closing: make(chan struct{})}
 	r.stopContext = context.AfterFunc(ctx, func() { r.closeSource() })
 	return r, nil
 }
@@ -402,7 +409,7 @@ func (r *Reader) initialize() error {
 		workspace += r.layerWorkspace(encoding)
 	}
 	if workspace > 0 {
-		waited, err := r.limits.MemoryBudget.acquire(r.ctx, workspace, r.limits.AdmissionWait)
+		waited, err := r.limits.MemoryBudget.acquire(r.ctx, r.closing, workspace, r.limits.AdmissionWait)
 		r.waited = waited
 		if err != nil {
 			return err
@@ -534,6 +541,9 @@ func (r *Reader) Read(p []byte) (int, error) {
 func (r *Reader) Close() error {
 	r.closeOnce.Do(func() {
 		r.closed.Store(true)
+		if r.closing != nil {
+			close(r.closing) // End an admission wait that holds readMu.
+		}
 		r.closeSource() // Unblock codec input before waiting for its Read/Close.
 		if r.stopContext != nil {
 			r.stopContext()

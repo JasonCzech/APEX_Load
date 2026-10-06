@@ -170,9 +170,9 @@ func TestSuggestDataParamsPreserveWholeKeyBoundaries(t *testing.T) {
 	script := httpScript(dsl.Action{
 		Name:   "query key boundary",
 		Type:   "http_request",
-		Target: "/users?session_id=abc&id=123",
+		Target: "/users?customer_id=abc&id=123",
 		Method: "GET",
-		Body:   "session_id=abc&id=123",
+		Body:   "customer_id=abc&id=123",
 	}, dsl.Action{
 		Name:   "form body",
 		Type:   "http_request",
@@ -187,13 +187,13 @@ func TestSuggestDataParamsPreserveWholeKeyBoundaries(t *testing.T) {
 	}
 	countByVar := map[string]int{}
 	for _, p := range params {
-		if p.VarName == "id" || p.VarName == "session_id" || p.VarName == "order_id" || p.VarName == "user_id" {
+		if p.VarName == "id" || p.VarName == "customer_id" || p.VarName == "order_id" || p.VarName == "user_id" {
 			countByVar[p.VarName]++
 			continue
 		}
 		t.Fatalf("unexpected data-param variable %q", p.VarName)
 	}
-	for _, v := range []string{"id", "session_id", "order_id", "user_id"} {
+	for _, v := range []string{"id", "customer_id", "order_id", "user_id"} {
 		if countByVar[v] != 1 {
 			t.Fatalf("expected variable %q exactly once, got %+v", v, countByVar)
 		}
@@ -214,7 +214,7 @@ func TestSuggestDataParamsHandleSemicolonAndOffsetPairs(t *testing.T) {
 		Type:   "http_request",
 		Target: "/submit",
 		Method: "POST",
-		Body:   "  session_id=xyz",
+		Body:   "  customer_id=xyz",
 	})
 	result := Suggest(script, allClasses())
 
@@ -231,8 +231,8 @@ func TestSuggestDataParamsHandleSemicolonAndOffsetPairs(t *testing.T) {
 		t.Fatalf("user_id = %q, want %q (semicolon must start a new pair)", values["user_id"], "987")
 	}
 	// Without multi-line/whitespace anchoring, an indented body drops its first pair.
-	if values["session_id"] != "xyz" {
-		t.Fatalf("session_id = %q, want %q (offset body pair must still match)", values["session_id"], "xyz")
+	if values["customer_id"] != "xyz" {
+		t.Fatalf("customer_id = %q, want %q (offset body pair must still match)", values["customer_id"], "xyz")
 	}
 }
 
@@ -510,7 +510,7 @@ func TestSuggestSurfacesCorrelationWorkLimit(t *testing.T) {
 }
 
 func TestSuggestRejectsTruncatedCorrelationCandidatePrefix(t *testing.T) {
-	const candidateLimit = 1024
+	candidateLimit := correlate.MaxCandidatesPerObservation
 	var responseBody strings.Builder
 	responseBody.WriteByte('{')
 	for index := 0; index <= candidateLimit; index++ {
@@ -523,12 +523,12 @@ func TestSuggestRejectsTruncatedCorrelationCandidatePrefix(t *testing.T) {
 
 	result := Suggest(httpScript(
 		dsl.Action{Name: "source", Type: "request", Method: "GET", Target: "/source"},
-		dsl.Action{Name: "consumer", Type: "request", Method: "GET", Target: "/use?token=token-value-001024"},
+		dsl.Action{Name: "consumer", Type: "request", Method: "GET", Target: fmt.Sprintf("/use?token=token-value-%06d", candidateLimit)},
 	), Options{
 		EnableCorrelation: true,
 		Observations: []correlate.Observation{
 			{ID: 1, ResponseBody: responseBody.String()},
-			{ID: 2, RequestURL: "https://api.example.com/use?token=token-value-001024"},
+			{ID: 2, RequestURL: fmt.Sprintf("https://api.example.com/use?token=token-value-%06d", candidateLimit)},
 		},
 	})
 	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "Correlation analysis was not completed") {

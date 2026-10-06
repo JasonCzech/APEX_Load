@@ -518,6 +518,12 @@ func resolveActionThinkTime(global protocol.ThinkTimeConfig, action dsl.ThinkTim
 		return global
 	}
 	cfg := protocol.ThinkTimeConfig{Type: action.Type, MeanMs: action.MeanMs, StdMs: action.StdMs, MinMs: action.MinMs, MaxMs: action.MaxMs, MinPercent: action.MinPercent, MaxPercent: action.MaxPercent, Multiplier: action.Multiplier, LimitMs: action.LimitMs, Ignore: action.Ignore}
+	if action.Force {
+		// A forced delay (lr_force_think_time) ignores the script's think-time
+		// policy entirely: no percentage sampling, multiplier, cap or ignore.
+		cfg.Multiplier, cfg.LimitMs, cfg.Ignore = 1, 0, false
+		return cfg
+	}
 	if strings.EqualFold(strings.TrimSpace(global.Type), "random_percentage") && (strings.EqualFold(strings.TrimSpace(action.Type), "fixed") || strings.EqualFold(strings.TrimSpace(action.Type), "recorded")) {
 		cfg.Type = "random_percentage"
 		cfg.MinPercent, cfg.MaxPercent = global.MinPercent, global.MaxPercent

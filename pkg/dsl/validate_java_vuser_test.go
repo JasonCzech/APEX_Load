@@ -200,3 +200,24 @@ func TestTrustedImportValidationAllowsOnlySensitiveJavaVMArguments(t *testing.T)
 		t.Fatalf("trusted structural validation issues = %v", issues)
 	}
 }
+
+// Brace limits count characters, matching the schema's maxLength, so a short
+// non-ASCII delimiter is accepted.
+func TestValidateJavaVuserParamBraces(t *testing.T) {
+	cases := []struct {
+		left, right string
+		ok          bool
+	}{
+		{"", "", true},
+		{"<", ">", true},
+		{"«««««", "»»»»»", true},
+		{"<", "", false},
+		{"123456789", ">", false},
+		{"< ", ">", false},
+	}
+	for _, tc := range cases {
+		if issues := validateJavaVuserParamBraces(tc.left, tc.right); (len(issues) == 0) != tc.ok {
+			t.Fatalf("braces %q/%q issues = %v, want ok=%v", tc.left, tc.right, issues, tc.ok)
+		}
+	}
+}

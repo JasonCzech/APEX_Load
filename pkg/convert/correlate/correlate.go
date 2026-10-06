@@ -17,14 +17,14 @@ import (
 )
 
 const (
-	maxCorrelationCandidatesPerObservation = 1024
+	maxCorrelationCandidatesPerObservation = 4096 // a Lightning Aura response yields over 1,024 id-shaped values
 	maxCorrelationCandidatesPerAnalysis    = 4096
 	maxCorrelationObservationsPerAnalysis  = 4096
 	maxCorrelationEvidenceBytes            = 16 << 20
 	maxCorrelationAnalysisEvidenceBytes    = 64 << 20
 	maxCorrelationStructuredFields         = 8192
-	maxCorrelationJSONTokens               = 32768
-	maxCorrelationJSONNodes                = 32768
+	maxCorrelationJSONTokens               = 1 << 17 // Aura record-UI and preload responses reach ~56,000 tokens
+	maxCorrelationJSONNodes                = 1 << 17
 	maxCorrelationJSONDepth                = 128
 	maxCorrelationJSONConstructionBytes    = 16 << 20
 	maxCorrelationRegexOrdinal             = protocol.MaxExtractionEntries - 1
@@ -36,6 +36,16 @@ const (
 	// result key; StoreExtraction accounts for key and value together.
 	maxCorrelationExtractionNameSuffixBytes = 16
 )
+
+// MaxCandidatesPerObservation is the number of candidates one response can
+// contribute before its discovery is reported as incomplete.
+const MaxCandidatesPerObservation = maxCorrelationCandidatesPerObservation
+
+// maxCorrelationAnalyzedValuesPerAnalysis lets detection analyze four full
+// responses' worth of distinct values, so one large response cannot use the
+// whole budget and hide the tokens of later responses. Cross-step scanning
+// stays bounded by maxCorrelationSearchBytes.
+const maxCorrelationAnalyzedValuesPerAnalysis = 4 * maxCorrelationCandidatesPerObservation
 
 // maxCorrelationSearchBytes is a deterministic CPU-work ceiling for cross-step
 // value scanning, measured in scanned request-surface bytes (unique candidate
@@ -232,7 +242,7 @@ scan:
 			// values the precision rules reject are skipped for free and must not
 			// truncate analysis of later responses.
 			analyzedCandidates++
-			if analyzedCandidates > maxCorrelationCandidatesPerAnalysis {
+			if analyzedCandidates > maxCorrelationAnalyzedValuesPerAnalysis {
 				truncated = true
 				break scan
 			}
@@ -482,7 +492,7 @@ func candidatesCheckedWithTruncation(responseBody string, responseHeaders map[st
 	if responseBytes > maxCorrelationEvidenceBytes {
 		return nil, false, fmt.Errorf("%w: response evidence exceeds %d bytes", ErrCorrelationWorkLimit, maxCorrelationEvidenceBytes)
 	}
-	candidates := make([]Candidate, 0, maxCorrelationCandidatesPerObservation+1)
+	candidates := make([]Candidate, 0, 64)
 	truncated := false
 	// A response that yields more candidates than the per-observation cap keeps
 	// the earliest ones (families run in fixed priority order) and drops the
@@ -1536,6 +1546,20 @@ func validateCorrelationJSONShape(body string) (valid bool, err error) {
 	nodes := 0
 	depth := 0
 	roots := 0
+	// The walk rejects a container wider than maxCorrelationStructuredFields
+	// and would keep only the prefix found before it, so such documents use
+	// the regex scan instead. An object's keys and values both arrive as
+	// tokens, so its entry allowance is doubled.
+	type container struct{ entries, limit int }
+	var open []container
+	enter := func() bool {
+		if len(open) == 0 {
+			return true
+		}
+		top := &open[len(open)-1]
+		top.entries++
+		return top.entries <= top.limit
+	}
 	for {
 		token, tokenErr := decoder.Token()
 		if tokenErr == io.EOF {
@@ -1554,20 +1578,32 @@ func validateCorrelationJSONShape(body string) (valid bool, err error) {
 				if depth == 0 {
 					roots++
 				}
+				if !enter() {
+					return false, nil
+				}
 				depth++
 				nodes++
 				if depth > maxCorrelationJSONDepth {
 					return false, nil
 				}
+				limit := maxCorrelationStructuredFields
+				if delimiter == '{' {
+					limit *= 2
+				}
+				open = append(open, container{limit: limit})
 			case '}', ']':
 				depth--
-				if depth < 0 {
+				if depth < 0 || len(open) == 0 {
 					return false, nil
 				}
+				open = open[:len(open)-1]
 			}
 		} else {
 			if depth == 0 {
 				roots++
+			}
+			if !enter() {
+				return false, nil
 			}
 			nodes++
 		}

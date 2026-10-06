@@ -94,7 +94,7 @@ func TestConcurrentHTTPAuraContractsLoadAndReplay(t *testing.T) {
 							vu := newConcurrentVU(t, server.URL)
 							vu.Script.Actions = []dsl.Action{group}
 							vu.Variables["first"] = "prior-output"
-							result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{})
+							result, err := vu.executeHTTPSequenceAction(context.Background(), group, dsl.ErrorHandlingConfig{}, nil)
 							if err != nil || result == nil {
 								t.Fatalf("load group: result=%v err=%v", result, err)
 							}

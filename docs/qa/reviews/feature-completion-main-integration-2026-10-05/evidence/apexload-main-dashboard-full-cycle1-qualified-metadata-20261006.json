@@ -1,0 +1,366 @@
+{
+  "schema": "apexload.main-dashboard-full-cycle-qualified-metadata.v1",
+  "at_utc": "2026-10-06T04:58:28.881390+00:00",
+  "reviewer": "/root/browser_har_audit_resume_v3",
+  "result": "RED overall; dev-admin one reviewed resize-synchronization failure; local-auth GREEN with documented private-fixture skip",
+  "physical_join": {
+    "session_id": 75923,
+    "exit_code": 1,
+    "finished_utc": "2026-10-06T04:56:56.259261+00:00",
+    "duration_seconds": 3206.104
+  },
+  "gate_reference": {
+    "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-dashboard-full-cycle-1.json",
+    "bytes": 2132702,
+    "sha256": "a51b74c0a49931aad4302079c45f9bd26bfe8746f7ceb57ac39ba7af31e257a7"
+  },
+  "raw_log_reference": {
+    "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-dashboard-full-cycle-1.log",
+    "bytes": 109545,
+    "sha256": "51b22654bf5cadd6abc6bfc9c734443c49abb0efdc384304fc4c82bd3ce14348"
+  },
+  "profiles": {
+    "dev-admin": {
+      "counts": {
+        "tests": 262,
+        "passed": 256,
+        "skipped": 5,
+        "failed": 1,
+        "errors": 0
+      },
+      "non_pass_cases": [
+        {
+          "file": "command-center-details.spec.ts",
+          "title": "runtime workspace keeps essential metrics readable and settings in an opaque drawer",
+          "result": "failed"
+        },
+        {
+          "file": "workflow-help.spec.ts",
+          "title": "non-administrators cannot open or search Administration articles",
+          "result": "skipped"
+        },
+        {
+          "file": "workflow-library-assignments.spec.ts",
+          "title": "Viewer cannot change script or scenario assignments",
+          "result": "skipped"
+        },
+        {
+          "file": "workflow-loadrunner-review.spec.ts",
+          "title": "LoadRunner private acceptance archive groups repeated findings without hiding source locations",
+          "result": "skipped"
+        },
+        {
+          "file": "workflow-object-activity.spec.ts",
+          "title": "project viewers can inspect deleted history but cannot archive or restore",
+          "result": "skipped"
+        },
+        {
+          "file": "workflow-script-folders.spec.ts",
+          "title": "Viewers cannot move scripts through the library or API",
+          "result": "skipped"
+        }
+      ]
+    },
+    "local-auth": {
+      "counts": {
+        "tests": 198,
+        "passed": 197,
+        "skipped": 1,
+        "failed": 0,
+        "errors": 0
+      },
+      "non_pass_cases": [
+        {
+          "file": "workflow-loadrunner-review.spec.ts",
+          "title": "LoadRunner private acceptance archive groups repeated findings without hiding source locations",
+          "result": "skipped"
+        }
+      ]
+    }
+  },
+  "frontend_phases": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "vitest_files": 531,
+    "vitest_tests": 6135,
+    "vitest_duration_seconds": 554.8,
+    "vite_embedded_build_ms": 986
+  },
+  "skip_classification": [
+    {
+      "file": "workflow-help.spec.ts",
+      "title": "non-administrators cannot open or search Administration articles",
+      "result": "skipped",
+      "source_line": 171,
+      "reason_from_source": "Requires the restricted local-auth persona",
+      "classification": "existing auth-profile restriction; passed under real local-auth",
+      "local_auth_result": "passed",
+      "source_sha256": "60d858471b4cc536f8801d794b5dadcfb87392a93d16d92b1ea6005d8c16a29a",
+      "source_equals_current_HEAD": true
+    },
+    {
+      "file": "workflow-library-assignments.spec.ts",
+      "title": "Viewer cannot change script or scenario assignments",
+      "result": "skipped",
+      "source_line": 96,
+      "reason_from_source": "requires viewer persona",
+      "classification": "existing auth-profile restriction; passed under real local-auth",
+      "local_auth_result": "passed",
+      "source_sha256": "6377c105ff550e79606d35d68519067af5c44dcb4f67081a0a7a581b035bf96f",
+      "source_equals_current_HEAD": true
+    },
+    {
+      "file": "workflow-loadrunner-review.spec.ts",
+      "title": "LoadRunner private acceptance archive groups repeated findings without hiding source locations",
+      "result": "skipped",
+      "source_line": 303,
+      "reason_from_source": "Set APEXLOAD_LR_ACCEPTANCE_ARCHIVE for local archive acceptance.",
+      "classification": "private optional archive acceptance unqualified; original HAR is not a substitute",
+      "local_auth_result": "skipped",
+      "source_sha256": "d737446022f044e90a2c461bf3a9f26ee4f784f8b30c2346be6cd25d519feff4",
+      "source_equals_current_HEAD": true
+    },
+    {
+      "file": "workflow-object-activity.spec.ts",
+      "title": "project viewers can inspect deleted history but cannot archive or restore",
+      "result": "skipped",
+      "source_line": 68,
+      "reason_from_source": "requires the local viewer persona",
+      "classification": "existing auth-profile restriction; passed under real local-auth",
+      "local_auth_result": "passed",
+      "source_sha256": "2819f998706cb00302de47acceb1f8c62d40f050207f8f0a85375d750cfa46d2",
+      "source_equals_current_HEAD": true
+    },
+    {
+      "file": "workflow-script-folders.spec.ts",
+      "title": "Viewers cannot move scripts through the library or API",
+      "result": "skipped",
+      "source_line": 66,
+      "reason_from_source": "requires local viewer persona",
+      "classification": "existing auth-profile restriction; passed under real local-auth",
+      "local_auth_result": "passed",
+      "source_sha256": "6f8dcbd66004b726ecba13249c94ad4aa36cb2a842f1c01ca692bf0e7dbc04db",
+      "source_equals_current_HEAD": true
+    }
+  ],
+  "affected_browser_evidence_workflows": [
+    {
+      "profile": "dev-admin",
+      "cases": [
+        {
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "title": "browser resource evidence filters retained failures and inspects action attribution",
+          "result": "passed"
+        },
+        {
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "title": "live browser legacy summary refuses unavailable values and distinguishes explicit zero without standards qualification",
+          "result": "passed"
+        },
+        {
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "title": "archived browser legacy summary preserves mixed-cohort gaps in engine CSV and ranks only complete devices",
+          "result": "passed"
+        },
+        {
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "title": "browser results comparison cards preserve exact mixed cohorts and malformed summaries",
+          "result": "passed"
+        },
+        {
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "title": "live document populations preserve overlapping provisional history, actual cohorts and missing-peer coverage",
+          "result": "passed"
+        },
+        {
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "title": "archive document evidence retains latest pending, censored and unavailable measurements independently from actions",
+          "result": "passed"
+        },
+        {
+          "file": "workflow-retained-resource-inspector.spec.ts",
+          "title": "retained resource inspector paginates beyond report previews and preserves native zero, false and independent clocks",
+          "result": "passed"
+        },
+        {
+          "file": "workflow-retained-resource-inspector.spec.ts",
+          "title": "retained resource inspector refuses a mismatched page and retries without publishing unavailable evidence as zero",
+          "result": "passed"
+        }
+      ],
+      "qualification_limit": "Controlled report/page UI projections plus real auth/controller run setup. Does not prove native metadata callback/runtime barrier; that Go-only fix is pending separate actual native qualification."
+    },
+    {
+      "profile": "local-auth",
+      "cases": [
+        {
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "title": "browser resource evidence filters retained failures and inspects action attribution",
+          "result": "passed"
+        },
+        {
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "title": "live browser legacy summary refuses unavailable values and distinguishes explicit zero without standards qualification",
+          "result": "passed"
+        },
+        {
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "title": "archived browser legacy summary preserves mixed-cohort gaps in engine CSV and ranks only complete devices",
+          "result": "passed"
+        },
+        {
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "title": "browser results comparison cards preserve exact mixed cohorts and malformed summaries",
+          "result": "passed"
+        },
+        {
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "title": "live document populations preserve overlapping provisional history, actual cohorts and missing-peer coverage",
+          "result": "passed"
+        },
+        {
+          "file": "workflow-browser-resource-evidence.spec.ts",
+          "title": "archive document evidence retains latest pending, censored and unavailable measurements independently from actions",
+          "result": "passed"
+        },
+        {
+          "file": "workflow-retained-resource-inspector.spec.ts",
+          "title": "retained resource inspector paginates beyond report previews and preserves native zero, false and independent clocks",
+          "result": "passed"
+        },
+        {
+          "file": "workflow-retained-resource-inspector.spec.ts",
+          "title": "retained resource inspector refuses a mismatched page and retries without publishing unavailable evidence as zero",
+          "result": "passed"
+        }
+      ],
+      "qualification_limit": "Controlled report/page UI projections plus real auth/controller run setup. Does not prove native metadata callback/runtime barrier; that Go-only fix is pending separate actual native qualification."
+    }
+  ],
+  "source_bookends": {
+    "changed_paths": [],
+    "before_after_equal": true,
+    "input_count": 5756,
+    "scope": "Gate against the current composed owned integration worktree; source/embedded inventories are repository inputs, not all transitive/native runtime files. Process completion recorded only after subprocess join. Qualification is limited to the named command."
+  },
+  "embed_bookends": {
+    "changes_expected": true,
+    "before_count": 260,
+    "after_count": 260,
+    "before_after_equal": false
+  },
+  "runner_retirement": {
+    "owned_workdirs": [
+      {
+        "path": "/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.FMRITmpvQB",
+        "exists": false
+      },
+      {
+        "path": "/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.ScbJoT1mPP",
+        "exists": false
+      }
+    ],
+    "playwright_artifact_scratch_remaining": [],
+    "scripts_cleanup": "Normal script EXIT cleanup owns exact controller kill+wait then deletes own mktemp; gate subprocess physically joined. No reviewer cleanup/signal performed."
+  },
+  "pending_correction_reviews": [
+    "/private/tmp/apexload-main-command-center-composed-patch-independent-review-20261006.json",
+    "/private/tmp/apexload-main-dashboard-profile-concurrency-static-assessment-20261006.json"
+  ],
+  "execution": "Only stable structured JUnit titles/results, source skip clauses, source/header metadata and named runner directory absence checked. No trace body extraction, private HAR usage, source/Git edits or cleanup. Current Go-only metadata barrier and reviewed test/config fixes require fresh qualification; this RED receipt remains authoritative for original sources.",
+  "inputs_before": [
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-dashboard-full-cycle-1.json",
+      "bytes": 2132702,
+      "sha256": "a51b74c0a49931aad4302079c45f9bd26bfe8746f7ceb57ac39ba7af31e257a7"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-dashboard-full-cycle-1.log",
+      "bytes": 109545,
+      "sha256": "51b22654bf5cadd6abc6bfc9c734443c49abb0efdc384304fc4c82bd3ce14348"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/full-cycle-1/dev-admin/playwright-junit.xml",
+      "bytes": 58613,
+      "sha256": "b1ce49d18657eedb89bb0a7a40acb1ccbd6e5622db2c1c2a257d4299a2392917"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/full-cycle-1/local-auth/playwright-junit.xml",
+      "bytes": 42061,
+      "sha256": "d64de2570dbf1750ab0bfc3d5a257906527bfc4d53466a61adfe30937a2d475e"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/workflow-help.spec.ts",
+      "bytes": 16837,
+      "sha256": "60d858471b4cc536f8801d794b5dadcfb87392a93d16d92b1ea6005d8c16a29a"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/workflow-library-assignments.spec.ts",
+      "bytes": 9283,
+      "sha256": "6377c105ff550e79606d35d68519067af5c44dcb4f67081a0a7a581b035bf96f"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/workflow-loadrunner-review.spec.ts",
+      "bytes": 71439,
+      "sha256": "d737446022f044e90a2c461bf3a9f26ee4f784f8b30c2346be6cd25d519feff4"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/workflow-object-activity.spec.ts",
+      "bytes": 6734,
+      "sha256": "2819f998706cb00302de47acceb1f8c62d40f050207f8f0a85375d750cfa46d2"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/workflow-script-folders.spec.ts",
+      "bytes": 5820,
+      "sha256": "6f8dcbd66004b726ecba13249c94ad4aa36cb2a842f1c01ca692bf0e7dbc04db"
+    }
+  ],
+  "inputs_after": [
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-dashboard-full-cycle-1.json",
+      "bytes": 2132702,
+      "sha256": "a51b74c0a49931aad4302079c45f9bd26bfe8746f7ceb57ac39ba7af31e257a7"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-dashboard-full-cycle-1.log",
+      "bytes": 109545,
+      "sha256": "51b22654bf5cadd6abc6bfc9c734443c49abb0efdc384304fc4c82bd3ce14348"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/full-cycle-1/dev-admin/playwright-junit.xml",
+      "bytes": 58613,
+      "sha256": "b1ce49d18657eedb89bb0a7a40acb1ccbd6e5622db2c1c2a257d4299a2392917"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/full-cycle-1/local-auth/playwright-junit.xml",
+      "bytes": 42061,
+      "sha256": "d64de2570dbf1750ab0bfc3d5a257906527bfc4d53466a61adfe30937a2d475e"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/workflow-help.spec.ts",
+      "bytes": 16837,
+      "sha256": "60d858471b4cc536f8801d794b5dadcfb87392a93d16d92b1ea6005d8c16a29a"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/workflow-library-assignments.spec.ts",
+      "bytes": 9283,
+      "sha256": "6377c105ff550e79606d35d68519067af5c44dcb4f67081a0a7a581b035bf96f"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/workflow-loadrunner-review.spec.ts",
+      "bytes": 71439,
+      "sha256": "d737446022f044e90a2c461bf3a9f26ee4f784f8b30c2346be6cd25d519feff4"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/workflow-object-activity.spec.ts",
+      "bytes": 6734,
+      "sha256": "2819f998706cb00302de47acceb1f8c62d40f050207f8f0a85375d750cfa46d2"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/workflow-script-folders.spec.ts",
+      "bytes": 5820,
+      "sha256": "6f8dcbd66004b726ecba13249c94ad4aa36cb2a842f1c01ca692bf0e7dbc04db"
+    }
+  ],
+  "stable": true
+}

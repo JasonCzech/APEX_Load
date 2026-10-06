@@ -126,6 +126,17 @@ kinds of edits so the script is data-driven rather than hard-coded:
 | `data_param` | parameterizable literals (user id, email, search term) | `{{data.*}}` / a `Parameter` |
 | `secret` | credential-shaped values (passwords, tokens, keys) | `{{secret.*}}` |
 
+`data_param` suggestions come from field names (`LooksParameterName` in `heuristics.go`).
+A name is split into words at separators, case changes and digits, so `user_id`, `userId`,
+`UserID` and `user-id` read alike, and it is judged by its last word, as an English
+compound is. It matches when that word is `id`, `user`, `customer`, `account`, `order`,
+`sku`, `email` or `zip`, or completes a compound such as `username`, `loginId`,
+`accountNumber` or `zipCode`. `userProfileCard`, `browserUserAgent` and `valid_from` do
+not match. Runtime and configuration ids (`client_id`, `sessionId`, `x_request_id`),
+accessor and header names (`getDeviceId`, `x_request_id`), sort fields and names longer
+than five words are excluded.
+These suggestions start unchecked (confidence 0.6).
+
 Suggestions at or above `autoApplyConfidence = 0.8` (in `paramize.go`) are pre-selected;
 high-confidence correlations may already be wired into the draft (`PreApplied`). The user
 accepts/rejects, then applies via `POST /api/v1/scripts/import/parameterize/apply`.

@@ -15,9 +15,11 @@ type capturedBrowserPageState struct {
 	screenshot string
 }
 
-func (b *Browser) finalizeActionResult(ctx context.Context, action *protocol.Action, result *protocol.Result, actionErr error, consoleStart, networkStart int, processBefore browserProcessSnapshot, actionDuration time.Duration) {
+func (b *Browser) finalizeActionResult(ctx context.Context, action *protocol.Action, result *protocol.Result, actionErr error, consoleStart, networkStart int, networkOwner browserNetworkActionOwner, processBefore browserProcessSnapshot, actionDuration time.Duration) {
 	pageState, captureErr := b.captureActionPageState(ctx, action, actionErr != nil)
-	b.applyCapturedPageState(result, pageState, consoleStart, networkStart)
+	networkEntries, acquisitionReason := b.acquireActionNetworkEntries(ctx, networkOwner, networkStart)
+	b.applyCapturedPageStateWithNetwork(result, pageState, consoleStart, networkEntries)
+	recordNetworkAcquisitionWarning(result, acquisitionReason)
 	result.Duration = actionDuration
 	result.ClientMetrics = b.captureClientMetrics(ctx, result.Duration, processBefore)
 
@@ -64,6 +66,10 @@ func (b *Browser) captureActionPageState(ctx context.Context, action *protocol.A
 }
 
 func (b *Browser) applyCapturedPageState(result *protocol.Result, pageState capturedBrowserPageState, consoleStart, networkStart int) {
+	b.applyCapturedPageStateWithNetwork(result, pageState, consoleStart, b.networkEntriesSince(networkStart))
+}
+
+func (b *Browser) applyCapturedPageStateWithNetwork(result *protocol.Result, pageState capturedBrowserPageState, consoleStart int, networkEntries []protocol.NetworkEntry) {
 	if pageState.pageURL != "" {
 		b.currentURL = pageState.pageURL
 		result.PageURL = pageState.pageURL
@@ -77,5 +83,5 @@ func (b *Browser) applyCapturedPageState(result *protocol.Result, pageState capt
 		result.ScreenshotBase64 = pageState.screenshot
 	}
 	result.ConsoleEntries = b.consoleEntriesSince(consoleStart)
-	result.NetworkEntries = b.networkEntriesSince(networkStart)
+	result.NetworkEntries = networkEntries
 }

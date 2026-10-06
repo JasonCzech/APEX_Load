@@ -133,6 +133,7 @@ type Browser struct {
 	networkTasks          chan browserNetworkTask
 	networkWorkerStop     chan struct{}
 	networkWorkerWG       sync.WaitGroup
+	networkWorkers        *browserNetworkWorkerState
 	networkTasksDropped   int64
 	requestPolicyStop     chan struct{}
 
@@ -275,7 +276,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 
 	b.beginEvidenceAction()
 	defer func() { b.endEvidenceAction(ctx.Err() != nil) }()
-	consoleStart, networkStart := b.eventOffsets()
+	consoleStart, networkStart, networkOwner := b.actionEvidenceOffsets()
 	// Remember the previous action's network start so a browser_wait_response
 	// here scans from the trigger action rather than from its own start.
 	b.mu.Lock()
@@ -316,7 +317,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	if actionErr == nil {
 		actionErr = b.afterActionDelay(actionCtx)
 	}
-	b.finalizeActionResult(actionCtx, action, result, actionErr, consoleStart, networkStart, processBefore, actionDuration)
+	b.finalizeActionResult(actionCtx, action, result, actionErr, consoleStart, networkStart, networkOwner, processBefore, actionDuration)
 	if b.harSLABreachThreshold > 0 && result.Duration > b.harSLABreachThreshold {
 		b.noteHARSLABreach()
 	}

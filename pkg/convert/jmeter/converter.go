@@ -373,6 +373,10 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		messagingAncestors, _ := messagingAncestorNodes(trees, tg)
 		ctx.contributors = append(ctx.contributors, messagingAncestors...)
 		walkThreadGroup(tg, &ctx, script, opts, result, unsupported, variableNames, csvNames, &diagnostics, sourceFileName, &sourceMappings)
+		if script.Protocol != "kafka" && script.Protocol != "eventhubs" {
+			attachJMeterCounterParameters(script, jmeterThreadGroupCounters(trees, tg), parseInt(prop(tg.Element, "ThreadGroup.num_threads")), &diagnostics, &sourceMappings, sourceFileName)
+			applyJMeterThroughputShaping(script, trees, tg, &diagnostics, &sourceMappings, sourceFileName)
+		}
 		for j := range script.Config.Results.CSVExports {
 			script.Config.Results.CSVExports[j].ID = fmt.Sprintf("jmeter_csv_%d", j+1)
 		}
@@ -653,30 +657,22 @@ func attachJMeterDynamicFunctionParameters(script *dsl.Script, diagnostics *diag
 			script.Parameters = append(script.Parameters, dsl.Parameter{Name: name, Type: "vuser_id", Update: "once"})
 			continue
 		}
-		script.Parameters = append(script.Parameters, dsl.Parameter{
-			Name: name, Type: "counter", Update: "each_occurrence", Start: 1, Step: 1,
-		})
+		parameter := dsl.Parameter{Name: name, Type: "counter", Update: "each_occurrence", Start: 1, Step: 1}
+		if strings.HasPrefix(name, "jmeter_global_counter") {
+			// __counter(FALSE, ...) is one unbounded sequence shared by every
+			// thread; unique-number blocks keep its values distinct across VUsers.
+			parameter.Selection, parameter.BlockSize = "unique", defaultJMeterSharedCounterBlock
+			if sourceMappings != nil {
+				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, nil, "__counter(FALSE, ...)", fmt.Sprintf("parameters[%d]", len(script.Parameters)), name, "dynamic_function", "converted", "JMeter cross-thread counter became a unique-number counter parameter."))
+			}
+		}
+		script.Parameters = append(script.Parameters, parameter)
 	}
-	if !globalCounter || hasJMeterReviewReason(script.Actions, "unsupported_jmeter_global_counter") {
-		return
-	}
-	setJMeterRuntimeParity(script, "dynamicFunctions.globalCounter", "review_required")
-	location := convertutil.FirstNonEmpty(sourceFileName, "JMX plan")
-	actionIndex := appendJMeterSourceReviewPlaceholder(script, "cross-thread __counter", location, sourceFileName, "unsupported_jmeter_global_counter")
-	if diagnostics != nil {
-		diagnostics.Add(diag.Blocker, "JMeter __counter", location, "cross-thread __counter(FALSE, ...) cannot be reproduced by the per-VUser counter runtime; replace the preserved counter before replay")
-	}
-	if sourceMappings != nil {
-		*sourceMappings = append(*sourceMappings, jmeterSourceMapping(
-			sourceFileName,
-			nil,
-			"__counter(FALSE, ...)",
-			fmt.Sprintf("actions[%d]", actionIndex),
-			"Cross-thread counter review gate",
-			"dynamic_function",
-			"review_only",
-			"JMeter cross-thread counter scope has no equivalent in the per-VUser parameter runtime.",
-		))
+	if globalCounter {
+		setJMeterRuntimeParity(script, "dynamicFunctions.globalCounter", "partial")
+		if diagnostics != nil {
+			diagnostics.Add(diag.Warning, "JMeter __counter", convertutil.FirstNonEmpty(sourceFileName, "JMX plan"), fmt.Sprintf("cross-thread __counter(FALSE, ...) became a unique-number counter: each VUser draws from its own block of %d values, so values stay distinct across VUsers but are not issued in JMeter's global order", defaultJMeterSharedCounterBlock))
+		}
 	}
 }
 
@@ -821,6 +817,19 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			ctx.oneShotTimerMs = 0
 		case "ThreadGroup", "TestPlan":
 			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
+			continue
+		case "GenericController":
+			// A Simple Controller only groups its children: they import in
+			// source order, and its config elements and timers stay scoped to
+			// them, as a Transaction Controller's do.
+			next := *ctx
+			next.csvSources = append([]dsl.DataSource(nil), ctx.csvSources...)
+			walkThreadGroup(child, &next, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
+			ctx.oneShotTimerMs = next.oneShotTimerMs
+			var csvConflicts []jmeterCSVSourceConflict
+			ctx.csvSources, csvConflicts = mergeJMeterCSVSources(ctx.csvSources, next.csvSources)
+			applyJMeterCSVSourceConflicts(script, result, diagnostics, sourceFileName, jmeterElementLocation(child.Element), csvConflicts)
+			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "converted", "JMeter Simple Controller only groups requests; its children were imported in source order."))
 			continue
 		case "TransactionController":
 			next := *ctx

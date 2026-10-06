@@ -15,7 +15,8 @@
 # coverage doc and completeness test see the full published library; the rich handler
 # owns their behavior and this row supplies classification metadata.
 # web_concurrent_start/end are executable only for validated, same-scope explicit
-# HTTP groups with at most 256 safe independent requests; all other spans require review.
+# HTTP groups with at most 256 safe independent requests (each optionally wrapped in its
+# own LR_AUTO transaction); all other spans require review.
 web_add_auto_filter,web,native_noop
 web_add_auto_header,web,executable
 web_add_cookie,web,executable

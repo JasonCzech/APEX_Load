@@ -154,10 +154,19 @@ type correlationApplicationPlan struct {
 // ways, a second url_encode extractor/variable is required: one variable cannot
 // simultaneously hold both spellings. Other encodings remain unchanged.
 func prepareCorrelationApplication(exchanges []exchange, correlations []Correlation) (map[string]string, map[string]int, map[int][]dsl.Extractor) {
-	return prepareCorrelationApplicationWithExtractionLimit(exchanges, correlations, protocol.MaxExtractionBytes)
+	return prepareCorrelationApplicationWithExtractionLimit(exchanges, correlations, protocol.MaxExtractionBytes, false)
 }
 
-func prepareCorrelationApplicationWithExtractionLimit(exchanges []exchange, correlations []Correlation, extractionLimit int) (map[string]string, map[string]int, map[int][]dsl.Extractor) {
+// prepareIncompleteCorrelationApplication applies the correlations of an
+// incomplete analysis. A value it skipped may contain an applied one, and
+// collision analysis only compares applied values, so a spelling that occurs
+// inside a longer identifier in a consumer request is held for review rather
+// than rewritten in place.
+func prepareIncompleteCorrelationApplication(exchanges []exchange, correlations []Correlation) (map[string]string, map[string]int, map[int][]dsl.Extractor) {
+	return prepareCorrelationApplicationWithExtractionLimit(exchanges, correlations, protocol.MaxExtractionBytes, true)
+}
+
+func prepareCorrelationApplicationWithExtractionLimit(exchanges []exchange, correlations []Correlation, extractionLimit int, holdEmbedded bool) (map[string]string, map[string]int, map[int][]dsl.Extractor) {
 	vars := make(map[string]string, len(correlations))
 	sourceSteps := make(map[string]int, len(correlations))
 	extraExtractors := make(map[int][]dsl.Extractor)
@@ -199,6 +208,16 @@ func prepareCorrelationApplicationWithExtractionLimit(exchanges []exchange, corr
 	ambiguousLiterals, ambiguousPlans := sampleCorrelationReplacementCollisions(exchanges, plans)
 	for planIndex := range ambiguousPlans {
 		correlations[plans[planIndex].index].ReviewAction = manualCorrelationValueReplacement
+	}
+	if holdEmbedded {
+		for _, plan := range plans {
+			for _, literal := range []string{plan.value, plan.queryEncoded} {
+				if literal != "" && literalEmbeddedInConsumers(exchanges, correlations[plan.index].UsedInSteps, literal) {
+					ambiguousLiterals[literal] = true
+					correlations[plan.index].ReviewAction = manualCorrelationValueReplacement
+				}
+			}
+		}
 	}
 
 	// Base extractors are materialized by converter.go after this planning pass,
@@ -572,6 +591,44 @@ func claimCorrelationName(base string, used map[string]bool) string {
 			return candidate
 		}
 	}
+}
+
+func literalEmbeddedInConsumers(exchanges []exchange, steps []int, literal string) bool {
+	for _, step := range steps {
+		if step <= 0 || step > len(exchanges) {
+			continue
+		}
+		for _, surface := range exchangeSurfaces(exchanges[step-1]) {
+			if literalEmbedded(surface, literal) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// literalEmbedded reports whether literal occurs in text continued by a
+// letter or digit on a side where it also ends in one, that is, inside a
+// longer identifier.
+func literalEmbedded(text, literal string) bool {
+	for offset := 0; offset < len(text); {
+		index := strings.Index(text[offset:], literal)
+		if index < 0 {
+			return false
+		}
+		start := offset + index
+		end := start + len(literal)
+		if (start > 0 && isASCIIAlphanumeric(text[start-1]) && isASCIIAlphanumeric(literal[0])) ||
+			(end < len(text) && isASCIIAlphanumeric(text[end]) && isASCIIAlphanumeric(literal[len(literal)-1])) {
+			return true
+		}
+		offset = start + 1
+	}
+	return false
+}
+
+func isASCIIAlphanumeric(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
 func exchangeSurfaces(ex exchange) []string {

@@ -1,0 +1,738 @@
+<testsuites id="" name="" tests="262" failures="1" skipped="5" errors="0" time="516.276252">
+<testsuite name="command-center-details.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="2" failures="1" skipped="0" time="9.699" errors="0">
+<testcase name="advanced details returns to the same run without losing cockpit edits or graph mode" classname="command-center-details.spec.ts" time="5.001">
+</testcase>
+<testcase name="runtime workspace keeps essential metrics readable and settings in an opaque drawer" classname="command-center-details.spec.ts" time="4.698">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|command-center-details-run-b0569-ettings-in-an-opaque-drawer/test-failed-1.png]]
+
+[[ATTACHMENT|command-center-details-run-b0569-ettings-in-an-opaque-drawer/error-context.md]]
+
+[[ATTACHMENT|command-center-details-run-b0569-ettings-in-an-opaque-drawer/trace.zip]]
+]]>
+</system-out>
+<failure message="expect(received).toBeGreaterThanOrEqual(expected)" type="expect.toBeGreaterThanOrEqual">
+<![CDATA[  command-center-details.spec.ts:33:1 › runtime workspace keeps essential metrics readable and settings in an opaque drawer 
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 363
+    Received:    269.78125
+
+      76 |   const narrowShelf = await cockpit.locator('.command-control-shelf').boundingBox()
+      77 |   const actionBox = await groupActions.boundingBox()
+    > 78 |   expect(actionBox!.y).toBeGreaterThanOrEqual(narrowShelf!.y + narrowShelf!.height - 1)
+         |                        ^
+      79 |   await page.screenshot({ path: testInfo.outputPath('operations-narrow.png'), fullPage: true })
+      80 | })
+      81 |
+        at /Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/command-center-details.spec.ts:78:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/full-cycle-1/dev-admin/command-center-details-run-b0569-ettings-in-an-opaque-drawer/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/full-cycle-1/dev-admin/command-center-details-run-b0569-ettings-in-an-opaque-drawer/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/full-cycle-1/dev-admin/command-center-details-run-b0569-ettings-in-an-opaque-drawer/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/full-cycle-1/dev-admin/command-center-details-run-b0569-ettings-in-an-opaque-drawer/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</failure>
+</testcase>
+</testsuite>
+<testsuite name="command-center-hero-metrics.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="3.576" errors="0">
+<testcase name="[U12 U20] live run summary shows readable averaged throughput and observed/target load" classname="command-center-hero-metrics.spec.ts" time="3.576">
+</testcase>
+</testsuite>
+<testsuite name="controller-smoke.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="0.959" errors="0">
+<testcase name="serves the dashboard, an SPA route, and healthy controller endpoints" classname="controller-smoke.spec.ts" time="0.959">
+</testcase>
+</testsuite>
+<testsuite name="debugger-layout.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="1.981" errors="0">
+<testcase name="keeps the debug parameter list below the action list when the bottom dock is maximized" classname="debugger-layout.spec.ts" time="1.981">
+</testcase>
+</testsuite>
+<testsuite name="tier0-auth.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="0.548" errors="0">
+<testcase name="lands in the explicit dev-admin workspace with a live connection" classname="tier0-auth.spec.ts" time="0.548">
+</testcase>
+</testsuite>
+<testsuite name="tier0-bruno-import.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="1.613" errors="0">
+<testcase name="[U23] Bruno native collection inspection, acknowledgements, and atomic save work on the host platform" classname="tier0-bruno-import.spec.ts" time="1.613">
+</testcase>
+</testsuite>
+<testsuite name="tier0-live-metrics.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="2" failures="0" skipped="0" time="6.667" errors="0">
+<testcase name="[U12] live metrics advance while a run is executing" classname="tier0-live-metrics.spec.ts" time="3.621">
+</testcase>
+<testcase name="[U12] the run view renders live metrics for an executing run" classname="tier0-live-metrics.spec.ts" time="3.046">
+</testcase>
+</testsuite>
+<testsuite name="tier0-report-results.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="2" failures="0" skipped="0" time="8.453" errors="0">
+<testcase name="[U16] a finished run produces a report and stays findable in results" classname="tier0-report-results.spec.ts" time="4.934">
+</testcase>
+<testcase name="[U16] every report lens renders the same run" classname="tier0-report-results.spec.ts" time="3.519">
+</testcase>
+</testsuite>
+<testsuite name="tier0-routes.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="1.368" errors="0">
+<testcase name="[U22] every top-level view renders under a real workspace scope" classname="tier0-routes.spec.ts" time="1.368">
+</testcase>
+</testsuite>
+<testsuite name="tier0-run-launch.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="1.625" errors="0">
+<testcase name="[U10] preflight and estimate lead to an immediate launch that reaches RUNNING" classname="tier0-run-launch.spec.ts" time="1.625">
+</testcase>
+</testsuite>
+<testsuite name="tier0-run-lifecycle.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="2" failures="0" skipped="0" time="11.3" errors="0">
+<testcase name="[U13 U14] a run dismisses confirmation, pauses, resumes, scales, extends, stops, and downloads evidence" classname="tier0-run-lifecycle.spec.ts" time="7.21">
+</testcase>
+<testcase name="[U13 U14] abort force-cancels a live run with exact terminal semantics" classname="tier0-run-lifecycle.spec.ts" time="4.09">
+</testcase>
+</testsuite>
+<testsuite name="tier0-scenario-builder.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="8" failures="0" skipped="0" time="15.621" errors="0">
+<testcase name="[U09] the five-step scenario builder preserves the draft and reviews the saved values" classname="tier0-scenario-builder.spec.ts" time="2.601">
+</testcase>
+<testcase name="[U09] canceling unsaved navigation keeps the scenario draft in the builder" classname="tier0-scenario-builder.spec.ts" time="0.874">
+</testcase>
+<testcase name="[U09] source switching, runtime scope and save recovery keep the scenario honest" classname="tier0-scenario-builder.spec.ts" time="2.191">
+</testcase>
+<testcase name="[U09] script groups fill horizontal rows and stack on narrow screens" classname="tier0-scenario-builder.spec.ts" time="3.348">
+</testcase>
+<testcase name="[U09] incomplete browser drafts survive reload without creating scenarios" classname="tier0-scenario-builder.spec.ts" time="1.079">
+</testcase>
+<testcase name="[U09] CSV schedule suggestions round-trip through preview and scenario storage" classname="tier0-scenario-builder.spec.ts" time="1.698">
+</testcase>
+<testcase name="[U09] data pools support CSV preview, import and multiple editable bindings" classname="tier0-scenario-builder.spec.ts" time="2.377">
+</testcase>
+<testcase name="[U09] narrow picker keeps actions visible and bulk-adds filtered scripts" classname="tier0-scenario-builder.spec.ts" time="1.453">
+</testcase>
+</testsuite>
+<testsuite name="tier0-script-editor.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="2" failures="0" skipped="0" time="4.024" errors="0">
+<testcase name="[U21] the imported script editor preserves tab state and saved changes across reopen" classname="tier0-script-editor.spec.ts" time="1.515">
+</testcase>
+<testcase name="[U21] a large script renders a usable virtualized action list within a bounded interval" classname="tier0-script-editor.spec.ts" time="2.509">
+</testcase>
+</testsuite>
+<testsuite name="tier0-script-import.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="1.61" errors="0">
+<testcase name="[U05] OpenAPI validation stays dry-run until the reviewed script is committed to the library" classname="tier0-script-import.spec.ts" time="1.61">
+</testcase>
+</testsuite>
+<testsuite name="tier0-workspace.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="3" failures="0" skipped="0" time="2.215" errors="0">
+<testcase name="the API-created workspace hierarchy is coherent and scoped" classname="tier0-workspace.spec.ts" time="0.016">
+</testcase>
+<testcase name="the repository view renders a freshly created project" classname="tier0-workspace.spec.ts" time="0.283">
+</testcase>
+<testcase name="the UI creates and scopes the complete workspace hierarchy" classname="tier0-workspace.spec.ts" time="1.916">
+</testcase>
+</testsuite>
+<testsuite name="workflow-access.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="3" failures="0" skipped="0" time="6.216" errors="0">
+<testcase name="Access policy navigation keeps the requested body through links and reloads" classname="workflow-access.spec.ts" time="3.298">
+</testcase>
+<testcase name="Access history pages beyond 50 and downloads all matching events" classname="workflow-access.spec.ts" time="1.267">
+</testcase>
+<testcase name="Access review opens remediation and renders long identities at narrow widths" classname="workflow-access.spec.ts" time="1.651">
+</testcase>
+</testsuite>
+<testsuite name="workflow-analysis-preparation.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="11" failures="0" skipped="0" time="17.818" errors="0">
+<testcase name="Parquet upload, mapping, query and deletion remain in project scope" classname="workflow-analysis-preparation.spec.ts" time="4.8">
+</testcase>
+<testcase name="preparation readiness can renew and Start sends its immutable revision" classname="workflow-analysis-preparation.spec.ts" time="0.956">
+</testcase>
+<testcase name="dependency evidence selects the same UTC interval for the monitor overlay" classname="workflow-analysis-preparation.spec.ts" time="0.896">
+</testcase>
+<testcase name="native project panel saves and reopens through the real dashboard API" classname="workflow-analysis-preparation.spec.ts" time="1.2">
+</testcase>
+<testcase name="filtered archive panels save, reopen, compare, and inspect an exact time bucket" classname="workflow-analysis-preparation.spec.ts" time="1.298">
+</testcase>
+<testcase name="grouped archive overlays and filtered live selections save and reopen" classname="workflow-analysis-preparation.spec.ts" time="1.93">
+</testcase>
+<testcase name="timestamped run annotations save, reopen and retain delete history" classname="workflow-analysis-preparation.spec.ts" time="2.776">
+</testcase>
+<testcase name="retained observation rates save and reopen with elapsed-time units" classname="workflow-analysis-preparation.spec.ts" time="0.687">
+</testcase>
+<testcase name="messaging management retains exact counts, denied coverage and reload" classname="workflow-analysis-preparation.spec.ts" time="1.391">
+</testcase>
+<testcase name="imported comparison preserves both exact identity selectors across save and reopen" classname="workflow-analysis-preparation.spec.ts" time="1.265">
+</testcase>
+<testcase name="older analytical peers keep v1 imports usable and refuse v2 identity work without downgrade" classname="workflow-analysis-preparation.spec.ts" time="0.619">
+</testcase>
+</testsuite>
+<testsuite name="workflow-application-secrets.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="0.407" errors="0">
+<testcase name="application settings show the shared secret vault in both auth profiles" classname="workflow-application-secrets.spec.ts" time="0.407">
+</testcase>
+</testsuite>
+<testsuite name="workflow-archive-references.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="0.679" errors="0">
+<testcase name="scenario drafts retain archived script references through read-only review" classname="workflow-archive-references.spec.ts" time="0.679">
+</testcase>
+</testsuite>
+<testsuite name="workflow-aura-outcomes.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="4" failures="0" skipped="0" time="9.487" errors="0">
+<testcase name="Aura HAR review exposes HTTP200 failures and missing responses with safe source navigation" classname="workflow-aura-outcomes.spec.ts" time="1.039">
+</testcase>
+<testcase name="Aura parameter review applies one nested field without changing repeated sibling values" classname="workflow-aura-outcomes.spec.ts" time="1.227">
+</testcase>
+<testcase name="native correlation review preserves exact original source navigation through save and reopen" classname="workflow-aura-outcomes.spec.ts" time="4.621">
+</testcase>
+<testcase name="correlation diagnosis retains missing-consumer evidence and independent HTTP200 failures" classname="workflow-aura-outcomes.spec.ts" time="2.6">
+</testcase>
+</testsuite>
+<testsuite name="workflow-author-experience.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="6.208" errors="0">
+<testcase name="Author creates, reverses, validates, edits source and saves without losing context" classname="workflow-author-experience.spec.ts" time="6.208">
+</testcase>
+</testsuite>
+<testsuite name="workflow-authoring.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="9" failures="0" skipped="0" time="10.738" errors="0">
+<testcase name="[U03 U08] empty setup explains prerequisites and invalid saves do not persist" classname="workflow-authoring.spec.ts" time="2.169">
+</testcase>
+<testcase name="[U07] script navigation: Keep editing has exact persistence semantics" classname="workflow-authoring.spec.ts" time="0.836">
+</testcase>
+<testcase name="[U07] script navigation: Discard changes has exact persistence semantics" classname="workflow-authoring.spec.ts" time="1.591">
+</testcase>
+<testcase name="[U07] script navigation: Save changes has exact persistence semantics" classname="workflow-authoring.spec.ts" time="0.793">
+</testcase>
+<testcase name="[U07 U18] failed script save (500) preserves edits and cannot overwrite stored content" classname="workflow-authoring.spec.ts" time="0.934">
+</testcase>
+<testcase name="[U07 U18] failed script save (409) preserves edits and cannot overwrite stored content" classname="workflow-authoring.spec.ts" time="0.869">
+</testcase>
+<testcase name="[U07 U18] failed script save (401) preserves edits and cannot overwrite stored content" classname="workflow-authoring.spec.ts" time="0.865">
+</testcase>
+<testcase name="[U04] project scope and browser history never substitute a similarly named script" classname="workflow-authoring.spec.ts" time="1.465">
+</testcase>
+<testcase name="[U06] malformed OpenAPI can be replaced and validated without creating a library entry" classname="workflow-authoring.spec.ts" time="1.216">
+</testcase>
+</testsuite>
+<testsuite name="workflow-baseline-comparison.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="3.484" errors="0">
+<testcase name="baseline workspace selects pins, investigates resources, shares and preserves comparison context" classname="workflow-baseline-comparison.spec.ts" time="3.484">
+</testcase>
+</testsuite>
+<testsuite name="workflow-browser-resource-evidence.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="6" failures="0" skipped="0" time="14.205" errors="0">
+<testcase name="browser resource evidence filters retained failures and inspects action attribution" classname="workflow-browser-resource-evidence.spec.ts" time="0.756">
+</testcase>
+<testcase name="live browser legacy summary refuses unavailable values and distinguishes explicit zero without standards qualification" classname="workflow-browser-resource-evidence.spec.ts" time="7.087">
+</testcase>
+<testcase name="archived browser legacy summary preserves mixed-cohort gaps in engine CSV and ranks only complete devices" classname="workflow-browser-resource-evidence.spec.ts" time="1.162">
+</testcase>
+<testcase name="browser results comparison cards preserve exact mixed cohorts and malformed summaries" classname="workflow-browser-resource-evidence.spec.ts" time="0.837">
+</testcase>
+<testcase name="live document populations preserve overlapping provisional history, actual cohorts and missing-peer coverage" classname="workflow-browser-resource-evidence.spec.ts" time="2.946">
+</testcase>
+<testcase name="archive document evidence retains latest pending, censored and unavailable measurements independently from actions" classname="workflow-browser-resource-evidence.spec.ts" time="1.417">
+</testcase>
+</testsuite>
+<testsuite name="workflow-command-center.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="4" failures="0" skipped="0" time="10.265" errors="0">
+<testcase name="Command Center supports empty actions, run triage, persistent switching and catalog recovery" classname="workflow-command-center.spec.ts" time="2.228">
+</testcase>
+<testcase name="active load observations expire without updates and fresh telemetry clears the warning" classname="workflow-command-center.spec.ts" time="1.303">
+</testcase>
+<testcase name="analysis load exports retain run identity and distinguish resampled observations" classname="workflow-command-center.spec.ts" time="2.695">
+</testcase>
+<testcase name="pause waits for controller confirmation and preserves running state when proof is rejected" classname="workflow-command-center.spec.ts" time="4.039">
+</testcase>
+</testsuite>
+<testsuite name="workflow-crosscut.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="5" failures="0" skipped="0" time="7.747" errors="0">
+<testcase name="missing Base URL is a local problem with a focused repair path" classname="workflow-crosscut.spec.ts" time="1.787">
+</testcase>
+<testcase name="script catalog retry clears the error and its notice stays below the header at 1440px" classname="workflow-crosscut.spec.ts" time="0.527">
+</testcase>
+<testcase name="script catalog retry clears the error and its notice stays below the header at 932px" classname="workflow-crosscut.spec.ts" time="0.517">
+</testcase>
+<testcase name="stopped outcomes and report drill-down agree across populations" classname="workflow-crosscut.spec.ts" time="3.465">
+</testcase>
+<testcase name="nested script editor owns title and help and returns the scenario context" classname="workflow-crosscut.spec.ts" time="1.451">
+</testcase>
+</testsuite>
+<testsuite name="workflow-dashboard-analysis.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="4" failures="0" skipped="0" time="5.159" errors="0">
+<testcase name="analysis preserves evidence gaps, saved baselines, filtered deltas and report context" classname="workflow-dashboard-analysis.spec.ts" time="1.782">
+</testcase>
+<testcase name="run results labels terminal samples as historical evidence" classname="workflow-dashboard-analysis.spec.ts" time="0.715">
+</testcase>
+<testcase name="run results distinguishes recorded archive failure and refreshes availability" classname="workflow-dashboard-analysis.spec.ts" time="2.051">
+</testcase>
+<testcase name="partial archive sources remain visible beside retained measurements and terminal outcome" classname="workflow-dashboard-analysis.spec.ts" time="0.611">
+</testcase>
+</testsuite>
+<testsuite name="workflow-dashboard.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="2" failures="0" skipped="0" time="21.905" errors="0">
+<testcase name="Dashboard preserves queue routing, evidence truth, filters and narrow run details" classname="workflow-dashboard.spec.ts" time="1.23">
+</testcase>
+<testcase name="Dashboard labels failed health refreshes stale and recovers independently of run data" classname="workflow-dashboard.spec.ts" time="20.675">
+</testcase>
+</testsuite>
+<testsuite name="workflow-debugger-experience.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="3" failures="0" skipped="0" time="6.311" errors="0">
+<testcase name="debugger captures successful evidence, diagnoses runtime failure, repairs a draft and retains protocol-correct history" classname="workflow-debugger-experience.spec.ts" time="3.335">
+</testcase>
+<testcase name="run-to starts at the beginning and consumes its temporary breakpoint without deleting a permanent breakpoint" classname="workflow-debugger-experience.spec.ts" time="1.004">
+</testcase>
+<testcase name="failures-only debugger capture preserves fetched resource evidence" classname="workflow-debugger-experience.spec.ts" time="1.972">
+</testcase>
+</testsuite>
+<testsuite name="workflow-dynatrace.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="4" failures="0" skipped="0" time="10.41" errors="0">
+<testcase name="Dynatrace native connection verification, collector assignment and discovery show bounded capability results" classname="workflow-dynatrace.spec.ts" time="5.132">
+</testcase>
+<testcase name="Dynatrace source editing preserves Classic, Grail and Smartscape selections across executor modes" classname="workflow-dynatrace.spec.ts" time="1.182">
+</testcase>
+<testcase name="Dynatrace canonical live and archived evidence retain zeros, units, resolution and delayed finalization" classname="workflow-dynatrace.spec.ts" time="3.261">
+</testcase>
+<testcase name="Dynatrace terminal criteria preview approved sources and clear superseded series choices" classname="workflow-dynatrace.spec.ts" time="0.835">
+</testcase>
+</testsuite>
+<testsuite name="workflow-execution-results.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="3" failures="0" skipped="0" time="1.834" errors="0">
+<testcase name="ended FAILED run preserves Results navigation without an archive" classname="workflow-execution-results.spec.ts" time="0.607">
+</testcase>
+<testcase name="ended COMPLETE run preserves Results navigation without an archive" classname="workflow-execution-results.spec.ts" time="0.622">
+</testcase>
+<testcase name="ended ABORTED run preserves Results navigation without an archive" classname="workflow-execution-results.spec.ts" time="0.605">
+</testcase>
+</testsuite>
+<testsuite name="workflow-execution.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="5" failures="0" skipped="0" time="13.605" errors="0">
+<testcase name="[U10 U11] unavailable preflight blocks launch; recovery creates only one run" classname="workflow-execution.spec.ts" time="2.335">
+</testcase>
+<testcase name="[U15] held run stays reserved across reload and starts only on explicit action" classname="workflow-execution.spec.ts" time="3.215">
+</testcase>
+<testcase name="[U12] disconnect is visible and reconnect resumes the same run" classname="workflow-execution.spec.ts" time="5.065">
+</testcase>
+<testcase name="[U17 U16] archive read failure is visible and retry restores the same run evidence" classname="workflow-execution.spec.ts" time="0.988">
+</testcase>
+<testcase name="[U15] scheduled run preserves its future start across reload without traffic" classname="workflow-execution.spec.ts" time="2.002">
+</testcase>
+</testsuite>
+<testsuite name="workflow-help.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="8" failures="0" skipped="1" time="7.103" errors="0">
+<testcase name="Help tasks, search and section links survive navigation and validate the first-test example" classname="workflow-help.spec.ts" time="0.949">
+</testcase>
+<testcase name="DSL operators can discover the guide, validate its example, and follow reference links" classname="workflow-help.spec.ts" time="1.368">
+</testcase>
+<testcase name="evidence guides are searchable, readable and retain their scope after reload" classname="workflow-help.spec.ts" time="1.31">
+</testcase>
+<testcase name="legacy URLs, generated API search and contextual guidance reach the right articles" classname="workflow-help.spec.ts" time="0.682">
+</testcase>
+<testcase name="Help is readable at narrow widths and exposes accessible navigation" classname="workflow-help.spec.ts" time="0.611">
+</testcase>
+<testcase name="non-administrators cannot open or search Administration articles" classname="workflow-help.spec.ts">
+<properties>
+<property name="skip" value="Requires the restricted local-auth persona">
+</property>
+</properties>
+<skipped>
+</skipped>
+</testcase>
+<testcase name="Help maintains readable contrast across the supported themes" classname="workflow-help.spec.ts" time="0.902">
+</testcase>
+<testcase name="retained resource guide is searchable and remains selected after reload and narrowing" classname="workflow-help.spec.ts" time="1.031">
+</testcase>
+</testsuite>
+<testsuite name="workflow-http-concurrent.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="5" failures="0" skipped="0" time="5.861" errors="0">
+<testcase name="HTTP sequence authoring preserves children and steps a concurrent parent-session group through its join barrier" classname="workflow-http-concurrent.spec.ts" time="1.693">
+</testcase>
+<testcase name="HTTP sequence controls review and preserve manual execution settings for http/1.1" classname="workflow-http-concurrent.spec.ts" time="0.813">
+</testcase>
+<testcase name="HTTP sequence controls review and preserve manual execution settings for http/2" classname="workflow-http-concurrent.spec.ts" time="0.826">
+</testcase>
+<testcase name="LoadRunner concurrent markers import exact child mappings and replay on the inherited HTTP session" classname="workflow-http-concurrent.spec.ts" time="1.654">
+<system-err>
+</system-err>
+</testcase>
+<testcase name="runtime evidence unavailability hides stale DTO detail, history and exported session JSON" classname="workflow-http-concurrent.spec.ts" time="0.875">
+</testcase>
+</testsuite>
+<testsuite name="workflow-http-version.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="2.738" errors="0">
+<testcase name="mixed HTTP versions retain request policy, share sessions and expose measured replay versions" classname="workflow-http-version.spec.ts" time="2.738">
+</testcase>
+</testsuite>
+<testsuite name="workflow-import-labels.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="1.04" errors="0">
+<testcase name="transaction names survive archive import without requiring secret bindings" classname="workflow-import-labels.spec.ts" time="1.04">
+</testcase>
+</testsuite>
+<testsuite name="workflow-import-source.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="6" failures="0" skipped="0" time="7.056" errors="0">
+<testcase name="source catalog search and importer guidance stay consistent across formats" classname="workflow-import-source.spec.ts" time="2.287">
+</testcase>
+<testcase name="Oracle review clears obsolete findings and never offers a script destination" classname="workflow-import-source.spec.ts" time="0.559">
+</testcase>
+<testcase name="Postman inspection sends project scope before collection bytes" classname="workflow-import-source.spec.ts" time="0.496">
+</testcase>
+<testcase name="HAR comparison can be removed and upload errors recover accessibly" classname="workflow-import-source.spec.ts" time="0.549">
+</testcase>
+<testcase name="JMeter review uses the shared six tabs and retains project scope during upload" classname="workflow-import-source.spec.ts" time="2.757">
+</testcase>
+<testcase name="HAR picker accepts captures above 50 MiB and rejects files above 100 MiB" classname="workflow-import-source.spec.ts" time="0.408">
+</testcase>
+</testsuite>
+<testsuite name="workflow-jmeter-fidelity.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="3" failures="0" skipped="0" time="6.851" errors="0">
+<testcase name="JMeter fidelity review retains blockers and regenerates explicit timestamp and name repairs" classname="workflow-jmeter-fidelity.spec.ts" time="1.396">
+</testcase>
+<testcase name="JMeter repaired import saves finite workload and downloads native per-run CSV" classname="workflow-jmeter-fidelity.spec.ts" time="3.677">
+</testcase>
+<testcase name="JMeter messaging preview preserves three blocked drafts and workload curves" classname="workflow-jmeter-fidelity.spec.ts" time="1.778">
+</testcase>
+</testsuite>
+<testsuite name="workflow-library-assignments.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="2" failures="0" skipped="1" time="4.905" errors="0">
+<testcase name="Library assignments persist, bulk failures recover, and launches require an explicit release" classname="workflow-library-assignments.spec.ts" time="4.837">
+</testcase>
+<testcase name="Viewer cannot change script or scenario assignments" classname="workflow-library-assignments.spec.ts">
+<properties>
+<property name="skip" value="requires viewer persona">
+</property>
+</properties>
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="workflow-loadrunner-collection.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="2.471" errors="0">
+<testcase name="reviews and saves nested VuGen projects independently, retaining failed and Java reviews" classname="workflow-loadrunner-collection.spec.ts" time="2.471">
+<properties>
+<property name="slow" value="">
+</property>
+</properties>
+</testcase>
+</testsuite>
+<testsuite name="workflow-loadrunner-folder.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="0.744" errors="0">
+<testcase name="imports an unpacked VuGen project folder" classname="workflow-loadrunner-folder.spec.ts" time="0.744">
+</testcase>
+</testsuite>
+<testsuite name="workflow-loadrunner-review.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="17" failures="0" skipped="1" time="28.586" errors="0">
+<testcase name="LoadRunner review renders real transaction-labels.zip response" classname="workflow-loadrunner-review.spec.ts" time="1.941">
+</testcase>
+<testcase name="LoadRunner review renders real credential-groups.zip response" classname="workflow-loadrunner-review.spec.ts" time="1.546">
+</testcase>
+<testcase name="LoadRunner review renders real java-lifecycle.zip response" classname="workflow-loadrunner-review.spec.ts" time="1.8">
+</testcase>
+<testcase name="LoadRunner review renders real sap-review.zip response" classname="workflow-loadrunner-review.spec.ts" time="1.8">
+</testcase>
+<testcase name="LoadRunner review renders real truclient-review.zip response" classname="workflow-loadrunner-review.spec.ts" time="1.334">
+</testcase>
+<testcase name="LoadRunner batch saves ready scripts, stays on import, and accepts another ZIP" classname="workflow-loadrunner-review.spec.ts" time="2.251">
+</testcase>
+<testcase name="LoadRunner guided repair previews redacted changes before applying" classname="workflow-loadrunner-review.spec.ts" time="1.7">
+</testcase>
+<testcase name="LoadRunner private acceptance archive groups repeated findings without hiding source locations" classname="workflow-loadrunner-review.spec.ts">
+<properties>
+<property name="skip" value="Set APEXLOAD_LR_ACCEPTANCE_ARCHIVE for local archive acceptance.">
+</property>
+</properties>
+<skipped>
+</skipped>
+</testcase>
+<testcase name="LoadRunner settings apply inline, retain source evidence, and survive draft save" classname="workflow-loadrunner-review.spec.ts" time="3.595">
+</testcase>
+<testcase name="LoadRunner credentials edit and apply in place while preserving protected values" classname="workflow-loadrunner-review.spec.ts" time="1.605">
+</testcase>
+<testcase name="LoadRunner percentage think time shows source bounds and saves edited percentages" classname="workflow-loadrunner-review.spec.ts" time="2.517">
+</testcase>
+<testcase name="LoadRunner runtime context explains inactive settings and repairs an oversized idle timeout" classname="workflow-loadrunner-review.spec.ts" time="2.254">
+</testcase>
+<testcase name="LoadRunner run-logic sections share one category and retain searchable source sections" classname="workflow-loadrunner-review.spec.ts" time="0.917">
+</testcase>
+<testcase name="unique allocation preview appears only when relevant and explains unavailable protected storage" classname="workflow-loadrunner-review.spec.ts" time="1.257">
+</testcase>
+<testcase name="fresh runtime diagnostic import separates capture from dormant source values" classname="workflow-loadrunner-review.spec.ts" time="1.015">
+</testcase>
+<testcase name="issue details retain concrete evidence, focus source and apply runtime changes without leaving Review" classname="workflow-loadrunner-review.spec.ts" time="1.794">
+</testcase>
+<testcase name="LoadRunner Java JAR attachment follows policy and survives review-session reopen" classname="workflow-loadrunner-review.spec.ts" time="1.195">
+</testcase>
+</testsuite>
+<testsuite name="workflow-local-archive-failure.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="1" failures="0" skipped="0" time="0.588" errors="0">
+<testcase name="local archive failure preserves completed Results and survives checking again" classname="workflow-local-archive-failure.spec.ts" time="0.588">
+</testcase>
+</testsuite>
+<testsuite name="workflow-monitoring.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="12" failures="0" skipped="0" time="28.252" errors="0">
+<testcase name="AppDynamics connection drafts, saved checks, and discovery preserve credential privacy" classname="workflow-monitoring.spec.ts" time="5.367">
+</testcase>
+<testcase name="AppDynamics source editing preserves typed selections for direct and collector collection" classname="workflow-monitoring.spec.ts" time="2.484">
+</testcase>
+<testcase name="AppDynamics live and archived evidence preserve delayed state, units and correlation" classname="workflow-monitoring.spec.ts" time="3.124">
+</testcase>
+<testcase name="Confluence connection setup follows saved project connection workflow" classname="workflow-monitoring.spec.ts" time="1.184">
+</testcase>
+<testcase name="archived run report publishes to a selected Confluence connection" classname="workflow-monitoring.spec.ts" time="2.593">
+</testcase>
+<testcase name="Monitoring preserves repeated keyboard navigation and calendar context" classname="workflow-monitoring.spec.ts" time="0.672">
+</testcase>
+<testcase name="Collectors receive a heartbeat while Monitoring remains open" classname="workflow-monitoring.spec.ts" time="5.76">
+</testcase>
+<testcase name="ELK connection plumbing is manageable without exposing secret references" classname="workflow-monitoring.spec.ts" time="1.284">
+</testcase>
+<testcase name="Dynatrace SaaS connection plumbing is manageable without exposing secret references" classname="workflow-monitoring.spec.ts" time="1.058">
+</testcase>
+<testcase name="Kafka management authoring retains scope, sealed-secret policy and revision conflicts through reload" classname="workflow-monitoring.spec.ts" time="1.442">
+</testcase>
+<testcase name="Service Bus authoring preserves explicit queue and subscription approval, revisions and narrow layout" classname="workflow-monitoring.spec.ts" time="1.575">
+</testcase>
+<testcase name="Solace authoring preserves explicit VPN queue and topic-endpoint approval, revisions and narrow layout" classname="workflow-monitoring.spec.ts" time="1.709">
+</testcase>
+</testsuite>
+<testsuite name="workflow-new-test.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="18" failures="0" skipped="0" time="32.774" errors="0">
+<testcase name="Scenario builder gates weighted placement for missing infrastructure" classname="workflow-new-test.spec.ts" time="2.045">
+</testcase>
+<testcase name="Scenario builder gates weighted placement for single-region infrastructure" classname="workflow-new-test.spec.ts" time="1.777">
+</testcase>
+<testcase name="Scenario builder gates weighted placement for multi-zone infrastructure" classname="workflow-new-test.spec.ts" time="1.045">
+</testcase>
+<testcase name="Scenario builder gates weighted placement for multi-region infrastructure" classname="workflow-new-test.spec.ts" time="1.706">
+</testcase>
+<testcase name="Scenario builder preserves controller continuity and the recovery spare budget" classname="workflow-new-test.spec.ts" time="1.431">
+</testcase>
+<testcase name="New Test saves drafts without execution, retains both tabs and validates recurring triggers" classname="workflow-new-test.spec.ts" time="2.923">
+</testcase>
+<testcase name="New Test restores the default name after clearing and reselecting the same scenario" classname="workflow-new-test.spec.ts" time="0.784">
+</testcase>
+<testcase name="New Test exposes editable groups and saves a paused recurring schedule with visible policies" classname="workflow-new-test.spec.ts" time="1.083">
+</testcase>
+<testcase name="Java group profile survives placement edits and scenario persistence (facade ledger: false)" classname="workflow-new-test.spec.ts" time="2.298">
+</testcase>
+<testcase name="Java group profile survives placement edits and scenario persistence (facade ledger: true)" classname="workflow-new-test.spec.ts" time="1.238">
+</testcase>
+<testcase name="Live configuration reports prepared Java reservations without opening raw JSON" classname="workflow-new-test.spec.ts" time="0.387">
+</testcase>
+<testcase name="prepared Event Hubs run displays processor admission and starts with the pinned revision" classname="workflow-new-test.spec.ts" time="0.451">
+</testcase>
+<testcase name="actual held-run serialization and an API-seeded queued copy preserve complete authored intent" classname="workflow-new-test.spec.ts" time="3.26">
+</testcase>
+<testcase name="queued-copy preserves source capture IDs and durably clears the last authored goal" classname="workflow-new-test.spec.ts" time="2.307">
+</testcase>
+<testcase name="queued-copy preserves iteration completion and explicitly clears source delay and root runtime" classname="workflow-new-test.spec.ts" time="5.079">
+</testcase>
+<testcase name="queued-copy joins a history-guard save to its actual submitted receipt and retains late edits" classname="workflow-new-test.spec.ts" time="1.93">
+</testcase>
+<testcase name="queued-copy submit refuses a source started concurrently and viewers cannot open the action" classname="workflow-new-test.spec.ts" time="1.765">
+</testcase>
+<testcase name="queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear" classname="workflow-new-test.spec.ts" time="1.265">
+</testcase>
+</testsuite>
+<testsuite name="workflow-object-activity.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="3" failures="0" skipped="1" time="1.926" errors="0">
+<testcase name="archive, restore, dependency admission and retained deleted history" classname="workflow-object-activity.spec.ts" time="1.469">
+</testcase>
+<testcase name="saved changes show audit warnings without implying failure" classname="workflow-object-activity.spec.ts" time="0.405">
+</testcase>
+<testcase name="project viewers can inspect deleted history but cannot archive or restore" classname="workflow-object-activity.spec.ts">
+<properties>
+<property name="skip" value="requires the local viewer persona">
+</property>
+</properties>
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="workflow-pod-capacity.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="2" failures="0" skipped="0" time="1.347" errors="0">
+<testcase name="peak capacity remains distinct from live utilization at 390px" classname="workflow-pod-capacity.spec.ts" time="0.571">
+</testcase>
+<testcase name="peak capacity remains distinct from live utilization at 1440px" classname="workflow-pod-capacity.spec.ts" time="0.776">
+</testcase>
+</testsuite>
+<testsuite name="workflow-prometheus-monitoring.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="4" failures="0" skipped="0" time="10.012" errors="0">
+<testcase name="Prometheus target connection drafts keep credentials write-only and expose bounded discovery" classname="workflow-prometheus-monitoring.spec.ts" time="5.044">
+</testcase>
+<testcase name="Prometheus target sources preserve labelled typed queries and assigned collection locations" classname="workflow-prometheus-monitoring.spec.ts" time="1.058">
+</testcase>
+<testcase name="Prometheus live and archived evidence preserve delayed collection, freshness and gaps" classname="workflow-prometheus-monitoring.spec.ts" time="3.225">
+</testcase>
+<testcase name="Grafana adoption resolves variables explicitly and saves a disabled reviewed source" classname="workflow-prometheus-monitoring.spec.ts" time="0.685">
+</testcase>
+</testsuite>
+<testsuite name="workflow-protocol-diagnostics.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="4" failures="0" skipped="0" time="9.37" errors="0">
+<testcase name="gRPC diagnostics distinguishes unavailable and measured-zero responses in the active run view" classname="workflow-protocol-diagnostics.spec.ts" time="3.106">
+</testcase>
+<testcase name="WebSocket diagnostics preserves unavailable ping RTT and matched zero RTT" classname="workflow-protocol-diagnostics.spec.ts" time="2.929">
+</testcase>
+<testcase name="messaging diagnostics preserves observed zero, missing acknowledgement and partial coverage" classname="workflow-protocol-diagnostics.spec.ts" time="0.751">
+</testcase>
+<testcase name="Event Hubs progress preserves exact cursors and unavailable lag during idle windows" classname="workflow-protocol-diagnostics.spec.ts" time="2.584">
+</testcase>
+</testsuite>
+<testsuite name="workflow-recording-review.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="2" failures="0" skipped="0" time="1.317" errors="0">
+<testcase name="recording review scopes verification to outputs and invalidates changed conversions" classname="workflow-recording-review.spec.ts" time="0.682">
+</testcase>
+<testcase name="a narrow browser cockpit keeps assertion evidence and the captured viewport readable" classname="workflow-recording-review.spec.ts" time="0.635">
+</testcase>
+</testsuite>
+<testsuite name="workflow-recovery.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="6" failures="0" skipped="0" time="4.89" errors="0">
+<testcase name="[U22] creation capability failure has an actionable retry that recovers" classname="workflow-recovery.spec.ts" time="0.429">
+</testcase>
+<testcase name="[U19] unavailable readiness is explicit and real monitoring recovers" classname="workflow-recovery.spec.ts" time="0.614">
+</testcase>
+<testcase name="[U20] keyboard draft guard and wizard remain reachable at 1440x900" classname="workflow-recovery.spec.ts" time="0.745">
+</testcase>
+<testcase name="[U20] keyboard draft guard and wizard remain reachable at 932x1096" classname="workflow-recovery.spec.ts" time="0.726">
+</testcase>
+<testcase name="[U20] keyboard draft guard and wizard remain reachable at 1280x720" classname="workflow-recovery.spec.ts" time="0.798">
+</testcase>
+<testcase name="[U24] recorder startup failure preserves the target and exposes recovery" classname="workflow-recovery.spec.ts" time="1.578">
+</testcase>
+</testsuite>
+<testsuite name="workflow-response-content.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="3" failures="0" skipped="0" time="5.63" errors="0">
+<testcase name="HAR decoded base64 content retains its correlations and real gzip replay extracts a fresh value" classname="workflow-response-content.spec.ts" time="2.21">
+</testcase>
+<testcase name="incomplete recorder response source remains a visible execution blocker through save and reopen" classname="workflow-response-content.spec.ts" time="2">
+</testcase>
+<testcase name="gzip SSE collection extracts sampled events and visibly qualifies the partial response" classname="workflow-response-content.spec.ts" time="1.42">
+</testcase>
+</testsuite>
+<testsuite name="workflow-retained-resource-inspector.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="2" failures="0" skipped="0" time="3.439" errors="0">
+<testcase name="retained resource inspector paginates beyond report previews and preserves native zero, false and independent clocks" classname="workflow-retained-resource-inspector.spec.ts" time="2.66">
+</testcase>
+<testcase name="retained resource inspector refuses a mismatched page and retries without publishing unavailable evidence as zero" classname="workflow-retained-resource-inspector.spec.ts" time="0.779">
+</testcase>
+</testsuite>
+<testsuite name="workflow-runtime-state.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="3" failures="0" skipped="0" time="8.196" errors="0">
+<testcase name="current paused values and parameter receipts survive inspection without consuming references" classname="workflow-runtime-state.spec.ts" time="4.605">
+</testcase>
+<testcase name="foreach receipts retain original row ordinals and restore enclosing bindings after stepping" classname="workflow-runtime-state.spec.ts" time="2.026">
+</testcase>
+<testcase name="Run To continues after its breakpoint socket precedes the HTTP acknowledgement" classname="workflow-runtime-state.spec.ts" time="1.565">
+</testcase>
+</testsuite>
+<testsuite name="workflow-scenario-composition.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="4" failures="0" skipped="0" time="5.981" errors="0">
+<testcase name="scenario composition combines group editing with a live preview" classname="workflow-scenario-composition.spec.ts" time="2.874">
+</testcase>
+<testcase name="guided stepped ramp keeps its pattern editor within the four scenario tabs" classname="workflow-scenario-composition.spec.ts" time="0.978">
+</testcase>
+<testcase name="scenario rename and reopen retain Results, WebSocket, named shape and group timing intent" classname="workflow-scenario-composition.spec.ts" time="0.928">
+</testcase>
+<testcase name="changing a saved workload shape retains the authored root SLA and rules" classname="workflow-scenario-composition.spec.ts" time="1.201">
+</testcase>
+</testsuite>
+<testsuite name="workflow-scenario-data.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="3" failures="0" skipped="0" time="3.159" errors="0">
+<testcase name="scenario Data step previews script parameters and restores them after removing a shared pool" classname="workflow-scenario-data.spec.ts" time="0.877">
+</testcase>
+<testcase name="scenario save and reopen preserves both bindings and attaching another pool appends it" classname="workflow-scenario-data.spec.ts" time="0.962">
+</testcase>
+<testcase name="legacy browser checkpoint migrates a first-pool replacement through save and reopen" classname="workflow-scenario-data.spec.ts" time="1.32">
+</testcase>
+</testsuite>
+<testsuite name="workflow-script-editor.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="7" failures="0" skipped="0" time="8.476" errors="0">
+<testcase name="operator edits the failed nested browser assertion and reruns without losing source fields" classname="workflow-script-editor.spec.ts" time="0.805">
+</testcase>
+<testcase name="authored script goals survive an unrelated editor save and canonical reopen" classname="workflow-script-editor.spec.ts" time="1.217">
+</testcase>
+<testcase name="two editors preserve stale drafts and require explicit revision review before reapply" classname="workflow-script-editor.spec.ts" time="1.313">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|workflow-script-editor-two-d2399-ision-review-before-reapply/attachments/reconciliation-geometry-b2dd3fed2d6dbe5c8f33ec54234914042f2c0a71.json]]
+]]>
+</system-out>
+</testcase>
+<testcase name="placement-only changes invalidate save authority and explicit reapply preserves the current folder" classname="workflow-script-editor.spec.ts" time="0.668">
+</testcase>
+<testcase name="uncertain successful writes retain drafts and revoke retry authority until explicit review" classname="workflow-script-editor.spec.ts" time="0.731">
+</testcase>
+<testcase name="library secret rebind retains exact revision authority and requires review after a real conflict" classname="workflow-script-editor.spec.ts" time="2.39">
+</testcase>
+<testcase name="reapply preserves own JSON header keys and explicit deletions across a real writer" classname="workflow-script-editor.spec.ts" time="1.352">
+</testcase>
+</testsuite>
+<testsuite name="workflow-script-folders.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="2" failures="0" skipped="1" time="3.011" errors="0">
+<testcase name="Operators move scripts individually and in bulk, recover failures, and retain assignments after reload" classname="workflow-script-folders.spec.ts" time="2.964">
+</testcase>
+<testcase name="Viewers cannot move scripts through the library or API" classname="workflow-script-folders.spec.ts">
+<properties>
+<property name="skip" value="requires local viewer persona">
+</property>
+</properties>
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="workflow-script-settings.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="4" failures="0" skipped="0" time="9.983" errors="0">
+<testcase name="runtime evidence uses the imported source treatment and keeps checkbox controls left aligned" classname="workflow-script-settings.spec.ts" time="1.704">
+</testcase>
+<testcase name="parameter workspace preserves 4000 rows, references, masked values and runtime settings" classname="workflow-script-settings.spec.ts" time="6.417">
+</testcase>
+<testcase name="older imported draft retains its saved snapshot classification until re-import" classname="workflow-script-settings.spec.ts" time="0.685">
+</testcase>
+<testcase name="property promotion survives capture changes and script save reopen" classname="workflow-script-settings.spec.ts" time="1.177">
+</testcase>
+</testsuite>
+<testsuite name="workflow-script-sidebars.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="6" failures="0" skipped="0" time="13.014" errors="0">
+<testcase name="script sidebars preserve selection, source scope, body editing and Debug options across narrow layouts" classname="workflow-script-sidebars.spec.ts" time="2.471">
+</testcase>
+<testcase name="Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 1800px" classname="workflow-script-sidebars.spec.ts" time="1.972">
+</testcase>
+<testcase name="Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 1100px" classname="workflow-script-sidebars.spec.ts" time="1.7">
+</testcase>
+<testcase name="Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 900px" classname="workflow-script-sidebars.spec.ts" time="1.635">
+</testcase>
+<testcase name="Source Mapping keeps equal source and destination widths through selection, wrap, resize and restore at 700px" classname="workflow-script-sidebars.spec.ts" time="2.758">
+</testcase>
+<testcase name="source mapping review decisions survive saving and moved or edited destinations require verified identity" classname="workflow-script-sidebars.spec.ts" time="2.478">
+</testcase>
+</testsuite>
+<testsuite name="workflow-settings-monitoring.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="7" failures="0" skipped="0" time="12.286" errors="0">
+<testcase name="Settings navigation and canonical editors at 1024px" classname="workflow-settings-monitoring.spec.ts" time="1.497">
+</testcase>
+<testcase name="Settings navigation and canonical editors at 1280px" classname="workflow-settings-monitoring.spec.ts" time="1.395">
+</testcase>
+<testcase name="Settings navigation and canonical editors at 1440px" classname="workflow-settings-monitoring.spec.ts" time="1.48">
+</testcase>
+<testcase name="settings destination navigation preserves unsaved edits until explicitly discarded" classname="workflow-settings-monitoring.spec.ts" time="2.531">
+</testcase>
+<testcase name="infrastructure guide, saved commitments and independent cancel work with keyboard navigation" classname="workflow-settings-monitoring.spec.ts" time="0.696">
+</testcase>
+<testcase name="project catalog edits, cancels and confirms deletion against persisted workspace data" classname="workflow-settings-monitoring.spec.ts" time="3.222">
+</testcase>
+<testcase name="Settings search reveals and focuses each matching personal control" classname="workflow-settings-monitoring.spec.ts" time="1.465">
+</testcase>
+</testsuite>
+<testsuite name="workflow-telemetry-policy.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="2" failures="0" skipped="0" time="6.725" errors="0">
+<testcase name="telemetry policy remains immutable in live, archive and manifest views after settings change" classname="workflow-telemetry-policy.spec.ts" time="5.915">
+</testcase>
+<testcase name="telemetry manifest shows legacy absence and refuses malformed policy without inferred budgets" classname="workflow-telemetry-policy.spec.ts" time="0.81">
+</testcase>
+</testsuite>
+<testsuite name="workflow-theme-controls.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="5" failures="0" skipped="0" time="8.737" errors="0">
+<testcase name="shared controls follow dark including focus and help" classname="workflow-theme-controls.spec.ts" time="1.794">
+</testcase>
+<testcase name="shared controls follow light including focus and help" classname="workflow-theme-controls.spec.ts" time="1.797">
+</testcase>
+<testcase name="shared controls follow solarized-dark including focus and help" classname="workflow-theme-controls.spec.ts" time="1.731">
+</testcase>
+<testcase name="shared controls follow solarized-light including focus and help" classname="workflow-theme-controls.spec.ts" time="1.707">
+</testcase>
+<testcase name="shared controls follow monokai-dimmed including focus and help" classname="workflow-theme-controls.spec.ts" time="1.708">
+</testcase>
+</testsuite>
+<testsuite name="workflow-usability.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="11" failures="0" skipped="0" time="13.022" errors="0">
+<testcase name="HTTP method edits preserve action type through save and reload" classname="workflow-usability.spec.ts" time="1.094">
+</testcase>
+<testcase name="an operator-stopped run without SLAs never produces a passing executive report" classname="workflow-usability.spec.ts" time="1.778">
+</testcase>
+<testcase name="missing-script detour preserves the scenario draft on cancellation" classname="workflow-usability.spec.ts" time="2.51">
+</testcase>
+<testcase name="guided setup creates the full hierarchy across scope changes" classname="workflow-usability.spec.ts" time="1.486">
+</testcase>
+<testcase name="OpenAPI prerequisite import returns the saved script to the original group" classname="workflow-usability.spec.ts" time="0.906">
+</testcase>
+<testcase name="data pool row failure retains the scenario and retries without creating a second pool" classname="workflow-usability.spec.ts" time="0.757">
+</testcase>
+<testcase name="debugger keeps request details readable at narrow width and browser zoom equivalent" classname="workflow-usability.spec.ts" time="0.557">
+</testcase>
+<testcase name="debug 200 shows response evidence without weakening the contract" classname="workflow-usability.spec.ts" time="0.654">
+</testcase>
+<testcase name="debug 503 shows response evidence without weakening the contract" classname="workflow-usability.spec.ts" time="0.728">
+</testcase>
+<testcase name="first-use screens meet automated WCAG AA checks in dark and light themes" classname="workflow-usability.spec.ts" time="1.359">
+</testcase>
+<testcase name="shared dialogs stay above app chrome and preserve nested discard decisions" classname="workflow-usability.spec.ts" time="1.193">
+</testcase>
+</testsuite>
+<testsuite name="workflow-ux-consistency.spec.ts" timestamp="2026-10-06T04:19:41.748Z" hostname="" tests="10" failures="0" skipped="0" time="22.995" errors="0">
+<testcase name="UX structure remains usable in dark at 923px" classname="workflow-ux-consistency.spec.ts" time="2.116">
+</testcase>
+<testcase name="UX structure remains usable in dark at 1440px" classname="workflow-ux-consistency.spec.ts" time="2.633">
+</testcase>
+<testcase name="UX structure remains usable in light at 923px" classname="workflow-ux-consistency.spec.ts" time="2.197">
+</testcase>
+<testcase name="UX structure remains usable in light at 1440px" classname="workflow-ux-consistency.spec.ts" time="2.665">
+</testcase>
+<testcase name="UX structure remains usable in solarized-dark at 923px" classname="workflow-ux-consistency.spec.ts" time="1.98">
+</testcase>
+<testcase name="UX structure remains usable in solarized-dark at 1440px" classname="workflow-ux-consistency.spec.ts" time="2.426">
+</testcase>
+<testcase name="UX structure remains usable in solarized-light at 923px" classname="workflow-ux-consistency.spec.ts" time="2.147">
+</testcase>
+<testcase name="UX structure remains usable in solarized-light at 1440px" classname="workflow-ux-consistency.spec.ts" time="2.552">
+</testcase>
+<testcase name="UX structure remains usable in monokai-dimmed at 923px" classname="workflow-ux-consistency.spec.ts" time="2.041">
+</testcase>
+<testcase name="UX structure remains usable in monokai-dimmed at 1440px" classname="workflow-ux-consistency.spec.ts" time="2.238">
+</testcase>
+</testsuite>
+</testsuites>

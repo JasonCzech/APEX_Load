@@ -18,9 +18,19 @@ var variableTemplatePattern = regexp.MustCompile(`\{\{\s*var\.([a-zA-Z0-9_.-]+)`
 // VariableReadiness is the source-neutral result of analyzing variable
 // references in execution order. ByAction uses stable DSL paths and Missing is
 // the sorted union used by API preflight and import review.
+//
+// Blocking is the subset of Missing that replay cannot carry as placeholder
+// text. Like LoadRunner, which uses an undefined {param} literally and warns,
+// HTTP replay keeps an unresolved {{var.*}} reference verbatim, and the
+// request that sends it warns (unresolved_variable_sent). Protocol
+// configuration is never interpolated, a JSON helper fails its step on an
+// unresolved buffer, and other protocols have no placeholder fallback.
 type VariableReadiness struct {
 	Missing  []string            `json:"missing,omitempty"`
 	ByAction map[string][]string `json:"by_action,omitempty"`
+	Blocking []string            `json:"blocking,omitempty"`
+
+	blocking map[string]struct{}
 }
 
 // AnalyzeVariableReadiness finds references that are not supplied by explicit
@@ -32,7 +42,7 @@ func AnalyzeVariableReadiness(script *dsl.Script, seeded map[string]string) Vari
 	}
 	state := newVariableState(script, seeded)
 	configRefs := scriptConfigVariableReferences(script)
-	result := VariableReadiness{ByAction: make(map[string][]string)}
+	result := VariableReadiness{ByAction: make(map[string][]string), blocking: make(map[string]struct{})}
 	analyzeVariableActions(script.Init, "init", state, configRefs, &result)
 	analyzeVariableActions(script.Actions, "actions", state, configRefs, &result)
 	analyzeVariableActions(script.Teardown, "teardown", state, configRefs, &result)
@@ -50,6 +60,8 @@ func AnalyzeVariableReadiness(script *dsl.Script, seeded map[string]string) Vari
 		}
 	}
 	result.Missing = sortedStringSet(union)
+	result.Blocking = sortedStringSet(result.blocking)
+	result.blocking = nil
 	if len(result.ByAction) == 0 {
 		result.ByAction = nil
 	}
@@ -171,7 +183,7 @@ func analyzeVariableActions(actions []dsl.Action, prefix string, state *variable
 			shell := *action
 			shell.Control = cloneControlShell(action.Control)
 			shell.Extractors = nil
-			recordMissingVariableRefs(shell, path, state, configVariableRefs{}, result)
+			recordMissingVariableRefs(shell, path, state, configVariableRefs{protocol: configRefs.protocol}, result)
 			if action.Control == nil {
 				continue
 			}
@@ -189,7 +201,7 @@ func analyzeVariableActions(actions []dsl.Action, prefix string, state *variable
 			shell := *action
 			shell.Control = cloneControlShell(action.Control)
 			shell.Extractors = nil
-			recordMissingVariableRefs(shell, path, state, configVariableRefs{}, result)
+			recordMissingVariableRefs(shell, path, state, configVariableRefs{protocol: configRefs.protocol}, result)
 			if action.Control == nil {
 				continue
 			}
@@ -226,7 +238,7 @@ func analyzeVariableActions(actions []dsl.Action, prefix string, state *variable
 			shell := *action
 			shell.Control = cloneControlShell(action.Control)
 			shell.Extractors = nil
-			recordMissingVariableRefs(shell, path, bodyState, configVariableRefs{}, result)
+			recordMissingVariableRefs(shell, path, bodyState, configVariableRefs{protocol: configRefs.protocol}, result)
 			if action.Control == nil {
 				continue
 			}
@@ -303,19 +315,30 @@ func (state *variableState) registerActionOutputs(action dsl.Action) {
 
 func recordMissingVariableRefs(action dsl.Action, path string, state *variableState, configRefs configVariableRefs, result *VariableReadiness) {
 	references := actionVariableReferences(action)
+	placeholder := keepsVariablePlaceholders(action, configRefs.protocol)
 	for _, name := range uniqueSorted(references) {
 		if !state.satisfied(name) {
 			result.ByAction[path] = append(result.ByAction[path], name)
+			if !placeholder {
+				result.blocking[name] = struct{}{}
+			}
 		}
 	}
 	// Protocol configuration is flattened and handed to the protocol before
 	// init/actions run. Unlike action fields, {{var.*}} references in these
 	// values are not interpolated from parameters, replay seeds, or prior
 	// extractors. Always report relevant config references as unresolved.
-	result.ByAction[path] = append(
-		result.ByAction[path],
-		relevantHTTPConfigVariableReferences(action, configRefs)...,
-	)
+	configMissing := relevantHTTPConfigVariableReferences(action, configRefs)
+	result.ByAction[path] = append(result.ByAction[path], configMissing...)
+	for _, name := range configMissing {
+		result.blocking[name] = struct{}{}
+	}
+}
+
+// keepsVariablePlaceholders reports whether replay carries an unresolved
+// reference in this action as its placeholder text.
+func keepsVariablePlaceholders(action dsl.Action, protocol string) bool {
+	return dsl.ProtocolFamily(protocol) == "http" && dsl.CanonicalActionType(action.Type) != "source_json"
 }
 
 func scriptConfigVariableReferences(script *dsl.Script) configVariableRefs {

@@ -1,4 +1,28 @@
-import { expect, test } from './support/liveRun'
+import { expect, test as liveRunTest, startLiveRun, abortLiveRun, type LiveRun, type StartLiveRunOptions } from './support/liveRun'
+import { login } from './support/workflow'
+
+// Keep a private, fixture-owned API context usable during timeout teardown,
+// while sharing the real local-auth session established through the dashboard.
+const test = liveRunTest.extend({
+  seedLiveRun: async ({ page, playwright, baseURL }, provide) => {
+    if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+    const context = await playwright.request.newContext({ baseURL, storageState: await page.context().storageState() })
+    const seeded: LiveRun[] = []
+    try {
+      await provide(async (options: StartLiveRunOptions = {}) => {
+        const run = await startLiveRun(context, baseURL, options)
+        seeded.push(run)
+        return run
+      })
+    } finally {
+      try {
+        for (const run of seeded.reverse()) await abortLiveRun(context, run)
+      } finally {
+        await context.dispose()
+      }
+    }
+  },
+})
 
 test('advanced details returns to the same run without losing cockpit edits or graph mode', async ({ page, seedLiveRun }) => {
   test.setTimeout(150_000)
@@ -68,13 +92,31 @@ test('runtime workspace keeps essential metrics readable and settings in an opaq
   expect(shelf!.y).toBeGreaterThanOrEqual(header!.y + header!.height - 1)
   await page.screenshot({ path: testInfo.outputPath('operations-desktop.png'), fullPage: true })
   await page.setViewportSize({ width: 900, height: 1000 })
+  // ResizeObserver publishes the new scroll offsets after viewport resize
+  // returns. Scrolling before that callback uses the desktop shelf height.
+  await expect.poll(async () => cockpit.evaluate(element => {
+    const scroller = element.closest<HTMLElement>('.main-content')
+    const header = scroller?.querySelector<HTMLElement>('.main-topbar')
+    const shelf = element.querySelector<HTMLElement>('.command-control-shelf')
+    if (!scroller || !header || !shelf) return null
+    const style = getComputedStyle(element)
+    return {
+      header: parseFloat(style.getPropertyValue('--command-header-offset')) - header.offsetHeight,
+      shelf: parseFloat(style.getPropertyValue('--command-shelf-height')) - shelf.offsetHeight,
+      inset: parseFloat(style.getPropertyValue('--command-scroll-inset')) - parseFloat(getComputedStyle(scroller).paddingTop),
+    }
+  }), { timeout: 15_000, message: 'Command Center scroll offsets match the narrow viewport layout' }).toEqual({ header: 0, shelf: 0, inset: 0 })
   const currentLoad = cockpit.locator('.command-group-row [data-label="Current VU"]').first()
   expect(await currentLoad.evaluate(element => getComputedStyle(element, '::before').content)).toBe('"Current VU"')
   const groupActions = cockpit.getByRole('button', { name: 'smoke group actions', exact: true })
   await groupActions.evaluate(element => element.scrollIntoView({ block: 'start' }))
   await groupActions.focus()
-  const narrowShelf = await cockpit.locator('.command-control-shelf').boundingBox()
-  const actionBox = await groupActions.boundingBox()
-  expect(actionBox!.y).toBeGreaterThanOrEqual(narrowShelf!.y + narrowShelf!.height - 1)
+  await expect.poll(async () => groupActions.evaluate(element => {
+    const shelf = element.closest('.command-center-page')?.querySelector('.command-control-shelf')
+    if (!shelf) throw new Error('Command Center run controls are missing')
+    const narrowShelf = shelf.getBoundingClientRect()
+    const actionBox = element.getBoundingClientRect()
+    return actionBox.y - (narrowShelf.y + narrowShelf.height - 1)
+  }), { timeout: 15_000, message: 'Narrow group actions remain below the sticky run controls' }).toBeGreaterThanOrEqual(0)
   await page.screenshot({ path: testInfo.outputPath('operations-narrow.png'), fullPage: true })
 })

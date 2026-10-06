@@ -51,6 +51,9 @@ func appendHTTPConfig(cfg map[string]any, script *dsl.Script) {
 	cfg["cache_max_unused_iterations"] = float64(httpCfg.CacheMaxUnusedIterations)
 	cfg["cache_excluded_mime_types"] = httpCfg.CacheExcludedMIMETypes
 	cfg["html_parse_mode"] = httpCfg.HTMLParseMode
+	if httpCfg.AuraRecordedFailures != "" {
+		cfg["aura_recorded_failures"] = httpCfg.AuraRecordedFailures
+	}
 	cfg["html_excluded_mime_types"] = httpCfg.HTMLExcludedMIMETypes
 	// Timeouts
 	if httpCfg.ConnectTimeoutMs > 0 {

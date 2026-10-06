@@ -477,3 +477,17 @@ func TestToInt(t *testing.T) {
 		}
 	}
 }
+
+func TestEvaluate_BodyContainsCaseInsensitive(t *testing.T) {
+	r := &protocol.Result{StatusCode: 200}
+	body := "Order SHIPPING confirmed"
+	if err := evaluate(protocol.Assertion{Type: "body_contains", Value: "Shipping", CaseInsensitive: true}, r, body); err != nil {
+		t.Fatalf("case-insensitive contains failed: %v", err)
+	}
+	if err := evaluate(protocol.Assertion{Type: "body_contains", Value: "Shipping"}, r, body); err == nil {
+		t.Fatal("case-sensitive contains matched different case")
+	}
+	if err := evaluate(protocol.Assertion{Type: "body_not_contains", Value: "shipping", CaseInsensitive: true}, r, body); err == nil {
+		t.Fatal("case-insensitive not_contains passed on a match")
+	}
+}

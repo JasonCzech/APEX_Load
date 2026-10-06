@@ -47,6 +47,29 @@ func TestAnalyzeVariableReadinessDecodesBase64WireBody(t *testing.T) {
 	}
 }
 
+func TestAnalyzeVariableReadinessBlocksOnlyReferencesWithoutPlaceholderFallback(t *testing.T) {
+	t.Parallel()
+	script := &dsl.Script{
+		Protocol: "http",
+		Actions: []dsl.Action{
+			{Name: "store", Type: "request", Method: "POST", Target: "/stores/{{var.store}}", Headers: map[string]string{"X-Trace": "{{var.trace}}"}, Body: `{"ban":"{{var.ban}}"}`},
+			{Name: "eval", Type: "source_json", Params: map[string]any{"json_object": "doc", "buffer": "{{var.document}}"}},
+			{Name: "search", Type: "request", Method: "GET", Target: "/search", Assertions: []dsl.Assertion{{Type: "body_contains", Expected: "{{var.expected}}"}}},
+		},
+	}
+	got := AnalyzeVariableReadiness(script, nil)
+	if !reflect.DeepEqual(got.Missing, []string{"ban", "document", "expected", "store", "trace"}) {
+		t.Fatalf("missing = %#v", got.Missing)
+	}
+	if !reflect.DeepEqual(got.Blocking, []string{"document"}) {
+		t.Fatalf("blocking = %#v, want only the JSON helper buffer", got.Blocking)
+	}
+	script.Protocol = "grpc"
+	if got := AnalyzeVariableReadiness(script, nil); !reflect.DeepEqual(got.Blocking, got.Missing) {
+		t.Fatalf("non-HTTP blocking = %#v, want every missing reference", got.Blocking)
+	}
+}
+
 func TestAnalyzeVariableReadinessIncludesHTTPConfigAtAffectedRequests(t *testing.T) {
 	t.Parallel()
 	script := &dsl.Script{
@@ -72,6 +95,9 @@ func TestAnalyzeVariableReadinessIncludesHTTPConfigAtAffectedRequests(t *testing
 	}
 	if !reflect.DeepEqual(got.ByAction["actions[1]"], []string{"host", "tenant"}) {
 		t.Fatalf("relative request missing = %#v, want base URL and shared config", got.ByAction["actions[1]"])
+	}
+	if !reflect.DeepEqual(got.Blocking, []string{"host", "tenant"}) {
+		t.Fatalf("blocking = %#v, protocol config has no placeholder fallback", got.Blocking)
 	}
 
 	got = AnalyzeVariableReadiness(script, map[string]string{"host": "api.example.test", "tenant": "tenant-a"})

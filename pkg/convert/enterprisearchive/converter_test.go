@@ -563,6 +563,12 @@ func sampleSourceFunctionCall(def SourceFunctionDefinition) string {
 		return "\tlr_save_var(\"abcdef\", 3, 0, \"SavedVar\");"
 	case "lr_db_executeSQLStatement":
 		return "\tlr_db_executeSQLStatement(\"SQL=select 1\");"
+	case "lr_eval_json":
+		return "\tlr_eval_json(\"Buffer={JsonText}\", \"JsonObject=Doc\", LAST);"
+	case "lr_json_get_values":
+		return "\tlr_json_get_values(\"JsonObject=Doc\", \"ValueParam=StoreId\", \"QueryString=$.Id\", LAST);"
+	case "lr_json_stringify":
+		return "\tlr_json_stringify(\"JsonObject=Doc\", \"OutputParam=DocText\", LAST);"
 	case "lr_aws_get_secret", "lr_azure_ad_client_get_token", "lr_azure_kv_get_secret", "lr_azure_set_service_port", "lr_cyberark_get_vault":
 		return "\t" + def.Name + "(\"SecretName\", \"SecretParam\");"
 	default:

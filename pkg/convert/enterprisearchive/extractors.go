@@ -36,28 +36,10 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 	warnings = append(warnings, postWarnings...)
 
 	if fn.Name == "web_reg_save_param_attrib" {
-		// Saves the value of an HTML element attribute. APEX Load's xpath extractor
-		// runs against the (HTML) response body, so map Tag + Attribute to an
-		// //tag/@attribute selector. Element-identification predicates (ID=, Name=,
-		// Value=, ...) and Ordinal narrow the match best-effort; warn on the ones
-		// that are not translated so the fidelity loss is visible.
-		attribute := convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "Attribute"), firstNonEmptyArg(fn, "AttributeName"))
-		if attribute == "" {
-			return nil, append(warnings, fmt.Sprintf("line %d: web_reg_save_param_attrib %q has no Attribute=; preserved for manual review", fn.LineNumber, paramName))
-		}
-		tag := strings.ToLower(strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "Tag"))))
-		node := "//*"
-		if tag != "" {
-			node = "//" + tag
-		}
-		expression := node + "/@" + strings.TrimSpace(cleanConfigValue(attribute))
-		if mode == "" && ordinal > 1 {
-			expression = fmt.Sprintf("(%s)[%d]", expression, ordinal)
-		}
-		for _, predicate := range []string{"ID", "Name", "Value"} {
-			if value := firstNonEmptyArg(fn, predicate); value != "" {
-				warnings = append(warnings, fmt.Sprintf("line %d: web_reg_save_param_attrib %q narrows by %s=%s, which is not translated into the xpath selector; verify the extracted element", fn.LineNumber, paramName, predicate, cleanConfigValue(value)))
-			}
+		expression, attribWarnings, ok := sourceAttribSelector(fn, paramName, mode, ordinal)
+		warnings = append(warnings, attribWarnings...)
+		if !ok {
+			return nil, warnings
 		}
 		return &dsl.Extractor{
 			Name:       paramName,
@@ -81,7 +63,7 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 			Name:       paramName,
 			Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
 			Type:       "regex",
-			Expression: unescapeSourceCString(expression),
+			Expression: expression,
 			OnMiss:     onMiss,
 			Mode:       mode,
 			SaveOffset: saveOffset,
@@ -104,7 +86,7 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 			Name:       paramName,
 			Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
 			Type:       "jsonpath",
-			Expression: unescapeSourceCString(expression),
+			Expression: expression,
 			OnMiss:     onMiss,
 			Mode:       mode,
 			SaveOffset: saveOffset,
@@ -122,7 +104,7 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 			Name:       paramName,
 			Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
 			Type:       "xpath",
-			Expression: unescapeSourceCString(expression),
+			Expression: expression,
 			OnMiss:     onMiss,
 			Mode:       mode,
 			SaveOffset: saveOffset,
@@ -133,8 +115,6 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 
 	lb, rb, caseInsensitive, flagWarnings := sourceBoundaryArguments(fn)
 	warnings = append(warnings, flagWarnings...)
-	lb = unescapeSourceCString(lb)
-	rb = unescapeSourceCString(rb)
 
 	ext := &dsl.Extractor{
 		Name:       paramName,
@@ -333,7 +313,6 @@ func convertGlobalVerification(fn ParsedFunction) (*dsl.ContentCheckConfig, stri
 	if text == "" {
 		text = fn.StepName
 	}
-	text = unescapeSourceCString(text)
 	if strings.TrimSpace(text) == "" {
 		return nil, fmt.Sprintf("line %d: web_global_verification has no Text argument", fn.LineNumber)
 	}
@@ -370,7 +349,8 @@ func normalizeSourceContentCheckScope(value string) string {
 }
 
 func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, SourceFunctionSupportMode, string) {
-	text := firstNonEmptyArg(fn, "Text")
+	// Text may carry modifier flags (Text/IC= is case-insensitive).
+	text, flags := sourceFlaggedArgument(fn, "Text")
 	if text == "" {
 		return nil, nil, SourceFunctionSupportReviewOnly, fmt.Sprintf("line %d: web_reg_find '%s' — manual review recommended because no Text argument was found", fn.LineNumber, fn.StepName)
 	}
@@ -378,6 +358,17 @@ func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, So
 	mode := SourceFunctionSupportExecutable
 	searchScope := strings.ToLower(strings.TrimSpace(firstNonEmptyArg(fn, "Search")))
 	warnings := make([]string, 0, 2)
+	caseInsensitive := false
+	for _, flag := range flags {
+		if strings.EqualFold(strings.TrimSpace(flag), "IC") {
+			caseInsensitive = true
+			continue
+		}
+		// DIG, ALNUM and BIN change what the text matches (wildcards or
+		// binary escapes); checking it literally would fail where
+		// LoadRunner passes, so no check is emitted.
+		return nil, nil, SourceFunctionSupportReviewOnly, fmt.Sprintf("line %d: web_reg_find Text/%s has no DSL equivalent; the check was not imported and requires review", fn.LineNumber, strings.TrimSpace(flag))
+	}
 	if searchScope == "all" {
 		// LoadRunner's ALL scope spans the main response body, response headers,
 		// and downloaded resources. APEX extractors can scan one response surface
@@ -401,8 +392,9 @@ func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, So
 			assertionType = "body_not_contains"
 		}
 		assertion = &dsl.Assertion{
-			Type:  assertionType,
-			Value: convertParamReferences(text),
+			Type:            assertionType,
+			Value:           convertParamReferences(text),
+			CaseInsensitive: caseInsensitive,
 		}
 	}
 
@@ -413,7 +405,7 @@ func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, So
 				Name:       name,
 				Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Search")),
 				Type:       "regex_count",
-				Expression: regexp.QuoteMeta(convertParamReferences(text)),
+				Expression: caseInsensitiveRegexPrefix(caseInsensitive) + regexp.QuoteMeta(convertParamReferences(text)),
 			}
 		}
 	}
@@ -438,12 +430,14 @@ func encodeRegexOrdinalExpression(expression string, ordinal int) string {
 	return regexOrdinalExpressionConfigPrefix + string(payload)
 }
 
-func unescapeSourceCString(value string) string {
-	if !strings.Contains(value, `\`) {
-		return value
-	}
-	decoded, err := strconv.Unquote(`"` + value + `"`)
-	if err != nil {
+// rawSourceStringContent decodes text captured from raw C source between a
+// literal's quotes (for example by a regular expression over a condition).
+// Parser arguments (Args, RawArgs, CallArgs values, Body) are already decoded
+// exactly once by cleanConfigValue and must never pass through it again: a
+// second decode strips escaped-JSON boundaries such as userAccountNumber\":\".
+func rawSourceStringContent(value string) string {
+	decoded, ok := decodeCStringContent(value)
+	if !ok {
 		return value
 	}
 	return decoded
@@ -517,4 +511,11 @@ func sourceFlagsInclude(flags []string, expected string) bool {
 		}
 	}
 	return false
+}
+
+func caseInsensitiveRegexPrefix(caseInsensitive bool) string {
+	if caseInsensitive {
+		return "(?i)"
+	}
+	return ""
 }

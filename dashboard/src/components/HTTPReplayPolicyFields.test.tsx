@@ -29,6 +29,8 @@ it('edits each policy and preserves explicit zero and empty exclusion overrides'
   edit('IP family', 'ipv6'); expect(onChange).toHaveBeenLastCalledWith({ ip_version: 'ipv6' })
   edit('Unused iterations', '2'); expect(onChange).toHaveBeenLastCalledWith({ cache_max_unused_iterations: 2 })
   edit('Discover HTML resources', 'any'); expect(onChange).toHaveBeenLastCalledWith({ html_parse_mode: 'any' })
+  edit('Aura actions that failed in the recording', 'accept_recorded'); expect(onChange).toHaveBeenLastCalledWith({ aura_recorded_failures: 'accept_recorded' })
+  edit('Aura actions that failed in the recording', ''); expect(onChange).toHaveBeenLastCalledWith({ aura_recorded_failures: undefined })
   edit('Do not cache MIME types', ''); expect(onChange).toHaveBeenLastCalledWith({ cache_excluded_mime_types: [] })
   edit('Do not discover resources', 'text/xml\ntext/plain'); expect(onChange).toHaveBeenLastCalledWith({ html_excluded_mime_types: ['text/xml', 'text/plain'] })
  } finally { act(() => root.unmount()); container.remove() }

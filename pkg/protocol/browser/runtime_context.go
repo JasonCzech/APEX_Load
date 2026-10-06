@@ -46,6 +46,7 @@ type browserNetworkTask struct {
 	request    playwright.Request
 	finished   bool
 	evidence   *protocol.BrowserResourceEvidence
+	receipt    *browserNetworkTaskReceipt
 }
 
 func (b *Browser) openBrowserContext() error {
@@ -275,6 +276,8 @@ func (b *Browser) appendConsoleEntry(entry protocol.ConsoleEntry, expectedGenera
 
 func (b *Browser) startNetworkWorkers() {
 	b.mu.Lock()
+	b.retireNetworkWorkersLocked()
+	b.networkWorkers = newBrowserNetworkWorkerState()
 	b.closing = false
 	b.networkTasks = make(chan browserNetworkTask, browserNetworkTaskQueueSize)
 	b.networkWorkerStop = make(chan struct{})
@@ -290,7 +293,7 @@ func (b *Browser) startNetworkWorkers() {
 				case <-stop:
 					return
 				case task := <-tasks:
-					b.recordNetworkTask(task)
+					b.processNetworkTask(task)
 				}
 			}
 		}()
@@ -304,21 +307,8 @@ func (b *Browser) enqueueNetworkRequest(request playwright.Request, finished boo
 		b.mu.Unlock()
 		return
 	}
-	tasks := b.networkTasks
-	stop := b.networkWorkerStop
-	generation := b.evidence.generation
+	b.admitNetworkTaskLocked(browserNetworkTask{request: request, finished: finished, evidence: evidence, generation: b.evidence.generation})
 	b.mu.Unlock()
-	select {
-	case tasks <- browserNetworkTask{request: request, finished: finished, evidence: evidence, generation: generation}:
-	case <-stop:
-	default:
-		b.mu.Lock()
-		if !b.closing && generation == b.evidence.generation {
-			b.networkTasksDropped++
-			b.evidence.incomplete = true
-		}
-		b.mu.Unlock()
-	}
 }
 
 // Only the admitted context may consume the next action's dialog policy.
@@ -522,7 +512,10 @@ func (b *Browser) recordNetworkRequest(request playwright.Request, finished bool
 }
 func (b *Browser) recordNetworkTask(task browserNetworkTask) {
 	request, finished := task.request, task.finished
-	if task.generation != "" && !b.browserEvidenceGenerationCurrent(task.generation) {
+	b.mu.Lock()
+	current := b.networkTaskCurrentLocked(task)
+	b.mu.Unlock()
+	if !current {
 		return
 	}
 	statusCode := 0
@@ -564,7 +557,7 @@ func (b *Browser) recordNetworkTask(task browserNetworkTask) {
 		ResponseHeaders:      responseHeaders,
 	})
 	b.mu.Lock()
-	if task.generation == "" || task.generation == b.evidence.generation && !b.closing {
+	if b.networkTaskCurrentLocked(task) {
 		b.appendNetworkEntryLocked(entry)
 	}
 	b.mu.Unlock()

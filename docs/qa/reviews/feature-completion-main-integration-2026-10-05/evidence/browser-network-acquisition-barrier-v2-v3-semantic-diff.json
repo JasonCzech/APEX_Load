@@ -1,0 +1,57 @@
+{
+  "schema": "apexload.private-patch-refinement-delta.v1",
+  "created_at_utc": "2026-10-06T04:40:51.129785+00:00",
+  "scope": "Temporary-only V2 root finding correction: one coherent context status snapshot plus deterministic wait-level cancellation regression. No ROOT application/Git/build/test/cache operations.",
+  "retained_prior_versions": [
+    {
+      "revision": 1,
+      "manifest_sha256": "1029579a4694be8d846f884b712ab8d624f6d3d9df759f01db793590754403f1",
+      "patch_sha256": "5464d99232b2b9f66d5fd35461dd63477981b7ad39441e1a96b09901a8cd0af1",
+      "checkpoint": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/v1-source-checkpoint"
+    },
+    {
+      "revision": 2,
+      "manifest_sha256": "362a02dabdc1527efa18961da29f94c8ab8bad3fd72f2a2d831e2994f0e18d29",
+      "patch_sha256": "0e9ab9c815ee67496f3b799b4327e86ce790c89080a3e6b3badf450951450ef1",
+      "checkpoint": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/v2-source-checkpoint"
+    }
+  ],
+  "v3": {
+    "patch": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v3.patch",
+    "patch_sha256": "91f4299ca482618eb1637ee58a47119dc61a6d49d0e59499960e191597c8758d",
+    "manifest": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v3.manifest.json",
+    "manifest_sha256": "84a78bd1048a90b06a01b61f0b0e6f63f1199b7068df99111d62574e82a5ec04"
+  },
+  "exact_delta": [
+    {
+      "path": "pkg/protocol/browser/network_task_completion.go",
+      "v2_sha256": "b8e3a0a9d83da3f6b9f096bb1353f91d2bdf06896103987a1be47ba7016d4316",
+      "v3_sha256": "1e03017d6f20867d0aec87deb9d02670a36994375e118661cadaad85609cde0f"
+    },
+    {
+      "path": "pkg/protocol/browser/network_task_completion_test.go",
+      "v2_sha256": "faed885d9a791db26ede724ddc847c76e455c1037e797525ab5862fc8dd1e2fb",
+      "v3_sha256": "df79d76f1ab62cc454dd377616fe7a882c9ea5f11835be1389703bdacd55b9d7"
+    }
+  ],
+  "diff_path": "/private/tmp/apexload-network-acquisition-barrier-patch-0gen2wr4/browser-network-acquisition-barrier-v2-v3-status-snapshot.diff",
+  "diff_sha256": "9143ecf43460f7c548cad2b3880b2cb35eaf093f1549b418146559b8ba5a796c",
+  "all_other_candidate_sources_identical_to_v2": [
+    "pkg/protocol/browser/action_helpers.go",
+    "pkg/protocol/browser/browser.go",
+    "pkg/protocol/browser/lifecycle.go",
+    "pkg/protocol/browser/result_finalization.go",
+    "pkg/protocol/browser/result_finalization_test.go",
+    "pkg/protocol/browser/runtime_context.go"
+  ],
+  "root_15_input_dependency_bookends_stable": true,
+  "candidate_new_test_count": 19,
+  "test_coverage_delta": {
+    "production_delta": "networkMetadataContextReason uses switch ctx.Err() for one coherent status sample. All other executable code unchanged from V2.",
+    "regression": "External context wraps real context.WithCancel: first Err samples nil then synchronously cancels before returning; unfinished-receipt wait must return cancelled and does not discharge receipt.",
+    "expected_original_failure": "With V2 two-read helper, first read returns nil and cancels; second read observes context.Canceled and takes metadata_timeout. This is a source-level deterministic prediction, not an executed red test.",
+    "test_execution": "No candidate tests/builds have run; ROOT qualification pending."
+  },
+  "executed_tests_builds": false,
+  "qualification_pending": true
+}

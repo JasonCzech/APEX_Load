@@ -43,7 +43,25 @@ type AuraOutcomeReview struct {
 	AnalysisByteLimit    int                `json:"analysis_byte_limit"`
 	StateCounts          map[aura.State]int `json:"state_counts,omitempty"`
 	IssueCounts          map[aura.Code]int  `json:"issue_counts,omitempty"`
-	Batches              []AuraOutcomeBatch `json:"batches"`
+	// RecordedFailureActions counts unsuccessful actions in batches whose
+	// recording matched the imported request completely; the native script
+	// carries them as the replay baseline. RecordedFailureBatches counts those
+	// batches.
+	RecordedFailureActions int                `json:"recorded_failure_actions,omitempty"`
+	RecordedFailureBatches int                `json:"recorded_failure_batches,omitempty"`
+	Batches                []AuraOutcomeBatch `json:"batches"`
+	// recordedFailures holds each baselined batch's unsuccessful outcomes by
+	// action path, taken before detail retention.
+	recordedFailures map[string][]aura.RecordedOutcome
+}
+
+// RecordedFailures returns the unsuccessful recorded outcomes of each
+// completely matched batch, by action path.
+func (review *AuraOutcomeReview) RecordedFailures() map[string][]aura.RecordedOutcome {
+	if review == nil {
+		return nil
+	}
+	return review.recordedFailures
 }
 
 // RequestValid describes the imported executable request. Analysis compares the
@@ -193,6 +211,25 @@ func inspectAuraOutcomes(refs []actionRef, entries []harEntry) *AuraOutcomeRevie
 		review.MatchedActions += analysis.MatchedActions
 		for _, outcome := range analysis.Outcomes {
 			review.StateCounts[outcome.State]++
+		}
+		// Ordinals line up with the replayed request only when the recording
+		// matched the imported request action for action.
+		if complete && request.Success && analysis.RequestActions == request.RequestActions {
+			var failed []aura.RecordedOutcome
+			for _, outcome := range analysis.Outcomes {
+				switch outcome.State {
+				case aura.Error, aura.Incomplete, aura.Aborted:
+					failed = append(failed, aura.RecordedOutcome{Ordinal: outcome.Ordinal, State: outcome.State})
+				}
+			}
+			if len(failed) > 0 && ref.ActionPath != "" {
+				if review.recordedFailures == nil {
+					review.recordedFailures = make(map[string][]aura.RecordedOutcome)
+				}
+				review.recordedFailures[ref.ActionPath] = failed
+				review.RecordedFailureBatches++
+				review.RecordedFailureActions += len(failed)
+			}
 		}
 		for _, issue := range analysis.Issues {
 			review.IssueCounts[issue.Code]++

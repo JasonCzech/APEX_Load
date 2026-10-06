@@ -294,6 +294,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result)
 		return result, nil
 	}
+	noteUnresolvedVariables(result, action.Target, action.Body, effectiveHeaders)
 
 	targetURL := h.resolveURL(action.Target)
 	method := actionHTTPMethod(action)
@@ -918,7 +919,7 @@ extractors:
 		}
 		var assertionErr error
 		if assertion.Type == "aura_actions_success" {
-			assertionErr = evaluateAuraAssertion(result, requestBody, respBody)
+			assertionErr = evaluateAuraAssertion(assertion, h.outcome.acceptRecordedAura, result, requestBody, respBody)
 		} else {
 			assertionErr = evaluateResponseAssertion(assertion, result, resp.Header, bodyText)
 		}

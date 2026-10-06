@@ -1,0 +1,196 @@
+{
+  "schema": "apexload.main-command-center-resize-diagnostic.v1",
+  "at_utc": "2026-10-06T04:28:53.613446+00:00",
+  "reviewer": "/root/authoring_fidelity_resume_v3",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "result": "confirmed test synchronization defect; no production responsive defect demonstrated",
+  "finding": {
+    "priority": "P2",
+    "path": "dashboard/e2e/command-center-details.spec.ts",
+    "line": 78,
+    "trigger": "Viewport resize1440\u2192900 followed immediately by scrollIntoView and focus, before ResizeObserver updates measured scroll-margin custom properties.",
+    "before_scroll": "Desktop CSS offsets header63px/shelf175px/inset20px still present in after-focus snapshot at10691.07ms; narrow viewport900px already acknowledged.",
+    "after_scroll": "At10702.666ms observer correctly publishes header103px/shelf241px/inset20px; main scroller remains scrollTop345.",
+    "failed_geometry": {
+      "action_y": 269.78125,
+      "required_minimum": 363,
+      "shelf_bottom": 364
+    },
+    "cause": "Scroll used the stale desktop238px header+shelf sum, which increased to344px after scrolling; changing scroll-margin does not retroactively reposition the element.",
+    "not_animation": "Actual trace custom-property change establishes observer scheduling seam, not a speculative drawer animation diagnosis.",
+    "error_context_caveat": "Error-context page snapshot is after fixture teardown and shows ABORTED results; diagnosis uses pre-teardown trace snapshots and failed cockpit screenshot."
+  },
+  "trace_evidence": [
+    {
+      "snapshot": "after@call@202",
+      "timestamp_ms": 10656.509,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "nodes": [
+        {
+          "tag": "MAIN",
+          "attributes": {
+            "__playwright_scroll_top_": "200",
+            "class": "main-content topbar-title-mode page-command-center"
+          }
+        },
+        {
+          "tag": "DIV",
+          "attributes": {
+            "class": "page command-center-page command-center-original",
+            "style": "--command-header-offset: 63px; --command-shelf-height: 175px; --command-scroll-inset: 20px;"
+          }
+        }
+      ]
+    },
+    {
+      "snapshot": "after@call@214",
+      "timestamp_ms": 10691.07,
+      "viewport": {
+        "width": 900,
+        "height": 1000
+      },
+      "nodes": [
+        {
+          "tag": "MAIN",
+          "attributes": {
+            "__playwright_scroll_top_": "345",
+            "class": "main-content topbar-title-mode page-command-center"
+          }
+        },
+        {
+          "tag": "DIV",
+          "attributes": {
+            "class": "page command-center-page command-center-original",
+            "style": "--command-header-offset: 63px; --command-shelf-height: 175px; --command-scroll-inset: 20px;"
+          }
+        }
+      ]
+    },
+    {
+      "snapshot": "before@call@216",
+      "timestamp_ms": 10702.666,
+      "viewport": {
+        "width": 900,
+        "height": 1000
+      },
+      "nodes": [
+        {
+          "tag": "MAIN",
+          "attributes": {
+            "__playwright_scroll_top_": "345",
+            "class": "main-content topbar-title-mode page-command-center"
+          }
+        },
+        {
+          "tag": "DIV",
+          "attributes": {
+            "class": "page command-center-page command-center-original",
+            "style": "--command-header-offset: 103px; --command-shelf-height: 241px; --command-scroll-inset: 20px;"
+          }
+        }
+      ]
+    },
+    {
+      "snapshot": "after@call@216",
+      "timestamp_ms": 10710.37,
+      "viewport": {
+        "width": 900,
+        "height": 1000
+      },
+      "nodes": [
+        {
+          "tag": "MAIN",
+          "attributes": {
+            "__playwright_scroll_top_": "345",
+            "class": "main-content topbar-title-mode page-command-center"
+          }
+        },
+        {
+          "tag": "DIV",
+          "attributes": {
+            "class": "page command-center-page command-center-original",
+            "style": "--command-header-offset: 103px; --command-shelf-height: 241px; --command-scroll-inset: 20px;"
+          }
+        }
+      ]
+    }
+  ],
+  "artifact_hashes": [
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/full-cycle-1/dev-admin/command-center-details-run-b0569-ettings-in-an-opaque-drawer/trace.zip",
+      "bytes": 4597828,
+      "sha256": "5cb9ac2a9c106a8edf20ca3580b50cdb55862f64e018fabac0b0d96a5d019091"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/full-cycle-1/dev-admin/command-center-details-run-b0569-ettings-in-an-opaque-drawer/test-failed-1.png",
+      "bytes": 159597,
+      "sha256": "d8c056e63a0f660497370f5e0c2e5cf3d0af39de01987dacc483453cffafa8ab"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/full-cycle-1/dev-admin/command-center-details-run-b0569-ettings-in-an-opaque-drawer/operations-desktop.png",
+      "bytes": 235163,
+      "sha256": "0b53133e44d00f5e5035b0a086ced1973a390b48c0279815d11774e3552e5fff"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/playwright/full-cycle-1/dev-admin/command-center-details-run-b0569-ettings-in-an-opaque-drawer/error-context.md",
+      "bytes": 19613,
+      "sha256": "97f1de15e3762638fad129742d5b9e2d4517bd20e9a13cb1c738f8cee2c10795"
+    }
+  ],
+  "source_hashes": [
+    {
+      "path": "dashboard/e2e/command-center-details.spec.ts",
+      "bytes": 5822,
+      "sha256": "eea3f101357b697df47c93e077bcf92d5992a98cfd3a11b0fd9368be4483cfda",
+      "equals_premerge_local_head": true
+    },
+    {
+      "path": "dashboard/src/components/CommandCenterPrototype.tsx",
+      "bytes": 185230,
+      "sha256": "e085a69456006f19fae18d1ccb273dc52efe6d1969243ea3b247154fc57bda02",
+      "equals_premerge_local_head": true
+    },
+    {
+      "path": "dashboard/src/components/CommandCenterPrototype.css",
+      "bytes": 52919,
+      "sha256": "883ab8daaa2866afb1fbea5c465a0867cb9dbab3d4c996f2cfcceaac059d13a5",
+      "equals_premerge_local_head": true
+    },
+    {
+      "path": "dashboard/src/App.css",
+      "bytes": 15927,
+      "sha256": "499ab6a7deae9c8926cfcbedf6e43593a8d5f0b0b2f8f984674e0a6c5e10283b",
+      "equals_premerge_local_head": true
+    },
+    {
+      "path": "dashboard/e2e/support/liveRun.ts",
+      "bytes": 10107,
+      "sha256": "75e3d5f41a3afd838946d5bd543c172baad2527032530cb8070920213bd5c511",
+      "equals_premerge_local_head": true
+    }
+  ],
+  "temporary_patch": {
+    "path": "/private/tmp/apexload-main-command-center-resize-offsets-test-only-20261006.patch",
+    "sha256": "8346a55027174a7e891506ab7266be3d19a400e3664d22e31a2f5cda30eab0a8",
+    "target": "dashboard/e2e/command-center-details.spec.ts",
+    "expected_before_bytes": 5822,
+    "expected_before_sha256": "eea3f101357b697df47c93e077bcf92d5992a98cfd3a11b0fd9368be4483cfda",
+    "expected_after_bytes": 7148,
+    "expected_after_sha256": "59b2f1500ac478b1e49cace2984e4e123f2c0507a1118ea60885494606847ca1",
+    "proposed_source_path": "/private/tmp/apexload-main-command-center-details-proposed-20261006.spec.ts",
+    "changes": [
+      "Before scrolling, bounded web-first poll requires actual header/shelf/inset custom properties to exactly match current measured offsetHeight/padding values.",
+      "Preserve existing scrollIntoView and focus, media-label assertion and screenshots.",
+      "Sample action/shelf rectangles atomically in one DOM evaluation and retain exact original action.y>=shelf.y+shelf.height-1 acceptance, with bounded polling.",
+      "No arbitrary sleep, retries policy, viewport changes, CSS policy changes or relaxed tolerance."
+    ],
+    "applied": false,
+    "requires_parent_guarded_apply_after_original_jobs_physically_join": true
+  },
+  "meaningful_coverage": "Existing actual live-run responsive/drawer browser workflow now rejects a missing or stale observer publication and still rejects obscured group actions. Parent should repeat this workflow in both auth profiles, including repeated resize executions, then rerun original full-cycle gate; no fabricated unit or static acceptance substitutes for actual browser execution.",
+  "findings_remaining_in_patch_review": [],
+  "execution": "Read-only source/Git/trace/image inspection; only /private/tmp proposed patch/source/metadata created. No owned source edits, tests/builds, Git writes/staging/commits or cache cleanup. No patch execution or green gate claim."
+}

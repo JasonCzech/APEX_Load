@@ -183,12 +183,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			warnings = append(warnings, fmt.Sprintf("correlation analysis was not completed and no automatic correlation rewrites were applied: %v", err))
 		}
 		if len(analysisWarnings) > 0 {
-			detail := "correlation analysis was incomplete; detected candidates are retained for manual review only and no automatic correlation rewrites were applied: " + strings.Join(analysisWarnings, "; ")
+			// Incomplete analysis misses correlations; it does not invalidate the
+			// ones found. Each detected correlation finished its reuse and
+			// client-origin checks (a budget stop discards the candidate in
+			// flight), so they are applied while the unanalyzed gap stays
+			// visible. A value seen inside a longer identifier is held for review
+			// because the skipped part may hold that longer value.
+			detail := "correlation coverage is incomplete; detected correlations were fully checked and applied (except values that also occur inside a longer identifier, which are held for review), but values in the unanalyzed part keep their recorded literals and need review: " + strings.Join(analysisWarnings, "; ")
 			warnings = append(warnings, detail)
 			diagnostics.Add(diag.Warning, "HAR correlation analysis incomplete", "HAR import", detail)
-			for index := range correlations {
-				correlations[index].ReviewAction = manualCorrelationValueReplacement
-			}
+			correlationVars, correlationVarSources, extraCorrelationExtractors = prepareIncompleteCorrelationApplication(exchanges, correlations)
 		} else {
 			correlationVars, correlationVarSources, extraCorrelationExtractors = prepareCorrelationApplication(exchanges, correlations)
 		}

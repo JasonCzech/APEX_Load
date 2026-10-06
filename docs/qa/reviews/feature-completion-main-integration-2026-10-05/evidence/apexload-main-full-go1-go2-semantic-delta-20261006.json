@@ -1,0 +1,31 @@
+{
+  "schema": "apexload.go-qualification-semantic-delta.v1",
+  "source_pin": {
+    "path": "desktop/files_metadata_darwin_test.go",
+    "sha256": "a12b53c7f69fac760f45508b1e1a34fd0e929230cb55f2a2ef881fc2cedd0b1a",
+    "current_file_equals_reviewed_head_6bbdc997_blob": true,
+    "inventory_scope_limit": "Gate source inventory does not include desktop or runners paths; no claim of historical execution hash bookends for this desktop test. Current source equals the reviewed HEAD blob, and Go1/Go2 used same HEAD under source freeze."
+  },
+  "only_additional_skip": {
+    "test": "TestSecureSavePreservesMacOSSpecialPermissionBits",
+    "package": "github.com/jasonczech/apexload/desktop",
+    "exact_reported_reason": "files_metadata_darwin_test.go:83: test filesystem did not retain set-id bits: mode=04750",
+    "precondition": "Unchanged test requires both setuid and setgid bits (06000) on its test fixture; native stat returned04750, so test skipped before calling secureWriteGrantedFile.",
+    "qualification_limit": "Current fullGo2 does not qualify preservation of both macOS special permission bits. No source/acceptance/runtime weakening was introduced; Go1 passed this unchanged test. No inference is made about the underlying filesystem cause."
+  },
+  "test_pass_delta_equation": {
+    "new_browser_root_test_passes": 19,
+    "new_browser_subtest_passes": 2,
+    "formerly_failed_native_browser_case_passes": 1,
+    "unchanged_desktop_fixture_precondition_pass_to_skip": -1,
+    "net": 21
+  },
+  "dynamic_outcome_names": {
+    "timestamp_subtest_name_changes": 3,
+    "temporary_archive_directory_subtest_name_changes": 1,
+    "net_test_count_change": 0
+  },
+  "required_native_fixture": "TestBrowserResourceActualChromiumAcquisitionArchiveAndPagination passed in fullGo2 in1.19s with81retained entries; no required-native qualification skip occurred.",
+  "prior_red_log_sha256": "0226f87f73ae997decf0697fcf90c9c6cec198d0f23393772668649cd59275a6",
+  "current_green_log_sha256": "37d53ed1afaf64113bfe4ad1a7649ac8421dd2c481738b823efc6a3bcd654140"
+}

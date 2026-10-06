@@ -1,0 +1,179 @@
+{
+  "schema": "apexload.main-command-center-composed-patch-independent-review.v1",
+  "at_utc": "2026-10-06T04:38:33.157595+00:00",
+  "reviewer": "/root/browser_har_audit_resume_v3",
+  "result": "clean within temporary test/config scope; actual execution pending",
+  "inputs_before": [
+    {
+      "path": "/private/tmp/apexload-main-command-center-resize-offsets-test-only-20261006.patch",
+      "bytes": 2682,
+      "sha256": "8346a55027174a7e891506ab7266be3d19a400e3664d22e31a2f5cda30eab0a8"
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-local-auth-coverage-additional-20261006.patch",
+      "bytes": 5320,
+      "sha256": "74f2026197f49db1289e3daac322ae6b463eac6d58e473d45d6f96448dfc8277"
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-resize-readonly-diagnostic-20261006.json",
+      "bytes": 8919,
+      "sha256": "ecae478d35598bc7f4af59da9eea1988ca476ef543e71abf41d0ea1dfd5d2cce"
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-local-auth-coverage-private-review-20261006.json",
+      "bytes": 4441,
+      "sha256": "210821dbe1736a9c2a83dc2dc8b0f162f99a9260d46700ec85f6cf3f2e72d456"
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-details-proposed-20261006.spec.ts",
+      "bytes": 7148,
+      "sha256": "59b2f1500ac478b1e49cace2984e4e123f2c0507a1118ea60885494606847ca1"
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-details-auth-proposed-20261006.spec.ts",
+      "bytes": 8136,
+      "sha256": "52061f3afe884cc48ceda77df535d204976008f7ce046a716eaaf68bb68f0765"
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-playwright-auth-proposed-20261006.config.ts",
+      "bytes": 3350,
+      "sha256": "ce0cfe7ff8567a7e34277fc6fa8cd71ce34b7ab3ec011d7729d35cc162468e69"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/command-center-details.spec.ts",
+      "bytes": 5822,
+      "sha256": "eea3f101357b697df47c93e077bcf92d5992a98cfd3a11b0fd9368be4483cfda"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/playwright.config.ts",
+      "bytes": 3313,
+      "sha256": "0514900e6e509ab3cd13bfb57a97480e0a56825645b2ad30e7a680d08cf9b313"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/support/liveRun.ts",
+      "bytes": 10107,
+      "sha256": "75e3d5f41a3afd838946d5bd543c172baad2527032530cb8070920213bd5c511"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/support/workflow.ts",
+      "bytes": 15949,
+      "sha256": "f43c6b99e7614b88e6e17d0cf827f1ac3802118d87b987f43f7b1a77f2079ce9"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/workflow-command-center.spec.ts",
+      "bytes": 14990,
+      "sha256": "3ad7e1ca303a513fd3c6c581a2977aa4bf4dd121ad564a5817c41165bf015db4"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/src/components/CommandCenterPrototype.tsx",
+      "bytes": 185230,
+      "sha256": "e085a69456006f19fae18d1ccb273dc52efe6d1969243ea3b247154fc57bda02"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/src/components/CommandCenterPrototype.css",
+      "bytes": 52919,
+      "sha256": "883ab8daaa2866afb1fbea5c465a0867cb9dbab3d4c996f2cfcceaac059d13a5"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/src/hooks/apiClient.ts",
+      "bytes": 21470,
+      "sha256": "c85b1704abfc4ba8787eb5f4d4ed4614b3441b4e8f55a2007ec5cd8dbaeab380"
+    }
+  ],
+  "inputs_after": [
+    {
+      "path": "/private/tmp/apexload-main-command-center-resize-offsets-test-only-20261006.patch",
+      "bytes": 2682,
+      "sha256": "8346a55027174a7e891506ab7266be3d19a400e3664d22e31a2f5cda30eab0a8"
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-local-auth-coverage-additional-20261006.patch",
+      "bytes": 5320,
+      "sha256": "74f2026197f49db1289e3daac322ae6b463eac6d58e473d45d6f96448dfc8277"
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-resize-readonly-diagnostic-20261006.json",
+      "bytes": 8919,
+      "sha256": "ecae478d35598bc7f4af59da9eea1988ca476ef543e71abf41d0ea1dfd5d2cce"
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-local-auth-coverage-private-review-20261006.json",
+      "bytes": 4441,
+      "sha256": "210821dbe1736a9c2a83dc2dc8b0f162f99a9260d46700ec85f6cf3f2e72d456"
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-details-proposed-20261006.spec.ts",
+      "bytes": 7148,
+      "sha256": "59b2f1500ac478b1e49cace2984e4e123f2c0507a1118ea60885494606847ca1"
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-details-auth-proposed-20261006.spec.ts",
+      "bytes": 8136,
+      "sha256": "52061f3afe884cc48ceda77df535d204976008f7ce046a716eaaf68bb68f0765"
+    },
+    {
+      "path": "/private/tmp/apexload-main-command-center-playwright-auth-proposed-20261006.config.ts",
+      "bytes": 3350,
+      "sha256": "ce0cfe7ff8567a7e34277fc6fa8cd71ce34b7ab3ec011d7729d35cc162468e69"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/command-center-details.spec.ts",
+      "bytes": 5822,
+      "sha256": "eea3f101357b697df47c93e077bcf92d5992a98cfd3a11b0fd9368be4483cfda"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/playwright.config.ts",
+      "bytes": 3313,
+      "sha256": "0514900e6e509ab3cd13bfb57a97480e0a56825645b2ad30e7a680d08cf9b313"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/support/liveRun.ts",
+      "bytes": 10107,
+      "sha256": "75e3d5f41a3afd838946d5bd543c172baad2527032530cb8070920213bd5c511"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/support/workflow.ts",
+      "bytes": 15949,
+      "sha256": "f43c6b99e7614b88e6e17d0cf827f1ac3802118d87b987f43f7b1a77f2079ce9"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/e2e/workflow-command-center.spec.ts",
+      "bytes": 14990,
+      "sha256": "3ad7e1ca303a513fd3c6c581a2977aa4bf4dd121ad564a5817c41165bf015db4"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/src/components/CommandCenterPrototype.tsx",
+      "bytes": 185230,
+      "sha256": "e085a69456006f19fae18d1ccb273dc52efe6d1969243ea3b247154fc57bda02"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/src/components/CommandCenterPrototype.css",
+      "bytes": 52919,
+      "sha256": "883ab8daaa2866afb1fbea5c465a0867cb9dbab3d4c996f2cfcceaac059d13a5"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/dashboard/src/hooks/apiClient.ts",
+      "bytes": 21470,
+      "sha256": "c85b1704abfc4ba8787eb5f4d4ed4614b3441b4e8f55a2007ec5cd8dbaeab380"
+    }
+  ],
+  "stable": true,
+  "patch_reconstruction": "Both unified diffs applied only in memory to exact current bytes; proposed resized/final spec and config match author proposed files byte for byte. No ROOT patch application.",
+  "review": [
+    "ResizeObserver code publishes measured integer offsetHeight and actual scroller padding; polling independently matches those current measurements before scrolling. Null/missing/NaN offsets cannot satisfy equality.",
+    "Existing scrollIntoView/focus remain; final action and shelf rectangles are measured in one DOM evaluation, retaining exact original y >= shelf bottom - 1 inequality and 15 second bounded wait. No CSS, tolerance, retries policy, fixed sleep or viewport changes.",
+    "Trace diagnostic 238 to 344 offset arithmetic with unchanged scrollTop345 explains failed269.78125 versus required363; this review read diagnostic metadata, not private network bodies or full trace contents.",
+    "Real UI login completes before storageState snapshot; apiClient uses cookie credentials include. Spec-local private API context follows existing workflow pattern, records genuine seeded runs, uses helper abort/terminal handling and disposes context through finally even if provide throws.",
+    "Only 2 existing cases and exact local-auth testMatch filename added. Shared helpers and test bodies remain unchanged except reviewed resize synchronization."
+  ],
+  "findings": [],
+  "limitations": [
+    "No test/build/typecheck/Playwright execution of proposed patches by reviewer; current original fullcycle remains active and RED dev-admin case preserved.",
+    "No full program acceptance or production CSS fix claimed. Parent must apply only after physical joins and qualify both auth profiles including fresh fullcycle."
+  ],
+  "prior_private_analysis_attempt": {
+    "result": "aborted before output creation",
+    "reason": "Review metadata script incorrectly addressed nested finding.failed_geometry as top-level failed_geometry; fixed lookup, repeated all read-only guards."
+  },
+  "execution": "Read-only ROOT sources plus create-only /private/tmp receipt; no source/Git mutation, staging, cleanup or trace body parsing."
+}

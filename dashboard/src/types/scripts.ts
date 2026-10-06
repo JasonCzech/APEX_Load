@@ -44,6 +44,8 @@ export interface ScriptAssertionDefinition {
   value?: string
   min?: number
   max?: number
+  // HTTP body_contains / body_not_contains ignore case (LoadRunner Text/IC).
+  case_insensitive?: boolean
 }
 
 export interface ScriptAuthConfig {
@@ -240,6 +242,8 @@ export interface ThinkTimeConfig {
   multiplier?: number
   limit_ms?: number
   ignore?: boolean
+  // An action delay applied exactly whatever the think-time settings say (lr_force_think_time).
+  force?: boolean
 }
 
 export interface PacingConfig {
@@ -305,6 +309,7 @@ export interface HTTPConfig {
   cache_max_unused_iterations?: number
   cache_excluded_mime_types?: string[]
   html_parse_mode?: 'html' | 'text' | 'any'
+  aura_recorded_failures?: 'require_success' | 'accept_recorded'
   html_excluded_mime_types?: string[]
   connect_timeout_ms?: number
   request_timeout_ms?: number
@@ -568,6 +573,9 @@ export interface JavaVuserConfig {
   use_xbootclasspath?: boolean
   dedicated_class_loader?: boolean
   skip_parameter_evaluation?: boolean
+  // Custom parameter delimiters (.usr ParamLeftBrace/ParamRightBrace); unset means { and }.
+  param_left_brace?: string
+  param_right_brace?: string
 }
 
 export interface JMSConfig {

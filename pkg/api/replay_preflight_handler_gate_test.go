@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestReplayStartHandlersRejectIncompletePreflight(t *testing.T) {
@@ -18,27 +20,27 @@ func TestReplayStartHandlersRejectIncompletePreflight(t *testing.T) {
 		wantWarningText string
 	}{
 		{
-			name: "classic replay missing variable",
+			name: "classic replay unresolved json buffer",
 			path: "/api/v1/scripts/replay",
 			script: map[string]any{
 				"name": "Classic", "version": "1.0.0", "protocol": "http",
 				"config": map[string]any{"base_url": "https://example.test"},
 				"actions": []map[string]any{{
-					"name": "account", "type": "request", "method": http.MethodGet,
-					"target": "/accounts/{{var.account_id}}",
+					"name": "eval", "type": "source_json",
+					"params": map[string]any{"json_object": "account", "buffer": "{{var.account_id}}"},
 				}},
 			},
 			wantMissingVar: "account_id",
 		},
 		{
-			name: "script debug missing variable",
+			name: "script debug unresolved json buffer",
 			path: "/api/v1/scripts/debug/sessions",
 			script: map[string]any{
 				"name": "Debug", "version": "1.0.0", "protocol": "http",
 				"config": map[string]any{"base_url": "https://example.test"},
 				"actions": []map[string]any{{
-					"name": "account", "type": "request", "method": http.MethodGet,
-					"target": "/accounts/{{var.account_id}}",
+					"name": "eval", "type": "source_json",
+					"params": map[string]any{"json_object": "account", "buffer": "{{var.account_id}}"},
 				}},
 			},
 			wantMissingVar: "account_id",
@@ -95,12 +97,62 @@ func TestReplayStartHandlersRejectIncompletePreflight(t *testing.T) {
 			if payload.ReplaySessionID != "" {
 				t.Fatalf("replay_session_id = %q, want no session creation", payload.ReplaySessionID)
 			}
-			if test.wantMissingVar != "" && !containsString(payload.Preflight.MissingVariables, test.wantMissingVar) {
-				t.Fatalf("missing_variables = %#v, want %q", payload.Preflight.MissingVariables, test.wantMissingVar)
+			if test.wantMissingVar != "" && (!containsString(payload.Preflight.MissingVariables, test.wantMissingVar) ||
+				replayPreflightCheckStatus(payload.Preflight, "variables") != "fail") {
+				t.Fatalf("missing_variables = %#v checks=%#v, want %q to fail variable readiness", payload.Preflight.MissingVariables, payload.Preflight.Checks, test.wantMissingVar)
 			}
 			if test.wantWarningText != "" &&
 				!strings.Contains(strings.Join(payload.Preflight.Warnings, "\n"), test.wantWarningText) {
 				t.Fatalf("preflight warnings = %#v, want %q", payload.Preflight.Warnings, test.wantWarningText)
+			}
+		})
+	}
+}
+
+func TestReplayPreflightSendsHTTPRequestPlaceholders(t *testing.T) {
+	request := func(target string) dsl.Action {
+		return dsl.Action{Name: "store", Type: "request", Method: http.MethodGet, Target: target}
+	}
+	tests := []struct {
+		name         string
+		script       *dsl.Script
+		wantValid    bool
+		wantBlocking string
+	}{
+		{
+			name:      "request target",
+			script:    &dsl.Script{Protocol: "http", Actions: []dsl.Action{request("/stores/{{var.store_ref}}")}},
+			wantValid: true,
+		},
+		{
+			name: "json helper buffer",
+			script: &dsl.Script{Protocol: "http", Actions: []dsl.Action{{
+				Name: "eval", Type: "source_json", Params: map[string]any{"json_object": "doc", "buffer": "{{var.store_ref}}"},
+			}}},
+			wantBlocking: "store_ref",
+		},
+		{
+			name:         "non-http protocol",
+			script:       &dsl.Script{Protocol: "browser", Actions: []dsl.Action{{Name: "open", Type: "browser_navigate", Target: "/stores/{{var.store_ref}}"}}},
+			wantBlocking: "store_ref",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			preflight := buildReplayPreflight(test.script, nil, nil, nil)
+			if !containsString(preflight.MissingVariables, "store_ref") {
+				t.Fatalf("missing variables = %v", preflight.MissingVariables)
+			}
+			status := replayPreflightCheckStatus(preflight, "variables")
+			warned := strings.Contains(strings.Join(preflight.Warnings, "\n"), "sent as placeholder text: store_ref")
+			if test.wantValid {
+				if !preflight.Valid || status != "warn" || !warned {
+					t.Fatalf("valid=%v status=%q warnings=%v, want a placeholder warning", preflight.Valid, status, preflight.Warnings)
+				}
+				return
+			}
+			if preflight.Valid || status != "fail" || warned {
+				t.Fatalf("valid=%v status=%q warnings=%v, want %s to block", preflight.Valid, status, preflight.Warnings, test.wantBlocking)
 			}
 		})
 	}

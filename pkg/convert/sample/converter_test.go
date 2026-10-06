@@ -2069,7 +2069,7 @@ func TestPrepareCorrelationApplicationRespectsAggregateRuntimeResultLimit(t *tes
 		})
 	}
 
-	vars, sourceSteps, extraExtractors := prepareCorrelationApplicationWithExtractionLimit(exchanges, correlations, extractionLimit)
+	vars, sourceSteps, extraExtractors := prepareCorrelationApplicationWithExtractionLimit(exchanges, correlations, extractionLimit, false)
 	if len(vars) != 4 || len(sourceSteps) != 4 || len(extraExtractors) != 0 {
 		t.Fatalf("aggregate-limited application = vars %d sources %d extras %#v, want four raw mappings", len(vars), len(sourceSteps), extraExtractors)
 	}

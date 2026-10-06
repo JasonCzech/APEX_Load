@@ -117,10 +117,32 @@ func (pr *ParameterRuntime) RefreshIteration() {
 	}
 	for _, name := range pr.order {
 		param := pr.params[name]
-		if effectiveParameterUpdate(param) == "each_iteration" && hasSameLineReference(param) {
+		if hasSameLineReference(param) && pr.sameLineRefreshesEachIteration(param) {
 			pr.refresh(name)
 		}
 	}
+}
+
+// sameLineRefreshesEachIteration reports whether a same-line parameter moves to
+// a new row each iteration. VuGen ignores a same-line parameter's own update
+// setting (a stale "Once" is common): it always follows its master's row.
+func (pr *ParameterRuntime) sameLineRefreshesEachIteration(param dsl.Parameter) bool {
+	if effectiveParameterUpdate(param) == "each_iteration" {
+		return true
+	}
+	seen := map[string]bool{}
+	for hasSameLineReference(param) {
+		name, master, _, ok := pr.findParameter(param.SameLineAs)
+		if !ok || seen[name] {
+			return false
+		}
+		seen[name] = true
+		if effectiveParameterUpdate(master) == "each_iteration" {
+			return true
+		}
+		param = master
+	}
+	return false
 }
 
 func (pr *ParameterRuntime) ResolveNamed(name string) (string, bool) {
@@ -306,6 +328,9 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState,
 	case "host":
 		return generateHostValue(param)
 	case "uuid":
+		if strings.EqualFold(strings.TrimSpace(param.Format), "uppercase") {
+			return strings.ToUpper(uuid.NewString()), true
+		}
 		return uuid.NewString(), true
 	case "random_string":
 		return generateRandomString(state.random, param.Length, param.Charset), true
@@ -337,12 +362,30 @@ func (pr *ParameterRuntime) generateSameLineValue(param dsl.Parameter, state *pa
 	if !ok || len(values) == 0 {
 		return "", false
 	}
-	if referenceState.lastIndex < 0 || referenceState.lastIndex >= len(values) {
+	index := referenceState.lastIndex
+	if index < 0 {
 		return "", false
 	}
-	state.lastIndex = referenceState.lastIndex
+	if index >= len(values) {
+		// The referenced row can lie beyond this parameter's own data when
+		// the two read different files; apply this parameter's exhaustion
+		// policy to the row number.
+		switch effectiveOnExhaustion(param) {
+		case "wrap":
+			index %= len(values)
+		case "last":
+			index = len(values) - 1
+		case "empty":
+			state.lastIndex = -1
+			state.hasRowPick = true
+			return "", true
+		default:
+			return "", false
+		}
+	}
+	state.lastIndex = index
 	state.hasRowPick = true
-	return values[referenceState.lastIndex], true
+	return values[index], true
 }
 
 func (pr *ParameterRuntime) findParameter(name string) (string, dsl.Parameter, *parameterState, bool) {

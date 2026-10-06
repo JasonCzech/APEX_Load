@@ -290,16 +290,53 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	sourceConstants := collectSourceStringConstants(files)
 	var parsedActions []*ParsedAction
 	var parseErrors []string
-	sourceDeclarations := orderedSourceActionFileDeclarations(projectConfig, files)
+	sourceDeclarations, unscheduledActions := withoutUnscheduledRunActions(
+		orderedSourceActionFileDeclarations(projectConfig, files),
+		runtimeCfg,
+		files,
+	)
 	declarationsByResolvedFile := sourceDeclarationsByResolvedFile(sourceDeclarations, files)
 	type parsedCSource struct {
 		action *ParsedAction
 		err    error
 	}
 	parsedByResolvedFile := make(map[string]parsedCSource)
+	parsedContents := make(map[string]string)
+	parseSourceFile := func(name string) (string, parsedCSource, bool) {
+		resolved, content, ambiguous := findSourceArchiveFile(files, name)
+		if resolved == "" || len(ambiguous) > 0 {
+			return "", parsedCSource{}, false
+		}
+		cacheKey := strings.ToLower(normalizeRuntimeArchivePath(resolved))
+		cached, parsedAlready := parsedByResolvedFile[cacheKey]
+		if !parsedAlready {
+			parsedContent := inlineSourceStringConstants(content, sourceConstants)
+			cached.action, cached.err = ParseActionFile(resolved, parsedContent)
+			parsedByResolvedFile[cacheKey] = cached
+			parsedContents[resolved] = parsedContent
+		}
+		return cacheKey, cached, true
+	}
+	// Parse every C source first, including action files the run logic never
+	// runs, so helper functions they define resolve wherever executed code
+	// calls them.
+	var helperSources []*ParsedAction
+	for _, declaration := range append(append([]SourceActionFile(nil), sourceDeclarations...), unscheduledActions...) {
+		if _, cached, ok := parseSourceFile(declaration.Name); ok && cached.action != nil && !containsParsedAction(helperSources, cached.action) {
+			helperSources = append(helperSources, cached.action)
+		}
+	}
+	helpers := buildSourceHelperTable(helperSources, parsedContents)
+	scheduledFiles := make(map[string]bool, len(sourceDeclarations))
+	for _, declaration := range sourceDeclarations {
+		if resolved, _, ambiguous := findSourceArchiveFile(files, declaration.Name); resolved != "" && len(ambiguous) == 0 {
+			scheduledFiles[strings.ToLower(resolved)] = true
+		}
+	}
+	var inlineWarnings []string
 	for _, declaration := range sourceDeclarations {
 		actionFile := declaration.Name
-		resolvedActionFile, content, ambiguous := findSourceArchiveFile(files, actionFile)
+		resolvedActionFile, _, ambiguous := findSourceArchiveFile(files, actionFile)
 		phase := normalizeSourcePhase(declaration.Phase)
 		if phase == "" {
 			phase = sourceActionPhaseForProjectFile(projectConfig, actionFile)
@@ -321,18 +358,53 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			parseErrors = appendUnique(parseErrors, actionFile)
 			continue
 		}
-		cacheKey := strings.ToLower(normalizeRuntimeArchivePath(resolvedActionFile))
-		cached, parsedAlready := parsedByResolvedFile[cacheKey]
-		if !parsedAlready {
-			cached.action, cached.err = ParseActionFile(resolvedActionFile, inlineSourceStringConstants(content, sourceConstants))
-			parsedByResolvedFile[cacheKey] = cached
+		cacheKey, cached, _ := parseSourceFile(resolvedActionFile)
+		source := cached.action
+		if source != nil {
+			// Expression calls run only as helper calls (see
+			// embeddedHelperCallKind); calls naming no helper stay dropped.
+			filtered := *source
+			filtered.Functions = helpers.withoutUnresolvedEmbeddedCalls(mergeEmbeddedCalls(source.Functions, source.embeddedCalls))
+			filtered.embeddedCalls = nil
+			source = &filtered
 		}
 		parsed := sourceActionForLifecycleDeclaration(
-			cached.action,
+			source,
 			declaration,
 			declarationsByResolvedFile[cacheKey],
+			helpers,
 		)
 		err := cached.err
+		if parsed != nil {
+			entry, matched := entryFunctions(parsed.Functions, declaredSourceActionName(declaration))
+			table := helpers
+			if !matched {
+				// This file's helper bodies stay at top level, so only
+				// helpers other files define are inlined.
+				table = helpers.excludingFile(resolvedActionFile)
+			}
+			var warnings, inlinedFiles []string
+			parsed.Functions, warnings, inlinedFiles = inlineSourceHelpers(entry, table)
+			inlineWarnings = append(inlineWarnings, warnings...)
+			for _, file := range inlinedFiles {
+				// A helper from an action file the run logic skips runs here,
+				// so that file's parse failures gate this phase.
+				if scheduledFiles[strings.ToLower(file)] {
+					continue
+				}
+				helperFile, ok := parsedByResolvedFile[strings.ToLower(normalizeRuntimeArchivePath(file))]
+				if !ok || helperFile.action == nil {
+					continue
+				}
+				for _, failure := range helperFile.action.ParseFailures {
+					if strings.TrimSpace(failure.Filename) == "" {
+						failure.Filename = file
+					}
+					failure.Phase = phase
+					parsed.ParseFailures = appendUniqueCSourceParseFailures(parsed.ParseFailures, failure)
+				}
+			}
+		}
 		if parsed != nil {
 			if err == nil || len(parsed.Functions) > 0 || len(parsed.ParseFailures) > 0 {
 				parsedActions = append(parsedActions, parsed)
@@ -383,6 +455,8 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			RuntimeConfig:      runtimeCfg,
 			ParameterFileNames: parameterFileNames,
 			ParsedActions:      parsedActions,
+			UnscheduledActions: sourceActionNames(unscheduledActions),
+			InlineWarnings:     inlineWarnings,
 		}); err != nil {
 			return nil, err
 		}
@@ -425,6 +499,8 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		RuntimeConfig:      runtimeCfg,
 		ParameterFileNames: parameterFileNames,
 		ParsedActions:      parsedActions,
+		UnscheduledActions: sourceActionNames(unscheduledActions),
+		InlineWarnings:     inlineWarnings,
 	}); err != nil {
 		return nil, err
 	}
@@ -557,6 +633,11 @@ type archiveFinalizationContext struct {
 	ParameterFileNames   []string
 	TrueClientInspection *trueclient.ArchiveInspection
 	ParsedActions        []*ParsedAction
+	// UnscheduledActions are run actions the project declares but its run
+	// logic never runs; they were not imported (see withoutUnscheduledRunActions).
+	UnscheduledActions []string
+	// InlineWarnings report helper calls that could not be inlined.
+	InlineWarnings []string
 }
 
 func finalizeEnterpriseArchiveImportResult(
@@ -567,6 +648,16 @@ func finalizeEnterpriseArchiveImportResult(
 		return nil
 	}
 	appendCSourceParseFailureGates(result, ctx.ParsedActions)
+	appendSplicedCommentWarnings(result, ctx.ParsedActions)
+	applySourceParamBraces(result, ctx.ProjectConfig)
+	result.Warnings = append(result.Warnings, ctx.InlineWarnings...)
+	if len(ctx.UnscheduledActions) > 0 {
+		subject, object := "they were", "them"
+		if len(ctx.UnscheduledActions) == 1 {
+			subject, object = "it was", "it"
+		}
+		result.Warnings = append(result.Warnings, fmt.Sprintf("The run logic never runs %s, so %s not imported; LoadRunner skips %s too. Add %s to the run logic in VuGen and re-import if %s should run.", strings.Join(ctx.UnscheduledActions, ", "), subject, object, object, strings.Fields(subject)[0]))
+	}
 	applyBrowserEmulationRuntimeSettingsReview(result, ctx.RuntimeConfig)
 	parameterSections := make(map[string]map[string]map[string]string)
 	scripts := result.effectiveScripts()
@@ -1367,6 +1458,7 @@ func sourceActionForLifecycleDeclaration(
 	parsed *ParsedAction,
 	declaration SourceActionFile,
 	siblings []SourceActionFile,
+	helpers sourceHelperTable,
 ) *ParsedAction {
 	if parsed == nil {
 		return nil
@@ -1376,8 +1468,9 @@ func sourceActionForLifecycleDeclaration(
 		phase = sourceActionPhase(declaration.Name)
 	}
 	out := &ParsedAction{
-		Filename: parsed.Filename,
-		Phase:    phase,
+		Filename:            parsed.Filename,
+		Phase:               phase,
+		SplicedCommentLines: parsed.SplicedCommentLines,
 	}
 
 	phases := make(map[string]struct{})
@@ -1395,6 +1488,11 @@ func sourceActionForLifecycleDeclaration(
 			ownerPhase, ok := sourceLifecyclePhaseForFunction(function.sourceFunction, siblings)
 			if ok && ownerPhase == phase {
 				out.Functions = append(out.Functions, function)
+			}
+			if !ok && helpers.definesHelper(function.sourceFunction) {
+				// A helper body runs where lifecycle code calls it (see
+				// inlineSourceHelpers), not as its own lifecycle phase.
+				continue
 			}
 			if !ok {
 				out.ParseFailures = appendUniqueCSourceParseFailures(
@@ -2432,4 +2530,21 @@ func runtimeSectionsByExactPath(all map[string]map[string]map[string]string, wan
 		}
 	}
 	return nil, false
+}
+
+func containsParsedAction(actions []*ParsedAction, action *ParsedAction) bool {
+	for _, candidate := range actions {
+		if candidate == action {
+			return true
+		}
+	}
+	return false
+}
+
+func sourceActionNames(declarations []SourceActionFile) []string {
+	names := make([]string, 0, len(declarations))
+	for _, declaration := range declarations {
+		names = append(names, declaredSourceActionName(declaration))
+	}
+	return names
 }

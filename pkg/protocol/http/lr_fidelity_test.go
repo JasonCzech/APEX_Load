@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"io"
 	"net/http"
@@ -170,5 +171,21 @@ func TestExplicitResourceRefererWinsOverHTMLDiscovery(t *testing.T) {
 	result, err := h.Execute(context.Background(), &protocol.Action{Type: "http_request", Method: "GET", Target: server.URL, Params: map[string]any{"resources": []any{map[string]any{"url": "/asset", "referer": "https://recorded.example/origin"}}}})
 	if err != nil || !result.Success || hits.Load() != 1 {
 		t.Fatalf("result=%+v err=%v resource hits=%d", result, err, hits.Load())
+	}
+}
+
+func TestExplicitResourcesAllowRecordedPageSizes(t *testing.T) {
+	resources := func(count int) []any {
+		out := make([]any, count)
+		for i := range out {
+			out[i] = map[string]any{"url": fmt.Sprintf("/static/r%d.js", i)}
+		}
+		return out
+	}
+	if refs, err := ParseExplicitResources(map[string]any{"resources": resources(106)}); err != nil || len(refs) != 106 {
+		t.Fatalf("106 resources: refs=%d err=%v, want accepted", len(refs), err)
+	}
+	if _, err := ParseExplicitResources(map[string]any{"resources": resources(maxPageResources + 1)}); err == nil {
+		t.Fatalf("%d resources accepted, want the per-page bound enforced", maxPageResources+1)
 	}
 }

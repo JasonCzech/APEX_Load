@@ -112,3 +112,49 @@ func TestBrotliAdmissionShrinksToHeaderWindow(t *testing.T) {
 		t.Fatal("brotli workspace leaked")
 	}
 }
+
+// Close from another goroutine ends a Read that is waiting for workspace
+// (and holding the read lock) instead of stalling for the whole wait.
+func TestReaderCloseEndsAdmissionWait(t *testing.T) {
+	body := encoded(t, []byte("sample"), "gzip")
+	budget := NewMemoryBudget(chunkBytes + flateWorkspaceBytes)
+	limits := DefaultLimits(1024)
+	limits.MemoryBudget = budget
+	limits.AdmissionWait = 30 * time.Second
+	holder, err := NewReader(context.Background(), io.NopCloser(bytes.NewReader(body)), []string{"gzip"}, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := holder.Read(make([]byte, 1)); err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Close()
+	waiter, err := NewReader(context.Background(), io.NopCloser(bytes.NewReader(body)), []string{"gzip"}, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := waiter.Read(make([]byte, 1))
+		readDone <- err
+	}()
+	for budget.Stats().Waits == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	closed := make(chan struct{})
+	go func() {
+		_ = waiter.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close stalled behind the admission wait")
+	}
+	if err := <-readDone; Kind(err) != Canceled {
+		t.Fatalf("waiting Read error = %v, want Canceled", err)
+	}
+	if used := budget.Used(); used != chunkBytes+flateWorkspaceBytes {
+		t.Fatalf("budget used = %d, want only the holder's workspace", used)
+	}
+}

@@ -93,7 +93,7 @@ func evaluate(a protocol.Assertion, result *protocol.Result, bodyText string) er
 func evaluateResponseAssertion(a protocol.Assertion, result *protocol.Result, responseHeaders http.Header, bodyText string) error {
 	switch a.Type {
 	case "aura_actions_success":
-		return evaluateAuraAssertion(result, nil, []byte(bodyText))
+		return evaluateAuraAssertion(a, false, result, nil, []byte(bodyText))
 	case "status_code":
 		expected, ok := toInt(a.Expected)
 		if !ok {
@@ -137,12 +137,12 @@ func evaluateResponseAssertion(a protocol.Assertion, result *protocol.Result, re
 		}
 
 	case "body_contains":
-		if !strings.Contains(bodyText, a.Value) {
+		if !bodyContains(bodyText, a.Value, a.CaseInsensitive) {
 			return fmt.Errorf("response body does not contain %q", a.Value)
 		}
 
 	case "body_not_contains":
-		if strings.Contains(bodyText, a.Value) {
+		if bodyContains(bodyText, a.Value, a.CaseInsensitive) {
 			return fmt.Errorf("response body contains %q (unexpected)", a.Value)
 		}
 
@@ -215,8 +215,11 @@ func responseHeaderValues(headers http.Header, name string) []string {
 func ValidateAssertionDefinition(assertion protocol.Assertion) error {
 	switch assertion.Type {
 	case "aura_actions_success":
-		if assertion.Value != "" || assertion.Expected != nil || assertion.Min != 0 || assertion.Max != 0 || assertion.LegacyHTMLCheck {
-			return errors.New("aura_actions_success assertion accepts no value, expected, min, max or legacy bypass")
+		if assertion.Value != "" || assertion.Min != 0 || assertion.Max != 0 || assertion.LegacyHTMLCheck {
+			return errors.New("aura_actions_success assertion accepts no value, min, max or legacy bypass")
+		}
+		if _, err := aura.ParseBaseline(assertion.Expected); err != nil {
+			return fmt.Errorf("aura_actions_success assertion: %w", err)
 		}
 	case "status_code", "status_code_not":
 		if _, ok := toInt(assertion.Expected); !ok {
@@ -429,9 +432,18 @@ func evaluateContentChecksLimited(checks []contentCheck, result *protocol.Result
 	return first
 }
 
-// Aura reporting is value-free and never changes the observed HTTP status.
-func evaluateAuraAssertion(result *protocol.Result, requestBody, responseBody []byte) error {
+// Aura reporting is value-free and never changes the observed HTTP status. An
+// imported baseline relates the replay to the recording: actions that failed
+// there too are labelled, and acceptRecorded accepts an action that ends in
+// the same unsuccessful state.
+func evaluateAuraAssertion(assertion protocol.Assertion, acceptRecorded bool, result *protocol.Result, requestBody, responseBody []byte) error {
 	report := aura.Validate(requestBody, responseBody)
+	if recorded, err := aura.ParseBaseline(assertion.Expected); err == nil {
+		report.ApplyRecordedBaseline(recorded, acceptRecorded)
+	}
+	if report.AcceptedRecordedFailures > 0 {
+		addReplayWarning(result, "aura_recorded_failure_accepted")
+	}
 	if result.ProtocolEvidence == nil {
 		result.ProtocolEvidence = make(map[string]any)
 	}
@@ -475,4 +487,11 @@ func retainAuraOutcomeEvidence(report aura.Report) aura.Report {
 		report.Issues = append([]aura.Issue(nil), report.Issues[:maxRetainedAuraDetails]...)
 	}
 	return report
+}
+
+func bodyContains(body, text string, caseInsensitive bool) bool {
+	if caseInsensitive {
+		return strings.Contains(strings.ToLower(body), strings.ToLower(text))
+	}
+	return strings.Contains(body, text)
 }

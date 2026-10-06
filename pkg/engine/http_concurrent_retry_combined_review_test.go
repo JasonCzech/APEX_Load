@@ -66,7 +66,7 @@ func TestConcurrentHTTPCombinedReviewDiscardedRetryClassification(t *testing.T) 
 				vu.Script.Config.Results = resultsConfig
 				sink := &concurrentCaptureSink{}
 				vu.ResultSink = sink
-				result, err := vu.executeHTTPSequenceAction(context.Background(), group, errConfig)
+				result, err := vu.executeHTTPSequenceAction(context.Background(), group, errConfig, nil)
 				if err != nil || result == nil || !result.Success || len(sink.results) != 2 || vu.Variables["ordinary_alias"] != value || vu.Variables["access_token"] != "" {
 					t.Fatal("retry changed joined outcomes or merged a discarded extraction")
 				}
@@ -203,7 +203,7 @@ func TestConcurrentHTTPCombinedReviewRetryClassificationFailureAndCancellation(t
 				var public [][]byte
 				errConfig := dsl.ErrorHandlingConfig{MaxRetries: 1, RetryDelayMs: 1}
 				if runner == "load" {
-					result, err := vu.executeHTTPSequenceAction(ctx, group, errConfig)
+					result, err := vu.executeHTTPSequenceAction(ctx, group, errConfig, nil)
 					if result == nil || result.Success || (mode == "cancel" && !errors.Is(err, context.Canceled)) || (mode != "cancel" && err != nil) {
 						t.Fatal("classification/error boundary lost its unsuccessful outcome")
 					}

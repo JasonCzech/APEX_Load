@@ -13,6 +13,7 @@ func (b *Browser) closeWithContext(ctx context.Context) error {
 	b.censorDocumentEvidence(nil, "context_closed")
 	b.mu.Lock()
 	b.closing = true
+	b.retireNetworkWorkersLocked()
 	requestPolicyStop := b.requestPolicyStop
 	b.requestPolicyStop = nil
 	cdp := b.pwCDP

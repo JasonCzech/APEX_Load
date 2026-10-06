@@ -1,0 +1,134 @@
+{
+  "schema": "apexload.final-embedded-static-qualification.v1",
+  "scope": "Seven selected existing Go root tests compiled with final UI2 production embedded assets; not a replacement for native diagnostics, full-Go qualification, or full browser profiles.",
+  "label": "main-final-embedded-static-1",
+  "command": [
+    "go",
+    "test",
+    "-json",
+    "./pkg/api",
+    "-run",
+    "^(TestStaticRoutesServeIndexForClientPath|TestStaticRoutesReturnNotFoundForMissingAssetPath|TestStaticRoutesReturnJSONNotFoundForUnknownAPIPath|TestDashboardStaticReadyAcceptsMatchingAssets|TestDashboardStaticReadyRejectsMissingBundleAsset|TestDashboardStaticReadyRejectsUnbuiltIndex|TestAPIDocsHandlersServeEmbeddedGeneratedAssets)$",
+    "-count=1",
+    "-timeout=10m"
+  ],
+  "exit_code": 0,
+  "duration_seconds": 65.691,
+  "started_utc": "2026-10-06T09:21:23.741499+00:00",
+  "finished_utc": "2026-10-06T09:22:29.433103+00:00",
+  "helper_sha256": "d186c69109218016d4ea0ddabc79728e9ce8e2b9919be25a93dbc842841a8f54",
+  "receipt_path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-final-embedded-static-1.json",
+  "receipt_sha256": "9912c6798f1c2c7cd9f148552c8eb4a1f1c7d5ce51e3c752ad48e873a1b395d8",
+  "log_path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-final-embedded-static-1.log",
+  "log_sha256": "6d72eceb379da310280d3aeb30d2b6afd55ce0bec8d8652a35c718ac4af44055",
+  "log_bytes": 8262,
+  "physical_join": {
+    "owned_child_pid": 93451,
+    "owned_child_process_group": 93451,
+    "owned_child_physically_joined": true,
+    "owned_child_group_empty": true,
+    "cancelled_signal": null,
+    "cleanup_escalated": false,
+    "errors": [],
+    "scope": "Only this gate-owned direct child/process group; the inner UI wrapper separately owns and joins its profile groups. No claim about unrelated processes."
+  },
+  "counts": {
+    "root_test_passes": 7,
+    "subtest_passes": 2,
+    "test_pass_events": 9,
+    "package_passes": 1,
+    "skips": 0,
+    "failures": 0
+  },
+  "actual_passes": [
+    {
+      "test": "TestAPIDocsHandlersServeEmbeddedGeneratedAssets/swagger_yaml",
+      "elapsed_seconds": 0.35,
+      "time": "2026-10-06T05:22:28.585784-04:00"
+    },
+    {
+      "test": "TestAPIDocsHandlersServeEmbeddedGeneratedAssets/endpoint_catalog_json",
+      "elapsed_seconds": 0,
+      "time": "2026-10-06T05:22:28.587561-04:00"
+    },
+    {
+      "test": "TestAPIDocsHandlersServeEmbeddedGeneratedAssets",
+      "elapsed_seconds": 0.35,
+      "time": "2026-10-06T05:22:28.58757-04:00"
+    },
+    {
+      "test": "TestStaticRoutesServeIndexForClientPath",
+      "elapsed_seconds": 0.01,
+      "time": "2026-10-06T05:22:28.595675-04:00"
+    },
+    {
+      "test": "TestStaticRoutesReturnNotFoundForMissingAssetPath",
+      "elapsed_seconds": 0.01,
+      "time": "2026-10-06T05:22:28.600735-04:00"
+    },
+    {
+      "test": "TestStaticRoutesReturnJSONNotFoundForUnknownAPIPath",
+      "elapsed_seconds": 0,
+      "time": "2026-10-06T05:22:28.60558-04:00"
+    },
+    {
+      "test": "TestDashboardStaticReadyAcceptsMatchingAssets",
+      "elapsed_seconds": 0,
+      "time": "2026-10-06T05:22:28.605603-04:00"
+    },
+    {
+      "test": "TestDashboardStaticReadyRejectsMissingBundleAsset",
+      "elapsed_seconds": 0,
+      "time": "2026-10-06T05:22:28.605624-04:00"
+    },
+    {
+      "test": "TestDashboardStaticReadyRejectsUnbuiltIndex",
+      "elapsed_seconds": 0,
+      "time": "2026-10-06T05:22:28.605635-04:00"
+    }
+  ],
+  "scope_limitations": {
+    "readiness_fixture_tests": [
+      "TestDashboardStaticReadyAcceptsMatchingAssets",
+      "TestDashboardStaticReadyRejectsMissingBundleAsset",
+      "TestDashboardStaticReadyRejectsUnbuiltIndex"
+    ],
+    "readiness_fixture_limit": "These three readiness tests use MapFS, not final production files.",
+    "client_route_test_limit": "TestStaticRoutesServeIndexForClientPath intentionally allows missing-dashboard fallback, so full UI2 real-controller browser passes and exact final inventory remain required.",
+    "API_docs_test": "Reads genuine embedded generated Swagger/catalog bytes, two subtests.",
+    "inventory_limit": "5758 inventoried source inputs as defined by V4; does not include every repository file (desktop/runners excluded)."
+  },
+  "combined_provenance": {
+    "full_go2_receipt_path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-full-go-2.json",
+    "full_go2_receipt_sha256": "d1c51e980bad269b18434ba8e5b09845615e753bef0fb490f3a1fa99d9aaa1d3",
+    "full_ui2_receipt_path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-dashboard-full-cycle-2.json",
+    "full_ui2_receipt_sha256": "1e6752b5ea451eef1f4dde9de6c518a71d52840dde0524e21e6e15b9ba531c58",
+    "source_bookends_and_full_go2_full_ui2_source_after_identical": true,
+    "static_embed_bookends_equal_full_ui2_final_embed": true,
+    "embed_files": 260,
+    "source_inputs": 5758,
+    "canonical_final_embed_inventory_sha256": "6cac3e15ebd3e63ac373b0bef99f665c5453efbe5a5bc9068b88ba20a301783d",
+    "previous_full_go2_embed_equality": "Not asserted: final UI2 rebuild changes build metadata and dependent content-addressed chunks; narrow staged-output provenance review is separate."
+  },
+  "environment": {
+    "TMPDIR": "/private/tmp/apexload-main-finalstatic-Sjqf4t",
+    "APEXLOAD_IMPORT_ASSET_DIR": "/private/tmp/apexload-main-finalstatic-Sjqf4t/import-assets",
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_AUTH_PORT": "18472",
+    "APEXLOAD_E2E_PROFILE": null,
+    "APEXLOAD_E2E_OUTPUT_ROOT": null,
+    "APEXLOAD_BROWSER_TESTS": "require",
+    "APEXLOAD_ANALYSIS_MEMORY_LIMIT": "512MiB",
+    "APEXLOAD_ANALYSIS_SPILL_LIMIT": "128MiB",
+    "TZ": "America/New_York"
+  },
+  "retained_owned_temp_root": "/private/tmp/apexload-main-finalstatic-Sjqf4t",
+  "cache_cleanup": "Root-owned final cleanup; no caches cleaned by verifier."
+}

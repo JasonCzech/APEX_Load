@@ -17,7 +17,7 @@ func httpActionSpecs() []ActionSpec {
 		{Name: "body", Kind: FieldKindString, Doc: "Request body; template variables are expanded."},
 		{Name: "body_file", Kind: FieldKindString, Doc: "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there."},
 		{Name: "body_encoding", Kind: FieldKindString, Doc: "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail."},
-		{Name: "params.resources", Kind: FieldKindArray, Doc: "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification."},
+		{Name: "params.resources", Kind: FieldKindArray, Doc: "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification."},
 		{Name: "params", Kind: FieldKindObject, Doc: "Protocol-specific request options."},
 		{Name: "soap", Kind: FieldKindObject, Doc: "SOAP-only: {action, operation, body_mode (raw_xml|generated)}."},
 	}
@@ -56,7 +56,7 @@ func httpActionSpecs() []ActionSpec {
 		Protocols: []string{"http"},
 		Summary:   "Composite HTTP step with sequential execution by default or bounded concurrent requests sharing one VUser session.",
 		Fields: []FieldSpec{
-			{Name: "params.requests", Required: true, Kind: FieldKindArray, Doc: "Child HTTP requests with full action fields. At least one required; concurrent mode permits at most 256. Concurrent children are prepared in source order, joined, then publish extractions in source order."},
+			{Name: "params.requests", Required: true, Kind: FieldKindArray, Doc: "Child HTTP requests with full action fields. At least one required; concurrent mode permits at most 256. Concurrent children are prepared in source order, joined, then publish extractions in source order. A concurrent group whose every child sets metadata.source_request_transaction records one transaction per child under that name, timed by the child's request and passing when it succeeds, instead of the group's aggregate transaction; each counts toward a transaction goal. Naming only some children is rejected."},
 			{Name: "params.execution_mode", Kind: FieldKindEnum, Enum: []string{HTTPSequenceSequential, HTTPSequenceConcurrent}, SchemaEnum: true, Doc: "Sequential when absent. Concurrent requests share the parent HTTP session; debugger pause and step occur at the group boundary."},
 			{Name: "params.max_concurrency", Kind: FieldKindInt, Maximum: MaxHTTPConcurrency, Doc: "Integer 1..16. Concurrent default is min(8, child count). Concurrent preparation is bounded to 16 MiB of source and prepared surfaces and 64 MiB of work. Duplicate extractor names and nonzero child think time are rejected before traffic."},
 		},

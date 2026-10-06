@@ -1,0 +1,301 @@
+{
+  "schema": "apexload.main-integration.final-README-proof-preflight-review.v1",
+  "at_utc": "2026-10-06T09:27:28.749456+00:00",
+  "reviewer": "/root/resume_integration_audit",
+  "README_sha256": "4013b3119c5cd875345cdd526cd8834b7fd8f085a829cb404bdde42736281901",
+  "proof_sha256": "2975fff5121ff616c4bde3fe327f1b44037aa172f18873c08aa8c9074de6cd18",
+  "V2_auditor_sha256": "55fe40d2ea2601bff17552562ae29db917d3911d937359300d92eae4af96d195",
+  "result": "Clean factual README and independent reproducible exact build-delta proof; final staged audit still pending",
+  "qualified_gates": [
+    {
+      "role": "go",
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-full-go-2.json",
+      "receipt_sha256": "d1c51e980bad269b18434ba8e5b09845615e753bef0fb490f3a1fa99d9aaa1d3",
+      "label": "main-full-go-2",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "./...",
+        "-count=1",
+        "-timeout=45m"
+      ],
+      "log_bytes": 30800002,
+      "log_sha256": "37d53ed1afaf64113bfe4ad1a7649ac8421dd2c481738b823efc6a3bcd654140",
+      "physical_join_verified": true,
+      "static_counts": null
+    },
+    {
+      "role": "ui",
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-dashboard-full-cycle-2.json",
+      "receipt_sha256": "1e6752b5ea451eef1f4dde9de6c518a71d52840dde0524e21e6e15b9ba531c58",
+      "label": "main-dashboard-full-cycle-2",
+      "command": [
+        "npm",
+        "--prefix",
+        "dashboard",
+        "run",
+        "test:cycle"
+      ],
+      "log_bytes": 95701,
+      "log_sha256": "715e1367fabeacf9319b2242953ca3d86e399e25c33b7f0384d174670000ce4c",
+      "physical_join_verified": true,
+      "static_counts": null
+    },
+    {
+      "role": "static",
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-main-integration-2026-10-05/evidence/main-final-embedded-static-1.json",
+      "receipt_sha256": "9912c6798f1c2c7cd9f148552c8eb4a1f1c7d5ce51e3c752ad48e873a1b395d8",
+      "label": "main-final-embedded-static-1",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "./pkg/api",
+        "-run",
+        "^(TestStaticRoutesServeIndexForClientPath|TestStaticRoutesReturnNotFoundForMissingAssetPath|TestStaticRoutesReturnJSONNotFoundForUnknownAPIPath|TestDashboardStaticReadyAcceptsMatchingAssets|TestDashboardStaticReadyRejectsMissingBundleAsset|TestDashboardStaticReadyRejectsUnbuiltIndex|TestAPIDocsHandlersServeEmbeddedGeneratedAssets)$",
+        "-count=1",
+        "-timeout=10m"
+      ],
+      "log_bytes": 8262,
+      "log_sha256": "6d72eceb379da310280d3aeb30d2b6afd55ce0bec8d8652a35c718ac4af44055",
+      "physical_join_verified": true,
+      "static_counts": {
+        "top_passes": 7,
+        "sub_passes": 2,
+        "package_passes": 1,
+        "failed_or_skipped": 0
+      }
+    }
+  ],
+  "source_exact_all_three": true,
+  "final_static_before_after_exact_UI2_embedded": true,
+  "independently_reconstructed_normalized_payloads": [
+    {
+      "old_path": "pkg/api/static/assets/AccessPage-D-Cp8yWS.js",
+      "new_path": "pkg/api/static/assets/AccessPage-BjFB76gv.js",
+      "normalized_sha256": "93379fc62d921d37feb1205501d647de6b86f8ba3871e6eec70ea643549ab71c",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/ApiGuidePage-B2kaHI50.js",
+      "new_path": "pkg/api/static/assets/ApiGuidePage-B-Zn8vU7.js",
+      "normalized_sha256": "3e7a32aec40a4a006217e10c640c52c67df1ee7624a555697c85742d9733aa61",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/ApplicationRepositoryPage-C0_TPocQ.js",
+      "new_path": "pkg/api/static/assets/ApplicationRepositoryPage-CUiBNKXX.js",
+      "normalized_sha256": "c5c97a21c8f0732ef43b7b02abad339d91939aa01badb852b5b237c675a8b914",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/BrunoImport-3PP2iXzD.js",
+      "new_path": "pkg/api/static/assets/BrunoImport-Drh-9gND.js",
+      "normalized_sha256": "5a1d3b516e60751f41ae8967516b432fb3b571f392355c167b18ccb065c64e28",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/CommandCenterPrototype-BeJleHNk.js",
+      "new_path": "pkg/api/static/assets/CommandCenterPrototype-Bl-bkb4k.js",
+      "normalized_sha256": "ee6bddc77b38c189fd7c957a668a450ece765d38d1ca48ac2b7f30fcc34cc4ac",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/DashboardPage-P7lWVLY5.js",
+      "new_path": "pkg/api/static/assets/DashboardPage-BM5z7hP1.js",
+      "normalized_sha256": "f6acd51ccc0f1982bb21da56ae2463c1bb38e3c732e833538b9957581d65f089",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/EnterpriseArchiveImport-CW3jWMo6.js",
+      "new_path": "pkg/api/static/assets/EnterpriseArchiveImport-BIBIhIRe.js",
+      "normalized_sha256": "c13c515e733f9db528d491a16b357edf90c8b1d5d0051712c183938b0ba638b5",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/GitHubSyncModal-MVW26BXi.js",
+      "new_path": "pkg/api/static/assets/GitHubSyncModal-bF2qt0pX.js",
+      "normalized_sha256": "1f10c614f96b024c3884218e1c09ad88752be02b532988aea2c653d5f0b6bc41",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/ImportDropzone-B6mWCqLF.js",
+      "new_path": "pkg/api/static/assets/ImportDropzone-x6s_A5pr.js",
+      "normalized_sha256": "3fa92d353b7b496643fd933a6c8702b244599e47dbdcda0704c331163154bea1",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/JMeterImport-DiEM8EQj.js",
+      "new_path": "pkg/api/static/assets/JMeterImport-DLnRFaxg.js",
+      "normalized_sha256": "a31947d7323c8e19309c6b4c0b494c463bc517732b93229b409f419a66668fde",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/MonitoringPage-tJvJj3_Q.js",
+      "new_path": "pkg/api/static/assets/MonitoringPage-Dx1zQydb.js",
+      "normalized_sha256": "65a18b87eefb32f76211b05293dc46327611933db2403f49fc8e8c8a2b2fccb5",
+      "timestamp_literal_occurrences": 2
+    },
+    {
+      "old_path": "pkg/api/static/assets/NewTestPage-3_rr7WHP.js",
+      "new_path": "pkg/api/static/assets/NewTestPage-DcYrqWhT.js",
+      "normalized_sha256": "d9efeb58e0849ad1a161530e58c29858763935ece5733670e39a8d3f541cef06",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/OracleEBusinessReviewImport-D7ebUjN-.js",
+      "new_path": "pkg/api/static/assets/OracleEBusinessReviewImport-C81CHhOk.js",
+      "normalized_sha256": "395f53cc949ce7acb94812cb483fd2f5a4c0b07ef04515300f5252da166b288e",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/PersonalSettings-Wm4p_uLk.js",
+      "new_path": "pkg/api/static/assets/PersonalSettings-D-tRIZwf.js",
+      "normalized_sha256": "0fc030640445c2371c79687e2c7adfb7dfd0b2db7c658a76e31dde0c4d40938e",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/ProtocolAssetImport-BSQZfIqr.js",
+      "new_path": "pkg/api/static/assets/ProtocolAssetImport-doJKidCk.js",
+      "normalized_sha256": "951789f39f0038e544c415b0f952401c1e39b362460b11738896ced37234a651",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/RecordingStudio-CTclpgaY.js",
+      "new_path": "pkg/api/static/assets/RecordingStudio-Dm4hzgck.js",
+      "normalized_sha256": "c0677321170c60a6226172bb21172c3998e2acc1be0c4e9b4d93dcb2dd76fd57",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/RepositoryGuidePage-BRsQLPuj.js",
+      "new_path": "pkg/api/static/assets/RepositoryGuidePage-DRsKu6W3.js",
+      "normalized_sha256": "529724cdf1f9c6de2e8fedba21a808097224cef6c97a3c938b89e46f1c446b29",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/ResultsPage-Dz_Nxc94.js",
+      "new_path": "pkg/api/static/assets/ResultsPage-BFwUlcWW.js",
+      "normalized_sha256": "fad6c1412f4fcca0ead1b8dc267cbffdb3129a89a0fe8d891b67951a5faf9611",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/SampleScriptImport-CotKGEcM.js",
+      "new_path": "pkg/api/static/assets/SampleScriptImport-BX5cd6kh.js",
+      "normalized_sha256": "cc89a65961eeb303a9065826786d30004a5849a76730c4051c6b0a0ba93cefc6",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/ScriptEditor-DZC-Nvmg.js",
+      "new_path": "pkg/api/static/assets/ScriptEditor-DnrnTfFV.js",
+      "normalized_sha256": "78611f86a2119f79e7067f00c1d074e29dbfd4cdae8ab462e744c65cd6fadf76",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/ScriptImportReview-Cb0vpNwa.js",
+      "new_path": "pkg/api/static/assets/ScriptImportReview-DbdPsFxu.js",
+      "normalized_sha256": "f204754f3f945ce7f1d57ce5338282340caa68705eb69e922585d14680f59ccf",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/ScriptsAuthoringSurface-DeemfCYA.js",
+      "new_path": "pkg/api/static/assets/ScriptsAuthoringSurface-B_bCnOnN.js",
+      "normalized_sha256": "1061f6fe9b0d71bec1d66ba3f1e219b8ec42e7c9401a3b4f33e28e6af2df6a92",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/ScriptsPage-DweTt7-J.js",
+      "new_path": "pkg/api/static/assets/ScriptsPage-DssRoqbY.js",
+      "normalized_sha256": "dda5913b8659fb174b1afceba68661278b644647c36ead09273f60bbd223bcde",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/SettingsPage-CelK9VKr.js",
+      "new_path": "pkg/api/static/assets/SettingsPage-CwbBDBYZ.js",
+      "normalized_sha256": "1a9172aa9d0989d12ea8b144ad897aaf8018b02a08e7800794ea347362f7c5f9",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/SourceMappingReview-CrbIcY4J.js",
+      "new_path": "pkg/api/static/assets/SourceMappingReview-CQ_zV1qH.js",
+      "normalized_sha256": "2482efde9ece9210cc1fea4bf46a99a169705fda5ddcf65ad2ce86076becd0c1",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/SwaggerDocsPage-CPbU42t0.js",
+      "new_path": "pkg/api/static/assets/SwaggerDocsPage-DtE6yIQZ.js",
+      "normalized_sha256": "f08754b18ab7c251e11bd9c34cd4bfae173377e9aa6110481544225d99e18114",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/TestHub-D7KyrtO4.js",
+      "new_path": "pkg/api/static/assets/TestHub-vICcXx6s.js",
+      "normalized_sha256": "d23f26786a57dc6f2ab5a96d547ab524109f0049df7501589dcbd9e4143a4e4f",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/UserSettingsPage-Dd7c213j.js",
+      "new_path": "pkg/api/static/assets/UserSettingsPage-Bq4l3urQ.js",
+      "normalized_sha256": "7263134a9600697e0c3d297dd9ef5eb9e1e052ec45a17cd8d26355aa80002983",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/YAMLImportChooser-DbkF_y37.js",
+      "new_path": "pkg/api/static/assets/YAMLImportChooser-DRC6y7hi.js",
+      "normalized_sha256": "cc15df750d1f0e568cf59fd9cf6a6840e1e74b018ce9b7246a4f8b00f579c4eb",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/fleetCatalogModel-B8hNwzVm.js",
+      "new_path": "pkg/api/static/assets/fleetCatalogModel-BfDa6d2u.js",
+      "normalized_sha256": "409763599886831f8513290ddf2cd29ac01b0cffc15001bd0afad4ae82f6d34c",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/index-DQS-O48L.js",
+      "new_path": "pkg/api/static/assets/index-CMBzWJgy.js",
+      "normalized_sha256": "4acdb05b7d663866380d7a09ec2e79c56799b3c2d0e6be9a4c47f506cb81c7da",
+      "timestamp_literal_occurrences": 0
+    },
+    {
+      "old_path": "pkg/api/static/assets/useApiGuideTopbarContribution-BY5O_icK.js",
+      "new_path": "pkg/api/static/assets/useApiGuideTopbarContribution-D-2XJ0xa.js",
+      "normalized_sha256": "5591ddf9ec72ea3c41a70b8707e618adac320e4f6e345134ccc7afca159eabad",
+      "timestamp_literal_occurrences": 1
+    },
+    {
+      "old_path": "pkg/api/static/index.html",
+      "new_path": "pkg/api/static/index.html",
+      "normalized_sha256": "3a9891dd2bbd288c8a4564db61ead923c918486f4328262b93e2145cd57d09d3",
+      "timestamp_literal_occurrences": 0
+    }
+  ],
+  "timestamp_literal_occurrences": 3,
+  "Go_counts": {
+    "package_skip": 7,
+    "test_pass": 29489,
+    "package_pass": 127,
+    "test_skip": 28
+  },
+  "UI_profiles": {
+    "dev-admin": [
+      262,
+      257,
+      5
+    ],
+    "local-auth": [
+      200,
+      199,
+      1
+    ]
+  },
+  "interpretation": [
+    "The32asset basename map plus3literal timestamps transforms33final payloads exactly to cryptographically pinned originalGo2 hashes; no residual difference or equalityclaim",
+    "README fullsuite/focused/native/authcounts and skip limitations match retainedreceipts/JUnit",
+    "Separate originalGo2embed/fullUI2rebuilt/freshstaticqualification represented honestly; production unchanged and existingreadinessfixtures described asfixtures",
+    "No fullprovider/platform/scale/customeracceptance or broadercompletionclaim; privateHARnotcopied/replayed; commit/push remain authorized nextstep"
+  ],
+  "findings": [],
+  "QA_freeze_or_stage_audit_executed": false,
+  "execution": "Read-only privatehelper gate preflight, source/asset hashes/in-memory inverse transform/ledger/JUnit/README checks; create-only private receipt. No tests/builds/source/Git/cachewrites; -B prevents Python bytecode generation."
+}

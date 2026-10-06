@@ -67,7 +67,7 @@ func TestEngineDispatchCoversCatalogEngineActions(t *testing.T) {
 // unsupportedEngineActions are dispatched so saved drafts fail with an explicit
 // message instead of an unknown-type error, but they must never report success.
 var unsupportedEngineActions = map[string]string{
-	"source_json": "LoadRunner JSON helpers are not evaluated yet",
+	"source_json": "LoadRunner JSON helpers other than lr_eval_json, lr_json_get_values and lr_json_stringify are not evaluated",
 	"source_xml":  "LoadRunner XML helpers are not evaluated yet",
 }
 

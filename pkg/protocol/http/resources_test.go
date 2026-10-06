@@ -458,6 +458,32 @@ func TestHTTPExecuteResourceCapPerPage(t *testing.T) {
 	if hits := atomic.LoadInt32(&resourceHits); int(hits) != maxPageResources {
 		t.Fatalf("server hits = %d, want %d", hits, maxPageResources)
 	}
+	if result.ProtocolEvidence["resource_cap_reached"] != true {
+		t.Fatalf("evidence = %+v, want resource_cap_reached", result.ProtocolEvidence)
+	}
+}
+
+// Only a fetchable leftover means the page was truncated; repeated or
+// filtered refs past the limit would never have been fetched.
+func TestFilterResourceRefsReportsCapOnlyForFetchableLeftovers(t *testing.T) {
+	page, _ := neturl.Parse("https://example.test/")
+	fetcher := &resourceFetcher{}
+	refs := func(urls ...string) []resourceRef {
+		out := make([]resourceRef, 0, len(urls))
+		for _, u := range urls {
+			out = append(out, resourceRef{url: u})
+		}
+		return out
+	}
+	if filtered, capped := fetcher.filterResourceRefs(refs("https://example.test/a", "https://example.test/b", "https://example.test/a", "ftp://example.test/c"), page, 2, nil); len(filtered) != 2 || capped {
+		t.Fatalf("filtered=%d capped=%v, want 2 refs and no cap for duplicate/unsupported leftovers", len(filtered), capped)
+	}
+	if filtered, capped := fetcher.filterResourceRefs(refs("https://example.test/a", "https://example.test/b", "https://example.test/c"), page, 2, nil); len(filtered) != 2 || !capped {
+		t.Fatalf("filtered=%d capped=%v, want 2 refs and the cap reported", len(filtered), capped)
+	}
+	if filtered, capped := fetcher.filterResourceRefs(refs("https://example.test/a"), page, 0, map[string]struct{}{"https://example.test/a": {}}); len(filtered) != 0 || capped {
+		t.Fatalf("filtered=%d capped=%v, want no cap when the only leftover was already fetched", len(filtered), capped)
+	}
 }
 
 func TestHTTPExecuteResourcesFeedCacheAcrossPages(t *testing.T) {

@@ -3781,6 +3781,83 @@ func TestHandleImportJMeterZipUsesJMXAndCSVSidecars(t *testing.T) {
 	}
 }
 
+// LoadRunner Enterprise stores a JMeter script as a .usz: a ZIP holding the
+// .jmx (here saved with a byte-order mark) beside VuGen project files.
+func TestHandleImportJMeterAcceptsLoadRunnerEnterpriseUSZ(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var zipBody bytes.Buffer
+	archive := zip.NewWriter(&zipBody)
+	for name, content := range map[string]string{
+		"Plan.usr":                 "[General]\r\nType=JMeter\r\nActiveTypes=JMeter\r\n",
+		"ScriptUploadMetadata.xml": `<?xml version="1.0" encoding="utf-8"?><VugenScriptMetadata><Protocol>JMETER</Protocol></VugenScriptMetadata>`,
+		"default.cfg":              "[General]\r\n",
+		"Plan.jmx": "\ufeff" + `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan"/>
+    <hashTree>
+      <ThreadGroup testname="HTTP"/>
+      <hashTree>
+        <HTTPSamplerProxy testname="HTTP Request">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/status</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`,
+	} {
+		entry, err := archive.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	part, err := form.CreateFormFile("file", "Plan.usz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(zipBody.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	if err := form.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", &body)
+	req.Header.Set("Content-Type", form.FormDataContentType())
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Scripts []struct {
+			Actions []struct {
+				Target string `json:"target"`
+			} `json:"actions"`
+		} `json:"scripts"`
+		Summary struct {
+			FileName string `json:"file_name"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Summary.FileName != "Plan.jmx" || len(result.Scripts) != 1 || len(result.Scripts[0].Actions) != 1 || result.Scripts[0].Actions[0].Target != "/status" {
+		t.Fatalf("result = %+v, want the converted inner JMX", result)
+	}
+}
+
 func TestHandleValidateJMeterImport(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer

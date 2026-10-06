@@ -14,37 +14,45 @@ import (
 
 // ParsedFunction represents a single C/VUser source function call extracted from a script.
 type ParsedFunction struct {
-	Name                                string            // e.g. "web_url", "web_submit_data", "lr_think_time"
-	StepName                            string            // The first string argument (step name)
-	Args                                map[string]string // Named key-value arguments extracted from ITEMDATA/LAST pairs
-	RawArgs                             []string          // Raw string arguments in order
-	CallArgs                            []ParsedArgument  // Structured top-level C call arguments in order
-	Headers                             map[string]string // Extracted header key-value pairs
-	HeaderList                          dsl.HeaderList    // Ordered header occurrences when the source preserves them
-	Body                                string            // Request body if present
-	Method                              string            // HTTP method (for web_custom_request)
-	URL                                 string            // Target URL
-	Action                              string            // Action/target URL for form submissions
-	Cookies                             []ParsedCookie    // Cookies added through web_add_cookie
-	Phase                               string            // init, action, or teardown
-	LineNumber                          int               // Source line number for diagnostics
-	Filename                            string            // Source file containing the function
-	EndLine                             int               // Source line where the function call ends
-	RawBlock                            string            // Original source block for source review
-	JavaOrigin                          bool              // Body was decoded from Java source; skip C-string unescaping
-	Conditions                          []string          // Enclosing if/else conditions (raw C, outermost first; else pre-negated as !(...))
-	ConditionIDs                        []string          // Stable per-construct identities (source positions) parallel to Conditions
-	Loops                               []string          // Enclosing loop headers (raw C, outermost first)
-	LoopIDs                             []string          // Stable per-construct identities (source positions) parallel to Loops
-	sourceColumn                        int               // 1-based source column used to deduplicate embedded/fallback call discovery
-	sourceOffset                        int               // parser-local byte offset used only for stable evaluation ordering
-	sourceEndOffset                     int               // exclusive parser-local byte offset
-	sourceFunction                      string            // enclosing C function definition; used to preserve lifecycle ownership
+	Name            string            // e.g. "web_url", "web_submit_data", "lr_think_time"
+	StepName        string            // The first string argument (step name)
+	Args            map[string]string // Named key-value arguments extracted from ITEMDATA/LAST pairs
+	RawArgs         []string          // Raw string arguments in order
+	CallArgs        []ParsedArgument  // Structured top-level C call arguments in order
+	Headers         map[string]string // Extracted header key-value pairs
+	HeaderList      dsl.HeaderList    // Ordered header occurrences when the source preserves them
+	Body            string            // Request body if present, C escapes decoded once
+	RawBody         string            // Body with its source C escapes intact (code-page byte encoding); empty when unknown
+	Method          string            // HTTP method (for web_custom_request)
+	URL             string            // Target URL
+	Action          string            // Action/target URL for form submissions
+	Cookies         []ParsedCookie    // Cookies added through web_add_cookie
+	Phase           string            // init, action, or teardown
+	LineNumber      int               // Source line number for diagnostics
+	Filename        string            // Source file containing the function
+	EndLine         int               // Source line where the function call ends
+	RawBlock        string            // Original source block for source review
+	JavaOrigin      bool              // Body was decoded from Java source; skip C-string unescaping
+	Conditions      []string          // Enclosing if/else conditions (raw C, outermost first; else pre-negated as !(...))
+	ConditionIDs    []string          // Stable per-construct identities (source positions) parallel to Conditions
+	Loops           []string          // Enclosing loop headers (raw C, outermost first)
+	LoopIDs         []string          // Stable per-construct identities (source positions) parallel to Loops
+	sourceColumn    int               // 1-based source column used to deduplicate embedded/fallback call discovery
+	sourceOffset    int               // parser-local byte offset used only for stable evaluation ordering
+	sourceEndOffset int               // exclusive parser-local byte offset
+	sourceFunction  string            // enclosing C function definition; used to preserve lifecycle ownership
+	// cLocals are the qualified int locals of the enclosing C function that
+	// its flow conditions may read (see c_locals.go).
+	cLocals                             map[string]bool
 	containsUnsupportedTransactionCall  bool
 	dependsOnUnsupportedTransactionFlow bool
 	javaJDBCConnection                  *javaJDBCConnection
 	itemDataReviewReason                string
 	itemDataURLForm                     bool
+	// embeddedCall marks a call to a script-defined C function made inside
+	// an expression rather than as its own statement (see
+	// embeddedHelperCallKind). It runs only through helper inlining.
+	embeddedCall string
 }
 
 type ParsedCookie struct {
@@ -70,6 +78,13 @@ type ParsedAction struct {
 	Phase         string
 	Functions     []ParsedFunction
 	ParseFailures []CSourceParseFailure
+	// SplicedCommentLines are code lines a backslash-continued // comment
+	// swallows; they are reported, not imported.
+	SplicedCommentLines []CSplicedCommentLine
+	// embeddedCalls are calls made inside expressions (see
+	// embeddedHelperCallKind), in source order. Only helper inlining reads
+	// them.
+	embeddedCalls []ParsedFunction
 }
 
 // CSourceParseFailure is value-free evidence that a C lifecycle/action file
@@ -109,6 +124,10 @@ type ProjectConfig struct {
 	BaseURL           string
 	ThinkTimeMin      float64
 	ThinkTimeMax      float64
+	// ParamLeftBrace and ParamRightBrace are the .usr parameter delimiters
+	// ("{" and "}" unless the script changed them, as Java scripts often do).
+	ParamLeftBrace  string
+	ParamRightBrace string
 	// Transactions are the transaction names the project declares in
 	// [TransactionsOrder]/[Transactions], in declared order. They let the
 	// importer cross-check that every declared transaction survived
@@ -173,12 +192,15 @@ var (
 // surrounding C validity, so it recovers the valid steps the AST parser drops.
 func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 	analysis := analyzeCTransactionSource(filename, content)
+	spliced := findSplicedCommentLines(content)
 	astParsed, astErr := parseActionFileASTWithAnalysis(filename, content, analysis)
 	if astErr == nil && len(astParsed.Functions) > 0 {
+		astParsed.SplicedCommentLines = spliced
 		return astParsed, nil
 	}
 
-	legacyParsed, legacyErr := parseActionFileLegacy(filename, content)
+	legacyParsed, legacyErr := parseActionFileLegacy(filename, content, splicedCommentLineSet(spliced))
+	legacyParsed.SplicedCommentLines = spliced
 	if astParsed != nil {
 		legacyParsed.ParseFailures = appendUniqueCSourceParseFailures(
 			legacyParsed.ParseFailures,
@@ -208,6 +230,7 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 	// otherwise-empty file; otherwise surface the richer AST diagnostic so the
 	// caller can flag the archive for review.
 	if astErr == nil {
+		astParsed.SplicedCommentLines = spliced
 		return astParsed, nil
 	}
 	return legacyParsed, astErr
@@ -235,7 +258,10 @@ func appendUniqueCSourceParseFailures(
 	return failures
 }
 
-func parseActionFileLegacy(filename string, content string) (*ParsedAction, error) {
+// parseActionFileLegacy scans content line by line. Lines in splicedComments
+// belong to a backslash-continued // comment and are skipped, as the C parser
+// skips them.
+func parseActionFileLegacy(filename string, content string, splicedComments map[int]bool) (*ParsedAction, error) {
 	parsed := &ParsedAction{
 		Filename:  filename,
 		Functions: make([]ParsedFunction, 0),
@@ -254,7 +280,10 @@ func parseActionFileLegacy(filename string, content string) (*ParsedAction, erro
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
-		parseLine := stripCComments(line, &inComment)
+		parseLine := ""
+		if !splicedComments[lineNum] {
+			parseLine = stripCComments(line, &inComment)
+		}
 		trimmed := strings.TrimSpace(parseLine)
 
 		// Skip empty lines, comments
@@ -468,7 +497,7 @@ func parseFunctionBlock(block string, filename string, lineNum int, endLine int,
 		parseWebRegFind(&fn, inner)
 	case "web_link", "web_image", "web_image_check":
 		parseWebLinkImage(&fn, inner)
-	case "lr_think_time":
+	case "lr_think_time", "lr_force_think_time":
 		parseLRThinkTime(&fn, inner)
 	case "lr_start_transaction", "lr_end_transaction":
 		if len(fn.RawArgs) > 0 {
@@ -727,10 +756,12 @@ func parseWebCustomRequest(fn *ParsedFunction, inner string) {
 		fn.Method = fn.Args["Method"]
 	}
 	if m := reBodyArg.FindStringSubmatch(inner); len(m) > 1 {
-		fn.Body = m[1]
+		fn.Body = rawSourceStringContent(m[1])
+		fn.RawBody = m[1]
 	}
 	if fn.Args["Body"] != "" {
 		fn.Body = fn.Args["Body"]
+		fn.RawBody = rawSourceArgument(fn, "Body", fn.Body)
 	}
 	applyMaskedBodyReference(fn)
 }
@@ -754,8 +785,10 @@ func parseWebREST(fn *ParsedFunction, inner string) {
 	}
 	if fn.Args["Body"] != "" {
 		fn.Body = fn.Args["Body"]
+		fn.RawBody = rawSourceArgument(fn, "Body", fn.Body)
 	} else if m := reBodyArg.FindStringSubmatch(inner); len(m) > 1 {
-		fn.Body = m[1]
+		fn.Body = rawSourceStringContent(m[1])
+		fn.RawBody = m[1]
 	}
 	applyMaskedBodyReference(fn)
 	extractWebRESTHeaders(fn)
@@ -825,10 +858,12 @@ func parseWebServiceCall(fn *ParsedFunction, inner string) {
 		fn.URL = fn.Args["Action"]
 	}
 	if m := reBodyArg.FindStringSubmatch(inner); len(m) > 1 {
-		fn.Body = m[1]
+		fn.Body = rawSourceStringContent(m[1])
+		fn.RawBody = m[1]
 	}
 	if fn.Args["Body"] != "" {
 		fn.Body = fn.Args["Body"]
+		fn.RawBody = rawSourceArgument(fn, "Body", fn.Body)
 	}
 
 	if soapAction, ok := fn.Args["SOAPAction"]; ok && soapAction != "" {
@@ -1210,6 +1245,10 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 				cfg.ScriptLanguage = value
 			case "runtype":
 				cfg.RunType = value
+			case "paramleftbrace":
+				cfg.ParamLeftBrace = value
+			case "paramrightbrace":
+				cfg.ParamRightBrace = value
 			case "defaultcfg":
 				cfg.DefaultCfg = pathValue
 				cfg.RuntimeFile = pathValue
@@ -1486,7 +1525,11 @@ func cleanINIConfigValue(section, key, value string) string {
 		strings.EqualFold(strings.TrimSpace(section), "RunLogicFiles") {
 		return cleanRuntimePathValue(value)
 	}
-	return cleanConfigValue(value)
+	cleaned := cleanConfigValue(value)
+	if cleaned == "" && strings.EqualFold(strings.TrimSpace(key), "Delimiter") {
+		return whitespaceParameterDelimiter(value)
+	}
+	return cleaned
 }
 
 // cleanRuntimePathValue removes INI quoting without interpreting backslashes
@@ -1550,8 +1593,8 @@ func decodeAdjacentCStringLiterals(value string) (string, bool) {
 			return "", false
 		}
 
-		decoded, err := strconv.Unquote(trimmed[start:i])
-		if err != nil {
+		decoded, ok := decodeCStringContent(trimmed[start+1 : i-1])
+		if !ok {
 			return "", false
 		}
 		out.WriteString(decoded)
@@ -1572,7 +1615,7 @@ func isASCIIWhitespace(ch byte) bool {
 
 // extractThinkTime extracts think time value in seconds from an lr_think_time call.
 func ExtractThinkTimeSeconds(fn ParsedFunction) (float64, bool) {
-	if fn.Name != "lr_think_time" {
+	if fn.Name != "lr_think_time" && fn.Name != "lr_force_think_time" {
 		return 0, false
 	}
 	secStr, ok := fn.Args["seconds"]

@@ -3,6 +3,7 @@ package enterprisearchive
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 
 	"modernc.org/cc/v4"
@@ -46,7 +47,7 @@ func parseActionFileASTWithAnalysis(
 	seenCalls := make(map[string]struct{})
 	unsupportedConditionIDs := make(map[string]struct{})
 	unsupportedLoopIDs := make(map[string]struct{})
-	appendParsedFunction := func(fn ParsedFunction, flow sourceFlowContext) {
+	withFlow := func(fn ParsedFunction, flow sourceFlowContext) ParsedFunction {
 		fn.sourceFunction = flow.function
 		for _, frame := range flow.conditions {
 			fn.Conditions = append(fn.Conditions, frame.Text)
@@ -62,6 +63,10 @@ func parseActionFileASTWithAnalysis(
 				fn.dependsOnUnsupportedTransactionFlow = true
 			}
 		}
+		return fn
+	}
+	appendParsedFunction := func(fn ParsedFunction, flow sourceFlowContext) {
+		fn = withFlow(fn, flow)
 		key := parsedSourceCallOccurrenceKey(fn)
 		if _, exists := seenCalls[key]; exists {
 			return
@@ -69,9 +74,56 @@ func parseActionFileASTWithAnalysis(
 		seenCalls[key] = struct{}{}
 		parsed.Functions = append(parsed.Functions, fn)
 	}
+	// Expression calls are kept apart from the statement calls every other
+	// consumer reads; only helper inlining merges them back (see
+	// mergeEmbeddedCalls). A statement call visited first under the same
+	// occurrence key wins.
+	var embeddedCalls []ParsedFunction
+	appendEmbeddedCall := func(fn ParsedFunction, flow sourceFlowContext) {
+		fn = withFlow(fn, flow)
+		key := parsedSourceCallOccurrenceKey(fn)
+		if _, exists := seenCalls[key]; exists {
+			return
+		}
+		seenCalls[key] = struct{}{}
+		embeddedCalls = append(embeddedCalls, fn)
+	}
 
 	jumpLoops := make(map[string]struct{})
+	// Calls still open at the current walk position, outermost first. The
+	// walk is pre-order and in source order, so a call nested in another
+	// call's arguments is visited while its enclosing call is on the stack.
+	var openCallRanges [][2]int
+	cLocalNames := cLocalCandidates(normalized)
+	cLocals := map[string]map[string]bool{} // C function -> qualified locals
+	emitCLocalWrite := func(name, value string, line, column, offset, endOffset int, flow sourceFlowContext) {
+		rawBlock := rawSourceBlock(originalLines, line, line)
+		fn, parseErr := parseFunctionBlock(cLocalSaveCall(name, value), filename, line, line, rawBlock)
+		if parseErr != nil {
+			return
+		}
+		fn.sourceColumn = column
+		fn.sourceOffset = offset
+		fn.sourceEndOffset = endOffset
+		appendParsedFunction(fn, flow)
+	}
 	walkCCNode(ast.TranslationUnit, func(node cc.Node, flow sourceFlowContext) {
+		if declaration, ok := node.(*cc.Declaration); ok {
+			if flow.function == "" || len(cLocalNames) == 0 {
+				return
+			}
+			match := cLocalDeclarationRe.FindStringSubmatch(strings.TrimSpace(cc.NodeSource(declaration)))
+			if match == nil || !cLocalNames[match[1]] {
+				return
+			}
+			if cLocals[flow.function] == nil {
+				cLocals[flow.function] = map[string]bool{}
+			}
+			cLocals[flow.function][match[1]] = true
+			position := declaration.Position()
+			emitCLocalWrite(match[1], match[2], position.Line, position.Column, position.Offset, position.Offset, flow)
+			return
+		}
 		if jump, ok := node.(*cc.JumpStatement); ok {
 			for _, loopID := range flow.jumpAffectedLoopIDs(jump.Case) {
 				jumpLoops[loopID] = struct{}{}
@@ -114,7 +166,31 @@ func parseActionFileASTWithAnalysis(
 					analysis.directCalls[key] = span
 				}
 			}
+			nested := false
+			if callEnd > callStart {
+				for len(openCallRanges) > 0 && openCallRanges[len(openCallRanges)-1][1] <= callStart {
+					openCallRanges = openCallRanges[:len(openCallRanges)-1]
+				}
+				if top := len(openCallRanges) - 1; top >= 0 && openCallRanges[top][0] <= callStart && callEnd <= openCallRanges[top][1] {
+					nested = true
+				}
+				openCallRanges = append(openCallRanges, [2]int{callStart, callEnd})
+			}
 			if !callee.related {
+				// A call made inside an expression (rc = Step();) is not a
+				// statement call. Record it so a script-defined helper still
+				// runs there; a statement call was already recorded under the
+				// same occurrence key and is deduplicated.
+				if kind := embeddedHelperCallKind(callee.sourceName, flow, nested); kind != "" {
+					rawBlock := rawSourceBlock(originalLines, startLine, endLine)
+					if fn, parseErr := parseFunctionBlock(strings.TrimSpace(cc.NodeSource(call))+";", filename, startLine, endLine, rawBlock); parseErr == nil {
+						fn.sourceColumn = call.Position().Column
+						fn.sourceOffset = callStart
+						fn.sourceEndOffset = callEnd
+						fn.embeddedCall = kind
+						appendEmbeddedCall(fn, flow)
+					}
+				}
 				return
 			}
 			for _, id := range flow.evaluatedConditionIDs {
@@ -154,6 +230,15 @@ func parseActionFileASTWithAnalysis(
 			return
 		}
 		block := strings.TrimSpace(cc.NodeSource(stmt.ExpressionList))
+		if match := cLocalAssignmentRe.FindStringSubmatch(block); match != nil && cLocals[flow.function][match[1]] {
+			position := stmt.ExpressionList.Position()
+			endOffset := position.Offset
+			if semicolon := stmt.Token.Position(); semicolon.IsValid() {
+				endOffset = semicolon.Offset
+			}
+			emitCLocalWrite(match[1], match[2], position.Line, position.Column, position.Offset, endOffset, flow)
+			return
+		}
 		if block == "" || !reFuncCall.MatchString(block) || isCControlCall(block) {
 			return
 		}
@@ -190,22 +275,61 @@ func parseActionFileASTWithAnalysis(
 
 	applyAnalyzedSourceCallSpans(parsed.Functions, analysis)
 	parsed.Functions = orderAndMarkSourceFunctions(parsed.Functions)
+	for index := range parsed.Functions {
+		parsed.Functions[index].cLocals = cLocals[parsed.Functions[index].sourceFunction]
+	}
+	sort.SliceStable(embeddedCalls, func(i, j int) bool { return embeddedCalls[i].sourceOffset < embeddedCalls[j].sourceOffset })
+	for index := range embeddedCalls {
+		embeddedCalls[index].cLocals = cLocals[embeddedCalls[index].sourceFunction]
+	}
+	parsed.embeddedCalls = embeddedCalls
 
 	// A loop whose body jumps (break/continue/goto/return) cannot be
 	// reproduced by a simple count or per-pass condition; defeat its header
 	// translation so it imports linearly with a review warning.
 	if len(jumpLoops) > 0 {
-		for fi := range parsed.Functions {
-			fn := &parsed.Functions[fi]
-			for li, loopID := range fn.LoopIDs {
-				if _, jumped := jumpLoops[loopID]; jumped && !strings.HasSuffix(fn.Loops[li], sourceLoopJumpMarker) {
-					fn.Loops[li] += sourceLoopJumpMarker
+		for _, functions := range [][]ParsedFunction{parsed.Functions, parsed.embeddedCalls} {
+			for fi := range functions {
+				fn := &functions[fi]
+				for li, loopID := range fn.LoopIDs {
+					if _, jumped := jumpLoops[loopID]; jumped && !strings.HasSuffix(fn.Loops[li], sourceLoopJumpMarker) {
+						fn.Loops[li] += sourceLoopJumpMarker
+					}
 				}
 			}
 		}
 	}
 
 	return parsed, nil
+}
+
+// Kinds of embeddedCall.
+const (
+	// embeddedCallInline: the value is computed once where it stands (an
+	// assignment, declaration initializer, return value or if/switch
+	// condition), so a helper's body can run at that point.
+	embeddedCallInline = "inline"
+	// embeddedCallReview: a loop header re-evaluates the call every pass, and
+	// a call inside another call's arguments supplies a value the inlined
+	// body cannot, so a helper call there stays for review.
+	embeddedCallReview = "review"
+)
+
+// embeddedHelperCallKind classifies a call made inside an expression to a
+// function that may be script-defined. LoadRunner and converter-mapped
+// functions are never helpers and are not recorded.
+func embeddedHelperCallKind(name string, flow sourceFlowContext, nested bool) string {
+	name = strings.TrimSpace(name)
+	if name == "" || flow.function == "" || !cIdentifierPattern.MatchString(name) {
+		return ""
+	}
+	if _, known := lookupSourceFunction(name); known || isSourceFileOutputFunction(name) {
+		return ""
+	}
+	if nested || len(flow.evaluatedLoopIDs) > 0 {
+		return embeddedCallReview
+	}
+	return embeddedCallInline
 }
 
 type sourceASTDirectCall struct {

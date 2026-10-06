@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 )
 
 func TestListCorrelationRulesEndpoint(t *testing.T) {
@@ -220,6 +222,7 @@ func TestDiagnoseCorrelationsEndpointRejectsCandidateOverflow(t *testing.T) {
 	}
 }
 
-// Keep the transport regression independent of unexported correlate constants.
-// 1025 candidates is one above the engine's documented per-observation limit.
-func maxCorrelationCandidatesPerObservationForAPITest() int { return 1024 }
+// One more candidate than the engine's per-observation limit overflows it.
+func maxCorrelationCandidatesPerObservationForAPITest() int {
+	return correlate.MaxCandidatesPerObservation
+}

@@ -262,8 +262,11 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	auth, redactedAuth := toProtocolAuthConfig(action.Auth, vu)
 	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
 	params, redactedParams := vu.interpolateAnyMapWithSecrets(action.Params)
-	if dsl.CanonicalActionType(strings.ToLower(strings.TrimSpace(action.Type))) == "java_vuser_run" && !vu.javaVuserSkipsParameterEvaluation() {
-		params, redactedParams = vu.withJavaVuserRuntimeParameters(params, redactedParams)
+	if dsl.CanonicalActionType(strings.ToLower(strings.TrimSpace(action.Type))) == "java_vuser_run" {
+		if !vu.javaVuserSkipsParameterEvaluation() {
+			params, redactedParams = vu.withJavaVuserRuntimeParameters(params, redactedParams)
+		}
+		params, redactedParams = vu.withJavaVuserParamBraces(params, redactedParams)
 	}
 	discardSuccessfulResponseBody := false
 	captureMessageDetail := false
@@ -593,6 +596,53 @@ func (vu *VUser) withJavaVuserRuntimeParameters(params, redactedParams map[strin
 	return params, redactedParams
 }
 
+// withJavaVuserParamBraces delivers custom parameter delimiters (.usr
+// ParamLeftBrace/ParamRightBrace) to the runner's lr.eval_string as reserved
+// lr_parameters entries, which the lrapi shim consumes instead of storing as
+// parameters. They are configuration, so they travel even when automatic
+// parameter evaluation is skipped.
+func (vu *VUser) withJavaVuserParamBraces(params, redactedParams map[string]any) (map[string]any, map[string]any) {
+	if vu == nil || vu.Script == nil {
+		return params, redactedParams
+	}
+	cfg := vu.Script.Config.JavaVuser
+	if cfg.ParamLeftBrace == "" || cfg.ParamRightBrace == "" {
+		return params, redactedParams
+	}
+	set := func(container map[string]any) (map[string]any, bool) {
+		if container == nil {
+			container = make(map[string]any, 1)
+		}
+		entries, ok := stringAnyMap(container["lr_parameters"])
+		if !ok {
+			if _, present := container["lr_parameters"]; present {
+				return container, false // malformed authored input; validation reports it
+			}
+			entries = make(map[string]any, 2)
+		}
+		merged := make(map[string]any, len(entries)+2)
+		for name, value := range entries {
+			merged[name] = value
+		}
+		merged[javaVuserParamLeftBraceKey] = cfg.ParamLeftBrace
+		merged[javaVuserParamRightBraceKey] = cfg.ParamRightBrace
+		container["lr_parameters"] = merged
+		return container, true
+	}
+	var ok bool
+	if params, ok = set(params); ok {
+		redactedParams, _ = set(redactedParams)
+	}
+	return params, redactedParams
+}
+
+// Reserved lr_parameters keys for custom parameter delimiters; they must match
+// PARAM_LEFT_BRACE_KEY and PARAM_RIGHT_BRACE_KEY in runners/java_vuser/lrapi/lr.java.
+const (
+	javaVuserParamLeftBraceKey  = "__apexload_param_left_brace"
+	javaVuserParamRightBraceKey = "__apexload_param_right_brace"
+)
+
 func (vu *VUser) javaVuserRuntimeParameterSnapshot(method string, overridden map[string]any) map[string]string {
 	if vu == nil {
 		return nil
@@ -886,10 +936,6 @@ func (vu *VUser) interpolateWithSecretsPolicyBounded(s string, transform func(in
 			vu.unresolvedParameterRefs = append(vu.unresolvedParameterRefs, expr)
 		} else if strings.HasPrefix(expr, "run.") {
 			vu.unresolvedRunRefs = append(vu.unresolvedRunRefs, expr)
-		}
-		if vu.concurrentPreparation != nil && !resolvedOK {
-			vu.concurrentPreparation.err = fmt.Errorf("concurrent HTTP template resolution failed")
-			return "", "", vu.concurrentPreparation.err
 		}
 		if strings.HasPrefix(expr, "secret.") {
 			hasRedaction = true
@@ -1238,6 +1284,7 @@ func toProtocolAssertions(asserts []dsl.Assertion, vu *VUser) []protocol.Asserti
 			Value:           value,
 			Min:             a.Min,
 			Max:             a.Max,
+			CaseInsensitive: a.CaseInsensitive,
 		}
 	}
 	return out

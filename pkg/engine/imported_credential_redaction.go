@@ -716,7 +716,9 @@ func (collector *importedCredentialCollector) collectSensitiveTree(value any, ke
 			sensitive := credential.SensitiveName(childKey) ||
 				(nextHeaderMap && credential.SensitiveHeader(childKey))
 			if scalar, ok := child.(string); ok && sensitive {
-				collector.add(scalar)
+				if credential.MatchableNamedValue(childKey, scalar) {
+					collector.add(scalar)
+				}
 				continue
 			}
 			collector.collectSensitiveTree(child, childKey, nextHeaderMap)
@@ -831,17 +833,40 @@ func (collector *importedCredentialCollector) collectRequestHeaders(request map[
 	}
 }
 
+// minImportedCookieCredentialBytes separates session material from cookie
+// flags and preferences (autocomplete=1, lang=en, consent=0:1). A shorter
+// cookie value is a credential only when its cookie name is credential-like
+// and the value is itself matchable (credential.MatchableNamedValue);
+// otherwise it would mark every matching token in the script (a User-Agent
+// version digit, an Accept-Language tag) and in run evidence.
+const minImportedCookieCredentialBytes = 8
+
 func (collector *importedCredentialCollector) collectCookieHeaderValues(name, value string) {
 	switch {
 	case strings.EqualFold(strings.TrimSpace(name), "Cookie"):
 		request := &stdhttp.Request{Header: stdhttp.Header{"Cookie": []string{value}}}
 		for _, cookie := range request.Cookies() {
-			collector.add(cookie.Value)
+			collector.addCookieValue(cookie)
 		}
 	case strings.EqualFold(strings.TrimSpace(name), "Set-Cookie"):
 		if cookie, err := stdhttp.ParseSetCookie(value); err == nil {
-			collector.add(cookie.Value)
+			collector.addCookieValue(cookie)
 		}
+	}
+}
+
+// addNamed adds a value that is a credential because of its field name,
+// unless it is too short to tell apart from ordinary text.
+func (collector *importedCredentialCollector) addNamed(name, value string) {
+	if credential.MatchableNamedValue(name, value) {
+		collector.add(value)
+	}
+}
+
+func (collector *importedCredentialCollector) addCookieValue(cookie *stdhttp.Cookie) {
+	if len(cookie.Value) >= minImportedCookieCredentialBytes ||
+		credential.SensitiveName(cookie.Name) && credential.MatchableNamedValue(cookie.Name, cookie.Value) {
+		collector.add(cookie.Value)
 	}
 }
 
@@ -858,11 +883,13 @@ func (collector *importedCredentialCollector) collectSurfaceTarget(
 		}
 		return collector.collectBodyTarget(body, mediaType, target)
 	case strings.Contains(field, "header"):
-		value, ok := surfaceHeaderValue(ref, target.Index)
+		name, value, ok := surfaceHeaderEntry(ref, target.Index)
 		if !ok {
 			return errors.New("retained credential header locator no longer matches the executable request")
 		}
-		collector.add(value)
+		if credential.MatchableNamedValue(name, value) {
+			collector.add(value)
+		}
 		return nil
 	case strings.HasSuffix(field, "auth.password"):
 		value, ok := surfaceAuthValue(ref, "password")
@@ -928,17 +955,22 @@ func surfaceParamStringValue(ref dslwalk.SurfaceRef, key string) (string, bool) 
 }
 
 func surfaceHeaderValue(ref dslwalk.SurfaceRef, index int) (string, bool) {
+	_, value, ok := surfaceHeaderEntry(ref, index)
+	return value, ok
+}
+
+func surfaceHeaderEntry(ref dslwalk.SurfaceRef, index int) (string, string, bool) {
 	if ref.Action != nil {
 		if index >= 0 && index < len(ref.Action.HeaderList) {
-			return ref.Action.HeaderList[index].Value, true
+			return ref.Action.HeaderList[index].Name, ref.Action.HeaderList[index].Value, true
 		}
-		return "", false
+		return "", "", false
 	}
 	list, ok := importedRequestHeaderList(ref.Request["header_list"])
 	if !ok || index < 0 || index >= len(list) {
-		return "", false
+		return "", "", false
 	}
-	return list[index].Value, true
+	return list[index].Name, list[index].Value, true
 }
 
 func surfaceAuthValue(ref dslwalk.SurfaceRef, name string) (string, bool) {
@@ -1294,7 +1326,7 @@ func (collector *importedCredentialCollector) collectLegacyJSONBodyCredentials(
 	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.UseNumber()
-	if err := scan.walk(decoder, 0, false, "", ""); err != nil {
+	if err := scan.walk(decoder, 0, false, "", "", ""); err != nil {
 		return errors.New("legacy credential JSON body is malformed or exceeds runtime limits")
 	}
 	if decoder.Decode(&struct{}{}) != io.EOF {
@@ -1307,7 +1339,7 @@ func (collector *importedCredentialCollector) collectLegacyJSONBodyCredentials(
 		}
 		for name := range references {
 			for _, value := range scan.variableScalars[name] {
-				collector.add(value)
+				collector.addNamed(name, value)
 			}
 		}
 	}
@@ -1320,6 +1352,7 @@ func (scan *legacyJSONCredentialScan) walk(
 	sensitive bool,
 	topField string,
 	variable string,
+	name string,
 ) error {
 	if depth > maxLegacyCredentialBodyDepth {
 		return errors.New("JSON nesting limit exceeded")
@@ -1360,6 +1393,7 @@ func (scan *legacyJSONCredentialScan) walk(
 					sensitive || credential.SensitiveName(key),
 					childTopField,
 					childVariable,
+					key,
 				); err != nil {
 					return err
 				}
@@ -1377,6 +1411,7 @@ func (scan *legacyJSONCredentialScan) walk(
 					sensitive,
 					topField,
 					variable,
+					name,
 				); err != nil {
 					return err
 				}
@@ -1396,7 +1431,7 @@ func (scan *legacyJSONCredentialScan) walk(
 		return nil
 	}
 	if sensitive {
-		scan.collector.add(value)
+		scan.collector.addNamed(name, value)
 	}
 	if variable != "" {
 		scan.variableScalars[variable] = append(scan.variableScalars[variable], value)
@@ -1428,6 +1463,7 @@ func (collector *importedCredentialCollector) collectLegacyXMLBodyCredentials(
 ) error {
 	type elementFrame struct {
 		sensitive bool
+		name      string
 		text      strings.Builder
 	}
 	decoder := xml.NewDecoder(bytes.NewReader(payload))
@@ -1453,11 +1489,13 @@ func (collector *importedCredentialCollector) collectLegacyXMLBodyCredentials(
 				sensitive = true
 			}
 			for _, attr := range typed.Attr {
-				if sensitive || credential.SensitiveXMLName(attr.Name.Local) {
-					collector.add(attr.Value)
+				if credential.SensitiveXMLName(attr.Name.Local) {
+					collector.addNamed(attr.Name.Local, attr.Value)
+				} else if sensitive {
+					collector.addNamed(typed.Name.Local, attr.Value)
 				}
 			}
-			stack = append(stack, elementFrame{sensitive: sensitive})
+			stack = append(stack, elementFrame{sensitive: sensitive, name: typed.Name.Local})
 		case xml.CharData:
 			for index := range stack {
 				if stack[index].sensitive {
@@ -1474,7 +1512,7 @@ func (collector *importedCredentialCollector) collectLegacyXMLBodyCredentials(
 			frame := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]
 			if frame.sensitive {
-				collector.add(strings.TrimSpace(frame.text.String()))
+				collector.addNamed(frame.name, strings.TrimSpace(frame.text.String()))
 			}
 		}
 	}
@@ -1500,7 +1538,7 @@ func (collector *importedCredentialCollector) collectLegacyFormBodyCredentials(
 			return errors.New("legacy credential form body has invalid encoding")
 		}
 		if credential.SensitiveName(name) {
-			collector.add(value)
+			collector.addNamed(name, value)
 		}
 	}
 	return nil
@@ -1525,6 +1563,7 @@ func (collector *importedCredentialCollector) collectLegacyMultipartBodyCredenti
 		}
 		sensitivePart := false
 		filePart := false
+		partName := ""
 		for _, header := range part.headers {
 			if credential.SensitiveHeader(header.name) {
 				collector.collectHeaderCredential(header.name, header.value)
@@ -1536,11 +1575,12 @@ func (collector *importedCredentialCollector) collectLegacyMultipartBodyCredenti
 			if parseErr != nil {
 				return errors.New("legacy credential multipart disposition is malformed")
 			}
-			sensitivePart = credential.SensitiveName(params["name"])
+			partName = params["name"]
+			sensitivePart = credential.SensitiveName(partName)
 			filePart = strings.TrimSpace(params["filename"]) != ""
 		}
 		if sensitivePart {
-			collector.add(string(part.body))
+			collector.addNamed(partName, string(part.body))
 		}
 		if !filePart && (part.contentType != "" || !sensitivePart) {
 			if err := collector.collectLegacyRequestBodyCredentials(
@@ -1617,6 +1657,7 @@ func (collector *importedCredentialCollector) collectLegacyGraphQLCredentialLite
 			valueIndex,
 			references,
 			0,
+			tokens[index].text,
 		); err != nil {
 			return nil, err
 		}
@@ -1654,6 +1695,7 @@ func (collector *importedCredentialCollector) collectLegacyGraphQLValue(
 	index int,
 	references map[string]struct{},
 	depth int,
+	name string,
 ) (int, error) {
 	if depth > maxLegacyCredentialBodyDepth || index >= len(tokens) {
 		return index, errors.New("legacy credential GraphQL value exceeds runtime limits")
@@ -1661,7 +1703,7 @@ func (collector *importedCredentialCollector) collectLegacyGraphQLValue(
 	token := tokens[index]
 	switch token.kind {
 	case legacyGraphQLStringToken:
-		collector.add(token.text)
+		collector.addNamed(name, token.text)
 		return index + 1, nil
 	case legacyGraphQLBlockToken:
 		// GraphQL block strings apply indentation normalization that cannot be
@@ -1669,11 +1711,11 @@ func (collector *importedCredentialCollector) collectLegacyGraphQLValue(
 		// than install an incomplete exact-value matcher.
 		return index, errors.New("legacy sensitive GraphQL block string requires review")
 	case legacyGraphQLNumberToken:
-		collector.add(token.text)
+		collector.addNamed(name, token.text)
 		return index + 1, nil
 	case legacyGraphQLNameToken:
 		if !strings.EqualFold(token.text, "null") {
-			collector.add(token.text)
+			collector.addNamed(name, token.text)
 		}
 		return index + 1, nil
 	}
@@ -1696,6 +1738,7 @@ func (collector *importedCredentialCollector) collectLegacyGraphQLValue(
 				cursor,
 				references,
 				depth+1,
+				name,
 			)
 			if err != nil {
 				return cursor, err
@@ -1722,6 +1765,7 @@ func (collector *importedCredentialCollector) collectLegacyGraphQLValue(
 				cursor+2,
 				references,
 				depth+1,
+				tokens[cursor].text,
 			)
 			if err != nil {
 				return cursor, err
@@ -1928,8 +1972,8 @@ func (collector *importedCredentialCollector) collectURL(raw string, target *imp
 		if nameErr != nil || valueErr != nil {
 			continue
 		}
-		if credential.SensitiveName(decodedName) ||
-			(target != nil && index == target.Index) {
+		if (credential.SensitiveName(decodedName) || target != nil && index == target.Index) &&
+			credential.MatchableNamedValue(decodedName, decodedValue) {
 			collector.add(decodedValue)
 		}
 	}
@@ -1956,12 +2000,14 @@ func (collector *importedCredentialCollector) collectURLTarget(
 		if target.Index < 0 || target.Index >= len(pairs) {
 			return errors.New("retained credential query locator no longer matches the executable request")
 		}
-		_, rawValue, _ := strings.Cut(pairs[target.Index], "=")
+		rawName, rawValue, _ := strings.Cut(pairs[target.Index], "=")
 		value, err := url.QueryUnescape(rawValue)
 		if err != nil {
 			return errors.New("retained credential query encoding is invalid")
 		}
-		collector.add(value)
+		if name, _ := url.QueryUnescape(rawName); credential.MatchableNamedValue(name, value) {
+			collector.add(value)
+		}
 		return nil
 	case strings.HasSuffix(field, ".userinfo"):
 		parsed, err := url.Parse(raw)
@@ -2324,12 +2370,14 @@ func (collector *importedCredentialCollector) collectBodyTarget(
 		if target.Index < 0 || target.Index >= len(pairs) {
 			return errors.New("retained form credential locator no longer matches the executable request")
 		}
-		_, rawValue, _ := strings.Cut(pairs[target.Index], "=")
+		rawName, rawValue, _ := strings.Cut(pairs[target.Index], "=")
 		value, err := url.QueryUnescape(rawValue)
 		if err != nil {
 			return errors.New("retained form credential encoding is invalid")
 		}
-		collector.add(value)
+		if name, _ := url.QueryUnescape(rawName); credential.MatchableNamedValue(name, value) {
+			collector.add(value)
+		}
 		return nil
 	}
 	if strings.Contains(baseMediaType, "json") ||

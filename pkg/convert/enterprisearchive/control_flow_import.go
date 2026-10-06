@@ -30,22 +30,29 @@ const (
 	sourceFlowLoopExprKey      = "__source_loop_expr"
 	sourceFlowLoopCountKey     = "__source_loop_count"
 	sourceFlowLoopIDKey        = "__source_loop_id"
+	sourceFlowLoopMaxKey       = "__source_loop_max"
 )
+
+// strexpr length: strlen(lr_eval_string("{param}")), optionally parenthesized.
+const sourceStrlenParamPattern = `\(*\s*strlen\s*\(\s*lr_eval_string\s*\(\s*"\{([A-Za-z_][A-Za-z0-9_]*)\}"\s*\)\s*\)\s*\)*`
 
 // numexpr: atoi(lr_eval_string("{param}")), optionally parenthesized.
 const sourceAtoiParamPattern = `\(*\s*atoi\s*\(\s*lr_eval_string\s*\(\s*"\{([A-Za-z_][A-Za-z0-9_]*)\}"\s*\)\s*\)\s*\)*`
 
 var (
-	sourceCondNumCmpRe     = regexp.MustCompile(`^` + sourceAtoiParamPattern + `\s*(==|!=|>=|<=|>|<)\s*\(*\s*(-?\d+)\s*\)*$`)
-	sourceCondNumCmpRevRe  = regexp.MustCompile(`^\(*\s*(-?\d+)\s*\)*\s*(==|!=|>=|<=|>|<)\s*` + sourceAtoiParamPattern + `$`)
-	sourceCondNumTruthyRe  = regexp.MustCompile(`^` + sourceAtoiParamPattern + `$`)
-	sourceCondStrcmpRe     = regexp.MustCompile(`^strcmp\s*\(\s*lr_eval_string\s*\(\s*"\{([A-Za-z_][A-Za-z0-9_]*)\}"\s*\)\s*,\s*"((?:\\.|[^"\\])*)"\s*\)\s*(==|!=)\s*0$`)
-	sourceCondStrcmpRevRe  = regexp.MustCompile(`^strcmp\s*\(\s*"((?:\\.|[^"\\])*)"\s*,\s*lr_eval_string\s*\(\s*"\{([A-Za-z_][A-Za-z0-9_]*)\}"\s*\)\s*\)\s*(==|!=)\s*0$`)
-	sourceCondStrstrRe     = regexp.MustCompile(`^strstr\s*\(\s*lr_eval_string\s*\(\s*"\{([A-Za-z_][A-Za-z0-9_]*)\}"\s*\)\s*,\s*"((?:\\.|[^"\\])*)"\s*\)\s*(==|!=)\s*(?:NULL|0)$`)
-	sourceForLoopHeaderRe  = regexp.MustCompile(`^for\s*\(\s*(?:int\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+)\s*;\s*([A-Za-z_][A-Za-z0-9_]*)\s*(<=|<)\s*(.+?)\s*;\s*(?:([A-Za-z_][A-Za-z0-9_]*)\s*\+\+|\+\+\s*([A-Za-z_][A-Za-z0-9_]*))\s*\)$`)
-	sourceForBoundParamRe  = regexp.MustCompile(`^` + sourceAtoiParamPattern + `$`)
-	sourceForBoundNumberRe = regexp.MustCompile(`^\(*\s*(\d+)\s*\)*$`)
-	sourceWhileHeaderRe    = regexp.MustCompile(`^while\s*\((.+)\)$`)
+	sourceCondNumCmpRe       = regexp.MustCompile(`^` + sourceAtoiParamPattern + `\s*(==|!=|>=|<=|>|<)\s*\(*\s*(-?\d+)\s*\)*$`)
+	sourceCondNumCmpRevRe    = regexp.MustCompile(`^\(*\s*(-?\d+)\s*\)*\s*(==|!=|>=|<=|>|<)\s*` + sourceAtoiParamPattern + `$`)
+	sourceCondNumTruthyRe    = regexp.MustCompile(`^` + sourceAtoiParamPattern + `$`)
+	sourceCondStrcmpRe       = regexp.MustCompile(`^strcmp\s*\(\s*lr_eval_string\s*\(\s*"\{([A-Za-z_][A-Za-z0-9_]*)\}"\s*\)\s*,\s*"((?:\\.|[^"\\])*)"\s*\)\s*(==|!=)\s*0$`)
+	sourceCondStrcmpRevRe    = regexp.MustCompile(`^strcmp\s*\(\s*"((?:\\.|[^"\\])*)"\s*,\s*lr_eval_string\s*\(\s*"\{([A-Za-z_][A-Za-z0-9_]*)\}"\s*\)\s*\)\s*(==|!=)\s*0$`)
+	sourceCondStrstrRe       = regexp.MustCompile(`^strstr\s*\(\s*lr_eval_string\s*\(\s*"\{([A-Za-z_][A-Za-z0-9_]*)\}"\s*\)\s*,\s*"((?:\\.|[^"\\])*)"\s*\)\s*(==|!=)\s*(?:NULL|0)$`)
+	sourceCondStrlenCmpRe    = regexp.MustCompile(`^` + sourceStrlenParamPattern + `\s*(==|!=|>=|<=|>|<)\s*\(*\s*(-?\d+)\s*\)*$`)
+	sourceCondStrlenCmpRevRe = regexp.MustCompile(`^\(*\s*(-?\d+)\s*\)*\s*(==|!=|>=|<=|>|<)\s*` + sourceStrlenParamPattern + `$`)
+	sourceCondStrlenTruthyRe = regexp.MustCompile(`^` + sourceStrlenParamPattern + `$`)
+	sourceForLoopHeaderRe    = regexp.MustCompile(`^for\s*\(\s*(?:int\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+)\s*;\s*([A-Za-z_][A-Za-z0-9_]*)\s*(<=|<)\s*(.+?)\s*;\s*(?:([A-Za-z_][A-Za-z0-9_]*)\s*\+\+|\+\+\s*([A-Za-z_][A-Za-z0-9_]*))\s*\)$`)
+	sourceForBoundParamRe    = regexp.MustCompile(`^` + sourceAtoiParamPattern + `$`)
+	sourceForBoundNumberRe   = regexp.MustCompile(`^\(*\s*(\d+)\s*\)*$`)
+	sourceWhileHeaderRe      = regexp.MustCompile(`^while\s*\((.+)\)$`)
 )
 
 // translateSourceConditionToCEL converts one raw C condition into a CEL
@@ -84,14 +91,26 @@ func translateSourceConditionToCEL(condition string) (string, bool) {
 	if m := sourceCondNumTruthyRe.FindStringSubmatch(condition); m != nil {
 		return fmt.Sprintf("%s != 0", celSafeAtoi(m[1])), true
 	}
+	// A registration with NotFound=warning stores "" on a miss (on_miss empty),
+	// so strlen(...) != 0 is the source idiom for "the value was found". CEL
+	// size counts characters where C strlen counts bytes; they agree on zero.
+	if m := sourceCondStrlenCmpRe.FindStringSubmatch(condition); m != nil {
+		return fmt.Sprintf("size(%s) %s %s", celSafeStr(m[1]), m[2], m[3]), true
+	}
+	if m := sourceCondStrlenCmpRevRe.FindStringSubmatch(condition); m != nil {
+		return fmt.Sprintf("%s %s size(%s)", m[1], m[2], celSafeStr(m[3])), true
+	}
+	if m := sourceCondStrlenTruthyRe.FindStringSubmatch(condition); m != nil {
+		return fmt.Sprintf("size(%s) != 0", celSafeStr(m[1])), true
+	}
 	if m := sourceCondStrcmpRe.FindStringSubmatch(condition); m != nil {
-		return fmt.Sprintf("%s %s %s", celSafeStr(m[1]), strcmpCELOp(m[3]), strconv.Quote(unescapeSourceCString(m[2]))), true
+		return fmt.Sprintf("%s %s %s", celSafeStr(m[1]), strcmpCELOp(m[3]), strconv.Quote(rawSourceStringContent(m[2]))), true
 	}
 	if m := sourceCondStrcmpRevRe.FindStringSubmatch(condition); m != nil {
-		return fmt.Sprintf("%s %s %s", celSafeStr(m[2]), strcmpCELOp(m[3]), strconv.Quote(unescapeSourceCString(m[1]))), true
+		return fmt.Sprintf("%s %s %s", celSafeStr(m[2]), strcmpCELOp(m[3]), strconv.Quote(rawSourceStringContent(m[1]))), true
 	}
 	if m := sourceCondStrstrRe.FindStringSubmatch(condition); m != nil {
-		expr := fmt.Sprintf("%s.contains(%s)", celSafeStr(m[1]), strconv.Quote(unescapeSourceCString(m[2])))
+		expr := fmt.Sprintf("%s.contains(%s)", celSafeStr(m[1]), strconv.Quote(rawSourceStringContent(m[2])))
 		if m[3] == "==" {
 			expr = "!(" + expr + ")"
 		}
@@ -248,10 +267,20 @@ func tagSourceFlowMetadata(result *ConvertResult, fn ParsedFunction, action *dsl
 		action.Metadata[sourceFlowLoopKey] = display
 		action.Metadata[sourceFlowLoopIDKey] = strings.Join(fn.LoopIDs, ">>")
 		if len(fn.Loops) == 1 {
-			if loop, ok := translateSourceLoopHeader(fn.Loops[0]); ok {
+			header := expandCLocalReferences(fn.Loops[0], fn.cLocals)
+			if loop, ok := translateSourceLoopHeader(header); ok {
 				if loop.ConditionExpr != "" {
 					if dsl.ValidateConditionExpression(loop.ConditionExpr) == nil {
 						action.Metadata[sourceFlowLoopExprKey] = loop.ConditionExpr
+						// Only a while loop driven by a local is unbounded in the
+						// source; a for loop with a local bound keeps its count.
+						if header != fn.Loops[0] && sourceWhileHeaderRe.MatchString(strings.TrimSpace(fn.Loops[0])) {
+							action.Metadata[sourceFlowLoopMaxKey] = strconv.Itoa(cLocalLoopMaxIterations)
+							if !warned["loopmax:"+display] {
+								warned["loopmax:"+display] = true
+								result.Warnings = append(result.Warnings, fmt.Sprintf("line %d: loop %q has no bound in the source; the import re-evaluates its C local each pass and stops after %d passes", fn.LineNumber, display, cLocalLoopMaxIterations))
+							}
+						}
 					}
 				} else if loop.Count <= 0 {
 					// Faithful to a zero-pass C loop: the body never runs, so
@@ -278,7 +307,7 @@ func tagSourceFlowMetadata(result *ConvertResult, fn ParsedFunction, action *dsl
 		display := strings.Join(fn.Conditions, " && ")
 		action.Metadata[sourceFlowConditionKey] = display
 		action.Metadata[sourceFlowConditionIDKey] = strings.Join(fn.ConditionIDs, "&&")
-		if expr, ok := translateSourceConditionChain(fn.Conditions); ok && dsl.ValidateConditionExpression(expr) == nil {
+		if expr, ok := translateSourceConditionChain(expandCLocalFrames(fn.Conditions, fn.cLocals)); ok && dsl.ValidateConditionExpression(expr) == nil {
 			action.Metadata[sourceFlowConditionExprKey] = expr
 		} else if !warned["cond:"+display] {
 			warned["cond:"+display] = true
@@ -410,6 +439,9 @@ func structureFlowActions(actions []dsl.Action, oldPath, newPath func(int) strin
 				}
 				if loopExpr != "" {
 					wrapper.Control.Condition = &dsl.Condition{Expr: loopExpr}
+					if limit, err := strconv.Atoi(metadataString(action.Metadata, sourceFlowLoopMaxKey)); err == nil && limit > 0 {
+						wrapper.Control.MaxIterations = limit
+					}
 				} else if count, err := strconv.Atoi(loopCount); err == nil {
 					wrapper.Control.Count = count
 					// Keep the engine's runaway cap from silently truncating
@@ -570,6 +602,7 @@ func stripLoopTagsOne(action dsl.Action, wrapperLoopID string) dsl.Action {
 	delete(metadata, sourceFlowLoopExprKey)
 	delete(metadata, sourceFlowLoopCountKey)
 	delete(metadata, sourceFlowLoopIDKey)
+	delete(metadata, sourceFlowLoopMaxKey)
 	if len(metadata) == 0 {
 		metadata = nil
 	}
@@ -587,6 +620,7 @@ func stripFlowTagsOne(action dsl.Action, keepCondition bool) dsl.Action {
 	delete(metadata, sourceFlowLoopExprKey)
 	delete(metadata, sourceFlowLoopCountKey)
 	delete(metadata, sourceFlowLoopIDKey)
+	delete(metadata, sourceFlowLoopMaxKey)
 	if !keepCondition {
 		// A translated condition moves to the wrapper; an untranslated one
 		// keeps its display tag for review.
