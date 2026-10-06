@@ -1,3 +1,4 @@
+import './Access.css'
 import type { ReactNode } from 'react'
 import type { DashboardAuditEvent } from '../types'
 import { detailsSummary, eventResourceLabel, formatTimestamp } from './accessUtils'

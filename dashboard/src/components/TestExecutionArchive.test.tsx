@@ -1659,16 +1659,39 @@ describe('TestExecutionArchive', () => {
     } finally { if (cryptoDescriptor) Object.defineProperty(globalThis, 'crypto', cryptoDescriptor); else Reflect.deleteProperty(globalThis, 'crypto') }
   })
 
+  it('exposes retained archive paging without requiring a report resource preview or document metrics', async () => {
+    const report = { ...archiveReport, browser_resources: [], browser_documents: undefined, browser_document_evidence: undefined }
+    await renderArchiveView('report-browser-resources', report, { ...test, project_id: 'project-1' })
+    const disclosure = container.querySelector('[aria-label="Archive resource inspection"]')!
+    const open = Array.from(disclosure.querySelectorAll('button')).find(button => button.textContent === 'Inspect retained archive resources')!
+    expect(open.disabled).toBe(false)
+    expect(open.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector('[aria-label="Retained archive resource inspector"]')).toBeNull()
+    expect(container.textContent).toContain('No resource preview was retained in this report')
+    expect(container.textContent).not.toContain('No browser resource waterfall entries were captured')
+    await renderArchiveView('report-overview', report, { ...test, project_id: 'project-1' })
+    expect(container.querySelector('[aria-label="Archive resource inspection"]')).toBeNull()
+  })
+
+  it('refuses archive paging when the report belongs to a different project', async () => {
+    await renderArchiveView('report-browser-resources', archiveReport, { ...test, project_id: 'other-project' })
+    const disclosure = container.querySelector('[aria-label="Archive resource inspection"]')!
+    expect(disclosure.querySelector('button')!.disabled).toBe(true)
+    expect(disclosure.textContent).toContain('matching archived run, project and report')
+    expect(container.querySelector('[aria-label="Retained archive resource inspector"]')).toBeNull()
+  })
+
   async function renderArchiveView(
     view: Parameters<typeof TestExecutionArchive>[0]['view'],
     report: RunArchiveReport = archiveReport,
+    testRecord: TestSummary = test,
   ) {
     await act(async () => {
       root.render(
         <TestExecutionArchive
           view={view}
           hasArchive={true}
-          test={test}
+          test={testRecord}
           archiveError=""
           archiveLoading={false}
           archiveReport={report}

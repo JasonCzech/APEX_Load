@@ -1,0 +1,20 @@
+# github.com/jasonczech/apexload/pkg/api
+pkg/api/route_catalog.go:375:5: initialization cycle for routeCatalogAuthRules
+	pkg/api/route_catalog.go:375:5: routeCatalogAuthRules refers to modularAPIRouteCatalogs
+	pkg/api/route_registry_foundation.go:47:5: modularAPIRouteCatalogs refers to runArchiveAPIRouteCatalog
+	pkg/api/route_registry_archive.go:5:5: runArchiveAPIRouteCatalog refers to handleGetRunArchiveBrowserResources
+	pkg/api/archive_browser_resource_handler.go:74:18: handleGetRunArchiveBrowserResources refers to readBrowserResourcePage
+	pkg/api/archive_browser_resource_handler.go:122:18: readBrowserResourcePage refers to browserResourceAuthorizer
+	pkg/api/archive_browser_resource_auth.go:54:18: browserResourceAuthorizer refers to browserResourceSnapshotRevalidator
+	pkg/api/archive_browser_resource_auth.go:94:6: browserResourceSnapshotRevalidator refers to serviceAccountAllowsRequest
+	pkg/api/auth_resolution.go:475:6: serviceAccountAllowsRequest refers to requiredServiceAccountScopes
+	pkg/api/auth_resolution.go:509:6: requiredServiceAccountScopes refers to requiredServiceAccountScope
+	pkg/api/auth_resolution.go:628:6: requiredServiceAccountScope refers to accessRequirementForRequest
+	pkg/api/access_policy.go:14:6: accessRequirementForRequest refers to accessRequirementFromRouteCatalog
+	pkg/api/route_catalog.go:513:6: accessRequirementFromRouteCatalog refers to indexedRouteCatalogAuthRules
+	pkg/api/route_catalog.go:395:5: indexedRouteCatalogAuthRules refers to routeCatalogAuthRules
+FAIL	github.com/jasonczech/apexload/pkg/api [build failed]
+ok  	github.com/jasonczech/apexload/pkg/storage	0.968s
+ok  	github.com/jasonczech/apexload/pkg/distributed/generatorrpc	0.470s
+FAIL	github.com/jasonczech/apexload/cmd/apexctl [build failed]
+FAIL

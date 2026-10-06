@@ -1,0 +1,54 @@
+{
+  "reviewed_at": "2026-10-05T17:46:41.865570+00:00",
+  "reviewer": "root",
+  "scope": "actual rendered retained-resource inspector and help images in both profiles; controlled archive transport UI proof, not acquisition or benchmark",
+  "source_sha256": "e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c",
+  "embed_sha256": "baa6376c1d471d6b82e5ead43fcdb6854325830b779c125a5bee6ce972690a37",
+  "artifacts": [
+    {
+      "path": "playwright/fixed-ui-3/dev-admin/workflow-help-retained-res-b79cb--after-reload-and-narrowing/retained-resource-help-narrow.png",
+      "bytes": 307156,
+      "sha256": "65b6d784414e7570778c6f5563962ada2668b1145885db8672f5c37f36668fd1"
+    },
+    {
+      "path": "playwright/fixed-ui-3/dev-admin/workflow-retained-resource-ad392-alse-and-independent-clocks/retained-resource-inspector-overview.png",
+      "bytes": 271233,
+      "sha256": "0e253b275a939825e333a8611929c091c5ca81b3bb031f39771fcf13b8b7b326"
+    },
+    {
+      "path": "playwright/fixed-ui-3/dev-admin/workflow-retained-resource-ad392-alse-and-independent-clocks/retained-resource-native-detail.png",
+      "bytes": 88132,
+      "sha256": "be9c64420b12c3c97f48496fa3a4bcc6b09366074d64e6c8bdfe44ee4e335d49"
+    },
+    {
+      "path": "playwright/fixed-ui-3/local-auth/workflow-help-retained-res-b79cb--after-reload-and-narrowing/retained-resource-help-narrow.png",
+      "bytes": 308035,
+      "sha256": "42f617bbbe59871c9e54f96c121f70b04658ff447a9abffd96b7fafc6930784c"
+    },
+    {
+      "path": "playwright/fixed-ui-3/local-auth/workflow-retained-resource-ad392-alse-and-independent-clocks/retained-resource-inspector-overview.png",
+      "bytes": 275588,
+      "sha256": "08363a3a7d81e779942b87600d6dca229010ba9fd1da2003ddc7acd979935e68"
+    },
+    {
+      "path": "playwright/fixed-ui-3/local-auth/workflow-retained-resource-ad392-alse-and-independent-clocks/retained-resource-native-detail.png",
+      "bytes": 88132,
+      "sha256": "be9c64420b12c3c97f48496fa3a4bcc6b09366074d64e6c8bdfe44ee4e335d49"
+    }
+  ],
+  "findings": [],
+  "observations": [
+    "Measured zero and false values remain readable and distinct from unavailable fields.",
+    "Request-local offsets show overlapping phases and a zero-duration measured point without claiming server processing or clock alignment.",
+    "Inspector controls remain readable at narrow width; the resource table retains its own keyboard scroll region.",
+    "Help section focus is below the fixed toolbar and preserves readable text after reload and narrowing."
+  ],
+  "executed_checks": [
+    "resource-fixed-ui-dev-3.json",
+    "resource-fixed-ui-local-3.json"
+  ],
+  "limits": [
+    "Full repository/dashboard cycle and final composed Help related-link closure remain pending.",
+    "Acquisition/integrity backend is qualified by separate actual Chromium and durable-store receipts."
+  ]
+}

@@ -1,0 +1,463 @@
+Building controller...
+Starting controller on http://127.0.0.1:18871 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.c0dtWQ2pMW)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 58 tests using 1 worker
+
+
+(node:52005) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1/58] e2e/workflow-help.spec.ts:27:1 › Help tasks, search and section links survive navigation and validate the first-test example
+[2/58] e2e/workflow-help.spec.ts:69:1 › DSL operators can discover the guide, validate its example, and follow reference links
+[3/58] e2e/workflow-help.spec.ts:110:1 › evidence guides are searchable, readable and retain their scope after reload
+[4/58] e2e/workflow-help.spec.ts:133:1 › legacy URLs, generated API search and contextual guidance reach the right articles
+[5/58] e2e/workflow-help.spec.ts:150:1 › Help is readable at narrow widths and exposes accessible navigation
+[6/58] e2e/workflow-help.spec.ts:171:1 › non-administrators cannot open or search Administration articles
+[7/58] e2e/workflow-help.spec.ts:186:1 › Help maintains readable contrast across the supported themes
+
+(node:52046) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[8/58] e2e/workflow-help.spec.ts:27:1 › Help tasks, search and section links survive navigation and validate the first-test example
+[9/58] e2e/workflow-help.spec.ts:69:1 › DSL operators can discover the guide, validate its example, and follow reference links
+[10/58] e2e/workflow-help.spec.ts:110:1 › evidence guides are searchable, readable and retain their scope after reload
+[11/58] e2e/workflow-help.spec.ts:133:1 › legacy URLs, generated API search and contextual guidance reach the right articles
+[12/58] e2e/workflow-help.spec.ts:150:1 › Help is readable at narrow widths and exposes accessible navigation
+[13/58] e2e/workflow-help.spec.ts:171:1 › non-administrators cannot open or search Administration articles
+[14/58] e2e/workflow-help.spec.ts:186:1 › Help maintains readable contrast across the supported themes
+
+(node:52094) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[15/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for missing infrastructure
+[16/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for single-region infrastructure
+[17/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for multi-zone infrastructure
+[18/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for multi-region infrastructure
+[19/58] e2e/workflow-new-test.spec.ts:67:1 › Scenario builder preserves controller continuity and the recovery spare budget
+[20/58] e2e/workflow-new-test.spec.ts:106:1 › New Test saves drafts without execution, retains both tabs and validates recurring triggers
+[21/58] e2e/workflow-new-test.spec.ts:159:1 › New Test restores the default name after clearing and reselecting the same scenario
+[22/58] e2e/workflow-new-test.spec.ts:175:1 › New Test exposes editable groups and saves a paused recurring schedule with visible policies
+[23/58] e2e/workflow-new-test.spec.ts:214:1 › Java group profile survives placement edits and scenario persistence (facade ledger: false)
+[24/58] e2e/workflow-new-test.spec.ts:214:1 › Java group profile survives placement edits and scenario persistence (facade ledger: true)
+[25/58] e2e/workflow-new-test.spec.ts:284:1 › Live configuration reports prepared Java reservations without opening raw JSON
+[26/58] e2e/workflow-new-test.spec.ts:309:1 › prepared Event Hubs run displays processor admission and starts with the pinned revision
+[27/58] e2e/workflow-new-test.spec.ts:340:1 › actual held-run serialization and an API-seeded queued copy preserve complete authored intent
+[28/58] e2e/workflow-new-test.spec.ts:426:1 › queued-copy preserves source capture IDs and durably clears the last authored goal
+  1) e2e/workflow-new-test.spec.ts:426:1 › queued-copy preserves source capture IDs and durably clears the last authored goal 
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByRole('dialog', { name: 'Create Revised Queued Run', exact: true }).getByLabel('Elastic log capture', { exact: true })
+    Expected: "ae4d7265-f10f-4c45-8a0a-a4c2d2ac6c61"
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toHaveValue" with timeout 15000ms
+      - waiting for getByRole('dialog', { name: 'Create Revised Queued Run', exact: true }).getByLabel('Elastic log capture', { exact: true })
+
+
+      444 |     await page.getByRole('button', { name: 'Create revised queued copy', exact: true }).click()
+      445 |     const dialog = page.getByRole('dialog', { name: 'Create Revised Queued Run', exact: true })
+    > 446 |     await expect(dialog.getByLabel('Elastic log capture', { exact: true })).toHaveValue(idOf(elk))
+          |                                                                             ^
+      447 |     await expect(dialog.getByLabel('Dynatrace SaaS capture', { exact: true })).toHaveValue(idOf(dt))
+      448 |     await expect(dialog.getByRole('button', { name: 'Create Revised Copy', exact: true })).toBeEnabled()
+      449 |     return dialog
+        at openCopy (/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:446:77)
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:451:27
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:52150) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[29/58] e2e/workflow-new-test.spec.ts:504:1 › queued-copy preserves iteration completion and explicitly clears source delay and root runtime
+  2) e2e/workflow-new-test.spec.ts:504:1 › queued-copy preserves iteration completion and explicitly clears source delay and root runtime 
+
+    TimeoutError: page.waitForResponse: Timeout 15000ms exceeded while waiting for event "response"
+
+      522 |   await expect(editor.getByLabel('Steady State Duration', { exact: true })).toHaveValue('')
+      523 |   await editor.getByLabel('Scenario Name', { exact: true }).fill('Iteration renamed copy')
+    > 524 |   let saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/tests')
+          |                    ^
+      525 |   await editor.getByRole('button', { name: 'Create Revised Copy', exact: true }).click()
+      526 |   let response = await saved
+      527 |   expect(response.ok(), await response.text()).toBeTruthy()
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:524:20
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByRole('dialog', { name: 'Create Revised Queued Run', exact: true }).getByRole('button', { name: 'Create Revised Copy', exact: true })
+
+
+      523 |   await editor.getByLabel('Scenario Name', { exact: true }).fill('Iteration renamed copy')
+      524 |   let saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/tests')
+    > 525 |   await editor.getByRole('button', { name: 'Create Revised Copy', exact: true }).click()
+          |                                                                                  ^
+      526 |   let response = await saved
+      527 |   expect(response.ok(), await response.text()).toBeTruthy()
+      528 |   let created = await response.json()
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:525:82
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:52167) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[30/58] e2e/workflow-new-test.spec.ts:608:1 › queued-copy joins a history-guard save to its actual submitted receipt and retains late edits
+[31/58] e2e/workflow-new-test.spec.ts:689:1 › queued-copy submit refuses a source started concurrently and viewers cannot open the action
+[32/58] e2e/workflow-new-test.spec.ts:747:1 › queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear
+  3) e2e/workflow-new-test.spec.ts:747:1 › queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear 
+
+    TimeoutError: locator.selectOption: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByRole('dialog', { name: 'Runtime Settings — orders', exact: true }).getByLabel('Exchange capture', { exact: true })
+
+
+      766 |   const httpDialog = await open('orders')
+      767 |   await httpDialog.getByRole('tab', { name: 'Error Handling', exact: true }).click()
+    > 768 |   await httpDialog.getByLabel('Exchange capture', { exact: true }).selectOption('off')
+          |                                                                    ^
+      769 |   await httpDialog.getByLabel('Include fetched resources', { exact: true }).selectOption('false')
+      770 |   await httpDialog.getByLabel('Retained exchange limit', { exact: true }).fill('0')
+      771 |   const httpSaved = page.waitForResponse(response => response.request().method() === 'PATCH' && new URL(response.url()).pathname === `/api/v1/tests/${run}/groups/orders/runtime-settings`)
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:768:68
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:52208) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[33/58] e2e/workflow-scenario-composition.spec.ts:4:1 › scenario composition combines group editing with a live preview
+[34/58] e2e/workflow-scenario-composition.spec.ts:72:1 › guided stepped ramp keeps its pattern editor within the four scenario tabs
+[35/58] e2e/workflow-scenario-composition.spec.ts:102:1 › scenario rename and reopen retain Results, WebSocket, named shape and group timing intent
+[36/58] e2e/workflow-scenario-composition.spec.ts:143:1 › changing a saved workload shape retains the authored root SLA and rules
+  4) e2e/workflow-scenario-composition.spec.ts:143:1 › changing a saved workload shape retains the authored root SLA and rules 
+
+    TimeoutError: locator.fill: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByLabel('Ending load level', { exact: true })
+
+
+      157 |   await page.getByRole('button', { name: 'Use Stepped Ramp', exact: true }).click()
+      158 |   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Run Settings/ }).click()
+    > 159 |   await page.getByLabel('Ending load level', { exact: true }).fill('14')
+          |                                                               ^
+      160 |   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Review/ }).click()
+      161 |   const saved = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/v1/scenarios/${scenario}`)
+      162 |   await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-scenario-composition.spec.ts:159:63
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:52243) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[37/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for missing infrastructure
+[38/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for single-region infrastructure
+[39/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for multi-zone infrastructure
+[40/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for multi-region infrastructure
+[41/58] e2e/workflow-new-test.spec.ts:67:1 › Scenario builder preserves controller continuity and the recovery spare budget
+[42/58] e2e/workflow-new-test.spec.ts:106:1 › New Test saves drafts without execution, retains both tabs and validates recurring triggers
+[43/58] e2e/workflow-new-test.spec.ts:159:1 › New Test restores the default name after clearing and reselecting the same scenario
+[44/58] e2e/workflow-new-test.spec.ts:175:1 › New Test exposes editable groups and saves a paused recurring schedule with visible policies
+[45/58] e2e/workflow-new-test.spec.ts:214:1 › Java group profile survives placement edits and scenario persistence (facade ledger: false)
+[46/58] e2e/workflow-new-test.spec.ts:214:1 › Java group profile survives placement edits and scenario persistence (facade ledger: true)
+[47/58] e2e/workflow-new-test.spec.ts:284:1 › Live configuration reports prepared Java reservations without opening raw JSON
+[48/58] e2e/workflow-new-test.spec.ts:309:1 › prepared Event Hubs run displays processor admission and starts with the pinned revision
+[49/58] e2e/workflow-new-test.spec.ts:340:1 › actual held-run serialization and an API-seeded queued copy preserve complete authored intent
+[50/58] e2e/workflow-new-test.spec.ts:426:1 › queued-copy preserves source capture IDs and durably clears the last authored goal
+  5) e2e/workflow-new-test.spec.ts:426:1 › queued-copy preserves source capture IDs and durably clears the last authored goal 
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByRole('dialog', { name: 'Create Revised Queued Run', exact: true }).getByLabel('Elastic log capture', { exact: true })
+    Expected: "4ad98e1c-d52b-4391-b976-4bc6ed29aa19"
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toHaveValue" with timeout 15000ms
+      - waiting for getByRole('dialog', { name: 'Create Revised Queued Run', exact: true }).getByLabel('Elastic log capture', { exact: true })
+
+
+      444 |     await page.getByRole('button', { name: 'Create revised queued copy', exact: true }).click()
+      445 |     const dialog = page.getByRole('dialog', { name: 'Create Revised Queued Run', exact: true })
+    > 446 |     await expect(dialog.getByLabel('Elastic log capture', { exact: true })).toHaveValue(idOf(elk))
+          |                                                                             ^
+      447 |     await expect(dialog.getByLabel('Dynatrace SaaS capture', { exact: true })).toHaveValue(idOf(dt))
+      448 |     await expect(dialog.getByRole('button', { name: 'Create Revised Copy', exact: true })).toBeEnabled()
+      449 |     return dialog
+        at openCopy (/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:446:77)
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:451:27
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal-repeat1/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal-repeat1/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal-repeat1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:52437) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[51/58] e2e/workflow-new-test.spec.ts:504:1 › queued-copy preserves iteration completion and explicitly clears source delay and root runtime
+  6) e2e/workflow-new-test.spec.ts:504:1 › queued-copy preserves iteration completion and explicitly clears source delay and root runtime 
+
+    TimeoutError: page.waitForResponse: Timeout 15000ms exceeded while waiting for event "response"
+
+      522 |   await expect(editor.getByLabel('Steady State Duration', { exact: true })).toHaveValue('')
+      523 |   await editor.getByLabel('Scenario Name', { exact: true }).fill('Iteration renamed copy')
+    > 524 |   let saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/tests')
+          |                    ^
+      525 |   await editor.getByRole('button', { name: 'Create Revised Copy', exact: true }).click()
+      526 |   let response = await saved
+      527 |   expect(response.ok(), await response.text()).toBeTruthy()
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:524:20
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByRole('dialog', { name: 'Create Revised Queued Run', exact: true }).getByRole('button', { name: 'Create Revised Copy', exact: true })
+
+
+      523 |   await editor.getByLabel('Scenario Name', { exact: true }).fill('Iteration renamed copy')
+      524 |   let saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/tests')
+    > 525 |   await editor.getByRole('button', { name: 'Create Revised Copy', exact: true }).click()
+          |                                                                                  ^
+      526 |   let response = await saved
+      527 |   expect(response.ok(), await response.text()).toBeTruthy()
+      528 |   let created = await response.json()
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:525:82
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime-repeat1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime-repeat1/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime-repeat1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:52506) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[52/58] e2e/workflow-new-test.spec.ts:608:1 › queued-copy joins a history-guard save to its actual submitted receipt and retains late edits
+[53/58] e2e/workflow-new-test.spec.ts:689:1 › queued-copy submit refuses a source started concurrently and viewers cannot open the action
+[54/58] e2e/workflow-new-test.spec.ts:747:1 › queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear
+  7) e2e/workflow-new-test.spec.ts:747:1 › queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear 
+
+    TimeoutError: locator.selectOption: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByRole('dialog', { name: 'Runtime Settings — orders', exact: true }).getByLabel('Exchange capture', { exact: true })
+
+
+      766 |   const httpDialog = await open('orders')
+      767 |   await httpDialog.getByRole('tab', { name: 'Error Handling', exact: true }).click()
+    > 768 |   await httpDialog.getByLabel('Exchange capture', { exact: true }).selectOption('off')
+          |                                                                    ^
+      769 |   await httpDialog.getByLabel('Include fetched resources', { exact: true }).selectOption('false')
+      770 |   await httpDialog.getByLabel('Retained exchange limit', { exact: true }).fill('0')
+      771 |   const httpSaved = page.waitForResponse(response => response.request().method() === 'PATCH' && new URL(response.url()).pathname === `/api/v1/tests/${run}/groups/orders/runtime-settings`)
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:768:68
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear-repeat1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear-repeat1/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear-repeat1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:52709) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[55/58] e2e/workflow-scenario-composition.spec.ts:4:1 › scenario composition combines group editing with a live preview
+[56/58] e2e/workflow-scenario-composition.spec.ts:72:1 › guided stepped ramp keeps its pattern editor within the four scenario tabs
+[57/58] e2e/workflow-scenario-composition.spec.ts:102:1 › scenario rename and reopen retain Results, WebSocket, named shape and group timing intent
+[58/58] e2e/workflow-scenario-composition.spec.ts:143:1 › changing a saved workload shape retains the authored root SLA and rules
+  8) e2e/workflow-scenario-composition.spec.ts:143:1 › changing a saved workload shape retains the authored root SLA and rules 
+
+    TimeoutError: locator.fill: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByLabel('Ending load level', { exact: true })
+
+
+      157 |   await page.getByRole('button', { name: 'Use Stepped Ramp', exact: true }).click()
+      158 |   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Run Settings/ }).click()
+    > 159 |   await page.getByLabel('Ending load level', { exact: true }).fill('14')
+          |                                                               ^
+      160 |   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Review/ }).click()
+      161 |   const saved = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/v1/scenarios/${scenario}`)
+      162 |   await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-scenario-composition.spec.ts:159:63
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules-repeat1/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules-repeat1/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules-repeat1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+  8 failed
+    e2e/workflow-new-test.spec.ts:426:1 › queued-copy preserves source capture IDs and durably clears the last authored goal 
+    e2e/workflow-new-test.spec.ts:504:1 › queued-copy preserves iteration completion and explicitly clears source delay and root runtime 
+    e2e/workflow-new-test.spec.ts:747:1 › queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear 
+    e2e/workflow-new-test.spec.ts:426:1 › queued-copy preserves source capture IDs and durably clears the last authored goal 
+    e2e/workflow-new-test.spec.ts:504:1 › queued-copy preserves iteration completion and explicitly clears source delay and root runtime 
+    e2e/workflow-new-test.spec.ts:747:1 › queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear 
+    e2e/workflow-scenario-composition.spec.ts:143:1 › changing a saved workload shape retains the authored root SLA and rules 
+    e2e/workflow-scenario-composition.spec.ts:143:1 › changing a saved workload shape retains the authored root SLA and rules 
+  2 skipped
+  48 passed (3.6m)
+--- controller log (last 60 lines) ---
+{"time":"2026-10-05T16:39:01.693133-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scenarios/load-models/templates","status":200,"duration_ms":2,"remote":"127.0.0.1:55161"}
+{"time":"2026-10-05T16:39:01.69337-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/remotes","status":200,"duration_ms":0,"remote":"127.0.0.1:55159"}
+{"time":"2026-10-05T16:39:01.695378-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts","status":200,"duration_ms":4,"remote":"127.0.0.1:55160"}
+{"time":"2026-10-05T16:39:01.702363-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scenarios","status":200,"duration_ms":11,"remote":"127.0.0.1:55158"}
+{"time":"2026-10-05T16:39:01.712657-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/catalog","status":200,"duration_ms":20,"remote":"127.0.0.1:55162"}
+{"time":"2026-10-05T16:39:01.748695-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:55165"}
+{"time":"2026-10-05T16:39:01.748703-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"5f837cc0-347a-455e-a1d4-1f67c3935484","clients":1}
+{"time":"2026-10-05T16:39:01.782074-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/inventory","status":200,"duration_ms":0,"remote":"127.0.0.1:55162"}
+{"time":"2026-10-05T16:39:01.897226-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-05T16:39:01.957918-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/domains","status":201,"duration_ms":0,"remote":"127.0.0.1:55139"}
+{"time":"2026-10-05T16:39:01.960678-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/projects","status":201,"duration_ms":0,"remote":"127.0.0.1:55139"}
+{"time":"2026-10-05T16:39:01.962803-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications","status":201,"duration_ms":0,"remote":"127.0.0.1:55139"}
+{"time":"2026-10-05T16:39:01.964922-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications/a48b2ac7-3dda-40ed-9274-7536f756c8c1/releases","status":201,"duration_ms":0,"remote":"127.0.0.1:55139"}
+{"time":"2026-10-05T16:39:01.97263-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/scripts","status":201,"duration_ms":6,"remote":"127.0.0.1:55139"}
+{"time":"2026-10-05T16:39:01.978455-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/scenarios","status":201,"duration_ms":2,"remote":"127.0.0.1:55139"}
+{"time":"2026-10-05T16:39:01.981811-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scenarios/82509dff-e0a2-4bf9-9195-18fa8f666a6d","status":200,"duration_ms":0,"remote":"127.0.0.1:55139"}
+{"time":"2026-10-05T16:39:02.037994-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/me","status":200,"duration_ms":0,"remote":"127.0.0.1:55168"}
+{"time":"2026-10-05T16:39:02.072499-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/me","status":200,"duration_ms":0,"remote":"127.0.0.1:55168"}
+{"time":"2026-10-05T16:39:02.076384-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:55168"}
+{"time":"2026-10-05T16:39:02.077242-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:55171"}
+{"time":"2026-10-05T16:39:02.077745-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains","status":200,"duration_ms":0,"remote":"127.0.0.1:55168"}
+{"time":"2026-10-05T16:39:02.077872-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:55170"}
+{"time":"2026-10-05T16:39:02.077934-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/desktop/status","status":200,"duration_ms":0,"remote":"127.0.0.1:55171"}
+{"time":"2026-10-05T16:39:02.095849-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects","status":200,"duration_ms":0,"remote":"127.0.0.1:55170"}
+{"time":"2026-10-05T16:39:02.116917-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/default/application-repository","status":200,"duration_ms":0,"remote":"127.0.0.1:55170"}
+{"time":"2026-10-05T16:39:02.117453-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:55171"}
+{"time":"2026-10-05T16:39:02.118163-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":1,"remote":"127.0.0.1:55167"}
+{"time":"2026-10-05T16:39:02.118396-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/default/application-repository/categories","status":200,"duration_ms":1,"remote":"127.0.0.1:55168"}
+{"time":"2026-10-05T16:39:02.119987-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:55172"}
+{"time":"2026-10-05T16:39:02.120209-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/4067c108-598f-4a17-9c51-5466a0dfc719/application-repository","status":200,"duration_ms":0,"remote":"127.0.0.1:55171"}
+{"time":"2026-10-05T16:39:02.120378-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/4067c108-598f-4a17-9c51-5466a0dfc719/application-repository/categories","status":200,"duration_ms":0,"remote":"127.0.0.1:55170"}
+{"time":"2026-10-05T16:39:02.12127-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:55169"}
+{"time":"2026-10-05T16:39:02.127278-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:55172"}
+{"time":"2026-10-05T16:39:02.127327-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:55170"}
+{"time":"2026-10-05T16:39:02.128657-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:55169"}
+{"time":"2026-10-05T16:39:02.130132-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:55170"}
+{"time":"2026-10-05T16:39:02.131712-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:55170"}
+{"time":"2026-10-05T16:39:02.133068-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:55170"}
+{"time":"2026-10-05T16:39:02.133844-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/a48b2ac7-3dda-40ed-9274-7536f756c8c1/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:55169"}
+{"time":"2026-10-05T16:39:02.134017-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/legacy-9d9e33fb40b2/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:55172"}
+{"time":"2026-10-05T16:39:02.135832-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:55172"}
+{"time":"2026-10-05T16:39:02.136134-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/a48b2ac7-3dda-40ed-9274-7536f756c8c1/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:55169"}
+{"time":"2026-10-05T16:39:02.240595-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/config-defaults","status":200,"duration_ms":0,"remote":"127.0.0.1:55171"}
+{"time":"2026-10-05T16:39:02.240714-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/data-pools","status":200,"duration_ms":0,"remote":"127.0.0.1:55168"}
+{"time":"2026-10-05T16:39:02.241536-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:55168"}
+{"time":"2026-10-05T16:39:02.241843-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scenarios/load-models/templates","status":200,"duration_ms":1,"remote":"127.0.0.1:55167"}
+{"time":"2026-10-05T16:39:02.242238-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scenarios/load-models/support-matrix","status":200,"duration_ms":1,"remote":"127.0.0.1:55169"}
+{"time":"2026-10-05T16:39:02.242721-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/remotes","status":200,"duration_ms":1,"remote":"127.0.0.1:55171"}
+{"time":"2026-10-05T16:39:02.242953-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:55167"}
+{"time":"2026-10-05T16:39:02.243353-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts","status":200,"duration_ms":3,"remote":"127.0.0.1:55170"}
+{"time":"2026-10-05T16:39:02.251313-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scenarios","status":200,"duration_ms":11,"remote":"127.0.0.1:55172"}
+{"time":"2026-10-05T16:39:02.258866-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/catalog","status":200,"duration_ms":16,"remote":"127.0.0.1:55168"}
+{"time":"2026-10-05T16:39:02.276779-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:55173"}
+{"time":"2026-10-05T16:39:02.276828-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"0eb29a61-63dd-419e-bc1d-2014344a7466","clients":1}
+{"time":"2026-10-05T16:39:02.321422-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/inventory","status":200,"duration_ms":0,"remote":"127.0.0.1:55168"}
+{"time":"2026-10-05T16:39:02.875299-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/tests/estimate","status":200,"duration_ms":2,"remote":"127.0.0.1:55168"}
+{"time":"2026-10-05T16:39:12.24215-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:55168"}
+{"time":"2026-10-05T16:39:17.956815-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-05T16:39:18.175207-04:00","level":"INFO","msg":"shutting down"}
+2026/10/05 16:39:18 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"

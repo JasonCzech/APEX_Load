@@ -6,6 +6,23 @@ import { apiGuideHashForToggle, apiGuideToggleOptions, helpAreaForPage } from '.
 
 const first = helpArticles.find(a => a.id === 'first-test')!
 describe('Help catalogue and content contracts', () => {
+  it('bundles retained resource inspection with searchable bounded-page guidance and honest coverage', async () => {
+    const article = helpArticles.find(value => value.id === 'retained-resource-inspection')!
+    expect(article.path).toBe('docs/guides/RETAINED_RESOURCE_INSPECTION.md')
+    const source = await loadHelpSource(article)
+    const results = searchHelp([{ article, source }], 'opaque continuation')
+    expect(results).toHaveLength(1)
+    expect(results[0].article.id).toBe(article.id)
+    expect(resolveHelpLink('#filter-and-page', article, source)).toBe(helpArticleHash(article, 'filter-and-page'))
+    expect(articleForSection(article.path, 'filter-and-page', source)?.id).toBe(article.id)
+    expect(source).toContain('A zero filter match differs from an unavailable projection')
+    expect(source).toContain('not a complete browser network census')
+    expect(source).toContain('logical allocation bound, not a process-RSS attestation')
+    const document = helpArticles.find(value => value.id === 'browser-document-evidence')!
+    expect(resolveHelpLink('BROWSER_DOCUMENT_EVIDENCE.md', article, source)).toBe(helpArticleHash(document))
+    const documentSource = await loadHelpSource(document)
+    expect(documentSource).toContain('No-interaction INP is unavailable.')
+  })
   it('loads every catalogue source and every selected task section', async () => {
     expect(new Set(helpArticles.map(a => a.id)).size).toBe(helpArticles.length)
     for (const article of helpArticles) {
@@ -14,6 +31,13 @@ describe('Help catalogue and content contracts', () => {
       for (const section of article.sections || []) expect(headings, `${article.id}: ${section}`).toContain(section)
       expect(articleBlocks(article, source).length, article.id).toBeGreaterThan(0)
     }
+  })
+  it('bundles qualified workload-shape guardrail ownership without claiming the remaining AUTH work', async () => {
+    const article = helpArticles.find(item => item.id === 'authoring-scenario-fidelity')!
+    const source = await loadHelpSource(article)
+    expect(source).toContain('Existing SLA, error, transaction and monitor guardrails survive unless the selected shape or template explicitly replaces that field.')
+    expect(source).toContain('An explicitly empty rule array clears those rules.')
+    expect(source).toContain('Scenario revision/CAS, request replay retirement and shared authoring-owner changes remain open')
   })
   it('links every core help document reference to a catalogue article or app route', async () => {
     for (const article of helpArticles.filter(a => a.path.includes('/HELP_'))) {
@@ -87,6 +111,21 @@ describe('Help catalogue and content contracts', () => {
     expect(resolveHelpLink('missing.md', first, source)).toBe('')
     expect(resolveHelpLink('#create-and-prove-the-script', first, source)).toContain('section=create-and-prove-the-script')
     expect(resolveHelpLink('dsl.schema.json', first, source)).toContain('article=dsl')
+  })
+  it.each([
+    ['browser-document-evidence', 'provisional history', 'Browser document evidence'],
+    ['telemetry-policy-receipts', 'semantic SHA-256', 'Telemetry budget policy receipts'],
+    ['authoring-scenario-fidelity', 'sub-millisecond thresholds', 'Scenario and queued-run authoring fidelity'],
+  ])('bundles searchable evidence guidance with a shareable destination: %s', async (id, query, title) => {
+    const article = helpArticles.find(candidate => candidate.id === id)!
+    expect(article).toMatchObject({ area: 'user-guide', title })
+    const source = await loadHelpSource(article)
+    const results = searchHelp([{ article, source }], query)
+    expect(results).toHaveLength(1)
+    expect(results[0].article).toBe(article)
+    expect(resolveHelpLink(article.path.split('/').slice(1).join('/'), first, '')).toBe(helpArticleHash(article))
+    if (results[0].section) expect(articleForSection(article.path, results[0].section, source)?.id).toBe(id)
+    expect(source).toContain('remain open')
   })
   it('retains old URLs and groups their navigation under automation', () => {
     for (const alias of ['mcp', 'authentication', 'quick-start', 'swagger', 'repo-guide'] as const) expect(helpAreaForPage(alias)).toBe('general')

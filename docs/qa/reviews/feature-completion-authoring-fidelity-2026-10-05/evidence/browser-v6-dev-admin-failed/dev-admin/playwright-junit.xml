@@ -1,0 +1,508 @@
+<testsuites id="" name="" tests="58" failures="2" skipped="2" errors="6" time="213.801342">
+<testsuite name="workflow-help.spec.ts" timestamp="2026-10-05T20:35:44.542Z" hostname="" tests="7" failures="0" skipped="1" time="5.64" errors="0">
+<testcase name="Help tasks, search and section links survive navigation and validate the first-test example" classname="workflow-help.spec.ts" time="0.929">
+</testcase>
+<testcase name="DSL operators can discover the guide, validate its example, and follow reference links" classname="workflow-help.spec.ts" time="1.13">
+</testcase>
+<testcase name="evidence guides are searchable, readable and retain their scope after reload" classname="workflow-help.spec.ts" time="1.342">
+</testcase>
+<testcase name="legacy URLs, generated API search and contextual guidance reach the right articles" classname="workflow-help.spec.ts" time="0.656">
+</testcase>
+<testcase name="Help is readable at narrow widths and exposes accessible navigation" classname="workflow-help.spec.ts" time="0.625">
+</testcase>
+<testcase name="non-administrators cannot open or search Administration articles" classname="workflow-help.spec.ts">
+<properties>
+<property name="skip" value="Requires the restricted local-auth persona">
+</property>
+</properties>
+<skipped>
+</skipped>
+</testcase>
+<testcase name="Help maintains readable contrast across the supported themes" classname="workflow-help.spec.ts" time="0.726">
+</testcase>
+</testsuite>
+<testsuite name="workflow-help.spec.ts" timestamp="2026-10-05T20:35:44.542Z" hostname="" tests="7" failures="0" skipped="1" time="5.486" errors="0">
+<testcase name="Help tasks, search and section links survive navigation and validate the first-test example" classname="workflow-help.spec.ts" time="0.702">
+</testcase>
+<testcase name="DSL operators can discover the guide, validate its example, and follow reference links" classname="workflow-help.spec.ts" time="1.247">
+</testcase>
+<testcase name="evidence guides are searchable, readable and retain their scope after reload" classname="workflow-help.spec.ts" time="1.311">
+</testcase>
+<testcase name="legacy URLs, generated API search and contextual guidance reach the right articles" classname="workflow-help.spec.ts" time="0.64">
+</testcase>
+<testcase name="Help is readable at narrow widths and exposes accessible navigation" classname="workflow-help.spec.ts" time="0.609">
+</testcase>
+<testcase name="non-administrators cannot open or search Administration articles" classname="workflow-help.spec.ts">
+<properties>
+<property name="skip" value="Requires the restricted local-auth persona">
+</property>
+</properties>
+<skipped>
+</skipped>
+</testcase>
+<testcase name="Help maintains readable contrast across the supported themes" classname="workflow-help.spec.ts" time="0.736">
+</testcase>
+</testsuite>
+<testsuite name="workflow-new-test.spec.ts" timestamp="2026-10-05T20:35:44.542Z" hostname="" tests="18" failures="1" skipped="0" time="74.16" errors="2">
+<testcase name="Scenario builder gates weighted placement for missing infrastructure" classname="workflow-new-test.spec.ts" time="1.073">
+</testcase>
+<testcase name="Scenario builder gates weighted placement for single-region infrastructure" classname="workflow-new-test.spec.ts" time="1.594">
+</testcase>
+<testcase name="Scenario builder gates weighted placement for multi-zone infrastructure" classname="workflow-new-test.spec.ts" time="0.905">
+</testcase>
+<testcase name="Scenario builder gates weighted placement for multi-region infrastructure" classname="workflow-new-test.spec.ts" time="1.006">
+</testcase>
+<testcase name="Scenario builder preserves controller continuity and the recovery spare budget" classname="workflow-new-test.spec.ts" time="2.118">
+</testcase>
+<testcase name="New Test saves drafts without execution, retains both tabs and validates recurring triggers" classname="workflow-new-test.spec.ts" time="2.753">
+</testcase>
+<testcase name="New Test restores the default name after clearing and reselecting the same scenario" classname="workflow-new-test.spec.ts" time="0.607">
+</testcase>
+<testcase name="New Test exposes editable groups and saves a paused recurring schedule with visible policies" classname="workflow-new-test.spec.ts" time="1.752">
+</testcase>
+<testcase name="Java group profile survives placement edits and scenario persistence (facade ledger: false)" classname="workflow-new-test.spec.ts" time="2.263">
+</testcase>
+<testcase name="Java group profile survives placement edits and scenario persistence (facade ledger: true)" classname="workflow-new-test.spec.ts" time="2.34">
+</testcase>
+<testcase name="Live configuration reports prepared Java reservations without opening raw JSON" classname="workflow-new-test.spec.ts" time="0.405">
+</testcase>
+<testcase name="prepared Event Hubs run displays processor admission and starts with the pinned revision" classname="workflow-new-test.spec.ts" time="0.495">
+</testcase>
+<testcase name="actual held-run serialization and an API-seeded queued copy preserve complete authored intent" classname="workflow-new-test.spec.ts" time="3.295">
+</testcase>
+<testcase name="queued-copy preserves source capture IDs and durably clears the last authored goal" classname="workflow-new-test.spec.ts" time="16.316">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal/test-failed-1.png]]
+
+[[ATTACHMENT|workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal/error-context.md]]
+
+[[ATTACHMENT|workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal/trace.zip]]
+]]>
+</system-out>
+<failure message="expect(locator).toHaveValue(expected) failed" type="expect.toHaveValue">
+<![CDATA[  workflow-new-test.spec.ts:426:1 › queued-copy preserves source capture IDs and durably clears the last authored goal 
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByRole('dialog', { name: 'Create Revised Queued Run', exact: true }).getByLabel('Elastic log capture', { exact: true })
+    Expected: "ae4d7265-f10f-4c45-8a0a-a4c2d2ac6c61"
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toHaveValue" with timeout 15000ms
+      - waiting for getByRole('dialog', { name: 'Create Revised Queued Run', exact: true }).getByLabel('Elastic log capture', { exact: true })
+
+
+      444 |     await page.getByRole('button', { name: 'Create revised queued copy', exact: true }).click()
+      445 |     const dialog = page.getByRole('dialog', { name: 'Create Revised Queued Run', exact: true })
+    > 446 |     await expect(dialog.getByLabel('Elastic log capture', { exact: true })).toHaveValue(idOf(elk))
+          |                                                                             ^
+      447 |     await expect(dialog.getByLabel('Dynatrace SaaS capture', { exact: true })).toHaveValue(idOf(dt))
+      448 |     await expect(dialog.getByRole('button', { name: 'Create Revised Copy', exact: true })).toBeEnabled()
+      449 |     return dialog
+        at openCopy (/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:446:77)
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:451:27
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</failure>
+</testcase>
+<testcase name="queued-copy preserves iteration completion and explicitly clears source delay and root runtime" classname="workflow-new-test.spec.ts" time="16.468">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime/test-failed-1.png]]
+
+[[ATTACHMENT|workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime/error-context.md]]
+
+[[ATTACHMENT|workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime/trace.zip]]
+]]>
+</system-out>
+<error message="page.waitForResponse: Timeout 15000ms exceeded while waiting for event &quot;response&quot;" type="TimeoutError">
+<![CDATA[  workflow-new-test.spec.ts:504:1 › queued-copy preserves iteration completion and explicitly clears source delay and root runtime 
+
+    TimeoutError: page.waitForResponse: Timeout 15000ms exceeded while waiting for event "response"
+
+      522 |   await expect(editor.getByLabel('Steady State Duration', { exact: true })).toHaveValue('')
+      523 |   await editor.getByLabel('Scenario Name', { exact: true }).fill('Iteration renamed copy')
+    > 524 |   let saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/tests')
+          |                    ^
+      525 |   await editor.getByRole('button', { name: 'Create Revised Copy', exact: true }).click()
+      526 |   let response = await saved
+      527 |   expect(response.ok(), await response.text()).toBeTruthy()
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:524:20
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByRole('dialog', { name: 'Create Revised Queued Run', exact: true }).getByRole('button', { name: 'Create Revised Copy', exact: true })
+
+
+      523 |   await editor.getByLabel('Scenario Name', { exact: true }).fill('Iteration renamed copy')
+      524 |   let saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/tests')
+    > 525 |   await editor.getByRole('button', { name: 'Create Revised Copy', exact: true }).click()
+          |                                                                                  ^
+      526 |   let response = await saved
+      527 |   expect(response.ok(), await response.text()).toBeTruthy()
+      528 |   let created = await response.json()
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:525:82
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</error>
+</testcase>
+<testcase name="queued-copy joins a history-guard save to its actual submitted receipt and retains late edits" classname="workflow-new-test.spec.ts" time="3.284">
+</testcase>
+<testcase name="queued-copy submit refuses a source started concurrently and viewers cannot open the action" classname="workflow-new-test.spec.ts" time="1.688">
+</testcase>
+<testcase name="queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear" classname="workflow-new-test.spec.ts" time="15.798">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/test-failed-1.png]]
+
+[[ATTACHMENT|workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/error-context.md]]
+
+[[ATTACHMENT|workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/trace.zip]]
+]]>
+</system-out>
+<error message="locator.selectOption: Timeout 15000ms exceeded." type="TimeoutError">
+<![CDATA[  workflow-new-test.spec.ts:747:1 › queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear 
+
+    TimeoutError: locator.selectOption: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByRole('dialog', { name: 'Runtime Settings — orders', exact: true }).getByLabel('Exchange capture', { exact: true })
+
+
+      766 |   const httpDialog = await open('orders')
+      767 |   await httpDialog.getByRole('tab', { name: 'Error Handling', exact: true }).click()
+    > 768 |   await httpDialog.getByLabel('Exchange capture', { exact: true }).selectOption('off')
+          |                                                                    ^
+      769 |   await httpDialog.getByLabel('Include fetched resources', { exact: true }).selectOption('false')
+      770 |   await httpDialog.getByLabel('Retained exchange limit', { exact: true }).fill('0')
+      771 |   const httpSaved = page.waitForResponse(response => response.request().method() === 'PATCH' && new URL(response.url()).pathname === `/api/v1/tests/${run}/groups/orders/runtime-settings`)
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:768:68
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</error>
+</testcase>
+</testsuite>
+<testsuite name="workflow-new-test.spec.ts" timestamp="2026-10-05T20:35:44.542Z" hostname="" tests="18" failures="1" skipped="0" time="74.099" errors="2">
+<testcase name="Scenario builder gates weighted placement for missing infrastructure" classname="workflow-new-test.spec.ts" time="1.586">
+</testcase>
+<testcase name="Scenario builder gates weighted placement for single-region infrastructure" classname="workflow-new-test.spec.ts" time="1.674">
+</testcase>
+<testcase name="Scenario builder gates weighted placement for multi-zone infrastructure" classname="workflow-new-test.spec.ts" time="1.633">
+</testcase>
+<testcase name="Scenario builder gates weighted placement for multi-region infrastructure" classname="workflow-new-test.spec.ts" time="1.833">
+</testcase>
+<testcase name="Scenario builder preserves controller continuity and the recovery spare budget" classname="workflow-new-test.spec.ts" time="2.026">
+</testcase>
+<testcase name="New Test saves drafts without execution, retains both tabs and validates recurring triggers" classname="workflow-new-test.spec.ts" time="2.621">
+</testcase>
+<testcase name="New Test restores the default name after clearing and reselecting the same scenario" classname="workflow-new-test.spec.ts" time="0.518">
+</testcase>
+<testcase name="New Test exposes editable groups and saves a paused recurring schedule with visible policies" classname="workflow-new-test.spec.ts" time="1.662">
+</testcase>
+<testcase name="Java group profile survives placement edits and scenario persistence (facade ledger: false)" classname="workflow-new-test.spec.ts" time="1.191">
+</testcase>
+<testcase name="Java group profile survives placement edits and scenario persistence (facade ledger: true)" classname="workflow-new-test.spec.ts" time="2.57">
+</testcase>
+<testcase name="Live configuration reports prepared Java reservations without opening raw JSON" classname="workflow-new-test.spec.ts" time="0.597">
+</testcase>
+<testcase name="prepared Event Hubs run displays processor admission and starts with the pinned revision" classname="workflow-new-test.spec.ts" time="0.592">
+</testcase>
+<testcase name="actual held-run serialization and an API-seeded queued copy preserve complete authored intent" classname="workflow-new-test.spec.ts" time="3.79">
+</testcase>
+<testcase name="queued-copy preserves source capture IDs and durably clears the last authored goal" classname="workflow-new-test.spec.ts" time="15.804">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal-repeat1/test-failed-1.png]]
+
+[[ATTACHMENT|workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal-repeat1/error-context.md]]
+
+[[ATTACHMENT|workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal-repeat1/trace.zip]]
+]]>
+</system-out>
+<failure message="expect(locator).toHaveValue(expected) failed" type="expect.toHaveValue">
+<![CDATA[  workflow-new-test.spec.ts:426:1 › queued-copy preserves source capture IDs and durably clears the last authored goal 
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByRole('dialog', { name: 'Create Revised Queued Run', exact: true }).getByLabel('Elastic log capture', { exact: true })
+    Expected: "4ad98e1c-d52b-4391-b976-4bc6ed29aa19"
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toHaveValue" with timeout 15000ms
+      - waiting for getByRole('dialog', { name: 'Create Revised Queued Run', exact: true }).getByLabel('Elastic log capture', { exact: true })
+
+
+      444 |     await page.getByRole('button', { name: 'Create revised queued copy', exact: true }).click()
+      445 |     const dialog = page.getByRole('dialog', { name: 'Create Revised Queued Run', exact: true })
+    > 446 |     await expect(dialog.getByLabel('Elastic log capture', { exact: true })).toHaveValue(idOf(elk))
+          |                                                                             ^
+      447 |     await expect(dialog.getByLabel('Dynatrace SaaS capture', { exact: true })).toHaveValue(idOf(dt))
+      448 |     await expect(dialog.getByRole('button', { name: 'Create Revised Copy', exact: true })).toBeEnabled()
+      449 |     return dialog
+        at openCopy (/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:446:77)
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:451:27
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal-repeat1/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal-repeat1/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-f0a67-ears-the-last-authored-goal-repeat1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</failure>
+</testcase>
+<testcase name="queued-copy preserves iteration completion and explicitly clears source delay and root runtime" classname="workflow-new-test.spec.ts" time="15.772">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime-repeat1/test-failed-1.png]]
+
+[[ATTACHMENT|workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime-repeat1/error-context.md]]
+
+[[ATTACHMENT|workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime-repeat1/trace.zip]]
+]]>
+</system-out>
+<error message="page.waitForResponse: Timeout 15000ms exceeded while waiting for event &quot;response&quot;" type="TimeoutError">
+<![CDATA[  workflow-new-test.spec.ts:504:1 › queued-copy preserves iteration completion and explicitly clears source delay and root runtime 
+
+    TimeoutError: page.waitForResponse: Timeout 15000ms exceeded while waiting for event "response"
+
+      522 |   await expect(editor.getByLabel('Steady State Duration', { exact: true })).toHaveValue('')
+      523 |   await editor.getByLabel('Scenario Name', { exact: true }).fill('Iteration renamed copy')
+    > 524 |   let saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/tests')
+          |                    ^
+      525 |   await editor.getByRole('button', { name: 'Create Revised Copy', exact: true }).click()
+      526 |   let response = await saved
+      527 |   expect(response.ok(), await response.text()).toBeTruthy()
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:524:20
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByRole('dialog', { name: 'Create Revised Queued Run', exact: true }).getByRole('button', { name: 'Create Revised Copy', exact: true })
+
+
+      523 |   await editor.getByLabel('Scenario Name', { exact: true }).fill('Iteration renamed copy')
+      524 |   let saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/tests')
+    > 525 |   await editor.getByRole('button', { name: 'Create Revised Copy', exact: true }).click()
+          |                                                                                  ^
+      526 |   let response = await saved
+      527 |   expect(response.ok(), await response.text()).toBeTruthy()
+      528 |   let created = await response.json()
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:525:82
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime-repeat1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime-repeat1/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-c-334fb-urce-delay-and-root-runtime-repeat1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</error>
+</testcase>
+<testcase name="queued-copy joins a history-guard save to its actual submitted receipt and retains late edits" classname="workflow-new-test.spec.ts" time="2.901">
+</testcase>
+<testcase name="queued-copy submit refuses a source started concurrently and viewers cannot open the action" classname="workflow-new-test.spec.ts" time="1.505">
+</testcase>
+<testcase name="queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear" classname="workflow-new-test.spec.ts" time="15.824">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear-repeat1/test-failed-1.png]]
+
+[[ATTACHMENT|workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear-repeat1/error-context.md]]
+
+[[ATTACHMENT|workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear-repeat1/trace.zip]]
+]]>
+</system-out>
+<error message="locator.selectOption: Timeout 15000ms exceeded." type="TimeoutError">
+<![CDATA[  workflow-new-test.spec.ts:747:1 › queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear 
+
+    TimeoutError: locator.selectOption: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByRole('dialog', { name: 'Runtime Settings — orders', exact: true }).getByLabel('Exchange capture', { exact: true })
+
+
+      766 |   const httpDialog = await open('orders')
+      767 |   await httpDialog.getByRole('tab', { name: 'Error Handling', exact: true }).click()
+    > 768 |   await httpDialog.getByLabel('Exchange capture', { exact: true }).selectOption('off')
+          |                                                                    ^
+      769 |   await httpDialog.getByLabel('Include fetched resources', { exact: true }).selectOption('false')
+      770 |   await httpDialog.getByLabel('Retained exchange limit', { exact: true }).fill('0')
+      771 |   const httpSaved = page.waitForResponse(response => response.request().method() === 'PATCH' && new URL(response.url()).pathname === `/api/v1/tests/${run}/groups/orders/runtime-settings`)
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:768:68
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear-repeat1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear-repeat1/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear-repeat1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</error>
+</testcase>
+</testsuite>
+<testsuite name="workflow-scenario-composition.spec.ts" timestamp="2026-10-05T20:35:44.542Z" hostname="" tests="4" failures="0" skipped="0" time="20.941" errors="1">
+<testcase name="scenario composition combines group editing with a live preview" classname="workflow-scenario-composition.spec.ts" time="2.918">
+</testcase>
+<testcase name="guided stepped ramp keeps its pattern editor within the four scenario tabs" classname="workflow-scenario-composition.spec.ts" time="1.064">
+</testcase>
+<testcase name="scenario rename and reopen retain Results, WebSocket, named shape and group timing intent" classname="workflow-scenario-composition.spec.ts" time="0.936">
+</testcase>
+<testcase name="changing a saved workload shape retains the authored root SLA and rules" classname="workflow-scenario-composition.spec.ts" time="16.023">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules/test-failed-1.png]]
+
+[[ATTACHMENT|workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules/error-context.md]]
+
+[[ATTACHMENT|workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules/trace.zip]]
+]]>
+</system-out>
+<error message="locator.fill: Timeout 15000ms exceeded." type="TimeoutError">
+<![CDATA[  workflow-scenario-composition.spec.ts:143:1 › changing a saved workload shape retains the authored root SLA and rules 
+
+    TimeoutError: locator.fill: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByLabel('Ending load level', { exact: true })
+
+
+      157 |   await page.getByRole('button', { name: 'Use Stepped Ramp', exact: true }).click()
+      158 |   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Run Settings/ }).click()
+    > 159 |   await page.getByLabel('Ending load level', { exact: true }).fill('14')
+          |                                                               ^
+      160 |   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Review/ }).click()
+      161 |   const saved = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/v1/scenarios/${scenario}`)
+      162 |   await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-scenario-composition.spec.ts:159:63
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</error>
+</testcase>
+</testsuite>
+<testsuite name="workflow-scenario-composition.spec.ts" timestamp="2026-10-05T20:35:44.542Z" hostname="" tests="4" failures="0" skipped="0" time="22.453" errors="1">
+<testcase name="scenario composition combines group editing with a live preview" classname="workflow-scenario-composition.spec.ts" time="3.311">
+</testcase>
+<testcase name="guided stepped ramp keeps its pattern editor within the four scenario tabs" classname="workflow-scenario-composition.spec.ts" time="1.985">
+</testcase>
+<testcase name="scenario rename and reopen retain Results, WebSocket, named shape and group timing intent" classname="workflow-scenario-composition.spec.ts" time="1.113">
+</testcase>
+<testcase name="changing a saved workload shape retains the authored root SLA and rules" classname="workflow-scenario-composition.spec.ts" time="16.044">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules-repeat1/test-failed-1.png]]
+
+[[ATTACHMENT|workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules-repeat1/error-context.md]]
+
+[[ATTACHMENT|workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules-repeat1/trace.zip]]
+]]>
+</system-out>
+<error message="locator.fill: Timeout 15000ms exceeded." type="TimeoutError">
+<![CDATA[  workflow-scenario-composition.spec.ts:143:1 › changing a saved workload shape retains the authored root SLA and rules 
+
+    TimeoutError: locator.fill: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByLabel('Ending load level', { exact: true })
+
+
+      157 |   await page.getByRole('button', { name: 'Use Stepped Ramp', exact: true }).click()
+      158 |   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Run Settings/ }).click()
+    > 159 |   await page.getByLabel('Ending load level', { exact: true }).fill('14')
+          |                                                               ^
+      160 |   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Review/ }).click()
+      161 |   const saved = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/v1/scenarios/${scenario}`)
+      162 |   await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-scenario-composition.spec.ts:159:63
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules-repeat1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules-repeat1/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules-repeat1/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../../private/tmp/apexload-authoring-fidelity-v6-browser-dev-admin-20261005/dev-admin/workflow-scenario-composit-1f0ac-authored-root-SLA-and-rules-repeat1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</error>
+</testcase>
+</testsuite>
+</testsuites>

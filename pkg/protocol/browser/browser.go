@@ -2,6 +2,7 @@ package browser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -71,6 +72,7 @@ type Browser struct {
 	harCapturePolicy      string
 	harDir                string
 	harWorkingPath        string
+	harOwner              *harCaptureOwner
 	harErrorSeen          bool
 	harSLABreachSeen      bool
 	harManualSeen         bool
@@ -212,6 +214,22 @@ type browserProcessSnapshot struct {
 func (b *Browser) Name() string { return "browser" }
 
 func (b *Browser) Init(ctx context.Context, config map[string]any) error {
+	b.mu.Lock()
+	owner := b.harOwner
+	b.mu.Unlock()
+	if owner != nil && !owner.retiredSuccessfully() {
+		return errHAROwnershipUnproven
+	}
+	if owner != nil {
+		b.mu.Lock()
+		if b.harOwner == owner {
+			b.harOwner = nil
+			b.harWorkingPath = ""
+			b.pwContext = nil
+			unregisterRuntimeHARWorkingPath(owner.path)
+		}
+		b.mu.Unlock()
+	}
 	if err := b.applyConfig(config); err != nil {
 		return err
 	}
@@ -312,9 +330,19 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 }
 
 func (b *Browser) Teardown(ctx context.Context) error {
-	b.finalizeDocumentEvidence(ctx)
-	b.close()
-	return nil
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	b.mu.Lock()
+	owned := b.harOwner != nil
+	b.mu.Unlock()
+	if owned {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, runtimeHARCloseWait)
+		defer cancel()
+	}
+	documentErr := b.finalizeDocumentEvidenceContext(ctx)
+	return errors.Join(documentErr, b.closeWithContext(ctx))
 }
 
 func (b *Browser) HealthCheck(_ context.Context) error {

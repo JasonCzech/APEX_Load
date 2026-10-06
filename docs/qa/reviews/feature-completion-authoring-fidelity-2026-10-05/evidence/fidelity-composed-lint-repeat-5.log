@@ -1,0 +1,10 @@
+
+> apexload-dashboard@0.1.0 lint
+> eslint . --max-warnings=0
+
+
+/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/src/components/CreateTestModal.test.tsx
+  512:17  error  Optional chain expressions can return undefined by design - using a non-null assertion is unsafe and wrong  @typescript-eslint/no-non-null-asserted-optional-chain
+
+✖ 1 problem (1 error, 0 warnings)
+

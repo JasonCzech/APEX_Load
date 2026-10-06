@@ -24621,7 +24621,35 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  description:
+                    type: string
+                  domain_id:
+                    type: string
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  repository_id:
+                    type: string
+                  sort_order:
+                    type: integer
+                    format: int64
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - created_at
+                  - domain_id
+                  - id
+                  - name
+                  - repository_id
+                  - updated_at
+                nullable: true
         "400":
           description: Bad Request
           content:
@@ -28027,7 +28055,78 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  active:
+                    type: boolean
+                  application_repository_roles:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: string
+                  contact_email:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  description:
+                    type: string
+                  domain_roles:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  global_roles:
+                    type: array
+                    items:
+                      type: string
+                  id:
+                    type: string
+                  key_rotated_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  last_used_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  name:
+                    type: string
+                  owner_id:
+                    type: string
+                  project_roles:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: string
+                  rotation_due_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  rotation_interval_days:
+                    type: integer
+                    format: int64
+                  scopes:
+                    type: array
+                    items:
+                      type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - active
+                  - created_at
+                  - id
+                  - name
+                  - updated_at
+                nullable: true
         "400":
           description: Bad Request
           content:
@@ -44774,7 +44873,29 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  description:
+                    type: string
+                  domain_id:
+                    type: string
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - created_at
+                  - domain_id
+                  - id
+                  - name
+                  - updated_at
+                nullable: true
         "401":
           description: Authentication required or invalid.
           content:
@@ -44832,7 +44953,29 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  description:
+                    type: string
+                  domain_id:
+                    type: string
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - created_at
+                  - domain_id
+                  - id
+                  - name
+                  - updated_at
+                nullable: true
         "400":
           description: Bad Request
           content:
@@ -60937,7 +61080,185 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  category_id:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  domain_id:
+                    type: string
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  settings:
+                    type: object
+                    properties:
+                      authoring:
+                        type: object
+                        properties:
+                          require_scenario_save_if_match:
+                            type: boolean
+                          require_script_save_if_match:
+                            type: boolean
+                        nullable: true
+                      features:
+                        type: object
+                        properties:
+                          control_parallel:
+                            type: boolean
+                          media_stream:
+                            type: boolean
+                          native_elastic_capacity:
+                            type: boolean
+                          privileged_monitors:
+                            type: boolean
+                          successful_message_detail:
+                            type: boolean
+                      github:
+                        type: object
+                        properties:
+                          actions:
+                            type: object
+                            properties:
+                              allowed_environments:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_protocols:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_refs:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_repositories:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_repository_ids:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_target_hosts:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_workflow_refs:
+                                type: array
+                                items:
+                                  type: string
+                              audience:
+                                type: string
+                              checks_enabled:
+                                type: boolean
+                              enabled:
+                                type: boolean
+                              issuer:
+                                type: string
+                              max_duration_minutes:
+                                type: integer
+                                format: int64
+                              max_vusers:
+                                type: integer
+                                format: int64
+                              required_runner_environment:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              updated_at:
+                                type: string
+                                format: date-time
+                              updated_by:
+                                type: string
+                          allow_direct_commit:
+                            type: boolean
+                          allow_import:
+                            type: boolean
+                          allow_push:
+                            type: boolean
+                          allowed_branches:
+                            type: array
+                            items:
+                              type: string
+                          allowed_repos:
+                            type: array
+                            items:
+                              type: string
+                          app_installation_id:
+                            type: integer
+                            format: int64
+                          auto_sync_enabled:
+                            type: boolean
+                          automation_identity:
+                            type: string
+                          bulk_sync_enabled:
+                            type: boolean
+                          checks_enabled:
+                            type: boolean
+                          default_branch:
+                            type: string
+                          default_repo:
+                            type: string
+                          default_sync_directory:
+                            type: string
+                          enabled:
+                            type: boolean
+                          path_template:
+                            type: string
+                          require_pull_request:
+                            type: boolean
+                      max_concurrent_tests:
+                        type: integer
+                        format: int64
+                      max_test_duration_minutes:
+                        type: integer
+                        format: int64
+                      max_vusers:
+                        type: integer
+                        format: int64
+                      max_vusers_per_test:
+                        type: integer
+                        format: int64
+                      pool_quotas:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            max_concurrent_tests:
+                              type: integer
+                              format: int64
+                            max_vusers:
+                              type: integer
+                              format: int64
+                      redaction_rules:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            pattern:
+                              type: string
+                            replacement:
+                              type: string
+                          required:
+                            - pattern
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - created_at
+                  - id
+                  - name
+                  - updated_at
+                nullable: true
         "401":
           description: Authentication required or invalid.
           content:
@@ -61149,7 +61470,185 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  category_id:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  domain_id:
+                    type: string
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  settings:
+                    type: object
+                    properties:
+                      authoring:
+                        type: object
+                        properties:
+                          require_scenario_save_if_match:
+                            type: boolean
+                          require_script_save_if_match:
+                            type: boolean
+                        nullable: true
+                      features:
+                        type: object
+                        properties:
+                          control_parallel:
+                            type: boolean
+                          media_stream:
+                            type: boolean
+                          native_elastic_capacity:
+                            type: boolean
+                          privileged_monitors:
+                            type: boolean
+                          successful_message_detail:
+                            type: boolean
+                      github:
+                        type: object
+                        properties:
+                          actions:
+                            type: object
+                            properties:
+                              allowed_environments:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_protocols:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_refs:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_repositories:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_repository_ids:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_target_hosts:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_workflow_refs:
+                                type: array
+                                items:
+                                  type: string
+                              audience:
+                                type: string
+                              checks_enabled:
+                                type: boolean
+                              enabled:
+                                type: boolean
+                              issuer:
+                                type: string
+                              max_duration_minutes:
+                                type: integer
+                                format: int64
+                              max_vusers:
+                                type: integer
+                                format: int64
+                              required_runner_environment:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              updated_at:
+                                type: string
+                                format: date-time
+                              updated_by:
+                                type: string
+                          allow_direct_commit:
+                            type: boolean
+                          allow_import:
+                            type: boolean
+                          allow_push:
+                            type: boolean
+                          allowed_branches:
+                            type: array
+                            items:
+                              type: string
+                          allowed_repos:
+                            type: array
+                            items:
+                              type: string
+                          app_installation_id:
+                            type: integer
+                            format: int64
+                          auto_sync_enabled:
+                            type: boolean
+                          automation_identity:
+                            type: string
+                          bulk_sync_enabled:
+                            type: boolean
+                          checks_enabled:
+                            type: boolean
+                          default_branch:
+                            type: string
+                          default_repo:
+                            type: string
+                          default_sync_directory:
+                            type: string
+                          enabled:
+                            type: boolean
+                          path_template:
+                            type: string
+                          require_pull_request:
+                            type: boolean
+                      max_concurrent_tests:
+                        type: integer
+                        format: int64
+                      max_test_duration_minutes:
+                        type: integer
+                        format: int64
+                      max_vusers:
+                        type: integer
+                        format: int64
+                      max_vusers_per_test:
+                        type: integer
+                        format: int64
+                      pool_quotas:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            max_concurrent_tests:
+                              type: integer
+                              format: int64
+                            max_vusers:
+                              type: integer
+                              format: int64
+                      redaction_rules:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            pattern:
+                              type: string
+                            replacement:
+                              type: string
+                          required:
+                            - pattern
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - created_at
+                  - id
+                  - name
+                  - updated_at
+                nullable: true
         "400":
           description: Bad Request
           content:
@@ -331597,6 +332096,466 @@ paths:
       tags:
         - Tests
       x-handler: handleDownloadRunArchiveBrowserDiagnostics
+  /api/v1/tests/{id}/archive/browser-resources:
+    get:
+      summary: Get Run Archive Browser Resources
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleGetRunArchiveBrowserResources
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  capture_coverage:
+                    type: object
+                    properties:
+                      availability:
+                        type: string
+                      reason:
+                        type: string
+                    additionalProperties: false
+                    required:
+                      - availability
+                      - reason
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        action_name:
+                          type: string
+                        browser_engine:
+                          type: string
+                        browser_evidence:
+                          type: object
+                          properties:
+                            bytes:
+                              type: object
+                              properties:
+                                request_body:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                request_headers:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                response_encoded_body:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                response_headers:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                unavailable_reason:
+                                  type: string
+                              additionalProperties: false
+                            cache:
+                              type: boolean
+                              nullable: true
+                            cache_unavailable_reason:
+                              type: string
+                            document_id:
+                              type: string
+                            document_offset_ms:
+                              type: number
+                              format: double
+                              nullable: true
+                            epoch_start_ms:
+                              type: number
+                              format: double
+                              nullable: true
+                            frame_id:
+                              type: string
+                            identity_unavailable_reason:
+                              type: string
+                            initiating_action_id:
+                              type: string
+                            initiator_unavailable_reason:
+                              type: string
+                            navigation_id:
+                              type: string
+                            observation_action_id:
+                              type: string
+                            observed_at:
+                              type: string
+                              format: date-time
+                            origin:
+                              type: string
+                            phases:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  end_ms:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  name:
+                                    type: string
+                                  start_ms:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  unavailable_reason:
+                                    type: string
+                                additionalProperties: false
+                                required:
+                                  - name
+                              nullable: true
+                            redirect_chain_id:
+                              type: string
+                            redirect_from_request_id:
+                              type: string
+                            redirect_hop:
+                              type: integer
+                              format: int64
+                            request_id:
+                              type: string
+                            service_worker:
+                              type: boolean
+                              nullable: true
+                            service_worker_unavailable_reason:
+                              type: string
+                            source_generation:
+                              type: string
+                            state:
+                              type: string
+                            timing_source:
+                              type: string
+                            version:
+                              type: integer
+                              format: int64
+                          additionalProperties: false
+                          required:
+                            - bytes
+                            - observed_at
+                            - phases
+                            - redirect_hop
+                            - request_id
+                            - source_generation
+                            - state
+                            - timing_source
+                            - version
+                          nullable: true
+                        bytes_received:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        device_platform:
+                          type: string
+                        device_profile:
+                          type: string
+                        duration_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        evidence_state:
+                          type: string
+                        failure_kind:
+                          type: string
+                        group:
+                          type: string
+                        locator:
+                          type: object
+                          properties:
+                            branch:
+                              type: string
+                            resource_ordinal:
+                              type: integer
+                              format: int64
+                            transaction_ordinal:
+                              type: integer
+                              format: int64
+                          additionalProperties: false
+                          required:
+                            - branch
+                            - resource_ordinal
+                            - transaction_ordinal
+                        method:
+                          type: string
+                        page_url:
+                          type: string
+                        region:
+                          type: string
+                        resource_type:
+                          type: string
+                        status_code:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        timestamp:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        timestamp_precision:
+                          type: string
+                        url:
+                          type: string
+                      additionalProperties: false
+                      required:
+                        - evidence_state
+                        - locator
+                        - timestamp_precision
+                  next_cursor:
+                    type: string
+                  population:
+                    type: object
+                    properties:
+                      availability:
+                        type: string
+                      matched_retained_observations:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      retained_entry_observations:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      transaction_records:
+                        type: integer
+                        format: int64
+                    additionalProperties: false
+                    required:
+                      - availability
+                      - matched_retained_observations
+                      - retained_entry_observations
+                      - transaction_records
+                  project_id:
+                    type: string
+                  source_format:
+                    type: string
+                  source_integrity:
+                    type: string
+                  source_revision:
+                    type: string
+                  source_timestamp_precision:
+                    type: string
+                  test_id:
+                    type: string
+                  version:
+                    type: integer
+                    format: int64
+                additionalProperties: false
+                required:
+                  - capture_coverage
+                  - items
+                  - population
+                  - project_id
+                  - source_format
+                  - source_integrity
+                  - source_revision
+                  - source_timestamp_precision
+                  - test_id
+                  - version
+        "400":
+          description: Bad Request; no partial resource page is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Forbidden; no partial resource page is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found; no partial resource page is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "408":
+          description: Request Timeout; no partial resource page is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict; no partial resource page is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large; no partial resource page is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: Unprocessable Entity; no partial resource page is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable; no partial resource page is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action_name
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+        - name: browser_engine
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          description: Opaque 15-minute continuation for this exact query, canonical run/project, durable publication and completed source fingerprint. A changed source or authorization refuses continuation.
+          required: false
+          schema:
+            type: string
+        - name: device_profile
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+        - name: document_id
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+        - name: failure_kind
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+            enum:
+              - http
+              - transport
+              - timeout
+              - canceled
+              - body_limit
+        - name: group
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+        - name: initiating_action_id
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Page size 1 through 100, default 50. Scan and selection are bounded; results are never silently truncated.
+          required: false
+          schema:
+            type: integer
+        - name: observation_action_id
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+        - name: origin
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Optional exact project scope. Durable joined run/archive project authority is rechecked before publication.
+          required: false
+          schema:
+            type: string
+        - name: redirect_chain_id
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+        - name: region
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+        - name: request_id
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+        - name: resource_type
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+        - name: sort_by
+          in: query
+          description: Approved sort; missing measurements sort last in both directions. Stable transaction/resource ordinals resolve ties; legacy values never substitute for native sort measurements.
+          required: false
+          schema:
+            type: string
+            enum:
+              - capture_order
+              - duration_ms
+              - native_start_ms
+              - response_encoded_body
+        - name: sort_dir
+          in: query
+          description: Sort direction, default asc; unavailable measurements remain last.
+          required: false
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+        - name: source_generation
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+        - name: state
+          in: query
+          description: Optional exact retained resource filter. Repeated, unsupported or explicit empty fields are refused.
+          required: false
+          schema:
+            type: string
+            enum:
+              - finished
+              - failed
+              - censored
+      tags:
+        - Tests
+      x-handler: handleGetRunArchiveBrowserResources
   /api/v1/tests/{id}/archive/comparison:
     get:
       summary: Get Run Archive Comparison

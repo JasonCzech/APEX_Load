@@ -1,0 +1,112 @@
+Building controller...
+Starting controller on http://127.0.0.1:18971 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.LmQ4o0bsjE)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 3 tests using 1 worker
+
+(node:25601) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/workflow-help.spec.ts:174:1 › retained resource guide is searchable and remains selected after reload and narrowing (1.2s)
+(node:25623) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 e2e/workflow-retained-resource-inspector.spec.ts:56:1 › retained resource inspector paginates beyond report previews and preserves native zero, false and independent clocks (16.3s)
+(node:25758) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  3 e2e/workflow-retained-resource-inspector.spec.ts:164:1 › retained resource inspector refuses a mismatched page and retries without publishing unavailable evidence as zero (581ms)
+
+
+  1) e2e/workflow-retained-resource-inspector.spec.ts:56:1 › retained resource inspector paginates beyond report previews and preserves native zero, false and independent clocks 
+
+    TimeoutError: locator.selectOption: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByRole('region', { name: 'Retained archive resource inspector', exact: true }).getByLabel('Resources per page', { exact: true })
+
+
+       96 |   expect(queries.at(-1)).not.toHaveProperty('cursor')
+       97 |   await inspector.getByLabel('Capturing action', { exact: true }).fill('')
+    >  98 |   await inspector.getByLabel('Resources per page', { exact: true }).selectOption('25')
+          |                                                                     ^
+       99 |   await inspector.getByRole('button', { name: 'Apply resource filters', exact: true }).click()
+      100 |   await expect(table.locator('tbody tr')).toHaveCount(25)
+      101 |   await page.setViewportSize({ width: 760, height: 1600 })
+        at /Users/jasonczech/.codex/worktrees/kafka-owned-seek/Project_Stormrunner/dashboard/e2e/workflow-retained-resource-inspector.spec.ts:98:69
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-browser-resource-ui-first-1/dev-admin/workflow-retained-resource-ad392-alse-and-independent-clocks/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../private/tmp/apexload-browser-resource-ui-first-1/dev-admin/workflow-retained-resource-ad392-alse-and-independent-clocks/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-browser-resource-ui-first-1/dev-admin/workflow-retained-resource-ad392-alse-and-independent-clocks/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../private/tmp/apexload-browser-resource-ui-first-1/dev-admin/workflow-retained-resource-ad392-alse-and-independent-clocks/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    e2e/workflow-retained-resource-inspector.spec.ts:56:1 › retained resource inspector paginates beyond report previews and preserves native zero, false and independent clocks 
+  2 passed (20.2s)
+--- controller log (last 60 lines) ---
+{"time":"2026-10-05T12:23:34.423509-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:62931"}
+{"time":"2026-10-05T12:23:34.446881-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/f89fa050-459c-4b9b-a1c7-373d9561a090/report/annotations","status":200,"duration_ms":0,"remote":"127.0.0.1:62926"}
+{"time":"2026-10-05T12:23:34.448418-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/f89fa050-459c-4b9b-a1c7-373d9561a090","status":200,"duration_ms":0,"remote":"127.0.0.1:62924"}
+{"time":"2026-10-05T12:23:34.467692-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/f89fa050-459c-4b9b-a1c7-373d9561a090/analysis/annotations","status":200,"duration_ms":0,"remote":"127.0.0.1:62926"}
+{"time":"2026-10-05T12:23:34.469583-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/f89fa050-459c-4b9b-a1c7-373d9561a090/manifest","status":200,"duration_ms":1,"remote":"127.0.0.1:62928"}
+{"time":"2026-10-05T12:23:34.556854-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:62932"}
+{"time":"2026-10-05T12:23:34.556884-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"b81e7151-d31f-4570-b4cc-c245abb69ba1","clients":1}
+{"time":"2026-10-05T12:23:44.421675-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:62928"}
+{"time":"2026-10-05T12:23:50.295945-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/f89fa050-459c-4b9b-a1c7-373d9561a090","status":200,"duration_ms":0,"remote":"127.0.0.1:62924"}
+{"time":"2026-10-05T12:23:50.299652-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/tests/f89fa050-459c-4b9b-a1c7-373d9561a090/abort","status":200,"duration_ms":2,"remote":"127.0.0.1:62924"}
+{"time":"2026-10-05T12:23:50.302935-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/f89fa050-459c-4b9b-a1c7-373d9561a090/archive/report","status":404,"duration_ms":0,"remote":"127.0.0.1:62928"}
+{"time":"2026-10-05T12:23:50.304048-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/f89fa050-459c-4b9b-a1c7-373d9561a090/manifest","status":200,"duration_ms":1,"remote":"127.0.0.1:62926"}
+{"time":"2026-10-05T12:23:50.304558-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/f89fa050-459c-4b9b-a1c7-373d9561a090","status":200,"duration_ms":1,"remote":"127.0.0.1:62924"}
+{"time":"2026-10-05T12:23:50.498124-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-05T12:23:51.080406-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/domains","status":201,"duration_ms":0,"remote":"127.0.0.1:62948"}
+{"time":"2026-10-05T12:23:51.084231-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/projects","status":201,"duration_ms":0,"remote":"127.0.0.1:62948"}
+{"time":"2026-10-05T12:23:51.086407-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications","status":201,"duration_ms":0,"remote":"127.0.0.1:62948"}
+{"time":"2026-10-05T12:23:51.088442-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications/fc584321-c429-461e-9124-2278ed525121/releases","status":201,"duration_ms":0,"remote":"127.0.0.1:62948"}
+{"time":"2026-10-05T12:23:51.094751-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/scripts","status":201,"duration_ms":4,"remote":"127.0.0.1:62948"}
+{"time":"2026-10-05T12:23:51.099744-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/tests","status":201,"duration_ms":1,"remote":"127.0.0.1:62948"}
+{"time":"2026-10-05T12:23:51.13764-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/me","status":200,"duration_ms":0,"remote":"127.0.0.1:62951"}
+{"time":"2026-10-05T12:23:51.168207-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:62951"}
+{"time":"2026-10-05T12:23:51.168234-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:62952"}
+{"time":"2026-10-05T12:23:51.168602-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains","status":200,"duration_ms":0,"remote":"127.0.0.1:62950"}
+{"time":"2026-10-05T12:23:51.168951-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:62949"}
+{"time":"2026-10-05T12:23:51.169021-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/86a4f93a-60fb-4c53-900c-5df6a904efa3","status":200,"duration_ms":0,"remote":"127.0.0.1:62948"}
+{"time":"2026-10-05T12:23:51.169826-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/desktop/status","status":200,"duration_ms":0,"remote":"127.0.0.1:62953"}
+{"time":"2026-10-05T12:23:51.169964-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects","status":200,"duration_ms":0,"remote":"127.0.0.1:62954"}
+{"time":"2026-10-05T12:23:51.179538-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/default/application-repository","status":200,"duration_ms":0,"remote":"127.0.0.1:62954"}
+{"time":"2026-10-05T12:23:51.17958-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:62949"}
+{"time":"2026-10-05T12:23:51.179652-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/default/application-repository/categories","status":200,"duration_ms":0,"remote":"127.0.0.1:62953"}
+{"time":"2026-10-05T12:23:51.180456-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:62953"}
+{"time":"2026-10-05T12:23:51.180725-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/dc2bee33-9cdc-41d0-90eb-fbdea9e250ea/application-repository","status":200,"duration_ms":0,"remote":"127.0.0.1:62949"}
+{"time":"2026-10-05T12:23:51.181011-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/dc2bee33-9cdc-41d0-90eb-fbdea9e250ea/application-repository/categories","status":200,"duration_ms":0,"remote":"127.0.0.1:62954"}
+{"time":"2026-10-05T12:23:51.181272-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:62953"}
+{"time":"2026-10-05T12:23:51.181372-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:62950"}
+{"time":"2026-10-05T12:23:51.181696-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:62951"}
+{"time":"2026-10-05T12:23:51.182299-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:62952"}
+{"time":"2026-10-05T12:23:51.182465-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:62949"}
+{"time":"2026-10-05T12:23:51.190152-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:62949"}
+{"time":"2026-10-05T12:23:51.190286-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/legacy-23807951a605/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:62953"}
+{"time":"2026-10-05T12:23:51.190311-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:62951"}
+{"time":"2026-10-05T12:23:51.190541-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/fc584321-c429-461e-9124-2278ed525121/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:62952"}
+{"time":"2026-10-05T12:23:51.190984-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:62950"}
+{"time":"2026-10-05T12:23:51.19103-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/fc584321-c429-461e-9124-2278ed525121/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:62949"}
+{"time":"2026-10-05T12:23:51.197135-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:62949"}
+{"time":"2026-10-05T12:23:51.221388-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/86a4f93a-60fb-4c53-900c-5df6a904efa3/report/annotations","status":200,"duration_ms":0,"remote":"127.0.0.1:62952"}
+{"time":"2026-10-05T12:23:51.222712-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/86a4f93a-60fb-4c53-900c-5df6a904efa3","status":200,"duration_ms":0,"remote":"127.0.0.1:62948"}
+{"time":"2026-10-05T12:23:51.230956-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/86a4f93a-60fb-4c53-900c-5df6a904efa3/analysis/annotations","status":200,"duration_ms":0,"remote":"127.0.0.1:62952"}
+{"time":"2026-10-05T12:23:51.232092-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/86a4f93a-60fb-4c53-900c-5df6a904efa3/manifest","status":200,"duration_ms":1,"remote":"127.0.0.1:62951"}
+{"time":"2026-10-05T12:23:51.336752-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:62955"}
+{"time":"2026-10-05T12:23:51.336755-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"a4758a37-37f0-46df-90e3-9b237d566d1d","clients":1}
+{"time":"2026-10-05T12:23:51.569358-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/86a4f93a-60fb-4c53-900c-5df6a904efa3","status":200,"duration_ms":0,"remote":"127.0.0.1:62948"}
+{"time":"2026-10-05T12:23:51.573273-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/tests/86a4f93a-60fb-4c53-900c-5df6a904efa3/abort","status":200,"duration_ms":1,"remote":"127.0.0.1:62948"}
+{"time":"2026-10-05T12:23:51.574829-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/86a4f93a-60fb-4c53-900c-5df6a904efa3/archive/report","status":404,"duration_ms":0,"remote":"127.0.0.1:62951"}
+{"time":"2026-10-05T12:23:51.575471-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/86a4f93a-60fb-4c53-900c-5df6a904efa3/manifest","status":200,"duration_ms":1,"remote":"127.0.0.1:62952"}
+{"time":"2026-10-05T12:23:51.577598-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests/86a4f93a-60fb-4c53-900c-5df6a904efa3","status":200,"duration_ms":0,"remote":"127.0.0.1:62948"}
+{"time":"2026-10-05T12:23:51.640653-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-05T12:23:51.666787-04:00","level":"INFO","msg":"shutting down"}
+2026/10/05 12:23:51 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"

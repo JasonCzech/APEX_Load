@@ -1071,6 +1071,8 @@ export function buildGroupsForRunPayload(scenario: StoredScenario | undefined, o
       vusers: effective.vusers,
       ramp_up: effective.ramp_up || undefined,
       ramp_down: effective.ramp_down || undefined,
+      start_offset: effective.start_offset || undefined,
+      ...(group.transaction_response_time_sla_ms !== undefined ? { transaction_response_time_sla_ms: group.transaction_response_time_sla_ms } : {}),
       stages: effective.stages,
       iterations: group.iterations,
       initialization: effective.initialization || 'at_runtime',

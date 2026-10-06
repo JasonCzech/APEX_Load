@@ -1,0 +1,46 @@
+{
+  "review": "Independent parent repeat review; v2 superseded by pending v3 fixes",
+  "reviewed_at_utc": "2026-10-05T21:26:56.381541+00:00",
+  "candidate_inventory": "apexload-native-har-ownership-candidate-source-v2-20261005.json",
+  "candidate_inventory_sha256": "aa049e84b8b736b951dc3caa4e1a2c9482f1783eee081b8bfc301b363a329625",
+  "source_check": "All25 direct source/module/support hashes matched at start of the v2 review. V3 edits subsequently authorized; this is not a claim that v3 matches v2 or full transitive qualification.",
+  "scope": [
+    "Re-read close/runtime/finish completion markers and exact closer barrier",
+    "Re-read working-generation retirement, completed retention, bounded scan/error/limit paths, private raw reservation",
+    "Read new native/API cross-process and ownership regressions",
+    "Read unchanged document finalizer/bootstrap and actual native WebKit oracle after full-suite failure"
+  ],
+  "previous_findings": "Four v1 P2 findings have focused corrections; revised retirement remains incomplete at later delete boundaries. SizeBytes and precreated0600 raw-file corrections reviewed.",
+  "findings": [
+    {
+      "priority": 2,
+      "file": "pkg/protocol/browser/har_working_lease.go; pkg/protocol/browser/har_retention.go",
+      "issue": "Working retirement removes owner.lock/join/sealed proof before final directory removal; interruption after proof deletion is permanently unprunable. Completed .har-retired-random tombstones are also ignored after rename interruption.",
+      "required": "Durable bounded identity-bound terminal retirement evidence survives every unlink/rename boundary. Reclaim only proven original payload; preserve unknown or replacement entries."
+    },
+    {
+      "priority": 2,
+      "file": "pkg/protocol/browser/document_evidence.go",
+      "issue": "Document finalizer cancellation closes the SDK context outside the HAR exact-owner close-once barrier, and synchronous joins may block before bounded teardown.",
+      "required": "Route owned context cancellation through exact close owner and join finalization work in its owned barrier."
+    },
+    {
+      "priority": 2,
+      "file": "pkg/protocol/browser/document_evidence.go",
+      "issue": "One stale/detached frame Evaluate error censors all documents on its page, invalidating later live sibling final measurements; this is consistent with retained WebKit INP red.",
+      "required": "Isolate per-frame finalization errors, exercise stale frame plus live sibling deterministically and repeat unchanged actual native finality/counter oracle."
+    },
+    {
+      "priority": 2,
+      "file": "pkg/api/har_artifact_ownership_test.go; pkg/protocol/browser/har_ownership_native_test.go",
+      "issue": "Failure branches after child Start or blocked native gate do not unconditionally release fixture gates and join exact processes/workers.",
+      "required": "Cleanup must release owned gates, cancel and join subprocesses and exact fixture workers on all failing assertions; never leave shared native contexts or pending owners stranded."
+    }
+  ],
+  "qualification_limits": [
+    "V2 focused and browser-short/race receipts are narrower than native/API/runtime acceptance",
+    "2GiB working admission is point-in-time only; aggregate active-writer/RSS quota and full BE3 artifact delivery remain open",
+    "No claims of Windows/Linux qualification or full program completion"
+  ],
+  "status": "findings-require-fix-and-repeat-review"
+}

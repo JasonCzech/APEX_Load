@@ -1,0 +1,35 @@
+{
+  "name": "native-har-document-owner-red-1",
+  "argv": [
+    "go",
+    "test",
+    "./pkg/protocol/browser",
+    "-run",
+    "TestHAROwnership(DocumentFinalizer|StaleFrame)",
+    "-short",
+    "-count=1"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "exit_code": 1,
+  "elapsed_seconds": 2.155,
+  "recorded_at_utc": "2026-10-05T21:26:07.163718+00:00",
+  "log_path": "/private/tmp/native-har-document-owner-red-1.log",
+  "log_sha256": "2023c63187aa11c9f37c2270eccf56f87cac71be6839183cb6b6e32154646464",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4026,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "raw_receipt_sha256": "e645fb3729518cc46313b14c94e688fce8191cd07b0f06671cee7bf032cb24e6",
+  "repository_inventory_before_sha256": "6945ac058be752a6983fae96959e074944a4c8ee8c30fcab5004936144794394",
+  "repository_inventory_after_sha256": "6945ac058be752a6983fae96959e074944a4c8ee8c30fcab5004936144794394",
+  "qualification_disposition": "Superseded red production regressions: document finalizer blocks Teardown, closes exact context twice, and stale frame error censors valid live sibling.",
+  "receipt_scope_note": "Compact durable receipt retains original private receipt SHA, source count/stability and inventory digests. Full 4,000+ repository inventories remain in the named private raw receipt; direct review inventories are copied separately. Neither inventory includes complete module-cache/native dependencies.",
+  "outcome": "red-superseded"
+}

@@ -27,6 +27,7 @@ var runArchiveAPIRouteCatalog = preserveRawAccessRequirementsForMethod(apiRouteC
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/browser-diagnostics", "handleDownloadRunArchiveBrowserDiagnostics", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleDownloadRunArchiveBrowserDiagnostics)
 		}),
+		browserResourceDeadlineRoute(newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/browser-resources", "handleGetRunArchiveBrowserResources", viewerProjectAccess(resolveBrowserResourceArchiveProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleGetRunArchiveBrowserResources) })),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/transactions", "handleGetRunArchiveTransactions", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRunArchiveTransactions)
 		}),

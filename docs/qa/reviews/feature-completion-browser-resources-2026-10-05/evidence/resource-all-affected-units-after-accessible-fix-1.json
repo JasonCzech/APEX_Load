@@ -1,0 +1,50 @@
+{
+  "qualification_scope": "dashboard-source-and-bundled-guides-only; backend and native acquisition qualify separately",
+  "command": [
+    "bash",
+    "-c",
+    "cd dashboard && npm test -- src/components/browserResourceEvidenceModel.test.ts src/components/browserResourcePageModel.test.ts src/components/useBrowserResourcePage.test.tsx src/components/BrowserResourceInspector.test.tsx src/components/ArchiveResourceInspectorDisclosure.test.tsx src/components/TestExecutionArchive.test.tsx src/hooks/api/useBrowserResourceApi.test.ts src/helpContent.test.ts"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/kafka-owned-seek/Project_Stormrunner",
+  "started_at": "2026-10-05T16:29:07.595406+00:00",
+  "finished_at": "2026-10-05T16:29:14.253766+00:00",
+  "duration_seconds": 6.658,
+  "exit_code": 0,
+  "status": "passed",
+  "raw_log": "resource-all-affected-units-after-accessible-fix-1.stdout.txt",
+  "raw_log_bytes": 689,
+  "raw_log_sha256": "a3eb2ec8cbe518876a8c069a0467665bac337f89c12e22ed00108470815f109f",
+  "source_before": {
+    "file": "frontend-source-inventory-88de52744d76db3a1d69458321be1fc2ee35b3583018e5ee41b2cc650fbb60f5.json",
+    "sha256": "88de52744d76db3a1d69458321be1fc2ee35b3583018e5ee41b2cc650fbb60f5",
+    "file_count": 1485
+  },
+  "source_after": {
+    "file": "frontend-source-inventory-88de52744d76db3a1d69458321be1fc2ee35b3583018e5ee41b2cc650fbb60f5.json",
+    "sha256": "88de52744d76db3a1d69458321be1fc2ee35b3583018e5ee41b2cc650fbb60f5",
+    "file_count": 1485
+  },
+  "source_changed": false,
+  "embed_before": {
+    "file": "frontend-embed-inventory-59ce5b14d8dbca8b9285a45dd3bac052780829603aa43be15b8b20ec5dba6b89.json",
+    "sha256": "59ce5b14d8dbca8b9285a45dd3bac052780829603aa43be15b8b20ec5dba6b89",
+    "file_count": 248
+  },
+  "embed_after": {
+    "file": "frontend-embed-inventory-59ce5b14d8dbca8b9285a45dd3bac052780829603aa43be15b8b20ec5dba6b89.json",
+    "sha256": "59ce5b14d8dbca8b9285a45dd3bac052780829603aa43be15b8b20ec5dba6b89",
+    "file_count": 248
+  },
+  "helper_sha256": "a502e0e4694aa16275ef613ec8e96d23fdf95475ae48153644994060c18a8ceb",
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_PROFILE": null,
+    "APEXLOAD_E2E_OUTPUT_ROOT": null
+  }
+}

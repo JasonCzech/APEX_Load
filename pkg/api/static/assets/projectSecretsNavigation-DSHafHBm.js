@@ -1,0 +1,1 @@
+import{M as e,N as t,P as n,k as r}from"./api-appdynamics-connections-CifwEjOo.js";import{h as i}from"./settingsSectionLayout-P5B6lYMx.js";var a=`apexload.settings.projectId`;function o(r){i(`projects`),t(`apexload.settings.projectSubsection`,`secrets`),r?.trim()?n(a,r.trim()):e(a)}function s(){let t=r(a).trim();return e(a),t}export{o as n,s as t};

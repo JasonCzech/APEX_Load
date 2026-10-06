@@ -1,0 +1,4 @@
+# github.com/jasonczech/apexload/pkg/protocol/browser [github.com/jasonczech/apexload/pkg/protocol/browser.test]
+pkg/protocol/browser/har_ownership_review_test.go:240:2: undefined: purgeStaleRuntimeHARWorkingFiles
+FAIL	github.com/jasonczech/apexload/pkg/protocol/browser [build failed]
+FAIL

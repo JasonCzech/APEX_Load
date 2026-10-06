@@ -1,0 +1,22 @@
+<testsuites id="" name="" tests="8" failures="0" skipped="0" errors="0" time="17.853907">
+<testsuite name="workflow-new-test.spec.ts" timestamp="2026-10-05T20:53:36.619Z" hostname="" tests="6" failures="0" skipped="0" time="14.314" errors="0">
+<testcase name="actual held-run serialization and an API-seeded queued copy preserve complete authored intent" classname="workflow-new-test.spec.ts" time="4.032">
+</testcase>
+<testcase name="queued-copy preserves source capture IDs and durably clears the last authored goal" classname="workflow-new-test.spec.ts" time="1.92">
+</testcase>
+<testcase name="queued-copy preserves iteration completion and explicitly clears source delay and root runtime" classname="workflow-new-test.spec.ts" time="3.952">
+</testcase>
+<testcase name="queued-copy joins a history-guard save to its actual submitted receipt and retains late edits" classname="workflow-new-test.spec.ts" time="1.485">
+</testcase>
+<testcase name="queued-copy submit refuses a source started concurrently and viewers cannot open the action" classname="workflow-new-test.spec.ts" time="1.665">
+</testcase>
+<testcase name="queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear" classname="workflow-new-test.spec.ts" time="1.26">
+</testcase>
+</testsuite>
+<testsuite name="workflow-scenario-composition.spec.ts" timestamp="2026-10-05T20:53:36.619Z" hostname="" tests="2" failures="0" skipped="0" time="2.022" errors="0">
+<testcase name="scenario rename and reopen retain Results, WebSocket, named shape and group timing intent" classname="workflow-scenario-composition.spec.ts" time="0.838">
+</testcase>
+<testcase name="changing a saved workload shape retains the authored root SLA and rules" classname="workflow-scenario-composition.spec.ts" time="1.184">
+</testcase>
+</testsuite>
+</testsuites>

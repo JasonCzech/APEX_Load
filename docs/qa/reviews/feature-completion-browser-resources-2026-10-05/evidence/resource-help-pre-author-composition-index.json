@@ -1,0 +1,31 @@
+{
+  "schema": "apexload.resource-help-pre-author-composition-evidence.v1",
+  "scope": "Eight affected resource/Help frontend files pass 190 tests with 1501 frontend/help inputs unchanged. Documentation failed only because the frozen author guide references its not-yet-integrated real QA README; no placeholder or release acceptance. Documentary inputs beyond the recorded frontend/Help set are not exhaustively bookended. Author product source and final combined generated/embed/full gates remain pending.",
+  "files": [
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/resource-help-composed-units-20261005.json",
+      "sha256": "130ba21c71052945036d2130df8bf6fb21b95b4aff6d1322d48d309b7e16003a",
+      "bytes": 553114
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/resource-help-composed-units-20261005.log",
+      "sha256": "8acfbf13f80b26d902499c90dd1c1399e2e5180318c2441a7e3562b61494564d",
+      "bytes": 698
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/resource-help-composed-docs-20261005.json",
+      "sha256": "135f9affdc1d065210cae033a7cd4cb0c88676f48563b4e517c7aff81cbee4c3",
+      "bytes": 552732
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/resource-help-composed-docs-20261005.log",
+      "sha256": "28096bfa5d6235087d0fd0466eccefcb5cfe2f3fabaedc1e1ef596b9204b1b11",
+      "bytes": 139
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/composed-frontend-check-20261005.py.txt",
+      "sha256": "171ab7242349c600b2b0b61341506eda11ac353e064b8dfcef5f833792862fed",
+      "bytes": 2433
+    }
+  ]
+}

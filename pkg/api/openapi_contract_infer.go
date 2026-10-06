@@ -144,6 +144,7 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		applyGenericImportBatchContract(route, &contract)
 		applyEnterpriseArchiveCollectionContract(route, &contract)
 		applyMonitorManagementContract(route, &contract, typeDefinitions)
+		applyBrowserResourcePageContract(route, &contract, typeDefinitions)
 		applyObjectActivityContract(route, &contract)
 		contracts[route.Method+" "+route.Path] = contract
 	}
@@ -252,7 +253,8 @@ var explicitRouteContractTypes = map[string]struct {
 	responseTypes       map[int]string
 	responseDescription string
 }{
-	"GET /api/v1/tests/{id}/metrics": {responseTypes: map[int]string{200: "liveMetricsReadResponseContract"}},
+	"GET /api/v1/tests/{id}/archive/browser-resources": {responseTypes: map[int]string{200: "BrowserResourcePage"}, responseDescription: "A completed bounded scan of retained resource observations. Counts do not attest browser capture coverage; native resource details appear only where explicitly retained."},
+	"GET /api/v1/tests/{id}/metrics":                   {responseTypes: map[int]string{200: "liveMetricsReadResponseContract"}},
 	// The compatibility test handler creates its own verification body before
 	// delegation. That internal body is not a caller-visible request contract.
 	"POST /api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/test": {

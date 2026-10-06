@@ -309,6 +309,9 @@ jobs:
           APEXLOAD_BROWSER_TESTS: require
         run: go test -count=1 -timeout=2m ./pkg/recorder/browser -run '^TestRecordAndReplayReact(SPAWithPollingAndDynamicAuraSelectors|AuraWithSessionCorrelation)$'
 
+      - name: Require owned HAR SDK completion contract
+        run: go test -race -count=1 github.com/mxschmitt/playwright-go -run '^TestAPEXOwnedHAR'
+
       - name: Run race tests
         run: |
           set -euo pipefail

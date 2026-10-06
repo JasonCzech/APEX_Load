@@ -1,0 +1,233 @@
+Building controller...
+Starting controller on http://127.0.0.1:18871 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.SUAErSRso8)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 25 tests using 1 worker
+
+
+(node:11687) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1/25] e2e/workflow-help.spec.ts:27:1 › Help tasks, search and section links survive navigation and validate the first-test example
+[2/25] e2e/workflow-help.spec.ts:69:1 › DSL operators can discover the guide, validate its example, and follow reference links
+[3/25] e2e/workflow-help.spec.ts:110:1 › evidence guides are searchable, readable and retain their scope after reload
+[4/25] e2e/workflow-help.spec.ts:133:1 › legacy URLs, generated API search and contextual guidance reach the right articles
+[5/25] e2e/workflow-help.spec.ts:150:1 › Help is readable at narrow widths and exposes accessible navigation
+[6/25] e2e/workflow-help.spec.ts:171:1 › non-administrators cannot open or search Administration articles
+[7/25] e2e/workflow-help.spec.ts:186:1 › Help maintains readable contrast across the supported themes
+
+(node:11732) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[8/25] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for missing infrastructure
+[9/25] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for single-region infrastructure
+[10/25] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for multi-zone infrastructure
+[11/25] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for multi-region infrastructure
+[12/25] e2e/workflow-new-test.spec.ts:67:1 › Scenario builder preserves controller continuity and the recovery spare budget
+[13/25] e2e/workflow-new-test.spec.ts:106:1 › New Test saves drafts without execution, retains both tabs and validates recurring triggers
+[14/25] e2e/workflow-new-test.spec.ts:159:1 › New Test restores the default name after clearing and reselecting the same scenario
+[15/25] e2e/workflow-new-test.spec.ts:175:1 › New Test exposes editable groups and saves a paused recurring schedule with visible policies
+[16/25] e2e/workflow-new-test.spec.ts:214:1 › Java group profile survives placement edits and scenario persistence (facade ledger: false)
+[17/25] e2e/workflow-new-test.spec.ts:214:1 › Java group profile survives placement edits and scenario persistence (facade ledger: true)
+[18/25] e2e/workflow-new-test.spec.ts:284:1 › Live configuration reports prepared Java reservations without opening raw JSON
+[19/25] e2e/workflow-new-test.spec.ts:309:1 › prepared Event Hubs run displays processor admission and starts with the pinned revision
+[20/25] e2e/workflow-new-test.spec.ts:340:1 › new run group edits and reachable revised queued copy preserve complete authored intent
+  1) e2e/workflow-new-test.spec.ts:340:1 › new run group edits and reachable revised queued copy preserve complete authored intent 
+
+    TimeoutError: page.waitForResponse: Timeout 15000ms exceeded while waiting for event "response"
+
+      361 |   await page.getByRole('textbox', { name: 'Run Name', exact: true }).fill('Queued fidelity source')
+      362 |   await page.getByLabel('Release', { exact: true }).selectOption(workspace.releaseId)
+    > 363 |   const created = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/tests')
+          |                        ^
+      364 |   await page.getByRole('button', { name: 'Create Queued Run', exact: true }).click()
+      365 |   const response = await created
+      366 |   expect(response.ok(), await response.text()).toBeTruthy()
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:363:24
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'Create Queued Run', exact: true })
+
+
+      362 |   await page.getByLabel('Release', { exact: true }).selectOption(workspace.releaseId)
+      363 |   const created = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/tests')
+    > 364 |   await page.getByRole('button', { name: 'Create Queued Run', exact: true }).click()
+          |                                                                              ^
+      365 |   const response = await created
+      366 |   expect(response.ok(), await response.text()).toBeTruthy()
+      367 |   const sourceId = idOf(await response.json()); trackRun(sourceId)
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:364:78
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-focused-final-1/dev-admin/workflow-new-test-new-run--05bed-ve-complete-authored-intent/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../private/tmp/apexload-authoring-fidelity-focused-final-1/dev-admin/workflow-new-test-new-run--05bed-ve-complete-authored-intent/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-focused-final-1/dev-admin/workflow-new-test-new-run--05bed-ve-complete-authored-intent/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../private/tmp/apexload-authoring-fidelity-focused-final-1/dev-admin/workflow-new-test-new-run--05bed-ve-complete-authored-intent/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:11925) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[21/25] e2e/workflow-new-test.spec.ts:404:1 › queued-copy submit refuses a source started concurrently and viewers cannot open the action
+[22/25] e2e/workflow-new-test.spec.ts:461:1 › queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear
+  2) e2e/workflow-new-test.spec.ts:461:1 › queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear 
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'orders group actions', exact: true })
+
+
+      473 |   await page.reload()
+      474 |   const open = async (group: string) => {
+    > 475 |     await page.getByRole('button', { name: `${group} group actions`, exact: true }).click()
+          |                                                                                     ^
+      476 |     await page.getByRole('menuitem', { name: 'Runtime Settings', exact: true }).click()
+      477 |     const dialog = page.getByRole('dialog', { name: `Runtime Settings — ${group}`, exact: true })
+      478 |     await expect(dialog.getByRole('button', { name: 'Save to run', exact: true })).toBeVisible()
+        at open (/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:475:85)
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-new-test.spec.ts:481:28
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-focused-final-1/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../private/tmp/apexload-authoring-fidelity-focused-final-1/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-focused-final-1/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../private/tmp/apexload-authoring-fidelity-focused-final-1/dev-admin/workflow-new-test-queued-g-18b8b-ket-zero-and-explicit-clear/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:12030) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[23/25] e2e/workflow-scenario-composition.spec.ts:4:1 › scenario composition combines group editing with a live preview
+[24/25] e2e/workflow-scenario-composition.spec.ts:72:1 › guided stepped ramp keeps its pattern editor within the four scenario tabs
+[25/25] e2e/workflow-scenario-composition.spec.ts:102:1 › scenario rename and reopen retain Results, WebSocket, named shape and group timing intent
+  3) e2e/workflow-scenario-composition.spec.ts:102:1 › scenario rename and reopen retain Results, WebSocket, named shape and group timing intent 
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 5
+
+    @@ -1,6 +1,11 @@
+      Object {
+    +   "early_stop": Object {
+    +     "breach_window": "1m",
+    +     "enabled": false,
+    +     "error_rate_pct": 5,
+    +   },
+        "transaction_response_time_sla_ms": 0.001,
+        "workload_shape_config": Object {
+          "closed_vuser": Object {
+            "scenario": Object {
+              "peak_vusers": 4,
+
+      131 |   expect(stored.runtime_settings).toEqual(original.runtime_settings)
+      132 |   expect(stored.scripts).toEqual(original.scripts)
+    > 133 |   expect(stored.goal_config).toEqual(original.goal_config)
+          |                              ^
+      134 |   expect(stored.workload_shape_id).toBe('closed-vuser')
+      135 |   await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
+      136 |   await page.reload()
+        at /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard/e2e/workflow-scenario-composition.spec.ts:133:30
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-focused-final-1/dev-admin/workflow-scenario-composit-14c99-ape-and-group-timing-intent/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../private/tmp/apexload-authoring-fidelity-focused-final-1/dev-admin/workflow-scenario-composit-14c99-ape-and-group-timing-intent/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../private/tmp/apexload-authoring-fidelity-focused-final-1/dev-admin/workflow-scenario-composit-14c99-ape-and-group-timing-intent/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../private/tmp/apexload-authoring-fidelity-focused-final-1/dev-admin/workflow-scenario-composit-14c99-ape-and-group-timing-intent/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+  3 failed
+    e2e/workflow-new-test.spec.ts:340:1 › new run group edits and reachable revised queued copy preserve complete authored intent 
+    e2e/workflow-new-test.spec.ts:461:1 › queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear 
+    e2e/workflow-scenario-composition.spec.ts:102:1 › scenario rename and reopen retain Results, WebSocket, named shape and group timing intent 
+  1 skipped
+  21 passed (1.1m)
+--- controller log (last 60 lines) ---
+{"time":"2026-10-05T11:18:40.441066-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/applications/4fc77ecd-7eb8-4536-be42-e6c59049d323/releases","status":201,"duration_ms":0,"remote":"127.0.0.1:65064"}
+{"time":"2026-10-05T11:18:40.445154-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/scripts","status":201,"duration_ms":3,"remote":"127.0.0.1:65064"}
+{"time":"2026-10-05T11:18:40.449548-04:00","level":"INFO","msg":"http request","method":"POST","path":"/api/v1/scenarios","status":201,"duration_ms":3,"remote":"127.0.0.1:65064"}
+{"time":"2026-10-05T11:18:40.451622-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scenarios/1b46e1e4-c592-4b11-897e-3b4e013258cd","status":200,"duration_ms":0,"remote":"127.0.0.1:65064"}
+{"time":"2026-10-05T11:18:40.473746-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/me","status":200,"duration_ms":0,"remote":"127.0.0.1:65083"}
+{"time":"2026-10-05T11:18:40.503653-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:65083"}
+{"time":"2026-10-05T11:18:40.504551-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:65082"}
+{"time":"2026-10-05T11:18:40.504613-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/desktop/status","status":200,"duration_ms":0,"remote":"127.0.0.1:65081"}
+{"time":"2026-10-05T11:18:40.504724-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:65083"}
+{"time":"2026-10-05T11:18:40.504977-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains","status":200,"duration_ms":0,"remote":"127.0.0.1:65085"}
+{"time":"2026-10-05T11:18:40.505634-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects","status":200,"duration_ms":0,"remote":"127.0.0.1:65085"}
+{"time":"2026-10-05T11:18:40.520225-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/me","status":200,"duration_ms":0,"remote":"127.0.0.1:65083"}
+{"time":"2026-10-05T11:18:40.529781-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:65083"}
+{"time":"2026-10-05T11:18:40.530607-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:65082"}
+{"time":"2026-10-05T11:18:40.530639-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains","status":200,"duration_ms":0,"remote":"127.0.0.1:65085"}
+{"time":"2026-10-05T11:18:40.530751-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/version","status":200,"duration_ms":0,"remote":"127.0.0.1:65084"}
+{"time":"2026-10-05T11:18:40.530872-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/desktop/status","status":200,"duration_ms":0,"remote":"127.0.0.1:65086"}
+{"time":"2026-10-05T11:18:40.53172-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/projects","status":200,"duration_ms":0,"remote":"127.0.0.1:65085"}
+{"time":"2026-10-05T11:18:40.537421-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/default/application-repository","status":200,"duration_ms":0,"remote":"127.0.0.1:65085"}
+{"time":"2026-10-05T11:18:40.537436-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:65082"}
+{"time":"2026-10-05T11:18:40.537594-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/default/application-repository/categories","status":200,"duration_ms":0,"remote":"127.0.0.1:65086"}
+{"time":"2026-10-05T11:18:40.537842-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:65084"}
+{"time":"2026-10-05T11:18:40.538997-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/b58e15a9-4130-4fbe-b1a5-77fcad445373/application-repository","status":200,"duration_ms":0,"remote":"127.0.0.1:65084"}
+{"time":"2026-10-05T11:18:40.539054-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:65086"}
+{"time":"2026-10-05T11:18:40.539145-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/domains/b58e15a9-4130-4fbe-b1a5-77fcad445373/application-repository/categories","status":200,"duration_ms":0,"remote":"127.0.0.1:65082"}
+{"time":"2026-10-05T11:18:40.53943-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:65085"}
+{"time":"2026-10-05T11:18:40.540054-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:65084"}
+{"time":"2026-10-05T11:18:40.540063-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:65086"}
+{"time":"2026-10-05T11:18:40.540322-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:65082"}
+{"time":"2026-10-05T11:18:40.540822-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications","status":200,"duration_ms":0,"remote":"127.0.0.1:65086"}
+{"time":"2026-10-05T11:18:40.548434-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:65086"}
+{"time":"2026-10-05T11:18:40.548763-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/legacy-591586b4349d/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:65085"}
+{"time":"2026-10-05T11:18:40.548846-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:65084"}
+{"time":"2026-10-05T11:18:40.549083-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/4fc77ecd-7eb8-4536-be42-e6c59049d323/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:65082"}
+{"time":"2026-10-05T11:18:40.550404-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:65085"}
+{"time":"2026-10-05T11:18:40.5506-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/applications/4fc77ecd-7eb8-4536-be42-e6c59049d323/releases","status":200,"duration_ms":0,"remote":"127.0.0.1:65086"}
+{"time":"2026-10-05T11:18:40.614943-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/dsl/config-defaults","status":200,"duration_ms":0,"remote":"127.0.0.1:65083"}
+{"time":"2026-10-05T11:18:40.615119-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/data-pools","status":200,"duration_ms":0,"remote":"127.0.0.1:65082"}
+{"time":"2026-10-05T11:18:40.615648-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/auth/effective-access","status":200,"duration_ms":0,"remote":"127.0.0.1:65082"}
+{"time":"2026-10-05T11:18:40.615759-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scenarios/load-models/templates","status":200,"duration_ms":0,"remote":"127.0.0.1:65084"}
+{"time":"2026-10-05T11:18:40.615836-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/remotes","status":200,"duration_ms":0,"remote":"127.0.0.1:65083"}
+{"time":"2026-10-05T11:18:40.616035-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scenarios/load-models/support-matrix","status":200,"duration_ms":0,"remote":"127.0.0.1:65081"}
+{"time":"2026-10-05T11:18:40.617101-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/tests","status":200,"duration_ms":0,"remote":"127.0.0.1:65082"}
+{"time":"2026-10-05T11:18:40.61733-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts","status":200,"duration_ms":2,"remote":"127.0.0.1:65085"}
+{"time":"2026-10-05T11:18:40.620325-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scenarios","status":200,"duration_ms":5,"remote":"127.0.0.1:65086"}
+{"time":"2026-10-05T11:18:40.622842-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/library/catalog","status":200,"duration_ms":5,"remote":"127.0.0.1:65083"}
+{"time":"2026-10-05T11:18:40.690791-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/ws","status":200,"duration_ms":0,"remote":"127.0.0.1:65087"}
+{"time":"2026-10-05T11:18:40.690834-04:00","level":"INFO","msg":"websocket client connected","test_filter":"","project_filter":"3cf051ae-1806-4189-9ec5-080ede64473c","clients":1}
+{"time":"2026-10-05T11:18:40.698021-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/system/inventory","status":200,"duration_ms":0,"remote":"127.0.0.1:65083"}
+{"time":"2026-10-05T11:18:40.794255-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts/24a231ae-6fb5-4553-8116-4964957bce3e","status":200,"duration_ms":2,"remote":"127.0.0.1:65083"}
+{"time":"2026-10-05T11:18:40.838854-04:00","level":"INFO","msg":"http request","method":"PUT","path":"/api/v1/scenarios/1b46e1e4-c592-4b11-897e-3b4e013258cd","status":200,"duration_ms":5,"remote":"127.0.0.1:65083"}
+{"time":"2026-10-05T11:18:40.842774-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/data-pools","status":200,"duration_ms":0,"remote":"127.0.0.1:65085"}
+{"time":"2026-10-05T11:18:40.844062-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scenarios/load-models/templates","status":200,"duration_ms":1,"remote":"127.0.0.1:65082"}
+{"time":"2026-10-05T11:18:40.844312-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scenarios/load-models/support-matrix","status":200,"duration_ms":1,"remote":"127.0.0.1:65081"}
+{"time":"2026-10-05T11:18:40.844952-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scripts","status":200,"duration_ms":2,"remote":"127.0.0.1:65086"}
+{"time":"2026-10-05T11:18:40.848153-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scenarios","status":200,"duration_ms":5,"remote":"127.0.0.1:65083"}
+{"time":"2026-10-05T11:18:40.862721-04:00","level":"INFO","msg":"http request","method":"GET","path":"/api/v1/scenarios/1b46e1e4-c592-4b11-897e-3b4e013258cd","status":200,"duration_ms":0,"remote":"127.0.0.1:65064"}
+{"time":"2026-10-05T11:18:40.997055-04:00","level":"INFO","msg":"websocket client disconnected","clients":0}
+{"time":"2026-10-05T11:18:41.081484-04:00","level":"INFO","msg":"shutting down"}
+2026/10/05 11:18:41 internal_logging.go:50: "msg"="Setting text map propagator to its current value. No delegate will be configured" "error"="no delegate configured in text map propagator"

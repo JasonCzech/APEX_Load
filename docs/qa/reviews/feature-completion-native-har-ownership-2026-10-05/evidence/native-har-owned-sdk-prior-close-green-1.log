@@ -1,0 +1,32 @@
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/chromium/inflight
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/chromium/completed
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/webkit/inflight
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/webkit/completed
+--- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof (2.92s)
+    --- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/chromium/inflight (1.16s)
+    --- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/chromium/completed (0.06s)
+    --- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/webkit/inflight (1.46s)
+    --- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/webkit/completed (0.25s)
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/chromium/inflight
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/chromium/completed
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/webkit/inflight
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/webkit/completed
+--- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof (0.64s)
+    --- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/chromium/inflight (0.09s)
+    --- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/chromium/completed (0.08s)
+    --- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/webkit/inflight (0.24s)
+    --- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/webkit/completed (0.24s)
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/chromium/inflight
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/chromium/completed
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/webkit/inflight
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/webkit/completed
+--- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof (0.61s)
+    --- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/chromium/inflight (0.07s)
+    --- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/chromium/completed (0.08s)
+    --- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/webkit/inflight (0.22s)
+    --- PASS: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof/webkit/completed (0.23s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/protocol/browser	4.598s

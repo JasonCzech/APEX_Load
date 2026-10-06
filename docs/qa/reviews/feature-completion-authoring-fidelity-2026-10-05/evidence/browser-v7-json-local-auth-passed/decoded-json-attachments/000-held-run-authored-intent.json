@@ -1,0 +1,268 @@
+{
+  "held_intent": {
+    "name": "Held fidelity serializer",
+    "duration": "1m",
+    "application_id": "af1a2860-d49b-41f0-ac65-c6a3c83d32be",
+    "release_id": "1f605007-5ecc-4423-bd08-7a5358f79830",
+    "scenario_id": "4b4dc437-c212-49f4-9b8c-aa21157b58da",
+    "project_id": "8244227c-c10b-4798-afb9-b2b12355428e",
+    "groups": [
+      {
+        "name": "orders",
+        "script_id": "e044fe0c-9cc0-4dce-923e-c6c0a16e7cd8",
+        "role": "load",
+        "vusers": 4,
+        "ramp_up": "3s",
+        "ramp_down": "4s",
+        "start_offset": "1s",
+        "transaction_response_time_sla_ms": 1250,
+        "initialization": "at_once",
+        "runtime_settings": {
+          "results": {
+            "message_detail": {
+              "include_resources": false,
+              "mode": "off"
+            }
+          },
+          "websocket": {}
+        }
+      },
+      {
+        "name": "staged",
+        "script_id": "e044fe0c-9cc0-4dce-923e-c6c0a16e7cd8",
+        "role": "load",
+        "vusers": 2,
+        "start_offset": "2s",
+        "transaction_response_time_sla_ms": 1500,
+        "stages": [
+          {
+            "duration": "50s",
+            "target_vusers": 2,
+            "type": "hold"
+          }
+        ],
+        "initialization": "at_runtime",
+        "runtime_settings": {
+          "results": {},
+          "websocket": {}
+        }
+      }
+    ],
+    "reserve_launch_window": true,
+    "scheduled_start_at": "2026-10-05T21:00:00.000Z"
+  },
+  "held": {
+    "activity": {
+      "creator": {
+        "id": "create:test:e5145e4a-2fbf-4cba-b266-3b01dcc63ecc:2026-10-05T20:57:59.963796Z",
+        "action": "create",
+        "actor_type": "user",
+        "actor_subject": "local:admin",
+        "actor_display_name": "Local System Administrator",
+        "project_id": "8244227c-c10b-4798-afb9-b2b12355428e",
+        "resource_type": "test",
+        "resource_id": "e5145e4a-2fbf-4cba-b266-3b01dcc63ecc",
+        "resource_name": "Held fidelity serializer",
+        "status": "success",
+        "created_at": "2026-10-05T20:57:59.963796Z"
+      }
+    },
+    "application_id": "af1a2860-d49b-41f0-ac65-c6a3c83d32be",
+    "capacity_advisory": {
+      "availability_source": "configured",
+      "available_generators": 1,
+      "baseline_window_enabled": false,
+      "bottleneck": "cpu",
+      "complexity_score": 1.22,
+      "configured_available_generators": 1,
+      "dimension_recommendations": {
+        "cpu": 1,
+        "memory": 1,
+        "network": 1,
+        "vusers": 1
+      },
+      "duration_seconds": 60,
+      "estimated_per_vuser": {
+        "cpu_cores": 0.0003,
+        "memory_mb": 0.43,
+        "network_mbps": 0.1
+      },
+      "estimated_total": {
+        "cpu_cores": 0.0018,
+        "memory_mb": 2.56,
+        "network_mbps": 0.59
+      },
+      "headroom_pct": 20,
+      "protocol_densities": [
+        {
+          "benchmark_evidence": "docs/ENTERPRISE_FLEET_AND_CAPACITY.md#protocol-density-envelopes",
+          "benchmark_profile": "http_10k_vusers_4vcpu_8gb",
+          "calibrated_at": "2026-05-18",
+          "calibration_source": "apexload_benchmark_catalog",
+          "compatibility_confidence": "design_target",
+          "cpu_cores_per_vuser": 0.00025,
+          "max_vusers_per_generator": 10000,
+          "memory_mb_per_vuser": 0.35,
+          "network_mbps_per_vuser": 0.08,
+          "protocol": "http",
+          "vusers": 6
+        }
+      ],
+      "recommended_generators": 1,
+      "total_vusers": 6,
+      "usable_per_generator": {
+        "cpu_cores": 3.2,
+        "memory_mb": 6553.6,
+        "network_mbps": 800
+      },
+      "workload_class": "http"
+    },
+    "created_at": "2026-10-05T16:57:59.963796-04:00",
+    "created_by_display_name": "Local System Administrator",
+    "created_by_subject": "local:admin",
+    "duration": "1m",
+    "duration_ns": 60000000000,
+    "goal_config": {
+      "transaction_response_time_sla_ms": 0.001,
+      "workload_shape_config": {
+        "closed_vuser": {
+          "scenario": {
+            "peak_vusers": 4,
+            "ramp_down": "0s",
+            "ramp_down_enabled": false,
+            "ramp_up": "10s",
+            "sustain": "50s"
+          },
+          "scope": "scenario"
+        }
+      }
+    },
+    "groups": [
+      {
+        "continue_on_error": {
+          "effective": true,
+          "scenario_explicit": false,
+          "scenario_value": true,
+          "source": "scenario_default"
+        },
+        "initialization": "at_once",
+        "iteration_override_known": true,
+        "name": "orders",
+        "protocol": "http",
+        "ramp_down": "4s",
+        "ramp_up": "3s",
+        "role": "load",
+        "runtime_settings": {
+          "results": {
+            "message_detail": {
+              "include_resources": false,
+              "mode": "off"
+            }
+          },
+          "websocket": {}
+        },
+        "runtime_state": "scheduled",
+        "script_id": "e044fe0c-9cc0-4dce-923e-c6c0a16e7cd8",
+        "script_name": "Queued_Fidelity_HTTP",
+        "start_offset": "1s",
+        "target_duration": "59s",
+        "transaction_response_time_sla_ms": 1250,
+        "vusers": 4
+      },
+      {
+        "continue_on_error": {
+          "effective": true,
+          "scenario_explicit": false,
+          "scenario_value": true,
+          "source": "scenario_default"
+        },
+        "initialization": "at_runtime",
+        "iteration_override_known": true,
+        "name": "staged",
+        "protocol": "http",
+        "role": "load",
+        "runtime_settings": {
+          "results": {},
+          "websocket": {}
+        },
+        "runtime_state": "scheduled",
+        "script_id": "e044fe0c-9cc0-4dce-923e-c6c0a16e7cd8",
+        "script_name": "Queued_Fidelity_HTTP",
+        "stages": [
+          {
+            "duration": "50s",
+            "target_vusers": 2,
+            "type": "hold"
+          }
+        ],
+        "start_offset": "2s",
+        "target_duration": "58s",
+        "transaction_response_time_sla_ms": 1500,
+        "vusers": 2
+      }
+    ],
+    "id": "e5145e4a-2fbf-4cba-b266-3b01dcc63ecc",
+    "name": "Held fidelity serializer",
+    "project_id": "8244227c-c10b-4798-afb9-b2b12355428e",
+    "ref_key": "LOC-RUN-20261005-001",
+    "release_id": "1f605007-5ecc-4423-bd08-7a5358f79830",
+    "runtime_settings": {
+      "results": {
+        "message_detail": {
+          "include_resources": false,
+          "mode": "off"
+        }
+      },
+      "websocket": {}
+    },
+    "runtime_settings_review": {
+      "findings": [
+        {
+          "area": "Diagnostics",
+          "concept": "Replay snapshots",
+          "evidence": [
+            "/api/v1/runtime-settings/support-matrix"
+          ],
+          "group": "orders",
+          "id": "runtime_replay_snapshots",
+          "protocol": "http",
+          "recommended_action": "Review the supported subset and attach replay evidence before promotion.",
+          "scope": "scenario",
+          "script_id": "e044fe0c-9cc0-4dce-923e-c6c0a16e7cd8",
+          "script_name": "Queued_Fidelity_HTTP",
+          "severity": "warning",
+          "status": "partial",
+          "summary": "Partial runtime setting Diagnostics / Replay snapshots."
+        },
+        {
+          "area": "Diagnostics",
+          "concept": "Snapshot resources",
+          "evidence": [
+            "/api/v1/runtime-settings/support-matrix"
+          ],
+          "group": "orders",
+          "id": "runtime_snapshot_resources",
+          "protocol": "http",
+          "recommended_action": "Review the supported subset and attach replay evidence before promotion.",
+          "scope": "scenario",
+          "script_id": "e044fe0c-9cc0-4dce-923e-c6c0a16e7cd8",
+          "script_name": "Queued_Fidelity_HTTP",
+          "severity": "warning",
+          "status": "partial",
+          "summary": "Partial runtime setting Diagnostics / Snapshot resources."
+        }
+      ],
+      "status": "needs_review",
+      "status_counts": {
+        "executed": 4,
+        "partial": 2
+      },
+      "summary": "2 runtime setting warnings should be reviewed before execution."
+    },
+    "scenario_id": "4b4dc437-c212-49f4-9b8c-aa21157b58da",
+    "scenario_mode": "vuser_driven",
+    "scheduled_start_at": "2026-10-05T21:00:00Z",
+    "status": "RESERVED",
+    "total_vusers": 6
+  }
+}

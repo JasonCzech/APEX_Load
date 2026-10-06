@@ -274,6 +274,8 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 			runtimeResourcePlanKnown:        true,
 			runtimeResourcePlanError:        resourceError,
 			messagingRuntimeFeatures:        append([]string(nil), requiredMessagingFeaturesForGroup(group)...),
+			requiredRuntimeFeature:          groupRequiredRuntimeFeature(group),
+			requiredRuntimeFeatureKnown:     true,
 			BrowserDocumentCaptureRequested: len(requiredBrowserFeaturesForGroup(group)) > 0,
 		}
 	}
@@ -283,6 +285,7 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 		MaterializationKey:           test.MaterializationKey,
 		Name:                         test.Name,
 		Status:                       test.Status,
+		TerminationMode:              test.TerminationMode,
 		shakeoutAdmissionReservation: test.shakeoutAdmissionReservation,
 		ScenarioID:                   test.ScenarioID,
 		ProjectID:                    test.ProjectID,
@@ -355,6 +358,7 @@ type managedTestBuildTestFence struct {
 	RefKey                string                       `json:"ref_key"`
 	MaterializationKey    string                       `json:"materialization_key"`
 	Status                string                       `json:"status"`
+	TerminationMode       string                       `json:"termination_mode"`
 	ProjectID             string                       `json:"project_id"`
 	TotalVUsers           int                          `json:"total_vusers"`
 	RecommendedGenerators int                          `json:"recommended_generators"`
@@ -367,6 +371,7 @@ type managedTestBuildTestFence struct {
 	PendingSince          managedTestBuildTimeFence    `json:"pending_since"`
 	StartedAt             managedTestBuildTimeFence    `json:"started_at"`
 	PausedAt              managedTestBuildTimeFence    `json:"paused_at"`
+	EndedAt               managedTestBuildTimeFence    `json:"ended_at"`
 	CumulativePause       int64                        `json:"cumulative_pause"`
 	CapacityWindowStartAt managedTestBuildTimeFence    `json:"capacity_window_start_at"`
 	CapacityWindowEndAt   managedTestBuildTimeFence    `json:"capacity_window_end_at"`
@@ -417,6 +422,7 @@ func managedTestBuildTestFingerprint(test *ManagedTest) managedTestBuildTestFenc
 		RefKey:                test.RefKey,
 		MaterializationKey:    test.MaterializationKey,
 		Status:                test.Status,
+		TerminationMode:       dsl.CanonicalTerminationMode(test.TerminationMode),
 		ProjectID:             normalizeProjectID(test.ProjectID),
 		TotalVUsers:           test.TotalVUsers,
 		Assignment:            cloneGeneratorAssignmentSettings(test.Assignment),
@@ -428,6 +434,7 @@ func managedTestBuildTestFingerprint(test *ManagedTest) managedTestBuildTestFenc
 		PendingSince:          managedTestBuildTimeFingerprint(test.PendingSince),
 		StartedAt:             managedTestBuildTimeFingerprint(test.StartedAt),
 		PausedAt:              managedTestBuildTimeFingerprint(test.PausedAt),
+		EndedAt:               managedTestBuildTimeFingerprint(test.EndedAt),
 		CumulativePause:       int64(test.CumulativePause),
 		CapacityWindowStartAt: managedTestBuildTimeFingerprint(test.CapacityWindowStartAt),
 		CapacityWindowEndAt:   managedTestBuildTimeFingerprint(test.CapacityWindowEndAt),
@@ -1306,7 +1313,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		return nil, fmt.Errorf("duration must be greater than zero")
 	}
 
-	scenarioMode, err := validateScenarioRequest(req)
+	scenarioMode, err := validateScenarioRequestWithRevisionSource(req, revisionSource)
 	if err != nil {
 		return nil, err
 	}
@@ -2222,6 +2229,13 @@ func setRuntimeSettingsIteration(settings *RuntimeSettingsOverride, iterations i
 }
 
 func validateScenarioRequest(req CreateTestRequest) (string, error) {
+	return validateScenarioRequestWithRevisionSource(req, nil)
+}
+
+// Only the build path supplies the canonical queued source admitted by
+// revisionSourceTestLocked. A client-provided source ID alone never authorizes
+// the explicit zero-delay clear. Both final build fences recheck that source.
+func validateScenarioRequestWithRevisionSource(req CreateTestRequest, revisionSource *ManagedTest) (string, error) {
 	if _, err := parseTerminationDuration(req.Duration, req.TerminationMode); req.Duration != "" && err != nil {
 		return "", err
 	}
@@ -2265,8 +2279,15 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("invalid start_delay: %w", err)
 		}
-		if startDelay <= 0 {
-			return "", fmt.Errorf("start_delay must be greater than zero")
+		completionMode := dsl.CanonicalTerminationMode(req.TerminationMode)
+		clearAdmitted := req.StartDelay == "0s" && revisionSource != nil &&
+			strings.TrimSpace(req.RevisionSourceTestID) == revisionSource.ID && revisionSource.ID != "" &&
+			normalizeProjectID(req.ProjectID) == normalizeProjectID(revisionSource.ProjectID) &&
+			revisionSource.Status == "QUEUED" && revisionSource.StartedAt == nil && revisionSource.EndedAt == nil &&
+			(completionMode == dsl.TerminationDuration || completionMode == dsl.TerminationIterations) &&
+			dsl.CanonicalTerminationMode(revisionSource.TerminationMode) == completionMode
+		if startDelay <= 0 && !clearAdmitted {
+			return "", fmt.Errorf("start_delay must be greater than zero except an admitted queued revision's explicit 0s clear")
 		}
 	}
 	if scenarioMode != "goal_oriented" {

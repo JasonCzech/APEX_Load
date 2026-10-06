@@ -1,0 +1,114 @@
+{
+  "recorded_utc": "2026-10-05T23:37:19.230291+00:00",
+  "root": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+  "head": "6e2f1082efcc83054c79d74ccf89e43625b4a4b0",
+  "scope": "Exact fixture-only v11 ownership correction qualified by actual SQLite/generator normal and race gates. All 53 authoring feature inputs, nine stable dependencies, two earlier native prerequisite sources, one generated document and 251 embedded artifacts remain exactly v9. Neutral document finality correction lives only in parent integration and is not qualified by these local gates.",
+  "fixture_inventory": {
+    "path": "fidelity-ordering-owned-cleanup-source-inventory-v11.json",
+    "sha256": "99e805cad61a869bf2bc39531b12a0aabf9d183f0109636956253f729c27dc87"
+  },
+  "fixture_source": [
+    {
+      "path": "pkg/api/distributed_start_ordering_test.go",
+      "sha256": "378b070523ddccb5d6970f1ecae358235d566a4c3100c11fb04a3f7492b3e844"
+    }
+  ],
+  "review_receipts": [
+    {
+      "path": "fidelity-ordering-fixture-parent-review-v11.json",
+      "sha256": "cdcd76686fecbf71357559ccfdc9272383036d7dd20062680cc1a19d43f9f92c"
+    },
+    {
+      "path": "fidelity-authoring-root-semantic-composition.json",
+      "sha256": "62a96fc28ecefe50ca8d7882884c094175d748d2e7b0c53ef394578c303b5b94"
+    },
+    {
+      "path": "fidelity-neutral-document-finality-independent-review-v1.json",
+      "sha256": "ac9d8a0764f28d5921ec9255928533b7e1d9d96a165e0efedb3ecb6247c0f2bd"
+    }
+  ],
+  "gate_receipts": [
+    {
+      "receipt": "fidelity-v10-ordering-cleanup-red-1.json",
+      "receipt_sha256": "e29c61639b9f01ed15ae345bc7b18db253289ead0f31521cdedd92ee027ac1c5",
+      "log": "fidelity-v10-ordering-cleanup-red-1.log",
+      "log_sha256": "9ac9b11d30ba5538d0397aff8276cf975e3d24fa14c7e02a1d3748467d4d1fd7",
+      "exit_code": 1,
+      "duration_seconds": 138.156,
+      "started_utc": "2026-10-05T23:23:52.287757+00:00",
+      "finished_utc": "2026-10-05T23:26:10.444538+00:00",
+      "top_level_passes": 0,
+      "top_level_failures": 0,
+      "top_level_skips": 0,
+      "source_bookends_equal": true,
+      "source_input_count": 5221,
+      "embed_bookends_equal": true,
+      "embedded_input_count": 251
+    },
+    {
+      "receipt": "fidelity-v10-ordering-cleanup-red-2.json",
+      "receipt_sha256": "3db923ee0bbf16042af4db46f5977fb976b9f18bfc76b27303cde8c70aae65fe",
+      "log": "fidelity-v10-ordering-cleanup-red-2.log",
+      "log_sha256": "1c09774c5448d3e769ced5d0c8c7918752a3eebc2473b3786c086b3ba9d96491",
+      "exit_code": 1,
+      "duration_seconds": 59.273,
+      "started_utc": "2026-10-05T23:27:10.918878+00:00",
+      "finished_utc": "2026-10-05T23:28:10.192485+00:00",
+      "top_level_passes": 0,
+      "top_level_failures": 2,
+      "top_level_skips": 0,
+      "source_bookends_equal": true,
+      "source_input_count": 5221,
+      "embed_bookends_equal": true,
+      "embedded_input_count": 251
+    },
+    {
+      "receipt": "fidelity-v11-eight-failures-ordering-normal-3.json",
+      "receipt_sha256": "c0475741967513df474c8ba47ac41fb5e1c7b7c97978ca3b8e86e04db063a9f2",
+      "log": "fidelity-v11-eight-failures-ordering-normal-3.log",
+      "log_sha256": "b9d014cdb9e22a0ca91ef32498669973b7e759efd4f691ce75fe64d5818f68b7",
+      "exit_code": 0,
+      "duration_seconds": 84.912,
+      "started_utc": "2026-10-05T23:29:27.413014+00:00",
+      "finished_utc": "2026-10-05T23:30:52.325087+00:00",
+      "top_level_passes": 36,
+      "top_level_failures": 0,
+      "top_level_skips": 0,
+      "source_bookends_equal": true,
+      "source_input_count": 5221,
+      "embed_bookends_equal": true,
+      "embedded_input_count": 251
+    },
+    {
+      "receipt": "fidelity-v11-ordering-owned-cleanup-race-2.json",
+      "receipt_sha256": "28b77298fab3279e9e08fbf9ae8e8d30283ce9b0c25855e484fd8eb134606287",
+      "log": "fidelity-v11-ordering-owned-cleanup-race-2.log",
+      "log_sha256": "298ab19955c17a8d57c96d0a8de93e8423173b6934701d0bd01e4f23375bd130",
+      "exit_code": 0,
+      "duration_seconds": 141.781,
+      "started_utc": "2026-10-05T23:32:05.317614+00:00",
+      "finished_utc": "2026-10-05T23:34:27.099113+00:00",
+      "top_level_passes": 10,
+      "top_level_failures": 0,
+      "top_level_skips": 0,
+      "source_bookends_equal": true,
+      "source_input_count": 5221,
+      "embed_bookends_equal": true,
+      "embedded_input_count": 251
+    }
+  ],
+  "red_disposition": {
+    "red_1": "Intentionally transport-only cleanup exposed live driver/missing generator join; safety quiescence then hung on a read snapshot rather than the canonical runtime. Exact owned api.test terminated with SIGQUIT after stack capture; no acceptance claim.",
+    "red_2": "Corrected canonical-runtime oracle naturally joined and failed only expected live driver/capacity/lifecycle assertions against transport-only cleanup.",
+    "fix": "Idempotent unconditional physical owned driver, archive fence, generator, gRPC Serve and Hub.Run joins before caller-owned storage closes. Existing concrete backend, RPC budgets and activation/persistence oracles remain unchanged."
+  },
+  "archive_reserve_unchanged": true,
+  "rpc_budget_ms_unchanged": 1500,
+  "simulated_rpc_delay_ms_unchanged": 900,
+  "free_bytes_before_normal": 13915693056,
+  "postgres_claim": "Earlier authoring actual PostgreSQL normal/race lifecycle gates qualify their captured v6 feature scope; the new ownership fixture gates use actual SQLite and actual generator only.",
+  "broad_gates": "Pending ONE final composed full Go required-native run and full dashboard test:cycle in both profiles, generation/docs and final review under parent ownership. All earlier full-suite RED receipts remain intact. No standalone whole-program acceptance.",
+  "heavy_window_released_utc": "2026-10-05T23:37:19.240896+00:00",
+  "commit_push": "No child feature commit or push; parent final integration/commit closure pending.",
+  "cache_cleanup": "Deferred while shared dependent builds and final gates need caches."
+}

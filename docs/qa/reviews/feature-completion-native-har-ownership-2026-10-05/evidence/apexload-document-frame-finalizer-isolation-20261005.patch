@@ -1,0 +1,119 @@
+--- a/pkg/protocol/browser/document_evidence.go
++++ b/pkg/protocol/browser/document_evidence.go
+@@ -377,12 +377,34 @@
+ 		d.ended = true
+ 	}
+ }
++func (b *Browser) finalizeDocumentFrameBatch(ctx context.Context, frames []playwright.Frame, finalizer string) {
++	for _, frame := range frames {
++		if ctx.Err() != nil {
++			return
++		}
++		_, err := frame.Evaluate(fmt.Sprintf("async () => { const f=globalThis[%q]; if(typeof f==='function') await f('graceful_end'); }", finalizer))
++		if err != nil {
++			// A stale frame does not prove page/sibling death. The final shared
++			// boundary censors unresolved documents after every live attempt.
++			continue
++		}
++	}
++}
++
+ func (b *Browser) finalizeDocumentEvidence(ctx context.Context) {
+ 	b.mu.Lock()
+-	frames := make(map[playwright.Frame]playwright.Page)
+-	for _, doc := range b.evidence.documents {
+-		if !doc.ended {
+-			frames[doc.frame] = doc.page
++	keys := make([]string, 0, len(b.evidence.documents))
++	for key := range b.evidence.documents {
++		keys = append(keys, key)
++	}
++	sort.Strings(keys)
++	frames := make([]playwright.Frame, 0, len(keys))
++	seen := make(map[playwright.Frame]bool)
++	for _, key := range keys {
++		doc := b.evidence.documents[key]
++		if !doc.ended && doc.frame != nil && !seen[doc.frame] {
++			seen[doc.frame] = true
++			frames = append(frames, doc.frame)
+ 		}
+ 	}
+ 	finalizer := b.evidence.finalizer
+@@ -406,15 +428,7 @@
+ 	done := make(chan struct{})
+ 	go func() {
+ 		defer close(done)
+-		for frame, page := range frames {
+-			if bounded.Err() != nil {
+-				return
+-			}
+-			_, err := frame.Evaluate(fmt.Sprintf("async () => { const f=globalThis[%q]; if(typeof f==='function') await f('graceful_end'); }", finalizer))
+-			if err != nil {
+-				b.censorDocumentEvidence(page, "context_closed")
+-			}
+-		}
++		b.finalizeDocumentFrameBatch(bounded, frames, finalizer)
+ 	}()
+ 	<-done
+ 	if !stopClose() {
+--- /dev/null
++++ b/pkg/protocol/browser/document_finalizer_frame_isolation_test.go
+@@ -0,0 +1,58 @@
++package browser
++
++import (
++	"context"
++	"errors"
++	"testing"
++
++	"github.com/jasonczech/apexload/pkg/protocol"
++	playwright "github.com/mxschmitt/playwright-go"
++)
++
++type finalizerFrameIsolationFixture struct {
++	playwright.Frame
++	evaluate func() error
++}
++
++func (f *finalizerFrameIsolationFixture) Evaluate(string, ...any) (any, error) {
++	return nil, f.evaluate()
++}
++
++func TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders(t *testing.T) {
++	for _, staleFirst := range []bool{true, false} {
++		name := "live_then_stale"
++		if staleFirst {
++			name = "stale_then_live"
++		}
++		t.Run(name, func(t *testing.T) {
++			page := &browserGenerationUntouchedPage{}
++			liveDoc := &browserDocumentState{page: page, observations: map[string]protocol.BrowserDocumentObservation{"inp": {State: "provisional"}}}
++			stale := &finalizerFrameIsolationFixture{evaluate: func() error { return errors.New("synthetic detached old frame") }}
++			accepted := false
++			live := &finalizerFrameIsolationFixture{evaluate: func() error {
++				if !liveDoc.ended {
++					accepted = true
++					liveDoc.observations["inp"] = protocol.BrowserDocumentObservation{State: "final", Boundary: "graceful_end", UnavailableReason: "no_interaction"}
++				}
++				return nil
++			}}
++			liveDoc.frame = live
++			staleDoc := &browserDocumentState{frame: stale, page: page, observations: map[string]protocol.BrowserDocumentObservation{"inp": {State: "provisional"}}}
++			b := &Browser{evidence: browserEvidenceState{documents: map[string]*browserDocumentState{"old": staleDoc, "live": liveDoc}}}
++			frames := []playwright.Frame{live, stale}
++			if staleFirst {
++				frames = []playwright.Frame{stale, live}
++			}
++			// An explicitly ordered batch proves either order without relying on
++			// Go map iteration or a probability of reproducing the stale first.
++			b.finalizeDocumentFrameBatch(context.Background(), frames, "synthetic")
++			b.censorDocumentEvidence(nil, "context_closed")
++			if !accepted || liveDoc.observations["inp"].State != "final" || liveDoc.observations["inp"].UnavailableReason != "no_interaction" {
++				t.Fatal("one stale frame erased its live sibling's valid final receipt")
++			}
++			if staleDoc.observations["inp"].State != "censored" {
++				t.Fatal("unresolved stale document lost the final shared boundary")
++			}
++		})
++	}
++}

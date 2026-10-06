@@ -1,0 +1,13 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run --run src/components/useQueuedRunRevision.test.tsx src/components/TestExecutionScenarioEditor.test.tsx
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard
+
+
+ Test Files  2 passed (2)
+      Tests  14 passed (14)
+   Start at  09:19:44
+   Duration  1.61s (transform 112ms, setup 55ms, import 148ms, tests 89ms, environment 1.08s)
+

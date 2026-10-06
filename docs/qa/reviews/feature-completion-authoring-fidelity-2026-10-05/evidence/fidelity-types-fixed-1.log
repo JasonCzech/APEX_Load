@@ -1,0 +1,8 @@
+
+> apexload-dashboard@0.1.0 typecheck
+> tsc --noEmit --pretty false -p tsconfig.json && tsc --noEmit --pretty false -p tsconfig.node.json
+
+src/components/scenarioFidelity.test.ts(31,25): error TS2339: Property 'property_analytics' does not exist on type 'ScriptResultsConfig | {}'.
+  Property 'property_analytics' does not exist on type '{}'.
+src/components/scenarioFidelity.test.ts(33,28): error TS2339: Property 'property_analytics' does not exist on type 'ScriptResultsConfig | {}'.
+  Property 'property_analytics' does not exist on type '{}'.

@@ -1,0 +1,38 @@
+{
+  "name": "native-har-sdk-original-prior-close-red-1",
+  "argv": [
+    "go",
+    "test",
+    "-modfile=/private/tmp/native-har-v5-before-owned-sdk-20261005.mod",
+    "-overlay=/private/tmp/native-har-sdk-original-binding-overlay-20261005.json",
+    "-v",
+    "./pkg/protocol/browser",
+    "-run",
+    "^TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof$",
+    "-count=1",
+    "-timeout=45s"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "exit_code": 1,
+  "elapsed_seconds": 4.883,
+  "recorded_at_utc": "2026-10-05T23:37:15.119040+00:00",
+  "log_path": "/private/tmp/native-har-sdk-original-prior-close-red-1.log",
+  "log_sha256": "b48a986d52198984ede1e5d806a02e1cbbe39d4df4e9ec98858bb0789761654e",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4113,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "raw_receipt_sha256": "1889e161b822d1146c97d709d4e84dd93f2d05025b7be22073057597432f1f88",
+  "repository_inventory_before_sha256": "52fc3f691e1c6b54559d743c42fecdfeb3326f9373d67858bd68cca6fae33c4f",
+  "repository_inventory_after_sha256": "52fc3f691e1c6b54559d743c42fecdfeb3326f9373d67858bd68cca6fae33c4f",
+  "qualification_disposition": "Superseded red production assertion with the pinned original SDK and exact old binding overlay: prior in-flight/completed ordinary Close falsely certified a writer join. Module-resolution and overlay inputs are separately frozen.",
+  "receipt_scope_note": "Compact durable receipt retains original private receipt SHA, source count/stability and inventory digests. Full 4,000+ repository inventories remain in the named private raw receipt; direct review inventories are copied separately. Neither inventory includes complete module-cache/native dependencies.",
+  "outcome": "red-superseded"
+}

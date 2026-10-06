@@ -1,0 +1,32 @@
+=== RUN   TestDistributedCommitBarrierIsChosenAfterSlowRunningPersistence
+2026/10/05 19:34:07 INFO scenario schedule overrides the script per-vuser iteration cap group=group script_id=ordering-script script_iterations=1
+--- PASS: TestDistributedCommitBarrierIsChosenAfterSlowRunningPersistence (2.40s)
+=== RUN   TestDistributedSetupRPCsReceiveIndependentTimeoutBudgets
+2026/10/05 19:34:09 INFO scenario schedule overrides the script per-vuser iteration cap group=group script_id=ordering-script script_iterations=1
+--- PASS: TestDistributedSetupRPCsReceiveIndependentTimeoutBudgets (2.12s)
+=== RUN   TestDistributedCommitBarrierIsRepersistedWhenSaveConsumesLead
+2026/10/05 19:34:12 INFO scenario schedule overrides the script per-vuser iteration cap group=group script_id=ordering-script script_iterations=1
+--- PASS: TestDistributedCommitBarrierIsRepersistedWhenSaveConsumesLead (2.33s)
+=== RUN   TestDistributedOrderingHarnessCleanupBeforeActivationJoinsDriver
+2026/10/05 19:34:14 INFO scenario schedule overrides the script per-vuser iteration cap group=group script_id=ordering-script script_iterations=1
+--- PASS: TestDistributedOrderingHarnessCleanupBeforeActivationJoinsDriver (1.17s)
+=== RUN   TestDistributedOrderingHarnessCleanupAfterActivationRetiresCapacityAndStorage
+2026/10/05 19:34:15 INFO scenario schedule overrides the script per-vuser iteration cap group=group script_id=ordering-script script_iterations=1
+--- PASS: TestDistributedOrderingHarnessCleanupAfterActivationRetiresCapacityAndStorage (1.48s)
+=== RUN   TestDistributedCommitBarrierIsChosenAfterSlowRunningPersistence
+2026/10/05 19:34:17 INFO scenario schedule overrides the script per-vuser iteration cap group=group script_id=ordering-script script_iterations=1
+--- PASS: TestDistributedCommitBarrierIsChosenAfterSlowRunningPersistence (2.34s)
+=== RUN   TestDistributedSetupRPCsReceiveIndependentTimeoutBudgets
+2026/10/05 19:34:18 INFO scenario schedule overrides the script per-vuser iteration cap group=group script_id=ordering-script script_iterations=1
+--- PASS: TestDistributedSetupRPCsReceiveIndependentTimeoutBudgets (2.12s)
+=== RUN   TestDistributedCommitBarrierIsRepersistedWhenSaveConsumesLead
+2026/10/05 19:34:21 INFO scenario schedule overrides the script per-vuser iteration cap group=group script_id=ordering-script script_iterations=1
+--- PASS: TestDistributedCommitBarrierIsRepersistedWhenSaveConsumesLead (2.24s)
+=== RUN   TestDistributedOrderingHarnessCleanupBeforeActivationJoinsDriver
+2026/10/05 19:34:24 INFO scenario schedule overrides the script per-vuser iteration cap group=group script_id=ordering-script script_iterations=1
+--- PASS: TestDistributedOrderingHarnessCleanupBeforeActivationJoinsDriver (1.16s)
+=== RUN   TestDistributedOrderingHarnessCleanupAfterActivationRetiresCapacityAndStorage
+2026/10/05 19:34:25 INFO scenario schedule overrides the script per-vuser iteration cap group=group script_id=ordering-script script_iterations=1
+--- PASS: TestDistributedOrderingHarnessCleanupAfterActivationRetiresCapacityAndStorage (1.54s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/api	21.912s

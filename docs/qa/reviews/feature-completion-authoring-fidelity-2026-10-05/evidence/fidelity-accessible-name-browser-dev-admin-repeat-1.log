@@ -1,0 +1,83 @@
+Building controller...
+Starting controller on http://127.0.0.1:18871 (profile=dev-admin, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.fHZ7iydx6t)...
+Controller healthy.
+Auth profile verified: dev-admin.
+
+Running 58 tests using 1 worker
+
+
+(node:53249) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1/58] e2e/workflow-help.spec.ts:27:1 › Help tasks, search and section links survive navigation and validate the first-test example
+[2/58] e2e/workflow-help.spec.ts:69:1 › DSL operators can discover the guide, validate its example, and follow reference links
+[3/58] e2e/workflow-help.spec.ts:110:1 › evidence guides are searchable, readable and retain their scope after reload
+[4/58] e2e/workflow-help.spec.ts:133:1 › legacy URLs, generated API search and contextual guidance reach the right articles
+[5/58] e2e/workflow-help.spec.ts:150:1 › Help is readable at narrow widths and exposes accessible navigation
+[6/58] e2e/workflow-help.spec.ts:171:1 › non-administrators cannot open or search Administration articles
+[7/58] e2e/workflow-help.spec.ts:186:1 › Help maintains readable contrast across the supported themes
+
+(node:53281) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[8/58] e2e/workflow-help.spec.ts:27:1 › Help tasks, search and section links survive navigation and validate the first-test example
+[9/58] e2e/workflow-help.spec.ts:69:1 › DSL operators can discover the guide, validate its example, and follow reference links
+[10/58] e2e/workflow-help.spec.ts:110:1 › evidence guides are searchable, readable and retain their scope after reload
+[11/58] e2e/workflow-help.spec.ts:133:1 › legacy URLs, generated API search and contextual guidance reach the right articles
+[12/58] e2e/workflow-help.spec.ts:150:1 › Help is readable at narrow widths and exposes accessible navigation
+[13/58] e2e/workflow-help.spec.ts:171:1 › non-administrators cannot open or search Administration articles
+[14/58] e2e/workflow-help.spec.ts:186:1 › Help maintains readable contrast across the supported themes
+
+(node:53310) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[15/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for missing infrastructure
+[16/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for single-region infrastructure
+[17/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for multi-zone infrastructure
+[18/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for multi-region infrastructure
+[19/58] e2e/workflow-new-test.spec.ts:67:1 › Scenario builder preserves controller continuity and the recovery spare budget
+[20/58] e2e/workflow-new-test.spec.ts:106:1 › New Test saves drafts without execution, retains both tabs and validates recurring triggers
+[21/58] e2e/workflow-new-test.spec.ts:159:1 › New Test restores the default name after clearing and reselecting the same scenario
+[22/58] e2e/workflow-new-test.spec.ts:175:1 › New Test exposes editable groups and saves a paused recurring schedule with visible policies
+[23/58] e2e/workflow-new-test.spec.ts:214:1 › Java group profile survives placement edits and scenario persistence (facade ledger: false)
+[24/58] e2e/workflow-new-test.spec.ts:214:1 › Java group profile survives placement edits and scenario persistence (facade ledger: true)
+[25/58] e2e/workflow-new-test.spec.ts:284:1 › Live configuration reports prepared Java reservations without opening raw JSON
+[26/58] e2e/workflow-new-test.spec.ts:309:1 › prepared Event Hubs run displays processor admission and starts with the pinned revision
+[27/58] e2e/workflow-new-test.spec.ts:340:1 › actual held-run serialization and an API-seeded queued copy preserve complete authored intent
+[28/58] e2e/workflow-new-test.spec.ts:426:1 › queued-copy preserves source capture IDs and durably clears the last authored goal
+[29/58] e2e/workflow-new-test.spec.ts:504:1 › queued-copy preserves iteration completion and explicitly clears source delay and root runtime
+[30/58] e2e/workflow-new-test.spec.ts:608:1 › queued-copy joins a history-guard save to its actual submitted receipt and retains late edits
+[31/58] e2e/workflow-new-test.spec.ts:689:1 › queued-copy submit refuses a source started concurrently and viewers cannot open the action
+[32/58] e2e/workflow-new-test.spec.ts:747:1 › queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear
+[33/58] e2e/workflow-scenario-composition.spec.ts:4:1 › scenario composition combines group editing with a live preview
+[34/58] e2e/workflow-scenario-composition.spec.ts:72:1 › guided stepped ramp keeps its pattern editor within the four scenario tabs
+[35/58] e2e/workflow-scenario-composition.spec.ts:102:1 › scenario rename and reopen retain Results, WebSocket, named shape and group timing intent
+[36/58] e2e/workflow-scenario-composition.spec.ts:143:1 › changing a saved workload shape retains the authored root SLA and rules
+
+(node:53467) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[37/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for missing infrastructure
+[38/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for single-region infrastructure
+[39/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for multi-zone infrastructure
+[40/58] e2e/workflow-new-test.spec.ts:12:3 › Scenario builder gates weighted placement for multi-region infrastructure
+[41/58] e2e/workflow-new-test.spec.ts:67:1 › Scenario builder preserves controller continuity and the recovery spare budget
+[42/58] e2e/workflow-new-test.spec.ts:106:1 › New Test saves drafts without execution, retains both tabs and validates recurring triggers
+[43/58] e2e/workflow-new-test.spec.ts:159:1 › New Test restores the default name after clearing and reselecting the same scenario
+[44/58] e2e/workflow-new-test.spec.ts:175:1 › New Test exposes editable groups and saves a paused recurring schedule with visible policies
+[45/58] e2e/workflow-new-test.spec.ts:214:1 › Java group profile survives placement edits and scenario persistence (facade ledger: false)
+[46/58] e2e/workflow-new-test.spec.ts:214:1 › Java group profile survives placement edits and scenario persistence (facade ledger: true)
+[47/58] e2e/workflow-new-test.spec.ts:284:1 › Live configuration reports prepared Java reservations without opening raw JSON
+[48/58] e2e/workflow-new-test.spec.ts:309:1 › prepared Event Hubs run displays processor admission and starts with the pinned revision
+[49/58] e2e/workflow-new-test.spec.ts:340:1 › actual held-run serialization and an API-seeded queued copy preserve complete authored intent
+[50/58] e2e/workflow-new-test.spec.ts:426:1 › queued-copy preserves source capture IDs and durably clears the last authored goal
+[51/58] e2e/workflow-new-test.spec.ts:504:1 › queued-copy preserves iteration completion and explicitly clears source delay and root runtime
+[52/58] e2e/workflow-new-test.spec.ts:608:1 › queued-copy joins a history-guard save to its actual submitted receipt and retains late edits
+[53/58] e2e/workflow-new-test.spec.ts:689:1 › queued-copy submit refuses a source started concurrently and viewers cannot open the action
+[54/58] e2e/workflow-new-test.spec.ts:747:1 › queued group dialogs retain inherited Results siblings and WebSocket zero and explicit clear
+[55/58] e2e/workflow-scenario-composition.spec.ts:4:1 › scenario composition combines group editing with a live preview
+[56/58] e2e/workflow-scenario-composition.spec.ts:72:1 › guided stepped ramp keeps its pattern editor within the four scenario tabs
+[57/58] e2e/workflow-scenario-composition.spec.ts:102:1 › scenario rename and reopen retain Results, WebSocket, named shape and group timing intent
+[58/58] e2e/workflow-scenario-composition.spec.ts:143:1 › changing a saved workload shape retains the authored root SLA and rules
+  2 skipped
+  56 passed (1.6m)

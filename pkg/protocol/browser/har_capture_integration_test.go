@@ -146,7 +146,8 @@ func TestFinalizeHARCaptureRedactsLowEntropyRuntimeSecrets(t *testing.T) {
 	const secret = "tiny"
 
 	dir := t.TempDir()
-	workingPath := filepath.Join(dir, "apexload_browser_runtime.har.tmp")
+	owner := fixtureHAROwner(t, dir)
+	workingPath := owner.path
 	fixture := `{
 		"log": {
 			"version": "1.2",
@@ -173,6 +174,7 @@ func TestFinalizeHARCaptureRedactsLowEntropyRuntimeSecrets(t *testing.T) {
 	b := &Browser{
 		harCapturePolicy: HARCaptureAlways,
 		harWorkingPath:   workingPath,
+		harOwner:         owner,
 	}
 	b.SetRuntimeTextRedactor(func(value string) string {
 		return strings.ReplaceAll(value, secret, scrub.Redacted)
@@ -200,12 +202,13 @@ func TestFinalizeHARCaptureRedactsLowEntropyRuntimeSecrets(t *testing.T) {
 func TestFinalizeHARCaptureRedactsPercentEncodedRuntimeSecrets(t *testing.T) {
 	const secret = "a&b"
 	dir := t.TempDir()
-	workingPath := filepath.Join(dir, "apexload_browser_encoded.har.tmp")
+	owner := fixtureHAROwner(t, dir)
+	workingPath := owner.path
 	fixture := `{"log":{"version":"1.2","creator":{"name":"test","version":"1"},"entries":[{"request":{"url":"https://example.test/?q=a%26b","headers":[],"cookies":[],"queryString":[{"name":"q","value":"a%26b"}]},"response":{"headers":[],"cookies":[],"content":{"text":"YSZi"}}}]}}`
 	if err := os.WriteFile(workingPath, []byte(fixture), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	b := &Browser{harCapturePolicy: HARCaptureAlways, harWorkingPath: workingPath}
+	b := &Browser{harCapturePolicy: HARCaptureAlways, harWorkingPath: workingPath, harOwner: owner}
 	variants := map[string]struct{}{secret: {}, "a%26b": {}, "YSZi": {}}
 	b.SetRuntimeTextRedactor(func(value string) string {
 		for variant := range variants {
@@ -228,7 +231,7 @@ func TestFinalizeHARCaptureRedactsPercentEncodedRuntimeSecrets(t *testing.T) {
 	}
 }
 
-func TestApplyHARCaptureOptionsPurgesOrphansButPreservesActiveWorkingFiles(t *testing.T) {
+func TestApplyHARCaptureOptionsPreservesUnknownLegacyWorkingFiles(t *testing.T) {
 	dir := t.TempDir()
 	orphan := filepath.Join(dir, "apexload_browser_orphan.har.tmp")
 	active := filepath.Join(dir, "apexload_browser_active.har.tmp")
@@ -242,10 +245,12 @@ func TestApplyHARCaptureOptionsPurgesOrphansButPreservesActiveWorkingFiles(t *te
 	t.Cleanup(func() { unregisterRuntimeHARWorkingPath(active) })
 	b := &Browser{harCapturePolicy: HARCaptureAlways, harDir: dir}
 	options := &playwright.BrowserNewContextOptions{}
-	b.applyHARCaptureOptions(options)
-	t.Cleanup(func() { unregisterRuntimeHARWorkingPath(b.harWorkingPath) })
-	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
-		t.Fatalf("orphan raw HAR survived new-session purge: %v", err)
+	if err := b.applyHARCaptureOptions(options); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = b.discardHARWorkingFile() })
+	if _, err := os.Stat(orphan); err != nil {
+		t.Fatalf("unknown legacy raw HAR was deleted: %v", err)
 	}
 	if _, err := os.Stat(active); err != nil {
 		t.Fatalf("active HAR was purged: %v", err)
@@ -260,7 +265,9 @@ func TestApplyHARCaptureOptionsDisablesRawCaptureForRuntimeSecrets(t *testing.T)
 	b := &Browser{harCapturePolicy: HARCaptureAlways, harDir: dir}
 	b.SetRuntimeSecretActivity(func() bool { return true })
 	options := &playwright.BrowserNewContextOptions{}
-	b.applyHARCaptureOptions(options)
+	if err := b.applyHARCaptureOptions(options); err != nil {
+		t.Fatal(err)
+	}
 	if options.RecordHarPath != nil || b.harWorkingPath != "" {
 		t.Fatalf("runtime secrets enabled raw HAR capture: options=%#v path=%q", options, b.harWorkingPath)
 	}
@@ -274,13 +281,16 @@ func TestApplyHARCaptureOptionsDisablesRawCaptureForRuntimeSecrets(t *testing.T)
 }
 
 func TestDiscardHARWorkingFileUnregistersAndRemoves(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "apexload_browser_init_failure.har.tmp")
+	owner := fixtureHAROwner(t, t.TempDir())
+	path := owner.path
 	if err := os.WriteFile(path, []byte(`{"log":{"entries":[]}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	registerRuntimeHARWorkingPath(path)
-	b := &Browser{harWorkingPath: path}
-	b.discardHARWorkingFile()
+	b := &Browser{harWorkingPath: path, harOwner: owner}
+	if err := b.discardHARWorkingFile(); err != nil {
+		t.Fatal(err)
+	}
 	if RuntimeHARWorkingPathActive(path) {
 		t.Fatal("discarded HAR working file is still registered as active")
 	}

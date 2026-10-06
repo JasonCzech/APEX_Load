@@ -1,0 +1,35 @@
+{
+  "name": "native-har-browser-focused-3",
+  "argv": [
+    "go",
+    "test",
+    "./pkg/protocol/browser",
+    "-run",
+    "TestHAROwnership|TestFinalizeHARCapture|TestApplyHARCapture|TestDiscardHARWorking|TestHARMonitor|TestClosePreserves|TestRuntimeHARRetention|TestBrowserContextOptions|TestBrowserClose",
+    "-short",
+    "-count=2"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "exit_code": 0,
+  "elapsed_seconds": 3.297,
+  "recorded_at_utc": "2026-10-05T20:51:55.082542+00:00",
+  "log_path": "/private/tmp/native-har-browser-focused-3.log",
+  "log_sha256": "ce6e183c422896cde20bd36ec289bcf90248ded76ac106b378d60219d5d43dce",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4022,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "raw_receipt_sha256": "2957bdc12af89e1da17269beac8a5a2168da1aaf43b913b3fa2ef92a898d171f",
+  "repository_inventory_before_sha256": "0506b8db014e65772f4db9d918631b096d0ca225e20dae738fa68e35a1c0603e",
+  "repository_inventory_after_sha256": "0506b8db014e65772f4db9d918631b096d0ca225e20dae738fa68e35a1c0603e",
+  "qualification_disposition": "Historical green/check superseded by subsequent source changes unless named as final candidate qualification in README.",
+  "receipt_scope_note": "Compact durable receipt retains original private receipt SHA, source count/stability and inventory digests. Full 4,000+ repository inventories remain in the named private raw receipt; direct review inventories are copied separately. Neither inventory includes complete module-cache/native dependencies.",
+  "outcome": "green-scoped"
+}

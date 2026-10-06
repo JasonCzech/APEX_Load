@@ -1,0 +1,31 @@
+{
+  "schema": "apexload.native-har.parent-review.v4",
+  "created_at_utc": "2026-10-05T22:13:44.164170+00:00",
+  "candidate_inventory": "/private/tmp/apexload-native-har-ownership-candidate-source-v4-20261005.json",
+  "candidate_inventory_sha256": "9317de086c2020e1af00fc9f3d176a29add4a8405049a09f851e7dfee8aef6a9",
+  "scope": "Independent parent static repeat review of the v4 source delta, ownership cursor, teardown deadline and post-wait namespace revalidation; all 33 frozen source/module inputs verified before release. No new test execution or native/API support qualification.",
+  "findings": [
+    {
+      "priority": 2,
+      "file": "pkg/protocol/browser/har_working_lease.go",
+      "summary": "Mixed retirement plans do not share their ledger cursor with unrecorded joined generation candidates.",
+      "impact": "A preceding unrecorded generation register/clear operation rewrites the plan ledger inode and causes a later unchanged terminal candidate to fail. An unrecorded candidate also lacks the shared replacement refusal after another candidate consumes the plan.",
+      "required_fix": "Share a plan cursor across all returned candidates; advance only after verified own mutations; retain refusal of external identical-content ledger replacements in either application order.",
+      "status": "Sent to implementation agent; v5 fix in progress."
+    },
+    {
+      "priority": 2,
+      "file": "pkg/api/har_artifact_retention.go",
+      "summary": "Before-rename completed retirement may appear twice in one API prune plan.",
+      "impact": "The original scrubbed basename can be returned from the durable ledger and again from expired flat-file retention. First removal succeeds and the duplicate produces a misleading failed prune result.",
+      "required_fix": "Deduplicate exact planned basename/inode within the held artifact directory and exercise the API plan/apply path before and after the retirement rename.",
+      "status": "Sent to implementation agent; regression written, actual API execution remains pending."
+    }
+  ],
+  "disposition": "Changes required; v4 freeze released for fixes. No clean review claim.",
+  "qualification_limits": [
+    "Existing v4 filtered normal/race checks do not cover these complete API plan scenarios.",
+    "No controller/API/native test execution performed by this review.",
+    "Point-in-time HAR admission is not aggregate active-writer or process RSS enforcement."
+  ]
+}

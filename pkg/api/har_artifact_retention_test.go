@@ -35,8 +35,8 @@ func TestPlanHARArtifactRetention(t *testing.T) {
 
 	settings := ArchiveRetentionSettings{Enabled: true, HARArtifactDir: dir}
 	candidates := planHARArtifactRetention(now, settings)
-	if len(candidates) != 2 {
-		t.Fatalf("candidates = %+v, want the two expired browser artifacts", candidates)
+	if len(candidates) != 1 {
+		t.Fatalf("candidates = %+v, want only the completed expired artifact", candidates)
 	}
 	byPath := map[string]HARArtifactPruneCandidate{}
 	for _, candidate := range candidates {
@@ -49,9 +49,11 @@ func TestPlanHARArtifactRetention(t *testing.T) {
 	if scrubbed.RetentionDays != defaultHARRetentionDays {
 		t.Errorf("retention days = %d, want default %d", scrubbed.RetentionDays, defaultHARRetentionDays)
 	}
-	orphan, ok := byPath[expiredOrphan]
-	if !ok || orphan.Sensitivity != scrub.SensitivityRaw {
-		t.Errorf("orphaned working file must classify as raw: %+v", byPath)
+	if _, ok := byPath[expiredOrphan]; ok {
+		t.Errorf("unknown legacy raw writer was planned: %+v", byPath)
+	}
+	if _, err := os.Stat(expiredOrphan); err != nil {
+		t.Fatal("legacy raw was removed", err)
 	}
 }
 
@@ -73,22 +75,15 @@ func TestPlanHARArtifactRetentionRespectsSettings(t *testing.T) {
 	}
 }
 
-func TestPlanHARArtifactRetentionImmediatelyPurgesRawWorkingFilesEvenWhenDisabled(t *testing.T) {
+func TestPlanHARArtifactRetentionPreservesUnknownRawWhenDisabled(t *testing.T) {
 	dir := t.TempDir()
-	now := time.Now().UTC()
 	raw := writeAgedFile(t, dir, "apexload_browser_fresh.har.tmp", time.Second)
 	writeAgedFile(t, dir, "apexload_browser_fresh_scrubbed.har", time.Second)
-
-	candidates := planHARArtifactRetention(now, ArchiveRetentionSettings{Enabled: false, HARArtifactDir: dir})
-	if len(candidates) != 1 || candidates[0].Path != raw || candidates[0].Sensitivity != scrub.SensitivityRaw || candidates[0].RetentionDays != 0 {
-		t.Fatalf("disabled retention candidates = %+v, want only immediate raw purge", candidates)
+	if candidates := planHARArtifactRetention(time.Now().UTC(), ArchiveRetentionSettings{Enabled: false, HARArtifactDir: dir}); len(candidates) != 0 {
+		t.Fatal("unknown raw planned without writer proof", candidates)
 	}
-	_, pruned, failed := applyHARArtifactRetention(candidates)
-	if pruned != 1 || failed != 0 {
-		t.Fatalf("raw purge = pruned %d failed %d", pruned, failed)
-	}
-	if _, err := os.Stat(raw); !os.IsNotExist(err) {
-		t.Fatalf("raw working file survived purge: %v", err)
+	if _, err := os.Stat(raw); err != nil {
+		t.Fatal("unknown raw removed", err)
 	}
 }
 

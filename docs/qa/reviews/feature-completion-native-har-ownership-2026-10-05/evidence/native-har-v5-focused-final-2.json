@@ -1,0 +1,35 @@
+{
+  "name": "native-har-v5-focused-final-2",
+  "argv": [
+    "go",
+    "test",
+    "./pkg/protocol/browser",
+    "-run",
+    "TestHAROwnership|TestFinalizeHARCapture|TestApplyHARCapture|TestDiscardHARWorking|TestHARMonitor|TestClosePreserves|TestRuntimeHARRetention|TestBrowserContextOptions|TestBrowserClose|TestBrowserDocumentFinalize|TestBrowserDocumentFinalizerFrameErrorIsolation",
+    "-short",
+    "-count=2"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "exit_code": 0,
+  "elapsed_seconds": 13.113,
+  "recorded_at_utc": "2026-10-05T22:11:59.243029+00:00",
+  "log_path": "/private/tmp/native-har-v5-focused-final-2.log",
+  "log_sha256": "7f3748179680b7e18e6e58f56811d9252690026ce6aba8843c79badacf1a17bf",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4030,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "raw_receipt_sha256": "26fe17894a45749940edb57109d4c3dfe71e0071bfddf9722e7df50eb92e9ccc",
+  "repository_inventory_before_sha256": "8ca69381c010a4be465ab49fa1d6ab87e72d77cfdb5ade6cfa090434b71e1ffe",
+  "repository_inventory_after_sha256": "8ca69381c010a4be465ab49fa1d6ab87e72d77cfdb5ade6cfa090434b71e1ffe",
+  "qualification_disposition": "Historical v5 scoped final browser units twice, including mixed-order and initially absent-ledger batches and external replacement refusal; native fixtures short-skip and API fixtures remain uncompiled.",
+  "receipt_scope_note": "Compact durable receipt retains original private receipt SHA, source count/stability and inventory digests. Full 4,000+ repository inventories remain in the named private raw receipt; direct review inventories are copied separately. Neither inventory includes complete module-cache/native dependencies.",
+  "outcome": "green-scoped"
+}

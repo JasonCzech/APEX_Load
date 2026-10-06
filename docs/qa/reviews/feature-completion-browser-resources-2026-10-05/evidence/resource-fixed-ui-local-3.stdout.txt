@@ -1,0 +1,18 @@
+Building controller...
+Starting controller on http://127.0.0.1:18972 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.Gz7bQwIjgC)...
+Controller healthy.
+Starting controller on http://127.0.0.1:18972 (profile=local-auth, throwaway DB in /var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.Gz7bQwIjgC)...
+Controller healthy.
+Auth profile verified: local-auth.
+
+Running 3 tests using 1 worker
+
+(node:61193) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/workflow-help.spec.ts:174:1 › retained resource guide is searchable and remains selected after reload and narrowing (711ms)
+(node:61242) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 e2e/workflow-retained-resource-inspector.spec.ts:56:1 › retained resource inspector paginates beyond report previews and preserves native zero, false and independent clocks (8.9s)
+  ✓  3 e2e/workflow-retained-resource-inspector.spec.ts:173:1 › retained resource inspector refuses a mismatched page and retries without publishing unavailable evidence as zero (7.2s)
+
+  3 passed (24.8s)

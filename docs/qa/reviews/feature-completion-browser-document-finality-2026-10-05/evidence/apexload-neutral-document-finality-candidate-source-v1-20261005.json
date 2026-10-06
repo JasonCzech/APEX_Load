@@ -1,0 +1,63 @@
+{
+  "recorded_at_utc": "2026-10-05T23:14:07.568921+00:00",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "head": "9b5b9e29a48950591f9e06d7acb7d2d3095cae4b",
+  "scope": "Neutral finality source candidate: three owned changed/new production/test files, parent aggregate-only native oracle logging and seven adjacent module/fixture/hook/library references. Not full transitive/native inventory. VM deterministic red then green; required native repetition and independent review pending. HAR ownership v5 worktree unchanged.",
+  "sources": [
+    {
+      "path": "pkg/protocol/browser/document_bootstrap.go",
+      "sha256": "dc3c8727caad97d7a24f5a73acbf8227b58dfe93834448d08c6aa392dbdd5a05",
+      "bytes": 7431
+    },
+    {
+      "path": "pkg/protocol/browser/document_evidence.go",
+      "sha256": "3312404b3313ce9c45c08079750d3894a8ceb0134615c8b9b272f6618229345d",
+      "bytes": 18895
+    },
+    {
+      "path": "pkg/protocol/browser/document_finality_join_test.go",
+      "sha256": "4c305e187129671b14708f74ddb061c6f670ea5b61c2a9852e8acdc7b0255205",
+      "bytes": 8261
+    },
+    {
+      "path": "pkg/protocol/browser/document_actual_integration_test.go",
+      "sha256": "553db9f6d9a98b2ef6e74bc6cb113ec9f09d6452b9775555ef8d87189f772ba7",
+      "bytes": 18665
+    },
+    {
+      "path": "pkg/protocol/browser/document_bootstrap_test.go",
+      "sha256": "227f27a7142c399e92fe4c55ecbaafc06b5daf8183ab194521e54a88cfa0f228",
+      "bytes": 5623
+    },
+    {
+      "path": "pkg/protocol/browser/document_evidence_test.go",
+      "sha256": "25c15edb67d86668cf26fd865b871fb4096bf6b5f3f127d560006f499a50e9a9",
+      "bytes": 10055
+    },
+    {
+      "path": "pkg/protocol/browser/document_finalizer_frame_isolation_test.go",
+      "sha256": "2485c62faa6ab53518694bb00b2624be93639f61cd805c6f226143361b94a2ed",
+      "bytes": 2274
+    },
+    {
+      "path": "pkg/protocol/browser/runtime_context.go",
+      "sha256": "cad4deedefd5a1e77658f4fc6dfa299db7660a9d97c608d69a83ebefee8f6a1a",
+      "bytes": 25545
+    },
+    {
+      "path": "pkg/protocol/browser/third_party/web_vitals/web-vitals-5.1.0.iife.js",
+      "sha256": "8890ec954757ea8e4801f49958afb76e2b8837c47fec5b16598fc20cbd49c220",
+      "bytes": 5886
+    },
+    {
+      "path": "go.mod",
+      "sha256": "05c38d4d914dd463eadcff718550f394425eeb85721dbcab2c0fc8c8d59b2d1b",
+      "bytes": 11383
+    },
+    {
+      "path": "go.sum",
+      "sha256": "f24fca42c52f47ee68239f16130fc02743aed90c7ba2815b3197b665db15c2c8",
+      "bytes": 160716
+    }
+  ]
+}

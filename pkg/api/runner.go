@@ -805,6 +805,11 @@ type TestGroup struct {
 	runtimeResourcePlanKnown   bool
 	runtimeResourcePlanError   string
 	messagingRuntimeFeatures   []string
+	// requiredRuntimeFeature is the complete compact feature contract captured
+	// only by a lightweight capacity snapshot that drops executable scripts.
+	// A present script always remains authoritative when resolving features.
+	requiredRuntimeFeature      string
+	requiredRuntimeFeatureKnown bool
 	// baseScript is the immutable executable input before test/group runtime
 	// overrides. It lets a revised queued copy apply intentional runtime edits
 	// without recompiling mutable script or data-pool resources. Older rows may

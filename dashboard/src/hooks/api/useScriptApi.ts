@@ -9,9 +9,8 @@ import {
   AuthoringSession,
   TestSummary,
 } from '../../types'
-import type { GoalConfig, ScenarioMode } from '../../types/goals'
 import type { LibraryAssignment, ScriptAuthoringBaseline, StoredScenario, StoredScript } from '../../types/storedContent'
-import type { GeneratorAssignmentSettings } from '../../types/testConfiguration'
+import type { ScenarioGroupPayload, ScenarioUpsertPayload } from '../../components/scenarioPayloadUtils'
 import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
 import type {
   ScenarioDataPoolBinding,
@@ -109,35 +108,16 @@ type ScenarioResultsResponse = {
   count: number
 }
 
-type ScenarioGroupPayload = {
-  name?: string
-  script_id: string
-  role?: 'load' | 'observer'
-  vusers: number
-  ramp_up?: string
-	ramp_down?: string
-	start_offset?: string
-  stages?: Array<{
-    name?: string
-    type: string
-    duration: string
-    target_vusers?: number
-    target_tps?: number
-  }>
-  initialization?: 'at_runtime' | 'at_once'
-}
-
-type ScenarioUpsertRequest = {
+// Share the serialized scenario fields with the authoring/run builders while
+// preserving optional API defaults and the existing request runtime contract.
+type ScenarioUpsertRequest = Omit<Partial<ScenarioUpsertPayload>, 'name' | 'duration' | 'groups' | 'runtime_settings'> & {
   name: string
   duration: string
-  scenario_mode?: ScenarioMode
-  script_shakeout?: boolean
-  resource_baseline?: boolean
-  assignment?: GeneratorAssignmentSettings
-  goal_config?: GoalConfig
   runtime_settings?: RuntimeSettingsOverride
-  groups: ScenarioGroupPayload[]
-  data_pools?: ScenarioDataPoolBinding[]
+  groups: Array<Omit<ScenarioGroupPayload, 'initialization' | 'runtime_settings'> & {
+    initialization?: ScenarioGroupPayload['initialization']
+    runtime_settings?: RuntimeSettingsOverride
+  }>
 }
 
 type DataPoolListResponse = {

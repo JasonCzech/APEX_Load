@@ -1,0 +1,1454 @@
+{
+  "schema": "apexload-first-final-staging-audit-independent-review-v1",
+  "at_utc": "2026-10-06T03:20:46.516915+00:00",
+  "status": "clean within scoped audit/provenance and bounded pattern classification review",
+  "findings": [],
+  "scope": "Read-only exact plan/complete/audit metadata verification, source/QA allowlist/exclusions/symlink/size checks, all selected file identities/modes and absence, new210+20guard logical SHA bookends. Prior full source/browser/native reviews and parent all-tested-input bookend reused. No staging/build/test/cleanup or source edits.",
+  "audit_output_directory": "/private/tmp/apexload-root-final-staging-audit-v1-20261005",
+  "completed_output_hashes": {
+    "audit.json": "72ef7d4e38eed711705b663c22a3bb7d65efa1506d4af98f63f12191fd5dd5ba",
+    "all-paths.nul": "f0da9c98500ca11378b5dead661dcc797430b305052ad89a80a077a902f85fa1",
+    "normal-paths.nul": "7feb578ccb1763d544929d8e8a728d7ba81416545809888456b78a7b7f6c5952",
+    "force-paths.nul": "0cedfe9dfa68706e10e871fc6bb599e0d0446cf635ec6a4d99de0dc22ae8f7db",
+    "complete.json": "26f31c7ecd6d062e44a929f9d701d96bbb0fd44be8fc3969d4fe697970472c25"
+  },
+  "advisory_sha256": "ae0d0b190cea870e460792f4667d3891a54e0c31fc4bc3d065ab8ba454974464",
+  "helper_sha256": "774686e75e7caa0ed93a2d1838ece7a75683c63b1f13009fe124cf7e96a90669",
+  "exact_plan_counts": {
+    "all-paths.nul": 2243,
+    "normal-paths.nul": 1868,
+    "force-paths.nul": 375
+  },
+  "plans_derived_exactly_from_pinned_audit_rows": true,
+  "force_plan_only_audited_ignored_untracked_candidates": true,
+  "selected_metadata_paths_checked": 2358,
+  "regular_paths": 2227,
+  "tracked_absent_paths": 131,
+  "new_retained_qa_paths_hash_verified": 210,
+  "pinned_source_guard_paths_hash_verified": 20,
+  "new_and_guard_hash_bookends": [
+    {
+      "path": "cmd/apexctl/analysis_workflows.go",
+      "sha256": "f7c15a020b9b7888055daf3b1b0a5aa979c29e743b86d33d16c03786142a9952",
+      "bytes": 18961,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "dashboard/src/components/BrowserNativeRequestEvidence.tsx",
+      "sha256": "70144ac332b93181835fc7b6b68a0dfa7354643a4fdffed68f48283d20571f52",
+      "bytes": 4066,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "dashboard/src/components/BrowserResourceInspector.css",
+      "sha256": "84b96900a69b514a6799bec3ebf2403751aac1c986388bd3ef11e9126c9445c6",
+      "bytes": 2086,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "dashboard/src/components/BrowserResourceInspector.test.tsx",
+      "sha256": "d0d2ce4eb39918ec39baae5d08b42bccf4b163c15ec763fd0b7e50f1bfa8c263",
+      "bytes": 7131,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "dashboard/src/components/TestExecutionArchive.test.tsx",
+      "sha256": "3bc34f0fcd152555a80b304e8b53d382a9fff10fb79e0c453e3f80bf84ed7e9b",
+      "bytes": 75073,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "dashboard/src/components/TestExecutionArchive.tsx",
+      "sha256": "16e6cb443e2911d83487c2510e4f7c28d49ce41e3bf550edd529b98287da9e4b",
+      "bytes": 127337,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "dashboard/src/components/browserResourceEvidenceModel.test.ts",
+      "sha256": "db1030294309e5095fdc7d7445a3de0fcbb99bf758388af3e3cb046912645f29",
+      "bytes": 7612,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "dashboard/src/components/browserResourceEvidenceModel.ts",
+      "sha256": "5edfb6cd6b1c0685cef2a63bcd853ece5943396a50ad359476f33221e154219a",
+      "bytes": 7648,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "dashboard/src/components/browserResourcePage.testFixtures.ts",
+      "sha256": "1d63f440cd887d112b08b5467084df92d1dac3ec6b8ec571d6b325b8063f904b",
+      "bytes": 1619,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "dashboard/src/components/browserResourcePageModel.test.ts",
+      "sha256": "771c655beb4b7c236b05e19b63ead3ca8ceba6f91330355cd1ca5947483819e4",
+      "bytes": 7063,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "dashboard/src/components/useBrowserResourcePage.test.tsx",
+      "sha256": "d9feee1026475b513118a45fa82778d6f6aaacb90be3f073ebf0bc3dccb9df82",
+      "bytes": 7265,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "dashboard/src/types/generated/openapi.ts",
+      "sha256": "87fd69081785270438752c9c30c56f1fa075ee12743ccf5ab78e4f3f927cc4bd",
+      "bytes": 5926404,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "c46aee0b70ce0505776508f7685a3f8eb6be92ac270f590aca75cc1739613456",
+      "bytes": 29470,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-finality-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "8b7cee6eacd0267dea5a99f385f9674e3f569ae425a118655be78c5af181fd28",
+      "bytes": 2987,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "7a0180fff6de9b1b5b005af6db0bdc93cac734b6d23492834410828f0845540e",
+      "bytes": 5955,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-dashboard-full-cycle-2.json",
+      "sha256": "f74e2970b743546a188c5b3521238ca04a3eb7939476becb4397baeebd3caa3a",
+      "bytes": 2118388,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-docs-final-1.json",
+      "sha256": "0fc4b85a31308c155d9c7a38bbe69f9faaf385f49397531781798a8ef1c5156a",
+      "bytes": 2119738,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-docs-final-1.log",
+      "sha256": "80da2d5cd875b187ab4bfc89d170f80822e10774ab082e38b0e568e579b085c9",
+      "bytes": 59,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-full-go-1.json",
+      "sha256": "8dc8bec036f4d16bf5d68257ab45962da9a27c747b40f1fb6cd4f9caa1409e80",
+      "bytes": 2119803,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-full-go-1.log",
+      "sha256": "6ec2dddef044ace5bbcd42a226f80328233720ae6d57fb10d18ef529ae09e7ba",
+      "bytes": 30600494,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-full-go-2.json",
+      "sha256": "2414c442fe38b9c2ed8cec6457a296ac616eb419434d174612c9a530d0d1e129",
+      "bytes": 2119803,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-full-go-2.log",
+      "sha256": "70c51aa0a7f07e5057f9f5d0a9ba1af91fe74778dafffbe7aa78a3944305eed5",
+      "bytes": 30600803,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-route-contract-focused-1.json",
+      "sha256": "73c919c13c4c6f34309e79afe63579d3fec714b3874b010d2cbc253a48809662",
+      "bytes": 2119961,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-route-contract-focused-1.log",
+      "sha256": "c30f1e5ebfbe79c00f8867ca72f59cbd9e05dafd24351982aab97c653cae59e2",
+      "bytes": 2931,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-route-contract-focused-2.json",
+      "sha256": "ebb3d8d6f0f1446d5b3d26ad52cb9a9e207ed66a5ffdd18e275df0550071a4ea",
+      "bytes": 2120010,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-route-contract-focused-2.log",
+      "sha256": "53ff750136a9c42391155a77e120712899b3e9cfead76d1746475eecb7e9fadc",
+      "bytes": 21126,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/dev-admin-skip-advisory.json",
+      "sha256": "249cef5606b1977e995946460617d7ec3f7e88e0e47ff03fc0e3a27ed6924d54",
+      "bytes": 5282,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/final-cache-docker-metadata.json",
+      "sha256": "370b4eabba0f2cb5ad35049c82a4b8e0aebda04a24ee7a8a7747591e94c45d82",
+      "bytes": 402,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/final-cache-process-metadata.json",
+      "sha256": "ed59dab7a6dc7efff37bccd29377b58a88d7a146b18054547c56e8d49c6d0edf",
+      "bytes": 4182,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/final-composed-api-authoring-source-review.json",
+      "sha256": "b0fbde1bf32beb249cb72eb492b9f05f2f2bd7213d1d7c49589e65f4c2702029",
+      "bytes": 50020,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/final-staging-helper-independent-review-v1.json",
+      "sha256": "dc1e362e60d972e6ccb296dd5a88deb68dd088739807e725d04f69e932f0a7a7",
+      "bytes": 3690,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/final-staging-helper-review-clarification-v1.json",
+      "sha256": "f45ad197f4ba712a06bc3b57833e41ce4156363bdc5df1052fe7fef0a7354273",
+      "bytes": 1023,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/final-status-doc-repeat-links.json",
+      "sha256": "264a569e817c84309e72994e8951fcae29e81cf13a18d1b02323373f5a9bf1f9",
+      "bytes": 39551,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/final-status-documentation-fix.json",
+      "sha256": "4e3f9ecaa2a4340aa2d71e0081fa9b1e1f99d61fc076909c9b800f4354337a0d",
+      "bytes": 3833,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/final-status-documentation-independent-repeat-clean-v1.json",
+      "sha256": "02bb63f997cf3a348cd333eaa73eac5029a6387d67e5f0a26f2538f8ee97ce38",
+      "bytes": 15463,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/final-status-documentation-supplement.json",
+      "sha256": "c9089bb36645fcf71056924cd2fbe4c95b04892244926625d991e725a606ef0f",
+      "bytes": 805,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/final-task-cache-cleanup.json",
+      "sha256": "06d098fde47d98dcd23e3952a215556997734be6fc4a943318eba646eb1ccde0",
+      "bytes": 3841,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/full-go-1-final-red-skip-ledger.json",
+      "sha256": "9271872e4c365298d9a010ff69723c10559dd8f2127f65aac0977e6ea46b7e7c",
+      "bytes": 18570,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/full-go-2-final-green-skip-ledger.json",
+      "sha256": "917a3e16d56f4d30a84b4c00cac846be7d23004b5e2417bd985caffcb10e45bc",
+      "bytes": 20742,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/local-auth-skip-closure.json",
+      "sha256": "2a37accf3ad56c729342e304109cca792580fe27950080c55f894bd890884665",
+      "bytes": 7514,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/resource-staging-manifest-map.json",
+      "sha256": "ca0d5207923ba9d20c90b0ad6eba64d8560a1a8bd143d761db3e0527a66bc156",
+      "bytes": 27708,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/route-contract-applied-independent-review.json",
+      "sha256": "776563d0602417b8cf639ff736a582c08dd23bb92bf330fe5472cfbce8409635",
+      "bytes": 8396,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/staging-advisory-audit-v2.json",
+      "sha256": "c5d26b1ea2d85d93494d658733fca121a82a6e91528b0d9d0b6190752daab7be",
+      "bytes": 1701880,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/staging-advisory-audit-v3.json",
+      "sha256": "d6b54a1d638ffbf0e9a121f9ea71ea1efd4f50e2411d302317a952394718c009",
+      "bytes": 1748547,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/staging-advisory-audit-v4.json",
+      "sha256": "ae0d0b190cea870e460792f4667d3891a54e0c31fc4bc3d065ab8ba454974464",
+      "bytes": 1760046,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/staging-helper-v2-scope-delta-independent-review.json",
+      "sha256": "1f3e5653ddc5fcd6aa154d88f27dfc266c6e8006dc5c5bbc4e8638b131df744e",
+      "bytes": 6934,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/helpers/final-staging-audit-v2.py.txt",
+      "sha256": "774686e75e7caa0ed93a2d1838ece7a75683c63b1f13009fe124cf7e96a90669",
+      "bytes": 23161,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/helpers/final-staging-audit.py.txt",
+      "sha256": "771525aa187fd541277ba2480c0daedf379d35fc0f2ecd46533cd1628bfa950c",
+      "bytes": 23163,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/.last-run.json",
+      "sha256": "91d1c43004802cd49950d78eb11c8fa7d05da8ffffe219a8b13b2f561bc00903",
+      "bytes": 45,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/playwright-junit.xml",
+      "sha256": "1319eeef79f9a258f397ec028a6bd04edfbb40c22ce7c7f790a6de466dca7a0d",
+      "bytes": 42056,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-analysis-preparat-0fe44-tors-across-save-and-reopen/imported-identity-comparison-left.png",
+      "sha256": "0c776c38786cd0813f17864ec019139acd1e5b744e2cc8f815d486a7f8b63b15",
+      "bytes": 60576,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-analysis-preparat-0fe44-tors-across-save-and-reopen/imported-identity-comparison-right.png",
+      "sha256": "d653f615eae8cc2c4f4e3e5888cfac93a3cd25002ca7f1273535a4a92d6ef337",
+      "bytes": 47138,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-analysis-preparat-a2463--denied-coverage-and-reload/management-exact-values.png",
+      "sha256": "6ecc778095a6eaa383bcbe0aeb57d6a5d68a5ab85b82a91c95b66b39db3a2134",
+      "bytes": 150921,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-analysis-preparat-a2463--denied-coverage-and-reload/management-narrow-context.png",
+      "sha256": "98b4df9d9f3a222c58a8568c1c849d4823ee6ccfe1a953f9cbde34b65d898903",
+      "bytes": 118373,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-analysis-preparat-a2463--denied-coverage-and-reload/management-narrow-values.png",
+      "sha256": "048d83cc8ea32ad504ce09a8567f44f79b915a1c244a7d83be6f54070bf0e4cd",
+      "bytes": 26455,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-aura-outcomes-Aur-a591b-ing-repeated-sibling-values/aura-nested-parameter-narrow.png",
+      "sha256": "ce00341acfab67ad27ba5403e2c97800ceac76b6b6803e757d1ac73ed05a6e10",
+      "bytes": 13218,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-aura-outcomes-Aur-a591b-ing-repeated-sibling-values/aura-nested-parameter-preview.png",
+      "sha256": "2eba9ccd388e09c7da52a82c6c3b90ded10dd114c257d036070d345d60baa20d",
+      "bytes": 31930,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-aura-outcomes-Aur-d731e-with-safe-source-navigation/aura-outcomes-desktop.png",
+      "sha256": "90b3dc0833dadff38a0c8cbb5a546bc93c3980884f60e3356d582add3aa7f202",
+      "bytes": 202321,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-aura-outcomes-Aur-d731e-with-safe-source-navigation/aura-outcomes-narrow.png",
+      "sha256": "fb26eba1cd7b990d3e2aac8102dc1b8d816f7c093d3474ee176c365eac138697",
+      "bytes": 206953,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-aura-outcomes-cor-c95b6-ndependent-HTTP200-failures/correlation-diagnosis-desktop.png",
+      "sha256": "e37665066b390281270668f037abbcdc1787a198e6ad108d05788dca845d3f47",
+      "bytes": 365290,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-aura-outcomes-cor-c95b6-ndependent-HTTP200-failures/correlation-diagnosis-narrow.png",
+      "sha256": "3b4d14ffabc0fb4a005dda29da11b0de49cb86405a73bf0257df8c8f3db60266",
+      "bytes": 200475,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-aura-outcomes-nat-f7f7b-ion-through-save-and-reopen/correlation-original-source-desktop.png",
+      "sha256": "30fe0862b204cf643a66d6262652b8271d94b67cdd239959b6a08f4baa151d3b",
+      "bytes": 236784,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-aura-outcomes-nat-f7f7b-ion-through-save-and-reopen/correlation-original-source-narrow.png",
+      "sha256": "13004997595ad6634fba14d2d2c1d2d0b929756f41b6ccb71a35f5bbc55b9990",
+      "bytes": 162257,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-aura-outcomes-nat-f7f7b-ion-through-save-and-reopen/correlation-review-desktop.png",
+      "sha256": "05f2fa49075feda842d9b0d878269da61e0e84c622e0be7887edbd8c97b9abf1",
+      "bytes": 239625,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-aura-outcomes-nat-f7f7b-ion-through-save-and-reopen/correlation-review-narrow.png",
+      "sha256": "7de14d522456dab746df67cca7860e8704ea66f556bcbd43435afc924d5852ba",
+      "bytes": 204580,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-author-experience-50289-aves-without-losing-context/author-operator-experience.png",
+      "sha256": "b82f09ead32afb1bb3108b371f4f63bf74ef91f77bb5a3e53a6c58c539ad67f3",
+      "bytes": 180679,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-baseline-comparis-3896f-reserves-comparison-context/baseline-comparison-narrow.png",
+      "sha256": "6e6326849ed16bf07eed952210e00636625b1882b6ccde9db517c698f9219663",
+      "bytes": 171609,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-baseline-comparis-3896f-reserves-comparison-context/baseline-comparison-wide.png",
+      "sha256": "86ce9f4fd979101a98809c62e7e11e8d7358fb32a93d79cbf28545991b67e16f",
+      "bytes": 232412,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-baseline-comparis-3896f-reserves-comparison-context/baseline-resource-detail.png",
+      "sha256": "236ff481ef5b5670bd458d2e28dc3dfbc9136249a7169d99287fbc2270e0b9bc",
+      "bytes": 121088,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-browser-resource--4da8b-inspects-action-attribution/resource-evidence.png",
+      "sha256": "7bf8835e3139b2a9730174098fee4863beffe2da7ecaf8a1c69ab1156687892a",
+      "bytes": 56311,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-browser-resource--6abc2--independently-from-actions/browser-document-archive-overview.png",
+      "sha256": "1a95774ed7f5042ebdd972636e2a5956be6cfc53663a5ba6f7743c3abd6bfd55",
+      "bytes": 259937,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-browser-resource--6abc2--independently-from-actions/browser-document-archive.png",
+      "sha256": "64753ec3f184f190f0e37016850f4fd944e2791522b1a7fa5eb13303c87f7ed9",
+      "bytes": 239749,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-browser-resource--7036a-ranks-only-complete-devices/browser-archive-unscored.png",
+      "sha256": "835f57ce49be653470e479cd9558f8b21fef7dfa0a9d6fe1ae1f84ca56bc359c",
+      "bytes": 140166,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-browser-resource--814c4-s-and-missing-peer-coverage/browser-document-live-overview.png",
+      "sha256": "584dccf9934f0a8c26e13c00b7f36d96666b5152f48a68311f16d5cf2a40d524",
+      "bytes": 359771,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-browser-resource--814c4-s-and-missing-peer-coverage/browser-document-live.png",
+      "sha256": "89303640676776e33b19d375813dfd70fe4bae7ea115748237eca900fad7a641",
+      "bytes": 337528,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-browser-resource--fbb5a-out-standards-qualification/browser-live-unscored.png",
+      "sha256": "f35f4c41f9c5e1455b9090005ffa6d06a2e4913c46a1bf2eb39d2e0d0854f8f3",
+      "bytes": 207668,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-command-center-Co-ab432-tching-and-catalog-recovery/command-center-overview.png",
+      "sha256": "2ada41e5472cc077c04d7c5415ed1cbfe8357291435fe722c6e69358dd80ac13",
+      "bytes": 204658,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-command-center-ac-121c7-elemetry-clears-the-warning/active-observation-stale.png",
+      "sha256": "06730aeb00a48d33dc0312a024c11b590580d6d256e524428859b4728988f714",
+      "bytes": 230704,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-command-center-pa-d47b0-tate-when-proof-is-rejected/acknowledged-pause.png",
+      "sha256": "44a6dce9311cf5ae093f9bfde3fb981bae9a4a015f7e52e91cf4aaf865299466",
+      "bytes": 160069,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-dashboard-Dashboa-739df-ters-and-narrow-run-details/dashboard-narrow-details.png",
+      "sha256": "92dafb2b0f15fddde662a9f34d4ef9ed8ef5d3d595940c6050a1074d63979067",
+      "bytes": 197422,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-dashboard-analysi-23779--and-refreshes-availability/archive-collection-failure.png",
+      "sha256": "b5e049bf991c0a96a24df26b9d4a491479f6dcc186c69fafcc6a17f58cca57f7",
+      "bytes": 223320,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-dashboard-analysi-23779--and-refreshes-availability/archive-recovery-pending.png",
+      "sha256": "42ce489d562ae17a53417ff2fa5fb8408a975f049d1b59ac8df9e67cbb0b147b",
+      "bytes": 223827,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-dashboard-analysi-8b1d1-ements-and-terminal-outcome/partial-archive-coverage.png",
+      "sha256": "34e9ebffb6925c3bdf16fb0e2f460aa5f5dafd2c55ddc78608fad66981c24f6a",
+      "bytes": 230339,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-dashboard-analysi-bb3e5-ples-as-historical-evidence/terminal-observation.png",
+      "sha256": "b7d52ac7c6fe24a372a7b661bd1945361d47cdbac8df6b29f40a1188ec6695f8",
+      "bytes": 245608,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-dashboard-analysi-cef7c-d-deltas-and-report-context/load-comparison-desktop.png",
+      "sha256": "349f96408aeb55ff4b5724788157a269755b23740673f7f129955bab22da03e1",
+      "bytes": 263323,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-dashboard-analysi-cef7c-d-deltas-and-report-context/release-trend-narrow.png",
+      "sha256": "0e27b864ab5cc88f4adfa482b88d08b77694594958ab1a61a5006f012f1c5adc",
+      "bytes": 117909,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-debugger-experien-7c17e-s-fetched-resource-evidence/failure-resource-evidence.png",
+      "sha256": "5c89640929d984efa58ca5662e9b06e85bae12d6a87de673f92b30199be7fcca",
+      "bytes": 216923,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-debugger-experien-f468e-ns-protocol-correct-history/debugger-operator-experience.png",
+      "sha256": "572a3bd58e4da844ec86113056c60923098445c3cf7bdc564ef074f7bdc3f9b6",
+      "bytes": 215963,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-help-DSL-operator-4f826--and-follow-reference-links/dsl-operator-guide-narrow.png",
+      "sha256": "52d17847a73ec078df86f6c35465fab42225fa148e1b6b61321f7dcbef980c6e",
+      "bytes": 206928,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-help-DSL-operator-4f826--and-follow-reference-links/dsl-operator-guide-wide.png",
+      "sha256": "09a5406ac1379c215064013a825cace8776472dc25d7bd6588cb63b86d816a36",
+      "bytes": 270792,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-help-Help-is-read-88ce3-poses-accessible-navigation/help-desktop.png",
+      "sha256": "89cab36f4ee65a4839863a0982deb6c04a6e4c1552167383d8a93b2a26278372",
+      "bytes": 239156,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-help-Help-is-read-88ce3-poses-accessible-navigation/help-narrow.png",
+      "sha256": "8613b6dadb309f8d283374a32cda481662442d746448b6decdbdbfc48607afe0",
+      "bytes": 195572,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-help-evidence-gui-2e28c-in-their-scope-after-reload/authoring-scenario-fidelity-narrow.png",
+      "sha256": "12b7dcc33894612645835460bfcaf7644a6460c8650bf12b2dc9ae216b5952de",
+      "bytes": 222013,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-help-evidence-gui-2e28c-in-their-scope-after-reload/browser-document-evidence-narrow.png",
+      "sha256": "b8436595d2604f0aee4b1bc87ecd3a4b8bc29f98b56a84297dd23166da114f43",
+      "bytes": 272408,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-help-evidence-gui-2e28c-in-their-scope-after-reload/telemetry-policy-receipts-narrow.png",
+      "sha256": "a3aaaeb153a2d6bb157456824426e654c6dedda2fe43396d1aaccfc74f546315",
+      "bytes": 236803,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-help-retained-res-b79cb--after-reload-and-narrowing/retained-resource-help-narrow.png",
+      "sha256": "f137b8425450eca69acedd7073ed28a138e7fee9194c0a44d0bd78a1471625e7",
+      "bytes": 308973,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-http-concurrent-H-8c030-up-through-its-join-barrier/concurrent-group-desktop.png",
+      "sha256": "317cddbbbc64352a0d30e0660d79e603edcff21b6291be0daa062b73e1ff9676",
+      "bytes": 335420,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-http-concurrent-H-8c030-up-through-its-join-barrier/concurrent-group-narrow.png",
+      "sha256": "2c6b6a9fcee46d36817e64a122b9a28a564ac7d59f29b9586768d978fecc1c32",
+      "bytes": 173014,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-http-version-mixe-2773c-se-measured-replay-versions/http-version-desktop.png",
+      "sha256": "f73932357145949993b4e200677678412972e038c38416955e8602901514b1fd",
+      "bytes": 282790,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-http-version-mixe-2773c-se-measured-replay-versions/http-version-narrow.png",
+      "sha256": "8e8b97d3ec02421f7a5fd772693c861524ae1551e5c6c7cc0d31910a732a0b1f",
+      "bytes": 146692,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-http-version-mixe-2773c-se-measured-replay-versions/http-version-replay-desktop.png",
+      "sha256": "5b5c9b7c75164569127f050d9142a21102a9821b65981a0d71a9b32e2b5d8b4b",
+      "bytes": 332356,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-data-review-narrow.png",
+      "sha256": "57e559fedbd7bd1a607736b6eca30a0a5f3cc43a0ae8d4ae4271d1f5d85ceadc",
+      "bytes": 120017,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-narrow-review.png",
+      "sha256": "22736e6a4327ff18d038e0fefbd8f8d2db673dfe11d4ea8c5da249ee56ec1144",
+      "bytes": 160719,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-runtime-review-narrow.png",
+      "sha256": "665724f06467f2a3ba636fcbc3b00cb28ee189fd99c465d7281efda90b056ac5",
+      "bytes": 119190,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-runtime-review-wide.png",
+      "sha256": "dfabadaf3fca2ebaab87c0945ba3f31122f51ee6a281947f70dd0c688fff5582",
+      "bytes": 178204,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-import-source-JMe-3c5ea-project-scope-during-upload/jmeter-six-tab-review.png",
+      "sha256": "c45b760ddf073fe4675981657d70d9f53327cc7760d57358d905246f6d0f13b0",
+      "bytes": 222223,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-import-source-Ora-4a93d-offers-a-script-destination/oracle-current-source.png",
+      "sha256": "151c703c3a3caf5d4fd5e80bf8e583e7cc5c3c90668d161aa5afc12e8e2ebe6b",
+      "bytes": 202267,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-jmeter-fidelity-J-720e8--drafts-and-workload-curves/messaging-fidelity.png",
+      "sha256": "a4e72e4594693bada47b0f308454959ea3311b30caef28c710b04bafb30ee881",
+      "bytes": 167155,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-library-assignmen-9a943-require-an-explicit-release/library-assignment-dialog.png",
+      "sha256": "a1fb57e50357ecbc16af70c90260d8568807539cedf63f46489f2ca3bca2660e",
+      "bytes": 119093,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-after-code-narrow.png",
+      "sha256": "53ba730d685ecee749f1bc2b1e790081538939607e9c7552a581d1220335e9c2",
+      "bytes": 21860,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-preview-code.png",
+      "sha256": "545712967f1e6b73fd119b5f87f0ae062edfbbdc1bf412fb258e66f650276543",
+      "bytes": 46444,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-preview-narrow.png",
+      "sha256": "1eaf56e4ff92b224aaa2e9c13f8061cd4e954b094087fec93d02778d25bb0aa1",
+      "bytes": 78380,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-2e043-ted-changes-before-applying/repair-preview.png",
+      "sha256": "8aed92fb9fc19a8c7cc72fe6bdd9b9d4ae3506aca0e28e6bfbf9a0104108931a",
+      "bytes": 43041,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-30e50-s-an-oversized-idle-timeout/runtime-context.png",
+      "sha256": "879d352d5e6522a6304a1a8027a6fda715c964ac878f97bf541d7da1d66426cc",
+      "bytes": 164518,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-3266b-java-lifecycle-zip-response/loadrunner-review.png",
+      "sha256": "e4989455428c4501f61bece61a144bacd4527b69ef8d2bae910ecad92260c15f",
+      "bytes": 208171,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-37eaf-dential-groups-zip-response/credential-groups.png",
+      "sha256": "bd5b57884e6f0862f238cb1d34b7b7b6d6da7980cbdc0777efc44be52d202b99",
+      "bytes": 192513,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-37eaf-dential-groups-zip-response/loadrunner-review.png",
+      "sha256": "b46ac32c8565deb2d1a6542a10fd2a6d050f2dfd5680da72e6dbd4b76a337004",
+      "bytes": 178976,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/conversion-reference-desktop.png",
+      "sha256": "7c7ae889c8d1175d5c6b6a91030f00b7c79eb3e5a3e53e09a1359638f28b270d",
+      "bytes": 188621,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/conversion-reference-narrow.png",
+      "sha256": "cf2bef381d2d46161b595647f8bf340fafa90384194053a7d6688b17b3dd2de2",
+      "bytes": 152958,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/loadrunner-review.png",
+      "sha256": "f8107c35794b4ab7642b1d68fea985c5c78c69725aa2fbf499ca4e70a8fe304f",
+      "bytes": 135624,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-data.png",
+      "sha256": "9c08b498eeb46b333cfbc19ba02bda6487d6dbd706497f7cc71a5a41f14bf72f",
+      "bytes": 180871,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-dsl.png",
+      "sha256": "ee4a4238f43b665a857424553e333c17d41893138195efb6f6687361a5f62412",
+      "bytes": 186295,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-runtime.png",
+      "sha256": "2490dc156a3fd130d62288a1582b0711620f45aa615befa3bc108d52c3ed4c0e",
+      "bytes": 171771,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-5f2b1-saction-labels-zip-response/tab-source.png",
+      "sha256": "9715c11fb0f4d81a39394e97099d7767bfbd10e37e14637ba3a0a0710bc1e5fb",
+      "bytes": 164360,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-8bfd9-nges-without-leaving-Review/issue-narrow.png",
+      "sha256": "0d29c5ec0c04abea131a3d4e9cedd695acac4ed4b915499df926a2c2b4f77801",
+      "bytes": 136909,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-8bfd9-nges-without-leaving-Review/issue-runtime.png",
+      "sha256": "6ff4dd80feaac749093b4cdb54c8b2fe44fd1ae80c3f5492bb48519fab801c82",
+      "bytes": 197385,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-8bfd9-nges-without-leaving-Review/issue-warning.png",
+      "sha256": "cda1977e827a7ba5007a511efdf350b15d8e1d6b3e6864d5333be947daf9e2a9",
+      "bytes": 195790,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-bbda9-uclient-review-zip-response/loadrunner-review.png",
+      "sha256": "551f621ac1274708ac300e5ae606fec09f0bf6067313ca39df574ac42aaa4d5e",
+      "bytes": 176185,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-c0c2f-ence-and-survive-draft-save/data-settings-narrow.png",
+      "sha256": "294b0bf7c9dade1044983731429ab5092e169e698d39fca049bd08a9a3b7fa62",
+      "bytes": 143919,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-c0c2f-ence-and-survive-draft-save/runtime-settings-desktop.png",
+      "sha256": "41ce11939b9430d3a89c9d1a656535a3dbd3fa1227b6c520dd19ab24c9d01fa7",
+      "bytes": 174503,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-d220e-preserving-protected-values/credentials-inline-edit.png",
+      "sha256": "7b0f232789cd33c648f197963d6bb532cd966db7aa73740773a897cbfc0a1b88",
+      "bytes": 200702,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-daf3d-ort-and-accepts-another-ZIP/batch-import-saved.png",
+      "sha256": "0a8a858ca000e0bbb981c199dff170b1feced6551bc5155dd1508631a0d42ed4",
+      "bytes": 209957,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-ddf3d-eal-sap-review-zip-response/loadrunner-review.png",
+      "sha256": "79b3036811146c799c269d3eaa56fc45b01b1139f20db3d3445d1e148ba43722",
+      "bytes": 169691,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-eb5a1--from-dormant-source-values/runtime-diagnostic-classification.png",
+      "sha256": "22d2dea7cf6de2903419cfcda2a05c04b2cb65487d53f9d52645ada246edc4eb",
+      "bytes": 196855,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-eb5a1--from-dormant-source-values/runtime-diagnostic-mapping.png",
+      "sha256": "2e581634627503fb514901b75e476693714f73ec249ea92fedc1ff5c43c39648",
+      "bytes": 212239,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-eb5a1--from-dormant-source-values/runtime-dormant-explanation.png",
+      "sha256": "1522ed62ebf4473cd8a23354a4c8aa77c8a3e3eabff3cd995defb0f0935510fb",
+      "bytes": 198164,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-loadrunner-review-fbc64-nd-saves-edited-percentages/percentage-runtime-settings.png",
+      "sha256": "5c67418fdf41673cde6eecd96e72a3a8116a1693749b7601c37616ed4e33df1d",
+      "bytes": 176350,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-local-archive-fai-ad13f-and-survives-checking-again/local-archive-failure.png",
+      "sha256": "e3864d977636454156b90ff9aa515ba30925b1e015112a556c0f34a28b284a13",
+      "bytes": 217645,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-monitoring-Kafka--30808-on-conflicts-through-reload/kafka-management-approval-narrow.png",
+      "sha256": "0cb74953b8b9a32899c2f9f1dca540007eb5e374d1b1ec3a028842280a984aaf",
+      "bytes": 98850,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-monitoring-Kafka--30808-on-conflicts-through-reload/kafka-management-source-narrow.png",
+      "sha256": "892ab295a110a268100d1f18351f1b23b3d173e972174c5f480c2ae4fd3f238b",
+      "bytes": 110251,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-monitoring-Kafka--30808-on-conflicts-through-reload/kafka-management-source.png",
+      "sha256": "c69836fd29b50e8ed8572fca4fef884ae8984f0b0d6469a360253eb3c8795c4c",
+      "bytes": 216805,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-monitoring-Servic-b3266-revisions-and-narrow-layout/servicebus-management-approval-narrow.png",
+      "sha256": "632ef04035d2870676b8425587f587e35e7baa3a61dddb6aef1472cf3cccb597",
+      "bytes": 102454,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-monitoring-Servic-b3266-revisions-and-narrow-layout/servicebus-management-source-narrow.png",
+      "sha256": "2ceaf171ca9aef7b27a331fdbffa7ba08bdd5ed7bb2cbc9b295a14e6037648a4",
+      "bytes": 116539,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-monitoring-Servic-b3266-revisions-and-narrow-layout/servicebus-management-source.png",
+      "sha256": "aad4ed23063bdfbc3076bb3fe25dcee0c1b79e01ff541570886c4f4b3c151e9b",
+      "bytes": 227431,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-monitoring-Solace-57e07-revisions-and-narrow-layout/solace-management-approval-narrow.png",
+      "sha256": "5b46797a7666235bccfcb4939b7ed886c0b2f745ba5c6ae2ae9b9c214743e50d",
+      "bytes": 124144,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-monitoring-Solace-57e07-revisions-and-narrow-layout/solace-management-source-narrow.png",
+      "sha256": "487bf4f4f6e355edd9cba21ac29372e90da2b98541dbdef9c9ea9495b66e84bb",
+      "bytes": 117936,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-monitoring-Solace-57e07-revisions-and-narrow-layout/solace-management-source.png",
+      "sha256": "7dc28c6ef4996b804b6ed7b2c277254ccc189cf794cba52b7b52553066902b42",
+      "bytes": 228610,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-new-test-Java-gro-0c281-istence-facade-ledger-true-/java-profile-placement.png",
+      "sha256": "73ba444f539dcd4c6d4307c4a7e4345c633442f1b80e50bd05c7d12418beb4f1",
+      "bytes": 174567,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-new-test-Java-gro-1fb68-stence-facade-ledger-false-/java-profile-placement.png",
+      "sha256": "80092e22ec25e68d684be0377186f2863c151a31ebd4a088f368592a7de355d9",
+      "bytes": 174354,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-new-test-Live-con-1955a-ns-without-opening-raw-JSON/java-reservations.png",
+      "sha256": "30f7f7728889f46a19e8ea985568fcd07bd805d44172b7c6372925d2804a707c",
+      "bytes": 209035,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-new-test-New-Test-a4e1f-edule-with-visible-policies/new-test-schedules-narrow.png",
+      "sha256": "598d57c5bd1d198d635cf23372f54b3368e066c59f202036ce7b49246c68d2fb",
+      "bytes": 180587,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-new-test-Scenario-03ef7-d-the-recovery-spare-budget/controller-continuity.png",
+      "sha256": "d997cf238d44cddbecbfd56973ea2abbb99c7ed744cc9fe61ea9eff5015dabfb",
+      "bytes": 195751,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-new-test-Scenario-2ede1-multi-region-infrastructure/weighted-placement-multi-region.png",
+      "sha256": "5a309eb55832a51fc5affeef3246f26fd20db4cd9e798733df500cb5c7a2d189",
+      "bytes": 57771,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-new-test-Scenario-54f4c-ingle-region-infrastructure/weighted-placement-single-region.png",
+      "sha256": "3af9cf94c7fb1af0422f315495f6378a74e4b0903e2d597f11facc3f9da75440",
+      "bytes": 46128,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-new-test-Scenario-8f139--for-missing-infrastructure/weighted-placement-missing.png",
+      "sha256": "3af9cf94c7fb1af0422f315495f6378a74e4b0903e2d597f11facc3f9da75440",
+      "bytes": 46128,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-new-test-Scenario-d6313-r-multi-zone-infrastructure/weighted-placement-multi-zone.png",
+      "sha256": "a447452f0629486b4f1a6b534120fa79342facf10b8db887f524997b7c899191",
+      "bytes": 48940,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-new-test-actual-h-00cdb-ve-complete-authored-intent/queued-copy-fidelity.png",
+      "sha256": "ec3cefc94e96962740e7aceb9f7dad559b890808faf6175af350f3ec3f03f51e",
+      "bytes": 133676,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-new-test-prepared-275a7-ts-with-the-pinned-revision/eventhubs-preparation-resources.png",
+      "sha256": "1b9b385b7d52f9a9d091a98bb40c26c65162971469e0cab82f84105ca6a6204b",
+      "bytes": 189217,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-object-activity-a-f9b62-nd-retained-deleted-history/deleted-object-history.png",
+      "sha256": "48e175c71eb7d0bb66096d6157ed17c0effe34b75934f6156da1775f97db777d",
+      "bytes": 246556,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-protocol-diagnost-220cb-nses-in-the-active-run-view/grpc-diagnostics.png",
+      "sha256": "46d268161a61c25405202308a29c00c4db540ef446f104f6ead8a26ecf246fb1",
+      "bytes": 166651,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-protocol-diagnost-4cabc-ng-RTT-and-matched-zero-RTT/websocket-diagnostics.png",
+      "sha256": "9f192aed4cd29b327f50aa4447df2ee054eedf23b326b31d9f5decae1592258d",
+      "bytes": 107616,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-protocol-diagnost-d8a15-ble-lag-during-idle-windows/eventhubs-progress.png",
+      "sha256": "c09515593779a59a3b08a051ebd0a195a6eb7d8134d42588c46688e4853381a2",
+      "bytes": 100373,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-recording-review--0527c--captured-viewport-readable/browser-evidence-narrow.png",
+      "sha256": "a5ea845b3ad9f0f196d886f671319016e58176c351282366c58e64d0be4b3c51",
+      "bytes": 192397,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-recording-review--a6696-lidates-changed-conversions/recording-output-review.png",
+      "sha256": "929154996ac2c4cf12cf205966309b3b9ae427d6d0615f4374a9c7b3edc1aa01",
+      "bytes": 275680,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-response-content--19605-ker-through-save-and-reopen/response-content-blocker-narrow-focused.png",
+      "sha256": "666cbbb773935b294cfba902ae87f1c221fb5d59fbe6dfefb9c3088ee4db6e76",
+      "bytes": 50326,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-response-content--19605-ker-through-save-and-reopen/response-content-blocker-narrow.png",
+      "sha256": "b347fa85f63c3c8138005f72ce91d5b899798ce5ca9e873d0bcc851538fdf67d",
+      "bytes": 99894,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-response-content--19605-ker-through-save-and-reopen/response-content-blocker.png",
+      "sha256": "9a13aad35e1417e88b39aab80aa02708933485555645a43c2d06563221bbad62",
+      "bytes": 200593,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-response-content--19605-ker-through-save-and-reopen/response-content-reopened-blocker.png",
+      "sha256": "2c6fd5c2a476937f14ef96e23c1e013eb1e9cb012ba6019e73b43a489c1dc9ad",
+      "bytes": 211432,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-response-content--19605-ker-through-save-and-reopen/response-content-retained-source.png",
+      "sha256": "b93c268f08f939853358c1bffbca53160055c80d46ca39b120faf8785c0109b2",
+      "bytes": 189138,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-response-content--4ccf9-play-extracts-a-fresh-value/response-content-gzip-replay-narrow-focused.png",
+      "sha256": "f80d67e971b476cffc9278558484f8491d3a95b17b452e64ee38715ad8b7d737",
+      "bytes": 12831,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-response-content--4ccf9-play-extracts-a-fresh-value/response-content-gzip-replay-narrow.png",
+      "sha256": "c84843a92156c3127451c4afced85bd08f34aa5386d3cc713363dd7c1fdfdf1d",
+      "bytes": 155979,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-response-content--4ccf9-play-extracts-a-fresh-value/response-content-gzip-replay.png",
+      "sha256": "be624e70c5018b9cb8d85e6ea45185f68718df5c5dfab4bdaf0c95526a0b628a",
+      "bytes": 225613,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-response-content--4ccf9-play-extracts-a-fresh-value/response-content-har-review.png",
+      "sha256": "777800b7af331fe1c6d332f38275bbe7ac5dec2cd7a56cf9f834a1856648c94f",
+      "bytes": 224862,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-response-content--65ba2-lifies-the-partial-response/response-content-partial-stream-narrow-focused.png",
+      "sha256": "0527d747bef62431b85e3bffc3112f53c709a9918aeea446cd3bafd615defbc4",
+      "bytes": 17651,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-response-content--65ba2-lifies-the-partial-response/response-content-partial-stream-narrow.png",
+      "sha256": "2bddc70a724d02b8a8d0a9fc346a72e2a2c0ceb5cad38f1add96605308eecf91",
+      "bytes": 155583,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-response-content--65ba2-lifies-the-partial-response/response-content-partial-stream.png",
+      "sha256": "187288f956e98f23e51eb77aa70c465939be85af5e531503dd1535147d9832ac",
+      "bytes": 217330,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-retained-resource-ad392-alse-and-independent-clocks/retained-resource-inspector-overview.png",
+      "sha256": "29fed8ddbd77b137f48d3704fa95990924fc608d59654fd8c38c9540d8e422e0",
+      "bytes": 274806,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-retained-resource-ad392-alse-and-independent-clocks/retained-resource-native-detail.png",
+      "sha256": "be9c64420b12c3c97f48496fa3a4bcc6b09366074d64e6c8bdfe44ee4e335d49",
+      "bytes": 88132,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/active-frames-narrow-focused.png",
+      "sha256": "328303997b99d318cce81af77594f5bc4d3bb062c4e7196de42c2265b3a942ad",
+      "bytes": 5602,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/active-frames-narrow.png",
+      "sha256": "91a2cd9bc82e24a86479d26c3620c43c8eb50c9ff7b48b20d12badd0abd7ab8a",
+      "bytes": 161696,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/current-binding-1-narrow-focused.png",
+      "sha256": "320f6bfc707df7cf5b5ae6e275698612666955900c7f338e15f2d27729279cb6",
+      "bytes": 8271,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/current-binding-1-narrow.png",
+      "sha256": "a5f005c7979790dd0f632884cf38f3773f50130cbc2fb5c600f8e42bc7ccbfb6",
+      "bytes": 161373,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/current-binding-2-narrow-focused.png",
+      "sha256": "f55d2de2d36bcf5f16905df23b3fa21e185af548c7ea48cd7feddd6f5e60bc13",
+      "bytes": 8239,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/current-binding-2-narrow.png",
+      "sha256": "200dca0dfdf3ff16bed1a37256822ca3c88fa1d701e7cda40803cec230747e11",
+      "bytes": 160121,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-1-narrow-focused.png",
+      "sha256": "eeae554a3c145fea7954e32c14c09f1eff18f508f98f8144618c0d28a2494f5d",
+      "bytes": 22195,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-1-narrow.png",
+      "sha256": "83f90ce92424b5a2be50bd0a3e3041692089081b988b0bac96f3a15e84d572f5",
+      "bytes": 162276,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-2-narrow-focused.png",
+      "sha256": "18b7cc5b351c0e416aaa8b3354e29b27edbde045f59a676d616f1fde275d60f8",
+      "bytes": 20450,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-2-narrow.png",
+      "sha256": "594943a519289efa7d5145ed76e92aee937db9b5822f892c1188d090b8bd3b57",
+      "bytes": 158292,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-3-narrow-focused.png",
+      "sha256": "397f1d19197445e661483d4975b8c2159a8236c5ed9e1d8d51e171dbc293c61b",
+      "bytes": 22416,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/parameter-receipt-3-narrow.png",
+      "sha256": "2fc4276536aeca478fbb33d2b9ec77d90ee26c7e812e198cdcbf5044e60f9da8",
+      "bytes": 161857,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/paused-runtime-receipts.png",
+      "sha256": "2aa585bb3a3c0219892d08e49a8397eabb69cd0fe7d9f9e26e9c63a8a4562c40",
+      "bytes": 351370,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/row-receipt-1-narrow-focused.png",
+      "sha256": "0acfebac44b0549d0b2947c02650d8d0cedcec2e7822620505a5e8932c14ec9e",
+      "bytes": 13438,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/row-receipt-1-narrow.png",
+      "sha256": "01b2005f365b7bd0d31d470ec914deaf50467756c9c32ef080bc448e23a1b83f",
+      "bytes": 158842,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/row-receipt-2-narrow-focused.png",
+      "sha256": "3be7be5b4beb780417c3b62eda2f4837e947df711c0af829750de626ca124ce9",
+      "bytes": 20593,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-cur-ef331-ithout-consuming-references/row-receipt-2-narrow.png",
+      "sha256": "def4dfd3e491f103ad5ea71af1763c4dd3a0c890c0dfb96bc32d02c306f5110b",
+      "bytes": 160158,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-runtime-state-for-9220c-ing-bindings-after-stepping/foreach-frame-source.png",
+      "sha256": "5d7a1b014b0b306263f23546151ece869a10e18fcc48da5f047c51b9d2c8b3fe",
+      "bytes": 365556,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-scenario-composit-6ecc2-editing-with-a-live-preview/scenario-composition-desktop.png",
+      "sha256": "4c1738156f7b78914b12265ae676f9fa840b8c1aaa691c8fe777e7197420e1e7",
+      "bytes": 268922,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-scenario-composit-6ecc2-editing-with-a-live-preview/scenario-composition-narrow.png",
+      "sha256": "7ee91b971f49fa154d83862b4f1ee0ee5d8def05da9b70ab6b91ce0b18ec636e",
+      "bytes": 130638,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-scenario-data-sce-d59d0-fter-removing-a-shared-pool/scenario-script-data-desktop.png",
+      "sha256": "75016b5be129434c8d18db36da3f25ac49f50bf98e98085b802769de5c439dd8",
+      "bytes": 332796,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-scenario-data-sce-d59d0-fter-removing-a-shared-pool/scenario-script-data-narrow.png",
+      "sha256": "93663ded04898a590973b0111a47fe013fea6acd462cfb5a6a92bf9a18195c3d",
+      "bytes": 139125,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-script-editor-aut-7060d-r-save-and-canonical-reopen/canonical-goals-reopen.png",
+      "sha256": "d2a9e0c1105a23b69aeb87513c66b631daa2c0aa753c0d5f4d17d69d80646ba8",
+      "bytes": 303290,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-script-editor-lib-d68ba-eview-after-a-real-conflict/library-secret-revision-conflict.png",
+      "sha256": "37f78e289e5710ae814dae71a6152b5089e3b39b8cb510848ac9e03b1bdc51f7",
+      "bytes": 116656,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-script-editor-ope-64e79-ithout-losing-source-fields/script-debug-evidence.png",
+      "sha256": "6ce61a3b67432e80dfa5ecd24e01c5d51d89b66cfa1aa054754db6ab34c0d1e8",
+      "bytes": 279634,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-script-editor-two-d2399-ision-review-before-reapply/attachments/reconciliation-geometry-b5248a8393eea60e42c8111086dbf888a8b89d16.json",
+      "sha256": "1e7610ef8423cd235f4999d8ee3bb3511cd31aaca736fc1efa0524e082a115e2",
+      "bytes": 6257,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-script-editor-two-d2399-ision-review-before-reapply/reconciliation-geometry.json",
+      "sha256": "1e7610ef8423cd235f4999d8ee3bb3511cd31aaca736fc1efa0524e082a115e2",
+      "bytes": 6257,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-script-editor-two-d2399-ision-review-before-reapply/script-revision-conflict.png",
+      "sha256": "fc1a2e53d929a2ef2d47eb64c7a48804303ccea01311628ffdb87039f8901243",
+      "bytes": 93377,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-script-folders-Op-2bffa-in-assignments-after-reload/move-scripts-dialog.png",
+      "sha256": "f3be2eeb5946445a6b465f227bf4d8ecf5cfcbb220e656c695cbf2a9e3f2a437",
+      "bytes": 103042,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-script-settings-o-5529c-ssification-until-re-import/legacy-runtime-classification.png",
+      "sha256": "6dc6e11622dc07049d99cb5bcbe4ce109b2e3eaa84249ae56a52ca1341d48d69",
+      "bytes": 241460,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/imported-source-runtime-narrow.png",
+      "sha256": "0d4e62d3b9e7a3264b15556426049d1a1dce37ceec43b76cc1cfa98e44aca1a0",
+      "bytes": 165334,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/imported-source-runtime-reference.png",
+      "sha256": "d41159a4f491735c607b35a19ac8db8b4674fc9da7c08da431e6bf5b2f092acd",
+      "bytes": 253893,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/runtime-checkbox-narrow.png",
+      "sha256": "a7c96517cfaef403ab85952f01e0a55785b5b3b3042f1842aea138bcb93363d9",
+      "bytes": 175721,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/runtime-evidence-narrow.png",
+      "sha256": "5402d833ebd52e43e779050f1a2df032b3f7e8596c7d23a090d9a7491fe8ab3c",
+      "bytes": 164706,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-script-settings-r-3558a-ckbox-controls-left-aligned/runtime-evidence-wide.png",
+      "sha256": "c1c8e3bcd7c567d38db48d58a23e82be47eedea74bba04da65f6e271a1a0637a",
+      "bytes": 283097,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-telemetry-policy--c8abd-views-after-settings-change/telemetry-policy-archive.png",
+      "sha256": "ee569b419e7e5247b4c44d2f2aa5098714139b4712b484e61430f07411e1e613",
+      "bytes": 179269,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-telemetry-policy--c8abd-views-after-settings-change/telemetry-policy-live.png",
+      "sha256": "abaf16f5a82d06db25e561e2486ca0eb5d59ea6eec5da02f729a896a4eecf5b9",
+      "bytes": 187667,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-theme-controls-sh-1cb34-rk-including-focus-and-help/dark-audit-controls.png",
+      "sha256": "8dd99a775cdbfb582d7f3c925d21abcfaf03433a0190ca2241e71088232581b1",
+      "bytes": 298712,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-theme-controls-sh-3e1d7-ht-including-focus-and-help/solarized-light-audit-controls.png",
+      "sha256": "4206c2fb43e4a0ee272ca44c8996cf2d86f379a24d31591f2a912c7672a294e9",
+      "bytes": 298590,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-theme-controls-sh-66ab6-ed-including-focus-and-help/monokai-dimmed-audit-controls.png",
+      "sha256": "8b7e7c024c2f03c57af317c6a049e413bb6ffb3e26c9ad935239a4a357610032",
+      "bytes": 278583,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-theme-controls-sh-857b6-ht-including-focus-and-help/light-audit-controls.png",
+      "sha256": "19089085504008fcd5cf689fbd8c4b53445ab169f886eb850d254a5ecd920aa4",
+      "bytes": 292371,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/workflow-theme-controls-sh-eea9c-rk-including-focus-and-help/solarized-dark-audit-controls.png",
+      "sha256": "3cf06c909c778a5fcab1e2d0ca393e431b9d08a3088d6f4bd8b4a6e1efe639be",
+      "bytes": 283102,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "11d508198aec639c7517db14576d2059b95f7f814f92f0e8bb994f76bdd03e18",
+      "bytes": 7942,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-scenario-source-admission-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "9333bfb0c2544c23ed0ae19b915dbe166e926ab175a52773bae8e565ec19555a",
+      "bytes": 2806,
+      "kind": "new retained QA since v4"
+    },
+    {
+      "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+      "sha256": "bca4eb849c2e446b2233d9db23af2c1e3b09457ae056f832dd48eeab3e686882",
+      "bytes": 292339,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "pkg/api/apidocs/swagger.yaml",
+      "sha256": "4436bbdeb25cccd929308c70703adc50d0f8f5df456e6a3a18124a725ef60551",
+      "bytes": 17614581,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "pkg/api/archive_parquet.go",
+      "sha256": "f6fd4d9ae1ef17f21af6f44797e018cf431c7dcd6d76e33f5f6530f0c4b7f8f7",
+      "bytes": 23919,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "pkg/api/route_catalog_characterization_test.go",
+      "sha256": "e4d0de109110574abd485ceeee27fea4bf3357bb0bf0aff321596f4cd6010eb3",
+      "bytes": 184779,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "pkg/api/route_registry.go",
+      "sha256": "5953582c8e78dee5f4a85a5d344345ccf8516b71ca762019473f0b13820a21d5",
+      "bytes": 4309,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "pkg/api/route_registry_archive.go",
+      "sha256": "b78f655924604a8afbafe28c889fcb353c27de5c177509317dc3131cd322784e",
+      "bytes": 6371,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "pkg/api/route_registry_test.go",
+      "sha256": "a868e8c31216d7bde96eeb60bfe50e40f3300ee605a86fc1e4798faa85779ca2",
+      "bytes": 27490,
+      "kind": "pinned source guard"
+    },
+    {
+      "path": "pkg/distributed/generatorrpc/archive.go",
+      "sha256": "5cf63ea5c12aa1ab5167080f3576eabc2d1f4b40b563497f6d592de03155558b",
+      "bytes": 76755,
+      "kind": "pinned source guard"
+    }
+  ],
+  "required_exclusions_enforced": [
+    "dashboard/tsconfig.tsbuildinfo",
+    "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-policy-final-scope-independent-review-supplement.json"
+  ],
+  "unknown_source_scratch_symlink_raw_HAR_plan_paths": 0,
+  "HEAD_branch_index_status_stable_and_no_staged_content": true,
+  "parent_all_tested_inputs_bookend": {
+    "path": "/private/tmp/apexload-precommit-tested-input-bookend-v1-20261005.json",
+    "sha256": "906faf985d88339adfd933c7c98c84c298eed766ea5fc0a40ff686617f81ef6a",
+    "source_entries_matched": 5721,
+    "embed_entries_matched": 260,
+    "dashboard_embed_equals_fullGo": true
+  },
+  "non_disclosing_content_classification": {
+    "path": "/private/tmp/apexload-root-first-staging-content-classification-20261005.json",
+    "sha256": "762281d233325be158065739c42b6e64231106f98d772cf410b5413ba71184d6",
+    "plain_files_scanned": 1459,
+    "zip_archives_scanned": 11,
+    "readable_archive_and_gzip_decoded_bytes": 17768363,
+    "zero_scan_budget_gaps": true,
+    "credential_indicator_matches": 0,
+    "HAR_structure_matches": 4,
+    "HAR_match_provenance": [
+      {
+        "path": "pkg/api/har_artifact_ownership_test.go",
+        "occurrences": 1,
+        "construction": "Literal controlled test fixture in TestHARArtifactOwnershipControllerCannotPruneOtherProcessWriter; prior owned HAR source review retained."
+      },
+      {
+        "path": "pkg/protocol/browser/har_capture_integration_test.go",
+        "occurrences": 2,
+        "construction": "Explicit literal test fixtures in the two runtime-secret-redaction tests; prior full owned source/native review retained."
+      },
+      {
+        "path": "pkg/protocol/browser/har_working_lease_test.go",
+        "occurrences": 1,
+        "construction": "Package test constant ownedHARFixture; synthetic fixture, not an imported raw capture."
+      }
+    ],
+    "limits": "Categories/counts only, no matched bytes or private values/URLs retained. Binary screenshots checked by source-fixture provenance and exact file metadata/hashes, without OCR. This is bounded indicator screening, not a proof against every possible encoding or unknown secret format."
+  },
+  "separate_stage_verifier_review": "Root delegated stage-helper static review found two safety gaps, already reported independently; parent must fix/review that helper before relying on its staged verification. The actual first audit plans independently derive exactly from pinned rows and are clean.",
+  "completion_limit": "First audit only. Parent will retain first audit/review and repeat audit to include new QA receipts before literal exact normal/force staging; that second audit remains required."
+}

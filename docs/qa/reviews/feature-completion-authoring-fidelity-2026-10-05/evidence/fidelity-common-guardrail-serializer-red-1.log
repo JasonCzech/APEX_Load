@@ -1,0 +1,186 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run --run src/components/scenarioPayloadUtils.test.ts src/components/TestHub.test.tsx -t every admitted common guardrail|preserves owned SLA|explicit replacements
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard
+
+ ❯ src/components/TestHub.test.tsx (112 tests | 5 failed | 107 skipped) 228ms
+     × preserves owned SLA and rules when a saved-source edit selects Stepped Ramp 91ms
+     × preserves owned SLA and rules when a saved-source clone selects Stepped Ramp 31ms
+     × preserves owned SLA and rules when a saved-source edit selects Goal-Driven Scenario 55ms
+     × preserves owned SLA and rules when a saved-source clone selects Goal-Driven Scenario 23ms
+     × keeps omitted guardrails and applies explicit replacements from an actual workload template 27ms
+ ❯ src/components/scenarioPayloadUtils.test.ts (39 tests | 2 failed | 37 skipped) 8ms
+     × retains every admitted common guardrail in vuser_driven submissions with owned nested values 6ms
+     × retains every admitted common guardrail in goal_oriented submissions with owned nested values 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source edit selects Stepped Ramp
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source clone selects Stepped Ramp
+AssertionError: expected { monitor_rules: [], …(4) } to match object { max_error_count: 3, …(7) }
+(9 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "max_avg_transfer_ms": 125,
+-   "max_error_count": 3,
+-   "max_error_pct": 9,
+-   "max_partition_skew_pct": 0,
+-   "max_throttled_requests": 0,
+-   "p95_latency_ms": 2300,
+-   "sla_breach_window": "7s",
+-   "stop_on_sla_breach": false,
++   "early_stop": {
++     "breach_window": "",
++     "enabled": false,
++     "error_rate_pct": 0,
++   },
++   "monitor_rules": [],
++   "transaction_response_time_sla_ms": 0.001,
++   "transaction_rules": [
++     {
++       "comparator": "lte",
++       "metric": "p95_duration_ms",
++       "threshold": 1250,
++       "transaction": "orders",
++     },
++   ],
++   "workload_shape_config": {
++     "stepped_ramp": {
++       "scenario": {
++         "end_vusers": 60,
++         "increment_by": "step_count",
++         "start_vusers": 0,
++         "step_count": 6,
++         "vusers_per_step": 10,
++       },
++       "scope": "scenario",
++     },
++   },
+  }
+
+ ❯ src/components/TestHub.test.tsx:1939:35
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source edit selects Goal-Driven Scenario
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source clone selects Goal-Driven Scenario
+AssertionError: expected { monitor_rules: [], …(14) } to match object { max_error_count: 3, …(7) }
+(12 matching properties omitted from actual)
+
+- Expected
++ Received
+
+@@ -4,7 +4,6 @@
+    "max_error_pct": 1,
+    "max_partition_skew_pct": 0,
+    "max_throttled_requests": 0,
+    "p95_latency_ms": 800,
+    "sla_breach_window": "7s",
+-   "stop_on_sla_breach": false,
+  }
+
+ ❯ src/components/TestHub.test.tsx:1939:35
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  src/components/TestHub.test.tsx > TestHub > keeps omitted guardrails and applies explicit replacements from an actual workload template
+AssertionError: expected undefined to deeply equal []
+
+- Expected:
+[]
+
++ Received:
+undefined
+
+ ❯ src/components/TestHub.test.tsx:1971:51
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  src/components/scenarioPayloadUtils.test.ts > scenarioPayloadUtils > retains every admitted common guardrail in vuser_driven submissions with owned nested values
+AssertionError: expected { monitor_rules: [], …(3) } to deeply equal { …(21) }
+
+- Expected
++ Received
+
+@@ -2,26 +2,9 @@
+    "early_stop": {
+      "breach_window": "",
+      "enabled": false,
+      "error_rate_pct": 0,
+    },
+-   "max_avg_server_processing_ms": 400,
+-   "max_avg_transfer_ms": 125,
+-   "max_cls": 0.1,
+-   "max_dead_letter_rate_pct": 0,
+-   "max_end_to_end_latency_ms": 500,
+-   "max_error_count": 3,
+-   "max_error_pct": 0,
+-   "max_inp_ms": 200,
+-   "max_lcp_ms": 2500,
+-   "max_partition_skew_pct": 0,
+-   "max_redelivery_rate_pct": 0,
+-   "max_throttled_requests": 0,
+    "monitor_rules": [],
+-   "p95_latency_ms": 2300,
+-   "sla_breach_window": "7s",
+-   "stop_on_max_errors": false,
+-   "stop_on_sla_breach": false,
+    "transaction_response_time_sla_ms": 0.001,
+-   "transaction_rules": [],
+    "workload_shape_config": {},
+  }
+
+ ❯ src/components/scenarioPayloadUtils.test.ts:18:34
+     16|     const scenario = buildScenarioUpsertPayload(input)
+     17|     const run = buildCreateTestPayload(input)
+     18|     expect(scenario.goal_config).toEqual(expected)
+       |                                  ^
+     19|     expect(run.goal_config).toEqual(expected)
+     20|     scenario.goal_config!.transaction_rules!.push({ transaction: 'orde…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  src/components/scenarioPayloadUtils.test.ts > scenarioPayloadUtils > retains every admitted common guardrail in goal_oriented submissions with owned nested values
+AssertionError: expected { monitor_rules: [], …(20) } to deeply equal { target_average_tps: 25, …(23) }
+
+- Expected
++ Received
+
+@@ -19,12 +19,9 @@
+    "max_vusers": 30,
+    "min_vusers": 1,
+    "monitor_rules": [],
+    "p95_latency_ms": 2300,
+    "sla_breach_window": "7s",
+-   "stop_on_max_errors": false,
+-   "stop_on_sla_breach": false,
+    "target_average_tps": 25,
+    "transaction_response_time_sla_ms": 0.001,
+-   "transaction_rules": [],
+    "workload_shape_config": {},
+  }
+
+ ❯ src/components/scenarioPayloadUtils.test.ts:18:34
+     16|     const scenario = buildScenarioUpsertPayload(input)
+     17|     const run = buildCreateTestPayload(input)
+     18|     expect(scenario.goal_config).toEqual(expected)
+       |                                  ^
+     19|     expect(run.goal_config).toEqual(expected)
+     20|     scenario.goal_config!.transaction_rules!.push({ transaction: 'orde…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  7 failed | 144 skipped (151)
+   Start at  13:17:25
+   Duration  2.21s (transform 886ms, setup 39ms, import 1.03s, tests 236ms, environment 756ms)
+

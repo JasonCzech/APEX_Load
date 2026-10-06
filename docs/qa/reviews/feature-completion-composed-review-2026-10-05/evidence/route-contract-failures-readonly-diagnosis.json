@@ -1,0 +1,348 @@
+{
+  "version": 1,
+  "date_utc": "2026-10-06T02:26:51.063472+00:00",
+  "reviewer": "/root/authoring_fidelity_resume_v3",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "scope": "Read-only diagnosis of two observed full Go contract failures; active run preserved and not joined or mutated by reviewer.",
+  "source_bookends": {
+    "before_inventory": {
+      "path": "/private/tmp/apexload-route-contract-failures-readonly-before-20261005.json",
+      "sha256": "4aaf96f14c274144e6f1b3beea3629d973f45525b15f3c948100fb727513bf62"
+    },
+    "inputs": 16,
+    "before": [
+      {
+        "path": "pkg/api/route_catalog_characterization_test.go",
+        "bytes": 177524,
+        "sha256": "162f2d18c0f4f6df2240f8b945a7f913719c633f07e50238d0148da0b5c287a1"
+      },
+      {
+        "path": "pkg/api/route_registry_test.go",
+        "bytes": 25491,
+        "sha256": "f7b400d18177e1225f9b16e531146329ccd45b845d745c967887179d73a36478"
+      },
+      {
+        "path": "pkg/api/route_registry_archive.go",
+        "bytes": 6371,
+        "sha256": "b78f655924604a8afbafe28c889fcb353c27de5c177509317dc3131cd322784e"
+      },
+      {
+        "path": "pkg/api/route_registry.go",
+        "bytes": 4309,
+        "sha256": "5953582c8e78dee5f4a85a5d344345ccf8516b71ca762019473f0b13820a21d5"
+      },
+      {
+        "path": "pkg/api/route_catalog.go",
+        "bytes": 46416,
+        "sha256": "7a5187dfe2b6f46f3a37cf5817860088e1f8b2ddc538508177d6c52e7cbbc320"
+      },
+      {
+        "path": "pkg/api/route_catalog_test.go",
+        "bytes": 9891,
+        "sha256": "180b8a7205e5a755bbdf12d2fe08cd573a13e308b913e0caa11be2752d1d3077"
+      },
+      {
+        "path": "pkg/api/auth_resolution.go",
+        "bytes": 33720,
+        "sha256": "1f605f28464e2523fe54eb5a5ff86a5aa9893a4229cc7a20562187edac41cacd"
+      },
+      {
+        "path": "pkg/api/archive_browser_resource_handler.go",
+        "bytes": 19317,
+        "sha256": "d1d0f134696f53d1cb817f5e15c94a20018ec63fe83fbce3c394459710440753"
+      },
+      {
+        "path": "pkg/api/archive_browser_resource_auth.go",
+        "bytes": 8960,
+        "sha256": "6b6c101180d8e83403efd112267d751989ad438b3c29679bdab58d9b24f36658"
+      },
+      {
+        "path": "pkg/api/archive_browser_resource_deadline.go",
+        "bytes": 1048,
+        "sha256": "c58fa427c27cf0b75dc7936c12ffc735f559d55c7c9f0a495382713e29c36560"
+      },
+      {
+        "path": "pkg/api/archive_browser_resource_deadline_test.go",
+        "bytes": 5703,
+        "sha256": "23af01879bc3a06216c494ccb125dae8948e8a4471be2e285245ff71afd924a9"
+      },
+      {
+        "path": "pkg/api/archive_browser_resource_auth_test.go",
+        "bytes": 18077,
+        "sha256": "fc1536c6dd23f173610a9f0d52c5a2243faea56e6b2c63390ad5ecb415296a67"
+      },
+      {
+        "path": "pkg/api/archive_browser_resource_handler_test.go",
+        "bytes": 7643,
+        "sha256": "29619fcdc208301160bca3dc78b7519ecc2061e298595beff3c32efa83037e77"
+      },
+      {
+        "path": "pkg/api/openapi_browser_resource.go",
+        "bytes": 3413,
+        "sha256": "6f066c80b83b5c80eda87b5c837fa083c9e3279695fb51b01bb8950d3c5f9408"
+      },
+      {
+        "path": "pkg/api/openapi_browser_resource_test.go",
+        "bytes": 2397,
+        "sha256": "2592b983286b263ec2ecee0e4c38ab83f48d86b96a00ed071187547fd4728ad5"
+      },
+      {
+        "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+        "bytes": 292339,
+        "sha256": "bca4eb849c2e446b2233d9db23af2c1e3b09457ae056f832dd48eeab3e686882"
+      }
+    ],
+    "after": [
+      {
+        "path": "pkg/api/route_catalog_characterization_test.go",
+        "bytes": 177524,
+        "sha256": "162f2d18c0f4f6df2240f8b945a7f913719c633f07e50238d0148da0b5c287a1"
+      },
+      {
+        "path": "pkg/api/route_registry_test.go",
+        "bytes": 25491,
+        "sha256": "f7b400d18177e1225f9b16e531146329ccd45b845d745c967887179d73a36478"
+      },
+      {
+        "path": "pkg/api/route_registry_archive.go",
+        "bytes": 6371,
+        "sha256": "b78f655924604a8afbafe28c889fcb353c27de5c177509317dc3131cd322784e"
+      },
+      {
+        "path": "pkg/api/route_registry.go",
+        "bytes": 4309,
+        "sha256": "5953582c8e78dee5f4a85a5d344345ccf8516b71ca762019473f0b13820a21d5"
+      },
+      {
+        "path": "pkg/api/route_catalog.go",
+        "bytes": 46416,
+        "sha256": "7a5187dfe2b6f46f3a37cf5817860088e1f8b2ddc538508177d6c52e7cbbc320"
+      },
+      {
+        "path": "pkg/api/route_catalog_test.go",
+        "bytes": 9891,
+        "sha256": "180b8a7205e5a755bbdf12d2fe08cd573a13e308b913e0caa11be2752d1d3077"
+      },
+      {
+        "path": "pkg/api/auth_resolution.go",
+        "bytes": 33720,
+        "sha256": "1f605f28464e2523fe54eb5a5ff86a5aa9893a4229cc7a20562187edac41cacd"
+      },
+      {
+        "path": "pkg/api/archive_browser_resource_handler.go",
+        "bytes": 19317,
+        "sha256": "d1d0f134696f53d1cb817f5e15c94a20018ec63fe83fbce3c394459710440753"
+      },
+      {
+        "path": "pkg/api/archive_browser_resource_auth.go",
+        "bytes": 8960,
+        "sha256": "6b6c101180d8e83403efd112267d751989ad438b3c29679bdab58d9b24f36658"
+      },
+      {
+        "path": "pkg/api/archive_browser_resource_deadline.go",
+        "bytes": 1048,
+        "sha256": "c58fa427c27cf0b75dc7936c12ffc735f559d55c7c9f0a495382713e29c36560"
+      },
+      {
+        "path": "pkg/api/archive_browser_resource_deadline_test.go",
+        "bytes": 5703,
+        "sha256": "23af01879bc3a06216c494ccb125dae8948e8a4471be2e285245ff71afd924a9"
+      },
+      {
+        "path": "pkg/api/archive_browser_resource_auth_test.go",
+        "bytes": 18077,
+        "sha256": "fc1536c6dd23f173610a9f0d52c5a2243faea56e6b2c63390ad5ecb415296a67"
+      },
+      {
+        "path": "pkg/api/archive_browser_resource_handler_test.go",
+        "bytes": 7643,
+        "sha256": "29619fcdc208301160bca3dc78b7519ecc2061e298595beff3c32efa83037e77"
+      },
+      {
+        "path": "pkg/api/openapi_browser_resource.go",
+        "bytes": 3413,
+        "sha256": "6f066c80b83b5c80eda87b5c837fa083c9e3279695fb51b01bb8950d3c5f9408"
+      },
+      {
+        "path": "pkg/api/openapi_browser_resource_test.go",
+        "bytes": 2397,
+        "sha256": "2592b983286b263ec2ecee0e4c38ab83f48d86b96a00ed071187547fd4728ad5"
+      },
+      {
+        "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+        "bytes": 292339,
+        "sha256": "bca4eb849c2e446b2233d9db23af2c1e3b09457ae056f832dd48eeab3e686882"
+      }
+    ],
+    "all_unchanged": true,
+    "changed_paths": []
+  },
+  "retained_failure_evidence": {
+    "log_path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-full-go-1.log",
+    "captured_prefix_bytes": 19738965,
+    "captured_prefix_sha256": "c2296b798d7870c71418054e46d77151461b8e3660ff70b043905b6ecbf7bbd2",
+    "log_was_still_growing": true,
+    "not_a_final_run_digest": true,
+    "events": [
+      {
+        "line": 47931,
+        "event": {
+          "Time": "2026-10-05T22:23:48.197028-04:00",
+          "Action": "run",
+          "Package": "github.com/jasonczech/apexload/pkg/api",
+          "Test": "TestAccessRequirementSnapshotStable"
+        }
+      },
+      {
+        "line": 47932,
+        "event": {
+          "Time": "2026-10-05T22:23:48.197032-04:00",
+          "Action": "output",
+          "Package": "github.com/jasonczech/apexload/pkg/api",
+          "Test": "TestAccessRequirementSnapshotStable",
+          "Output": "=== RUN   TestAccessRequirementSnapshotStable\n"
+        }
+      },
+      {
+        "line": 47933,
+        "event": {
+          "Time": "2026-10-05T22:23:48.224167-04:00",
+          "Action": "output",
+          "Package": "github.com/jasonczech/apexload/pkg/api",
+          "Test": "TestAccessRequirementSnapshotStable",
+          "Output": "    route_catalog_characterization_test.go:182: no golden fingerprint for GET /api/v1/tests/sample-id/archive/browser-resources (got \"auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID= serviceScope=results:read serviceScopeLookup=false\") \u2014 add it to accessRequirementGolden\n"
+        }
+      },
+      {
+        "line": 47934,
+        "event": {
+          "Time": "2026-10-05T22:23:48.225593-04:00",
+          "Action": "output",
+          "Package": "github.com/jasonczech/apexload/pkg/api",
+          "Test": "TestAccessRequirementSnapshotStable",
+          "Output": "--- FAIL: TestAccessRequirementSnapshotStable (0.03s)\n"
+        }
+      },
+      {
+        "line": 47935,
+        "event": {
+          "Time": "2026-10-05T22:23:48.225626-04:00",
+          "Action": "fail",
+          "Package": "github.com/jasonczech/apexload/pkg/api",
+          "Test": "TestAccessRequirementSnapshotStable",
+          "Elapsed": 0.03
+        }
+      },
+      {
+        "line": 48500,
+        "event": {
+          "Time": "2026-10-05T22:23:48.653175-04:00",
+          "Action": "run",
+          "Package": "github.com/jasonczech/apexload/pkg/api",
+          "Test": "TestArchiveAPIRoutesUseModularCatalogs"
+        }
+      },
+      {
+        "line": 48501,
+        "event": {
+          "Time": "2026-10-05T22:23:48.653177-04:00",
+          "Action": "output",
+          "Package": "github.com/jasonczech/apexload/pkg/api",
+          "Test": "TestArchiveAPIRoutesUseModularCatalogs",
+          "Output": "=== RUN   TestArchiveAPIRoutesUseModularCatalogs\n"
+        }
+      },
+      {
+        "line": 48502,
+        "event": {
+          "Time": "2026-10-05T22:23:48.653184-04:00",
+          "Action": "output",
+          "Package": "github.com/jasonczech/apexload/pkg/api",
+          "Test": "TestArchiveAPIRoutesUseModularCatalogs",
+          "Output": "    route_registry_test.go:443: modular archive route count = 18, want 17\n"
+        }
+      },
+      {
+        "line": 48503,
+        "event": {
+          "Time": "2026-10-05T22:23:48.653187-04:00",
+          "Action": "output",
+          "Package": "github.com/jasonczech/apexload/pkg/api",
+          "Test": "TestArchiveAPIRoutesUseModularCatalogs",
+          "Output": "--- FAIL: TestArchiveAPIRoutesUseModularCatalogs (0.00s)\n"
+        }
+      },
+      {
+        "line": 48504,
+        "event": {
+          "Time": "2026-10-05T22:23:48.65319-04:00",
+          "Action": "fail",
+          "Package": "github.com/jasonczech/apexload/pkg/api",
+          "Test": "TestArchiveAPIRoutesUseModularCatalogs",
+          "Elapsed": 0
+        }
+      }
+    ]
+  },
+  "status": "actionable_test_contract_omissions",
+  "findings": [
+    {
+      "priority": "P2",
+      "title": "Register the new browser-resource access golden explicitly",
+      "file": "pkg/api/route_catalog_characterization_test.go",
+      "line": 182,
+      "evidence": "TestAccessRequirementSnapshotStable reports no golden fingerprint for GET /api/v1/tests/sample-id/archive/browser-resources; it reports no changed existing policy value.",
+      "root_cause": "The generic-auth route discovery correctly finds the newly registered route but accessRequirementGolden has no explicit row for it.",
+      "proposed_fix": "Add exactly one reviewed golden entry adjacent to archive/browser-diagnostics. Keep the test iteration, unknown-route error and exact equality unchanged.",
+      "golden_key": "GET /api/v1/tests/sample-id/archive/browser-resources",
+      "golden_value": "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0 featureID=",
+      "important_detail": "Use the RBAC-only fingerprint that this test compares. The missing-entry diagnostic prints the full fingerprint including serviceScope, so copying it verbatim would add a second stale-contract failure. auth=false is AuthenticatedOnly=false, not public middleware."
+    },
+    {
+      "priority": "P2",
+      "title": "Extend the archive catalog test contract for the added route",
+      "file": "pkg/api/route_registry_test.go",
+      "line": 442,
+      "evidence": "TestArchiveAPIRoutesUseModularCatalogs observes 18 routes and still expects17. Git diff against HEAD adds exactly the browser-resources GET catalog entry.",
+      "root_cause": "The hardcoded expected inventory predates the new modular browser-resource route; its omission also leaves the exact resource resolver outside TestArchiveRouteCatalogPreservesAccessContracts.",
+      "proposed_fix": "Update only the expected count17\u219218. Add a dedicated resource route access-contract subtest or table entry whose expected ProjectLookup is resolveBrowserResourceArchiveProjectID, rather than folding it into the legacy list expecting resolveTestProjectID. Preserve the generic-auth, no-legacy-rule, discovered-handler and catalog/discovery equality assertions.",
+      "meaningful_contract_coverage": [
+        "Exact human viewer global/project roles and zero body limit via assertAccessRequirementEqual",
+        "Exact durable resolver function identity resolveBrowserResourceArchiveProjectID, not merely a non-nil lookup",
+        "Runtime ServiceAccountScope results:read with no conditional scope lookup",
+        "Documented raw viewer access matches the new durable resolver (scope preservation is already explicit catalog behavior)",
+        "RequestTimeout equals browserResourceReadTimeout and MiddlewareProfile remains apiRouteMiddlewareAuthenticated",
+        "HandlerIdentity handleGetRunArchiveBrowserResources remains bound/discovered"
+      ]
+    }
+  ],
+  "production_trace": {
+    "route": "GET /api/v1/tests/{id}/archive/browser-resources",
+    "registered_in": "runArchiveAPIRouteCatalog",
+    "construction": "browserResourceDeadlineRoute(newAuthenticatedAPIRoute(... viewerProjectAccess(resolveBrowserResourceArchiveProjectID) ...))",
+    "middleware": "Authenticated profile; timeout wraps auth/project resolution inside existing CORS/log layers",
+    "roles": "global viewer/editor/project_admin/system_admin; project viewer/editor/project_admin",
+    "runtime_scope": "results:read",
+    "timeout": "10s",
+    "project_resolution": "contextual durable browser-resource archive identity, unavailable/canceled/missing authority fails explicitly",
+    "publication_guard": "handler uses the existing final contextual authorization revalidator; source identity/scope is not trusted from query parameters",
+    "actual_auth_defect_identified": false,
+    "request_to_weaken_policy": false
+  },
+  "existing_meaningful_resource_tests_to_retain": [
+    "TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware checks actual SQLite-backed middleware results:read acceptance, broad-read/tests-run refusal and final revocation",
+    "TestBrowserResourceRouteDeadlineCoversPreHandlerOccupiedProjectSQL checks actual occupied SQL pool cancellation before handler entry",
+    "TestBrowserResourceRouteAddsTenSecondDeadlineWithoutChangingOtherRoutes checks registered resource auth deadline while unrelated routes remain unchanged",
+    "TestBrowserResourceHandlerLegacyProjectAuthorityAndSuppliedConflict and final incarnation/authorization tests retain the durable authority boundary"
+  ],
+  "proposed_affected_validation_after_parent_confirms_join": "Run focused normal and race selection for TestAccessRequirementSnapshotStable, TestArchiveAPIRoutesUseModularCatalogs, TestArchiveRouteCatalogPreservesAccessContracts, any added exact browser-resource contract test, TestBrowserResourceFinalAuthFixedScopeMatchesCatalogAndActualMiddleware, and TestBrowserResourceRoute.*. Parent then repeats required full Go on final candidate.",
+  "limits": {
+    "source_edits": false,
+    "snapshots_updated": false,
+    "tests_builds_run": false,
+    "staging_commits_cache_cleanup": false,
+    "full_go_physically_joined_by_reviewer": false,
+    "full_program_qualification": false,
+    "status_document_review": false
+  }
+}

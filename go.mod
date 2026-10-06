@@ -224,3 +224,6 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
+
+// Pinned local SDK acknowledgment for exact native HAR writer completion.
+replace github.com/mxschmitt/playwright-go => ./third_party/playwright-go

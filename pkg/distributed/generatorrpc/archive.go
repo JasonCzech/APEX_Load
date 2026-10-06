@@ -586,6 +586,9 @@ func (f *generatorArchiveQuotaParquetFile) Create(name string) (source.ParquetFi
 }
 
 type parquetTransactionEvent struct {
+	// Opaque disclosure projection has no approved lexical-statistics query.
+	ResourceProjectionJSON string  `parquet:"name=resource_projection_json, type=BYTE_ARRAY, convertedtype=UTF8, omitstats=true"`
+	PageURL                string  `parquet:"name=page_url, type=BYTE_ARRAY, convertedtype=UTF8"`
 	WorkerDurationMs       float64 `parquet:"name=worker_duration_ms, type=DOUBLE"`
 	TimestampUnixMs        int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
 	TimestampRFC3339       string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
@@ -1510,13 +1513,13 @@ func writeArchiveParquetFilesAtWithBudget(root *os.Root, manifest *archiveManife
 	if root == nil || manifest == nil {
 		return fmt.Errorf("archive root and manifest are required")
 	}
-	if err := streamJSONLToParquetAtWithBudget(
+	if err := streamJSONLToParquetRawAtWithBudget(
 		root,
 		manifest.TransactionsFile,
 		manifest.TransactionsParquetFile,
 		budget,
-		func(item archiveTransactionEvent) parquetTransactionEvent {
-			return toParquetTransactions([]archiveTransactionEvent{item})[0]
+		func(item archiveTransactionEvent, raw []byte) parquetTransactionEvent {
+			return toParquetTransactions([]archiveTransactionEvent{item}, raw)[0]
 		},
 	); err != nil {
 		return fmt.Errorf("write transaction parquet: %w", err)
@@ -1576,6 +1579,10 @@ func streamJSONLToParquetAt[In any, Out any](root *os.Root, inputName string, ou
 }
 
 func streamJSONLToParquetAtWithBudget[In any, Out any](root *os.Root, inputName string, outputName string, budget *generatorArchiveByteBudget, convert func(In) Out, decoders ...func([]byte, *In) error) error {
+	return streamJSONLToParquetRawAtWithBudget(root, inputName, outputName, budget, func(item In, _ []byte) Out { return convert(item) }, decoders...)
+}
+
+func streamJSONLToParquetRawAtWithBudget[In any, Out any](root *os.Root, inputName string, outputName string, budget *generatorArchiveByteBudget, convert func(In, []byte) Out, decoders ...func([]byte, *In) error) error {
 	input, _, err := openGeneratorArchiveRegularFile(root, inputName)
 	if err != nil {
 		return err
@@ -1614,7 +1621,7 @@ func streamJSONLToParquetAtWithBudget[In any, Out any](root *os.Root, inputName 
 			_ = fw.Close()
 			return decodeError
 		}
-		if err := pw.Write(convert(item)); err != nil {
+		if err := pw.Write(convert(item, scanner.Bytes())); err != nil {
 			_ = pw.WriteStop()
 			_ = fw.Close()
 			return err
@@ -1666,10 +1673,16 @@ func generatorArchiveRunSize(root *os.Root) (int64, error) {
 	return total, nil
 }
 
-func toParquetTransactions(items []archiveTransactionEvent) []parquetTransactionEvent {
+func toParquetTransactions(items []archiveTransactionEvent, sourceRows ...[]byte) []parquetTransactionEvent {
 	rows := make([]parquetTransactionEvent, 0, len(items))
-	for _, item := range items {
+	for index, item := range items {
+		raw, _ := json.Marshal(item)
+		if index < len(sourceRows) {
+			raw = sourceRows[index]
+		}
 		rows = append(rows, parquetTransactionEvent{
+			ResourceProjectionJSON: string(protocol.BrowserResourceArchiveProjection(raw)),
+			PageURL:                item.PageURL,
 			TimestampUnixMs:        item.Timestamp.UnixMilli(),
 			TimestampRFC3339:       item.Timestamp.Format(time.RFC3339Nano),
 			TestID:                 item.TestID,

@@ -161,3 +161,38 @@ test('reports oversized and forbidden assets in a static route graph', async () 
     },
   )
 })
+
+
+test('rejects a lazy route importing the shell entry even when assets fit their size limits', async () => {
+  const manifest = {
+    'index.html': {
+      file: 'assets/renamed-shell.js',
+      isEntry: true,
+      imports: ['_vendor.js'],
+      dynamicImports: ['src/ScriptsPage.tsx'],
+    },
+    '_vendor.js': { file: 'assets/vendor.js' },
+    'src/ScriptsPage.tsx': {
+      file: 'assets/ScriptsPage.js',
+      isDynamicEntry: true,
+      imports: ['index.html'],
+    },
+  }
+  await withBundle({
+    '.vite/manifest.json': JSON.stringify(manifest),
+    'assets/renamed-shell.js': 'const shell = true;',
+    'assets/vendor.js': 'const vendor = true;',
+    'assets/ScriptsPage.js': 'const scripts = true;',
+  }, async directory => {
+    const budget = {
+      id: 'scripts', label: 'Scripts route', entryKey: 'src/ScriptsPage.tsx',
+      maxGzipBytes: 1_000, forbiddenEntryKeys: ['index.html'],
+    }
+    const result = await inspectRouteBudgets(directory, [budget])
+    assert.deepEqual(result.violations, ['Scripts route unexpectedly imports the index.html entry'])
+    // Removing the reverse static import preserves the normal dynamic route.
+    manifest['src/ScriptsPage.tsx'].imports = ['_vendor.js']
+    await writeFile(join(directory, '.vite/manifest.json'), JSON.stringify(manifest))
+    assert.deepEqual((await inspectRouteBudgets(directory, [budget])).violations, [])
+  })
+})

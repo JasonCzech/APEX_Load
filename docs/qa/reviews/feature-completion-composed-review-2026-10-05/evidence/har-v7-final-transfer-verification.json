@@ -1,0 +1,10 @@
+{
+  "utc": "2026-10-06T00:32:38.263744+00:00",
+  "manifest_sha256": "83f663eea9ec9a8bcb497fa6637eaa72d96ac1483ede8ae427503740db6da5d2",
+  "verified_source_count": 135,
+  "created_guide_count": 1,
+  "created_qa_count": 163,
+  "qa_bytes": 878864,
+  "source_mutations": 0,
+  "scope": "All299 source/guide/QA donor entries verified;164 guide/QA files exclusively created;135 alreadycomposed ROOT inputs matched declared root hashes, including separately preserved native diagnostics."
+}

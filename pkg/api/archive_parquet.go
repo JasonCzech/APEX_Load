@@ -9,11 +9,18 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/protocol"
+
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/writer"
 )
 
 type parquetTransactionEvent struct {
+	// Opaque disclosure projection has no approved lexical-statistics query.
+	ResourceProjectionJSON string  `parquet:"name=resource_projection_json, type=BYTE_ARRAY, convertedtype=UTF8, omitstats=true"`
+	PageURL                string  `parquet:"name=page_url, type=BYTE_ARRAY, convertedtype=UTF8"`
+	ClientMetricsJSON      string  `parquet:"name=client_metrics_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	NetworkEntriesJSON     string  `parquet:"name=network_entries_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	WorkerDurationMs       float64 `parquet:"name=worker_duration_ms, type=DOUBLE"`
 	EventID                string  `parquet:"name=event_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	TimestampUnixMs        int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
@@ -144,11 +151,11 @@ func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest, budg
 	if len(budgets) == 0 {
 		defer budget.close()
 	}
-	count, err := streamJSONLToParquet(
+	count, err := streamJSONLToParquetRawChecked(
 		filepath.Join(rootDir, manifest.TransactionsFile),
 		filepath.Join(rootDir, manifest.TransactionsParquetFile),
-		func(item TransactionEvent) parquetTransactionEvent {
-			return toParquetTransactions([]TransactionEvent{item})[0]
+		func(item TransactionEvent, raw []byte) (parquetTransactionEvent, error) {
+			return toParquetTransactions([]TransactionEvent{item}, raw)[0], nil
 		}, budget,
 	)
 	if err != nil {
@@ -195,6 +202,12 @@ func streamJSONLToParquet[In any, Out any](inputPath string, outputPath string, 
 }
 
 func streamJSONLToParquetChecked[In any, Out any](inputPath string, outputPath string, convert func(In) (Out, error), budgets ...*archiveOutputBudget) (count int64, err error) {
+	return streamJSONLToParquetRawChecked(inputPath, outputPath, func(item In, _ []byte) (Out, error) { return convert(item) }, budgets...)
+}
+
+// The raw conversion seam preserves the actual disclosed JSONL presence before
+// ordinary typed decoding can materialize missing values as zero.
+func streamJSONLToParquetRawChecked[In any, Out any](inputPath string, outputPath string, convert func(In, []byte) (Out, error), budgets ...*archiveOutputBudget) (count int64, err error) {
 	budget, err := conversionBudget(filepath.Dir(outputPath), budgets)
 	if err != nil {
 		return 0, err
@@ -231,7 +244,7 @@ func streamJSONLToParquetChecked[In any, Out any](inputPath string, outputPath s
 			_ = fw.Close()
 			return count, err
 		}
-		row, err := convert(item)
+		row, err := convert(item, scanner.Bytes())
 		if err != nil {
 			_ = pw.WriteStop()
 			_ = fw.Close()
@@ -258,10 +271,18 @@ func streamJSONLToParquetChecked[In any, Out any](inputPath string, outputPath s
 	return count, errors.Join(fw.Sync(), fw.Close())
 }
 
-func toParquetTransactions(items []TransactionEvent) []parquetTransactionEvent {
+func toParquetTransactions(items []TransactionEvent, sourceRows ...[]byte) []parquetTransactionEvent {
 	rows := make([]parquetTransactionEvent, 0, len(items))
-	for _, item := range items {
+	for index, item := range items {
+		raw, _ := json.Marshal(item)
+		if index < len(sourceRows) {
+			raw = sourceRows[index]
+		}
 		rows = append(rows, parquetTransactionEvent{
+			ResourceProjectionJSON: string(protocol.BrowserResourceArchiveProjection(raw)),
+			PageURL:                item.PageURL,
+			ClientMetricsJSON:      mustJSON(item.ClientMetrics),
+			NetworkEntriesJSON:     mustJSON(item.NetworkEntries),
 			EventID:                item.EventID,
 			TimestampUnixMs:        item.Timestamp.UnixMilli(),
 			TimestampRFC3339:       item.Timestamp.Format(time.RFC3339Nano),

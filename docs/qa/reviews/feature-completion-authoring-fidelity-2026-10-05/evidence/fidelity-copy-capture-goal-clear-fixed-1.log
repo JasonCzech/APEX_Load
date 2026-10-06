@@ -1,0 +1,95 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run src/components/CreateTestModal.test.tsx src/components/scenarioFidelity.test.ts src/components/scenarioPayloadUtils.test.ts src/components/scenarioDraftUtils.test.ts
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard
+
+ ❯ src/components/CreateTestModal.test.tsx (23 tests | 4 failed) 496ms
+     × blocks an observer setup above the backend diagnostic envelope 22ms
+     × blocks aggregate staged demand above the backend one-million VUser limit 40ms
+     × retains missing source selections until capture is explicitly turned off 22ms
+     × retains failed source selections until capture is explicitly turned off 12ms
+ ❯ src/components/scenarioDraftUtils.test.ts (15 tests | 1 failed) 9ms
+     × preserves and clones the complete source-run revision context 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/CreateTestModal.test.tsx > CreateTestModal > blocks an observer setup above the backend diagnostic envelope
+AssertionError: expected 'Capture connections could not be load…' to contain 'observer canaries must use between 1 …'
+
+Expected: "observer canaries must use between 1 and 10 VUsers"
+Received: "Capture connections could not be loaded. Check the selection before launching. Retry connections"
+
+ ❯ src/components/CreateTestModal.test.tsx:214:68
+    212|
+    213|     expect(apiMock.createTest).not.toHaveBeenCalled()
+    214|     expect(container.querySelector('[role="alert"]')?.textContent).toC…
+       |                                                                    ^
+    215|   })
+    216|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  src/components/CreateTestModal.test.tsx > CreateTestModal > blocks aggregate staged demand above the backend one-million VUser limit
+AssertionError: expected 'Capture connections could not be load…' to contain 'aggregate peak demand cannot exceed 1…'
+
+Expected: "aggregate peak demand cannot exceed 1,000,000 VUsers"
+Received: "Capture connections could not be loaded. Check the selection before launching. Retry connections"
+
+ ❯ src/components/CreateTestModal.test.tsx:252:68
+    250|
+    251|     expect(apiMock.createTest).not.toHaveBeenCalled()
+    252|     expect(container.querySelector('[role="alert"]')?.textContent).toC…
+       |                                                                    ^
+    253|   })
+    254|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  src/components/CreateTestModal.test.tsx > CreateTestModal > retains missing source selections until capture is explicitly turned off
+ FAIL  src/components/CreateTestModal.test.tsx > CreateTestModal > retains failed source selections until capture is explicitly turned off
+TypeError: Cannot read properties of undefined (reading 'disabled')
+ ❯ src/components/CreateTestModal.test.tsx:457:19
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  src/components/scenarioDraftUtils.test.ts > scenarioDraftUtils > preserves and clones the complete source-run revision context
+AssertionError: expected { …(10) } to deeply equal { sourceTestId: 'test-context', …(6) }
+
+- Expected
++ Received
+
+@@ -18,11 +18,14 @@
+        "pool_name": "Orders",
+        "scenario_id": "scenario-1",
+        "selection_strategy": "sequential",
+      },
+    ],
++   "dynatraceConnectionId": undefined,
++   "elkConnectionId": undefined,
+    "folderId": null,
+    "projectId": "project-1",
+    "releaseId": "release-1",
+    "scenarioId": "scenario-1",
++   "sourceGoalConfigPresent": false,
+    "sourceTestId": "test-context",
+  }
+
+ ❯ src/components/scenarioDraftUtils.test.ts:157:34
+    155|    } as never)
+    156|
+    157|    expect(draft.revisionContext).toEqual({
+       |                                  ^
+    158|      sourceTestId: 'test-context',
+    159|      applicationId: 'application-1',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+
+ Test Files  2 failed | 2 passed (4)
+      Tests  5 failed | 80 passed (85)
+   Start at  13:48:48
+   Duration  2.15s (transform 330ms, setup 60ms, import 398ms, tests 519ms, environment 887ms)
+

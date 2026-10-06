@@ -1,0 +1,27 @@
+{
+  "recorded_at_utc": "2026-10-05T23:37:35.162537+00:00",
+  "scope": "Frozen original modfile/overlay inputs and original SDK module resolution captured before go test invocation. Input hashes revalidated during compile; original copied-source manifest predates test. Native runtime bookend retained separately, not full transitive inventory.",
+  "original_module_resolution_before_sha256": "7e73f1abc9987bb4ac9236aa8a853e1edd51a499bfcc60a1701da2a7b8588194",
+  "inputs": [
+    {
+      "path": "/private/tmp/native-har-v5-before-owned-sdk-20261005.mod",
+      "bytes": 11383,
+      "sha256": "05c38d4d914dd463eadcff718550f394425eeb85721dbcab2c0fc8c8d59b2d1b"
+    },
+    {
+      "path": "/private/tmp/native-har-v5-before-owned-sdk-20261005.sum",
+      "bytes": 160716,
+      "sha256": "f24fca42c52f47ee68239f16130fc02743aed90c7ba2815b3197b665db15c2c8"
+    },
+    {
+      "path": "/private/tmp/native-har-sdk-original-binding-overlay-20261005.json",
+      "bytes": 217,
+      "sha256": "910a0da616a0f9337f690c966bc1aa0238c55390c6184e8ac6aaf0917350df3f"
+    },
+    {
+      "path": "/private/tmp/native-har-v5-runtime-before-owned-sdk-20261005.go",
+      "bytes": 26106,
+      "sha256": "4ad56f15bd279bf5121631bf8620825b64061e9549c3d11cdfa56503522cb5c4"
+    }
+  ]
+}

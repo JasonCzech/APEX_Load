@@ -1,0 +1,76 @@
+{
+  "recorded_at_utc": "2026-10-06T00:01:50.806280+00:00",
+  "scope": "Fourteen direct installed Node/driver/default browser executables and local SDK/module inputs, before final dispatcher-safe required native acceptance. Not a complete dylib/native/module dependency inventory.",
+  "inputs": [
+    {
+      "path": "/Users/jasonczech/.npm/_npx/6d82ddbdd7da268b/node_modules/node/bin/node",
+      "bytes": 111673840,
+      "sha256": "913b144fdb40638b1acef7974ab3c33fbd527cc0974cb5da467ab1e6ac51b4d4"
+    },
+    {
+      "path": "/Users/jasonczech/Library/Caches/ms-playwright-go/1.61.1/node",
+      "bytes": 120965360,
+      "sha256": "ee6fb0e015284d83a91e8ec5213f43a157f8a392b58555301682892ba928c04a"
+    },
+    {
+      "path": "/Users/jasonczech/Library/Caches/ms-playwright-go/1.61.1/package/lib/coreBundle.js",
+      "bytes": 3352379,
+      "sha256": "d90f29f93a11039767d745d141632b0f6888c434194ff0f9334b2cdab3e937ab"
+    },
+    {
+      "path": "/Users/jasonczech/Library/Caches/ms-playwright-go/1.61.1/package/browsers.json",
+      "bytes": 1939,
+      "sha256": "ee39bc924bc3d1bd895626c2910f1292d109bbfeeb5abd113acb45e1951cc942"
+    },
+    {
+      "path": "/Users/jasonczech/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+      "bytes": 159293248,
+      "sha256": "11e393326c7d20a7c56641a7c65def33ea9c280da3b0b74cf8563b07989a0ee3"
+    },
+    {
+      "path": "/Users/jasonczech/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+      "bytes": 52112,
+      "sha256": "b1b9e2dd063115031f08eadc10ed381ca0fa05b2284baff8f721d87f5f0f61b7"
+    },
+    {
+      "path": "/Users/jasonczech/Library/Caches/ms-playwright/webkit-2311/pw_run.sh",
+      "bytes": 3049,
+      "sha256": "a85baad3d8c07173ac387a59b41500c382b21ed692afe0964d29aac247ccc63b"
+    },
+    {
+      "path": "/Users/jasonczech/Library/Caches/ms-playwright/webkit-2311/Playwright.app/Contents/MacOS/Playwright",
+      "bytes": 172128,
+      "sha256": "042c3ee42aab538dfcd440892286af0d5b20707ca3c22765da41d1cc6464f762"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/third_party/playwright-go/browser_context.go",
+      "bytes": 31758,
+      "sha256": "cdb3661ec88f0e812298703f17dedb50ea10a252daf27d7ee2f73e7c8f7e15a3"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/third_party/playwright-go/owned_har_close.go",
+      "bytes": 2324,
+      "sha256": "bf96da14bfdc93ad0455bf12a85e1e23675172a58603c25d30059fcc3fee6db6"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/go.mod",
+      "bytes": 11533,
+      "sha256": "30806ceb5fa14c24c7703d9e4e57f9267502b59a1d01abcae8d9687a4fea62d0"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/go.sum",
+      "bytes": 160523,
+      "sha256": "66b5b966246df011fa86f71b09c9ce19cae7154b659358b786a13c2198c1320e"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/third_party/playwright-go/go.mod",
+      "bytes": 782,
+      "sha256": "755e83d264703fc6b0bdce94ec159cd3a7e229c5c85418029c89cad58b2c37da"
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner/third_party/playwright-go/go.sum",
+      "bytes": 7739,
+      "sha256": "07b39a80c1d0550c500039856573b5387830ef0bc465f85ff32131ccb6268856"
+    }
+  ]
+}

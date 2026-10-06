@@ -1,4 +1,4 @@
-import { test, expect, seedScript, login } from './support/workflow'
+import { test, expect, seedScript, login, json, idOf } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('scenario composition combines group editing with a live preview', async ({ page }, testInfo) => {
@@ -96,4 +96,94 @@ test('guided stepped ramp keeps its pattern editor within the four scenario tabs
   await expect(page.getByRole('heading', { name: 'Protect the Run' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Transaction response-time SLA' })).toBeVisible()
   await expect(page.getByText('Advanced run protection and assurance')).toHaveCount(0)
+})
+
+
+test('scenario rename and reopen retain Results, WebSocket, named shape and group timing intent', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const script = await seedScript(request, workspace, 'Fidelity_HTTP')
+  const results = { csv_exports: [{ id: 'calls', file_name: 'calls.csv', action_name: 'orders', columns: [{ name: 'latency', metric: 'latency_ms' }] }], property_analytics: [{ name: 'category', extraction: 'category', values: ['one', 'two'] }] }
+  const rootRuntime = { results: { message_detail: { mode: 'off', include_resources: false, sample_rate: 0, max_items: 0 } }, websocket: { callback_interval_ms: 0, compression: false, reconnect: false } }
+  const goal = { transaction_response_time_sla_ms: 0.001, workload_shape_config: { closed_vuser: { scope: 'scenario', scenario: { peak_vusers: 4, ramp_up: '10s', sustain: '50s', ramp_down_enabled: false, ramp_down: '0s' } } } }
+  const scenario = idOf(await json(await request.post('/api/v1/scenarios', { data: {
+    project_id: workspace.projectId, application_id: workspace.applicationId, name: 'Fidelity original', duration: '1m', scenario_mode: 'vuser_driven', workload_shape_id: 'closed-vuser', goal_config: goal, runtime_settings: rootRuntime,
+    groups: [
+      { name: 'orders', script_id: script, vusers: 2, role: 'load', ramp_up: '3s', ramp_down: '4s', start_offset: '1s', initialization: 'at_once', transaction_response_time_sla_ms: 1250, runtime_settings: { results, websocket: {} } },
+      { name: 'staged', script_id: script, vusers: 2, role: 'load', start_offset: '2s', initialization: 'at_runtime', stages: [{ type: 'hold', duration: '50s', target_vusers: 2 }], transaction_response_time_sla_ms: 1500, runtime_settings: { results: {}, websocket: {} } },
+    ],
+  } })))
+  const original = await json(await request.get(`/api/v1/scenarios/${scenario}`))
+  await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
+  await page.reload()
+  await page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Fidelity original' }).getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByPlaceholder('Scenario name').fill('Fidelity renamed only')
+  await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Review/ }).click()
+  const saved = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/v1/scenarios/${scenario}`)
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+  const response = await saved
+  expect(response.ok(), await response.text()).toBeTruthy()
+  const sent = response.request().postDataJSON()
+  expect(sent).toMatchObject({ name: 'Fidelity renamed only', workload_shape_id: 'closed-vuser', goal_config: goal, runtime_settings: { results: { message_detail: { mode: 'off', include_resources: false } }, websocket: {} } })
+  expect(sent.groups).toMatchObject([{ start_offset: '1s', ramp_up: '3s', ramp_down: '4s', transaction_response_time_sla_ms: 1250, runtime_settings: { results, websocket: {} } }, { start_offset: '2s', stages: [{ type: 'hold', duration: '50s', target_vusers: 2 }], transaction_response_time_sla_ms: 1500, runtime_settings: { results: {}, websocket: {} } }])
+  const stored = await json(await request.get(`/api/v1/scenarios/${scenario}`))
+  expect(stored.runtime_settings).toEqual(original.runtime_settings)
+  expect(stored.scripts).toEqual(original.scripts)
+  expect(stored.goal_config).toEqual(original.goal_config)
+  expect(stored.workload_shape_id).toBe('closed-vuser')
+  await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
+  await page.reload()
+  await page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Fidelity renamed only' }).getByRole('button', { name: 'Edit', exact: true }).click()
+  await expect(page.getByPlaceholder('Scenario name')).toHaveValue('Fidelity renamed only')
+  await testInfo.attach('canonical-scenario-fidelity', { body: JSON.stringify({ original, submitted: sent, reopened: stored }, null, 2), contentType: 'application/json' })
+})
+
+
+test('changing a saved workload shape retains the authored root SLA and rules', async ({ page, target }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const script = await seedScript(request, workspace, 'Shape_Guardrails_HTTP', target.url)
+  const goal = { target_average_tps: 25, min_vusers: 1, max_vusers: 30, p95_latency_ms: 2300, max_error_pct: 0, max_error_count: 3, max_avg_server_processing_ms: 400, max_avg_transfer_ms: 125, max_lcp_ms: 2500, max_inp_ms: 200, max_cls: 0.1, max_throttled_requests: 0, max_end_to_end_latency_ms: 500, max_partition_skew_pct: 0, max_redelivery_rate_pct: 0, max_dead_letter_rate_pct: 0, stop_on_sla_breach: true, stop_on_max_errors: true, sla_breach_window: '7s', transaction_response_time_sla_ms: 0.001, transaction_rules: [{ transaction: 'orders', metric: 'p95_duration_ms', comparator: 'lte', threshold: 1250 }], monitor_rules: [], workload_shape_config: { goal_driven: { groups: { group_0: { target_tps: 25, art: { basis: 'manual', art_ms: 400 } } } } } }
+  const scenario = idOf(await json(await request.post('/api/v1/scenarios', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, name: 'Shape guardrail source', duration: '1m', scenario_mode: 'goal_oriented', workload_shape_id: 'open-arrival-rate', goal_config: goal, groups: [{ name: 'orders', script_id: script, vusers: 2, initialization: 'at_once', transaction_response_time_sla_ms: 1250 }] } })))
+  const original = await json(await request.get(`/api/v1/scenarios/${scenario}`))
+  await testInfo.attach('original-shape-guardrails', { body: JSON.stringify(original, null, 2), contentType: 'application/json' })
+  await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
+  await page.reload()
+  await page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Shape guardrail source' }).getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Model & Shape/ }).click()
+  await page.getByRole('button', { name: /^Stepped Ramp/ }).click()
+  await page.getByRole('button', { name: 'Use Stepped Ramp', exact: true }).click()
+  await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Run Settings/ }).click()
+  await page.getByRole('spinbutton', { name: 'Ending load level VUsers', exact: true }).fill('14')
+  await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Review/ }).click()
+  const saved = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/v1/scenarios/${scenario}`)
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+  const response = await saved
+  const submitted = response.request().postDataJSON()
+  await testInfo.attach('shape-guardrail-save', { body: JSON.stringify({ submitted, status: response.status(), response: await response.text() }, null, 2), contentType: 'application/json' })
+  expect(response.ok()).toBeTruthy()
+  const reopened = await json(await request.get(`/api/v1/scenarios/${scenario}`))
+  await testInfo.attach('reopened-shape-guardrails', { body: JSON.stringify(reopened, null, 2), contentType: 'application/json' })
+  expect(submitted.workload_shape_id).toBe('stepped-ramp')
+  const replacedOrCanonicallyEmpty = new Set(['target_average_tps', 'min_vusers', 'max_vusers', 'workload_shape_config', 'monitor_rules'])
+  const guardrails = Object.fromEntries(Object.entries(goal).filter(([key]) => !replacedOrCanonicallyEmpty.has(key)))
+  expect(submitted.goal_config).toMatchObject(guardrails)
+  expect(reopened.goal_config).toMatchObject(guardrails)
+  // Go's canonical DTO omits zero-length rule arrays; their empty semantics
+  // are retained, while explicit nonempty-to-empty template submission is unit-tested.
+  expect(submitted.goal_config.monitor_rules ?? []).toEqual([])
+  expect(reopened.goal_config).not.toHaveProperty('monitor_rules')
+  for (const field of ['target_average_tps', 'min_vusers', 'max_vusers']) expect(reopened.goal_config).not.toHaveProperty(field)
+  expect(reopened.goal_config).not.toHaveProperty('early_stop')
+  expect(reopened.goal_config).not.toHaveProperty('workload_shape_config.goal_driven')
+  expect(reopened.goal_config).toHaveProperty('workload_shape_config.stepped_ramp')
+  expect(reopened.scripts).toMatchObject([{ script_id: script, vusers: 14, initialization: 'at_once', transaction_response_time_sla_ms: 1250 }])
+  await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
+  await page.reload()
+  await page.locator('.scenario-library-table').getByRole('row').filter({ hasText: 'Shape guardrail source' }).getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Run Settings/ }).click()
+  await expect(page.getByRole('spinbutton', { name: 'Ending load level VUsers', exact: true })).toHaveValue('14')
+  expect(target.count()).toBe(0)
 })

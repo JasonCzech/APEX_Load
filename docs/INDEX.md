@@ -13,6 +13,11 @@ kept for planning or audit context only.
 | [HELP_CENTER.md](HELP_CENTER.md#build-and-run-your-first-test) | Current | In-app help: first test, capabilities, support, changes, and troubleshooting |
 | [README.md](../README.md) | Current | Project overview, quick start, and primary links |
 | [APPLICATION_USER_GUIDE.md](APPLICATION_USER_GUIDE.md) | Current | End-user guide to the dashboard application |
+| [Browser document evidence](guides/BROWSER_DOCUMENT_EVIDENCE.md) | Current | Opt-in capture, lifecycle populations, bounded live/archive inspection and qualification limits |
+| [Retained resource inspection](guides/RETAINED_RESOURCE_INSPECTION.md) | Current | Authorized bounded archive resource pages, exact filters, native availability and CLI inspection |
+| [Native HAR working-file ownership](guides/BROWSER_HAR_WORKING_OWNERSHIP.md) | Current | Private staging, joined native close, protected retirement and remaining transfer/platform limits |
+| [Telemetry budget policy receipts](guides/TELEMETRY_POLICY_RECEIPTS.md) | Current | Immutable run budgets, digest verification, live/archive inspection and diagnostic limits |
+| [Scenario and queued-run authoring fidelity](guides/AUTHORING_SCENARIO_FIDELITY.md) | Current | Whole-section settings, library snapshot compatibility and revised queued copies |
 | [BASELINE_COMPARISON.md](BASELINE_COMPARISON.md) | Current | Pinned baseline selection, matched-load evidence, advisory policies and saved comparison exports |
 | [ADMIN_USER_GUIDE.md](ADMIN_USER_GUIDE.md) | Current | Administrator tasks, library assignments, and project secrets |
 | [API_USER_GUIDE.md](API_USER_GUIDE.md) | Current | API orientation, authentication, workflows, and automation |

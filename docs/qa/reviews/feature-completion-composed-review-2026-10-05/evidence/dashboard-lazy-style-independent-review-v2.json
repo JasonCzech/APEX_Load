@@ -1,0 +1,602 @@
+{
+  "recorded_at_utc": "2026-10-06T01:08:18.419750+00:00",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "status": "No additional actionable findings in the scoped lazy CSS/disclosure independent review.",
+  "scope": "Read-only review of fifteen frozen direct inputs, full original-to-current CSS rule/declaration/media/order comparison, all six actual access class consumers, local lazy error isolation and real inspector pending-retirement/owner tests. Relevant parent archive callsite and owner/read hook checked. No builds/tests/browser or source mutations.",
+  "findings": [],
+  "freeze": {
+    "path": "/private/tmp/apexload-dashboard-lazy-style-source-freeze-v2-20261005.json",
+    "sha256": "513158b0372bcc31410d5608c5e9390014ed474ca1319fe978eba0d74c5692e3",
+    "files_before": [
+      {
+        "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.tsx",
+        "bytes": 1923,
+        "sha256": "4995ab74b2be4e81f5dcc255877751160fc5f46db1515031e8ffdcea61fc3336"
+      },
+      {
+        "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.lazy.test.tsx",
+        "bytes": 3554,
+        "sha256": "6cfa39fd998c562302b900eb8c2c0084b7f9787b59022382d757bf117204e940"
+      },
+      {
+        "path": "dashboard/src/components/Pages.css",
+        "bytes": 171197,
+        "sha256": "ef6607910b2b9448d614577a1c3eeb0415c479175fe0411b4163fe8202613840"
+      },
+      {
+        "path": "dashboard/src/components/Access.css",
+        "bytes": 23670,
+        "sha256": "0526eca49722ec1086d2a9fd20830bf98a181ef31d8d1a2a7baff08e59593b67"
+      },
+      {
+        "path": "dashboard/src/components/AccessStyles.test.ts",
+        "bytes": 4960,
+        "sha256": "f9ccc5c2999d300ffe0f7a29bacfcef3fc820dc58d7996253deaa9e071f7d27e"
+      },
+      {
+        "path": "dashboard/src/components/AccessPage.tsx",
+        "bytes": 146848,
+        "sha256": "dbff095fb5757b2bb1b8407360abc1aacd6dd35329a27efb08f60c940059ceed"
+      },
+      {
+        "path": "dashboard/src/components/AccessNavigation.tsx",
+        "bytes": 1254,
+        "sha256": "442c347b1a98d74909d83ebe9db2459ce9c35d78b02052ed58a891f7c9fbe5d6"
+      },
+      {
+        "path": "dashboard/src/components/AccessIssuedKeyModal.tsx",
+        "bytes": 3305,
+        "sha256": "52b1bc6aef3f6ea8d571f9aeedbcec713899ee2383bef7a396af6869fb9606aa"
+      },
+      {
+        "path": "dashboard/src/components/AccessUsagePanel.tsx",
+        "bytes": 11594,
+        "sha256": "b9c7266b39dcdf863f02d06238acb8ca886a090825e0c8d6a9e7f15a6c0c17a0"
+      },
+      {
+        "path": "dashboard/src/components/AuditEventTable.tsx",
+        "bytes": 2281,
+        "sha256": "529d0611a8092e5db7efed69d6017d0b6c9c8e3be13d796fac03fde0231b95f3"
+      },
+      {
+        "path": "dashboard/src/components/CapacityCommitments.tsx",
+        "bytes": 3920,
+        "sha256": "c0a34469b55c1a4a212bff03a90238db20d60d694d4393bed8da41fddd876dc0"
+      },
+      {
+        "path": "dashboard/src/components/SwaggerDocsPage.tsx",
+        "bytes": 15710,
+        "sha256": "35648433f742cb64fe00854563401b3844f678a1c7a6bc4765d884f8deab2def"
+      },
+      {
+        "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.test.tsx",
+        "bytes": 5873,
+        "sha256": "de27f99437c4964680be658d3c0b91c70a56fa8ad36f7478945bb7d5bfcdeed4"
+      },
+      {
+        "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.loadFailure.test.tsx",
+        "bytes": 3156,
+        "sha256": "c1766f84dd40975c1f5b1bbe6680a134b10946f7ee65390f9b5b58f2c0cc9a37"
+      },
+      {
+        "path": "dashboard/src/components/LazyLoadBoundary.tsx",
+        "bytes": 1345,
+        "sha256": "a9daf35cb46f04543308eb5054ae0bb15cb67f988d2b98119c18f1070896fa9a"
+      }
+    ],
+    "files_after": [
+      {
+        "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.tsx",
+        "bytes": 1923,
+        "sha256": "4995ab74b2be4e81f5dcc255877751160fc5f46db1515031e8ffdcea61fc3336"
+      },
+      {
+        "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.lazy.test.tsx",
+        "bytes": 3554,
+        "sha256": "6cfa39fd998c562302b900eb8c2c0084b7f9787b59022382d757bf117204e940"
+      },
+      {
+        "path": "dashboard/src/components/Pages.css",
+        "bytes": 171197,
+        "sha256": "ef6607910b2b9448d614577a1c3eeb0415c479175fe0411b4163fe8202613840"
+      },
+      {
+        "path": "dashboard/src/components/Access.css",
+        "bytes": 23670,
+        "sha256": "0526eca49722ec1086d2a9fd20830bf98a181ef31d8d1a2a7baff08e59593b67"
+      },
+      {
+        "path": "dashboard/src/components/AccessStyles.test.ts",
+        "bytes": 4960,
+        "sha256": "f9ccc5c2999d300ffe0f7a29bacfcef3fc820dc58d7996253deaa9e071f7d27e"
+      },
+      {
+        "path": "dashboard/src/components/AccessPage.tsx",
+        "bytes": 146848,
+        "sha256": "dbff095fb5757b2bb1b8407360abc1aacd6dd35329a27efb08f60c940059ceed"
+      },
+      {
+        "path": "dashboard/src/components/AccessNavigation.tsx",
+        "bytes": 1254,
+        "sha256": "442c347b1a98d74909d83ebe9db2459ce9c35d78b02052ed58a891f7c9fbe5d6"
+      },
+      {
+        "path": "dashboard/src/components/AccessIssuedKeyModal.tsx",
+        "bytes": 3305,
+        "sha256": "52b1bc6aef3f6ea8d571f9aeedbcec713899ee2383bef7a396af6869fb9606aa"
+      },
+      {
+        "path": "dashboard/src/components/AccessUsagePanel.tsx",
+        "bytes": 11594,
+        "sha256": "b9c7266b39dcdf863f02d06238acb8ca886a090825e0c8d6a9e7f15a6c0c17a0"
+      },
+      {
+        "path": "dashboard/src/components/AuditEventTable.tsx",
+        "bytes": 2281,
+        "sha256": "529d0611a8092e5db7efed69d6017d0b6c9c8e3be13d796fac03fde0231b95f3"
+      },
+      {
+        "path": "dashboard/src/components/CapacityCommitments.tsx",
+        "bytes": 3920,
+        "sha256": "c0a34469b55c1a4a212bff03a90238db20d60d694d4393bed8da41fddd876dc0"
+      },
+      {
+        "path": "dashboard/src/components/SwaggerDocsPage.tsx",
+        "bytes": 15710,
+        "sha256": "35648433f742cb64fe00854563401b3844f678a1c7a6bc4765d884f8deab2def"
+      },
+      {
+        "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.test.tsx",
+        "bytes": 5873,
+        "sha256": "de27f99437c4964680be658d3c0b91c70a56fa8ad36f7478945bb7d5bfcdeed4"
+      },
+      {
+        "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.loadFailure.test.tsx",
+        "bytes": 3156,
+        "sha256": "c1766f84dd40975c1f5b1bbe6680a134b10946f7ee65390f9b5b58f2c0cc9a37"
+      },
+      {
+        "path": "dashboard/src/components/LazyLoadBoundary.tsx",
+        "bytes": 1345,
+        "sha256": "a9daf35cb46f04543308eb5054ae0bb15cb67f988d2b98119c18f1070896fa9a"
+      }
+    ],
+    "all_15_direct_hashes_stable": true
+  },
+  "original_css": {
+    "path": "/private/tmp/apexload-pages-before-access-css-split-20261005.css",
+    "sha256": "26978144fa9f71cc011e4085e0e367d57f8206ca6f590419f186f130e669bf43",
+    "bytes": 194456
+  },
+  "analysis": {
+    "path": "/private/tmp/apexload-access-css-static-analysis-20261005.json",
+    "sha256": "16e9cade8a2fff1bdd3bf1d9dea4340ff71fa27f22493d7ee7615e145b62c7d4",
+    "method": "Independent pure PostCSS AST parse of preserved original and frozen two stylesheets plus TypeScript AST class/import scan. This is read-only analysis, not a unit/browser/bundle execution gate.",
+    "tsx_files_scanned": 360,
+    "tsx_scan_hashes_stable": true,
+    "rules": {
+      "original": 1518,
+      "pureAccessMoved": 169,
+      "mixedAccessClone": 1,
+      "retained": 1349,
+      "lazyAccess": 170,
+      "retainedExact": true,
+      "accessExact": true,
+      "expectedAccessASTSHA": "5d272f68a439f703ebad1eb97e30031d71162af9451ea114c74443a98fdc01ea",
+      "actualAccessASTSHA": "5d272f68a439f703ebad1eb97e30031d71162af9451ea114c74443a98fdc01ea",
+      "mixedAccessRetained": [
+        [
+          ".swagger-docs-access-filter",
+          [],
+          [
+            [
+              "justify-content",
+              "end",
+              false
+            ]
+          ]
+        ],
+        [
+          ".swagger-access-badge",
+          [],
+          [
+            [
+              "display",
+              "inline-flex",
+              false
+            ],
+            [
+              "align-items",
+              "center",
+              false
+            ],
+            [
+              "justify-content",
+              "center",
+              false
+            ],
+            [
+              "min-height",
+              "24px",
+              false
+            ],
+            [
+              "border-radius",
+              "999px",
+              false
+            ],
+            [
+              "border",
+              "1px solid var(--border)",
+              false
+            ],
+            [
+              "padding",
+              "3px 9px",
+              false
+            ],
+            [
+              "color",
+              "var(--text-secondary)",
+              false
+            ],
+            [
+              "font-size",
+              "11px",
+              false
+            ],
+            [
+              "font-weight",
+              "800",
+              false
+            ],
+            [
+              "white-space",
+              "nowrap",
+              false
+            ]
+          ]
+        ],
+        [
+          ".swagger-access-public",
+          [],
+          [
+            [
+              "background",
+              "color-mix(in srgb, #14b8a6 12%, var(--bg-card))",
+              false
+            ],
+            [
+              "border-color",
+              "color-mix(in srgb, #14b8a6 40%, var(--border))",
+              false
+            ]
+          ]
+        ],
+        [
+          ".swagger-access-available",
+          [],
+          [
+            [
+              "background",
+              "color-mix(in srgb, var(--success, #16a34a) 12%, var(--bg-card))",
+              false
+            ],
+            [
+              "border-color",
+              "color-mix(in srgb, var(--success, #16a34a) 38%, var(--border))",
+              false
+            ]
+          ]
+        ],
+        [
+          ".swagger-access-restricted",
+          [],
+          [
+            [
+              "background",
+              "color-mix(in srgb, #dc2626 10%, var(--bg-card))",
+              false
+            ],
+            [
+              "border-color",
+              "color-mix(in srgb, #dc2626 32%, var(--border))",
+              false
+            ]
+          ]
+        ],
+        [
+          ".swagger-access-muted",
+          [],
+          [
+            [
+              "background",
+              "var(--bg-surface)",
+              false
+            ],
+            [
+              "color",
+              "var(--text-muted)",
+              false
+            ]
+          ]
+        ],
+        [
+          ".api-guide-hero,.api-guide-mcp-grid,.swagger-docs-hero,.swagger-docs-controls,.swagger-detail-grid,.access-workspace,.access-user-management,.access-preset-grid",
+          [
+            [
+              "media",
+              "(max-width: 980px)"
+            ]
+          ],
+          [
+            [
+              "grid-template-columns",
+              "1fr",
+              false
+            ]
+          ]
+        ],
+        [
+          ".swagger-access-badge",
+          [
+            [
+              "media",
+              "(max-width: 980px)"
+            ]
+          ],
+          [
+            [
+              "grid-column",
+              "2",
+              false
+            ],
+            [
+              "justify-self",
+              "flex-start",
+              false
+            ]
+          ]
+        ],
+        [
+          ".swagger-access-badge",
+          [
+            [
+              "media",
+              "(max-width: 640px)"
+            ]
+          ],
+          [
+            [
+              "grid-column",
+              "auto",
+              false
+            ]
+          ]
+        ],
+        [
+          ".settings-commitments .access-data-table",
+          [],
+          [
+            [
+              "min-width",
+              "680px",
+              false
+            ],
+            [
+              "width",
+              "100%",
+              false
+            ]
+          ]
+        ],
+        [
+          ".settings-main .access-data-table pre,.monitor-body .access-data-table pre",
+          [],
+          [
+            [
+              "max-width",
+              "320px",
+              false
+            ],
+            [
+              "white-space",
+              "pre-wrap",
+              false
+            ],
+            [
+              "overflow-wrap",
+              "anywhere",
+              false
+            ]
+          ]
+        ],
+        [
+          ":is(.access-users-table, .access-accounts-table) :is(th, td):first-child",
+          [],
+          [
+            [
+              "position",
+              "sticky",
+              false
+            ],
+            [
+              "left",
+              "0",
+              false
+            ],
+            [
+              "background",
+              "var(--bg-secondary)",
+              false
+            ],
+            [
+              "z-index",
+              "2",
+              false
+            ],
+            [
+              "max-width",
+              "220px",
+              false
+            ]
+          ]
+        ],
+        [
+          ":is(.access-users-table, .access-accounts-table) :is(th, td):last-child",
+          [],
+          [
+            [
+              "position",
+              "sticky",
+              false
+            ],
+            [
+              "right",
+              "0",
+              false
+            ],
+            [
+              "background",
+              "var(--bg-secondary)",
+              false
+            ],
+            [
+              "z-index",
+              "2",
+              false
+            ],
+            [
+              "box-shadow",
+              "-2px 0 0 var(--border)",
+              false
+            ]
+          ]
+        ],
+        [
+          ":is(.access-users-table, .access-accounts-table) th:is(:first-child, :last-child)",
+          [],
+          [
+            [
+              "z-index",
+              "3",
+              false
+            ]
+          ]
+        ],
+        [
+          ":is(.access-users-table, .access-accounts-table) :is(th, td):first-child",
+          [
+            [
+              "media",
+              "(max-width: 760px)"
+            ]
+          ],
+          [
+            [
+              "max-width",
+              "130px",
+              false
+            ]
+          ]
+        ]
+      ]
+    },
+    "actual_consumers": [
+      {
+        "path": "dashboard/src/components/AccessIssuedKeyModal.tsx",
+        "imports": [
+          "./Access.css"
+        ]
+      },
+      {
+        "path": "dashboard/src/components/AccessNavigation.tsx",
+        "imports": [
+          "./Access.css"
+        ]
+      },
+      {
+        "path": "dashboard/src/components/AccessPage.tsx",
+        "imports": [
+          "./Access.css"
+        ]
+      },
+      {
+        "path": "dashboard/src/components/AccessUsagePanel.tsx",
+        "imports": [
+          "./Access.css"
+        ]
+      },
+      {
+        "path": "dashboard/src/components/AuditEventTable.tsx",
+        "imports": [
+          "./Access.css"
+        ]
+      },
+      {
+        "path": "dashboard/src/components/CapacityCommitments.tsx",
+        "imports": [
+          "./Access.css"
+        ]
+      }
+    ]
+  },
+  "additional_related_inputs_snapshot": [
+    {
+      "path": "dashboard/src/components/archiveResourceInspectorOwner.ts",
+      "bytes": 1646,
+      "sha256": "c371f27439544b636fc9da1e709c208cbdc3f9d7e6176043ba479be473bbc9e3"
+    },
+    {
+      "path": "dashboard/src/components/useBrowserResourcePage.ts",
+      "bytes": 2993,
+      "sha256": "76d4a5474e05f4af15515d4b2a32a1f6b2614e3d5499e6b6aa8a643a885f3be9"
+    },
+    {
+      "path": "dashboard/src/components/TestExecutionArchive.tsx",
+      "bytes": 127337,
+      "sha256": "16e6cb443e2911d83487c2510e4f7c28d49ce41e3bf550edd529b98287da9e4b"
+    },
+    {
+      "path": "dashboard/src/components/BrowserResourceInspector.tsx",
+      "bytes": 10043,
+      "sha256": "ead4379ab6a827f8869abf2cbe7a6447c833ab5712f86421a9f184e7df6c2a4d"
+    },
+    {
+      "path": "dashboard/src/App.tsx",
+      "bytes": 137314,
+      "sha256": "635e8f4fb51ff42039db2336c22fc625f48652f371adb18792e3783c923fbbb2"
+    },
+    {
+      "path": "dashboard/scripts/chunk-strategy.mjs",
+      "bytes": 2929,
+      "sha256": "e4678f2a5df3e11d5a36163a96171abc437549b136da29ca78b035b6eb7898ed"
+    },
+    {
+      "path": "dashboard/src/viteChunkStrategy.test.ts",
+      "bytes": 5642,
+      "sha256": "94196aa09989da0f523e36bd80cf27d8e2be4428d2e60f3f82c8f9522c17ed7c"
+    },
+    {
+      "path": "dashboard/scripts/check-bundle-budget.mjs",
+      "bytes": 10040,
+      "sha256": "53c2bfad7b36854e67a2ac0d12175c3d51bb29c146393e3d75862343b953cdf8"
+    }
+  ],
+  "reviewed_semantics": [
+    "All 169 pure .access-* original rules moved with exact selector order, media ancestry, declaration order/value/important. All 1349 retained rules match original in exact order. One mixed max-width 980px shared rule stays global and is cloned for its three access selectors at original relative ordering in Access.css. Lazy access AST hash equals the independently derived 5d272f68 fixture fingerprint.",
+    "Mixed Swagger/filter/status styles, settings and monitor descendant overrides, and sticky-table :is selectors remain global. Their more-specific override selectors remain compatible with moved access base rules; later full/narrow access overrides retain original relative order.",
+    "Actual TSX string/template class consumers scanned across all dashboard/src, rather than matching the substring access-. Six exact consumers have one ./Access.css import each. SwaggerDocsPage has only swagger-* class names and remains unchanged without the unnecessary import.",
+    "Access.css is not imported at App root. Each shared actual access widget brings its styles when used outside AccessPage. Vite lazy-route CSS loading remains a final build/browser prerequisite, not inferred acceptance from AST equivalence.",
+    "Resource inspector module is lazy and reached only from open disclosure with a valid paired canonical run/project/report owner. Owner key remains synchronous source identity reset. Suspense fallback and rejected-module LazyLoadBoundary are inside the optional disclosure, preserving the containing archive report and close control.",
+    "Failure test gates/rejects the actual module boundary and asserts containing report remains mounted, local alert displayed, no resource read and close clears local failure. Pending-chunk test proves no eager import/read, close and run-change retire pending disclosure, completion cannot resurrect a stale read and new owner opens actual inspector/read hook once.",
+    "Existing owner tests now await the actual lazy module inside act for reads; they preserve no-read invalid ownership oracles and equivalent refresh vs source/run/project retirement assertions. No assertion weakening or route-only substitute found.",
+    "Existing read hook cleanup and generation/ABA protection prevent previously resolved custom-loader promises from publishing after scope retirement. The new local boundary does not confer source authority or alter server authorization."
+  ],
+  "qualification_limits": [
+    "Root owns target unit/lint/type/browser/bundle execution; this review does not claim those results.",
+    "Final deterministic bundle must verify all aggregate/per-asset/route and forbidden-import caps; measured candidate size not yet inferred here.",
+    "Final dev-admin/local-auth workflows and full dashboard/Go/docs/staging gates remain required at parent scope.",
+    "No newly implemented aggregate budget edit was available in this freeze; previous conditional calibration review remains separate."
+  ]
+}

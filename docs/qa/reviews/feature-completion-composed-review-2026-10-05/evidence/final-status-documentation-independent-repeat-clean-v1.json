@@ -1,0 +1,224 @@
+{
+  "schema": "apexload.qa.final-status-documentation-independent-repeat.v1",
+  "reviewed_at_utc": "2026-10-06T03:11:31.507613+00:00",
+  "status": "clean-exact-final-doc-repeat",
+  "scope": "Read-only repeat of9current documents (ROADMAP/SPEC/INDEX/composedREADME+5componentREADME), five original checkpoint files and final-fix/supplement/GREEN2 ledger metadata. Existing completed gate metadata and controlled counts verified; no tests/builds/source/guide/UI/generated edits, staging/cache cleanup or private capture/trace bodies.",
+  "findings": [],
+  "input_bookends": {
+    "count": 17,
+    "before": {
+      "docs/ROADMAP.md": "443a60881262d0ac8005eddbbd993052d73ddb8f3b9980822dc40514d79568d1",
+      "docs/FEATURE_COMPLETION_SPEC.md": "93e46ba6300e62c584a20f389013bf36879e39c57c17d97fa0060704b7c50a21",
+      "docs/INDEX.md": "33c0363c936047bba7f18d0688b4df98f373992c92f122d7231de4e19db7e199",
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/README.md": "8b7eaca52210fb4775fc7001d28eacac6212e4255422b0bf0357f1d229bddac5",
+      "docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/README.md": "a1863ef52275e80cf98c0de9b03e9062fad55859734318034d0a0b0b06547202",
+      "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/README.md": "a184b3d3577a179009396c47d6a3662dcddd75034f3e770b1d54783b28fb0d83",
+      "docs/qa/reviews/feature-completion-browser-document-finality-2026-10-05/README.md": "9438f66687999738c7ee1271bdbf8999643707192036e43c6cce3009ed26a629",
+      "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/README.md": "cabafdb157fe8f2650176aa77faaa0aecd8e7c651601685bff46ad0550fc0c9a",
+      "docs/qa/reviews/feature-completion-scenario-source-admission-2026-10-05/README.md": "78e1e6b9231c0cfe052eb2b2b8cb0bef3b01ee3b9cf4af53e68d5acd86f8a450",
+      "docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/README.component-checkpoint.txt": "c46aee0b70ce0505776508f7685a3f8eb6be92ac270f590aca75cc1739613456",
+      "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/README.component-checkpoint.txt": "7a0180fff6de9b1b5b005af6db0bdc93cac734b6d23492834410828f0845540e",
+      "docs/qa/reviews/feature-completion-browser-document-finality-2026-10-05/README.component-checkpoint.txt": "8b7cee6eacd0267dea5a99f385f9674e3f569ae425a118655be78c5af181fd28",
+      "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/README.component-checkpoint.txt": "11d508198aec639c7517db14576d2059b95f7f814f92f0e8bb994f76bdd03e18",
+      "docs/qa/reviews/feature-completion-scenario-source-admission-2026-10-05/README.component-checkpoint.txt": "9333bfb0c2544c23ed0ae19b915dbe166e926ab175a52773bae8e565ec19555a",
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/final-status-documentation-fix.json": "4e3f9ecaa2a4340aa2d71e0081fa9b1e1f99d61fc076909c9b800f4354337a0d",
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/final-status-documentation-supplement.json": "c9089bb36645fcf71056924cd2fbe4c95b04892244926625d991e725a606ef0f",
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/full-go-2-final-green-skip-ledger.json": "917a3e16d56f4d30a84b4c00cac846be7d23004b5e2417bd985caffcb10e45bc"
+    },
+    "after": {
+      "docs/ROADMAP.md": "443a60881262d0ac8005eddbbd993052d73ddb8f3b9980822dc40514d79568d1",
+      "docs/FEATURE_COMPLETION_SPEC.md": "93e46ba6300e62c584a20f389013bf36879e39c57c17d97fa0060704b7c50a21",
+      "docs/INDEX.md": "33c0363c936047bba7f18d0688b4df98f373992c92f122d7231de4e19db7e199",
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/README.md": "8b7eaca52210fb4775fc7001d28eacac6212e4255422b0bf0357f1d229bddac5",
+      "docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/README.md": "a1863ef52275e80cf98c0de9b03e9062fad55859734318034d0a0b0b06547202",
+      "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/README.md": "a184b3d3577a179009396c47d6a3662dcddd75034f3e770b1d54783b28fb0d83",
+      "docs/qa/reviews/feature-completion-browser-document-finality-2026-10-05/README.md": "9438f66687999738c7ee1271bdbf8999643707192036e43c6cce3009ed26a629",
+      "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/README.md": "cabafdb157fe8f2650176aa77faaa0aecd8e7c651601685bff46ad0550fc0c9a",
+      "docs/qa/reviews/feature-completion-scenario-source-admission-2026-10-05/README.md": "78e1e6b9231c0cfe052eb2b2b8cb0bef3b01ee3b9cf4af53e68d5acd86f8a450",
+      "docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/README.component-checkpoint.txt": "c46aee0b70ce0505776508f7685a3f8eb6be92ac270f590aca75cc1739613456",
+      "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/README.component-checkpoint.txt": "7a0180fff6de9b1b5b005af6db0bdc93cac734b6d23492834410828f0845540e",
+      "docs/qa/reviews/feature-completion-browser-document-finality-2026-10-05/README.component-checkpoint.txt": "8b7cee6eacd0267dea5a99f385f9674e3f569ae425a118655be78c5af181fd28",
+      "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/README.component-checkpoint.txt": "11d508198aec639c7517db14576d2059b95f7f814f92f0e8bb994f76bdd03e18",
+      "docs/qa/reviews/feature-completion-scenario-source-admission-2026-10-05/README.component-checkpoint.txt": "9333bfb0c2544c23ed0ae19b915dbe166e926ab175a52773bae8e565ec19555a",
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/final-status-documentation-fix.json": "4e3f9ecaa2a4340aa2d71e0081fa9b1e1f99d61fc076909c9b800f4354337a0d",
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/final-status-documentation-supplement.json": "c9089bb36645fcf71056924cd2fbe4c95b04892244926625d991e725a606ef0f",
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/full-go-2-final-green-skip-ledger.json": "917a3e16d56f4d30a84b4c00cac846be7d23004b5e2417bd985caffcb10e45bc"
+    },
+    "changed_paths": [],
+    "start_receipt_sha256": "5fef2950a25642eb62b220541c20ad8df014e99e72292f80ea29e9c6450fa166"
+  },
+  "closure_of_preserved_red_findings": {
+    "original_receipt_path": "/private/tmp/apexload-final-docs-packaging-independent-review-red-v1-20261005.json",
+    "original_receipt_sha256": "268f9a50ddb7cc148589ae2b8165908a33f3ac5e3a1d8f0095525a4b35afbf5a",
+    "DOC-PRIVATE-ADMISSION-STATUS": "Closed:ROADMAP63/67/75 and SPEC300/302/306 distinguish implemented/qualified private source admission from unavailable public scenario ETags/projections/preconditions/editor recovery and remaining AUTH1-3.",
+    "DOC-PREMATURE-FINAL-QUALIFICATION": "Closed:SPEC166 now names completed scoped source/test qualification backed by physically joined GREEN2/full dashboard2, with broader BE/platform/provider/overhead requirements explicitly open.",
+    "DOC-SCOPED-CHECKS-STALE-PENDING": "Closed:ROADMAP75/77 and composedREADME identify completed named affected/PG/SDK/generated/bundle/full gates while retaining original failures and unrun profiles/acceptance."
+  },
+  "final_fix_hash_chain": {
+    "fix_receipt_sha256": "4e3f9ecaa2a4340aa2d71e0081fa9b1e1f99d61fc076909c9b800f4354337a0d",
+    "supplement_receipt_sha256": "c9089bb36645fcf71056924cd2fbe4c95b04892244926625d991e725a606ef0f",
+    "supplement_before_hashes_match_fix_after_hashes": true,
+    "current8changed_document_hashes_match_effective_after_hashes": true,
+    "INDEX_unchanged_from_prior_clean_review": true,
+    "GREEN2_ledger_exact_private_review_hash_preserved": true
+  },
+  "historical_checkpoints": [
+    {
+      "path": "docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "c46aee0b70ce0505776508f7685a3f8eb6be92ac270f590aca75cc1739613456",
+      "matches_pre_edit_original_hash": true,
+      "original_body_preserved_in_current_README": true,
+      "current_delta": "Exactly two inserted lines: blank plus scoped current-qualification paragraph and historical checkpoint link."
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "7a0180fff6de9b1b5b005af6db0bdc93cac734b6d23492834410828f0845540e",
+      "matches_pre_edit_original_hash": true,
+      "original_body_preserved_in_current_README": true,
+      "current_delta": "Exactly two inserted lines: blank plus scoped current-qualification paragraph and historical checkpoint link."
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-finality-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "8b7cee6eacd0267dea5a99f385f9674e3f569ae425a118655be78c5af181fd28",
+      "matches_pre_edit_original_hash": true,
+      "original_body_preserved_in_current_README": true,
+      "current_delta": "Exactly two inserted lines: blank plus scoped current-qualification paragraph and historical checkpoint link."
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "11d508198aec639c7517db14576d2059b95f7f814f92f0e8bb994f76bdd03e18",
+      "matches_pre_edit_original_hash": true,
+      "original_body_preserved_in_current_README": true,
+      "current_delta": "Exactly two inserted lines: blank plus scoped current-qualification paragraph and historical checkpoint link."
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-scenario-source-admission-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "9333bfb0c2544c23ed0ae19b915dbe166e926ab175a52773bae8e565ec19555a",
+      "matches_pre_edit_original_hash": true,
+      "original_body_preserved_in_current_README": true,
+      "current_delta": "Exactly two inserted lines: blank plus scoped current-qualification paragraph and historical checkpoint link."
+    }
+  ],
+  "completed_receipts_metadata": {
+    "composed-source-publication-api-normal-1.json": {
+      "sha256": "6450ca776c64a7bebcc315abb2b0701587b06a6ca873a3a298b0be3ce6d18b93",
+      "exit_code": 0,
+      "duration_seconds": 17.381,
+      "log_sha256": "b0c68d72bfc281dd1ab88aae1257675d29e77aca7a7725d998c4cba43868f2ca",
+      "source_changed_paths": []
+    },
+    "composed-source-publication-api-race-2.json": {
+      "sha256": "395b65609a0bfb5e2a67ddab960259a71b4d09867873a63474c49cb2347855ae",
+      "exit_code": 0,
+      "duration_seconds": 330.722,
+      "log_sha256": "c8b496f8504486559776abafd6b1e4fc218677e50a8b4ebf18f1c742bbab3633",
+      "source_changed_paths": []
+    },
+    "composed-postgres-affected-1.json": {
+      "sha256": "611993dd3dd8a1fab9bb5d4762692462cd0b7221a6fa4c9ee6acb08385045e58",
+      "exit_code": 0,
+      "duration_seconds": 113.28,
+      "log_sha256": "6481b825ef434756ab3618da3fc60c6269474a299009b1a8c97651643b2850e9",
+      "source_changed_paths": []
+    },
+    "composed-owned-sdk-contract-race-1.json": {
+      "sha256": "4c09ff6b159d0b45ec96b19254e1043b5813a9682f89123cf6e335b0946bcf01",
+      "exit_code": 0,
+      "duration_seconds": 3.898,
+      "log_sha256": "fc0b703a6b2abece984a778fe8bdb9265ccf7f1db007ed40eed7ea56ab1a3283",
+      "source_changed_paths": []
+    },
+    "composed-route-contract-focused-2.json": {
+      "sha256": "ebb3d8d6f0f1446d5b3d26ad52cb9a9e207ed66a5ffdd18e275df0550071a4ea",
+      "exit_code": 0,
+      "duration_seconds": 19.662,
+      "log_sha256": "53ff750136a9c42391155a77e120712899b3e9cfead76d1746475eecb7e9fadc",
+      "source_changed_paths": []
+    },
+    "composed-full-go-2.json": {
+      "sha256": "2414c442fe38b9c2ed8cec6457a296ac616eb419434d174612c9a530d0d1e129",
+      "exit_code": 0,
+      "duration_seconds": 1312.046,
+      "log_sha256": "70c51aa0a7f07e5057f9f5d0a9ba1af91fe74778dafffbe7aa78a3944305eed5",
+      "source_changed_paths": []
+    },
+    "composed-dashboard-full-cycle-2.json": {
+      "sha256": "f74e2970b743546a188c5b3521238ca04a3eb7939476becb4397baeebd3caa3a",
+      "exit_code": 0,
+      "duration_seconds": 2586.287,
+      "log_sha256": "e6fbae411a87bf6db9cb1d31d28a7ffdece6341d8b421d354991223301e38d83",
+      "source_changed_paths": []
+    },
+    "composed-generate-api-1.json": {
+      "sha256": "f864976484b732a30bc44bde11aaace7cd835d5f3f10400831c9cfecda856220",
+      "exit_code": 0,
+      "duration_seconds": 48.439,
+      "log_sha256": "fd343376a624d0fe1d7429363a13a2f9db5f25daa2e2de536b20e336639d5b46",
+      "source_changed_paths": [
+        "dashboard/src/types/generated/openapi.ts",
+        "docs/api-endpoint-catalog.json",
+        "docs/swagger.yaml",
+        "pkg/api/apidocs/swagger.yaml"
+      ]
+    },
+    "composed-generate-m1-1.json": {
+      "sha256": "a1b004c97c4ad819c601e9ff3901475069179d21e6eafc849d1bb36e191813f8",
+      "exit_code": 0,
+      "duration_seconds": 138.991,
+      "log_sha256": "b63a0e4b269691581c75bacf21ef427a59e5074cf9d15bd5c9dced2e94a4002d",
+      "source_changed_paths": []
+    }
+  },
+  "count_checks": {
+    "affected_normal_top_level_passes": 115,
+    "affected_normal_skips_failures": 0,
+    "affected_race_two_repeats_top_level_passes": 230,
+    "affected_race_skips_failures": 0,
+    "actual_PostgreSQL_named_cases": 10,
+    "Go2_raw_skip_events": 34,
+    "Go2_no_test_file_packages": 7,
+    "Go2_test_subtest_skip_events": 27,
+    "Go2_intentional_non_script_helper_entries": 5,
+    "dashboard_unit_summary": [
+      "531 files passed",
+      "6127 tests passed"
+    ],
+    "dashboard_auth_JUnit": [
+      {
+        "label": "dev-admin",
+        "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/dev-admin/playwright-junit.xml",
+        "sha256": "385c79e69515c1d0e561d086271b5e192eb64a1d9cc71e18ec9e8e25cadd0592",
+        "counts": {
+          "tests": 262,
+          "skipped": 5,
+          "failures": 0,
+          "errors": 0,
+          "passed": 257
+        }
+      },
+      {
+        "label": "local-auth",
+        "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/playwright/full-cycle-2/local-auth/playwright-junit.xml",
+        "sha256": "1319eeef79f9a258f397ec028a6bd04edfbb40c22ce7c7f790a6de466dca7a0d",
+        "counts": {
+          "tests": 198,
+          "skipped": 1,
+          "failures": 0,
+          "errors": 0,
+          "passed": 197
+        }
+      }
+    ],
+    "four_dev_admin_restricted_persona_skips_pass_in_local_auth": true,
+    "private_LoadRunner_acceptance_skipped_in_both_profiles_remains_unqualified": true
+  },
+  "links": {
+    "local_file_targets": 247,
+    "missing": [],
+    "detail_path": "/private/tmp/apexload-final-status-doc-repeat-links-20261005.json",
+    "detail_sha256": "264a569e817c84309e72994e8951fcae29e81cf13a18d1b02323373f5a9bf1f9",
+    "limit": "File target resolution inspected here; parent repository documentation gate separately owns full anchor/policy/package-inventory validation."
+  },
+  "scope_judgment": "New status notes accurately describe the reviewed implementation and exact current source/test outcomes, with explicit default-profile skips and independently scoped10-case PG/SDK proof. Historical component pending/failure text is clearly labelled as pre-composition, preserved byte-for-byte and linked. No complete AUTH/BE/BI/TEL/NA program, unrun live-provider, multi-platform, native scale/restart or general HAR crash/aggregate-quota/transfer/export acceptance is promoted.",
+  "remaining": "Parent final docs gate, completed staging/provenance audit, commit and cache cleanup are still separate; this static review does not perform or predeclare those steps."
+}

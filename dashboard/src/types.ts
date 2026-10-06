@@ -776,6 +776,9 @@ export interface RunContinuityStatus {
 }
 
 export interface TestSummary {
+  /** Safe configured capture identities; credentials are never part of this projection. */
+  elk_capture?: { connection_id: string; connection_name?: string }
+  dynatrace_capture?: { connection_id: string; connection_name?: string }
   monitor_bindings?: { revision?: number; sources: import('./types/appdynamics').MonitorBinding[] }
   activity?: import("./types/objectActivity").ObjectActivitySummary
   termination_mode?: "duration" | "iterations"
@@ -2048,6 +2051,12 @@ export interface ScenarioDraftGroup {
 }
 
 export interface ScenarioDraftRevisionContext {
+  /** Initial source presence distinguishes an authored empty replacement from inheritance. */
+  sourceGoalConfigPresent?: boolean
+  sourceRuntimeSettingsPresent?: boolean
+  sourceStartDelayPresent?: boolean
+  elkConnectionId?: string
+  dynatraceConnectionId?: string
   monitorBindings?: import('./types/appdynamics').MonitorBinding[]
   sourceTestId: string
   applicationId?: string

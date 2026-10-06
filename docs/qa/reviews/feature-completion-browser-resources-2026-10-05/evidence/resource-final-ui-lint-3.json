@@ -1,0 +1,52 @@
+{
+  "qualification_scope": "dashboard-source-and-bundled-guides-only; backend and native acquisition qualify separately",
+  "command": [
+    "npm",
+    "--prefix",
+    "dashboard",
+    "run",
+    "lint"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/kafka-owned-seek/Project_Stormrunner",
+  "started_at": "2026-10-05T16:55:44.306435+00:00",
+  "finished_at": "2026-10-05T16:56:03.555700+00:00",
+  "duration_seconds": 19.249,
+  "exit_code": 0,
+  "status": "passed",
+  "raw_log": "resource-final-ui-lint-3.stdout.txt",
+  "raw_log_bytes": 62,
+  "raw_log_sha256": "bf7ea878e62d715055d29dd6955852b7c24f575ba3d1aa177c99df05cc0a6eb6",
+  "source_before": {
+    "file": "frontend-source-inventory-c09e44f7d19bdc048df2cb44ee63c4af42361663172f4314deeb123a7634f331.json",
+    "sha256": "c09e44f7d19bdc048df2cb44ee63c4af42361663172f4314deeb123a7634f331",
+    "file_count": 1485
+  },
+  "source_after": {
+    "file": "frontend-source-inventory-c09e44f7d19bdc048df2cb44ee63c4af42361663172f4314deeb123a7634f331.json",
+    "sha256": "c09e44f7d19bdc048df2cb44ee63c4af42361663172f4314deeb123a7634f331",
+    "file_count": 1485
+  },
+  "source_changed": false,
+  "embed_before": {
+    "file": "frontend-embed-inventory-49a0696f64980cad2ac258053a1a2abc8b76151815611fc5c4dfa6f94b0c2241.json",
+    "sha256": "49a0696f64980cad2ac258053a1a2abc8b76151815611fc5c4dfa6f94b0c2241",
+    "file_count": 248
+  },
+  "embed_after": {
+    "file": "frontend-embed-inventory-49a0696f64980cad2ac258053a1a2abc8b76151815611fc5c4dfa6f94b0c2241.json",
+    "sha256": "49a0696f64980cad2ac258053a1a2abc8b76151815611fc5c4dfa6f94b0c2241",
+    "file_count": 248
+  },
+  "helper_sha256": "a502e0e4694aa16275ef613ec8e96d23fdf95475ae48153644994060c18a8ceb",
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1",
+    "APEXLOAD_E2E_PORT": "18471",
+    "APEXLOAD_E2E_PROFILE": null,
+    "APEXLOAD_E2E_OUTPUT_ROOT": null
+  }
+}

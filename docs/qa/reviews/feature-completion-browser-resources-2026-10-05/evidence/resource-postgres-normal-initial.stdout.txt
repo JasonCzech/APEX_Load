@@ -1,0 +1,29 @@
+=== RUN   TestPostgresBrowserResourceExactIdentityFreshnessAndCancellation
+    browser_resource_postgres_integration_test.go:49: verified cleanup of exact owned PostgreSQL resource schema apexload_browser_resources_1791221610007592000
+--- PASS: TestPostgresBrowserResourceExactIdentityFreshnessAndCancellation (1.02s)
+=== RUN   TestPostgresBrowserResourceCursorKeyCASOneWinnerAndReopen
+    browser_resource_postgres_integration_test.go:49: verified cleanup of exact owned PostgreSQL resource schema apexload_browser_resources_1791221611030891000
+--- PASS: TestPostgresBrowserResourceCursorKeyCASOneWinnerAndReopen (1.13s)
+=== RUN   TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation
+=== RUN   TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation/user_and_bindings
+=== RUN   TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation/service_account
+=== RUN   TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation/project
+=== RUN   TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation/category
+=== RUN   TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation/repository
+=== RUN   TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation/generation
+=== RUN   TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation/exact_session
+=== NAME  TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation
+    browser_resource_postgres_integration_test.go:49: verified cleanup of exact owned PostgreSQL resource schema apexload_browser_resources_1791221612163400000
+--- PASS: TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation (0.87s)
+    --- PASS: TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation/user_and_bindings (0.03s)
+    --- PASS: TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation/service_account (0.03s)
+    --- PASS: TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation/project (0.03s)
+    --- PASS: TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation/category (0.03s)
+    --- PASS: TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation/repository (0.03s)
+    --- PASS: TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation/generation (0.03s)
+    --- PASS: TestPostgresBrowserResourceCurrentAuthProjectionAndOccupiedCancellation/exact_session (0.03s)
+=== RUN   TestPostgresBrowserResourceRoleOverflowIsExplicitRefusal
+    browser_resource_postgres_integration_test.go:49: verified cleanup of exact owned PostgreSQL resource schema apexload_browser_resources_1791221613035868000
+--- PASS: TestPostgresBrowserResourceRoleOverflowIsExplicitRefusal (1.52s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/storage	5.050s

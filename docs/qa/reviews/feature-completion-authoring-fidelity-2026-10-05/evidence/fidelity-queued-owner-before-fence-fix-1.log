@@ -1,0 +1,90 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run --run src/components/useQueuedRunRevision.test.tsx
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard
+
+ ❯ src/components/useQueuedRunRevision.test.tsx (12 tests | 2 failed) 169ms
+     × does not adopt a late read after an A→B→A scope switch 18ms
+     × permission revocation and restoration clears the old owner and late navigation 27ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/useQueuedRunRevision.test.tsx > queued run revision owner > does not adopt a late read after an A→B→A scope switch
+AssertionError: expected { id: 'queued-a', …(8) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "created_at": "2026-10-05T00:00:00Z",
+  "duration": "1m",
+  "groups": [
+    {
+      "name": "orders",
+      "script_id": "script",
+      "vusers": 1,
+    },
+  ],
+  "id": "queued-a",
+  "name": "Queued A",
+  "project_id": "project-a",
+  "runtime_settings": {
+    "results": {
+      "property_analytics": [
+        {
+          "extraction": "category",
+          "name": "category",
+          "values": [
+            "original",
+          ],
+        },
+      ],
+    },
+  },
+  "status": "QUEUED",
+  "total_vusers": 1,
+}
+
+ ❯ src/components/useQueuedRunRevision.test.tsx:67:30
+     65|     await render({ project: 'project-b' }); await render()
+     66|     await act(async () => resolve(source()))
+     67|     expect(current.snapshot).toBeNull(); expect(current.loading).toBe(…
+       |                              ^
+     68|   })
+     69|   it('permission revocation and restoration clears the old owner and l…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/useQueuedRunRevision.test.tsx > queued run revision owner > permission revocation and restoration clears the old owner and late navigation
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      "late-copy",
+    ]
+
+
+Number of calls: 1
+
+ ❯ src/components/useQueuedRunRevision.test.tsx:73:63
+     71|     await render({ allowed: false }); await render()
+     72|     await act(async () => lateCreated('late-copy'))
+     73|     expect(current.snapshot).toBeNull(); expect(selected).not.toHaveBe…
+       |                                                               ^
+     74|   })
+     75|   it('closes on a source status change and rejects a stale modal respo…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 10 passed (12)
+   Start at  09:11:16
+   Duration  4.77s (transform 311ms, setup 256ms, import 255ms, tests 169ms, environment 3.43s)
+

@@ -1,0 +1,13 @@
+{
+  "at_utc": "2026-10-06T03:08:14.414317+00:00",
+  "docker_cli": "/usr/local/bin/docker",
+  "scope": "Read-only local Docker context/builder metadata; no credential/environment or application-data reads.",
+  "context_exit": 0,
+  "context": "desktop-linux",
+  "endpoint_exit": 0,
+  "local_unix_endpoint": true,
+  "server_exit": 0,
+  "server_version": "29.8.0",
+  "builders_exit": 1,
+  "builders": []
+}

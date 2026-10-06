@@ -1,0 +1,13 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run src/components/CreateTestModal.test.tsx src/components/CommandCenterQueuedRevision.test.tsx src/components/scenarioDraftUtils.test.ts src/components/scenarioFidelity.test.ts src/components/scenarioPayloadUtils.test.ts src/components/TestHub.test.tsx src/helpContent.test.ts src/hooks/NavigationGuardProvider.test.tsx
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard
+
+
+ Test Files  8 passed (8)
+      Tests  250 passed (250)
+   Start at  16:23:17
+   Duration  10.88s (transform 2.54s, setup 147ms, import 3.32s, tests 4.18s, environment 2.50s)
+

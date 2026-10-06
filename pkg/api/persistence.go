@@ -1443,6 +1443,7 @@ func storedScenarioToStorage(stored *StoredScenario) *storage.Scenario {
 		ID:               stored.ID,
 		RefKey:           stored.RefKey,
 		Name:             stored.Name,
+		WorkloadShapeID:  stored.WorkloadShapeID,
 		Duration:         stored.Duration,
 		StartDelay:       stored.StartDelay,
 		TerminationMode:  stored.TerminationMode,

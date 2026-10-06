@@ -1,0 +1,13 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run src/components/browserResourceEvidenceModel.test.ts src/components/browserResourcePageModel.test.ts src/components/useBrowserResourcePage.test.tsx src/components/BrowserResourceInspector.test.tsx src/components/ArchiveResourceInspectorDisclosure.test.tsx src/components/TestExecutionArchive.test.tsx src/hooks/api/useBrowserResourceApi.test.ts src/helpContent.test.ts
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/kafka-owned-seek/Project_Stormrunner/dashboard
+
+
+ Test Files  8 passed (8)
+      Tests  187 passed (187)
+   Start at  12:29:08
+   Duration  5.68s (transform 1.40s, setup 117ms, import 1.87s, tests 840ms, environment 2.16s)
+

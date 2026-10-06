@@ -1,0 +1,4 @@
+# github.com/jasonczech/apexload/pkg/protocol/browser
+pkg/protocol/browser/har_retirement_ledger_test.go:121:13: missing ',' in composite literal
+FAIL	github.com/jasonczech/apexload/pkg/protocol/browser [setup failed]
+FAIL

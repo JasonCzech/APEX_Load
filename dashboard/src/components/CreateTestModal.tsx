@@ -4,12 +4,12 @@ import type { MonitorBinding } from '../types/appdynamics'
 import DialogLayer from './ux/DialogLayer'
 import CaptureSelectionHelp from './CaptureSelectionHelp'
 import { captureSelectionNeedsReview, dynatraceCapabilities } from './captureConnectionModel'
-import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { DraftCapacityEstimate, DynatraceConnection, ELKConnection, ScenarioDraft, ScenarioDraftGroup, StoredScript, SystemInventoryGenerator, TestSummary } from '../types'
 import './CreateTestModal.css'
-import { parseDurationToSeconds } from '../utils/timeUtils'
+import { isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import CreateTestCapacityPreview from './CreateTestCapacityPreview'
 import CreateTestGoalSettings from './CreateTestGoalSettings'
 import CreateTestGroupsEditor from './CreateTestGroupsEditor'
@@ -19,7 +19,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { buildDefaultScenarioGroup, buildInitialScenarioDraft, scenarioDraftReducer, ScenarioDraftField, ScenarioDraftState } from './scenarioDraftUtils'
 import { buildCreateTestPayload } from './scenarioPayloadUtils'
 import DurationField from './DurationField'
-import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
+import { NavigationGuardRegisterContext, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { hasGoalModeConfiguration, validateGoalConfig, validateTransactionResponseTimeSLAOverrides } from './goalConfigValidation'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { effectiveGroupVUsers, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
@@ -44,13 +44,15 @@ type LoadProfilePoint = {
 export default function CreateTestModal({ scripts, projectId, folderId, onClose, onCreated, initialScenario, mode = 'create-queued-run' }: Props) {
   const api = useApi()
   const { runGuarded } = useNavigationGuardRunner()
+  const registerGuard = useContext(NavigationGuardRegisterContext)
+  const releaseOwnGuardRef = useRef<(() => void) | null>(null)
   const baselineSeconds = 5 * 60
   const [scenarioDraft, dispatchScenarioDraft] = useReducer(
     scenarioDraftReducer,
     buildInitialScenarioDraft(initialScenario, scripts),
   )
-  const baselineDraftRef = useRef(JSON.stringify(scenarioDraft))
   const submitDraftRef = useRef<() => Promise<boolean>>(async () => false)
+  const submitOperationRef = useRef<Promise<boolean> | null>(null)
   const modalDirtyRef = useRef(false)
   const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
   const [estimateLoading, setEstimateLoading] = useState(false)
@@ -65,16 +67,24 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const [dynatraceLoading, setDynatraceLoading] = useState(false)
   const [dynatraceError, setDynatraceError] = useState(false)
   const [elkConnections, setELKConnections] = useState<ELKConnection[]>([])
-  const [elkConnectionId, setELKConnectionId] = useState('')
+  const [elkConnectionId, setELKConnectionId] = useState(() => initialScenario?.revisionContext?.elkConnectionId ?? '')
   const [dynatraceConnections, setDynatraceConnections] = useState<DynatraceConnection[]>([])
-  const [dynatraceConnectionId, setDynatraceConnectionId] = useState('')
+  const [dynatraceConnectionId, setDynatraceConnectionId] = useState(() => initialScenario?.revisionContext?.dynatraceConnectionId ?? '')
   const [monitorBindings, setMonitorBindings] = useState<MonitorBinding[] | undefined>(() => initialScenario?.revisionContext?.monitorBindings?.map(binding => ({ ...binding })))
-  const baselineMonitorBindingsRef = useRef(JSON.stringify(monitorBindings))
+  const authoringFingerprint = JSON.stringify([scenarioDraft, monitorBindings, elkConnectionId, dynatraceConnectionId])
+  const latestAuthoringFingerprintRef = useRef(authoringFingerprint)
+  latestAuthoringFingerprintRef.current = authoringFingerprint
+  const baselineAuthoringFingerprintRef = useRef(authoringFingerprint)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const scenarioNameRef = useRef<HTMLInputElement | null>(null)
   const titleId = useId()
+  const mountedRef = useRef(false)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
-  const { name, duration, startDelay, scenarioMode, scriptShakeout, resourceBaseline, assignment, groups, goalConfig, runtimeSettings, revisionContext } = scenarioDraft
+  const { name, duration, terminationMode, startDelay, scenarioMode, scriptShakeout, resourceBaseline, assignment, groups, goalConfig, runtimeSettings, revisionContext } = scenarioDraft
   const isReviseMode = mode === 'revise-queued-run'
   const modalTitle = isReviseMode ? 'Create Revised Queued Run' : 'Create Queued Run'
   const submitLabel = isReviseMode ? 'Create Revised Copy' : 'Create Queued Run'
@@ -123,6 +133,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const footprint = draftEstimate?.footprint
   const hasGoalModeConfig = hasGoalModeConfiguration(goalConfig)
   const effectiveProjectId = revisionContext?.projectId ?? projectId
+  const captureProjectRef = useRef(effectiveProjectId)
   useEffect(() => {
     let active = true
     setCanManageConnections(false)
@@ -133,14 +144,22 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     }
     return () => { active = false }
   }, [api, effectiveProjectId])
-  useEffect(() => { setELKConnectionId(''); setDynatraceConnectionId(''); setELKConnections([]); setDynatraceConnections([]) }, [effectiveProjectId])
+  useEffect(() => {
+    if (captureProjectRef.current === effectiveProjectId) return
+    captureProjectRef.current = effectiveProjectId
+    setELKConnectionId('')
+    setDynatraceConnectionId('')
+    setELKConnections([])
+    setDynatraceConnections([])
+  }, [effectiveProjectId])
   const captureNeedsReview = captureSelectionNeedsReview(elkConnectionId, elkConnections, elkLoading, elkError) || captureSelectionNeedsReview(dynatraceConnectionId, dynatraceConnections, dynatraceLoading, dynatraceError)
 
   useEffect(() => {
     const listELKConnections = api.listELKConnections
     if (!effectiveProjectId || typeof listELKConnections !== 'function') {
       setELKConnections([])
-      setELKConnectionId('')
+      setELKLoading(false)
+      setELKError(Boolean(effectiveProjectId))
       return
     }
     let active = true
@@ -160,10 +179,10 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
   useEffect(() => {
     const list = api.listDynatraceConnections
-    if (!effectiveProjectId || typeof list !== 'function') { setDynatraceConnections([]); setDynatraceConnectionId(''); return }
+    if (!effectiveProjectId || typeof list !== 'function') { setDynatraceConnections([]); setDynatraceLoading(false); setDynatraceError(Boolean(effectiveProjectId)); return }
     let active = true
     setDynatraceLoading(true); setDynatraceError(false)
-    list(effectiveProjectId).then(result => { if (!active) return; const ready = result.connections.filter(connection => connection.status === 'ready'); setDynatraceConnections(ready);  }).catch(() => { if (active) { setDynatraceConnections([]); setDynatraceError(true) } }).finally(() => { if (active) setDynatraceLoading(false) })
+    list(effectiveProjectId).then(result => { if (!active) return; const ready = result.connections.filter(connection => (connection.legacy_capture_status ?? connection.status) === 'ready'); setDynatraceConnections(ready);  }).catch(() => { if (active) { setDynatraceConnections([]); setDynatraceError(true) } }).finally(() => { if (active) setDynatraceLoading(false) })
     return () => { active = false }
   }, [api, effectiveProjectId, captureRetry])
 
@@ -223,6 +242,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const buildPayload = () => buildCreateTestPayload({
     name,
     duration,
+    termination_mode: terminationMode,
     startDelay,
     scenarioMode,
     scriptShakeout,
@@ -235,6 +255,9 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     releaseId: revisionContext?.releaseId,
     scenarioId: revisionContext?.scenarioId,
     revisionSourceTestId: revisionContext?.sourceTestId,
+    sourceGoalConfigPresent: revisionContext?.sourceGoalConfigPresent,
+    sourceRuntimeSettingsPresent: revisionContext?.sourceRuntimeSettingsPresent,
+    sourceStartDelayPresent: revisionContext?.sourceStartDelayPresent,
     projectId: revisionContext?.projectId ?? projectId,
     folderId: revisionContext ? revisionContext.folderId : folderId,
     dataPools: revisionContext?.dataPools,
@@ -246,6 +269,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const buildEstimatePayload = useCallback(() => buildCreateTestPayload({
     name,
     duration,
+    termination_mode: terminationMode,
     startDelay,
     scenarioMode,
     scriptShakeout,
@@ -260,14 +284,17 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     releaseId: revisionContext?.releaseId,
     scenarioId: revisionContext?.scenarioId,
     revisionSourceTestId: revisionContext?.sourceTestId,
+    sourceGoalConfigPresent: revisionContext?.sourceGoalConfigPresent,
+    sourceRuntimeSettingsPresent: revisionContext?.sourceRuntimeSettingsPresent,
+    sourceStartDelayPresent: revisionContext?.sourceStartDelayPresent,
     projectId: revisionContext?.projectId ?? projectId,
     folderId: revisionContext ? revisionContext.folderId : folderId,
     dataPools: revisionContext?.dataPools,
     monitorBindings,
-  }), [assignment, duration, folderId, goalConfig, groups, monitorBindings, name, projectId, resourceBaseline, revisionContext, runtimeSettings, scenarioMode, scriptShakeout, startDelay])
+  }), [assignment, duration, folderId, goalConfig, groups, monitorBindings, name, projectId, resourceBaseline, revisionContext, runtimeSettings, scenarioMode, scriptShakeout, startDelay, terminationMode])
 
   useEffect(() => {
-    const canEstimate = Boolean(duration.trim()) && groups.every((group) => group.scriptId)
+    const canEstimate = (terminationMode === 'iterations' || Boolean(duration.trim())) && groups.every((group) => group.scriptId)
     if (!canEstimate) {
       setDraftEstimate(null)
       setEstimateError('')
@@ -300,7 +327,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [api, buildEstimatePayload, groups, duration])
+  }, [api, buildEstimatePayload, groups, duration, terminationMode])
 
   useEffect(() => {
     let cancelled = false
@@ -316,11 +343,15 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     }
   }, [api])
 
-  const submitDraft = async (): Promise<boolean> => {
+  const performSubmitDraft = async (): Promise<boolean> => {
+    if (!mountedRef.current) return false
     if (captureNeedsReview) { setError('Review the unavailable capture connection, retry, or explicitly turn capture off before launching.'); return false }
     setError('')
     setLoading(true)
     try {
+      if (terminationMode === 'iterations' ? duration !== '' : !isValidDurationInput(duration)) {
+        throw new Error(terminationMode === 'iterations' ? 'Iteration completion must not specify a duration.' : 'Enter a positive steady state duration.')
+      }
       const rootAssignmentError = validateGeneratorAssignment(assignment, 'scenario', 'Scenario assignment')
       if (rootAssignmentError) throw new Error(rootAssignmentError)
       for (let index = 0; index < groups.length; index += 1) {
@@ -348,27 +379,63 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
         }
       }
 
+      const submittedFingerprint = authoringFingerprint
       const test = await api.createTest(payload)
+      if (!mountedRef.current) return false
+      // Successful creation durably accepts this submitted draft. Retire only
+      // its guard before the parent attempts guarded navigation synchronously.
+      baselineAuthoringFingerprintRef.current = submittedFingerprint
+      if (latestAuthoringFingerprintRef.current !== submittedFingerprint) {
+        // Fields remain editable while saving. The successful receipt belongs
+        // to the submitted snapshot, so later edits retain their own guard.
+        modalDirtyRef.current = true
+        setError(`Queued run ${test.ref_key || test.id} was created. Edits made while saving remain unsaved; review them before creating another run.`)
+        return false
+      }
+      modalDirtyRef.current = false
+      releaseOwnGuardRef.current?.()
+      releaseOwnGuardRef.current = null
       onCreated(test)
       return true
     } catch (error: unknown) {
-      setError(getErrorMessage(error, errorMessage))
+      if (mountedRef.current) setError(getErrorMessage(error, errorMessage))
       return false
     } finally {
-      setLoading(false)
+      if (mountedRef.current) setLoading(false)
     }
   }
+  const submitDraft = (): Promise<boolean> => {
+    // The form button and the navigation guard share this instance-owned
+    // operation. Join the captured submission, including its preflight and
+    // late-edit result; a history guard must never launch a second copy.
+    if (submitOperationRef.current) return submitOperationRef.current
+    if (!mountedRef.current) return Promise.resolve(false)
+    const operation = Promise.resolve().then(performSubmitDraft)
+    submitOperationRef.current = operation
+    const retire = () => { if (submitOperationRef.current === operation) submitOperationRef.current = null }
+    // Handle both settlements explicitly; an ignored rejecting finally chain
+    // would otherwise create a second, unhandled promise.
+    void operation.then(retire, retire)
+    return operation
+  }
   submitDraftRef.current = submitDraft
-  const modalDirty = JSON.stringify(scenarioDraft) !== baselineDraftRef.current || JSON.stringify(monitorBindings) !== baselineMonitorBindingsRef.current
+  const modalDirty = authoringFingerprint !== baselineAuthoringFingerprintRef.current
   modalDirtyRef.current = modalDirty
   const modalGuard = useMemo<NavigationGuard>(() => ({
-    id: `create-test-modal-${mode}`,
+    id: `create-test-modal-${mode}-${titleId}`,
     label: modalTitle,
     isDirty: () => modalDirtyRef.current,
     save: () => submitDraftRef.current(),
     discard: () => undefined,
-  }), [modalTitle, mode])
-  useNavigationGuard(modalGuard, modalDirty)
+  }), [modalTitle, mode, titleId])
+  useEffect(() => {
+    const release = registerGuard(modalGuard, modalDirty)
+    releaseOwnGuardRef.current = release
+    return () => {
+      release()
+      if (releaseOwnGuardRef.current === release) releaseOwnGuardRef.current = null
+    }
+  }, [modalDirty, modalGuard, registerGuard])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -420,10 +487,14 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                   placeholder="Optional — auto-generated if empty"
                 />
               </label>
+              {isReviseMode && <p><strong>Completion:</strong> {terminationMode === 'iterations' ? 'All per-user iterations' : 'Duration'}. The source completion mode is retained.</p>}
+              {terminationMode === 'iterations' && <p>Each fixed VUser completes its configured finite iterations. The controller validates the final script and runtime iteration counts; no steady state duration is submitted.</p>}
               <DurationField
                 label="Steady State Duration"
                 value={duration}
-                required
+                required={terminationMode !== 'iterations'}
+                disabled={terminationMode === 'iterations'}
+                allowEmpty={terminationMode === 'iterations'}
                 showPresets
                 onChange={(value) => updateScenarioField('duration', value)}
               />

@@ -1,0 +1,15 @@
+{
+  "scope": "External temporary probe inputs retained separately from application inventory and original reporter artifact manifest.",
+  "files": [
+    {
+      "path": "apexload-authoring-settled-dialog-probe-20261005.spec.ts",
+      "bytes": 3947,
+      "sha256": "296076670b7d8a66987f96c541acf8878082f86f1065a2d65952dc6dbc83598e"
+    },
+    {
+      "path": "apexload-authoring-settled-dialog-probe-20261005.config.ts",
+      "bytes": 691,
+      "sha256": "d7dacfd4cd7839a435e17b5f78f4fdbd2c93e866d61f6364efa7d8c8f5fe76e0"
+    }
+  ]
+}

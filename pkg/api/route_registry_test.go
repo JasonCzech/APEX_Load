@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestModularAPIRouteCatalogsAreCompleteAndUnique(t *testing.T) {
@@ -439,7 +440,7 @@ func TestArchiveAPIRoutesUseModularCatalogs(t *testing.T) {
 			}
 		}
 	}
-	if got, want := len(modular), 17; got != want {
+	if got, want := len(modular), 18; got != want {
 		t.Fatalf("modular archive route count = %d, want %d", got, want)
 	}
 
@@ -519,6 +520,51 @@ func TestArchiveRouteCatalogPreservesAccessContracts(t *testing.T) {
 			}
 		})
 	}
+
+	// This route resolves durable archive authority instead of the live test
+	// cache. Pin its actual resolver separately from the legacy read paths.
+	t.Run(http.MethodGet+" /api/v1/tests/{id}/archive/browser-resources", func(t *testing.T) {
+		const path = "/api/v1/tests/{id}/archive/browser-resources"
+		got, ok := accessRequirementFromRouteCatalog(http.MethodGet, path)
+		if !ok {
+			t.Fatal("browser-resource route is absent from the authorization catalog")
+		}
+		want := viewerProjectAccess(resolveBrowserResourceArchiveProjectID)
+		want.ServiceAccountScope = "results:read"
+		assertAccessRequirementEqual(t, got, want)
+		documented, ok := documentedAccessRequirementFromAPIRouteCatalogs(http.MethodGet, path)
+		if !ok {
+			t.Fatal("browser-resource route is absent from the documentation access catalog")
+		}
+		assertAccessRequirementEqual(t, documented, viewerProjectAccess(resolveBrowserResourceArchiveProjectID))
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/run-1/archive/browser-resources", nil)
+		req.SetPathValue("id", "run-1")
+		if scope := requiredServiceAccountScope(req); scope != "results:read" {
+			t.Errorf("effective service-account scope = %q, want %q", scope, "results:read")
+		}
+
+		var spec apiRouteSpec
+		found := false
+		for _, route := range runArchiveAPIRouteCatalog.Routes {
+			if route.Method == http.MethodGet && route.Path == path {
+				spec, found = route, true
+				break
+			}
+		}
+		if !found {
+			t.Fatal("browser-resource route is absent from the modular archive catalog")
+		}
+		if spec.MiddlewareProfile != apiRouteMiddlewareAuthenticated {
+			t.Error("browser-resource route lost authenticated middleware")
+		}
+		if spec.RequestTimeout != 10*time.Second {
+			t.Errorf("browser-resource request timeout = %s, want 10s", spec.RequestTimeout)
+		}
+		if spec.HandlerIdentity != "handleGetRunArchiveBrowserResources" {
+			t.Errorf("browser-resource handler identity = %q, want handleGetRunArchiveBrowserResources", spec.HandlerIdentity)
+		}
+	})
 
 	batch, ok := accessRequirementFromRouteCatalog(http.MethodPost, "/api/v1/tests/archive/reports")
 	if !ok {

@@ -1,1 +1,0 @@
-import{d as e,l as t,o as n,u as r}from"./desktopBridge-BkhkaRhX.js";import{h as i}from"./settingsSectionLayout-P5B6lYMx.js";var a=`apexload.settings.projectId`;function o(n){i(`projects`),r(`apexload.settings.projectSubsection`,`secrets`),n?.trim()?e(a,n.trim()):t(a)}function s(){let e=n(a).trim();return t(a),e}export{o as n,s as t};

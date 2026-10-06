@@ -1,0 +1,14 @@
+=== RUN   TestHAROwnershipNativeContextFlushAndJoin
+=== RUN   TestHAROwnershipNativeContextFlushAndJoin/chromium
+=== RUN   TestHAROwnershipNativeContextFlushAndJoin/webkit
+--- PASS: TestHAROwnershipNativeContextFlushAndJoin (3.01s)
+    --- PASS: TestHAROwnershipNativeContextFlushAndJoin/chromium (1.50s)
+    --- PASS: TestHAROwnershipNativeContextFlushAndJoin/webkit (1.50s)
+=== RUN   TestHAROwnershipNativeCloseErrorRemainsExplicitAndPrivate
+=== RUN   TestHAROwnershipNativeCloseErrorRemainsExplicitAndPrivate/chromium
+=== RUN   TestHAROwnershipNativeCloseErrorRemainsExplicitAndPrivate/webkit
+--- PASS: TestHAROwnershipNativeCloseErrorRemainsExplicitAndPrivate (0.31s)
+    --- PASS: TestHAROwnershipNativeCloseErrorRemainsExplicitAndPrivate/chromium (0.08s)
+    --- PASS: TestHAROwnershipNativeCloseErrorRemainsExplicitAndPrivate/webkit (0.23s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/protocol/browser	3.628s

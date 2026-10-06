@@ -1,0 +1,301 @@
+{
+  "recorded_at_utc": "2026-10-06T01:05:06.512279+00:00",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "scope": "Read-only final independent review of frozen shared-chunk classifier/test and the imports of all thirteen explicit workspace modules; Vite wiring, existing route budget checker and root provider exclusion reviewed. CSS and built outputs are outside this scope while their owner fixes global CSS.",
+  "status": "No actionable static findings in the scoped chunk change.",
+  "findings": [],
+  "candidate": {
+    "path": "/private/tmp/apexload-dashboard-shared-chunks-candidate-v2-20261005.json",
+    "sha256": "9595f346c4d8f65d42fdfd535b90a68c41f8adb6106a9aa486e6423f50618ec1"
+  },
+  "bookends": {
+    "before_path": "/private/tmp/apexload-dashboard-chunk-independent-review-start-20261005.json",
+    "before_sha256": "8a7c151954be1d5b68d59cd9847d1fb015d7cf70992c795e5b5d1f5f4e0f38fb",
+    "files_before": [
+      {
+        "path": "dashboard/scripts/chunk-strategy.mjs",
+        "sha256": "e4678f2a5df3e11d5a36163a96171abc437549b136da29ca78b035b6eb7898ed",
+        "bytes": 2929
+      },
+      {
+        "path": "dashboard/src/viteChunkStrategy.test.ts",
+        "sha256": "94196aa09989da0f523e36bd80cf27d8e2be4428d2e60f3f82c8f9522c17ed7c",
+        "bytes": 5642
+      },
+      {
+        "path": "dashboard/vite.config.ts",
+        "sha256": "ebd4b88aeb2d468bfc435cb2b4fc124a00c361875b7e2acb3517fd3e1668641f",
+        "bytes": 4077
+      },
+      {
+        "path": "dashboard/scripts/check-bundle-budget.mjs",
+        "sha256": "e0260876cb5c3b56bff8f69862b641648f630aa8ad6cbcb4e8f9697286a763fa",
+        "bytes": 9433
+      },
+      {
+        "path": "dashboard/scripts/run-bundle-budget.mjs",
+        "sha256": "a715b9f499c2bb5c0f80bad08f006ade61813039a4ef33168e827d4e113305de",
+        "bytes": 1807
+      },
+      {
+        "path": "dashboard/src/hooks/projectContext.ts",
+        "sha256": "23ad60643f28fb576a617adae7a5e638e10e05b5c91d1170cc63729845b1dd43",
+        "bytes": 866
+      },
+      {
+        "path": "dashboard/src/hooks/useProject.tsx",
+        "sha256": "c2d63b067600978f47303a761c3b2ed18450d4d75d127585bb54b5368d92f872",
+        "bytes": 274
+      },
+      {
+        "path": "dashboard/src/hooks/applicationContext.ts",
+        "sha256": "c94cb7089a1944b1c700052098dfd495019a8dc03f91b0b66b75f746f21e4051",
+        "bytes": 1007
+      },
+      {
+        "path": "dashboard/src/hooks/useApplication.tsx",
+        "sha256": "2cbb48975d38078ee3a0abe9e0d54a69cd1d380fd28ca7f0349b0a6f471b9d84",
+        "bytes": 298
+      },
+      {
+        "path": "dashboard/src/hooks/useDevView.ts",
+        "sha256": "e5ab2fae96192169f6d24365a4f2a16cc132efb354ede4fae920e1ece6e36df5",
+        "bytes": 545
+      },
+      {
+        "path": "dashboard/src/hooks/NavigationGuardProvider.tsx",
+        "sha256": "48146838aee7298016a58e618b614324903a8bfd89de658f5ce10e04dd477dc6",
+        "bytes": 1725
+      },
+      {
+        "path": "dashboard/src/hooks/TopbarContributionProvider.tsx",
+        "sha256": "74e57d69cde86e9a7301a1a72152b7247472f7efc75ce0bfaef6613c331634a0",
+        "bytes": 2464
+      },
+      {
+        "path": "dashboard/src/hooks/KeyboardShortcutProvider.tsx",
+        "sha256": "a3ba6092b4015fc20d0b27600d2672d63380831941a45c54c26923881f400e5b",
+        "bytes": 8263
+      },
+      {
+        "path": "dashboard/src/hooks/useModalDialog.ts",
+        "sha256": "39341404207c9aad1e0b078fafd8535c75f1d4e1cd9f33d305230f103bb93041",
+        "bytes": 5650
+      },
+      {
+        "path": "dashboard/src/components/dialogBackdropProps.ts",
+        "sha256": "5b74d53dc0210f0f7aa08b86b145c9f2085b8b7b0c79046b0b021d4b51af462a",
+        "bytes": 563
+      },
+      {
+        "path": "dashboard/src/components/ux/DialogLayer.tsx",
+        "sha256": "b366bb79317979acbfe61ec5db8408f7f4a32e857ac13d8a353b40986e4ffa25",
+        "bytes": 581
+      },
+      {
+        "path": "dashboard/src/components/LazyLoadBoundary.tsx",
+        "sha256": "a9daf35cb46f04543308eb5054ae0bb15cb67f988d2b98119c18f1070896fa9a",
+        "bytes": 1345
+      },
+      {
+        "path": "dashboard/src/utils/authAccessUtils.ts",
+        "sha256": "c44daa8174e8ceac1b60560456bbb3588b71262416ffb399ee3780cd8de23546",
+        "bytes": 1010
+      },
+      {
+        "path": "dashboard/src/hooks/NavigationGuardRoot.tsx",
+        "sha256": "c3bf75be71f81cc63c4a43b7cb78ac0fb8739c3eca16a890554898c8df073659",
+        "bytes": 4674
+      },
+      {
+        "path": "dashboard/src/hooks/TopbarContributionRoot.tsx",
+        "sha256": "881573c031bb39db754389de2bed68f097a0779ab15fb200b25a4fa7e9da5104",
+        "bytes": 1601
+      },
+      {
+        "path": "dashboard/src/hooks/KeyboardShortcutRoot.tsx",
+        "sha256": "bcedd178069cb3fc531a98e9b542fc064564e0315d72a2e60e64546ed452f3eb",
+        "bytes": 6165
+      },
+      {
+        "path": "dashboard/src/hooks/ProjectProvider.tsx",
+        "sha256": "d908c989096306679217ed5cdfc34e1f1a1da18d0d3a04a9ebb2e1f1d1f5a6fd",
+        "bytes": 7795
+      },
+      {
+        "path": "dashboard/src/hooks/ApplicationProvider.tsx",
+        "sha256": "ca0d4cf29d46114996aa21ea919579a0e73f1e23d9af4907fc78d8881416e399",
+        "bytes": 19812
+      },
+      {
+        "path": "dashboard/src/hooks/DevViewProvider.tsx",
+        "sha256": "17cf2e014d868c7921be3ecc7b7d7eb7768bd72f018a96c314eccdbe34bf1872",
+        "bytes": 1243
+      }
+    ],
+    "files_after": [
+      {
+        "path": "dashboard/scripts/chunk-strategy.mjs",
+        "sha256": "e4678f2a5df3e11d5a36163a96171abc437549b136da29ca78b035b6eb7898ed",
+        "bytes": 2929
+      },
+      {
+        "path": "dashboard/src/viteChunkStrategy.test.ts",
+        "sha256": "94196aa09989da0f523e36bd80cf27d8e2be4428d2e60f3f82c8f9522c17ed7c",
+        "bytes": 5642
+      },
+      {
+        "path": "dashboard/vite.config.ts",
+        "sha256": "ebd4b88aeb2d468bfc435cb2b4fc124a00c361875b7e2acb3517fd3e1668641f",
+        "bytes": 4077
+      },
+      {
+        "path": "dashboard/scripts/check-bundle-budget.mjs",
+        "sha256": "e0260876cb5c3b56bff8f69862b641648f630aa8ad6cbcb4e8f9697286a763fa",
+        "bytes": 9433
+      },
+      {
+        "path": "dashboard/scripts/run-bundle-budget.mjs",
+        "sha256": "a715b9f499c2bb5c0f80bad08f006ade61813039a4ef33168e827d4e113305de",
+        "bytes": 1807
+      },
+      {
+        "path": "dashboard/src/hooks/projectContext.ts",
+        "sha256": "23ad60643f28fb576a617adae7a5e638e10e05b5c91d1170cc63729845b1dd43",
+        "bytes": 866
+      },
+      {
+        "path": "dashboard/src/hooks/useProject.tsx",
+        "sha256": "c2d63b067600978f47303a761c3b2ed18450d4d75d127585bb54b5368d92f872",
+        "bytes": 274
+      },
+      {
+        "path": "dashboard/src/hooks/applicationContext.ts",
+        "sha256": "c94cb7089a1944b1c700052098dfd495019a8dc03f91b0b66b75f746f21e4051",
+        "bytes": 1007
+      },
+      {
+        "path": "dashboard/src/hooks/useApplication.tsx",
+        "sha256": "2cbb48975d38078ee3a0abe9e0d54a69cd1d380fd28ca7f0349b0a6f471b9d84",
+        "bytes": 298
+      },
+      {
+        "path": "dashboard/src/hooks/useDevView.ts",
+        "sha256": "e5ab2fae96192169f6d24365a4f2a16cc132efb354ede4fae920e1ece6e36df5",
+        "bytes": 545
+      },
+      {
+        "path": "dashboard/src/hooks/NavigationGuardProvider.tsx",
+        "sha256": "48146838aee7298016a58e618b614324903a8bfd89de658f5ce10e04dd477dc6",
+        "bytes": 1725
+      },
+      {
+        "path": "dashboard/src/hooks/TopbarContributionProvider.tsx",
+        "sha256": "74e57d69cde86e9a7301a1a72152b7247472f7efc75ce0bfaef6613c331634a0",
+        "bytes": 2464
+      },
+      {
+        "path": "dashboard/src/hooks/KeyboardShortcutProvider.tsx",
+        "sha256": "a3ba6092b4015fc20d0b27600d2672d63380831941a45c54c26923881f400e5b",
+        "bytes": 8263
+      },
+      {
+        "path": "dashboard/src/hooks/useModalDialog.ts",
+        "sha256": "39341404207c9aad1e0b078fafd8535c75f1d4e1cd9f33d305230f103bb93041",
+        "bytes": 5650
+      },
+      {
+        "path": "dashboard/src/components/dialogBackdropProps.ts",
+        "sha256": "5b74d53dc0210f0f7aa08b86b145c9f2085b8b7b0c79046b0b021d4b51af462a",
+        "bytes": 563
+      },
+      {
+        "path": "dashboard/src/components/ux/DialogLayer.tsx",
+        "sha256": "b366bb79317979acbfe61ec5db8408f7f4a32e857ac13d8a353b40986e4ffa25",
+        "bytes": 581
+      },
+      {
+        "path": "dashboard/src/components/LazyLoadBoundary.tsx",
+        "sha256": "a9daf35cb46f04543308eb5054ae0bb15cb67f988d2b98119c18f1070896fa9a",
+        "bytes": 1345
+      },
+      {
+        "path": "dashboard/src/utils/authAccessUtils.ts",
+        "sha256": "c44daa8174e8ceac1b60560456bbb3588b71262416ffb399ee3780cd8de23546",
+        "bytes": 1010
+      },
+      {
+        "path": "dashboard/src/hooks/NavigationGuardRoot.tsx",
+        "sha256": "c3bf75be71f81cc63c4a43b7cb78ac0fb8739c3eca16a890554898c8df073659",
+        "bytes": 4674
+      },
+      {
+        "path": "dashboard/src/hooks/TopbarContributionRoot.tsx",
+        "sha256": "881573c031bb39db754389de2bed68f097a0779ab15fb200b25a4fa7e9da5104",
+        "bytes": 1601
+      },
+      {
+        "path": "dashboard/src/hooks/KeyboardShortcutRoot.tsx",
+        "sha256": "bcedd178069cb3fc531a98e9b542fc064564e0315d72a2e60e64546ed452f3eb",
+        "bytes": 6165
+      },
+      {
+        "path": "dashboard/src/hooks/ProjectProvider.tsx",
+        "sha256": "d908c989096306679217ed5cdfc34e1f1a1da18d0d3a04a9ebb2e1f1d1f5a6fd",
+        "bytes": 7795
+      },
+      {
+        "path": "dashboard/src/hooks/ApplicationProvider.tsx",
+        "sha256": "ca0d4cf29d46114996aa21ea919579a0e73f1e23d9af4907fc78d8881416e399",
+        "bytes": 19812
+      },
+      {
+        "path": "dashboard/src/hooks/DevViewProvider.tsx",
+        "sha256": "17cf2e014d868c7921be3ecc7b7d7eb7768bd72f018a96c314eccdbe34bf1872",
+        "bytes": 1243
+      }
+    ],
+    "all_24_hashes_stable": true
+  },
+  "additional_read_context_single_snapshot": [
+    {
+      "path": "dashboard/src/hooks/apiClient.ts",
+      "sha256": "c85b1704abfc4ba8787eb5f4d4ed4614b3441b4e8f55a2007ec5cd8dbaeab380",
+      "bytes": 21470
+    },
+    {
+      "path": "dashboard/src/desktop/desktopBridge.ts",
+      "sha256": "6112738f82d804c5569b4ce041675976c07b369b6d7133f7c7aac3d54f1e00a5",
+      "bytes": 7136
+    },
+    {
+      "path": "dashboard/src/utils/browserStorage.ts",
+      "sha256": "03e306fd3ea3d65a05bf4291ed632528196cea88fa4f9c604b251d4d2edab9cd",
+      "bytes": 2151
+    },
+    {
+      "path": "dashboard/tsconfig.json",
+      "sha256": "53432f8c887fd5bc7d4a2fa0870d5c40e5039f1730effaf73aa6ac0e92facfbe",
+      "bytes": 618
+    },
+    {
+      "path": "dashboard/scripts/chunk-strategy.d.mts",
+      "sha256": "6c5d79e1e1e851f412834d3298d85a272f99a6d7df1c67a77981c4f97dd491b0",
+      "bytes": 67
+    }
+  ],
+  "checks": [
+    "Explicit group matches only full first-party suffixes before generic vendor mapping; stateful root providers and feature routes remain unclassified. Project/application/topbar/navigation/keyboard contexts are defined once and shared by root and lazy consumers.",
+    "All thirteen grouped module implementations were read. Dependencies remain React/UI primitives or type-only models. useDevView runtime references apiClient; adjacent apiClient dependencies are storage and desktop bridge primitives, without App or feature/provider-root imports.",
+    "Module-level dialog state and context identities are retained rather than duplicated or reinitialized by any application source rewrite. Classifier does not change their behavior.",
+    "Exact NUL vite/preload-helper.js match agrees with currently installed Vite source. Other virtual/user helper modules stay automatic; textual NUL escapes preserve test fixture runtime identity.",
+    "Tanstack virtualization matches complete package directory boundaries, including pnpm nested paths; neighboring query/extra/first-party paths retain their previous vendor/automatic classification.",
+    "Existing HTTP formatter, Three.js, Recharts and CodeMirror language/parser/core precedence remains intact.",
+    "Tests cover every explicit shared module plus excluded stateful roots/features, neighboring package/module cases and virtual identities. Existing .d.mts signature remains compatible."
+  ],
+  "limits": [
+    "No build, tests, browser or import-evaluation execution performed by this static review.",
+    "Actual deterministic candidate asset graph and bundle sizes remain a required gate. Static grouping alone does not prove removed shell backedges, cycle behavior, budget success or browser runtime qualification.",
+    "No budget/asset/route cap changes reviewed as implemented here; current aggregate recalibration and CSS changes belong to separate final candidate assessment."
+  ]
+}

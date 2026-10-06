@@ -2,13 +2,12 @@ package browser
 
 import (
 	"container/heap"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/scrub"
@@ -22,8 +21,6 @@ const (
 	maxRetainedRuntimeHARArtifacts = 128
 	maxRetainedRuntimeHARBytes     = int64(1 << 30)
 )
-
-var runtimeHARRetentionMu sync.Mutex
 
 type retainedHARArtifact struct {
 	path       string
@@ -68,7 +65,7 @@ func enforceRuntimeHARRetention(dir string) error {
 // pre-existing directory with many artifacts cannot turn cleanup into another
 // unbounded-memory path.
 func enforceRuntimeHARRetentionLimit(dir string, maxArtifacts int, maxBytes int64) error {
-	if maxArtifacts <= 0 || maxBytes <= 0 {
+	if maxArtifacts <= 0 || maxBytes <= 0 || maxBytes > maxRetainedRuntimeHARBytes {
 		return fmt.Errorf("runtime HAR retention limits must be positive")
 	}
 	dir = strings.TrimSpace(dir)
@@ -76,65 +73,112 @@ func enforceRuntimeHARRetentionLimit(dir string, maxArtifacts int, maxBytes int6
 		dir = os.TempDir()
 	}
 
-	runtimeHARRetentionMu.Lock()
-	defer runtimeHARRetentionMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), runtimeHARCloseWait)
+	defer cancel()
+	return WithRuntimeHARArtifactNamespace(ctx, dir, func(root *os.Root) error {
+		return enforceRuntimeHARRetentionAtContext(ctx, root, maxArtifacts, maxBytes)
+	})
+}
 
-	directory, err := os.Open(dir)
+const maxRuntimeHARRetentionScanEntries = 1024
+const maxRuntimeHARRetentionErrors = 16
+
+func enforceRuntimeHARRetentionAt(root *os.Root, maxArtifacts int, maxBytes int64) error {
+	ctx, cancel := context.WithTimeout(context.Background(), runtimeHARCloseWait)
+	defer cancel()
+	return enforceRuntimeHARRetentionAtContext(ctx, root, maxArtifacts, maxBytes)
+}
+
+func enforceRuntimeHARRetentionAtContext(ctx context.Context, root *os.Root, maxArtifacts int, maxBytes int64) (err error) {
+	if ctx == nil || root == nil || maxArtifacts <= 0 || maxArtifacts > maxRetainedRuntimeHARArtifacts || maxBytes <= 0 || maxBytes > maxRetainedRuntimeHARBytes {
+		return fmt.Errorf("HAR retention requires bounded limits and an owned context/root")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	directory, err := root.Open(".")
 	if err != nil {
 		return err
 	}
-	defer directory.Close()
-
+	defer func() { err = errors.Join(err, directory.Close()) }()
 	kept := &retainedHARHeap{}
 	heap.Init(kept)
 	var keptBytes int64
 	var cleanupErrors []error
+	suppressed, scanned := 0, 0
+	addError := func(e error) {
+		if e == nil {
+			return
+		}
+		if len(cleanupErrors) < maxRuntimeHARRetentionErrors {
+			cleanupErrors = append(cleanupErrors, e)
+		} else {
+			suppressed++
+		}
+	}
+	result := func(e error) error {
+		addError(e)
+		if suppressed > 0 {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("%d additional HAR retention errors", suppressed))
+		}
+		return errors.Join(cleanupErrors...)
+	}
 	for {
-		entries, readErr := directory.ReadDir(256)
+		if err := ctx.Err(); err != nil {
+			return result(err)
+		}
+		entries, readErr := directory.ReadDir(64)
 		for _, entry := range entries {
+			scanned++
+			if scanned > maxRuntimeHARRetentionScanEntries {
+				return result(fmt.Errorf("HAR retention scan limit reached"))
+			}
+			if err := ctx.Err(); err != nil {
+				return result(err)
+			}
 			if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !isRetainedRuntimeHARArtifact(entry.Name()) {
 				continue
 			}
-			info, infoErr := entry.Info()
-			if infoErr != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			info, infoErr := root.Lstat(entry.Name())
+			if infoErr != nil {
+				addError(infoErr)
 				continue
 			}
-			candidate := retainedHARArtifact{
-				path:       filepath.Join(dir, entry.Name()),
-				info:       info,
-				modifiedAt: info.ModTime(),
-				size:       info.Size(),
+			if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+				continue
+			}
+			candidate := retainedHARArtifact{path: entry.Name(), info: info, modifiedAt: info.ModTime(), size: info.Size()}
+			if candidate.size > maxBytes {
+				addError(removeRetainedRuntimeHARAt(root, candidate))
+				continue
 			}
 			heap.Push(kept, candidate)
 			keptBytes += candidate.size
 			for kept.Len() > maxArtifacts || keptBytes > maxBytes {
 				oldest := heap.Pop(kept).(retainedHARArtifact)
 				keptBytes -= oldest.size
-				if removeErr := removeRetainedRuntimeHAR(oldest); removeErr != nil {
-					cleanupErrors = append(cleanupErrors, removeErr)
-				}
+				addError(removeRetainedRuntimeHARAt(root, oldest))
 			}
 		}
 		if errors.Is(readErr, io.EOF) {
-			return errors.Join(cleanupErrors...)
+			return result(nil)
 		}
 		if readErr != nil {
-			cleanupErrors = append(cleanupErrors, readErr)
-			return errors.Join(cleanupErrors...)
+			return result(readErr)
 		}
 	}
 }
 
-func removeRetainedRuntimeHAR(candidate retainedHARArtifact) error {
-	current, err := os.Lstat(candidate.path)
+func removeRetainedRuntimeHARAt(root *os.Root, candidate retainedHARArtifact) error {
+	current, err := root.Lstat(candidate.path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
-	if current.Mode()&os.ModeSymlink != 0 || !current.Mode().IsRegular() || !os.SameFile(candidate.info, current) {
-		return fmt.Errorf("runtime HAR artifact %q changed during retention", filepath.Base(candidate.path))
+	if !current.Mode().IsRegular() || current.Mode()&os.ModeSymlink != 0 || !os.SameFile(candidate.info, current) || current.Size() != candidate.size || !current.ModTime().Equal(candidate.modifiedAt) {
+		return fmt.Errorf("runtime HAR artifact changed during retention")
 	}
-	return os.Remove(candidate.path)
+	return RemoveRuntimeHARArtifactAt(root, candidate.path, candidate.info)
 }

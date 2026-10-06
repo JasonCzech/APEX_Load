@@ -720,6 +720,9 @@ func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsO
 	if group.HTTP != nil {
 		merged.HTTP = cloneViaJSON(group.HTTP)
 	}
+	if group.Results != nil {
+		merged.Results = cloneViaJSON(group.Results)
+	}
 	if group.WebSocket != nil {
 		merged.WebSocket = cloneViaJSON(group.WebSocket)
 	}

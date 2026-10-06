@@ -391,8 +391,67 @@ func (b *Browser) finalizeDocumentFrameBatch(ctx context.Context, frames []playw
 	}
 }
 
+// mergeCurrentDocumentFrames includes native frames whose asynchronous begin
+// binding has not reached the Go document map yet. Current frames take priority
+// over retained stale handles, with one bounded deduplicated attempt per frame.
+func (b *Browser) mergeCurrentDocumentFrames(browserContext playwright.BrowserContext, retained []playwright.Frame) []playwright.Frame {
+	capacity := len(retained)
+	if capacity > browserFrameIdentityLimit {
+		capacity = browserFrameIdentityLimit
+	}
+	frames := make([]playwright.Frame, 0, capacity)
+	seen := make(map[playwright.Frame]bool)
+	add := func(frame playwright.Frame) bool {
+		if frame == nil || seen[frame] {
+			return true
+		}
+		if len(frames) >= browserFrameIdentityLimit {
+			b.mu.Lock()
+			b.evidence.incomplete = true
+			b.mu.Unlock()
+			return false
+		}
+		seen[frame] = true
+		frames = append(frames, frame)
+		return true
+	}
+	for _, page := range browserContext.Pages() {
+		if page == nil {
+			continue
+		}
+		for _, frame := range page.Frames() {
+			if !add(frame) {
+				return frames
+			}
+		}
+	}
+	for _, frame := range retained {
+		if !add(frame) {
+			break
+		}
+	}
+	return frames
+}
+
 func (b *Browser) finalizeDocumentEvidence(ctx context.Context) {
+	_ = b.finalizeDocumentEvidenceContext(ctx)
+}
+
+func (b *Browser) finalizeDocumentEvidenceContext(ctx context.Context) error {
 	b.mu.Lock()
+	owner := b.harOwner
+	b.mu.Unlock()
+	if owner == nil {
+		b.finalizeDocumentEvidenceJoined(ctx, nil)
+		return nil
+	}
+	owner.startDocumentJoin(func() { b.finalizeDocumentEvidenceJoined(ctx, owner) })
+	return owner.waitDocument(ctx)
+}
+
+func (b *Browser) finalizeDocumentEvidenceJoined(ctx context.Context, owner *harCaptureOwner) {
+	b.mu.Lock()
+	// Stable ordering also makes stale-frame/live-frame qualification repeatable.
 	keys := make([]string, 0, len(b.evidence.documents))
 	for key := range b.evidence.documents {
 		keys = append(keys, key)
@@ -424,11 +483,28 @@ func (b *Browser) finalizeDocumentEvidence(ctx context.Context) {
 	bounded, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	closed := make(chan struct{})
-	stopClose := context.AfterFunc(bounded, func() { defer close(closed); _ = browserContext.Close() })
+	stopClose := context.AfterFunc(bounded, func() {
+		defer close(closed)
+		if owner != nil {
+			owner.startClose()
+		} else {
+			_ = browserContext.Close()
+		}
+	})
 	done := make(chan struct{})
 	go func() {
+		completed := false
 		defer close(done)
-		b.finalizeDocumentFrameBatch(bounded, frames, finalizer)
+		if owner != nil {
+			defer func() {
+				recovered := recover()
+				if !completed || recovered != nil {
+					owner.recordDocumentError(errHAROwnershipUnproven)
+				}
+			}()
+		}
+		b.finalizeDocumentFrameBatch(bounded, b.mergeCurrentDocumentFrames(browserContext, frames), finalizer)
+		completed = true
 	}()
 	<-done
 	if !stopClose() {

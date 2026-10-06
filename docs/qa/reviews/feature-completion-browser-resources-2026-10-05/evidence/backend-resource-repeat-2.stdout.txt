@@ -1,0 +1,7 @@
+# github.com/jasonczech/apexload/pkg/api [github.com/jasonczech/apexload/pkg/api.test]
+pkg/api/archive_browser_resource_parquet_test.go:82:33: cannot use map[string]string{…} (value of type map[string]string) as url.Values value in argument to resourcePageTestQuery
+FAIL	github.com/jasonczech/apexload/pkg/api [build failed]
+ok  	github.com/jasonczech/apexload/pkg/storage	1.160s
+ok  	github.com/jasonczech/apexload/pkg/distributed/generatorrpc	0.446s
+ok  	github.com/jasonczech/apexload/cmd/apexctl	0.864s
+FAIL

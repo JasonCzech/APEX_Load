@@ -1,0 +1,30 @@
+{
+  "name": "native-har-docs-final-1",
+  "argv": [
+    "python3",
+    "scripts/check-docs.py"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "exit_code": 1,
+  "elapsed_seconds": 0.916,
+  "recorded_at_utc": "2026-10-06T00:19:13.316568+00:00",
+  "log_path": "/private/tmp/native-har-docs-final-1.log",
+  "log_sha256": "3a7449d2494624d8f00474457c6d91bf686d7d28e1172ee984d527a7e3be4e04",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4114,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "raw_receipt_sha256": "f0c43059f658bef712b4d87a7776ab926824278d16ba454f083847f168c4538c",
+  "repository_inventory_before_sha256": "4b41ca6214fc38cba07f8c7ca020e8388c4e6ec29b88516b0caf5526cf0a4b32",
+  "repository_inventory_after_sha256": "4b41ca6214fc38cba07f8c7ca020e8388c4e6ec29b88516b0caf5526cf0a4b32",
+  "qualification_disposition": "Superseded red documentation packaging failure: twelve relative links in pristine copied upstream README reference intentionally omitted assets. No SDK behavior failure. Fixed by byte-exact .txt preservation plus explicit origin mapping and local wrapper; checker unchanged.",
+  "receipt_scope_note": "Compact durable receipt retains original private receipt SHA, source count/stability and inventory digests. Full 4,000+ repository inventories remain in the named private raw receipt; direct review inventories are copied separately. Neither inventory includes complete module-cache/native dependencies.",
+  "outcome": "red-superseded"
+}

@@ -1,0 +1,427 @@
+{
+  "version": 4,
+  "candidate": "dashboard-api-provider-boundary",
+  "date_utc": "2026-10-06T01:18:31.452314+00:00",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "previous_candidate_sha256": "650da97326b4c19c5749dfd5a010e248a7bb31d5b952fc39b77aa75ded710ba4",
+  "changed_inputs": [
+    {
+      "path": "dashboard/scripts/chunk-strategy.mjs",
+      "bytes": 4620,
+      "sha256": "7b3855a1dbc4407f7d8d0591f1d490a1ab14430166be82d2a24679365b0a50fb"
+    },
+    {
+      "path": "dashboard/src/viteChunkStrategy.test.ts",
+      "bytes": 7908,
+      "sha256": "c69246b805c32e1ae0d85afd6ceb6f981d25a6ec0ab7be89b913a6891294e418"
+    },
+    {
+      "path": "dashboard/src/hooks/useApi.ts",
+      "bytes": 669,
+      "sha256": "4afaa9b8128d04640b605336f1330b312d4987676ce79d86a36015d8eee72084"
+    },
+    {
+      "path": "dashboard/src/hooks/ApiProvider.ts",
+      "bytes": 3501,
+      "sha256": "8cc5390cc4fc88302158cc31ac9ffaf315747712e5d50e49a01cab42eec84749"
+    },
+    {
+      "path": "dashboard/src/hooks/apiContext.ts",
+      "bytes": 305,
+      "sha256": "05ff6c3081af64609037ede7ee53de54a5deaac83ec3350227f77b2424b7f473"
+    },
+    {
+      "path": "dashboard/src/main.tsx",
+      "bytes": 1387,
+      "sha256": "28d9b35e2786d77c78b76240d012e2288a72a42a59d713f9d5e43ec93a37a224"
+    },
+    {
+      "path": "dashboard/src/App.hookOrder.test.tsx",
+      "bytes": 40705,
+      "sha256": "bb95756def4265bc5749756d93d8862e41add74811953cdfe764be02f238e371"
+    },
+    {
+      "path": "dashboard/src/hooks/useApi.test.tsx",
+      "bytes": 3889,
+      "sha256": "23f3bb7a7bc501bc769f8a690379296ab432a74f6779b867a6aaa1f5cb0725d5"
+    },
+    {
+      "path": "dashboard/src/hooks/ApiProvider.test.tsx",
+      "bytes": 1720,
+      "sha256": "e9af66a25793d28ccbff0da2e3b5cd7de428e6f42e11e5d7258fa711e4b7ed7e"
+    },
+    {
+      "path": "dashboard/src/hooks/useApi.moduleBoundary.test.tsx",
+      "bytes": 1567,
+      "sha256": "7d0b1f8112a1e2e181c6bfdb4695d45e410e8908366cccc0d475d676459a740c"
+    }
+  ],
+  "read_only_references": [
+    {
+      "path": "dashboard/vite.config.ts",
+      "bytes": 4077,
+      "sha256": "ebd4b88aeb2d468bfc435cb2b4fc124a00c361875b7e2acb3517fd3e1668641f"
+    },
+    {
+      "path": "dashboard/scripts/check-bundle-budget.mjs",
+      "bytes": 10040,
+      "sha256": "53c2bfad7b36854e67a2ac0d12175c3d51bb29c146393e3d75862343b953cdf8"
+    },
+    {
+      "path": "dashboard/scripts/run-bundle-budget.mjs",
+      "bytes": 1807,
+      "sha256": "a715b9f499c2bb5c0f80bad08f006ade61813039a4ef33168e827d4e113305de"
+    },
+    {
+      "path": "dashboard/src/App.css",
+      "bytes": 15927,
+      "sha256": "499ab6a7deae9c8926cfcbedf6e43593a8d5f0b0b2f8f984674e0a6c5e10283b"
+    },
+    {
+      "path": "dashboard/src/components/Pages.css",
+      "bytes": 171197,
+      "sha256": "ef6607910b2b9448d614577a1c3eeb0415c479175fe0411b4163fe8202613840"
+    },
+    {
+      "path": "dashboard/src/hooks/projectContext.ts",
+      "bytes": 866,
+      "sha256": "23ad60643f28fb576a617adae7a5e638e10e05b5c91d1170cc63729845b1dd43"
+    },
+    {
+      "path": "dashboard/src/hooks/useProject.tsx",
+      "bytes": 274,
+      "sha256": "c2d63b067600978f47303a761c3b2ed18450d4d75d127585bb54b5368d92f872"
+    },
+    {
+      "path": "dashboard/src/hooks/applicationContext.ts",
+      "bytes": 1007,
+      "sha256": "c94cb7089a1944b1c700052098dfd495019a8dc03f91b0b66b75f746f21e4051"
+    },
+    {
+      "path": "dashboard/src/hooks/useApplication.tsx",
+      "bytes": 298,
+      "sha256": "2cbb48975d38078ee3a0abe9e0d54a69cd1d380fd28ca7f0349b0a6f471b9d84"
+    },
+    {
+      "path": "dashboard/src/hooks/useDevView.ts",
+      "bytes": 545,
+      "sha256": "e5ab2fae96192169f6d24365a4f2a16cc132efb354ede4fae920e1ece6e36df5"
+    },
+    {
+      "path": "dashboard/src/hooks/NavigationGuardProvider.tsx",
+      "bytes": 1725,
+      "sha256": "48146838aee7298016a58e618b614324903a8bfd89de658f5ce10e04dd477dc6"
+    },
+    {
+      "path": "dashboard/src/hooks/TopbarContributionProvider.tsx",
+      "bytes": 2464,
+      "sha256": "74e57d69cde86e9a7301a1a72152b7247472f7efc75ce0bfaef6613c331634a0"
+    },
+    {
+      "path": "dashboard/src/hooks/KeyboardShortcutProvider.tsx",
+      "bytes": 8263,
+      "sha256": "a3ba6092b4015fc20d0b27600d2672d63380831941a45c54c26923881f400e5b"
+    },
+    {
+      "path": "dashboard/src/hooks/useModalDialog.ts",
+      "bytes": 5650,
+      "sha256": "39341404207c9aad1e0b078fafd8535c75f1d4e1cd9f33d305230f103bb93041"
+    },
+    {
+      "path": "dashboard/src/components/dialogBackdropProps.ts",
+      "bytes": 563,
+      "sha256": "5b74d53dc0210f0f7aa08b86b145c9f2085b8b7b0c79046b0b021d4b51af462a"
+    },
+    {
+      "path": "dashboard/src/components/ux/DialogLayer.tsx",
+      "bytes": 581,
+      "sha256": "b366bb79317979acbfe61ec5db8408f7f4a32e857ac13d8a353b40986e4ffa25"
+    },
+    {
+      "path": "dashboard/src/components/LazyLoadBoundary.tsx",
+      "bytes": 1345,
+      "sha256": "a9daf35cb46f04543308eb5054ae0bb15cb67f988d2b98119c18f1070896fa9a"
+    },
+    {
+      "path": "dashboard/src/utils/authAccessUtils.ts",
+      "bytes": 1010,
+      "sha256": "c44daa8174e8ceac1b60560456bbb3588b71262416ffb399ee3780cd8de23546"
+    },
+    {
+      "path": "dashboard/src/hooks/NavigationGuardRoot.tsx",
+      "bytes": 4674,
+      "sha256": "c3bf75be71f81cc63c4a43b7cb78ac0fb8739c3eca16a890554898c8df073659"
+    },
+    {
+      "path": "dashboard/src/hooks/TopbarContributionRoot.tsx",
+      "bytes": 1601,
+      "sha256": "881573c031bb39db754389de2bed68f097a0779ab15fb200b25a4fa7e9da5104"
+    },
+    {
+      "path": "dashboard/src/hooks/KeyboardShortcutRoot.tsx",
+      "bytes": 6165,
+      "sha256": "bcedd178069cb3fc531a98e9b542fc064564e0315d72a2e60e64546ed452f3eb"
+    },
+    {
+      "path": "dashboard/src/hooks/ProjectProvider.tsx",
+      "bytes": 7795,
+      "sha256": "d908c989096306679217ed5cdfc34e1f1a1da18d0d3a04a9ebb2e1f1d1f5a6fd"
+    },
+    {
+      "path": "dashboard/src/hooks/ApplicationProvider.tsx",
+      "bytes": 19812,
+      "sha256": "ca0d4cf29d46114996aa21ea919579a0e73f1e23d9af4907fc78d8881416e399"
+    },
+    {
+      "path": "dashboard/src/hooks/DevViewProvider.tsx",
+      "bytes": 1243,
+      "sha256": "17cf2e014d868c7921be3ecc7b7d7eb7768bd72f018a96c314eccdbe34bf1872"
+    },
+    {
+      "path": "dashboard/src/utils/clipboardUtils.ts",
+      "bytes": 2285,
+      "sha256": "09802c128173178a3a4fc4a5ca580e408688fa0f3c3c22be6d111cd95311f900"
+    },
+    {
+      "path": "dashboard/src/appRouting.ts",
+      "bytes": 24009,
+      "sha256": "112c936938609f941b4b0a2090d6d8534c66833be5568138d74c312c27fcff9f"
+    },
+    {
+      "path": "dashboard/src/appTopbar.ts",
+      "bytes": 6695,
+      "sha256": "e8dca396d6e2b82463336c9663f3570d388761ca8782cb59d57a7442290f3739"
+    },
+    {
+      "path": "dashboard/src/components/settingsNavigation.ts",
+      "bytes": 9623,
+      "sha256": "72a9d9d39b3fb1e4b593dcb37a6fde6d0c70ac7774a8dcaba83936d98c17a457"
+    },
+    {
+      "path": "dashboard/src/components/ErrorDiagnostic.tsx",
+      "bytes": 2109,
+      "sha256": "db0049be4dd975c88f6e6ecf63bd7bd26c13dab0c1d206886c510303668a500d"
+    },
+    {
+      "path": "dashboard/src/components/Logo.tsx",
+      "bytes": 1612,
+      "sha256": "b4ada767dff4531840f9a95db3a6e5a9d53f5ae1f2156246d3b00e342bf75036"
+    },
+    {
+      "path": "dashboard/src/hooks/useWebSocket.ts",
+      "bytes": 6618,
+      "sha256": "1cfe17d796c1d7763bc542e92af3caafd263094dcb0dda74ab42285e2fb24cae"
+    },
+    {
+      "path": "dashboard/src/components/testExecutionMetricsModel.ts",
+      "bytes": 28619,
+      "sha256": "030b9e42e92cec3df889e2ea06f07688c0def8c6ad885e6d1236fc5531661778"
+    },
+    {
+      "path": "dashboard/src/components/testExecutionChartZoomModel.ts",
+      "bytes": 4024,
+      "sha256": "be88b4d352254b37737d3a9d8eb31cf84d827c665435d7b5b27b9c80fd20f933"
+    },
+    {
+      "path": "dashboard/src/components/generatorImpact.ts",
+      "bytes": 9889,
+      "sha256": "1114adea0d739beedde53abfc0bf47c9c31f24f1bf56ef089e6fba3037623888"
+    },
+    {
+      "path": "dashboard/src/components/latencySeries.ts",
+      "bytes": 3999,
+      "sha256": "5b0d6b3b954ee59bc433be5ad7d375c4b70a9d94acc80ab8d55edb84fd9a12c8"
+    },
+    {
+      "path": "dashboard/src/components/transactionChartSeries.ts",
+      "bytes": 3830,
+      "sha256": "977c619f5203f9a4806dd503f595575f50b8d58637279219b626b1db19e0c793"
+    },
+    {
+      "path": "dashboard/src/components/httpVersionModel.ts",
+      "bytes": 2691,
+      "sha256": "85de65caac6b4317afc05cc21d298c84e9a2d2e73c785046eb872d7dac0c7fd4"
+    },
+    {
+      "path": "dashboard/src/apiGuideNavigation.ts",
+      "bytes": 1935,
+      "sha256": "c90087d8fce784a5dee2e164615aef9f7cfe1342e39ce87960e9c3bfa14dd430"
+    },
+    {
+      "path": "dashboard/src/components/accessDestinations.ts",
+      "bytes": 722,
+      "sha256": "bbd96b46b1801b13b11c9d93a8b9f67c1020e6a4fff0ed0a1d7e51e113575639"
+    },
+    {
+      "path": "dashboard/src/hooks/api/browserRecorderBridge.ts",
+      "bytes": 5982,
+      "sha256": "0bf3a98a4318a57d352aeb47832f667eddd3b60eb87a9348254c83c7f9a03414"
+    },
+    {
+      "path": "dashboard/src/hooks/apiClient.ts",
+      "bytes": 21470,
+      "sha256": "c85b1704abfc4ba8787eb5f4d4ed4614b3441b4e8f55a2007ec5cd8dbaeab380"
+    },
+    {
+      "path": "dashboard/src/desktop/desktopBridge.ts",
+      "bytes": 7136,
+      "sha256": "6112738f82d804c5569b4ce041675976c07b369b6d7133f7c7aac3d54f1e00a5"
+    },
+    {
+      "path": "dashboard/src/utils/browserStorage.ts",
+      "bytes": 2151,
+      "sha256": "03e306fd3ea3d65a05bf4291ed632528196cea88fa4f9c604b251d4d2edab9cd"
+    },
+    {
+      "path": "dashboard/src/utils/testStatusUtils.ts",
+      "bytes": 2741,
+      "sha256": "ed18f9d0dce759dea699968223bfdb4ad8d0074aea2f2401d7e2cab6873a953b"
+    },
+    {
+      "path": "dashboard/src/utils/errorUtils.ts",
+      "bytes": 16387,
+      "sha256": "2d51f9e3c307eda9d086e4c51e3387e8c645d6fe7ef7499881169f3a079aea29"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useApplicationApi.ts",
+      "bytes": 7140,
+      "sha256": "bdf5a6bbcf9a6b8b1373e45d09d42df78030fe75b5f829f70b1024d12b855761"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useBrowserRecorderApi.ts",
+      "bytes": 16783,
+      "sha256": "c39f2aeac1332e05cfd140468d95abfbbd2ab14440c2900921e7a4c49dca651a"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useRecorderApi.ts",
+      "bytes": 5237,
+      "sha256": "0ded69f2dcf80e55a7a2d8f9abc95949c1a95f2049056f5e050df925b53c5f3a"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useProjectApi.ts",
+      "bytes": 5704,
+      "sha256": "52f7d2fb2cbf624fb36607e62361a507a859b774c610aaee2d1a240a11172311"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useRepositoryApi.ts",
+      "bytes": 5851,
+      "sha256": "8ef8554b7cddc7177636a5b33c056ca91806c2bbc72e54ab0d8a92e829623840"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useScriptApi.ts",
+      "bytes": 76529,
+      "sha256": "ce25b7385cc0805d366c84174f64d1344955b12a7f5163d63c4f135ecbbd47e1"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useSystemApi.ts",
+      "bytes": 21528,
+      "sha256": "0e7bb0d1ba1c09bcbcbf8c0ae44883315b0762c2febc283ef9af0e548341e68a"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useTestApi.ts",
+      "bytes": 36106,
+      "sha256": "ecffe395644c6eff95327b59efc7cbdd84bd7f059b0f8d94d218c23f9bc71ec0"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useLibraryApi.ts",
+      "bytes": 5102,
+      "sha256": "19091fad4cb212be418cd3a8181b049137592c2876878a47a9d57a2df460a9d6"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useCapacityApi.ts",
+      "bytes": 3435,
+      "sha256": "dae619181c5a06afc2a115de83fb0c11abbd485236fa03696327aabb234ed691"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useFleetApi.ts",
+      "bytes": 6787,
+      "sha256": "3245caae00cbab9b446d8429d6dcd2dfdff61f0c807df245a6092050d28df005"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useExecutionPlansApi.ts",
+      "bytes": 7077,
+      "sha256": "9b3cfe1624f6867d7cb2095ca72bb545b038ab5ba1e60c2f50452758d00b8a96"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useMonitoringCollectorsApi.ts",
+      "bytes": 3221,
+      "sha256": "dc7caba01229d7976b0460d14be19f1cd78f53f1916f7248c97d29bb2d35daaf"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useObjectRepositoryApi.ts",
+      "bytes": 2594,
+      "sha256": "b460b4899027b43f1791994b3c69e03efed20c313380e81cfa8a07631638b776"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useCorrelationRulesetApi.ts",
+      "bytes": 3122,
+      "sha256": "318e30ce495a03d09a0c5808e4cf2d928e620ef9011769d4b84521f85fcaf35c"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useEntitlementsApi.ts",
+      "bytes": 1136,
+      "sha256": "c8450a79a52814333045ddf741688d1a4118d6c7ad7f7477fd51912dea46e5a6"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useDashboardDefinitionsApi.ts",
+      "bytes": 2261,
+      "sha256": "89a8079c66bad250336e544073d1791cfaa619bfb4a3b07f529a03d475cf77d0"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useELKConnectionsApi.ts",
+      "bytes": 2552,
+      "sha256": "21245ba816c22a6b3e137e0693113c2e9b39cd2b037a0fe007c8ddff9bad867c"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useDynatraceConnectionsApi.ts",
+      "bytes": 4404,
+      "sha256": "9997b1afa56410bbd6f0d003e05c4196da4da8e267d9b21a33f743ae7386b43a"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useAppDynamicsConnectionsApi.ts",
+      "bytes": 4435,
+      "sha256": "53fcc681b41f35710bb5408a8859558b3002fdac70cffd6fd5cf538d28bf358a"
+    },
+    {
+      "path": "dashboard/src/hooks/apiServiceRegistry.ts",
+      "bytes": 4385,
+      "sha256": "087b89ab3d7df1c69b952a0135dc439e8afd711c44e70dc3573b76216258dc3a"
+    }
+  ],
+  "scope": "Structural API provider/context split plus exact six actually shared API facade chunk boundaries. Actual main and two existing test provider imports updated. New provider identity/retirement and gated real service-module boundary regressions. No API service/function bodies, budget or CSS edits by this owner.",
+  "before_api_source": {
+    "path": "/private/tmp/apexload-use-api-before-provider-split-20261005.ts",
+    "sha256": "44eff255c56d4027c94c75793c98aa4a165cb61a84f9d3f5933fc5df201b22af"
+  },
+  "body_preservation": {
+    "service_assembly_exact": true,
+    "service_assembly_sha256": "b2764e97b5017d7b3405ed2d1890a615e3e78cc094e854a0d1886181ab90c1d4",
+    "provider_body_exact": true,
+    "consumer_hooks_exact": true,
+    "api_error_export_preserved": true,
+    "all_twenty_groups_and_memo_dependencies_same_order": true,
+    "one_api_context_object": true,
+    "provider_type_edges": "Both apiContext and useApi import ApiServices from ApiProvider using import type only; provider is the sole runtime assembly owner."
+  },
+  "self_review": {
+    "findings": [],
+    "checks": [
+      "Read new provider/leaf/context and compared assembly, memo dependencies, provider body and required/optional consumer bodies byte-for-byte against pre-split source.",
+      "Only actual main/provider tests import ApiProvider as a runtime value; route consumers retain useApi required throw, optional null and ApiError identity.",
+      "Exact classifier matches apiContext/useApi as shared leaves while ApiProvider remains automatic. Six facade boundaries are ObjectRepository, CorrelationRuleset, Library, System, Dynatrace, AppDynamics; no broad API/hooks rule or twenty facade bucket.",
+      "Existing flat context fixture now represents all twenty groups; added nested real providers prove required/optional consumers share one object and nested unmount restores outer context.",
+      "New boundary test gates actual useTestApi module: consumer import must settle before service module evaluates; cleanup releases and joins any started gate.",
+      "Current sources have no literal NUL; historical HEAD NUL requires git diff --text. Diff whitespace check clean."
+    ],
+    "execution_claim": "No unit/type/lint/build/browser execution by this owner for v4. Root owns exact qualification. Previous v3 bundle failed reverse-entry/caps and remains red evidence."
+  },
+  "proposed_focused_tests": [
+    "src/viteChunkStrategy.test.ts",
+    "src/hooks/useApi.test.tsx",
+    "src/hooks/ApiProvider.test.tsx",
+    "src/hooks/useApi.moduleBoundary.test.tsx",
+    "src/hooks/apiServiceRegistry.test.tsx",
+    "src/App.hookOrder.test.tsx"
+  ],
+  "remaining_acceptance": "Candidate4 manifest DFS must contain no index.html in Scripts/Execution static closures and satisfy unchanged route/asset caps; all broader fullcycle/auth gates remain root-owned."
+}

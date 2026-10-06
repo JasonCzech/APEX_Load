@@ -1,0 +1,30 @@
+{
+  "name": "native-har-docs-final-2",
+  "argv": [
+    "python3",
+    "scripts/check-docs.py"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "exit_code": 0,
+  "elapsed_seconds": 2.441,
+  "recorded_at_utc": "2026-10-06T00:23:00.032250+00:00",
+  "log_path": "/private/tmp/native-har-docs-final-2.log",
+  "log_sha256": "8e0de64215e31a79d9fb17bc223e930c36a787c5b8cfd8afd8d1cbb38f30881e",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4114,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "raw_receipt_sha256": "18625b8bc999f6b8478f06ff4c441770cd58d6cd5a827c6ea47724ce33705853",
+  "repository_inventory_before_sha256": "9617b0c7b1715f41b107929e01fab979a2b9a2df78226bec0afd4dbc9d21104b",
+  "repository_inventory_after_sha256": "9617b0c7b1715f41b107929e01fab979a2b9a2df78226bec0afd4dbc9d21104b",
+  "qualification_disposition": "Current v7 repository documentation check green after exact upstream README preservation and local wrapper, with no checker skips or imported assets.",
+  "receipt_scope_note": "Compact durable receipt retains original private receipt SHA, source count/stability and inventory digests. Full 4,000+ repository inventories remain in the named private raw receipt; direct review inventories are copied separately. Neither inventory includes complete module-cache/native dependencies.",
+  "outcome": "green-scoped"
+}

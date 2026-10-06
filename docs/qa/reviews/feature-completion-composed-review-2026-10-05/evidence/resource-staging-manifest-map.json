@@ -1,0 +1,495 @@
+{
+  "schema": "apexload.qa.resource-staging-hold-map.v1",
+  "recorded_at_utc": "2026-10-06T01:48:53.957465+00:00",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "scope": "Read-only mapping of18 parent-confirmed resource/glue/generated staging holds to exact retained source/qualification/review manifests and current hashes. No source review rerun/tests/builds/staging/source edits or private HAR content read.",
+  "no_dedicated_64_file_manifest": "Parent confirms no dedicated14 tracked+50new resource transfer manifest is visible; none invented. Historical broad inventories do not independently authorize staging.",
+  "audit": {
+    "path": "/private/tmp/apexload-root-staging-advisory-audit-v2-20261005.json",
+    "sha256": "c5d26b1ea2d85d93494d658733fca121a82a6e91528b0d9d0b6190752daab7be"
+  },
+  "manifests": [
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-fa2d0a4f04eb8423b29f9a3d3af763b0f17fecbe745d6f4c5f54465ed6ce923b.json",
+      "sha256": "fa2d0a4f04eb8423b29f9a3d3af763b0f17fecbe745d6f4c5f54465ed6ce923b",
+      "input_count": 4036,
+      "scope": "Historical source bookend; broad inventory coverage is not independent proof of staging ownership."
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+      "sha256": "eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e",
+      "input_count": 5539,
+      "scope": "Historical source bookend; broad inventory coverage is not independent proof of staging ownership."
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/frontend-source-inventory-e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c.json",
+      "sha256": "e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c",
+      "input_count": 1485,
+      "scope": "Historical source bookend; broad inventory coverage is not independent proof of staging ownership."
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/generated-contract-inputs-final-freshness-bookends.json",
+      "sha256": "8cbe7e50e8ce0ff55343cc20f6f4d3ab3508b272b19beca6855b2ec29602a2f7",
+      "scope": "Historical resource generated-contract input bookends, superseded for changed outputs by composed generation."
+    },
+    {
+      "path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+      "sha256": "f864976484b732a30bc44bde11aaace7cd835d5f3f10400831c9cfecda856220",
+      "scope": "Current composed API generation receipt; exit0; four expected generated path deltas.",
+      "exit_code": 0,
+      "log_sha256": "fd343376a624d0fe1d7429363a13a2f9db5f25daa2e2de536b20e336639d5b46"
+    },
+    {
+      "path": "/private/tmp/apexload-resource-inspector-independent-repeat-review-v1-20261005.json",
+      "sha256": "561abd6a0604d5fb8aa94628e815ab89268e41ccee037c6ec18e21edfdcef22d",
+      "reviewed_count": 50,
+      "scope": "Actual independent source review of50 chosen resource inputs; no build execution."
+    }
+  ],
+  "rows": [
+    {
+      "path": "cmd/apexctl/analysis_workflows.go",
+      "current_sha256": "f7c15a020b9b7888055daf3b1b0a5aa979c29e743b86d33d16c03786142a9952",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-fa2d0a4f04eb8423b29f9a3d3af763b0f17fecbe745d6f4c5f54465ed6ce923b.json",
+          "sha256": "f7c15a020b9b7888055daf3b1b0a5aa979c29e743b86d33d16c03786142a9952",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "f7c15a020b9b7888055daf3b1b0a5aa979c29e743b86d33d16c03786142a9952",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "f7c15a020b9b7888055daf3b1b0a5aa979c29e743b86d33d16c03786142a9952",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": true,
+      "actual_review_hash": "f7c15a020b9b7888055daf3b1b0a5aa979c29e743b86d33d16c03786142a9952",
+      "actual_review_matches_current": true
+    },
+    {
+      "path": "dashboard/src/components/BrowserNativeRequestEvidence.tsx",
+      "current_sha256": "70144ac332b93181835fc7b6b68a0dfa7354643a4fdffed68f48283d20571f52",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "70144ac332b93181835fc7b6b68a0dfa7354643a4fdffed68f48283d20571f52",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/frontend-source-inventory-e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c.json",
+          "sha256": "70144ac332b93181835fc7b6b68a0dfa7354643a4fdffed68f48283d20571f52",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "70144ac332b93181835fc7b6b68a0dfa7354643a4fdffed68f48283d20571f52",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": true,
+      "actual_review_hash": "70144ac332b93181835fc7b6b68a0dfa7354643a4fdffed68f48283d20571f52",
+      "actual_review_matches_current": true
+    },
+    {
+      "path": "dashboard/src/components/BrowserResourceInspector.css",
+      "current_sha256": "84b96900a69b514a6799bec3ebf2403751aac1c986388bd3ef11e9126c9445c6",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "84b96900a69b514a6799bec3ebf2403751aac1c986388bd3ef11e9126c9445c6",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/frontend-source-inventory-e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c.json",
+          "sha256": "84b96900a69b514a6799bec3ebf2403751aac1c986388bd3ef11e9126c9445c6",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": false,
+      "actual_review_hash": null,
+      "actual_review_matches_current": null
+    },
+    {
+      "path": "dashboard/src/components/BrowserResourceInspector.test.tsx",
+      "current_sha256": "d0d2ce4eb39918ec39baae5d08b42bccf4b163c15ec763fd0b7e50f1bfa8c263",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "d0d2ce4eb39918ec39baae5d08b42bccf4b163c15ec763fd0b7e50f1bfa8c263",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/frontend-source-inventory-e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c.json",
+          "sha256": "d0d2ce4eb39918ec39baae5d08b42bccf4b163c15ec763fd0b7e50f1bfa8c263",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "d0d2ce4eb39918ec39baae5d08b42bccf4b163c15ec763fd0b7e50f1bfa8c263",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": true,
+      "actual_review_hash": "d0d2ce4eb39918ec39baae5d08b42bccf4b163c15ec763fd0b7e50f1bfa8c263",
+      "actual_review_matches_current": true
+    },
+    {
+      "path": "dashboard/src/components/TestExecutionArchive.test.tsx",
+      "current_sha256": "3bc34f0fcd152555a80b304e8b53d382a9fff10fb79e0c453e3f80bf84ed7e9b",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "3bc34f0fcd152555a80b304e8b53d382a9fff10fb79e0c453e3f80bf84ed7e9b",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/frontend-source-inventory-e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c.json",
+          "sha256": "3bc34f0fcd152555a80b304e8b53d382a9fff10fb79e0c453e3f80bf84ed7e9b",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "3bc34f0fcd152555a80b304e8b53d382a9fff10fb79e0c453e3f80bf84ed7e9b",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": false,
+      "actual_review_hash": null,
+      "actual_review_matches_current": null
+    },
+    {
+      "path": "dashboard/src/components/TestExecutionArchive.tsx",
+      "current_sha256": "16e6cb443e2911d83487c2510e4f7c28d49ce41e3bf550edd529b98287da9e4b",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "16e6cb443e2911d83487c2510e4f7c28d49ce41e3bf550edd529b98287da9e4b",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/frontend-source-inventory-e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c.json",
+          "sha256": "16e6cb443e2911d83487c2510e4f7c28d49ce41e3bf550edd529b98287da9e4b",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "16e6cb443e2911d83487c2510e4f7c28d49ce41e3bf550edd529b98287da9e4b",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": true,
+      "actual_review_hash": "16e6cb443e2911d83487c2510e4f7c28d49ce41e3bf550edd529b98287da9e4b",
+      "actual_review_matches_current": true
+    },
+    {
+      "path": "dashboard/src/components/browserResourceEvidenceModel.test.ts",
+      "current_sha256": "db1030294309e5095fdc7d7445a3de0fcbb99bf758388af3e3cb046912645f29",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "db1030294309e5095fdc7d7445a3de0fcbb99bf758388af3e3cb046912645f29",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/frontend-source-inventory-e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c.json",
+          "sha256": "db1030294309e5095fdc7d7445a3de0fcbb99bf758388af3e3cb046912645f29",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "db1030294309e5095fdc7d7445a3de0fcbb99bf758388af3e3cb046912645f29",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": false,
+      "actual_review_hash": null,
+      "actual_review_matches_current": null
+    },
+    {
+      "path": "dashboard/src/components/browserResourceEvidenceModel.ts",
+      "current_sha256": "5edfb6cd6b1c0685cef2a63bcd853ece5943396a50ad359476f33221e154219a",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "5edfb6cd6b1c0685cef2a63bcd853ece5943396a50ad359476f33221e154219a",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/frontend-source-inventory-e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c.json",
+          "sha256": "5edfb6cd6b1c0685cef2a63bcd853ece5943396a50ad359476f33221e154219a",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "5edfb6cd6b1c0685cef2a63bcd853ece5943396a50ad359476f33221e154219a",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": true,
+      "actual_review_hash": "5edfb6cd6b1c0685cef2a63bcd853ece5943396a50ad359476f33221e154219a",
+      "actual_review_matches_current": true
+    },
+    {
+      "path": "dashboard/src/components/browserResourcePage.testFixtures.ts",
+      "current_sha256": "1d63f440cd887d112b08b5467084df92d1dac3ec6b8ec571d6b325b8063f904b",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "1d63f440cd887d112b08b5467084df92d1dac3ec6b8ec571d6b325b8063f904b",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/frontend-source-inventory-e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c.json",
+          "sha256": "1d63f440cd887d112b08b5467084df92d1dac3ec6b8ec571d6b325b8063f904b",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "1d63f440cd887d112b08b5467084df92d1dac3ec6b8ec571d6b325b8063f904b",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": false,
+      "actual_review_hash": null,
+      "actual_review_matches_current": null
+    },
+    {
+      "path": "dashboard/src/components/browserResourcePageModel.test.ts",
+      "current_sha256": "771c655beb4b7c236b05e19b63ead3ca8ceba6f91330355cd1ca5947483819e4",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "771c655beb4b7c236b05e19b63ead3ca8ceba6f91330355cd1ca5947483819e4",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/frontend-source-inventory-e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c.json",
+          "sha256": "771c655beb4b7c236b05e19b63ead3ca8ceba6f91330355cd1ca5947483819e4",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "771c655beb4b7c236b05e19b63ead3ca8ceba6f91330355cd1ca5947483819e4",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": true,
+      "actual_review_hash": "771c655beb4b7c236b05e19b63ead3ca8ceba6f91330355cd1ca5947483819e4",
+      "actual_review_matches_current": true
+    },
+    {
+      "path": "dashboard/src/components/useBrowserResourcePage.test.tsx",
+      "current_sha256": "d9feee1026475b513118a45fa82778d6f6aaacb90be3f073ebf0bc3dccb9df82",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "d9feee1026475b513118a45fa82778d6f6aaacb90be3f073ebf0bc3dccb9df82",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/frontend-source-inventory-e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c.json",
+          "sha256": "d9feee1026475b513118a45fa82778d6f6aaacb90be3f073ebf0bc3dccb9df82",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "d9feee1026475b513118a45fa82778d6f6aaacb90be3f073ebf0bc3dccb9df82",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": true,
+      "actual_review_hash": "d9feee1026475b513118a45fa82778d6f6aaacb90be3f073ebf0bc3dccb9df82",
+      "actual_review_matches_current": true
+    },
+    {
+      "path": "dashboard/src/types/generated/openapi.ts",
+      "current_sha256": "87fd69081785270438752c9c30c56f1fa075ee12743ccf5ab78e4f3f927cc4bd",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "24b258f93a562ebf2b5f7dad734e3e959c8f8477589dc15ce0b967924dead3f2",
+          "matches_current": false
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/frontend-source-inventory-e3c180b5b0b93a2ed48b1601fc80d090178c56a70f774660b77d7ff365b5057c.json",
+          "sha256": "24b258f93a562ebf2b5f7dad734e3e959c8f8477589dc15ce0b967924dead3f2",
+          "matches_current": false
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/generated-contract-inputs-final-freshness-bookends.json",
+          "sha256": "24b258f93a562ebf2b5f7dad734e3e959c8f8477589dc15ce0b967924dead3f2",
+          "matches_current": false
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "87fd69081785270438752c9c30c56f1fa075ee12743ccf5ab78e4f3f927cc4bd",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": false,
+      "actual_review_hash": null,
+      "actual_review_matches_current": null
+    },
+    {
+      "path": "pkg/api/apidocs/api-endpoint-catalog.json",
+      "current_sha256": "bca4eb849c2e446b2233d9db23af2c1e3b09457ae056f832dd48eeab3e686882",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/generated-contract-inputs-final-freshness-bookends.json",
+          "sha256": "bca4eb849c2e446b2233d9db23af2c1e3b09457ae056f832dd48eeab3e686882",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": false,
+      "actual_review_hash": null,
+      "actual_review_matches_current": null
+    },
+    {
+      "path": "pkg/api/apidocs/swagger.yaml",
+      "current_sha256": "4436bbdeb25cccd929308c70703adc50d0f8f5df456e6a3a18124a725ef60551",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/generated-contract-inputs-final-freshness-bookends.json",
+          "sha256": "b2bb6103ad794012daf401807dea948f35945952e7f90ec2167509a90a65cd91",
+          "matches_current": false
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "4436bbdeb25cccd929308c70703adc50d0f8f5df456e6a3a18124a725ef60551",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": false,
+      "actual_review_hash": null,
+      "actual_review_matches_current": null
+    },
+    {
+      "path": "pkg/api/archive_parquet.go",
+      "current_sha256": "f6fd4d9ae1ef17f21af6f44797e018cf431c7dcd6d76e33f5f6530f0c4b7f8f7",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-fa2d0a4f04eb8423b29f9a3d3af763b0f17fecbe745d6f4c5f54465ed6ce923b.json",
+          "sha256": "f6fd4d9ae1ef17f21af6f44797e018cf431c7dcd6d76e33f5f6530f0c4b7f8f7",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "f6fd4d9ae1ef17f21af6f44797e018cf431c7dcd6d76e33f5f6530f0c4b7f8f7",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "f6fd4d9ae1ef17f21af6f44797e018cf431c7dcd6d76e33f5f6530f0c4b7f8f7",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": true,
+      "actual_review_hash": "f6fd4d9ae1ef17f21af6f44797e018cf431c7dcd6d76e33f5f6530f0c4b7f8f7",
+      "actual_review_matches_current": true
+    },
+    {
+      "path": "pkg/api/route_registry.go",
+      "current_sha256": "5953582c8e78dee5f4a85a5d344345ccf8516b71ca762019473f0b13820a21d5",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-fa2d0a4f04eb8423b29f9a3d3af763b0f17fecbe745d6f4c5f54465ed6ce923b.json",
+          "sha256": "5953582c8e78dee5f4a85a5d344345ccf8516b71ca762019473f0b13820a21d5",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "5953582c8e78dee5f4a85a5d344345ccf8516b71ca762019473f0b13820a21d5",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "5953582c8e78dee5f4a85a5d344345ccf8516b71ca762019473f0b13820a21d5",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": true,
+      "actual_review_hash": "5953582c8e78dee5f4a85a5d344345ccf8516b71ca762019473f0b13820a21d5",
+      "actual_review_matches_current": true
+    },
+    {
+      "path": "pkg/api/route_registry_archive.go",
+      "current_sha256": "b78f655924604a8afbafe28c889fcb353c27de5c177509317dc3131cd322784e",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-fa2d0a4f04eb8423b29f9a3d3af763b0f17fecbe745d6f4c5f54465ed6ce923b.json",
+          "sha256": "b78f655924604a8afbafe28c889fcb353c27de5c177509317dc3131cd322784e",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "b78f655924604a8afbafe28c889fcb353c27de5c177509317dc3131cd322784e",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "b78f655924604a8afbafe28c889fcb353c27de5c177509317dc3131cd322784e",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": true,
+      "actual_review_hash": "b78f655924604a8afbafe28c889fcb353c27de5c177509317dc3131cd322784e",
+      "actual_review_matches_current": true
+    },
+    {
+      "path": "pkg/distributed/generatorrpc/archive.go",
+      "current_sha256": "5cf63ea5c12aa1ab5167080f3576eabc2d1f4b40b563497f6d592de03155558b",
+      "explicit_parent_ownership_confirmation": true,
+      "historical_sources": [
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-fa2d0a4f04eb8423b29f9a3d3af763b0f17fecbe745d6f4c5f54465ed6ce923b.json",
+          "sha256": "5cf63ea5c12aa1ab5167080f3576eabc2d1f4b40b563497f6d592de03155558b",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/evidence/source-inventory-eb7936f36bc5d4db14d2932acefec40ae14b4e47f4aac46645f23d3eb4fd827e.json",
+          "sha256": "5cf63ea5c12aa1ab5167080f3576eabc2d1f4b40b563497f6d592de03155558b",
+          "matches_current": true
+        },
+        {
+          "manifest": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-generate-api-1.json",
+          "sha256": "5cf63ea5c12aa1ab5167080f3576eabc2d1f4b40b563497f6d592de03155558b",
+          "matches_current": true
+        }
+      ],
+      "in_actual_50_input_independent_review": true,
+      "actual_review_hash": "5cf63ea5c12aa1ab5167080f3576eabc2d1f4b40b563497f6d592de03155558b",
+      "actual_review_matches_current": true
+    }
+  ],
+  "current_hashes_rechecked_at_end": true,
+  "summary": {
+    "holds": 18,
+    "nongenerated_source_paths": 15,
+    "all_nongenerated_sources_match_final_historical_resource_bookend": true,
+    "generated_typescript_and_swagger_match_composed_generation": true,
+    "catalog_unchanged_matches_resource_generated_freshness": true
+  },
+  "remaining": "Parent exact prospective stage/diff/source/provenance audit and physical gate joins remain mandatory. Do not stage changing embed/browser scratch from this map."
+}

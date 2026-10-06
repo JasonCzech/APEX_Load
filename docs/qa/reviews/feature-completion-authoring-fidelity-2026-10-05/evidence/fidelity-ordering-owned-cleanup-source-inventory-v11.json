@@ -1,0 +1,64 @@
+{
+  "recorded_utc": "2026-10-05T23:29:05.502683+00:00",
+  "root": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+  "head": "6e2f1082efcc83054c79d74ccf89e43625b4a4b0",
+  "prior_v9_inventory_path": "docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/evidence/fidelity-native-frame-prerequisite-source-embed-inventory-v9.json",
+  "prior_v9_inventory_sha256": "5d8d56b401b7946ec1d2e0fac2a37a29689311a067a7e712958e388cf1ad7c90",
+  "scope": "Fixture-only ownership correction and two actual SQLite/generator regressions. Preserve exact concrete backend, 1500ms individual budget / 900ms delays, all existing activation and persistence assertions. Current authored feature input hashes remain v9; no production or embedded changes.",
+  "sources": [
+    {
+      "path": "pkg/api/distributed_start_ordering_test.go",
+      "sha256": "378b070523ddccb5d6970f1ecae358235d566a4c3100c11fb04a3f7492b3e844"
+    }
+  ],
+  "dependencies": [
+    {
+      "path": "pkg/api/testexecution.go",
+      "sha256": "e3c5dcadffea2a537a536908448da1cabe993585791d93908318f886ac4fc936"
+    },
+    {
+      "path": "pkg/api/distributed_execution_backend.go",
+      "sha256": "76a622ee421665decfc8b8a5773c859dc244324ab6067737b221e6da4d4be29c"
+    },
+    {
+      "path": "pkg/api/distributed_stream.go",
+      "sha256": "2aceaf5633be90e82b88fbae74b41c415c2446de0ba945036b890d20fe01d07f"
+    },
+    {
+      "path": "pkg/api/runner_shutdown.go",
+      "sha256": "7d5398e7c55c2bae92f08739666e26677677f1ae9613c7878752dd740283beea"
+    },
+    {
+      "path": "pkg/api/monitoring_incidents.go",
+      "sha256": "7ef1d78db5d4b1b2b3bf992fa6ccea1fd4db1bfd530face6bd1394e3bae3808d"
+    },
+    {
+      "path": "pkg/api/websocket.go",
+      "sha256": "0f8c7869de0ab8d5a5838251ccd49160e5652c8c8eb4250b5497897b08f59bbe"
+    },
+    {
+      "path": "pkg/distributed/generatorrpc/service.go",
+      "sha256": "e1e5dc352a3407723adebcd264002834d605c594dc2a560ba88c50caa242c36d"
+    },
+    {
+      "path": "pkg/distributed/generatorrpc/execution_control.go",
+      "sha256": "cefbee8092ea0d72ff6d0935365cba6fd77c1dcefcf10e61d1843bf6df029f6a"
+    },
+    {
+      "path": "pkg/distributed/generatorrpc/run_supervision.go",
+      "sha256": "e2f60bcc408b8bf33a1c3afcb97a905c825d7ce6fa8d4d34d8be5cb916e41397"
+    },
+    {
+      "path": "pkg/api/main_test.go",
+      "sha256": "7c4102d49ef793abf4e54047d2bf05e7a25fb9b485aef77d6cff1599f4c3543f"
+    }
+  ],
+  "free_bytes_before_normal": 13915693056,
+  "archive_reserve_unchanged": true,
+  "red_receipts": [
+    "fidelity-v10-ordering-cleanup-red-1.json",
+    "fidelity-v10-ordering-cleanup-red-2.json"
+  ],
+  "new_source_qualified": false,
+  "broad_gates": "Per parent sequencing, ONE final composed full Go/full dashboard cycle will run after semantic integration; no duplicate broad suite in author worktree."
+}

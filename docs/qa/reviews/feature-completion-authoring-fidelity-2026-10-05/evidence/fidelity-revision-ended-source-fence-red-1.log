@@ -1,0 +1,10 @@
+=== RUN   TestAuthoringFidelityRevisionDelayClearRechecksSourceAtFinalFence
+=== RUN   TestAuthoringFidelityRevisionDelayClearRechecksSourceAtFinalFence/started
+=== RUN   TestAuthoringFidelityRevisionDelayClearRechecksSourceAtFinalFence/ended_only
+    authoring_fidelity_regression_test.go:294: changed source committed a cleared revision: created=true err=<nil>
+--- FAIL: TestAuthoringFidelityRevisionDelayClearRechecksSourceAtFinalFence (0.01s)
+    --- PASS: TestAuthoringFidelityRevisionDelayClearRechecksSourceAtFinalFence/started (0.01s)
+    --- FAIL: TestAuthoringFidelityRevisionDelayClearRechecksSourceAtFinalFence/ended_only (0.00s)
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/api	1.506s
+FAIL

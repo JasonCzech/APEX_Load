@@ -40,6 +40,9 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 		return fmt.Errorf("usage: apexctl %s <action> --api URL [--project ID] [--id ID] [--file JSON]", kind)
 	}
 	action := args[0]
+	if kind == "analysis" && action == "browser-resources" {
+		return runBrowserResourcesCommand(ctx, args[1:], out)
+	}
 	if kind == "analysis" && action == "browser-documents" {
 		return executeBrowserDocumentCommand(ctx, args[1:], out)
 	}
@@ -397,7 +400,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 					return errors.New("--file JSON query is required")
 				}
 			default:
-				return errors.New("analysis actions: telemetry-policy, browser-documents, progress, baseline, capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison")
+				return errors.New("analysis actions: telemetry-policy, browser-documents, browser-resources, progress, baseline, capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison")
 			}
 		}
 	default:

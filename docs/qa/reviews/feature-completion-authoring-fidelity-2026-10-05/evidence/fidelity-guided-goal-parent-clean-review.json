@@ -1,0 +1,23 @@
+{
+  "schema": "apexload.qa.independent-review.v1",
+  "captured_at_utc": "2026-10-05T16:30:33.406792+00:00",
+  "reviewer": "root independent of implementing owner",
+  "finding_count_after_fixes": 0,
+  "scope": "Final TestHub authored goal extraction, guided patch/seed/edit/clone ownership, real held RESERVED and API-seeded QUEUED workflow intent; second pass only adds raw held/queued snapshots before assertions. No browser success or broader AUTH-1 claim.",
+  "files": [
+    {
+      "path": "dashboard/src/components/TestHub.tsx",
+      "sha256": "461037d01b67d2828c7e04ef15fcb2750c3a96e4fb79902cc7ed6bd36a6dca63"
+    },
+    {
+      "path": "dashboard/src/components/TestHub.test.tsx",
+      "sha256": "c19160ad0160b72e2f3cdb8366d8c8aa1dfbdd2b38fc5cdbef87e3b6f8761fa5"
+    },
+    {
+      "path": "dashboard/e2e/workflow-new-test.spec.ts",
+      "sha256": "224a8805452bfcac5a8d93edf06084a814823381681091a093ebbb813d2d6829"
+    }
+  ],
+  "unit_receipt": "fidelity-guided-shape-early-stop-final-units-1.json",
+  "source_embed_freeze": "fidelity-guided-goal-final-source-embed-freeze.json"
+}

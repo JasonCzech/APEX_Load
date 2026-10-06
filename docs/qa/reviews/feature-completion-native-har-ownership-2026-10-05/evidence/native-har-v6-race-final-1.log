@@ -1,0 +1,478 @@
+=== RUN   TestBrowserContextOptionsApplyScaleAndOrientation
+--- PASS: TestBrowserContextOptionsApplyScaleAndOrientation (0.00s)
+=== RUN   TestBrowserDocumentFinalizePhysicallyClosesAndJoinsOwnedNativeWorkers
+--- PASS: TestBrowserDocumentFinalizePhysicallyClosesAndJoinsOwnedNativeWorkers (0.05s)
+=== RUN   TestBrowserDocumentBootstrapJoinsLifecycleReceipts
+=== RUN   TestBrowserDocumentBootstrapJoinsLifecycleReceipts/begin
+=== RUN   TestBrowserDocumentBootstrapJoinsLifecycleReceipts/join
+=== RUN   TestBrowserDocumentBootstrapJoinsLifecycleReceipts/restore
+=== RUN   TestBrowserDocumentBootstrapJoinsLifecycleReceipts/begin_false
+--- PASS: TestBrowserDocumentBootstrapJoinsLifecycleReceipts (0.13s)
+    --- PASS: TestBrowserDocumentBootstrapJoinsLifecycleReceipts/begin (0.03s)
+    --- PASS: TestBrowserDocumentBootstrapJoinsLifecycleReceipts/join (0.03s)
+    --- PASS: TestBrowserDocumentBootstrapJoinsLifecycleReceipts/restore (0.03s)
+    --- PASS: TestBrowserDocumentBootstrapJoinsLifecycleReceipts/begin_false (0.03s)
+=== RUN   TestBrowserDocumentFinalizeIncludesCurrentFrameBeforeBeginAcknowledgment
+--- PASS: TestBrowserDocumentFinalizeIncludesCurrentFrameBeforeBeginAcknowledgment (0.00s)
+=== RUN   TestBrowserDocumentCurrentFrameMergeIsBoundedAndDeduplicated
+--- PASS: TestBrowserDocumentCurrentFrameMergeIsBoundedAndDeduplicated (0.00s)
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/stale_then_live
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/live_then_stale
+--- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders (0.00s)
+    --- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/stale_then_live (0.00s)
+    --- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/live_then_stale (0.00s)
+=== RUN   TestFinalizeHARCaptureRedactsLowEntropyRuntimeSecrets
+--- PASS: TestFinalizeHARCaptureRedactsLowEntropyRuntimeSecrets (0.07s)
+=== RUN   TestFinalizeHARCaptureRedactsPercentEncodedRuntimeSecrets
+--- PASS: TestFinalizeHARCaptureRedactsPercentEncodedRuntimeSecrets (0.06s)
+=== RUN   TestApplyHARCaptureOptionsPreservesUnknownLegacyWorkingFiles
+--- PASS: TestApplyHARCaptureOptionsPreservesUnknownLegacyWorkingFiles (0.03s)
+=== RUN   TestApplyHARCaptureOptionsDisablesRawCaptureForRuntimeSecrets
+--- PASS: TestApplyHARCaptureOptionsDisablesRawCaptureForRuntimeSecrets (0.00s)
+=== RUN   TestDiscardHARWorkingFileUnregistersAndRemoves
+--- PASS: TestDiscardHARWorkingFileUnregistersAndRemoves (0.03s)
+=== RUN   TestHARMonitorStopsOnActualFileSize
+--- PASS: TestHARMonitorStopsOnActualFileSize (0.25s)
+=== RUN   TestClosePreservesPreviouslyRetainedHARArtifact
+--- PASS: TestClosePreservesPreviouslyRetainedHARArtifact (0.00s)
+=== RUN   TestHAROwnershipNativeOnCloseRepeatCannotBlockOwnedFlush
+    har_native_callback_test.go:18: native callback ownership requires installed browsers
+--- SKIP: TestHAROwnershipNativeOnCloseRepeatCannotBlockOwnedFlush (0.00s)
+=== RUN   TestHAROwnershipNativeCloseCapabilityIsExplicit
+--- PASS: TestHAROwnershipNativeCloseCapabilityIsExplicit (0.00s)
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof
+    har_native_preclosed_test.go:19: native HAR owned-close fixture requires installed browsers
+--- SKIP: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof (0.00s)
+=== RUN   TestHAROwnershipSetupFailurePrecedesNativeLaunch
+--- PASS: TestHAROwnershipSetupFailurePrecedesNativeLaunch (0.00s)
+=== RUN   TestHAROwnershipTeardownAndOversizedCloseSharePhysicalJoin
+--- PASS: TestHAROwnershipTeardownAndOversizedCloseSharePhysicalJoin (0.08s)
+=== RUN   TestHAROwnershipRedactorPanicReportsUnprovenWork
+--- PASS: TestHAROwnershipRedactorPanicReportsUnprovenWork (0.02s)
+=== RUN   TestHAROwnershipAdmissionIsBounded
+--- PASS: TestHAROwnershipAdmissionIsBounded (0.03s)
+=== RUN   TestHAROwnershipTeardownRetainsLeaseUntilRuntimeWorkerActuallyJoins
+--- PASS: TestHAROwnershipTeardownRetainsLeaseUntilRuntimeWorkerActuallyJoins (0.08s)
+=== RUN   TestHAROwnershipDocumentFinalizerDeadlineRetainsSameCloseOwner
+--- PASS: TestHAROwnershipDocumentFinalizerDeadlineRetainsSameCloseOwner (0.08s)
+=== RUN   TestHAROwnershipStaleFrameFailureCannotCensorLiveSibling
+--- PASS: TestHAROwnershipStaleFrameFailureCannotCensorLiveSibling (0.00s)
+=== RUN   TestHAROwnershipTerminalPlanRetiresUnchangedBatchAndRejectsExternalReplacement
+=== RUN   TestHAROwnershipTerminalPlanRetiresUnchangedBatchAndRejectsExternalReplacement/unchanged_batch
+=== RUN   TestHAROwnershipTerminalPlanRetiresUnchangedBatchAndRejectsExternalReplacement/external_replacement
+--- PASS: TestHAROwnershipTerminalPlanRetiresUnchangedBatchAndRejectsExternalReplacement (0.16s)
+    --- PASS: TestHAROwnershipTerminalPlanRetiresUnchangedBatchAndRejectsExternalReplacement/unchanged_batch (0.09s)
+    --- PASS: TestHAROwnershipTerminalPlanRetiresUnchangedBatchAndRejectsExternalReplacement/external_replacement (0.07s)
+=== RUN   TestHAROwnershipTeardownUsesOneOverallBudget
+--- PASS: TestHAROwnershipTeardownUsesOneOverallBudget (2.06s)
+=== RUN   TestHAROwnershipNamespaceRejectsWorkDirectoryReplacementAfterLockWait
+--- PASS: TestHAROwnershipNamespaceRejectsWorkDirectoryReplacementAfterLockWait (0.01s)
+=== RUN   TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement
+=== RUN   TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/recorded_first/unchanged
+=== RUN   TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/recorded_first/external_replacement
+=== RUN   TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/unrecorded_first/unchanged
+=== RUN   TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/unrecorded_first/external_replacement
+--- PASS: TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement (0.32s)
+    --- PASS: TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/recorded_first/unchanged (0.08s)
+    --- PASS: TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/recorded_first/external_replacement (0.08s)
+    --- PASS: TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/unrecorded_first/unchanged (0.09s)
+    --- PASS: TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/unrecorded_first/external_replacement (0.07s)
+=== RUN   TestHAROwnershipUnrecordedPlanStartsAbsentAndRejectsExternalReplacement
+=== RUN   TestHAROwnershipUnrecordedPlanStartsAbsentAndRejectsExternalReplacement/own_mutations
+=== RUN   TestHAROwnershipUnrecordedPlanStartsAbsentAndRejectsExternalReplacement/external_replacement
+--- PASS: TestHAROwnershipUnrecordedPlanStartsAbsentAndRejectsExternalReplacement (0.14s)
+    --- PASS: TestHAROwnershipUnrecordedPlanStartsAbsentAndRejectsExternalReplacement/own_mutations (0.09s)
+    --- PASS: TestHAROwnershipUnrecordedPlanStartsAbsentAndRejectsExternalReplacement/external_replacement (0.05s)
+=== RUN   TestHAROwnershipNativeContextFlushAndJoin
+    har_ownership_native_test.go:24: native HAR ownership fixture requires an installed browser
+--- SKIP: TestHAROwnershipNativeContextFlushAndJoin (0.00s)
+=== RUN   TestHAROwnershipNativeCloseErrorRemainsExplicitAndPrivate
+    har_ownership_native_test.go:133: native HAR ownership fixture requires an installed browser
+--- SKIP: TestHAROwnershipNativeCloseErrorRemainsExplicitAndPrivate (0.00s)
+=== RUN   TestHAROwnershipBlockedDetachRetainsExactJoinAndReturnsDeadline
+--- PASS: TestHAROwnershipBlockedDetachRetainsExactJoinAndReturnsDeadline (0.08s)
+=== RUN   TestHAROwnershipGoexitNeverInventsCompletion
+=== RUN   TestHAROwnershipGoexitNeverInventsCompletion/closer
+=== RUN   TestHAROwnershipGoexitNeverInventsCompletion/redactor
+=== RUN   TestHAROwnershipGoexitNeverInventsCompletion/runtime_join
+--- PASS: TestHAROwnershipGoexitNeverInventsCompletion (0.04s)
+    --- PASS: TestHAROwnershipGoexitNeverInventsCompletion/closer (0.01s)
+    --- PASS: TestHAROwnershipGoexitNeverInventsCompletion/redactor (0.01s)
+    --- PASS: TestHAROwnershipGoexitNeverInventsCompletion/runtime_join (0.02s)
+=== RUN   TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration
+=== RUN   TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration/resume
+=== RUN   TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration/replacement
+--- PASS: TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration (0.06s)
+    --- PASS: TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration/resume (0.04s)
+    --- PASS: TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration/replacement (0.02s)
+=== RUN   TestHAROwnershipCompletedRetentionHasBoundedScan
+--- PASS: TestHAROwnershipCompletedRetentionHasBoundedScan (0.10s)
+=== RUN   TestHAROwnershipJoinedCandidateCarriesBoundedActualSize
+--- PASS: TestHAROwnershipJoinedCandidateCarriesBoundedActualSize (0.01s)
+=== RUN   TestHAROwnershipRawFileIsPrivateBeforeNativeWriterEnters
+--- PASS: TestHAROwnershipRawFileIsPrivateBeforeNativeWriterEnters (0.05s)
+=== RUN   TestHAROwnershipRetentionRejectsOversizedLimitsAndCancelledWork
+--- PASS: TestHAROwnershipRetentionRejectsOversizedLimitsAndCancelledWork (0.00s)
+=== RUN   TestHAROwnershipUnjoinedRetiredGenerationIsPreserved
+--- PASS: TestHAROwnershipUnjoinedRetiredGenerationIsPreserved (0.01s)
+=== RUN   TestRuntimeHARRetentionBoundsCompletedArtifacts
+--- PASS: TestRuntimeHARRetentionBoundsCompletedArtifacts (0.08s)
+=== RUN   TestRuntimeHARRetentionIgnoresUnownedFilesAndSymlinks
+--- PASS: TestRuntimeHARRetentionIgnoresUnownedFilesAndSymlinks (0.02s)
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-0-removals
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-1-removals
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-2-removals
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-3-removals
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-4-removals
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-5-removals
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-6-removals
+--- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary (0.29s)
+    --- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-0-removals (0.04s)
+    --- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-1-removals (0.04s)
+    --- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-2-removals (0.04s)
+    --- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-3-removals (0.04s)
+    --- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-4-removals (0.04s)
+    --- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-5-removals (0.04s)
+    --- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-6-removals (0.05s)
+=== RUN   TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger
+=== RUN   TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger/payload
+=== RUN   TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger/absent_payload
+=== RUN   TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger/ledger
+--- PASS: TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger (0.08s)
+    --- PASS: TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger/payload (0.03s)
+    --- PASS: TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger/absent_payload (0.02s)
+    --- PASS: TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger/ledger (0.03s)
+=== RUN   TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval
+=== RUN   TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/renamed
+=== RUN   TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/absent
+=== RUN   TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/replaced
+=== RUN   TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/unknown
+--- PASS: TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval (0.10s)
+    --- PASS: TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/renamed (0.03s)
+    --- PASS: TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/absent (0.03s)
+    --- PASS: TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/replaced (0.02s)
+    --- PASS: TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/unknown (0.01s)
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/duplicate
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/utf8
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/trailing
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/null
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/path
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/null_device
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/version
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/case_alias
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/unknown
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/null_name
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/too_large
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/record_count
+--- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed (0.09s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/duplicate (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/utf8 (0.00s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/trailing (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/null (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/path (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/null_device (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/version (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/case_alias (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/unknown (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/null_name (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/too_large (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/record_count (0.02s)
+=== RUN   TestHAROwnershipDocumentCallbackGoexitNeverAuthorizesRetirement
+--- PASS: TestHAROwnershipDocumentCallbackGoexitNeverAuthorizesRetirement (0.01s)
+=== RUN   TestHAROwnershipStrictManifestRejectsActualInvalidUTF8
+--- PASS: TestHAROwnershipStrictManifestRejectsActualInvalidUTF8 (0.00s)
+=== RUN   TestHAROwnershipPrivateGenerationAndDurablePublication
+--- PASS: TestHAROwnershipPrivateGenerationAndDurablePublication (0.05s)
+=== RUN   TestHAROwnershipCollisionNeverReplacesCompletedArtifact
+--- PASS: TestHAROwnershipCollisionNeverReplacesCompletedArtifact (0.04s)
+=== RUN   TestHAROwnershipUnknownLegacyAndUnjoinedCrashRemainPrivate
+--- PASS: TestHAROwnershipUnknownLegacyAndUnjoinedCrashRemainPrivate (0.01s)
+=== RUN   TestHAROwnershipFailedAndBlockedCloseRetainsExactLease
+=== RUN   TestHAROwnershipFailedAndBlockedCloseRetainsExactLease/error
+=== RUN   TestHAROwnershipFailedAndBlockedCloseRetainsExactLease/panic
+=== RUN   TestHAROwnershipFailedAndBlockedCloseRetainsExactLease/blocked
+--- PASS: TestHAROwnershipFailedAndBlockedCloseRetainsExactLease (0.10s)
+    --- PASS: TestHAROwnershipFailedAndBlockedCloseRetainsExactLease/error (0.01s)
+    --- PASS: TestHAROwnershipFailedAndBlockedCloseRetainsExactLease/panic (0.01s)
+    --- PASS: TestHAROwnershipFailedAndBlockedCloseRetainsExactLease/blocked (0.07s)
+=== RUN   TestHAROwnershipInitFailureJoinsBeforeRemovingRaw
+--- PASS: TestHAROwnershipInitFailureJoinsBeforeRemovingRaw (0.04s)
+=== RUN   TestHAROwnershipLateOldLimiterCannotCloseNewGeneration
+--- PASS: TestHAROwnershipLateOldLimiterCannotCloseNewGeneration (0.08s)
+=== RUN   TestHAROwnershipRejectsUnsafeRootsAndLockAliases
+=== RUN   TestHAROwnershipRejectsUnsafeRootsAndLockAliases/root_symlink
+=== RUN   TestHAROwnershipRejectsUnsafeRootsAndLockAliases/work_symlink
+=== RUN   TestHAROwnershipRejectsUnsafeRootsAndLockAliases/work_permissions
+=== RUN   TestHAROwnershipRejectsUnsafeRootsAndLockAliases/lock_hardlink
+=== RUN   TestHAROwnershipRejectsUnsafeRootsAndLockAliases/lock_symlink
+--- PASS: TestHAROwnershipRejectsUnsafeRootsAndLockAliases (0.01s)
+    --- PASS: TestHAROwnershipRejectsUnsafeRootsAndLockAliases/root_symlink (0.00s)
+    --- PASS: TestHAROwnershipRejectsUnsafeRootsAndLockAliases/work_symlink (0.00s)
+    --- PASS: TestHAROwnershipRejectsUnsafeRootsAndLockAliases/work_permissions (0.00s)
+    --- PASS: TestHAROwnershipRejectsUnsafeRootsAndLockAliases/lock_hardlink (0.00s)
+    --- PASS: TestHAROwnershipRejectsUnsafeRootsAndLockAliases/lock_symlink (0.00s)
+=== RUN   TestHAROwnershipManifestAndGenerationFences
+=== RUN   TestHAROwnershipManifestAndGenerationFences/unknown_version
+=== RUN   TestHAROwnershipManifestAndGenerationFences/wrong_generation
+=== RUN   TestHAROwnershipManifestAndGenerationFences/trailing_json
+=== RUN   TestHAROwnershipManifestAndGenerationFences/oversized
+=== RUN   TestHAROwnershipManifestAndGenerationFences/replacement
+--- PASS: TestHAROwnershipManifestAndGenerationFences (0.07s)
+    --- PASS: TestHAROwnershipManifestAndGenerationFences/unknown_version (0.01s)
+    --- PASS: TestHAROwnershipManifestAndGenerationFences/wrong_generation (0.01s)
+    --- PASS: TestHAROwnershipManifestAndGenerationFences/trailing_json (0.02s)
+    --- PASS: TestHAROwnershipManifestAndGenerationFences/oversized (0.01s)
+    --- PASS: TestHAROwnershipManifestAndGenerationFences/replacement (0.01s)
+=== RUN   TestHAROwnershipCrossProcessCleaner
+=== RUN   TestHAROwnershipCrossProcessCleaner/unknown_crash
+=== RUN   TestHAROwnershipCrossProcessCleaner/joined_crash
+--- PASS: TestHAROwnershipCrossProcessCleaner (2.14s)
+    --- PASS: TestHAROwnershipCrossProcessCleaner/unknown_crash (1.04s)
+    --- PASS: TestHAROwnershipCrossProcessCleaner/joined_crash (1.10s)
+=== RUN   TestBrowserCloseClearsEphemeralState
+--- PASS: TestBrowserCloseClearsEphemeralState (0.00s)
+=== RUN   TestBrowserContextOptions
+--- PASS: TestBrowserContextOptions (0.00s)
+=== RUN   TestBrowserContextOptionsApplyScaleAndOrientation
+--- PASS: TestBrowserContextOptionsApplyScaleAndOrientation (0.00s)
+=== RUN   TestBrowserDocumentFinalizePhysicallyClosesAndJoinsOwnedNativeWorkers
+--- PASS: TestBrowserDocumentFinalizePhysicallyClosesAndJoinsOwnedNativeWorkers (0.05s)
+=== RUN   TestBrowserDocumentBootstrapJoinsLifecycleReceipts
+=== RUN   TestBrowserDocumentBootstrapJoinsLifecycleReceipts/begin
+=== RUN   TestBrowserDocumentBootstrapJoinsLifecycleReceipts/join
+=== RUN   TestBrowserDocumentBootstrapJoinsLifecycleReceipts/restore
+=== RUN   TestBrowserDocumentBootstrapJoinsLifecycleReceipts/begin_false
+--- PASS: TestBrowserDocumentBootstrapJoinsLifecycleReceipts (0.14s)
+    --- PASS: TestBrowserDocumentBootstrapJoinsLifecycleReceipts/begin (0.03s)
+    --- PASS: TestBrowserDocumentBootstrapJoinsLifecycleReceipts/join (0.03s)
+    --- PASS: TestBrowserDocumentBootstrapJoinsLifecycleReceipts/restore (0.03s)
+    --- PASS: TestBrowserDocumentBootstrapJoinsLifecycleReceipts/begin_false (0.03s)
+=== RUN   TestBrowserDocumentFinalizeIncludesCurrentFrameBeforeBeginAcknowledgment
+--- PASS: TestBrowserDocumentFinalizeIncludesCurrentFrameBeforeBeginAcknowledgment (0.00s)
+=== RUN   TestBrowserDocumentCurrentFrameMergeIsBoundedAndDeduplicated
+--- PASS: TestBrowserDocumentCurrentFrameMergeIsBoundedAndDeduplicated (0.00s)
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/stale_then_live
+=== RUN   TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/live_then_stale
+--- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders (0.00s)
+    --- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/stale_then_live (0.00s)
+    --- PASS: TestBrowserDocumentFinalizerFrameErrorIsolationInBothOrders/live_then_stale (0.00s)
+=== RUN   TestFinalizeHARCaptureRedactsLowEntropyRuntimeSecrets
+--- PASS: TestFinalizeHARCaptureRedactsLowEntropyRuntimeSecrets (0.05s)
+=== RUN   TestFinalizeHARCaptureRedactsPercentEncodedRuntimeSecrets
+--- PASS: TestFinalizeHARCaptureRedactsPercentEncodedRuntimeSecrets (0.05s)
+=== RUN   TestApplyHARCaptureOptionsPreservesUnknownLegacyWorkingFiles
+--- PASS: TestApplyHARCaptureOptionsPreservesUnknownLegacyWorkingFiles (0.03s)
+=== RUN   TestApplyHARCaptureOptionsDisablesRawCaptureForRuntimeSecrets
+--- PASS: TestApplyHARCaptureOptionsDisablesRawCaptureForRuntimeSecrets (0.00s)
+=== RUN   TestDiscardHARWorkingFileUnregistersAndRemoves
+--- PASS: TestDiscardHARWorkingFileUnregistersAndRemoves (0.04s)
+=== RUN   TestHARMonitorStopsOnActualFileSize
+--- PASS: TestHARMonitorStopsOnActualFileSize (0.25s)
+=== RUN   TestClosePreservesPreviouslyRetainedHARArtifact
+--- PASS: TestClosePreservesPreviouslyRetainedHARArtifact (0.00s)
+=== RUN   TestHAROwnershipNativeOnCloseRepeatCannotBlockOwnedFlush
+    har_native_callback_test.go:18: native callback ownership requires installed browsers
+--- SKIP: TestHAROwnershipNativeOnCloseRepeatCannotBlockOwnedFlush (0.00s)
+=== RUN   TestHAROwnershipNativeCloseCapabilityIsExplicit
+--- PASS: TestHAROwnershipNativeCloseCapabilityIsExplicit (0.00s)
+=== RUN   TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof
+    har_native_preclosed_test.go:19: native HAR owned-close fixture requires installed browsers
+--- SKIP: TestHAROwnershipNativePriorCloseNeverCreatesJoinedProof (0.00s)
+=== RUN   TestHAROwnershipSetupFailurePrecedesNativeLaunch
+--- PASS: TestHAROwnershipSetupFailurePrecedesNativeLaunch (0.00s)
+=== RUN   TestHAROwnershipTeardownAndOversizedCloseSharePhysicalJoin
+--- PASS: TestHAROwnershipTeardownAndOversizedCloseSharePhysicalJoin (0.08s)
+=== RUN   TestHAROwnershipRedactorPanicReportsUnprovenWork
+--- PASS: TestHAROwnershipRedactorPanicReportsUnprovenWork (0.03s)
+=== RUN   TestHAROwnershipAdmissionIsBounded
+--- PASS: TestHAROwnershipAdmissionIsBounded (0.03s)
+=== RUN   TestHAROwnershipTeardownRetainsLeaseUntilRuntimeWorkerActuallyJoins
+--- PASS: TestHAROwnershipTeardownRetainsLeaseUntilRuntimeWorkerActuallyJoins (0.08s)
+=== RUN   TestHAROwnershipDocumentFinalizerDeadlineRetainsSameCloseOwner
+--- PASS: TestHAROwnershipDocumentFinalizerDeadlineRetainsSameCloseOwner (0.08s)
+=== RUN   TestHAROwnershipStaleFrameFailureCannotCensorLiveSibling
+--- PASS: TestHAROwnershipStaleFrameFailureCannotCensorLiveSibling (0.00s)
+=== RUN   TestHAROwnershipTerminalPlanRetiresUnchangedBatchAndRejectsExternalReplacement
+=== RUN   TestHAROwnershipTerminalPlanRetiresUnchangedBatchAndRejectsExternalReplacement/unchanged_batch
+=== RUN   TestHAROwnershipTerminalPlanRetiresUnchangedBatchAndRejectsExternalReplacement/external_replacement
+--- PASS: TestHAROwnershipTerminalPlanRetiresUnchangedBatchAndRejectsExternalReplacement (0.15s)
+    --- PASS: TestHAROwnershipTerminalPlanRetiresUnchangedBatchAndRejectsExternalReplacement/unchanged_batch (0.08s)
+    --- PASS: TestHAROwnershipTerminalPlanRetiresUnchangedBatchAndRejectsExternalReplacement/external_replacement (0.08s)
+=== RUN   TestHAROwnershipTeardownUsesOneOverallBudget
+--- PASS: TestHAROwnershipTeardownUsesOneOverallBudget (2.05s)
+=== RUN   TestHAROwnershipNamespaceRejectsWorkDirectoryReplacementAfterLockWait
+--- PASS: TestHAROwnershipNamespaceRejectsWorkDirectoryReplacementAfterLockWait (0.01s)
+=== RUN   TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement
+=== RUN   TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/recorded_first/unchanged
+=== RUN   TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/recorded_first/external_replacement
+=== RUN   TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/unrecorded_first/unchanged
+=== RUN   TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/unrecorded_first/external_replacement
+--- PASS: TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement (0.25s)
+    --- PASS: TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/recorded_first/unchanged (0.07s)
+    --- PASS: TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/recorded_first/external_replacement (0.05s)
+    --- PASS: TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/unrecorded_first/unchanged (0.07s)
+    --- PASS: TestHAROwnershipMixedPlanRetiresOwnMutationsAndRejectsExternalReplacement/unrecorded_first/external_replacement (0.06s)
+=== RUN   TestHAROwnershipUnrecordedPlanStartsAbsentAndRejectsExternalReplacement
+=== RUN   TestHAROwnershipUnrecordedPlanStartsAbsentAndRejectsExternalReplacement/own_mutations
+=== RUN   TestHAROwnershipUnrecordedPlanStartsAbsentAndRejectsExternalReplacement/external_replacement
+--- PASS: TestHAROwnershipUnrecordedPlanStartsAbsentAndRejectsExternalReplacement (0.12s)
+    --- PASS: TestHAROwnershipUnrecordedPlanStartsAbsentAndRejectsExternalReplacement/own_mutations (0.07s)
+    --- PASS: TestHAROwnershipUnrecordedPlanStartsAbsentAndRejectsExternalReplacement/external_replacement (0.05s)
+=== RUN   TestHAROwnershipNativeContextFlushAndJoin
+    har_ownership_native_test.go:24: native HAR ownership fixture requires an installed browser
+--- SKIP: TestHAROwnershipNativeContextFlushAndJoin (0.00s)
+=== RUN   TestHAROwnershipNativeCloseErrorRemainsExplicitAndPrivate
+    har_ownership_native_test.go:133: native HAR ownership fixture requires an installed browser
+--- SKIP: TestHAROwnershipNativeCloseErrorRemainsExplicitAndPrivate (0.00s)
+=== RUN   TestHAROwnershipBlockedDetachRetainsExactJoinAndReturnsDeadline
+--- PASS: TestHAROwnershipBlockedDetachRetainsExactJoinAndReturnsDeadline (0.07s)
+=== RUN   TestHAROwnershipGoexitNeverInventsCompletion
+=== RUN   TestHAROwnershipGoexitNeverInventsCompletion/closer
+=== RUN   TestHAROwnershipGoexitNeverInventsCompletion/redactor
+=== RUN   TestHAROwnershipGoexitNeverInventsCompletion/runtime_join
+--- PASS: TestHAROwnershipGoexitNeverInventsCompletion (0.04s)
+    --- PASS: TestHAROwnershipGoexitNeverInventsCompletion/closer (0.01s)
+    --- PASS: TestHAROwnershipGoexitNeverInventsCompletion/redactor (0.02s)
+    --- PASS: TestHAROwnershipGoexitNeverInventsCompletion/runtime_join (0.01s)
+=== RUN   TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration
+=== RUN   TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration/resume
+=== RUN   TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration/replacement
+--- PASS: TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration (0.06s)
+    --- PASS: TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration/resume (0.04s)
+    --- PASS: TestHAROwnershipInterruptedRetirementResumesOnlyBoundGeneration/replacement (0.02s)
+=== RUN   TestHAROwnershipCompletedRetentionHasBoundedScan
+--- PASS: TestHAROwnershipCompletedRetentionHasBoundedScan (0.09s)
+=== RUN   TestHAROwnershipJoinedCandidateCarriesBoundedActualSize
+--- PASS: TestHAROwnershipJoinedCandidateCarriesBoundedActualSize (0.01s)
+=== RUN   TestHAROwnershipRawFileIsPrivateBeforeNativeWriterEnters
+--- PASS: TestHAROwnershipRawFileIsPrivateBeforeNativeWriterEnters (0.04s)
+=== RUN   TestHAROwnershipRetentionRejectsOversizedLimitsAndCancelledWork
+--- PASS: TestHAROwnershipRetentionRejectsOversizedLimitsAndCancelledWork (0.00s)
+=== RUN   TestHAROwnershipUnjoinedRetiredGenerationIsPreserved
+--- PASS: TestHAROwnershipUnjoinedRetiredGenerationIsPreserved (0.01s)
+=== RUN   TestRuntimeHARRetentionBoundsCompletedArtifacts
+--- PASS: TestRuntimeHARRetentionBoundsCompletedArtifacts (0.07s)
+=== RUN   TestRuntimeHARRetentionIgnoresUnownedFilesAndSymlinks
+--- PASS: TestRuntimeHARRetentionIgnoresUnownedFilesAndSymlinks (0.02s)
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-0-removals
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-1-removals
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-2-removals
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-3-removals
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-4-removals
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-5-removals
+=== RUN   TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-6-removals
+--- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary (0.28s)
+    --- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-0-removals (0.03s)
+    --- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-1-removals (0.04s)
+    --- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-2-removals (0.04s)
+    --- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-3-removals (0.04s)
+    --- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-4-removals (0.05s)
+    --- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-5-removals (0.04s)
+    --- PASS: TestHAROwnershipRetirementRecoversEveryUnlinkBoundary/after-6-removals (0.04s)
+=== RUN   TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger
+=== RUN   TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger/payload
+=== RUN   TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger/absent_payload
+=== RUN   TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger/ledger
+--- PASS: TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger (0.09s)
+    --- PASS: TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger/payload (0.03s)
+    --- PASS: TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger/absent_payload (0.02s)
+    --- PASS: TestHAROwnershipTerminalLedgerPreservesReplacedPayloadAndLedger/ledger (0.04s)
+=== RUN   TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval
+=== RUN   TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/renamed
+=== RUN   TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/absent
+=== RUN   TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/replaced
+=== RUN   TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/unknown
+--- PASS: TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval (0.09s)
+    --- PASS: TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/renamed (0.04s)
+    --- PASS: TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/absent (0.03s)
+    --- PASS: TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/replaced (0.02s)
+    --- PASS: TestHAROwnershipCompletedRetirementRecoversRenameAndRemoval/unknown (0.01s)
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/version
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/duplicate
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/case_alias
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/utf8
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/path
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/too_large
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/unknown
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/trailing
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/null
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/null_device
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/null_name
+=== RUN   TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/record_count
+--- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed (0.09s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/version (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/duplicate (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/case_alias (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/utf8 (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/path (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/too_large (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/unknown (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/trailing (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/null (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/null_device (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/null_name (0.01s)
+    --- PASS: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/record_count (0.02s)
+=== RUN   TestHAROwnershipDocumentCallbackGoexitNeverAuthorizesRetirement
+--- PASS: TestHAROwnershipDocumentCallbackGoexitNeverAuthorizesRetirement (0.01s)
+=== RUN   TestHAROwnershipStrictManifestRejectsActualInvalidUTF8
+--- PASS: TestHAROwnershipStrictManifestRejectsActualInvalidUTF8 (0.00s)
+=== RUN   TestHAROwnershipPrivateGenerationAndDurablePublication
+--- PASS: TestHAROwnershipPrivateGenerationAndDurablePublication (0.05s)
+=== RUN   TestHAROwnershipCollisionNeverReplacesCompletedArtifact
+--- PASS: TestHAROwnershipCollisionNeverReplacesCompletedArtifact (0.04s)
+=== RUN   TestHAROwnershipUnknownLegacyAndUnjoinedCrashRemainPrivate
+--- PASS: TestHAROwnershipUnknownLegacyAndUnjoinedCrashRemainPrivate (0.01s)
+=== RUN   TestHAROwnershipFailedAndBlockedCloseRetainsExactLease
+=== RUN   TestHAROwnershipFailedAndBlockedCloseRetainsExactLease/error
+=== RUN   TestHAROwnershipFailedAndBlockedCloseRetainsExactLease/panic
+=== RUN   TestHAROwnershipFailedAndBlockedCloseRetainsExactLease/blocked
+--- PASS: TestHAROwnershipFailedAndBlockedCloseRetainsExactLease (0.09s)
+    --- PASS: TestHAROwnershipFailedAndBlockedCloseRetainsExactLease/error (0.01s)
+    --- PASS: TestHAROwnershipFailedAndBlockedCloseRetainsExactLease/panic (0.01s)
+    --- PASS: TestHAROwnershipFailedAndBlockedCloseRetainsExactLease/blocked (0.07s)
+=== RUN   TestHAROwnershipInitFailureJoinsBeforeRemovingRaw
+--- PASS: TestHAROwnershipInitFailureJoinsBeforeRemovingRaw (0.04s)
+=== RUN   TestHAROwnershipLateOldLimiterCannotCloseNewGeneration
+--- PASS: TestHAROwnershipLateOldLimiterCannotCloseNewGeneration (0.08s)
+=== RUN   TestHAROwnershipRejectsUnsafeRootsAndLockAliases
+=== RUN   TestHAROwnershipRejectsUnsafeRootsAndLockAliases/root_symlink
+=== RUN   TestHAROwnershipRejectsUnsafeRootsAndLockAliases/work_symlink
+=== RUN   TestHAROwnershipRejectsUnsafeRootsAndLockAliases/work_permissions
+=== RUN   TestHAROwnershipRejectsUnsafeRootsAndLockAliases/lock_hardlink
+=== RUN   TestHAROwnershipRejectsUnsafeRootsAndLockAliases/lock_symlink
+--- PASS: TestHAROwnershipRejectsUnsafeRootsAndLockAliases (0.01s)
+    --- PASS: TestHAROwnershipRejectsUnsafeRootsAndLockAliases/root_symlink (0.00s)
+    --- PASS: TestHAROwnershipRejectsUnsafeRootsAndLockAliases/work_symlink (0.00s)
+    --- PASS: TestHAROwnershipRejectsUnsafeRootsAndLockAliases/work_permissions (0.00s)
+    --- PASS: TestHAROwnershipRejectsUnsafeRootsAndLockAliases/lock_hardlink (0.00s)
+    --- PASS: TestHAROwnershipRejectsUnsafeRootsAndLockAliases/lock_symlink (0.00s)
+=== RUN   TestHAROwnershipManifestAndGenerationFences
+=== RUN   TestHAROwnershipManifestAndGenerationFences/unknown_version
+=== RUN   TestHAROwnershipManifestAndGenerationFences/wrong_generation
+=== RUN   TestHAROwnershipManifestAndGenerationFences/trailing_json
+=== RUN   TestHAROwnershipManifestAndGenerationFences/oversized
+=== RUN   TestHAROwnershipManifestAndGenerationFences/replacement
+--- PASS: TestHAROwnershipManifestAndGenerationFences (0.07s)
+    --- PASS: TestHAROwnershipManifestAndGenerationFences/unknown_version (0.01s)
+    --- PASS: TestHAROwnershipManifestAndGenerationFences/wrong_generation (0.01s)
+    --- PASS: TestHAROwnershipManifestAndGenerationFences/trailing_json (0.02s)
+    --- PASS: TestHAROwnershipManifestAndGenerationFences/oversized (0.01s)
+    --- PASS: TestHAROwnershipManifestAndGenerationFences/replacement (0.01s)
+=== RUN   TestHAROwnershipCrossProcessCleaner
+=== RUN   TestHAROwnershipCrossProcessCleaner/unknown_crash
+=== RUN   TestHAROwnershipCrossProcessCleaner/joined_crash
+--- PASS: TestHAROwnershipCrossProcessCleaner (2.14s)
+    --- PASS: TestHAROwnershipCrossProcessCleaner/unknown_crash (1.04s)
+    --- PASS: TestHAROwnershipCrossProcessCleaner/joined_crash (1.10s)
+=== RUN   TestBrowserCloseClearsEphemeralState
+--- PASS: TestBrowserCloseClearsEphemeralState (0.00s)
+=== RUN   TestBrowserContextOptions
+--- PASS: TestBrowserContextOptions (0.00s)
+PASS
+ok  	github.com/jasonczech/apexload/pkg/protocol/browser	15.497s

@@ -46,6 +46,12 @@ func documentActualBrowser(t *testing.T, engine, baseURL string) (*Browser, cont
 		}
 		b.mu.Lock()
 		documents, frames, issued := len(b.evidence.documents), len(b.evidence.frames), b.evidence.issued
+		states := make(map[string]int)
+		for _, document := range b.evidence.documents {
+			for _, observation := range document.observations {
+				states[observation.FrameScope+"/"+observation.Metric+"/"+observation.State+"/"+observation.Boundary+"/"+observation.UnavailableReason]++
+			}
+		}
 		b.mu.Unlock()
 		b.mu.Lock()
 		version := ""
@@ -56,7 +62,7 @@ func documentActualBrowser(t *testing.T, engine, baseURL string) (*Browser, cont
 		errorMu.Lock()
 		errors := append([]string(nil), pageErrors...)
 		errorMu.Unlock()
-		t.Logf("owned fixture diagnostics documents=%d frames=%d issued=%d browser_version=%s errors=%q", documents, frames, issued, version, errors)
+		t.Logf("owned fixture diagnostics documents=%d frames=%d issued=%d browser_version=%s errors=%q observation_states=%v", documents, frames, issued, version, errors, states)
 	})
 	return b, ctx
 }

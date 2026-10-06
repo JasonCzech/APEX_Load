@@ -51010,7 +51010,14 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "created_at": string;
+            "description"?: string;
+            "domain_id": string;
+            "id": string;
+            "name": string;
+            "updated_at": string;
+          }) | null;
         };
       };
       "401": {
@@ -57842,7 +57849,78 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "category_id"?: string;
+            "created_at": string;
+            "domain_id"?: string;
+            "id": string;
+            "name": string;
+            "settings"?: {
+              "authoring"?: ({
+                "require_scenario_save_if_match"?: boolean;
+                "require_script_save_if_match"?: boolean;
+              }) | null;
+              "features"?: {
+                "control_parallel"?: boolean;
+                "media_stream"?: boolean;
+                "native_elastic_capacity"?: boolean;
+                "privileged_monitors"?: boolean;
+                "successful_message_detail"?: boolean;
+              };
+              "github"?: {
+                "actions"?: {
+                  "allowed_environments"?: Array<string>;
+                  "allowed_protocols"?: Array<string>;
+                  "allowed_refs"?: Array<string>;
+                  "allowed_repositories"?: Array<string>;
+                  "allowed_repository_ids"?: Array<string>;
+                  "allowed_target_hosts"?: Array<string>;
+                  "allowed_workflow_refs"?: Array<string>;
+                  "audience"?: string;
+                  "checks_enabled"?: boolean;
+                  "enabled"?: boolean;
+                  "issuer"?: string;
+                  "max_duration_minutes"?: number;
+                  "max_vusers"?: number;
+                  "required_runner_environment"?: string;
+                  "revision"?: number;
+                  "server_url"?: string;
+                  "updated_at"?: string;
+                  "updated_by"?: string;
+                };
+                "allow_direct_commit"?: boolean;
+                "allow_import"?: boolean;
+                "allow_push"?: boolean;
+                "allowed_branches"?: Array<string>;
+                "allowed_repos"?: Array<string>;
+                "app_installation_id"?: number;
+                "auto_sync_enabled"?: boolean;
+                "automation_identity"?: string;
+                "bulk_sync_enabled"?: boolean;
+                "checks_enabled"?: boolean;
+                "default_branch"?: string;
+                "default_repo"?: string;
+                "default_sync_directory"?: string;
+                "enabled"?: boolean;
+                "path_template"?: string;
+                "require_pull_request"?: boolean;
+              };
+              "max_concurrent_tests"?: number;
+              "max_test_duration_minutes"?: number;
+              "max_vusers"?: number;
+              "max_vusers_per_test"?: number;
+              "pool_quotas"?: Record<string, {
+                "max_concurrent_tests"?: number;
+                "max_vusers"?: number;
+              }>;
+              "redaction_rules"?: Array<{
+                "name"?: string;
+                "pattern": string;
+                "replacement"?: string;
+              }>;
+            };
+            "updated_at": string;
+          }) | null;
         };
       };
       "401": {
@@ -60461,6 +60539,172 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetRunArchiveBrowserResources": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "action_name"?: string;
+        "browser_engine"?: string;
+        "cursor"?: string;
+        "device_profile"?: string;
+        "document_id"?: string;
+        "failure_kind"?: "http" | "transport" | "timeout" | "canceled" | "body_limit";
+        "group"?: string;
+        "initiating_action_id"?: string;
+        "limit"?: number;
+        "observation_action_id"?: string;
+        "origin"?: string;
+        "project_id"?: string;
+        "redirect_chain_id"?: string;
+        "region"?: string;
+        "request_id"?: string;
+        "resource_type"?: string;
+        "sort_by"?: "capture_order" | "duration_ms" | "native_start_ms" | "response_encoded_body";
+        "sort_dir"?: "asc" | "desc";
+        "source_generation"?: string;
+        "state"?: "finished" | "failed" | "censored";
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "capture_coverage": {
+              "availability": string;
+              "reason": string;
+            };
+            "items": Array<{
+              "action_name"?: string;
+              "browser_engine"?: string;
+              "browser_evidence"?: ({
+                "bytes": {
+                  "request_body"?: (number) | null;
+                  "request_headers"?: (number) | null;
+                  "response_encoded_body"?: (number) | null;
+                  "response_headers"?: (number) | null;
+                  "unavailable_reason"?: string;
+                };
+                "cache"?: (boolean) | null;
+                "cache_unavailable_reason"?: string;
+                "document_id"?: string;
+                "document_offset_ms"?: (number) | null;
+                "epoch_start_ms"?: (number) | null;
+                "frame_id"?: string;
+                "identity_unavailable_reason"?: string;
+                "initiating_action_id"?: string;
+                "initiator_unavailable_reason"?: string;
+                "navigation_id"?: string;
+                "observation_action_id"?: string;
+                "observed_at": string;
+                "origin"?: string;
+                "phases": (Array<{
+                  "end_ms"?: (number) | null;
+                  "name": string;
+                  "start_ms"?: (number) | null;
+                  "unavailable_reason"?: string;
+                }>) | null;
+                "redirect_chain_id"?: string;
+                "redirect_from_request_id"?: string;
+                "redirect_hop": number;
+                "request_id": string;
+                "service_worker"?: (boolean) | null;
+                "service_worker_unavailable_reason"?: string;
+                "source_generation": string;
+                "state": string;
+                "timing_source": string;
+                "version": number;
+              }) | null;
+              "bytes_received"?: (number) | null;
+              "device_platform"?: string;
+              "device_profile"?: string;
+              "duration_ms"?: (number) | null;
+              "evidence_state": string;
+              "failure_kind"?: string;
+              "group"?: string;
+              "locator": {
+                "branch": string;
+                "resource_ordinal": number;
+                "transaction_ordinal": number;
+              };
+              "method"?: string;
+              "page_url"?: string;
+              "region"?: string;
+              "resource_type"?: string;
+              "status_code"?: (number) | null;
+              "timestamp"?: (string) | null;
+              "timestamp_precision": string;
+              "url"?: string;
+            }>;
+            "next_cursor"?: string;
+            "population": {
+              "availability": string;
+              "matched_retained_observations": (number) | null;
+              "retained_entry_observations": (number) | null;
+              "transaction_records": number;
+            };
+            "project_id": string;
+            "source_format": string;
+            "source_integrity": string;
+            "source_revision": string;
+            "source_timestamp_precision": string;
+            "test_id": string;
+            "version": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "408": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -140563,7 +140807,14 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "created_at": string;
+            "description"?: string;
+            "domain_id": string;
+            "id": string;
+            "name": string;
+            "updated_at": string;
+          }) | null;
         };
       };
       "400": {
@@ -144179,7 +144430,78 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "category_id"?: string;
+            "created_at": string;
+            "domain_id"?: string;
+            "id": string;
+            "name": string;
+            "settings"?: {
+              "authoring"?: ({
+                "require_scenario_save_if_match"?: boolean;
+                "require_script_save_if_match"?: boolean;
+              }) | null;
+              "features"?: {
+                "control_parallel"?: boolean;
+                "media_stream"?: boolean;
+                "native_elastic_capacity"?: boolean;
+                "privileged_monitors"?: boolean;
+                "successful_message_detail"?: boolean;
+              };
+              "github"?: {
+                "actions"?: {
+                  "allowed_environments"?: Array<string>;
+                  "allowed_protocols"?: Array<string>;
+                  "allowed_refs"?: Array<string>;
+                  "allowed_repositories"?: Array<string>;
+                  "allowed_repository_ids"?: Array<string>;
+                  "allowed_target_hosts"?: Array<string>;
+                  "allowed_workflow_refs"?: Array<string>;
+                  "audience"?: string;
+                  "checks_enabled"?: boolean;
+                  "enabled"?: boolean;
+                  "issuer"?: string;
+                  "max_duration_minutes"?: number;
+                  "max_vusers"?: number;
+                  "required_runner_environment"?: string;
+                  "revision"?: number;
+                  "server_url"?: string;
+                  "updated_at"?: string;
+                  "updated_by"?: string;
+                };
+                "allow_direct_commit"?: boolean;
+                "allow_import"?: boolean;
+                "allow_push"?: boolean;
+                "allowed_branches"?: Array<string>;
+                "allowed_repos"?: Array<string>;
+                "app_installation_id"?: number;
+                "auto_sync_enabled"?: boolean;
+                "automation_identity"?: string;
+                "bulk_sync_enabled"?: boolean;
+                "checks_enabled"?: boolean;
+                "default_branch"?: string;
+                "default_repo"?: string;
+                "default_sync_directory"?: string;
+                "enabled"?: boolean;
+                "path_template"?: string;
+                "require_pull_request"?: boolean;
+              };
+              "max_concurrent_tests"?: number;
+              "max_test_duration_minutes"?: number;
+              "max_vusers"?: number;
+              "max_vusers_per_test"?: number;
+              "pool_quotas"?: Record<string, {
+                "max_concurrent_tests"?: number;
+                "max_vusers"?: number;
+              }>;
+              "redaction_rules"?: Array<{
+                "name"?: string;
+                "pattern": string;
+                "replacement"?: string;
+              }>;
+            };
+            "updated_at": string;
+          }) | null;
         };
       };
       "400": {
@@ -144641,7 +144963,16 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "created_at": string;
+            "description"?: string;
+            "domain_id": string;
+            "id": string;
+            "name": string;
+            "repository_id": string;
+            "sort_order"?: number;
+            "updated_at": string;
+          }) | null;
         };
       };
       "400": {
@@ -151379,7 +151710,26 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "active": boolean;
+            "application_repository_roles"?: Record<string, Array<string>>;
+            "contact_email"?: string;
+            "created_at": string;
+            "description"?: string;
+            "domain_roles"?: Record<string, Array<string>>;
+            "expires_at"?: (string) | null;
+            "global_roles"?: Array<string>;
+            "id": string;
+            "key_rotated_at"?: (string) | null;
+            "last_used_at"?: (string) | null;
+            "name": string;
+            "owner_id"?: string;
+            "project_roles"?: Record<string, Array<string>>;
+            "rotation_due_at"?: (string) | null;
+            "rotation_interval_days"?: number;
+            "scopes"?: Array<string>;
+            "updated_at": string;
+          }) | null;
         };
       };
       "400": {
@@ -157462,6 +157812,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/browser-diagnostics": {
     "get": operations["handleDownloadRunArchiveBrowserDiagnostics"];
+  };
+  "/api/v1/tests/{id}/archive/browser-resources": {
+    "get": operations["handleGetRunArchiveBrowserResources"];
   };
   "/api/v1/tests/{id}/archive/comparison": {
     "get": operations["handleGetRunArchiveComparison"];

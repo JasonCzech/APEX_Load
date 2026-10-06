@@ -37,7 +37,16 @@ func (s *Server) websocketAuthorizer(r *http.Request, projectID string) func() b
 		if err != nil || stored == nil {
 			return func() bool { return false }
 		}
-		initialKeyHash = stored.KeyHash
+		// Bind this socket to the credential that authenticated its transport.
+		// Rotation can occur between middleware admission and this snapshot.
+		presented := extractAPIKey(r)
+		if strings.TrimSpace(presented) == "" {
+			return func() bool { return false }
+		}
+		initialKeyHash = hashAPIKey(presented)
+		if subtle.ConstantTimeCompare([]byte(stored.KeyHash), []byte(initialKeyHash)) != 1 {
+			return func() bool { return false }
+		}
 	} else if settings.Mode == authModeLocal && snapshot.SessionScoped {
 		cookie, err := r.Cookie(localSessionCookieName)
 		if err != nil || strings.TrimSpace(cookie.Value) == "" {

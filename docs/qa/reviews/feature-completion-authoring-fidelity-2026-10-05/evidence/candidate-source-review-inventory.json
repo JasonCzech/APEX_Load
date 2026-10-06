@@ -1,0 +1,169 @@
+{
+  "schema": "apexload.qa.review-source-inventory.v1",
+  "captured_at": "2026-10-05T13:39:21.329324+00:00",
+  "git_head": "e420bcc6e209da0f23a1e8457ea8b6f2ab42cc7c",
+  "scope": "Authoring fidelity plus reachable queued-copy owner review candidates; browser qualification pending completed composition. No scenario opaque revisions/CAS or named-shape run metadata claim.",
+  "files": [
+    {
+      "path": "dashboard/e2e/workflow-new-test.spec.ts",
+      "bytes": 40874,
+      "sha256": "d8d66c4f03bbfd3608d5d3b4226640984a74e55a7257c564abf73fc484a194af"
+    },
+    {
+      "path": "dashboard/e2e/workflow-scenario-composition.spec.ts",
+      "bytes": 11416,
+      "sha256": "ea97fb372950bf25648b197b0935d8af8da54f5380aa9852a9444336b4d64adc"
+    },
+    {
+      "path": "dashboard/src/App.tsx",
+      "bytes": 137314,
+      "sha256": "635e8f4fb51ff42039db2336c22fc625f48652f371adb18792e3783c923fbbb2"
+    },
+    {
+      "path": "dashboard/src/components/CommandCenterPrototype.test.tsx",
+      "bytes": 120716,
+      "sha256": "a9f0e1ec8d9294d8e02bfc5453572883b74f5d2e7a2f681ae886af81ea86d33f"
+    },
+    {
+      "path": "dashboard/src/components/CommandCenterPrototype.tsx",
+      "bytes": 182105,
+      "sha256": "94e4e2b9da193cc3ef7f2269a4da22e604d955cd9a8366e295af11ea57b0871b"
+    },
+    {
+      "path": "dashboard/src/components/CommandCenterQueuedRevision.test.tsx",
+      "bytes": 4510,
+      "sha256": "e5b1b0014d893d286c63318d28164406ec1ed65965ebad9b6e33a9cdb83074c8"
+    },
+    {
+      "path": "dashboard/src/components/CreateTestModal.test.tsx",
+      "bytes": 25540,
+      "sha256": "3e75eed1555583538f9ce6f066384ff85a2009dc53d6be5671ac69bbe5fa5f6a"
+    },
+    {
+      "path": "dashboard/src/components/GroupRuntimeSettingsDialog.test.tsx",
+      "bytes": 29340,
+      "sha256": "88e22989c426d9cf8f102d584c86eb6b8eec5db4c1b1d42a5612fb371f36fe83"
+    },
+    {
+      "path": "dashboard/src/components/GroupRuntimeSettingsDialog.tsx",
+      "bytes": 20613,
+      "sha256": "55e4dcdbdc1a982d3ce1e1d400bf49d70729a6b01e537d285d3e60aa11716e1c"
+    },
+    {
+      "path": "dashboard/src/components/RuntimeSettingsGroupEditor.tsx",
+      "bytes": 89249,
+      "sha256": "b244d5beb06629cf52eb108c892b387a3eb6031dc6828d5aeffb1cecddee3be7"
+    },
+    {
+      "path": "dashboard/src/components/TestExecution.tsx",
+      "bytes": 44524,
+      "sha256": "746eb3f5071950ed7db12bb38fdcd94b875f18cc7863622f9b7c05384fa2026f"
+    },
+    {
+      "path": "dashboard/src/components/TestExecutionScenarioEditor.test.tsx",
+      "bytes": 3866,
+      "sha256": "2deb3800a63a016f6a5a46a5ad075433bfcf79d7471a665e8cb0fd56b28a2d05"
+    },
+    {
+      "path": "dashboard/src/components/TestExecutionScenarioEditor.tsx",
+      "bytes": 1919,
+      "sha256": "5427758f6f1fff7c208b43b9ddc767ab6d8395c88b1a4c1b671f1ad96d218eb6"
+    },
+    {
+      "path": "dashboard/src/components/TransactionResponseTimeSLASettings.test.tsx",
+      "bytes": 2885,
+      "sha256": "096cb7f0455991b0a7e7f41a6a90ee663e08439ccba37bf0363e8049565ee1d5"
+    },
+    {
+      "path": "dashboard/src/components/TransactionResponseTimeSLASettings.tsx",
+      "bytes": 3845,
+      "sha256": "7df55c42748f2eeda7ea858c0284f8192185ea28d167b1cee4f80b1222cc370f"
+    },
+    {
+      "path": "dashboard/src/components/newTestRunModel.ts",
+      "bytes": 61005,
+      "sha256": "ea65852fdadaaf727e65cb2f8986356808544eec9b977b535a01c382dbe45780"
+    },
+    {
+      "path": "dashboard/src/components/scenarioDraftUtils.ts",
+      "bytes": 16812,
+      "sha256": "9e7d01633c21cb8690f2c9dda0fa68274faaed15a007060991059e6e8048aff4"
+    },
+    {
+      "path": "dashboard/src/components/scenarioFidelity.test.ts",
+      "bytes": 6348,
+      "sha256": "7a2612e98b7cf52425b78790d83ad056927510090bed83d0c6190676c4e69408"
+    },
+    {
+      "path": "dashboard/src/components/scenarioPayloadUtils.ts",
+      "bytes": 21508,
+      "sha256": "09b147b6bd08771490dbad1f9c9bf5bcb4f7f5b16aaef399fc69156d841d788b"
+    },
+    {
+      "path": "dashboard/src/components/useQueuedRunRevision.test.tsx",
+      "bytes": 7647,
+      "sha256": "6f7556f149db11a7406d53e4f0bc885b4bbb842a39984cf8fc50e221fab4e787"
+    },
+    {
+      "path": "dashboard/src/components/useQueuedRunRevision.ts",
+      "bytes": 5047,
+      "sha256": "1f2056363033e457e8b4cfc319d08dc58310251b36fe1c88c74d9099dac910f4"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useScriptApi.test.tsx",
+      "bytes": 30354,
+      "sha256": "1432251bf85dbcb0152022f02e12abce8dd18b8386095a3631431c772c2357b9"
+    },
+    {
+      "path": "dashboard/src/hooks/api/useScriptApi.ts",
+      "bytes": 76529,
+      "sha256": "ce25b7385cc0805d366c84174f64d1344955b12a7f5163d63c4f135ecbbd47e1"
+    },
+    {
+      "path": "pkg/api/authoring_fidelity_lifecycle_test.go",
+      "bytes": 19092,
+      "sha256": "c2c6c1a0014290334ede3a54eca0f5089e0148ceaee316259d768c13204d0e76"
+    },
+    {
+      "path": "pkg/api/authoring_fidelity_postgres_integration_test.go",
+      "bytes": 2060,
+      "sha256": "127219fef692ea7ba64b969dee858226f7cf919dd532ba6d343fd4e40cd8ed5e"
+    },
+    {
+      "path": "pkg/api/authoring_fidelity_regression_test.go",
+      "bytes": 8657,
+      "sha256": "9ada4640fd8e9e7b1b18dfe4f904e27dc41482ca54b7d1d6ef0f80b80dffe118"
+    },
+    {
+      "path": "pkg/api/handlers_scenario_runtime.go",
+      "bytes": 23142,
+      "sha256": "c324c688a80df07b09622a27e862d9eb144114c7ded75e5355567c72c31da134"
+    },
+    {
+      "path": "pkg/api/library_bundle.go",
+      "bytes": 79808,
+      "sha256": "be194150f1a56636034fc9b88396e9cea1a05ae16aaa752312ce36087e770f5f"
+    },
+    {
+      "path": "pkg/api/library_import_claims.go",
+      "bytes": 47099,
+      "sha256": "0ef8e302ae32754b3d6fad70d6aef14546a6508f1caafc32b5becd67d9891bce"
+    },
+    {
+      "path": "pkg/api/library_links.go",
+      "bytes": 14793,
+      "sha256": "470b4f0d323e19b24185385b0a1857a0df313b727be7ef5c1924aabf7df7f4fb"
+    },
+    {
+      "path": "pkg/api/persistence.go",
+      "bytes": 104497,
+      "sha256": "1ec2df0d51145021dca4dfd328a232bab95b1ba4221815647d2155ee51cd8608"
+    },
+    {
+      "path": "pkg/api/runtime_overrides.go",
+      "bytes": 28708,
+      "sha256": "59d0aae18b7e75dc1dc83b67258ea4b2479d237470eed7e11d2edbbf3b0f67bb"
+    }
+  ],
+  "files_sha256": "e9713f2bf7b86a2690a5b7c480cd7d294da0cc6e1a6697f273cc2701954f12a4"
+}

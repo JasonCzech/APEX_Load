@@ -1,18 +1,22 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, StrictMode, useEffect } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import CreateTestModal from './CreateTestModal'
 import { hasGoalModeConfiguration, validateGoalConfig } from './goalConfigValidation'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
-import type { ScenarioDraft } from '../types'
+import { useNavigationGuard, useNavigationGuardRunner } from '../hooks/NavigationGuardProvider'
+import { buildScenarioDraftFromTest } from './scenarioDraftUtils'
+import type { ScenarioDraft, TestSummary } from '../types'
 
 const apiMock = {
   estimateTest: vi.fn(),
   createTest: vi.fn(),
   getSystemInventory: vi.fn(),
+  listELKConnections: vi.fn(),
+  listDynatraceConnections: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -53,6 +57,8 @@ describe('CreateTestModal', () => {
       },
     })
     apiMock.createTest.mockResolvedValue({ id: 'test-1' })
+    apiMock.listELKConnections.mockResolvedValue({ connections: [], count: 0 })
+    apiMock.listDynatraceConnections.mockResolvedValue({ connections: [], count: 0 })
     apiMock.getSystemInventory.mockResolvedValue({
       execution_mode: 'distributed',
       controller: { id: 'controller-1', status: 'ready', address: ':8080', version: 'dev', execution_mode: 'distributed' },
@@ -397,6 +403,134 @@ describe('CreateTestModal', () => {
     }))
   })
 
+  it('submits the complete queued-copy snapshot after an actual unrelated name edit', async () => {
+    const sections = { results: { message_detail: { mode: 'off' as const, include_resources: false, sample_rate: 0, max_items: 0 }, property_analytics: [{ name: 'category', extraction: 'category', values: ['original'] }] }, websocket: { callback_interval_ms: 0, compression: false, reconnect: false } }
+    const source: TestSummary = { id: 'queued-source', project_id: 'project-original', application_id: 'application-original', release_id: 'release-original', name: 'Original queued source', status: 'QUEUED', created_at: '2026-10-05T00:00:00Z', duration: '1m', total_vusers: 5, scenario_mode: 'vuser_driven', runtime_settings: sections, goal_config: { transaction_response_time_sla_ms: 0.001, workload_shape_config: { closed_vuser: { scope: 'scenario', scenario: { peak_vusers: 5, ramp_up: '3s', sustain: '57s', ramp_down_enabled: false, ramp_down: '0s' } } } }, groups: [
+      { name: 'orders', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', role: 'load', vusers: 3, ramp_up: '3s', ramp_down: '4s', start_offset: '1s', transaction_response_time_sla_ms: 1250, initialization: 'at_once', runtime_settings: sections },
+      { name: 'staged', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', role: 'load', vusers: 2, start_offset: '2s', transaction_response_time_sla_ms: 1500, stages: [{ type: 'hold', duration: '50s', target_vusers: 2 }], initialization: 'at_runtime', runtime_settings: { results: {}, websocket: {} } },
+    ] }
+    const before = structuredClone(source)
+    await act(async () => root.render(<CreateTestModal scripts={[{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: source.created_at } as never]} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    const name = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Scenario Name'))?.querySelector('input')
+    expect(name).toBeDefined()
+    await act(async () => setInputValue(name!, 'Revised name only'))
+    await click('Create Revised Copy')
+    expect(container.querySelector('[role="alert"]')?.textContent || Array.from(container.querySelectorAll<HTMLInputElement>('input')).filter(input => !input.checkValidity()).map(input => `${input.outerHTML}:${input.validationMessage}`).join('\n')).toBe('')
+    expect(apiMock.createTest).toHaveBeenCalledTimes(1)
+    const sent = JSON.parse(JSON.stringify(apiMock.createTest.mock.calls[0][0]))
+    expect(sent).toMatchObject({ name: 'Revised name only', revision_source_test_id: source.id, project_id: source.project_id, application_id: source.application_id, release_id: source.release_id, runtime_settings: sections, goal_config: source.goal_config })
+    expect(sent.groups).toMatchObject([{ name: 'orders', ramp_up: '3s', ramp_down: '4s', start_offset: '1s', transaction_response_time_sla_ms: 1250, initialization: 'at_once', runtime_settings: sections }, { name: 'staged', start_offset: '2s', transaction_response_time_sla_ms: 1500, stages: source.groups[1].stages, initialization: 'at_runtime', runtime_settings: { results: {}, websocket: {} } }])
+    expect(source).toEqual(before)
+    apiMock.createTest.mock.calls[0][0].runtime_settings.results.property_analytics[0].values[0] = 'copy-only'
+    expect(source.runtime_settings?.results?.property_analytics?.[0].values).toEqual(['original'])
+  })
+
+  it('retains safe source capture IDs through strict mount, unrelated edit and actual copy submission', async () => {
+    apiMock.listELKConnections.mockResolvedValue({ connections: [{ id: 'source-elk', name: 'Source logs', status: 'ready' }], count: 1 })
+    // The actual modern response distinguishes legacy configuration from native readiness.
+    apiMock.listDynatraceConnections.mockResolvedValue({ connections: [{ id: 'source-dt', name: 'Source SaaS', status: 'unverified', legacy_capture_status: 'ready' }], count: 1 })
+    const source = captureSource()
+    const before = structuredClone(source)
+    await act(async () => root.render(<StrictMode><CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} /></StrictMode>))
+    expect(captureSelect('Elastic log capture').value).toBe('source-elk')
+    expect(captureSelect('Dynatrace SaaS capture').value).toBe('source-dt')
+    expect(captureSelect('Dynatrace SaaS capture').selectedOptions[0].textContent).toBe('Source SaaS')
+    expect(apiMock.listELKConnections).toHaveBeenCalledWith('project-original')
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!, 'Renamed capture copy'))
+    await click('Create Revised Copy')
+    expect(apiMock.createTest).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ elk_capture: { connection_id: 'source-elk' }, dynatrace_capture: { connection_id: 'source-dt' } }))
+    expect(source).toEqual(before)
+  })
+
+  it.each(['missing', 'failed'] as const)('retains %s source selections until capture is explicitly turned off', async failure => {
+    if (failure === 'failed') {
+      apiMock.listELKConnections.mockRejectedValue(new Error('List unavailable'))
+      apiMock.listDynatraceConnections.mockRejectedValue(new Error('List unavailable'))
+    }
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(captureSource())} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    const submit = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Create Revised Copy'))!
+    for (const label of ['Elastic log capture', 'Dynatrace SaaS capture']) {
+      const select = captureSelect(label)
+      expect(select.value).not.toBe('')
+      expect(select.selectedOptions[0].textContent).toContain('review required')
+    }
+    expect(submit.disabled).toBe(true)
+    expect(apiMock.createTest).not.toHaveBeenCalled()
+    for (const label of ['Elastic log capture', 'Dynatrace SaaS capture']) await act(async () => { const select = captureSelect(label); select.value = ''; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(submit.disabled).toBe(false)
+    await click('Create Revised Copy')
+    expect(apiMock.createTest).toHaveBeenCalledOnce()
+    expect(apiMock.createTest.mock.calls[0][0]).not.toHaveProperty('elk_capture')
+    expect(apiMock.createTest.mock.calls[0][0]).not.toHaveProperty('dynatrace_capture')
+  })
+
+  it('retains source capture review when peer listing APIs are unavailable', async () => {
+    const originalELK = apiMock.listELKConnections
+    const originalDynatrace = apiMock.listDynatraceConnections
+    Reflect.deleteProperty(apiMock, 'listELKConnections')
+    Reflect.deleteProperty(apiMock, 'listDynatraceConnections')
+    try {
+      await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(captureSource())} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+      expect(captureSelect('Elastic log capture').value).toBe('source-elk')
+      expect(captureSelect('Dynatrace SaaS capture').value).toBe('source-dt')
+      expect(container.textContent).toContain('review required')
+      expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Create Revised Copy'))?.disabled).toBe(true)
+      expect(apiMock.createTest).not.toHaveBeenCalled()
+    } finally {
+      Reflect.set(apiMock, 'listELKConnections', originalELK)
+      Reflect.set(apiMock, 'listDynatraceConnections', originalDynatrace)
+    }
+  })
+
+  it('clears capture IDs only on a real project change and ignores old project list completions', async () => {
+    let finishOld!: (value: { connections: { id: string; name: string; status: string }[]; count: number }) => void
+    apiMock.listELKConnections.mockImplementation((project: string) => project === 'project-old' ? Promise.resolve({ connections: [{ id: 'old-elk', name: 'Old logs', status: 'ready' }], count: 1 }) : Promise.resolve({ connections: [], count: 0 }))
+    apiMock.listDynatraceConnections.mockImplementation((project: string) => project === 'project-old' ? Promise.resolve({ connections: [{ id: 'old-dt', name: 'Old SaaS', status: 'ready' }], count: 1 }) : Promise.resolve({ connections: [], count: 0 }))
+    const render = async (project: string) => { await act(async () => root.render(<CreateTestModal projectId={project} scripts={captureScripts} onClose={vi.fn()} onCreated={vi.fn()} />)) }
+    await render('project-old')
+    for (const [label, id] of [['Elastic log capture', 'old-elk'], ['Dynatrace SaaS capture', 'old-dt']]) await act(async () => { const select = captureSelect(label); select.value = id; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    await render('project-old')
+    expect(captureSelect('Elastic log capture').value).toBe('old-elk')
+    // Start an old-project refresh, then move scope before it completes.
+    apiMock.listELKConnections.mockImplementation((project: string) => project === 'project-old' ? new Promise(resolve => { finishOld = resolve }) : Promise.resolve({ connections: [], count: 0 }))
+    await render('project-intermediate')
+    await render('project-old')
+    await render('project-new')
+    expect(captureSelect('Elastic log capture').value).toBe('')
+    expect(captureSelect('Dynatrace SaaS capture').value).toBe('')
+    await act(async () => finishOld({ connections: [{ id: 'old-elk', name: 'Stale old logs', status: 'ready' }], count: 1 }))
+    expect(container.textContent).not.toContain('Stale old logs')
+    await click('Create Queued Run')
+    expect(apiMock.createTest.mock.calls[0][0].project_id).toBe('project-new')
+    expect(apiMock.createTest.mock.calls[0][0]).not.toHaveProperty('elk_capture')
+    expect(apiMock.createTest.mock.calls[0][0]).not.toHaveProperty('dynatrace_capture')
+  })
+
+  it.each([true, false])('submits an empty queued-copy goal only when clearing an originally present config (%s)', async hadConfig => {
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, scenario_mode: 'goal_oriented', ...(hadConfig ? { goal_config: { p95_latency_ms: 1000 } } : {}) } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    const p95 = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('P95 Latency Ceiling'))?.querySelector('input')
+    if (!p95) throw new Error('P95 latency control not found')
+    if (hadConfig) { expect(p95.value).toBe('1000'); await act(async () => setInputValue(p95, '')) }
+    await click('VUser-Driven')
+    await click('Create Revised Copy')
+    expect(apiMock.createTest).toHaveBeenCalledOnce()
+    const sent = JSON.parse(JSON.stringify(apiMock.createTest.mock.calls[0][0]))
+    if (hadConfig) expect(sent.goal_config).toEqual({})
+    else expect(sent).not.toHaveProperty('goal_config')
+    expect(source.goal_config).toEqual(hadConfig ? { p95_latency_ms: 1000 } : undefined)
+  })
+
+  const captureScripts = [{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]
+  function captureSource(): TestSummary {
+    return { id: 'capture-source', project_id: 'project-original', name: 'Capture source', status: 'QUEUED', created_at: '2026-10-05T00:00:00Z', duration: '1m', total_vusers: 1, elk_capture: { connection_id: 'source-elk', connection_name: 'Source logs' }, dynatrace_capture: { connection_id: 'source-dt', connection_name: 'Source SaaS' }, groups: [{ name: 'orders', script_id: 'script-1', vusers: 1 }] } as TestSummary
+  }
+  function captureSelect(label: string): HTMLSelectElement {
+    const select = Array.from(container.querySelectorAll('label')).find(candidate => candidate.querySelector('span')?.textContent === label)?.querySelector('select')
+    expect(select).toBeDefined()
+    return select!
+  }
+
   it('accepts valid zero-valued SLA thresholds and detects them as configured', () => {
     const validZeros = {
       max_error_pct: 0,
@@ -447,6 +581,162 @@ describe('CreateTestModal', () => {
     for (const [goalConfig, expectedMessage] of invalidCases) {
       expect(validateGoalConfig(goalConfig)).toContain(expectedMessage)
     }
+  })
+
+  it.each([false, true])('acknowledges only its own successful save before guarded navigation (other dirty editor: %s)', async otherDirty => {
+    const selected = vi.fn()
+    const external = { id: 'other-editor', label: 'Other draft', isDirty: () => otherDirty, save: () => false, discard: vi.fn() }
+    function Harness() {
+      const { runGuarded } = useNavigationGuardRunner()
+      useNavigationGuard(external, otherDirty)
+      return <CreateTestModal scripts={[{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]} onClose={vi.fn()} onCreated={test => runGuarded(() => selected(test.id))} />
+    }
+    await act(async () => root.render(<NavigationGuardProvider><Harness /></NavigationGuardProvider>))
+    const input = container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!
+    await act(async () => setInputValue(input, 'Saved queued draft'))
+    await click('Create Queued Run')
+    expect(apiMock.createTest).toHaveBeenCalledOnce()
+    if (otherDirty) {
+      expect(selected).not.toHaveBeenCalled()
+      expect(container.textContent).toContain('Other draft has unsaved changes')
+      expect(container.textContent).not.toContain('Create Queued Run has unsaved changes')
+    } else {
+      expect(selected).toHaveBeenCalledExactlyOnceWith('test-1')
+      expect(container.textContent).not.toContain('Unsaved Changes')
+    }
+  })
+
+  it('retains an editable late draft and guard when the submitted snapshot succeeds', async () => {
+    let complete!: (value: TestSummary) => void
+    apiMock.createTest.mockReturnValue(new Promise<TestSummary>(resolve => { complete = resolve }))
+    const selected = vi.fn()
+    function Harness() {
+      const { runGuarded } = useNavigationGuardRunner()
+      return <><button onClick={() => runGuarded(selected)}>Leave draft</button><CreateTestModal scripts={[{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]} onClose={vi.fn()} onCreated={selected} /></>
+    }
+    await act(async () => root.render(<NavigationGuardProvider><Harness /></NavigationGuardProvider>))
+    const input = container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!
+    await act(async () => setInputValue(input, 'Submitted name'))
+    await click('Create Queued Run')
+    expect(apiMock.createTest.mock.calls[0][0].name).toBe('Submitted name')
+    expect(input.disabled).toBe(false)
+    await act(async () => setInputValue(input, 'Later unsaved name'))
+    await act(async () => complete({ id: 'created-receipt' } as TestSummary))
+    expect(input.value).toBe('Later unsaved name')
+    expect(selected).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('created-receipt')
+    expect(container.textContent).toContain('Edits made while saving remain unsaved')
+    await click('Leave draft')
+    expect(selected).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Create Queued Run has unsaved changes')
+    expect(apiMock.createTest).toHaveBeenCalledOnce()
+  })
+
+  it('joins a history guard save to the held direct operation without creating a second run', async () => {
+    let complete!: (value: TestSummary) => void
+    apiMock.createTest.mockReturnValue(new Promise<TestSummary>(resolve => { complete = resolve }))
+    const selected = vi.fn()
+    function Harness() {
+      const { runGuarded } = useNavigationGuardRunner()
+      useEffect(() => {
+        const onPopState = () => runGuarded(selected)
+        window.addEventListener('popstate', onPopState)
+        return () => window.removeEventListener('popstate', onPopState)
+      }, [runGuarded])
+      return <CreateTestModal scripts={captureScripts} onClose={vi.fn()} onCreated={selected} />
+    }
+    await act(async () => root.render(<NavigationGuardProvider><Harness /></NavigationGuardProvider>))
+    const input = container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!
+    await act(async () => setInputValue(input, 'Submitted once'))
+    await click('Create Queued Run')
+    await act(async () => setInputValue(input, 'Later guarded edits'))
+    await act(async () => window.dispatchEvent(new PopStateEvent('popstate')))
+    expect(container.textContent).toContain('Create Queued Run has unsaved changes')
+    await click('Save changes')
+    try {
+      expect(apiMock.createTest).toHaveBeenCalledOnce()
+      expect(apiMock.createTest.mock.calls[0][0].name).toBe('Submitted once')
+    } finally {
+      await act(async () => complete({ id: 'single-created-receipt' } as TestSummary))
+    }
+    expect(selected).not.toHaveBeenCalled()
+    expect(input.value).toBe('Later guarded edits')
+    expect(container.textContent).toContain('single-created-receipt')
+    expect(container.textContent).toContain('Save did not complete')
+    await click('Keep editing')
+    expect(input.value).toBe('Later guarded edits')
+    expect(apiMock.createTest).toHaveBeenCalledOnce()
+  })
+
+  it('preserves iteration completion and its empty duration in the actual modal estimate and copy request', async () => {
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, termination_mode: 'iterations', duration: '', groups: [{ name: 'orders', script_id: 'script-1', vusers: 1, iterations: 3, iteration_override: 3, iteration_override_known: true }] } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    expect(container.textContent).toContain('All per-user iterations')
+    const duration = container.querySelector<HTMLInputElement>('input[aria-label="Steady State Duration"]')!
+    expect(duration.disabled).toBe(true)
+    expect(duration.value).toBe('')
+    await act(async () => vi.advanceTimersByTimeAsync(300))
+    expect(apiMock.estimateTest).toHaveBeenCalledWith(expect.objectContaining({ termination_mode: 'iterations', duration: '', groups: [expect.objectContaining({ iterations: 3 })] }))
+    await click('Create Revised Copy')
+    const sent = apiMock.createTest.mock.calls[0][0]
+    expect(sent).toMatchObject({ termination_mode: 'iterations', duration: '', revision_source_test_id: 'capture-source', groups: [expect.objectContaining({ iterations: 3 })] })
+    expect(sent).not.toHaveProperty('start_delay')
+    expect(sent).not.toHaveProperty('goal_config')
+    expect(sent).not.toHaveProperty('runtime_settings')
+  })
+
+  it('retains finite iteration completion while clearing a positive source delay', async () => {
+    const source = { ...captureSource(), elk_capture: undefined, dynatrace_capture: undefined, termination_mode: 'iterations', duration: '', start_delay: '10s', groups: [{ name: 'orders', script_id: 'script-1', vusers: 1, iterations: 3, iteration_override: 3, iteration_override_known: true }] } as TestSummary
+    await act(async () => root.render(<CreateTestModal scripts={captureScripts} initialScenario={buildScenarioDraftFromTest(source)} mode="revise-queued-run" onClose={vi.fn()} onCreated={vi.fn()} />))
+    const delay = container.querySelector<HTMLInputElement>('input[aria-label="Global Start Delay"]')!
+    expect(delay.value).toBe('10')
+    await act(async () => setInputValue(delay, ''))
+    await click('Create Revised Copy')
+    const sent = apiMock.createTest.mock.calls[0][0]
+    expect(sent).toMatchObject({ termination_mode: 'iterations', duration: '', start_delay: '0s', revision_source_test_id: 'capture-source', groups: [expect.objectContaining({ iterations: 3 })] })
+    expect(sent).not.toHaveProperty('goal_config')
+    expect(source.start_delay).toBe('10s')
+  })
+
+  it('does not release or navigate a replacement modal when an unmounted save completes', async () => {
+    let complete!: (value: TestSummary) => void
+    apiMock.createTest.mockReturnValue(new Promise<TestSummary>(resolve => { complete = resolve }))
+    const selected = vi.fn()
+    function Harness({ incarnation }: { incarnation: number }) {
+      const { runGuarded } = useNavigationGuardRunner()
+      return <><button onClick={() => runGuarded(selected)}>Leave draft</button><CreateTestModal key={incarnation} scripts={[{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]} onClose={vi.fn()} onCreated={selected} /></>
+    }
+    const render = async (incarnation: number) => { await act(async () => root.render(<NavigationGuardProvider><Harness incarnation={incarnation} /></NavigationGuardProvider>)) }
+    await render(1)
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!, 'Submitted old draft'))
+    await click('Create Queued Run')
+    await render(2)
+    const current = container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!
+    await act(async () => setInputValue(current, 'Replacement unsaved draft'))
+    await act(async () => complete({ id: 'old-created-receipt' } as TestSummary))
+    expect(selected).not.toHaveBeenCalled()
+    expect(current.value).toBe('Replacement unsaved draft')
+    await click('Leave draft')
+    expect(selected).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Create Queued Run has unsaved changes')
+  })
+
+  it('retains its navigation guard and draft after a refused create', async () => {
+    apiMock.createTest.mockRejectedValue(new Error('Source has started'))
+    const selected = vi.fn()
+    function Harness() {
+      const { runGuarded } = useNavigationGuardRunner()
+      return <><button onClick={() => runGuarded(selected)}>Leave draft</button><CreateTestModal scripts={[{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '2026-05-12T00:00:00Z' } as never]} onClose={vi.fn()} onCreated={selected} /></>
+    }
+    await act(async () => root.render(<NavigationGuardProvider><Harness /></NavigationGuardProvider>))
+    const input = container.querySelector<HTMLInputElement>('input[placeholder*="auto-generated"]')!
+    await act(async () => setInputValue(input, 'Refused draft'))
+    await click('Create Queued Run')
+    expect(container.textContent).toContain('Source has started')
+    expect(input.value).toBe('Refused draft')
+    await click('Leave draft')
+    expect(selected).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Create Queued Run has unsaved changes')
   })
 
   it('prompts before closing a dirty queued-run draft', async () => {

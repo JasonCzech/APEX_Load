@@ -1,0 +1,1074 @@
+{
+  "utc": "2026-10-06T01:12:37.599Z",
+  "scope": "Read-only TypeScript AST import/top-level initializer inspection; not a compiler/test/build run",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "groupedModuleCount": 25,
+  "nodes": [
+    {
+      "path": "dashboard/src/hooks/projectContext.ts",
+      "sha256": "23ad60643f28fb576a617adae7a5e638e10e05b5c91d1170cc63729845b1dd43",
+      "bytes": 866,
+      "imports": [
+        {
+          "module": "react",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "createContext",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "../types",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "Project",
+              "typeOnly": false
+            },
+            {
+              "imported": "ProjectSettings",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "./api/useProjectApi",
+          "typeOnly": true,
+          "names": [
+            {
+              "imported": "DeleteEntityResponse",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "ProjectContext",
+          "initializer": "createContext<ProjectContextValue | null>(null)"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/hooks/useProject.tsx",
+      "sha256": "c2d63b067600978f47303a761c3b2ed18450d4d75d127585bb54b5368d92f872",
+      "bytes": 274,
+      "imports": [
+        {
+          "module": "react",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "useContext",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "./projectContext",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "ProjectContext",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": []
+    },
+    {
+      "path": "dashboard/src/hooks/applicationContext.ts",
+      "sha256": "c94cb7089a1944b1c700052098dfd495019a8dc03f91b0b66b75f746f21e4051",
+      "bytes": 1007,
+      "imports": [
+        {
+          "module": "react",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "createContext",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "../types",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "Application",
+              "typeOnly": false
+            },
+            {
+              "imported": "Release",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "ApplicationContext",
+          "initializer": "createContext<ApplicationContextValue | null>(null)"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/hooks/useApplication.tsx",
+      "sha256": "2cbb48975d38078ee3a0abe9e0d54a69cd1d380fd28ca7f0349b0a6f471b9d84",
+      "bytes": 298,
+      "imports": [
+        {
+          "module": "react",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "useContext",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "./applicationContext",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "ApplicationContext",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": []
+    },
+    {
+      "path": "dashboard/src/hooks/useDevView.ts",
+      "sha256": "e5ab2fae96192169f6d24365a4f2a16cc132efb354ede4fae920e1ece6e36df5",
+      "bytes": 545,
+      "imports": [
+        {
+          "module": "react",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "createContext",
+              "typeOnly": false
+            },
+            {
+              "imported": "useContext",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "./apiClient",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "DevViewMode",
+              "typeOnly": false
+            },
+            {
+              "imported": "readStoredDevViewMode",
+              "typeOnly": false
+            },
+            {
+              "imported": "writeStoredDevViewMode",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "DevViewContext",
+          "initializer": "createContext<DevViewContextValue | null>(null)"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/hooks/NavigationGuardProvider.tsx",
+      "sha256": "48146838aee7298016a58e618b614324903a8bfd89de658f5ce10e04dd477dc6",
+      "bytes": 1725,
+      "imports": [
+        {
+          "module": "react",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "createContext",
+              "typeOnly": false
+            },
+            {
+              "imported": "useContext",
+              "typeOnly": false
+            },
+            {
+              "imported": "useEffect",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "NavigationGuardRegisterContext",
+          "initializer": "createContext<NavigationGuardRegistrar>(() => () => undefined)"
+        },
+        {
+          "binding": "NavigationGuardRunnerContext",
+          "initializer": "createContext<NavigationGuardRunner>({\n  hasDirtyGuard: () => false,\n  runGuarded: (proceed) => proceed(),\n})"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/hooks/TopbarContributionProvider.tsx",
+      "sha256": "74e57d69cde86e9a7301a1a72152b7247472f7efc75ce0bfaef6613c331634a0",
+      "bytes": 2464,
+      "imports": [
+        {
+          "module": "react",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "createContext",
+              "typeOnly": false
+            },
+            {
+              "imported": "useContext",
+              "typeOnly": false
+            },
+            {
+              "imported": "useEffect",
+              "typeOnly": false
+            },
+            {
+              "imported": "ReactNode",
+              "typeOnly": true
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "TopbarActiveContributionContext",
+          "initializer": "createContext<TopbarContribution | null>(null)"
+        },
+        {
+          "binding": "TopbarContributionRegisterContext",
+          "initializer": "createContext<TopbarContributionRegistrar>(() => () => undefined)"
+        },
+        {
+          "binding": "TopbarContributionProviderPresenceContext",
+          "initializer": "createContext(false)"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/hooks/KeyboardShortcutProvider.tsx",
+      "sha256": "a3ba6092b4015fc20d0b27600d2672d63380831941a45c54c26923881f400e5b",
+      "bytes": 8263,
+      "imports": [
+        {
+          "module": "react",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "createContext",
+              "typeOnly": false
+            },
+            {
+              "imported": "useContext",
+              "typeOnly": false
+            },
+            {
+              "imported": "useEffect",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "SEQUENCE_TIMEOUT_MS",
+          "initializer": "900"
+        },
+        {
+          "binding": "KeyboardShortcutContext",
+          "initializer": "createContext<KeyboardShortcutContextValue | null>(null)"
+        },
+        {
+          "binding": "BUILT_IN_HELP_SHORTCUT",
+          "initializer": "{\n  id: 'global.help',\n  label: 'Show keyboard shortcuts',\n  keys: '?',\n  group: 'Global',\n  priority: 1000,\n  sequence: 0,\n  onTrigger: () => undefined,\n}"
+        },
+        {
+          "binding": "BUILT_IN_PALETTE_SHORTCUT",
+          "initializer": "{\n  id: 'global.command-palette',\n  label: 'Open command palette',\n  keys: ['mod+k', 'ctrl+shift+p'],\n  group: 'Global',\n  priority: 1001,\n  sequence: 0,\n  allowInEditable: true,\n  onTrigger: () => undefined,\n}"
+        },
+        {
+          "binding": "GROUP_ORDER",
+          "initializer": "['Global', 'Navigation', 'Current Page', 'Script Editor', 'Test Run', 'Workspace']"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/hooks/useModalDialog.ts",
+      "sha256": "39341404207c9aad1e0b078fafd8535c75f1d4e1cd9f33d305230f103bb93041",
+      "bytes": 5650,
+      "imports": [
+        {
+          "module": "react",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "RefObject",
+              "typeOnly": false
+            },
+            {
+              "imported": "useEffect",
+              "typeOnly": false
+            },
+            {
+              "imported": "useRef",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "dialogStack",
+          "initializer": "[]"
+        },
+        {
+          "binding": "nextDialogId",
+          "initializer": "1"
+        },
+        {
+          "binding": "inertBefore",
+          "initializer": "new Map<HTMLElement, boolean>()"
+        },
+        {
+          "binding": "bodyOverflow",
+          "initializer": "''"
+        },
+        {
+          "binding": "FOCUSABLE_SELECTOR",
+          "initializer": "[\n  'a[href]',\n  'area[href]',\n  'button:not([disabled])',\n  'input:not([disabled]):not([type=\"hidden\"])',\n  'select:not([disabled])',\n  'textarea:not([disabled])',\n  'iframe',\n  'object',\n  'embed',\n  '[contenteditable=\"true\"]',\n  '[tabindex]:not([tabindex=\"-1\"])',\n].join(',')"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/components/dialogBackdropProps.ts",
+      "sha256": "5b74d53dc0210f0f7aa08b86b145c9f2085b8b7b0c79046b0b021d4b51af462a",
+      "bytes": 563,
+      "imports": [
+        {
+          "module": "react",
+          "typeOnly": true,
+          "names": [
+            {
+              "imported": "KeyboardEvent",
+              "typeOnly": false
+            },
+            {
+              "imported": "MouseEvent",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": []
+    },
+    {
+      "path": "dashboard/src/components/ux/DialogLayer.tsx",
+      "sha256": "b366bb79317979acbfe61ec5db8408f7f4a32e857ac13d8a353b40986e4ffa25",
+      "bytes": 581,
+      "imports": [
+        {
+          "module": "react",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "ReactNode",
+              "typeOnly": true
+            },
+            {
+              "imported": "useLayoutEffect",
+              "typeOnly": false
+            },
+            {
+              "imported": "useState",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "react-dom",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "createPortal",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "./ux.css",
+          "typeOnly": false
+        }
+      ],
+      "topLevelInitializers": []
+    },
+    {
+      "path": "dashboard/src/components/LazyLoadBoundary.tsx",
+      "sha256": "a9daf35cb46f04543308eb5054ae0bb15cb67f988d2b98119c18f1070896fa9a",
+      "bytes": 1345,
+      "imports": [
+        {
+          "module": "react",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "Component",
+              "typeOnly": false
+            },
+            {
+              "imported": "ErrorInfo",
+              "typeOnly": true
+            },
+            {
+              "imported": "ReactNode",
+              "typeOnly": true
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": []
+    },
+    {
+      "path": "dashboard/src/utils/authAccessUtils.ts",
+      "sha256": "c44daa8174e8ceac1b60560456bbb3588b71262416ffb399ee3780cd8de23546",
+      "bytes": 1010,
+      "imports": [
+        {
+          "module": "../types",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "DashboardAuthEffectiveAccessResource",
+              "typeOnly": true
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": []
+    },
+    {
+      "path": "dashboard/src/utils/clipboardUtils.ts",
+      "sha256": "09802c128173178a3a4fc4a5ca580e408688fa0f3c3c22be6d111cd95311f900",
+      "bytes": 2285,
+      "imports": [],
+      "topLevelInitializers": []
+    },
+    {
+      "path": "dashboard/src/appRouting.ts",
+      "sha256": "112c936938609f941b4b0a2090d6d8534c66833be5568138d74c312c27fcff9f",
+      "bytes": 24009,
+      "imports": [
+        {
+          "module": "./components/accessDestinations",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "isAccessView",
+              "typeOnly": false
+            },
+            {
+              "imported": "AccessView",
+              "typeOnly": true
+            }
+          ]
+        },
+        {
+          "module": "./apiGuideNavigation",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "API_GUIDE_DEFAULT_PAGE",
+              "typeOnly": false
+            },
+            {
+              "imported": "isApiGuideContentPageID",
+              "typeOnly": false
+            },
+            {
+              "imported": "ApiGuideContentPageID",
+              "typeOnly": true
+            }
+          ]
+        },
+        {
+          "module": "./components/Sidebar",
+          "typeOnly": true,
+          "names": [
+            {
+              "imported": "NavPage",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "NAV_PAGES",
+          "initializer": "[\n  'dashboard',\n  'command-center',\n  'repository',\n  'tests',\n  'new-test',\n  'scripts',\n  'results',\n  'activity',\n  'monitoring',\n  'fleet',\n  'schedules',\n  'docs',\n  'access',\n  'settings',\n]"
+        },
+        {
+          "binding": "SCRIPT_MODES",
+          "initializer": "['list', 'create', 'edit', 'import'] as const"
+        },
+        {
+          "binding": "SCENARIO_VIEWS",
+          "initializer": "['library', 'builder', 'plans'] as const"
+        },
+        {
+          "binding": "TEST_WORKSPACE_TABS",
+          "initializer": "['overview', 'diagnostics', 'configuration', 'infrastructure', 'control', 'graphs', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const"
+        },
+        {
+          "binding": "MONITORING_CATEGORIES",
+          "initializer": "['overview', 'telemetry', 'alerts', 'analysis'] as const"
+        },
+        {
+          "binding": "REPORT_SECTIONS",
+          "initializer": "['summary', 'performance', 'comparison', 'diagnostics', 'evidence', 'execution'] as const"
+        },
+        {
+          "binding": "REPORT_LENSES",
+          "initializer": "['executive', 'engineer', 'audit'] as const"
+        },
+        {
+          "binding": "ARCHIVE_TEST_WORKSPACE_TABS",
+          "initializer": "['archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const satisfies readonly TestWorkspaceTabID[]"
+        },
+        {
+          "binding": "APP_HISTORY_INDEX_KEY",
+          "initializer": "'__apexloadHistoryIndex'"
+        },
+        {
+          "binding": "DESKTOP_DEEP_LINK_PAGES",
+          "initializer": "new Set<string>([\n  ...NAV_PAGES,\n  'report',\n  'test',\n  'swagger',\n  'repository-guide',\n  'recorder-panel',\n])"
+        },
+        {
+          "binding": "DESKTOP_DEEP_LINK_COMMAND_HOSTS",
+          "initializer": "new Set(['app', 'navigate', 'open'])"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/appTopbar.ts",
+      "sha256": "e8dca396d6e2b82463336c9663f3570d388761ca8782cb59d57a7442290f3739",
+      "bytes": 6695,
+      "imports": [
+        {
+          "module": "./appRouting",
+          "typeOnly": true,
+          "names": [
+            {
+              "imported": "AppView",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "./types",
+          "typeOnly": true,
+          "names": [
+            {
+              "imported": "TestStatus",
+              "typeOnly": false
+            },
+            {
+              "imported": "TestSummary",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "./utils/testStatusUtils",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "isPendingTestStatus",
+              "typeOnly": false
+            },
+            {
+              "imported": "normalizeTestStatus",
+              "typeOnly": false
+            },
+            {
+              "imported": "resolveTestStatus",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "ACTIVE_RUN_STATUS_PRIORITY",
+          "initializer": "{\n  RUNNING: 0,\n  SHAKEOUT: 1,\n  INITIALIZING: 2,\n  PAUSED: 3,\n  STOPPING: 4,\n  SHAKEOUT_REVIEW: 5,\n  PENDING: 6,\n  QUEUED: 7,\n  RESERVED: 8,\n  SCHEDULED: 9,\n}"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/components/settingsNavigation.ts",
+      "sha256": "72a9d9d39b3fb1e4b593dcb37a6fde6d0c70ac7774a8dcaba83936d98c17a457",
+      "bytes": 9623,
+      "imports": [
+        {
+          "module": "./settingsSectionLayout",
+          "typeOnly": true,
+          "names": [
+            {
+              "imported": "SettingsSectionId",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "SETTINGS_DESTINATIONS",
+          "initializer": "[\n  { id: 'platform', group: 'Platform', title: 'Controller & runtime', section: 'general', subsection: 'platform', scope: 'deployment' },\n  { id: 'preferences', group: 'Platform', title: 'Personal preferences', section: 'general', subsection: 'platform', scope: 'browser' },\n  { id: 'entitlements', group: 'Platform', title: 'Edition & deployment limits', section: 'general', subsection: 'entitlements', scope: 'deployment' },\n  { id: 'domains', group: 'Workspaces', title: 'Domains & placement defaults', section: 'domains', scope: 'domain' },\n  { id: 'projects', group: 'Workspaces', title: 'Projects', section: 'projects', subsection: 'catalog', scope: 'domain' },\n  { id: 'applications', group: 'Workspaces', title: 'Applications & releases', section: 'applications', scope: 'project' },\n  { id: 'limits', group: 'Workspaces', title: 'Project limits & quotas', section: 'projects', subsection: 'limits', scope: 'project' },\n  { id: 'usage', group: 'Workspaces', title: 'Usage accounting', section: 'general', subsection: 'usage', scope: 'project' },\n  { id: 'github-policy', group: 'Workspaces', title: 'Project GitHub policy', section: 'projects', subsection: 'github', scope: 'project' },\n  { id: 'github', group: 'Connections', title: 'GitHub', section: 'integrations', subsection: 'github', scope: 'deployment' },\n  { id: 'elk-capture', group: 'Connections', title: 'Elastic test capture', section: 'integrations', subsection: 'elk-capture', scope: 'project' },\n  { id: 'dynatrace-capture', group: 'Connections', title: 'Dynatrace test capture', section: 'integrations', subsection: 'dynatrace-capture', scope: 'project' },\n  { id: 'appdynamics-capture', group: 'Connections', title: 'AppDynamics test capture', section: 'integrations', subsection: 'appdynamics-capture', scope: 'project' },\n  { id: 'prometheus-capture', group: 'Connections', title: 'Prometheus test monitoring', section: 'integrations', subsection: 'prometheus-capture', scope: 'project' },\n  { id: 'prometheus', group: 'Connections', title: 'APEX platform graphs', section: 'integrations', subsection: 'prometheus', scope: 'deployment' },\n  { id: 'opensearch', group: 'Connections', title: 'OpenSearch', section: 'integrations', subsection: 'opensearch', scope: 'deployment' },\n  { id: 'grafana', group: 'Connections', title: 'Grafana', section: 'integrations', subsection: 'grafana', scope: 'deployment' },\n  { id: 'dashboards', group: 'Connections', title: 'Imported dashboards', section: 'integrations', subsection: 'dashboards', scope: 'project' },\n  { id: 'powerbi', group: 'Connections', title: 'Power BI', section: 'integrations', subsection: 'powerbi', scope: 'deployment' },\n  { id: 'confluence', group: 'Connections', title: 'Confluence', section: 'integrations', subsection: 'confluence', scope: 'project' },\n  { id: 'federation', group: 'Connections', title: 'Library federation', section: 'integrations', subsection: 'library', scope: 'project' },\n  { id: 'cloud', group: 'Infrastructure', title: 'Cloud connections & targets', section: 'capacity', scope: 'deployment', resource: 'cloud' },\n  { id: 'clusters', group: 'Infrastructure', title: 'Kubernetes clusters', section: 'capacity', scope: 'deployment', resource: 'clusters' },\n  { id: 'pools', group: 'Infrastructure', title: 'Generator pools', section: 'capacity', scope: 'deployment', resource: 'pools' },\n  { id: 'allocation', group: 'Infrastructure', title: 'Host resource allocation', section: 'capacity', scope: 'deployment', resource: 'allocation' },\n  { id: 'generators', group: 'Infrastructure', title: 'Generator metadata', section: 'capacity', scope: 'deployment', resource: 'generators' },\n  { id: 'capacity', group: 'Infrastructure', title: 'Capacity source', section: 'capacity', subsection: 'availability', scope: 'deployment' },\n  { id: 'planning', group: 'Infrastructure', title: 'Planning profile', section: 'capacity', subsection: 'generator', scope: 'deployment' },\n  { id: 'allocations', group: 'Infrastructure', title: 'Standing allocations', section: 'capacity', subsection: 'reservations', scope: 'deployment' },\n  { id: 'authentication', group: 'Access & Security', title: 'Authentication', section: 'general', subsection: 'authentication', scope: 'deployment' },\n  { id: 'features', group: 'Access & Security', title: 'Domain feature policy', section: 'feature-access', scope: 'domain' },\n  { id: 'imports', group: 'Access & Security', title: 'Import credential policy', section: 'general', subsection: 'governance', governance: 'script-imports', scope: 'deployment' },\n  { id: 'redaction', group: 'Access & Security', title: 'Project redaction rules', section: 'projects', subsection: 'redaction', scope: 'project' },\n  { id: 'secrets', group: 'Access & Security', title: 'Project secrets', section: 'projects', subsection: 'secrets', scope: 'project' },\n  { id: 'audit', group: 'Access & Security', title: 'Governance audit', section: 'general', subsection: 'governance', governance: 'recent-audit-events', scope: 'deployment' },\n  { id: 'thresholds', group: 'Alerts & Scheduling', title: 'Alert & stop policies', section: 'thresholds', scope: 'deployment' },\n  { id: 'notifications', group: 'Alerts & Scheduling', title: 'Notification routes', section: 'integrations', subsection: 'notifications', scope: 'deployment' },\n  { id: 'scheduling', group: 'Alerts & Scheduling', title: 'Schedule defaults', section: 'general', subsection: 'governance', governance: 'schedule-defaults', scope: 'deployment' },\n  { id: 'retention', group: 'Data & Retention', title: 'Archive & HAR retention', section: 'capacity', subsection: 'retention', scope: 'deployment' },\n  { id: 'test-data', group: 'Test Data', title: 'Shared data pools', section: 'data-pools', scope: 'project' },\n]"
+        },
+        {
+          "binding": "SETTINGS_SEARCH_TERMS",
+          "initializer": "{\n  preferences: 'theme dark light system appearance word wrap editor rows table motion accessibility start page landing',\n  platform: 'endpoint concurrency metrics interval runtime downloads desktop',\n  authentication: 'login sso oidc password session users security',\n  retention: 'archive har cleanup storage delete expiration',\n  scheduling: 'timezone time zone recurring calendar cron',\n}"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/components/ErrorDiagnostic.tsx",
+      "sha256": "db0049be4dd975c88f6e6ecf63bd7bd26c13dab0c1d206886c510303668a500d",
+      "bytes": 2109,
+      "imports": [
+        {
+          "module": "../utils/errorUtils",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "diagnoseError",
+              "typeOnly": false
+            },
+            {
+              "imported": "ErrorDiagnostic",
+              "typeOnly": true
+            }
+          ]
+        },
+        {
+          "module": "./ErrorDiagnostic.css",
+          "typeOnly": false
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "severityLabel",
+          "initializer": "{\n  critical: 'Critical',\n  error: 'Error',\n  warning: 'Warning',\n  info: 'Info',\n}"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/components/Logo.tsx",
+      "sha256": "b4ada767dff4531840f9a95db3a6e5a9d53f5ae1f2156246d3b00e342bf75036",
+      "bytes": 1612,
+      "imports": [],
+      "topLevelInitializers": []
+    },
+    {
+      "path": "dashboard/src/hooks/useWebSocket.ts",
+      "sha256": "1cfe17d796c1d7763bc542e92af3caafd263094dcb0dda74ab42285e2fb24cae",
+      "bytes": 6618,
+      "imports": [
+        {
+          "module": "react",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "useEffect",
+              "typeOnly": false
+            },
+            {
+              "imported": "useRef",
+              "typeOnly": false
+            },
+            {
+              "imported": "useState",
+              "typeOnly": false
+            },
+            {
+              "imported": "useCallback",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "../types",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "WSMessage",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "./apiClient",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "wsUrl",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "./api/browserRecorderBridge",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "bridgeWsUrl",
+              "typeOnly": false
+            },
+            {
+              "imported": "BrowserRecorderBridgeConnection",
+              "typeOnly": true
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "CONNECT_DEBOUNCE_MS",
+          "initializer": "150"
+        },
+        {
+          "binding": "RECONNECT_BASE_DELAY_MS",
+          "initializer": "3000"
+        },
+        {
+          "binding": "RECONNECT_MAX_DELAY_MS",
+          "initializer": "30000"
+        },
+        {
+          "binding": "RECONNECT_JITTER_MS",
+          "initializer": "1000"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/components/testExecutionMetricsModel.ts",
+      "sha256": "030b9e42e92cec3df889e2ea06f07688c0def8c6ad885e6d1236fc5531661778",
+      "bytes": 28619,
+      "imports": [
+        {
+          "module": "../types",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "IntervalSummaryRecord",
+              "typeOnly": false
+            },
+            {
+              "imported": "LiveMetrics",
+              "typeOnly": false
+            },
+            {
+              "imported": "MetricsHistoryPoint",
+              "typeOnly": false
+            },
+            {
+              "imported": "ResourceSample",
+              "typeOnly": false
+            },
+            {
+              "imported": "TestStatus",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "./generatorImpact",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "resourceImpactHistoryValues",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "./latencySeries",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "routeLatencySeriesValuesForTarget",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "./transactionChartSeries",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "transactionChartSeriesKey",
+              "typeOnly": false
+            }
+          ]
+        },
+        {
+          "module": "./testExecutionChartZoomModel",
+          "typeOnly": false,
+          "names": [
+            {
+              "imported": "executionChartMinuteRangeValue",
+              "typeOnly": false
+            },
+            {
+              "imported": "ExecutionChartTimeRange",
+              "typeOnly": true
+            },
+            {
+              "imported": "ExecutionChartZoomRange",
+              "typeOnly": true
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "HERO_METRIC_AVERAGE_WINDOW_MS",
+          "initializer": "10_000"
+        },
+        {
+          "binding": "RESPONSE_TIME_METRICS",
+          "initializer": "['avgMs', 'p50', 'p90', 'p95', 'p99'] as const"
+        },
+        {
+          "binding": "GAP_DETECTION_MIN_POINTS",
+          "initializer": "6"
+        },
+        {
+          "binding": "GAP_DETECTION_FACTOR",
+          "initializer": "3"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/components/testExecutionChartZoomModel.ts",
+      "sha256": "be88b4d352254b37737d3a9d8eb31cf84d827c665435d7b5b27b9c80fd20f933",
+      "bytes": 4024,
+      "imports": [],
+      "topLevelInitializers": [
+        {
+          "binding": "executionChartMinuteRangeValues",
+          "initializer": "[\n  1, 2, 3, 4, 5, 6, 7, 8, 9, 10,\n  11, 12, 13, 14, 15, 16, 17, 18, 19, 20,\n  21, 22, 23, 24, 25, 26, 27, 28, 29, 30,\n  31, 32, 33, 34, 35, 36, 37, 38, 39, 40,\n  41, 42, 43, 44, 45, 46, 47, 48, 49, 50,\n  51, 52, 53, 54, 55, 56, 57, 58, 59, 60,\n] as const"
+        },
+        {
+          "binding": "executionChartMinMinuteRange",
+          "initializer": "executionChartMinuteRangeValues[0]"
+        },
+        {
+          "binding": "executionChartMaxMinuteRange",
+          "initializer": "executionChartMinuteRangeValues[executionChartMinuteRangeValues.length - 1]"
+        },
+        {
+          "binding": "initialExecutionChartZoomState",
+          "initializer": "{\n  timeRange: 'all',\n  zoomRange: null,\n  refAreaLeft: null,\n  refAreaRight: null,\n}"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/components/generatorImpact.ts",
+      "sha256": "1114adea0d739beedde53abfc0bf47c9c31f24f1bf56ef089e6fba3037623888",
+      "bytes": 9889,
+      "imports": [
+        {
+          "module": "../types",
+          "typeOnly": true,
+          "names": [
+            {
+              "imported": "GeneratorResourceSnapshot",
+              "typeOnly": false
+            },
+            {
+              "imported": "LiveMetrics",
+              "typeOnly": false
+            },
+            {
+              "imported": "MetricsHistoryPoint",
+              "typeOnly": false
+            },
+            {
+              "imported": "ResourceSample",
+              "typeOnly": false
+            },
+            {
+              "imported": "SystemResources",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "SLOW_TRANSACTION_MS",
+          "initializer": "1000"
+        },
+        {
+          "binding": "IMPACT_HISTORY_KEYS",
+          "initializer": "[\n  'cpuIOWait',\n  'cpuSteal',\n  'gcPauseMs',\n  'containerCPUUsagePct',\n  'containerCPUThrottledSecondsRate',\n  'containerMemoryUsagePct',\n  'containerOOMKillCountDelta',\n  'netDropsPerSec',\n  'netErrorsPerSec',\n  'tcpRetransmitsPerSec',\n  'diskIOTimePct',\n]"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/components/latencySeries.ts",
+      "sha256": "5b0d6b3b954ee59bc433be5ad7d375c4b70a9d94acc80ab8d55edb84fd9a12c8",
+      "bytes": 3999,
+      "imports": [
+        {
+          "module": "../types",
+          "typeOnly": true,
+          "names": [
+            {
+              "imported": "LatencyTarget",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "LATENCY_PREFIX",
+          "initializer": "'latency_'"
+        },
+        {
+          "binding": "ROUTE_LATENCY_METRIC_PREFIXES",
+          "initializer": "{\n  dns: 'latency_dns_',\n  connect: 'latency_connect_',\n  tls: 'latency_tls_',\n  ttfb: 'latency_ttfb_',\n  jitter: 'latency_jitter_',\n  successRate: 'latency_success_rate_',\n} as const"
+        }
+      ]
+    },
+    {
+      "path": "dashboard/src/components/transactionChartSeries.ts",
+      "sha256": "977c619f5203f9a4806dd503f595575f50b8d58637279219b626b1db19e0c793",
+      "bytes": 3830,
+      "imports": [
+        {
+          "module": "../types",
+          "typeOnly": true,
+          "names": [
+            {
+              "imported": "MetricsHistoryPoint",
+              "typeOnly": false
+            }
+          ]
+        }
+      ],
+      "topLevelInitializers": [
+        {
+          "binding": "MAX_TRANSACTION_CHART_SERIES",
+          "initializer": "512"
+        },
+        {
+          "binding": "TRANSACTION_SERIES_PREFIX",
+          "initializer": "'transaction:'"
+        },
+        {
+          "binding": "TRANSACTION_SERIES_METRICS",
+          "initializer": "['tps', 'avgMs', 'errorPct', 'p50', 'p90', 'p95', 'p99']"
+        },
+        {
+          "binding": "TRANSACTION_SERIES_COLORS",
+          "initializer": "[\n  'var(--chart-1)',\n  'var(--chart-2)',\n  'var(--chart-3)',\n  'var(--chart-4)',\n  'var(--chart-5)',\n  'var(--chart-6)',\n] as const"
+        },
+        {
+          "binding": "TRANSACTION_SERIES_DASH_PATTERNS",
+          "initializer": "['10 3', '4 2 1 2', '7 2 2 2', '1 2', '12 3 2 3'] as const"
+        }
+      ]
+    }
+  ],
+  "candidate2Trace": {
+    "manifest": {
+      "path": "/private/tmp/apexload-composed-dashboard-candidate-kqNDFg/.vite/manifest.json",
+      "sha256": "3e965ed59153972f507f71b6a0361b02812c23fc67645fa63c28c0e97fe83c08",
+      "expected": "3e965ed59153972f507f71b6a0361b02812c23fc67645fa63c28c0e97fe83c08"
+    },
+    "index": {
+      "path": "/private/tmp/apexload-composed-dashboard-candidate-kqNDFg/assets/index-Ct_UJeBv.js",
+      "sha256": "1c8975c71ea963ce9a6add9caeceaae7c5d04c9dd566dc88b5f7ee1cdd9d772d",
+      "expected": "1c8975c71ea963ce9a6add9caeceaae7c5d04c9dd566dc88b5f7ee1cdd9d772d"
+    },
+    "importerStatements": [
+      {
+        "path": "/private/tmp/apexload-composed-dashboard-candidate-kqNDFg/assets/boundedAllSettled-BizE4W-U.js",
+        "sha256": "bad34437a0b3a5c1cb04b4136aa2bc29e83d42c7b9da2f8be5e9fa5bf6fef03e",
+        "statement": "import{f as a,p as o}from\"./index-Ct_UJeBv.js\"",
+        "present": true
+      },
+      {
+        "path": "/private/tmp/apexload-composed-dashboard-candidate-kqNDFg/assets/TestExecution-DSD_1JxL.js",
+        "sha256": "e53ccaa676eb0687c6d21a19ab99f2cb0fc28c8c706602368c1aafbcd2923615",
+        "statement": "import{E as g,it as _,p as v,s as y,ut as b,v as x}from\"./index-Ct_UJeBv.js\"",
+        "present": true
+      },
+      {
+        "path": "/private/tmp/apexload-composed-dashboard-candidate-kqNDFg/assets/ConfirmRunActionModal-CzGkAaau.js",
+        "sha256": "3f8f30685d644e61fc4b2f126b4dccf5ce77198e683278a126b3340baf24b87d",
+        "statement": "import{A as ne,B as m,D as re,F as h,G as ie,I as g,J as ae,K as oe,M as _,N as se,P as ce,Q as v,T as le,U as ue,W as y,b,it as x,j as de,k as fe,p as pe,q as me,w as he,x as ge,y as _e}from\"./index-Ct_UJeBv.js\"",
+        "present": true
+      },
+      {
+        "path": "/private/tmp/apexload-composed-dashboard-candidate-kqNDFg/assets/TestExecution-C1uJ-X5P.js",
+        "sha256": "475f729c941367a62c4a61cbccd72e4924393dd482fa1fe190cb3c796a132d9e",
+        "statement": "import{C as f}from\"./index-Ct_UJeBv.js\"",
+        "present": true
+      },
+      {
+        "path": "/private/tmp/apexload-composed-dashboard-candidate-kqNDFg/assets/MarkdownRenderer-DgstTJdj.js",
+        "sha256": "5ffc5b6c200f316d3415fc8fef1ca2308785bd5517e1c5b5e10c37bdea0d05c6",
+        "statement": "import{p as r}from\"./index-Ct_UJeBv.js\"",
+        "present": true
+      },
+      {
+        "path": "/private/tmp/apexload-composed-dashboard-candidate-kqNDFg/assets/PrometheusPanelCard-Cqdrdj3O.js",
+        "sha256": "105d23596c17d765c14ee4c1ea8ccc8571e7e1dd198050b5cedc62064670315c",
+        "statement": "import{G as r,H as i,L as a,V as o,W as s,z as c}from\"./index-Ct_UJeBv.js\"",
+        "present": true
+      },
+      {
+        "path": "/private/tmp/apexload-composed-dashboard-candidate-kqNDFg/assets/ResourceSnapshotList-7mkoTByo.js",
+        "sha256": "06bf3950f43bf21438871e29c9dd969d56a3c3837478a36a7a1ec96b5fd27142",
+        "statement": "import{f as o,p as s}from\"./index-Ct_UJeBv.js\"",
+        "present": true
+      },
+      {
+        "path": "/private/tmp/apexload-composed-dashboard-candidate-kqNDFg/assets/RunMonitoring-ClQp90o5.js",
+        "sha256": "206271bc335644298cec667731a1d04b15ada17d0c8c39d226089a29b5d16b9c",
+        "statement": "import{it as o}from\"./index-Ct_UJeBv.js\"",
+        "present": true
+      },
+      {
+        "path": "/private/tmp/apexload-composed-dashboard-candidate-kqNDFg/assets/TransactionResponseTimeSLATable-Bzg3uvwv.js",
+        "sha256": "373de1856f7f45e7edc3c61dd17c5a0af9cf1e263490adbd685be27842fca52f",
+        "statement": "import{S as y,X as ee,p as te}from\"./index-Ct_UJeBv.js\"",
+        "present": true
+      }
+    ]
+  }
+}

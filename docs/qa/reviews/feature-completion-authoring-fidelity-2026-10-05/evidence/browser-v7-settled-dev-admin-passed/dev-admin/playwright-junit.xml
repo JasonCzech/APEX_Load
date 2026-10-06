@@ -1,0 +1,6 @@
+<testsuites id="" name="" tests="1" failures="0" skipped="0" errors="0" time="3.558884">
+<testsuite name="apexload-authoring-settled-dialog-probe-20261005.spec.ts" timestamp="2026-10-05T20:56:59.719Z" hostname="" tests="1" failures="0" skipped="0" time="2.023" errors="0">
+<testcase name="settled queued copy dialog retains opaque surfaces and visible controls" classname="apexload-authoring-settled-dialog-probe-20261005.spec.ts" time="2.023">
+</testcase>
+</testsuite>
+</testsuites>

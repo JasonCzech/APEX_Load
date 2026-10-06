@@ -1,0 +1,34 @@
+{
+  "scope": "Development freeze for the first focused storage qualification. Actual PostgreSQL tests and full private admission review remain pending; public capability guards unchanged.",
+  "head": "39c0db8a25cd027cfed4c24bf5e6ca06fdc43d55",
+  "sources": [
+    {
+      "path": "pkg/api/import_publication_visibility.go",
+      "sha256": "16f9e391ad31ee303576f31c6ded37196316fb0895b6ca556e4407910eca0306"
+    },
+    {
+      "path": "pkg/api/library_import_claims.go",
+      "sha256": "c782ee5fce3ab9bf7dfadadd34bac695069c1f6e80f46414ede8923589de4dad"
+    },
+    {
+      "path": "pkg/storage/library_import_publication_projection.go",
+      "sha256": "a8343a1ce49a05cb434b95c3af2db722c6df95fbc8730c8e755d7fd167fc19ef"
+    },
+    {
+      "path": "pkg/storage/library_import_publication_projection_test.go",
+      "sha256": "229ab77011624d995773e62b28d3e773c967569f7713df22c706adc360cfa00f"
+    },
+    {
+      "path": "pkg/storage/scenario_content_revision.go",
+      "sha256": "be1ed1847de746e778b6a2de3c6b90b9a46fdf3b284ab3456801ffe3730d668a"
+    },
+    {
+      "path": "pkg/storage/scenario_source_admission.go",
+      "sha256": "99a68c3e8048cebe3b06045800cabdf2ba6f77b2c40cd6b4ce48eecc3d335b23"
+    },
+    {
+      "path": "pkg/storage/scenario_source_admission_test.go",
+      "sha256": "5e1871d8b4e62581bfc5522c672be368abd1e34d26f60fd8e91fdec1054d2e07"
+    }
+  ]
+}

@@ -15,7 +15,9 @@ vi.mock('./apiClient', async (importOriginal) => {
   }
 })
 
-import { ApiProvider, useApi } from './useApi'
+import { ApiProvider } from './ApiProvider'
+import { ApiError, useApi, useOptionalApi } from './useApi'
+import { ApiError as ClientApiError } from './apiClient'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -38,6 +40,10 @@ const REPRESENTATIVE_SERVICES = [
   'listObjectRepositories',
   'listCorrelationRulesets',
   'getEntitlements',
+  'listDashboardDefinitions',
+  'listELKConnections',
+  'listDynatraceConnections',
+  'listAppDynamicsConnections',
 ] as const
 
 describe('ApiProvider', () => {
@@ -96,6 +102,17 @@ describe('ApiProvider', () => {
     })
     expect(seen.length).toBeGreaterThan(1)
     expect(seen[seen.length - 1]).toBe(seen[0])
+  })
+
+  it('returns null for optional consumers outside the provider and preserves ApiError identity', async () => {
+    let value: unknown = 'not rendered'
+    function Consumer() {
+      value = useOptionalApi()
+      return null
+    }
+    await act(async () => root.render(<Consumer />))
+    expect(value).toBeNull()
+    expect(ApiError).toBe(ClientApiError)
   })
 
   it('fails loudly when used outside the provider', async () => {

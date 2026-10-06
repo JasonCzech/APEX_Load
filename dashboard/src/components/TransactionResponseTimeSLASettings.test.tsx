@@ -23,6 +23,14 @@ describe('TransactionResponseTimeSLASettings', () => {
     container.remove()
   })
 
+  it.each([0.001, 1250, 1500])('keeps admitted %sms native controls valid without an artificial step or one-millisecond floor', async milliseconds => {
+    await act(async () => root.render(<TransactionResponseTimeSLASettings defaultMs={milliseconds} groups={[{ name: 'Buyers', overrideMs: milliseconds }]} onDefaultChange={vi.fn()} onGroupOverrideChange={vi.fn()} />))
+    for (const input of container.querySelectorAll<HTMLInputElement>('input')) {
+      expect(input.value).toBe(String(milliseconds / 1000))
+      expect(input.checkValidity()).toBe(true)
+    }
+  })
+
   it('shows inheritance and emits default and group override values in milliseconds', async () => {
     const onDefaultChange = vi.fn()
     const onGroupOverrideChange = vi.fn()

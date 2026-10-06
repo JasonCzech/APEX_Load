@@ -1,0 +1,13 @@
+
+> apexload-dashboard@0.1.0 lint
+> eslint . --max-warnings=0
+
+
+/Users/jasonczech/.codex/worktrees/kafka-owned-seek/Project_Stormrunner/dashboard/src/components/browserResourceEvidenceModel.ts
+  21:9  error  Unexpected control character(s) in regular expression: \x00  no-control-regex
+
+/Users/jasonczech/.codex/worktrees/kafka-owned-seek/Project_Stormrunner/dashboard/src/components/browserResourcePageModel.ts
+  18:9  error  Unexpected control character(s) in regular expression: \x00  no-control-regex
+
+✖ 2 problems (2 errors, 0 warnings)
+

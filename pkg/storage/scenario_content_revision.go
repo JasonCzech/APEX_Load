@@ -429,6 +429,9 @@ func cloneScenarioAuthoringInput(scenario *Scenario, scripts []ScenarioScript, p
 	return cloned.Scenario, cloned.Scripts, cloned.Pools, nil
 }
 func (s *SQLiteStore) CreateScenarioAuthoringIfAbsent(input *Scenario, groups []ScenarioScript, pools []ScenarioDataPoolBinding) (*ScenarioAuthoringMutationResult, error) {
+	return s.createScenarioAuthoringIfAbsent(input, groups, pools, nil)
+}
+func (s *SQLiteStore) createScenarioAuthoringIfAbsent(input *Scenario, groups []ScenarioScript, pools []ScenarioDataPoolBinding, admission *ScenarioSourceAdmission) (*ScenarioAuthoringMutationResult, error) {
 	scenario, groups, pools, err := cloneScenarioAuthoringInput(input, groups, pools)
 	if err != nil {
 		return nil, err
@@ -442,9 +445,26 @@ func (s *SQLiteStore) CreateScenarioAuthoringIfAbsent(input *Scenario, groups []
 		return nil, err
 	}
 	defer tx.Rollback()
-	project, err := lockScenarioCreateProjectTx(tx, scenario.ID, groups)
-	if err != nil {
-		return nil, err
+	var project string
+	if admission != nil {
+		if err := acquireLibraryImportPublicationFenceTx(tx); err != nil {
+			return nil, err
+		}
+		project, err = lockProjectForOwnedMutation(tx, admission.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		if err := lockPrivateScenarioCreateTx(tx, scenario.ID); err != nil {
+			return nil, err
+		}
+		if err := admitScenarioSourcesTx(tx, admission, pools); err != nil {
+			return nil, err
+		}
+	} else {
+		project, err = lockScenarioCreateProjectTx(tx, scenario.ID, groups)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := validateScenarioAuthoringPoolsActiveTx(tx, pools); err != nil {
 		return nil, err
@@ -452,6 +472,9 @@ func (s *SQLiteStore) CreateScenarioAuthoringIfAbsent(input *Scenario, groups []
 	applied, err := createScenarioWithBindingsTx(tx, scenario, groups, pools, assignment, goals, runtime, traffic)
 	if err != nil {
 		return nil, err
+	}
+	if admission != nil && !applied {
+		return nil, ErrScenarioSourceAdmissionConflict
 	}
 	snapshot, err := readScenarioAuthoringSnapshotTx(tx, scenario.ID)
 	if err != nil {
@@ -466,6 +489,9 @@ func (s *SQLiteStore) CreateScenarioAuthoringIfAbsent(input *Scenario, groups []
 	return &ScenarioAuthoringMutationResult{Snapshot: snapshot, Applied: applied}, nil
 }
 func (s *SQLiteStore) UpdateScenarioAuthoringIfCurrent(input *Scenario, groups []ScenarioScript, pools []ScenarioDataPoolBinding, expected ScenarioAuthoringPrecondition) (*ScenarioAuthoringMutationResult, error) {
+	return s.updateScenarioAuthoringIfCurrent(input, groups, pools, expected, nil)
+}
+func (s *SQLiteStore) updateScenarioAuthoringIfCurrent(input *Scenario, groups []ScenarioScript, pools []ScenarioDataPoolBinding, expected ScenarioAuthoringPrecondition, admission *ScenarioSourceAdmission) (*ScenarioAuthoringMutationResult, error) {
 	if err := validateScenarioAuthoringPrecondition(expected); err != nil {
 		return nil, err
 	}
@@ -484,6 +510,14 @@ func (s *SQLiteStore) UpdateScenarioAuthoringIfCurrent(input *Scenario, groups [
 		return nil, err
 	}
 	defer tx.Rollback()
+	if admission != nil {
+		if err := acquireLibraryImportPublicationFenceTx(tx); err != nil {
+			return nil, err
+		}
+		if _, err := lockProjectForOwnedMutation(tx, admission.ProjectID); err != nil {
+			return nil, err
+		}
+	}
 	if err := lockScenarioSQLiteWriterTx(tx, scenario.ID); err != nil {
 		return nil, err
 	}
@@ -545,6 +579,11 @@ func (s *SQLiteStore) UpdateScenarioAuthoringIfCurrent(input *Scenario, groups [
 	}
 	if err := validateScenarioProjectRewriteTx(tx, scenario.ID, groups); err != nil {
 		return nil, err
+	}
+	if admission != nil {
+		if err := admitScenarioSourcesTx(tx, admission, pools); err != nil {
+			return nil, err
+		}
 	}
 	if err := updateScenarioAuthoredRowTx(tx, scenario, assignment, goals, runtime, traffic); err != nil {
 		return nil, err

@@ -1,0 +1,10 @@
+{
+  "scope": "Transparent filesystem compression of retained quiescent session-owned Go cache. No cache entry removed, no dependency/module/default shared cache changed. Logical hash/size/permissions checked before atomic replacement.",
+  "started_free_bytes": 2854912000,
+  "finished_free_bytes": 2859008000,
+  "duration_seconds": 66.908,
+  "recorded_at_utc": "2026-10-05T23:53:53.406891+00:00",
+  "files": [],
+  "errors": [],
+  "reclaimed_physical_bytes": 0
+}

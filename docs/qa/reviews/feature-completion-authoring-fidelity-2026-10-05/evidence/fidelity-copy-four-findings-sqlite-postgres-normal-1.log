@@ -1,0 +1,4 @@
+# github.com/jasonczech/apexload/pkg/api [github.com/jasonczech/apexload/pkg/api.test]
+pkg/api/authoring_fidelity_lifecycle_test.go:393:60: unknown field VUsers in struct literal of type LiveMetrics
+FAIL	github.com/jasonczech/apexload/pkg/api [build failed]
+FAIL

@@ -1,0 +1,95 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run --run src/components/TestHub.test.tsx -t preserves authored early-stop
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard
+
+ ❯ src/components/TestHub.test.tsx (95 tests | 3 failed | 90 skipped) 165ms
+     × preserves authored early-stop presence during a real rename save: absent whole goal 68ms
+     × preserves authored early-stop presence during a real rename save: absent early stop 31ms
+     × preserves authored early-stop presence during a real rename save: present empty early stop 25ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves authored early-stop presence during a real rename save: absent whole goal
+AssertionError: expected { Object (early_stop) } to deeply equal undefined
+
+- Expected:
+undefined
+
++ Received:
+{
+  "early_stop": {
+    "breach_window": "1m",
+    "enabled": false,
+    "error_rate_pct": 5,
+  },
+}
+
+ ❯ src/components/TestHub.test.tsx:1864:33
+    1862|     expect(identity).toBe(stored.id)
+    1863|     expect(payload.name).toBe('Renamed only')
+    1864|     expect(payload.goal_config).toEqual(originalGoal)
+       |                                 ^
+    1865|     expect(stored).toEqual(original)
+    1866|     if (payload.goal_config?.early_stop) {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves authored early-stop presence during a real rename save: absent early stop
+AssertionError: expected { …(2) } to deeply equal { Object (transaction_response_time_sla_ms) }
+
+- Expected
++ Received
+
+  {
++   "early_stop": {
++     "breach_window": "1m",
++     "enabled": false,
++     "error_rate_pct": 5,
++   },
+    "transaction_response_time_sla_ms": 0.001,
+  }
+
+ ❯ src/components/TestHub.test.tsx:1864:33
+    1862|     expect(identity).toBe(stored.id)
+    1863|     expect(payload.name).toBe('Renamed only')
+    1864|     expect(payload.goal_config).toEqual(originalGoal)
+       |                                 ^
+    1865|     expect(stored).toEqual(original)
+    1866|     if (payload.goal_config?.early_stop) {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves authored early-stop presence during a real rename save: present empty early stop
+AssertionError: expected { Object (early_stop) } to deeply equal { early_stop: {} }
+
+- Expected
++ Received
+
+  {
+-   "early_stop": {},
++   "early_stop": {
++     "breach_window": "1m",
++     "enabled": false,
++     "error_rate_pct": 5,
++   },
+  }
+
+ ❯ src/components/TestHub.test.tsx:1864:33
+    1862|     expect(identity).toBe(stored.id)
+    1863|     expect(payload.name).toBe('Renamed only')
+    1864|     expect(payload.goal_config).toEqual(originalGoal)
+       |                                 ^
+    1865|     expect(stored).toEqual(original)
+    1866|     if (payload.goal_config?.early_stop) {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 2 passed | 90 skipped (95)
+   Start at  11:24:21
+   Duration  1.84s (transform 888ms, setup 23ms, import 1.06s, tests 165ms, environment 516ms)
+

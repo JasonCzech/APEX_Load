@@ -1,0 +1,407 @@
+{
+  "schema": "apexload.qa.scoped-independent-review.v1",
+  "reviewed_at_utc": "2026-10-06T01:38:11.006940+00:00",
+  "root": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner",
+  "head": "9b5b9e29a48950591f9e06d7acb7d2d3095cae4b",
+  "scope": "Read-only final ROADMAP/SPEC/INDEX plus composed QA README links, SDK module/source/license/pins, all six Go-building Docker stages, CI/Make dependency-module gates, v5 metadata supplement and planned two-path dry-stage exclusions. No tests/builds/source edits/staging/cache cleanup; changing embedded assets not inspected.",
+  "status": "documentation-findings-pending-root-fix; packaging/index-links/supplement/exclusions-clean-within-stated-scope",
+  "source_bookends": {
+    "start_receipt_path": "/private/tmp/apexload-final-docs-packaging-review-start-20261005.json",
+    "start_receipt_sha256": "a46e0667617b07468a82a0002591ec818c5535de1afcb611b66b48e5643da344",
+    "direct_input_count": 25,
+    "before": {
+      "docs/ROADMAP.md": "a1ec0ded1c7e9865838fbad14450502a71552cbffd2a4072a78c0424525ba9c0",
+      "docs/FEATURE_COMPLETION_SPEC.md": "af02bb3153d5af013118dcd3ef1d8042a2b87a94c7a71ac338624a1bf68e7a1f",
+      "docs/INDEX.md": "33c0363c936047bba7f18d0688b4df98f373992c92f122d7231de4e19db7e199",
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/README.md": "3ebd85d94586a1474f5c50cb5b8871ac6b11d03663fdf227cf9d452761f4a327",
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/dashboard-api-provider-candidate-v5-supplement.json": "e6be1093dc0f8a0c68141253080dedcbd62459a072ebd639cf91480adcd838c5",
+      "go.mod": "30806ceb5fa14c24c7703d9e4e57f9267502b59a1d01abcae8d9687a4fea62d0",
+      "go.sum": "66b5b966246df011fa86f71b09c9ce19cae7154b659358b786a13c2198c1320e",
+      "Dockerfile": "6217dd33f5186af078384060692d1dcfe2d422615d04dce2d93c66c77b7a7b40",
+      "Dockerfile.controller": "27b60561bcbe50c9d392530222e084c2a2f60a34da41873a624b9d97657f5a6e",
+      "runners/java_vuser/Dockerfile": "70babc61c284c14efed4298ca8e71712de1602f1493ff580a48a5e9c4251b848",
+      "runners/java_vuser/Dockerfile.supervisor": "c8b2887c4a1962a13135de937f0a4d5168fb109724d4fed57f37a706e4918a51",
+      "runners/java_vuser/Dockerfile.broker": "983ff6c6ffb6e0369c87ae4c0a8f2a1885b7c7e469459a016a0fba0d3d4fa1c6",
+      "runners/java_vuser/Dockerfile.facade": "85cb5887fbfbde61693c95d9b11a7e45252f9802e33c78996c242c7f97fb225a",
+      "Makefile": "2c06590d9aff78f448c8a279e43faa6ef96d6df5684696ebc44e1bf1dcdd607a",
+      ".github/workflows/ci.yml": "1b7bf39be18706cf9b97ea651731c087a16b7bd3da4dcb5e62473c39cc008573",
+      ".github/workflows/recording-e2e.yml": "1ea7562bf1043708d68a118e4041e0e8be5472ba10544e52ea045438f59a5e8e",
+      ".dockerignore": "1cf1aa4a12121f0860bdec225e8e10f38bf384e32fa4acd4761a408270af55b0",
+      "scripts/playwright_sdk_fork_test.go": "25a632aeb68d5bc66e83236790e642957d540f9fd3fc3f17a3f54a1dc806ae8f",
+      "third_party/playwright-go/README.md": "d88be4fe449b6c96e1f5a983937254d43ce702eb04faf80b83bdf71492c68287",
+      "third_party/playwright-go/APEX_PATCHES.md": "57a45970a163ee755603f9bd8f93558a859d51058e44eb5f90b9e45f87caeb98",
+      "third_party/playwright-go/LICENSE": "012b4d1cf8295a878fb932a9b0bd03ef3e5083b2b16c2936986e1de0b8c3b784",
+      "third_party/playwright-go/UPSTREAM_MANIFEST.json": "b989773c1aa72835249fce767e549c2142ee02ff19585e6fd6ded8c528cecc1a",
+      "third_party/playwright-go/README.upstream.txt": "10ad6ed78db64fe19b2d704b6f4d811f47879cdebf53172f6a8a6ec2fd9ed04e",
+      "third_party/playwright-go/go.mod": "755e83d264703fc6b0bdce94ec159cd3a7e229c5c85418029c89cad58b2c37da",
+      "third_party/playwright-go/go.sum": "07b39a80c1d0550c500039856573b5387830ef0bc465f85ff32131ccb6268856"
+    },
+    "after": {
+      "docs/ROADMAP.md": "a1ec0ded1c7e9865838fbad14450502a71552cbffd2a4072a78c0424525ba9c0",
+      "docs/FEATURE_COMPLETION_SPEC.md": "af02bb3153d5af013118dcd3ef1d8042a2b87a94c7a71ac338624a1bf68e7a1f",
+      "docs/INDEX.md": "33c0363c936047bba7f18d0688b4df98f373992c92f122d7231de4e19db7e199",
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/README.md": "3ebd85d94586a1474f5c50cb5b8871ac6b11d03663fdf227cf9d452761f4a327",
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/dashboard-api-provider-candidate-v5-supplement.json": "e6be1093dc0f8a0c68141253080dedcbd62459a072ebd639cf91480adcd838c5",
+      "go.mod": "30806ceb5fa14c24c7703d9e4e57f9267502b59a1d01abcae8d9687a4fea62d0",
+      "go.sum": "66b5b966246df011fa86f71b09c9ce19cae7154b659358b786a13c2198c1320e",
+      "Dockerfile": "6217dd33f5186af078384060692d1dcfe2d422615d04dce2d93c66c77b7a7b40",
+      "Dockerfile.controller": "27b60561bcbe50c9d392530222e084c2a2f60a34da41873a624b9d97657f5a6e",
+      "runners/java_vuser/Dockerfile": "70babc61c284c14efed4298ca8e71712de1602f1493ff580a48a5e9c4251b848",
+      "runners/java_vuser/Dockerfile.supervisor": "c8b2887c4a1962a13135de937f0a4d5168fb109724d4fed57f37a706e4918a51",
+      "runners/java_vuser/Dockerfile.broker": "983ff6c6ffb6e0369c87ae4c0a8f2a1885b7c7e469459a016a0fba0d3d4fa1c6",
+      "runners/java_vuser/Dockerfile.facade": "85cb5887fbfbde61693c95d9b11a7e45252f9802e33c78996c242c7f97fb225a",
+      "Makefile": "2c06590d9aff78f448c8a279e43faa6ef96d6df5684696ebc44e1bf1dcdd607a",
+      ".github/workflows/ci.yml": "1b7bf39be18706cf9b97ea651731c087a16b7bd3da4dcb5e62473c39cc008573",
+      ".github/workflows/recording-e2e.yml": "1ea7562bf1043708d68a118e4041e0e8be5472ba10544e52ea045438f59a5e8e",
+      ".dockerignore": "1cf1aa4a12121f0860bdec225e8e10f38bf384e32fa4acd4761a408270af55b0",
+      "scripts/playwright_sdk_fork_test.go": "25a632aeb68d5bc66e83236790e642957d540f9fd3fc3f17a3f54a1dc806ae8f",
+      "third_party/playwright-go/README.md": "d88be4fe449b6c96e1f5a983937254d43ce702eb04faf80b83bdf71492c68287",
+      "third_party/playwright-go/APEX_PATCHES.md": "57a45970a163ee755603f9bd8f93558a859d51058e44eb5f90b9e45f87caeb98",
+      "third_party/playwright-go/LICENSE": "012b4d1cf8295a878fb932a9b0bd03ef3e5083b2b16c2936986e1de0b8c3b784",
+      "third_party/playwright-go/UPSTREAM_MANIFEST.json": "b989773c1aa72835249fce767e549c2142ee02ff19585e6fd6ded8c528cecc1a",
+      "third_party/playwright-go/README.upstream.txt": "10ad6ed78db64fe19b2d704b6f4d811f47879cdebf53172f6a8a6ec2fd9ed04e",
+      "third_party/playwright-go/go.mod": "755e83d264703fc6b0bdce94ec159cd3a7e229c5c85418029c89cad58b2c37da",
+      "third_party/playwright-go/go.sum": "07b39a80c1d0550c500039856573b5387830ef0bc465f85ff32131ccb6268856"
+    },
+    "changed_paths": []
+  },
+  "findings": [
+    {
+      "id": "DOC-PRIVATE-ADMISSION-STATUS",
+      "priority": 3,
+      "locations": [
+        {
+          "path": "docs/ROADMAP.md",
+          "line": 63
+        },
+        {
+          "path": "docs/ROADMAP.md",
+          "line": 67
+        },
+        {
+          "path": "docs/FEATURE_COMPLETION_SPEC.md",
+          "line": 300
+        },
+        {
+          "path": "docs/FEATURE_COMPLETION_SPEC.md",
+          "line": 306
+        }
+      ],
+      "finding": "Current completion notes still call private publication/source admission open or next, although current private source admission is implemented and described at ROADMAP:75 and SPEC:302. Public scenario ETags/projections/editor recovery remain unavailable.",
+      "fix": "Mark original foundation/publication qualifications as dated outcomes and describe the implemented private follow-up separately from the unavailable public vertical; do not imply full AUTH completion."
+    },
+    {
+      "id": "DOC-PREMATURE-FINAL-QUALIFICATION",
+      "priority": 3,
+      "locations": [
+        {
+          "path": "docs/FEATURE_COMPLETION_SPEC.md",
+          "line": 166
+        }
+      ],
+      "finding": "The composed review is said to record final qualification before required full dashboard/full Go gates have physically joined.",
+      "fix": "Say it records scoped qualification and outstanding final gates until actual outcomes exist."
+    },
+    {
+      "id": "DOC-SCOPED-CHECKS-STALE-PENDING",
+      "priority": 3,
+      "locations": [
+        {
+          "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/README.md",
+          "line": 7
+        },
+        {
+          "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/README.md",
+          "line": 11
+        },
+        {
+          "path": "docs/ROADMAP.md",
+          "line": 77
+        }
+      ],
+      "finding": "Current notes still call the SDK correction, dependency/generated checks and baseline/bundle fixes pending or in progress despite reviewed frozen correction, recorded focused gates and named candidate5 private bundle pass. Full dashboard/full Go/final documentation remain pending.",
+      "fix": "Record each actual dated scoped result, retain original failures, and distinguish pending final composed gates without claiming the full program finished."
+    }
+  ],
+  "packaging": {
+    "sdk_module": "github.com/mxschmitt/playwright-go",
+    "sdk_version": "v0.6100.0",
+    "local_replace": "./third_party/playwright-go",
+    "native_driver_version": "1.61.1",
+    "driver_pins_match": [
+      "third_party/playwright-go/run.go",
+      "dashboard/package.json",
+      "dashboard/package-lock.json",
+      "Dockerfile",
+      "Dockerfile.controller"
+    ],
+    "source_manifest_count": 80,
+    "manifest_altered_upstream_files": [
+      "browser_context.go"
+    ],
+    "79_pristine_source_hashes_match": true,
+    "source_hashes": {
+      "LICENSE": "012b4d1cf8295a878fb932a9b0bd03ef3e5083b2b16c2936986e1de0b8c3b784",
+      "README.upstream.txt": "10ad6ed78db64fe19b2d704b6f4d811f47879cdebf53172f6a8a6ec2fd9ed04e",
+      "apiresponse_assertions.go": "e87dfe182835c73a8673a02cf06153cf779705050338c589ac91024633bbc720",
+      "artifact.go": "3e01585e8c8b05f62c964d1ab167b5e96a9c3d45a8de6c8e2862bc9bef52f1cc",
+      "assertions.go": "f741fbf8eab7ee3bd94c588ac8cc381398dc0de07af16cbf185af18e81a36ac1",
+      "binding_call.go": "27fb1b4146344fd6e60f143be7bb85ad6ba07f1d0e6e201f5e699ab54070a0a5",
+      "browser.go": "6699d2846d966112fe0128a11d07e09289569cb63cd829b53c59b485cdf5240f",
+      "browser_context.go": "cdb3661ec88f0e812298703f17dedb50ea10a252daf27d7ee2f73e7c8f7e15a3",
+      "browser_type.go": "6854931adffd5db28983f0785f72dddd4e2141e2ecaf86053287da9d3adf1113",
+      "cdp_session.go": "ea67e23fc6d9fec35129e9ed2b024d8eb0c3f2d6a544307da6988a1207411652",
+      "channel.go": "5cfdee0423ef1c7450fedddd7c61b5e03d60fc5ddf3232955bca6d718a4e665c",
+      "channel_owner.go": "befa59b86f4fb32dbae235d2ceeafaabc9b0ded029cd67cace08b43e1ea57a4e",
+      "clock.go": "9f807668194e7070f2142181c6a87c0b4b1b0985ceab3a325eaade91a6849721",
+      "connection.go": "d7a48dbf4279b94dfb96736b31a98de92d4d9743a8a50b4f26d3dc6168ad1efc",
+      "console_message.go": "692d1d3ce5654f048d0976e545db57e176421a4b0805c3fff0d378c1f29e1fd5",
+      "credentials.go": "dd13892a3cd189a10950d6407d2efe65acf6f4dda24f7701b98dde45a3dd7c4d",
+      "debugger.go": "95b1be2c73a5713cc179d5e8372bab1fcba019652ea9a2e09a5aeda2432d7476",
+      "dialog.go": "0ac9339031f9a7f315cc40532bed0d36d44659173083cce1c7a0bf983b7dcf52",
+      "disposable.go": "caabe5df02cf57c79373de1ace2ade10eea15a9a9e536ae7a4227f84f144f22f",
+      "download.go": "e9697f44b98f507030b433ad3ba3650778977ee8d8d06b5aab27b2d760d15069",
+      "element_handle.go": "3370b4fe18766d3d120c0f85f7ff9afab50d5fdecdc4b1d0744260f8233161d4",
+      "errors.go": "1b58045b31168b633e98c4b6fd85182f97fcf0d38f69a2693a27c2937bd5ceaa",
+      "event_emitter.go": "fc5a0effada20e79bbf6f236275f36d4449ce8c5a64e6f5088c1e945884a5389",
+      "event_emitter_test.go": "30eba55f12f1d8a8a95048932252812a7a34424af3d50a3ba80bad259d0422c3",
+      "fetch.go": "9ef3d12b9f6bd21e2315ae3b2c395b17c10f63d2a9efc61d76c1d70bc537ff61",
+      "file_chooser.go": "abc900bf9f618c588464d0ac7a383122cea7d9826ff128203be0890fa7b3ebec",
+      "frame.go": "ded93ff48f185c02879b19729e1375965f0e6459ab61ebec05d7054750ed98f7",
+      "frame_locator.go": "19306a5466ecec3808b6080962a7c3c5c579f549ec6d3f8a051d99966849cf81",
+      "generated-enums.go": "cb71d9b957b232299ddfe91d4812bc784edfb29b2146649894de2fa5dd4424cc",
+      "generated-interfaces.go": "d766831794a45ff2214faa652fd1c7c2e47ccaf2b87ec29de22865bde73de52d",
+      "generated-structs.go": "43a0f0bcc51d6b946f496f6f6ed1daa8593402f6c0aa35b3f35889ba02f1718d",
+      "glob.go": "635891a66a901aba16c63b3241505c35b95bc301bee81fd7b1ae069c73a59575",
+      "glob_test.go": "70e4c79a4583c99349a1722faddc878539b6313fa2ddab0f65ae60f9e21dde75",
+      "go.mod": "755e83d264703fc6b0bdce94ec159cd3a7e229c5c85418029c89cad58b2c37da",
+      "go.sum": "07b39a80c1d0550c500039856573b5387830ef0bc465f85ff32131ccb6268856",
+      "goid.go": "7c95ffc7cf4fde7daef2b8a903e67d1b73e2e527132d6e935675b17c529aaa8c",
+      "har_router.go": "85d77f3e7ca0b6c54b936735c6c8bcf09907773d4ffe64485c9180d68d81f736",
+      "helpers.go": "c465189c7eab3f861ffbe18b10212a86e174a09f760b6fac22dc4307c2a8a2d7",
+      "helpers_test.go": "a593cc02ef1120da2270fc61b3bc453ffb0119a99eab3815aff979e63cd88f98",
+      "input.go": "2a200403603c542ce21aa151219b645d06b31173c90f1c3e0fee5157899312fd",
+      "input_files_helper.go": "97ca12d97b0cfedd90e523f2ba9a8be48387d258f8422199d0e59cd0e486a02b",
+      "internal/safe/map.go": "f3982502474ee0e4ac2f1011445b65cb9ed455f4254593b267523d7e953b63bc",
+      "js_handle.go": "c114d9d2f5e886cd2dcac087c6fdacea31e6ab27528028277be441f5349b2dbc",
+      "jsonPipe.go": "111afb2e2f0ce0e783a9ae1a0e3fd567a0bba0e2d87d2b76ea3175b1510c3ff8",
+      "jsonPipe_test.go": "1c09eab91c73c6b94b4d0a9884f4977add2e5aec9cdbb3f7ffbdf2d0871f205e",
+      "local_utils.go": "825aca06d97e7660f7a3b4ca66b2a707ab30e844d7ca979f9e76cbc1cde269f4",
+      "locator.go": "5b512aac7cbd369a948eb88fe5a0bc2cca1b6e9b3436a2b20c9c13a1a4177015",
+      "locator_assertions.go": "79941886a819833a63fea33982cd1843215199cf3d6554480a9765131ef8aa42",
+      "locator_helpers.go": "35ed6ac6ec418e4fa12b7f6af739646ed07c06ec2deedfd4d781f71940e9c56e",
+      "mime_types.go": "b31631656376a0300135a51c8478c8432aee6d6f09dcb2a25ae9f12f6017ecd8",
+      "network.go": "6e7982656dea91ecf173dac4231e9cd2255f2eacb9241277a00dc7ab31b9c7bd",
+      "network_test.go": "936dacb17f4192863c23f4ed0933b09243df595931c1a3e46d49ba8d2a350daf",
+      "objectFactory.go": "c692710835e09690cd703cdec19aa1b5f788a35f4d100cc6695aff1b82ee6d9f",
+      "page.go": "1cce4f395474c5ca607b85fbbef99493436012ef5b59cabd162ba89b86a250ea",
+      "page_assertions.go": "1057baacf0c374b8ad1ee142ff90d02ca0b2951bff82299d7c9dc9f8f080d8d4",
+      "playwright.go": "a5a9e43348877d0b613742822b2826c16363436f8317e00851956da787088e40",
+      "request.go": "574aa784fd224c41c2c107ea07258dd8e072a970610d9dc4327665684f22d9d2",
+      "response.go": "971934c347eb775c37c04c7085fdd80613440440337f11da547c2b023a623ab1",
+      "route.go": "94063bcb37429517f495406eccf45d70fddbf4e8f32b5c823518ef8a2238952e",
+      "run.go": "132aab827689596c4fbd8715943a3004b369a15d339f456f0e0ae93ec3a42d63",
+      "run_test.go": "cc5b657b428b6f9d77ec498a2f672329aeebbbb1836ac8c962c28dfad3df1654",
+      "run_unix.go": "f6365a7e3d75c06188883369598aee6aee7e0467f14756127ad1bfa091f67681",
+      "run_win.go": "c54832107aa36afc760b4efd5d303d7c16ddcf56cc84d144c7f872fa0afd2394",
+      "screencast.go": "b7e7e3c8b12cfbf9d755daa3794118fe97c30917e975641d947c4852dc811b8d",
+      "selectors.go": "d444b4f2104d44c060dbac78919d169ccac5ea23c4de422e9fb939a910b06dd2",
+      "selectors_internal_test.go": "7754ee84512bf71b41e94a6fa966156e51c1c84d184c94c974d46c63e0c4c8ac",
+      "stream.go": "7c0a86625491999bac66b9db0facb867af4a8127af8d0e85fae6b88a25934f0d",
+      "tracing.go": "9a5fed9c6851016e6c8965f81bb381864b80a23ca78ff78d42e15e5174a4f6d2",
+      "transport.go": "24750ccab39f8b6d24cc3850e7c55af865f2ee6cdf0ffa180fdeddf13781f565",
+      "type_helpers.go": "fdfd77df58dd06543e9092550869711e6fc7465fc0d766ad628f0779c643e2db",
+      "type_helpers_test.go": "7c96fbdd3f60ef8ceb1174d8c5dea34cdf850038e24027f524d67a8608beb29e",
+      "video.go": "84c4637e20050dfba23ebf4c014f806c100c2d4f50c2df8458765dc4f1baafbc",
+      "waiter.go": "8b013d11b82f08504621707820de405db23a73c58207d485a7daab3b2a72de81",
+      "waiter_test.go": "b8c92119761d84419ff325855c7901f4625909e2ca5a6de523b497086c71bc4b",
+      "web_error.go": "82125844bee07c282b236f01290e37ba1ccd5745063e1c2f9a0c73643511a942",
+      "web_storage.go": "6830a3813c110b3db05e937291fd1dda46c87bdad2e83620fae5cdf87a2387b8",
+      "websocket.go": "5bda6f92394fd16578adce608b8389bdb2ae816f50ee294436e1d9b0d24d615a",
+      "websocket_route.go": "790b80277afe6c65e3c4f02c1b0ca2d3114d27271e98fa6792784570d6f71d4b",
+      "worker.go": "1082a6f7ae30ae27918f714b4881208bf82e64657fbaca66aa29c526ea4feeb4",
+      "writable_stream.go": "b651ff9e8dbdd2025eafd78c4b550a3f4495123894f6b38b864db1d39588a447"
+    },
+    "license": "MIT notice and verbatim upstream README retained; wrapper correctly distinguishes omitted upstream assets and limited owned-close patch.",
+    "docker_stages": [
+      "Dockerfile",
+      "Dockerfile.controller",
+      "runners/java_vuser/Dockerfile",
+      "runners/java_vuser/Dockerfile.supervisor",
+      "runners/java_vuser/Dockerfile.broker",
+      "runners/java_vuser/Dockerfile.facade"
+    ],
+    "all_copy_local_module_before_go_mod_download": true,
+    "dockerignore_excludes_local_module": false,
+    "explicit_dependency_module_race_gate": [
+      "Makefile:test",
+      ".github/workflows/ci.yml:Require owned HAR SDK completion contract"
+    ],
+    "recording_workflow_fork_path_trigger": true,
+    "qualification_limit": "Static packaging/provenance review only; no Docker build/platform/provider acceptance certified. Existing pinned SDK v7 source review remains separate."
+  },
+  "links": {
+    "local_links_checked": 160,
+    "missing": [],
+    "detail_receipt": "/private/tmp/apexload-final-docs-packaging-links-20261005.json",
+    "detail_sha256": "723538cd6f080a4d331766a8ebc4828aa3805fa7c59e3cf8501e3334d5dc7b1b"
+  },
+  "v5_supplement": {
+    "sha256": "e6be1093dc0f8a0c68141253080dedcbd62459a072ebd639cf91480adcd838c5",
+    "original_v5_preserved": true,
+    "facade_count": 7,
+    "facades": [
+      "useObjectRepositoryApi",
+      "useCorrelationRulesetApi",
+      "useLibraryApi",
+      "useSystemApi",
+      "useTestApi",
+      "useDynatraceConnectionsApi",
+      "useAppDynamicsConnectionsApi"
+    ],
+    "prior_six_facade_metadata_finding_closed": true,
+    "evidence_hashes": {
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-dashboard-bundle-candidate-5.json": "a1d92265b815c759a7aace79c2485b164ada52b0a0a0600bf20e1b45803356d3",
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-dashboard-bundle-candidate-5-bundle-result.json": "0912fdee73b2af4ebf45de6fdd5dd9cf4a3e15f7a3f07a944db1178acfaea965",
+      "docs/qa/reviews/feature-completion-composed-review-2026-10-05/evidence/composed-dashboard-bundle-candidate-5-manifest.json": "876ec73ac8e2446a37d1d85a018afeb953c1688493631d2701d2883e32df359a"
+    },
+    "evidence_hashes_match": true,
+    "log_sha256": "ae62c33ffe99a65fe9f0e396ccaf6445e73a5f9caac85e49f57e25578e08c4ad",
+    "route_gzip_bytes": {
+      "initial-shell": 188299,
+      "scripts-library": 172982,
+      "test-execution": 378118
+    },
+    "route_caps_match": true,
+    "aggregate_groups": {
+      ".js": {
+        "label": "JavaScript",
+        "maxAssetBytes": 665600,
+        "maxAssetGzipBytes": 225280,
+        "maxTotalBytes": 7392460.8,
+        "maxTotalGzipBytes": 2076180.48,
+        "totalBytes": 7333958,
+        "totalGzipBytes": 2050471
+      },
+      ".css": {
+        "label": "CSS",
+        "maxAssetBytes": 215040,
+        "maxAssetGzipBytes": 34816,
+        "maxTotalBytes": 925696,
+        "maxTotalGzipBytes": 165888,
+        "totalBytes": 911845,
+        "totalGzipBytes": 164662
+      }
+    },
+    "static_closures": {
+      "src/components/ScriptsPage.tsx": {
+        "static_keys": [
+          "_LibraryToolbar-CohgV_X3.js",
+          "_ObjectArchiveControls-DEjO1G3L.js",
+          "_ObjectHistory-D8TsMkmG.js",
+          "_PageViewToggle-Cq6Kb1ZU.js",
+          "_ScriptSecretBindingsDialog-BHI0U7mD.js",
+          "_SecretReferenceValueControl-DqQaTSWO.js",
+          "_SortIndicator-Dg4spV57.js",
+          "_TabList-DnDozKNp.js",
+          "_api-appdynamics-connections-CifwEjOo.js",
+          "_api-correlation-rulesets-H8M_yGHQ.js",
+          "_api-library-50FHt1D1.js",
+          "_api-object-repositories-B-UUTg1U.js",
+          "_boundedAllSettled-DfwbcLiV.js",
+          "_brunoFolderOptions-CoUowwa5.js",
+          "_confirmAction-CBDZYzGd.js",
+          "_libraryFederationUtils-CWH23TFG.js",
+          "_projectSecretsNavigation-DSHafHBm.js",
+          "_rolldown-runtime-QTnfLwEv.js",
+          "_scriptAuthoringRevision-DawsyaVw.js",
+          "_scriptDraftFactories-Ba-auNtB.js",
+          "_secretBindingUtils-B0n1oK74.js",
+          "_settingsSectionLayout-P5B6lYMx.js",
+          "_sourceSecretSession-BnmeYFpE.js",
+          "_testCatalogPagination-CISUYoI-.js",
+          "_timeUtils-Df7WRUWg.js",
+          "_useGitHubApi-CS5J5VNK.js",
+          "_useLibraryPagination-Ik6NYrD0.js",
+          "_vendor-uASnokba.js",
+          "_vite-preload-helper-Czpn1I53.js",
+          "_workspace-shared-D1MGBlXH.js",
+          "src/components/ScriptsPage.tsx"
+        ],
+        "contains_index_html": false,
+        "matches_supplement": true
+      },
+      "src/components/TestExecution.tsx": {
+        "static_keys": [
+          "_BrowserBreakdownChart-DAuHPtyc.js",
+          "_ConfirmRunActionModal-DnRFLV9T.js",
+          "_DesktopApiResourceLink-CUu5yb1P.js",
+          "_DurationField-Dazpg6n_.js",
+          "_MarkdownRenderer-BgYg1qbj.js",
+          "_ObjectHistory-D8TsMkmG.js",
+          "_PrometheusPanelCard-Dx1BuOiq.js",
+          "_PrometheusRunEvidence-CaUYndgd.js",
+          "_PrometheusSourceFields-Dgs92i-F.js",
+          "_ResourceSnapshotList-BGInwkg3.js",
+          "_RunMonitoring-BQRZZ7ZC.js",
+          "_SeriesChartExport-LCEN-sFp.js",
+          "_SortIndicator-Dg4spV57.js",
+          "_TabList-DnDozKNp.js",
+          "_TestExecution-0WTCbqNB.js",
+          "_TransactionResponseTimeSLATable-BtFOukM9.js",
+          "_api-appdynamics-connections-CifwEjOo.js",
+          "_api-dynatrace-connections-B3LDG6Vt.js",
+          "_api-system-Xq8lRczS.js",
+          "_api-tests-BDtfCtRY.js",
+          "_archiveHistorySampling-5QnVuSSo.js",
+          "_browserRuntimeSummary-sXEBIPbd.js",
+          "_chartTooltipTheme-BUAhhHiK.js",
+          "_confirmAction-CBDZYzGd.js",
+          "_execution-metrics-model-Dek0WDaB.js",
+          "_fileUtils-BXxzfKP2.js",
+          "_loadImpactModel-D5Ccnrne.js",
+          "_monitorProviderModel-Bqor7OQj.js",
+          "_monitorTimelineModel-gjPKnqqP.js",
+          "_newTestRunModel-BjvTMp0G.js",
+          "_observerGroupModel-IGUhoNKX.js",
+          "_prometheusConnectionModel-DXHZzmvh.js",
+          "_reportPresentation-BdFNY_WH.js",
+          "_repositoryGuideMarkdown-DcMa8ib6.js",
+          "_rolldown-runtime-QTnfLwEv.js",
+          "_soapFaultUtils-DoAHnnnm.js",
+          "_thinkTimeConfig-hLK8W9Iq.js",
+          "_timeUtils-Df7WRUWg.js",
+          "_trafficProfilePreviewModel-5QPhLZjV.js",
+          "_vendor-recharts-BLR7_yyj.js",
+          "_vendor-uASnokba.js",
+          "_vite-preload-helper-Czpn1I53.js",
+          "_workspace-shared-D1MGBlXH.js",
+          "src/components/TestExecution.tsx"
+        ],
+        "contains_index_html": false,
+        "matches_supplement": true
+      }
+    },
+    "violations": [],
+    "limit": "This retained named private bundle result is not final full-cycle or Go acceptance."
+  },
+  "staging_exclusions": {
+    "reviewed_as": "Planned exact exclusions; no new dry-stage manifest exists in the inspected named locations and no staging operation was performed.",
+    "paths": [
+      {
+        "path": "dashboard/tsconfig.tsbuildinfo",
+        "git_status": "untracked",
+        "reason": "Disposable typecheck cache, not source or deliverable.",
+        "bytes": 55458
+      },
+      {
+        "path": "docs/qa/reviews/feature-completion-telemetry-policy-2026-10-05/evidence/telemetry-policy-final-scope-independent-review-supplement.json",
+        "git_status": "untracked",
+        "sha256": "6a4d38f01fbe6757932962e0757afeea82a58f38f44379ee84624532d0c5509f",
+        "reason": "Unrelated pre-existing telemetry QA supplement; outside current owned changes. One authoring historical restoration receipt records it only as preserved pre-existing input; no active guide/index link requires it."
+      }
+    ],
+    "limitation": "Parent final exact staging inventory and blob audit remain required; do not exclude complete owned QA directories."
+  },
+  "remaining_gates": "Parent fullcycle2 running; full Go and final documentation/results/repeat review not yet joined. No whole-program or full composed qualification claim."
+}

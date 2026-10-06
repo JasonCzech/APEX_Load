@@ -1,0 +1,17 @@
+{
+  "reviewed_at": "2026-10-05T16:50:09.703992+00:00",
+  "reviewer": "root",
+  "scope": "read-only independent review of entire genuine Chromium acquisition test; execution qualifies separately",
+  "path": "pkg/api/archive_browser_resource_actual_integration_test.go",
+  "sha256": "7c058055aa2f6ceb2b4bdd90fdb1bd885d313caabc6909fe99f498a4c9f5343e",
+  "actionable_findings": [],
+  "checks": [
+    "owned81-request fixture and >50 genuine retained entries",
+    "runtime IDs and actually measured zero/false",
+    "one transaction and separate typed document sidecar",
+    "unchanged original JSONL and Parquet bytes; owned manifest format selection",
+    "direct native-value ordering and exact ID filter",
+    "bounded verified pagination; target request counts unchanged",
+    "require/auto/skip existing runtime contract"
+  ]
+}

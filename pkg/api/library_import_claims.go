@@ -635,6 +635,9 @@ func decodeLibraryImportClaims(raw string) ([]libraryImportClaim, error) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
 	}
+	if _, err := storage.ParseLibraryImportPublication(raw); err != nil {
+		return nil, err
+	}
 	var claims []libraryImportClaim
 	if err := json.Unmarshal([]byte(raw), &claims); err != nil {
 		return nil, fmt.Errorf("decode library import claims: %w", err)
@@ -729,8 +732,8 @@ func (s *Server) loadLibraryImportClaims() ([]libraryImportClaim, error) {
 func pendingDirectImportAssetsFromClaims(claims []libraryImportClaim) map[string]struct{} {
 	pending := make(map[string]struct{})
 	for _, claim := range claims {
-		if claim.Committed || !claim.Prepared || strings.TrimSpace(claim.LocalItemID) == "" ||
-			!strings.HasPrefix(strings.TrimSpace(claim.RemoteID), "direct-import:") {
+		facts := storage.LibraryImportClaimFacts{Committed: claim.Committed, Prepared: claim.Prepared, LocalItemID: claim.LocalItemID, RemoteID: claim.RemoteID, Kind: claim.Kind}
+		if !facts.PendingDirectImport() {
 			continue
 		}
 		pending[importPublicationAssetKey(claim.Kind, claim.LocalItemID)] = struct{}{}
@@ -1088,6 +1091,9 @@ func (s *Server) libraryScenarioRecoveryHash(scenario *StoredScenario) string {
 
 func (s *Server) libraryScenarioRequestRecoveryHash(req CreateScenarioRequest) string {
 	req = cloneScenarioRequestForLibrary(req)
+	// Preserve semantically default historical receipts without discarding any
+	// non-default authored mode, shape, runtime section or group SLA evidence.
+	req = normalizePortableScenarioRequestDefaults(req)
 	req.ScenarioMode = normalizeScenarioMode(req.ScenarioMode)
 	req.RuntimeSettings = maskRuntimeSettings(req.RuntimeSettings)
 	for index := range req.Groups {

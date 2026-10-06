@@ -1,0 +1,36 @@
+{
+  "name": "native-har-owned-sdk-recording-path-red-1",
+  "argv": [
+    "go",
+    "test",
+    "-v",
+    "./scripts",
+    "-run",
+    "^TestRecordingCIChangeAndTrustBoundary$",
+    "-count=1",
+    "-timeout=30s"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/browser-document-finality/Project_Stormrunner",
+  "head": "81bd5eb760007adce060450a1f0cce03d8846732",
+  "exit_code": 1,
+  "elapsed_seconds": 1.566,
+  "recorded_at_utc": "2026-10-05T23:41:07.682572+00:00",
+  "log_path": "/private/tmp/native-har-owned-sdk-recording-path-red-1.log",
+  "log_sha256": "6bd5cadf5e7d270e89efda883cbc4a5ab3bf47a4a6b625d9266fb915f9023093",
+  "source_scope": "Every repository Go source currently listed as tracked/nonignored untracked plus go.mod and go.sum; excludes module cache/native runtime dependencies, so not a complete transitive build inventory.",
+  "source_count": 4113,
+  "source_unchanged": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOGC": "50",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false"
+  },
+  "raw_receipt_sha256": "5641f5c695de7f820cd327191b57aa72e360cc805e9ec7601bb170d1bb1a2ef2",
+  "repository_inventory_before_sha256": "f15ea74f813202731f4653e44678ea5269bc82a2633597f93703b12c7ba71752",
+  "repository_inventory_after_sha256": "f15ea74f813202731f4653e44678ea5269bc82a2633597f93703b12c7ba71752",
+  "qualification_disposition": "Superseded red workflow contract assertion: local SDK-only paths omitted from push and pull-request recording gates. Fixed without changing native pins.",
+  "receipt_scope_note": "Compact durable receipt retains original private receipt SHA, source count/stability and inventory digests. Full 4,000+ repository inventories remain in the named private raw receipt; direct review inventories are copied separately. Neither inventory includes complete module-cache/native dependencies.",
+  "outcome": "red-superseded"
+}

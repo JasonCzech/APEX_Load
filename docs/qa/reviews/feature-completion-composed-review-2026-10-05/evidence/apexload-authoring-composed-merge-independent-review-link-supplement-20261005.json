@@ -1,0 +1,23 @@
+{
+  "scope": "Dated read-only supplement closing the sole pending authoring QA link packaging dependency from the independent seven-shared-input semantic merge review; original receipt preserved unchanged.",
+  "verified_at_utc": "2026-10-05T23:39:42.473721+00:00",
+  "original_receipt": {
+    "path": "/private/tmp/apexload-authoring-composed-merge-independent-review-v1-20261005.json",
+    "sha256": "92938e3faf8fa7a1fa0246c60467bfb6148babd827796c6bb9f53928e6814ed4"
+  },
+  "closed_dependency": {
+    "referenced_from": "docs/guides/AUTHORING_SCENARIO_FIDELITY.md",
+    "line": 29,
+    "guide_sha256": "9ee7c86008bb465c0a513162dbf07221bd4e685c08606d39a39e38c377083295",
+    "target": "docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/README.md",
+    "target_sha256": "c46aee0b70ce0505776508f7685a3f8eb6be92ac270f590aca75cc1739613456",
+    "resolved_path": "/Users/jasonczech/.codex/worktrees/feature-completion-resume/Project_Stormrunner/docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/README.md",
+    "target_matches_author_owned_readme_byte_for_byte": true
+  },
+  "status": "pending-qualification-link-packaging-resolved; seven-shared-input review issue closed",
+  "findings": [],
+  "qualification_limits": "Linked README explicitly retains final composed full Go and both-profile dashboard gates as pending. Link verification is not execution qualification or an audit of all 564 copied artifacts.",
+  "repository_writes": false,
+  "executed_tests": [],
+  "cache_cleanup": false
+}

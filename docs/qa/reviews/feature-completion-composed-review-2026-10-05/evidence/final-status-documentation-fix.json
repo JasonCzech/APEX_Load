@@ -1,0 +1,81 @@
+{
+  "at_utc": "2026-10-06T03:04:42.867712+00:00",
+  "scope": "Correct stale current-status prose only after completed green source/test gates. Five component checkpoint originals retained verbatim. No implementation/guide/UI/generated changes.",
+  "changed": [
+    {
+      "path": "docs/ROADMAP.md",
+      "before_sha256": "a1ec0ded1c7e9865838fbad14450502a71552cbffd2a4072a78c0424525ba9c0",
+      "after_sha256": "443a60881262d0ac8005eddbbd993052d73ddb8f3b9980822dc40514d79568d1",
+      "bytes": 113637
+    },
+    {
+      "path": "docs/FEATURE_COMPLETION_SPEC.md",
+      "before_sha256": "af02bb3153d5af013118dcd3ef1d8042a2b87a94c7a71ac338624a1bf68e7a1f",
+      "after_sha256": "2e4bf5059e006fc928d2e9cf7505499cb04a2c73b8324073ae520dd459fbd772",
+      "bytes": 86470
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-composed-review-2026-10-05/README.md",
+      "before_sha256": "3ebd85d94586a1474f5c50cb5b8871ac6b11d03663fdf227cf9d452761f4a327",
+      "after_sha256": "6accbc983d7f2c83f3dd1018c15d8160633f1862c2f911fdd78a6ee137d8a0f7",
+      "bytes": 4877
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/README.md",
+      "before_sha256": "c46aee0b70ce0505776508f7685a3f8eb6be92ac270f590aca75cc1739613456",
+      "after_sha256": "a1863ef52275e80cf98c0de9b03e9062fad55859734318034d0a0b0b06547202",
+      "bytes": 30052
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/README.md",
+      "before_sha256": "7a0180fff6de9b1b5b005af6db0bdc93cac734b6d23492834410828f0845540e",
+      "after_sha256": "a184b3d3577a179009396c47d6a3662dcddd75034f3e770b1d54783b28fb0d83",
+      "bytes": 6537
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-finality-2026-10-05/README.md",
+      "before_sha256": "8b7cee6eacd0267dea5a99f385f9674e3f569ae425a118655be78c5af181fd28",
+      "after_sha256": "9438f66687999738c7ee1271bdbf8999643707192036e43c6cce3009ed26a629",
+      "bytes": 3569
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/README.md",
+      "before_sha256": "11d508198aec639c7517db14576d2059b95f7f814f92f0e8bb994f76bdd03e18",
+      "after_sha256": "cabafdb157fe8f2650176aa77faaa0aecd8e7c651601685bff46ad0550fc0c9a",
+      "bytes": 8524
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-scenario-source-admission-2026-10-05/README.md",
+      "before_sha256": "9333bfb0c2544c23ed0ae19b915dbe166e926ab175a52773bae8e565ec19555a",
+      "after_sha256": "78e1e6b9231c0cfe052eb2b2b8cb0bef3b01ee3b9cf4af53e68d5acd86f8a450",
+      "bytes": 3388
+    }
+  ],
+  "historical_checkpoints": [
+    {
+      "path": "docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "c46aee0b70ce0505776508f7685a3f8eb6be92ac270f590aca75cc1739613456",
+      "bytes": 29470
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-resources-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "7a0180fff6de9b1b5b005af6db0bdc93cac734b6d23492834410828f0845540e",
+      "bytes": 5955
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-browser-document-finality-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "8b7cee6eacd0267dea5a99f385f9674e3f569ae425a118655be78c5af181fd28",
+      "bytes": 2987
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-native-har-ownership-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "11d508198aec639c7517db14576d2059b95f7f814f92f0e8bb994f76bdd03e18",
+      "bytes": 7942
+    },
+    {
+      "path": "docs/qa/reviews/feature-completion-scenario-source-admission-2026-10-05/README.component-checkpoint.txt",
+      "sha256": "9333bfb0c2544c23ed0ae19b915dbe166e926ab175a52773bae8e565ec19555a",
+      "bytes": 2806
+    }
+  ]
+}

@@ -1,0 +1,163 @@
+{
+  "utc": "2026-10-06T00:50:33.906842+00:00",
+  "scope": "Cancelled unfinished browser workflows after independent bundle gate found9 budget failures. Typecheck/lint/6065 units/embed build completed; full cycle is unqualified. Exact owned ancestry/start/comm and ROOT cwd checked before signals. No unrelated process or shared Playwright runtime signalled. All observed owned descendants gone before source fixes.",
+  "root_pid": 46686,
+  "owned_processes": [
+    {
+      "pid": 52545,
+      "ppid": 52520,
+      "started": [
+        "Mon",
+        "Oct",
+        "5",
+        "20:46:34",
+        "2026"
+      ],
+      "comm": "bash"
+    },
+    {
+      "pid": 52549,
+      "ppid": 52545,
+      "started": [
+        "Mon",
+        "Oct",
+        "5",
+        "20:46:34",
+        "2026"
+      ],
+      "comm": "bash"
+    },
+    {
+      "pid": 52520,
+      "ppid": 46704,
+      "started": [
+        "Mon",
+        "Oct",
+        "5",
+        "20:46:34",
+        "2026"
+      ],
+      "comm": "npm run test:workflows"
+    },
+    {
+      "pid": 54953,
+      "ppid": 52549,
+      "started": [
+        "Mon",
+        "Oct",
+        "5",
+        "20:49:13",
+        "2026"
+      ],
+      "comm": "/var/folders/jw/zlnv3nsx6xn9wlkxpdrrcls00000gn/T/apexload-e2e.XXXXXX.0YlM5s1III/controller"
+    },
+    {
+      "pid": 54987,
+      "ppid": 52549,
+      "started": [
+        "Mon",
+        "Oct",
+        "5",
+        "20:49:15",
+        "2026"
+      ],
+      "comm": "node"
+    },
+    {
+      "pid": 46704,
+      "ppid": 46686,
+      "started": [
+        "Mon",
+        "Oct",
+        "5",
+        "20:36:28",
+        "2026"
+      ],
+      "comm": "sh"
+    },
+    {
+      "pid": 54993,
+      "ppid": 54987,
+      "started": [
+        "Mon",
+        "Oct",
+        "5",
+        "20:49:16",
+        "2026"
+      ],
+      "comm": "/Users/jasonczech/.npm/_npx/6d82ddbdd7da268b/node_modules/node/bin/node"
+    },
+    {
+      "pid": 54994,
+      "ppid": 54993,
+      "started": [
+        "Mon",
+        "Oct",
+        "5",
+        "20:49:16",
+        "2026"
+      ],
+      "comm": "/Users/jasonczech/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell"
+    },
+    {
+      "pid": 54995,
+      "ppid": 54994,
+      "started": [
+        "Mon",
+        "Oct",
+        "5",
+        "20:49:16",
+        "2026"
+      ],
+      "comm": "/Users/jasonczech/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell"
+    },
+    {
+      "pid": 54996,
+      "ppid": 54994,
+      "started": [
+        "Mon",
+        "Oct",
+        "5",
+        "20:49:16",
+        "2026"
+      ],
+      "comm": "/Users/jasonczech/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell"
+    },
+    {
+      "pid": 55549,
+      "ppid": 54994,
+      "started": [
+        "Mon",
+        "Oct",
+        "5",
+        "20:50:32",
+        "2026"
+      ],
+      "comm": "/Users/jasonczech/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell"
+    },
+    {
+      "pid": 46686,
+      "ppid": 46684,
+      "started": [
+        "Mon",
+        "Oct",
+        "5",
+        "20:36:28",
+        "2026"
+      ],
+      "comm": "npm run test:cycle"
+    }
+  ],
+  "signals": [
+    {
+      "pid": 52545,
+      "signal": "SIGTERM"
+    },
+    {
+      "pid": 54987,
+      "signal": "SIGINT"
+    }
+  ],
+  "duration_seconds": 0.48025066599075217,
+  "survivors": []
+}

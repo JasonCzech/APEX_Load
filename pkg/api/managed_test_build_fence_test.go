@@ -25,6 +25,7 @@ func TestManagedTestCapacitySnapshotPreservesBuildFingerprint(t *testing.T) {
 	pausedAt := createdAt.Add(4 * time.Minute)
 	windowStart := createdAt.Add(5 * time.Minute)
 	windowEnd := createdAt.Add(65 * time.Minute)
+	endedAt := createdAt.Add(70 * time.Minute)
 	timeslotID := "timeslot-fingerprint"
 	goalMaxVUsers := 27
 	original := &ManagedTest{
@@ -39,7 +40,7 @@ func TestManagedTestCapacitySnapshotPreservesBuildFingerprint(t *testing.T) {
 		},
 		ResourceBaseline: true, StartDelay: "7s", Duration: 91 * time.Second, CreatedAt: createdAt,
 		ScheduledStartAt: &scheduledAt, PendingSince: &pendingSince, StartedAt: &startedAt, PausedAt: &pausedAt,
-		CumulativePause: 11 * time.Second, CapacityWindowStartAt: &windowStart, CapacityWindowEndAt: &windowEnd,
+		CumulativePause: 11 * time.Second, CapacityWindowStartAt: &windowStart, CapacityWindowEndAt: &windowEnd, EndedAt: &endedAt,
 		TimeslotID: &timeslotID, GoalConfig: &GoalConfig{MaxVUsers: &goalMaxVUsers},
 		ExecutionPlanApproval: &RunArchiveExecutionPlanApprovalSnapshot{
 			ID: "approval-a", PlanID: "plan-a", PlanContentHash: "sha256:plan", Status: "approved",

@@ -1,1 +1,0 @@
-import{lt as e}from"./vendor-B_Qv7o7Q.js";import t from"./ApiGuidePage-BcIVkeYn.js";var n=e();function r({effectiveAccessResources:e=[]}){return(0,n.jsx)(t,{activePage:`general`,defaultArticle:`api-workflows`,effectiveAccessResources:e})}export{r as default};

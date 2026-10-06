@@ -1,0 +1,37 @@
+{
+  "command": [
+    "npm",
+    "--prefix",
+    "dashboard",
+    "run",
+    "typecheck"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/kafka-owned-seek/Project_Stormrunner",
+  "started_at": "2026-10-05T14:06:08.696324+00:00",
+  "finished_at": "2026-10-05T14:07:35.638512+00:00",
+  "duration_seconds": 86.942,
+  "exit_code": 0,
+  "status": "passed",
+  "raw_log": "resource-model-owner-typecheck-repeat1.stdout.txt",
+  "raw_log_bytes": 139,
+  "raw_log_sha256": "a691c3ed7f868f4224b319aa9ea49b8db48d41717efab023a87b3a64b7133ee9",
+  "source_before": {
+    "file": "source-inventory-5754b5b482975a230227fe0464ea9fb51b59daff93c335ad02ca57665a8ed760.json",
+    "sha256": "5754b5b482975a230227fe0464ea9fb51b59daff93c335ad02ca57665a8ed760",
+    "file_count": 5476
+  },
+  "source_after": {
+    "file": "source-inventory-86d74fd8184266643b17930dcf249ff50b6eec13ed8d947b0e39ceb8d5685738.json",
+    "sha256": "86d74fd8184266643b17930dcf249ff50b6eec13ed8d947b0e39ceb8d5685738",
+    "file_count": 5478
+  },
+  "source_changed": true,
+  "environment": {
+    "GOCACHE": "/private/tmp/apexload-feature-completion-resume-go-cache",
+    "GOMAXPROCS": "2",
+    "GOMEMLIMIT": "6GiB",
+    "GOFLAGS": "-p=1 -gcflags=github.com/jasonczech/apexload/pkg/api=-dwarf=false",
+    "NODE_OPTIONS": "--max-old-space-size=2048",
+    "APEXLOAD_VITEST_MAX_WORKERS": "1"
+  }
+}

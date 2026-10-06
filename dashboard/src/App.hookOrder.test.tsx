@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { readAppHistoryIndex, withAppHistoryIndex } from './appRouting'
 import type { WailsDesktopBridge } from './desktop/desktopBridge'
-import { ApiProvider } from './hooks/useApi'
+import { ApiProvider } from './hooks/ApiProvider'
 
 const browserRecorderPanelPropsMock = vi.hoisted(() => vi.fn())
 

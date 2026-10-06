@@ -1,0 +1,51 @@
+{
+  "created_utc": "2026-10-05T20:57:59.547568+00:00",
+  "source_root": "/private/tmp/apexload-authoring-fidelity-v7-settled-dev-admin-20261005",
+  "retained_root": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/docs/qa/reviews/feature-completion-authoring-fidelity-2026-10-05/evidence/browser-v7-settled-dev-admin-passed",
+  "scope": "Unmodified original reporter artifacts plus exactly decoded JSON attachment bodies; successful runtime verification is in the sibling immutable gate receipt.",
+  "decoded_json_attachments": [
+    {
+      "name": "settled-dialog-style-evidence",
+      "path": "decoded-json-attachments/000-settled-dialog-style-evidence.json",
+      "sha256": "2a93f4f64fc4fe1a023dcca70c936a0efcbf86d653d2b682a2ec4252e9061388",
+      "bytes": 23132
+    }
+  ],
+  "files": [
+    {
+      "path": "decoded-json-attachments/000-settled-dialog-style-evidence.json",
+      "bytes": 23132,
+      "sha256": "2a93f4f64fc4fe1a023dcca70c936a0efcbf86d653d2b682a2ec4252e9061388"
+    },
+    {
+      "path": "dev-admin/.last-run.json",
+      "bytes": 45,
+      "sha256": "91d1c43004802cd49950d78eb11c8fa7d05da8ffffe219a8b13b2f561bc00903"
+    },
+    {
+      "path": "dev-admin/apexload-authoring-settled-724f0-rfaces-and-visible-controls/settled-dialog-submit-visible.png",
+      "bytes": 113537,
+      "sha256": "2c61138c004d086bad6ffd6bbd0359e6fd0f699739a6edf10f7b105262dd0d64"
+    },
+    {
+      "path": "dev-admin/apexload-authoring-settled-724f0-rfaces-and-visible-controls/settled-dialog-surface.png",
+      "bytes": 131182,
+      "sha256": "56ee6ea9efceb118ae549a7a4d88f7c59718f430339016a1138b3f921cf6fd62"
+    },
+    {
+      "path": "dev-admin/apexload-authoring-settled-724f0-rfaces-and-visible-controls/settled-dialog-viewport.png",
+      "bytes": 166943,
+      "sha256": "0f49f959ac36a4cfa844bed53af14164169e11d8d8849463a629206eee905085"
+    },
+    {
+      "path": "dev-admin/playwright-junit.xml",
+      "bytes": 483,
+      "sha256": "b4d1cf1937943354938b327c5dc3ac0c7e3d33e5e2d497686c031852462ee97c"
+    },
+    {
+      "path": "dev-admin/report.json",
+      "bytes": 34264,
+      "sha256": "c23df4f8560664a9603f920bc3450dba6a163843bb6870612a59187479fd55f3"
+    }
+  ]
+}

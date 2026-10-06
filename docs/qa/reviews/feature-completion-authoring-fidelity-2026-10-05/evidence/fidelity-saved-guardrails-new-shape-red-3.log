@@ -1,0 +1,83 @@
+
+> apexload-dashboard@0.1.0 test
+> vitest run src/components/TestHub.test.tsx -t preserves owned SLA and rules
+
+
+ RUN  v4.1.10 /Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner/dashboard
+
+ ❯ src/components/TestHub.test.tsx (111 tests | 4 failed | 107 skipped) 211ms
+     × preserves owned SLA and rules when a saved-source edit selects Stepped Ramp 103ms
+     × preserves owned SLA and rules when a saved-source clone selects Stepped Ramp 36ms
+     × preserves owned SLA and rules when a saved-source edit selects Goal-Driven Scenario 42ms
+     × preserves owned SLA and rules when a saved-source clone selects Goal-Driven Scenario 28ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source edit selects Stepped Ramp
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source clone selects Stepped Ramp
+AssertionError: expected { early_stop: { …(3) }, …(1) } to match object { …(4) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+@@ -2,16 +2,6 @@
+    "early_stop": {
+      "breach_window": "",
+      "enabled": false,
+      "error_rate_pct": 0,
+    },
+-   "monitor_rules": [],
+-   "transaction_response_time_sla_ms": 0.001,
+-   "transaction_rules": [
+-     {
+-       "comparator": "lte",
+-       "metric": "p95_duration_ms",
+-       "threshold": 1250,
+-       "transaction": "orders",
+-     },
+-   ],
+  }
+
+ ❯ src/components/TestHub.test.tsx:1937:33
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source edit selects Goal-Driven Scenario
+ FAIL  src/components/TestHub.test.tsx > TestHub > preserves owned SLA and rules when a saved-source clone selects Goal-Driven Scenario
+AssertionError: expected { target_average_tps: 25, …(6) } to match object { …(4) }
+(7 matching properties omitted from actual)
+
+- Expected
++ Received
+
+@@ -2,16 +2,6 @@
+    "early_stop": {
+      "breach_window": "",
+      "enabled": false,
+      "error_rate_pct": 0,
+    },
+-   "monitor_rules": [],
+-   "transaction_response_time_sla_ms": 0.001,
+-   "transaction_rules": [
+-     {
+-       "comparator": "lte",
+-       "metric": "p95_duration_ms",
+-       "threshold": 1250,
+-       "transaction": "orders",
+-     },
+-   ],
+  }
+
+ ❯ src/components/TestHub.test.tsx:1937:33
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 107 skipped (111)
+   Start at  12:53:30
+   Duration  1.71s (transform 897ms, setup 26ms, import 1.06s, tests 211ms, environment 323ms)
+

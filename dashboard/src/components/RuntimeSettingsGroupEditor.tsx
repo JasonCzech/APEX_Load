@@ -1564,7 +1564,7 @@ export default function RuntimeSettingsGroupEditor({
         )}
       </div>
 
-      {fieldApplicable('websocket') && <label className="runtime-apply-row"><span>WebSocket callback interval (ms)</span><input className="settings-input" type="number" min={1} max={60000} value={draft.websocket?.callback_interval_ms ?? ''} placeholder={String(inheritedOverride?.websocket?.callback_interval_ms || 500)} onChange={event => patch({websocket: {...(draft.websocket ?? inheritedOverride?.websocket), callback_interval_ms: event.target.value === '' ? undefined : Number(event.target.value)}})} /></label>}
+      {fieldApplicable('websocket') && <label className="runtime-apply-row"><span>WebSocket callback interval (ms)</span><input className="settings-input" type="number" min={0} max={60000} value={draft.websocket?.callback_interval_ms ?? ''} placeholder={String(inheritedOverride?.websocket?.callback_interval_ms ?? 500)} onChange={event => patch({websocket: {...(draft.websocket ?? inheritedOverride?.websocket), callback_interval_ms: event.target.value === '' ? undefined : Number(event.target.value)}})} /></label>}
       {applyPanelAvailable && (
       <div className="runtime-apply-row">
         <button type="button" className="secondary-button" onClick={() => setApplyOpen(open => !open)} disabled={groups.length < 2}>

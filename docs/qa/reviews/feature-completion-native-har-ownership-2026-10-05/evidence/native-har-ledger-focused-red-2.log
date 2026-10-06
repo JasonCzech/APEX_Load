@@ -1,0 +1,8 @@
+--- FAIL: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed (0.06s)
+    --- FAIL: TestHAROwnershipLedgerCorruptionAndAdmissionFailClosed/case_alias (0.01s)
+        har_retirement_ledger_test.go:275: malformed ledger admitted new native work
+--- FAIL: TestHAROwnershipPrivateGenerationAndDurablePublication (0.04s)
+    har_working_lease_test.go:79: private generation leftovers <nil>
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/protocol/browser	2.544s
+FAIL

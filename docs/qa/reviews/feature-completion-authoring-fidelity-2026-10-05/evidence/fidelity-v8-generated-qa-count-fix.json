@@ -1,0 +1,131 @@
+{
+  "command": [
+    "python3",
+    "scripts/qa-generate-dashboard.py"
+  ],
+  "cwd": "/Users/jasonczech/.codex/worktrees/native-partition-pruning/Project_Stormrunner",
+  "started_utc": "2026-10-05T21:25:36.300910+00:00",
+  "finished_utc": "2026-10-05T21:25:37.195617+00:00",
+  "duration_seconds": 0.895,
+  "exit_code": 0,
+  "path": "docs/qa/DASHBOARD.md",
+  "before_sha256": "8a37308640fdcebe5e49270faccb044947afc4cad17097723ee5bb4e2262bd30",
+  "after_sha256": "35aa5ff9416facb9ba9df008c585f597fae778f33da3aaceacd11203aee5fc0e",
+  "diff_sha256": "06adc6277ea8e814fd6beee0d8116a99b4562c6df59e9f2e1d17760635d565ea",
+  "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "generator_inputs_before": [
+    {
+      "path": "scripts/qa-generate-dashboard.py",
+      "sha256": "2f51c64fdc7e20a30a7e7663e1748c0336aa550e7645a30feb08456d2623f1de"
+    },
+    {
+      "path": "scripts/qa_metrics.py",
+      "sha256": "aec558500de6d386d53947bb891a817701f9db5845b817a9ecb8c1b4ae71d7e0"
+    },
+    {
+      "path": "docs/qa/STATUS.md",
+      "sha256": "c904a3e7de3e3e00c9d0aa2aebd22bf8d919a8437847ca8bb905019c6084dab6"
+    },
+    {
+      "path": "docs/qa/E2E_SUITES.md",
+      "sha256": "0ef03b70b5c2aafee646f52d61834847b62d655544ca456ba60c392507f7237b"
+    },
+    {
+      "path": "docs/qa/evidence/M1/api-contract-matrix.json",
+      "sha256": "4519240ed3c12612386304a4d826b2e903bed11e90b383c2fe9c642b0ae6abf3"
+    }
+  ],
+  "generator_inputs_after": [
+    {
+      "path": "scripts/qa-generate-dashboard.py",
+      "sha256": "2f51c64fdc7e20a30a7e7663e1748c0336aa550e7645a30feb08456d2623f1de"
+    },
+    {
+      "path": "scripts/qa_metrics.py",
+      "sha256": "aec558500de6d386d53947bb891a817701f9db5845b817a9ecb8c1b4ae71d7e0"
+    },
+    {
+      "path": "docs/qa/STATUS.md",
+      "sha256": "c904a3e7de3e3e00c9d0aa2aebd22bf8d919a8437847ca8bb905019c6084dab6"
+    },
+    {
+      "path": "docs/qa/E2E_SUITES.md",
+      "sha256": "0ef03b70b5c2aafee646f52d61834847b62d655544ca456ba60c392507f7237b"
+    },
+    {
+      "path": "docs/qa/evidence/M1/api-contract-matrix.json",
+      "sha256": "4519240ed3c12612386304a4d826b2e903bed11e90b383c2fe9c642b0ae6abf3"
+    }
+  ],
+  "tracked_browser_spec_count": 66,
+  "tracked_browser_spec_paths": [
+    "dashboard/e2e/command-center-details.spec.ts",
+    "dashboard/e2e/command-center-hero-metrics.spec.ts",
+    "dashboard/e2e/controller-smoke.spec.ts",
+    "dashboard/e2e/debugger-layout.spec.ts",
+    "dashboard/e2e/tier0-auth.spec.ts",
+    "dashboard/e2e/tier0-bruno-import.spec.ts",
+    "dashboard/e2e/tier0-live-metrics.spec.ts",
+    "dashboard/e2e/tier0-local-auth.spec.ts",
+    "dashboard/e2e/tier0-report-results.spec.ts",
+    "dashboard/e2e/tier0-routes.spec.ts",
+    "dashboard/e2e/tier0-run-launch.spec.ts",
+    "dashboard/e2e/tier0-run-lifecycle.spec.ts",
+    "dashboard/e2e/tier0-scenario-builder.spec.ts",
+    "dashboard/e2e/tier0-script-editor.spec.ts",
+    "dashboard/e2e/tier0-script-import.spec.ts",
+    "dashboard/e2e/tier0-workspace.spec.ts",
+    "dashboard/e2e/workflow-access.spec.ts",
+    "dashboard/e2e/workflow-analysis-preparation.spec.ts",
+    "dashboard/e2e/workflow-application-secrets.spec.ts",
+    "dashboard/e2e/workflow-archive-references.spec.ts",
+    "dashboard/e2e/workflow-aura-outcomes.spec.ts",
+    "dashboard/e2e/workflow-author-experience.spec.ts",
+    "dashboard/e2e/workflow-authoring.spec.ts",
+    "dashboard/e2e/workflow-baseline-comparison.spec.ts",
+    "dashboard/e2e/workflow-browser-resource-evidence.spec.ts",
+    "dashboard/e2e/workflow-command-center.spec.ts",
+    "dashboard/e2e/workflow-crosscut.spec.ts",
+    "dashboard/e2e/workflow-dashboard-analysis.spec.ts",
+    "dashboard/e2e/workflow-dashboard.spec.ts",
+    "dashboard/e2e/workflow-debugger-experience.spec.ts",
+    "dashboard/e2e/workflow-dynatrace.spec.ts",
+    "dashboard/e2e/workflow-execution-results.spec.ts",
+    "dashboard/e2e/workflow-execution.spec.ts",
+    "dashboard/e2e/workflow-help.spec.ts",
+    "dashboard/e2e/workflow-http-concurrent.spec.ts",
+    "dashboard/e2e/workflow-http-version.spec.ts",
+    "dashboard/e2e/workflow-import-labels.spec.ts",
+    "dashboard/e2e/workflow-import-source.spec.ts",
+    "dashboard/e2e/workflow-jmeter-fidelity.spec.ts",
+    "dashboard/e2e/workflow-library-assignments.spec.ts",
+    "dashboard/e2e/workflow-loadrunner-collection.spec.ts",
+    "dashboard/e2e/workflow-loadrunner-folder.spec.ts",
+    "dashboard/e2e/workflow-loadrunner-review.spec.ts",
+    "dashboard/e2e/workflow-local-archive-failure.spec.ts",
+    "dashboard/e2e/workflow-local-auth.spec.ts",
+    "dashboard/e2e/workflow-monitoring.spec.ts",
+    "dashboard/e2e/workflow-new-test.spec.ts",
+    "dashboard/e2e/workflow-object-activity.spec.ts",
+    "dashboard/e2e/workflow-pod-capacity.spec.ts",
+    "dashboard/e2e/workflow-prometheus-monitoring.spec.ts",
+    "dashboard/e2e/workflow-protocol-diagnostics.spec.ts",
+    "dashboard/e2e/workflow-recording-review.spec.ts",
+    "dashboard/e2e/workflow-recovery.spec.ts",
+    "dashboard/e2e/workflow-response-content.spec.ts",
+    "dashboard/e2e/workflow-runtime-state.spec.ts",
+    "dashboard/e2e/workflow-scenario-composition.spec.ts",
+    "dashboard/e2e/workflow-scenario-data.spec.ts",
+    "dashboard/e2e/workflow-script-editor.spec.ts",
+    "dashboard/e2e/workflow-script-folders.spec.ts",
+    "dashboard/e2e/workflow-script-settings.spec.ts",
+    "dashboard/e2e/workflow-script-sidebars.spec.ts",
+    "dashboard/e2e/workflow-settings-monitoring.spec.ts",
+    "dashboard/e2e/workflow-telemetry-policy.spec.ts",
+    "dashboard/e2e/workflow-theme-controls.spec.ts",
+    "dashboard/e2e/workflow-usability.spec.ts",
+    "dashboard/e2e/workflow-ux-consistency.spec.ts"
+  ],
+  "expected_exact_delta": true,
+  "scope": "Generated QA metric only for this worktree; integration regenerates after composition."
+}

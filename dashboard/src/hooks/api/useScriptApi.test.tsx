@@ -48,6 +48,20 @@ describe('useScriptApi import wrappers', () => {
     vi.clearAllMocks()
   })
 
+  it('serializes the complete shared scenario shape for create and save, including explicit clears and advanced group fields', async () => {
+    const payload = {
+      name: 'Iteration snapshot', project_id: 'project', workload_shape_id: '', duration: '', termination_mode: 'iterations' as const, start_delay: '2s',
+      runtime_settings: { results: { message_detail: { mode: 'off' as const, include_resources: false } }, websocket: { callback_interval_ms: 0, compression: false, reconnect: false } },
+      groups: [{ name: 'group', script_id: 'script', vusers: 1, iterations: 3, start_offset: '4s', initialization: 'at_once' as const, transaction_response_time_sla_ms: 1250, runtime_settings: { results: {}, websocket: {} } }],
+    }
+    await api.createScenario(payload)
+    expect(request).toHaveBeenLastCalledWith('/scenarios', expect.objectContaining({ method: 'POST', body: JSON.stringify(payload) }))
+    await api.updateScenario('scenario', payload)
+    expect(request).toHaveBeenLastCalledWith('/scenarios/scenario', expect.objectContaining({ method: 'PUT', body: JSON.stringify(payload) }))
+    expect(payload.workload_shape_id).toBe('')
+    expect(payload.groups[0].runtime_settings).toEqual({ results: {}, websocket: {} })
+  })
+
   it('loads a strict paired authoring projection through the bounded envelope', async () => {
     const pair = authoringFixture()
     ;(requestWithResponse as Mock).mockResolvedValueOnce({ body: pair.projection, headers: new Headers({ ETag: pair.etag }) })

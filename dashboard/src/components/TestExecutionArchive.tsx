@@ -3,6 +3,7 @@ import MonitorRuleResults from './MonitorRuleResults'
 import PrometheusArchiveEvidence from './PrometheusArchiveEvidence'
 import AppDynamicsArchiveEvidence from './AppDynamicsArchiveEvidence'
 import BrowserResourceEvidence from './BrowserResourceEvidence'
+import ArchiveResourceInspectorDisclosure from './ArchiveResourceInspectorDisclosure'
 import BrowserDocumentEvidencePanel from './BrowserDocumentEvidencePanel'
 import { grpcDiagnosticLines } from '../utils/grpcDiagnostics'
 import { websocketDiagnosticLines } from '../utils/websocketDiagnostics'
@@ -1244,11 +1245,14 @@ export default function TestExecutionArchive({
           )}
 
           {showReportBrowserResourcesView && (
-            archiveReport.browser_resources && archiveReport.browser_resources.length > 0 ? (
-              <BrowserResourceEvidence resources={archiveReport.browser_resources} />
-            ) : showStandaloneReportSection ? (
-              <p className="scenario-script-status">No browser resource waterfall entries were captured for this archive.</p>
-            ) : null
+            <>
+              {archiveReport.browser_resources && archiveReport.browser_resources.length > 0 ? (
+                <BrowserResourceEvidence resources={archiveReport.browser_resources} />
+              ) : showStandaloneReportSection ? (
+                <p className="scenario-script-status">No resource preview was retained in this report.</p>
+              ) : null}
+              <ArchiveResourceInspectorDisclosure hasArchive={hasArchive} test={test} report={archiveReport} />
+            </>
           )}
 
           {showReportAssetsView && (

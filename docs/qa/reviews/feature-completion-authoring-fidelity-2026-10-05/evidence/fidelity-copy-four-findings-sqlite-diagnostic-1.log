@@ -1,0 +1,7 @@
+=== RUN   TestAuthoringFidelitySQLiteLifecycle
+2026/10/05 16:02:56 WARN encrypted project secret store is unavailable error="wrapping key is not configured; set APEXLOAD_WRAPPING_MASTER_KEY or configure a Key Vault key"
+    authoring_fidelity_lifecycle_test.go:17: create retained VUser guardrails: controller admission state kept changing across 5 test-build attempts: managed test build fence is stale: controller content changed while test creation was being compiled
+--- FAIL: TestAuthoringFidelitySQLiteLifecycle (0.11s)
+FAIL
+FAIL	github.com/jasonczech/apexload/pkg/api	1.577s
+FAIL

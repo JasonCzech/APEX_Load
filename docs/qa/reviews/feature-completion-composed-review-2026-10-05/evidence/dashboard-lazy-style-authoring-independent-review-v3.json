@@ -1,0 +1,173 @@
+{
+  "date_utc": "2026-10-06T01:25:25.326008+00:00",
+  "reviewer": "authoring_fidelity_resume_v3",
+  "scope": "Independent read-only narrow V3 repeat of single type-oracle correction in AccessStyles.test.ts. Fourteen other direct input hashes unchanged from scoped clean V2 review. No tests/builds/browser/source edits.",
+  "freeze": {
+    "path": "/private/tmp/apexload-dashboard-lazy-style-source-freeze-v3-20261005.json",
+    "sha256": "771dc1658ac4df5c4aa57033135b7742d677138a795c0ae1f23d5d6baea81815"
+  },
+  "previous_clean_review": {
+    "path": "/private/tmp/apexload-dashboard-lazy-style-authoring-independent-review-v2-20261005.json",
+    "sha256": "95c197a259579bc5b8b15dd64e5ebd11a264aa99880f3e53682920851ecb51ae"
+  },
+  "delta": [
+    "dashboard/src/components/AccessStyles.test.ts"
+  ],
+  "source_before": [
+    {
+      "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.tsx",
+      "bytes": 1923,
+      "sha256": "4995ab74b2be4e81f5dcc255877751160fc5f46db1515031e8ffdcea61fc3336"
+    },
+    {
+      "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.lazy.test.tsx",
+      "bytes": 3554,
+      "sha256": "6cfa39fd998c562302b900eb8c2c0084b7f9787b59022382d757bf117204e940"
+    },
+    {
+      "path": "dashboard/src/components/Pages.css",
+      "bytes": 171197,
+      "sha256": "ef6607910b2b9448d614577a1c3eeb0415c479175fe0411b4163fe8202613840"
+    },
+    {
+      "path": "dashboard/src/components/Access.css",
+      "bytes": 23670,
+      "sha256": "0526eca49722ec1086d2a9fd20830bf98a181ef31d8d1a2a7baff08e59593b67"
+    },
+    {
+      "path": "dashboard/src/components/AccessStyles.test.ts",
+      "bytes": 4978,
+      "sha256": "47d04cba8be7cb07e755d8f64730d047b3f26807744125215858b9273946bce7"
+    },
+    {
+      "path": "dashboard/src/components/AccessPage.tsx",
+      "bytes": 146848,
+      "sha256": "dbff095fb5757b2bb1b8407360abc1aacd6dd35329a27efb08f60c940059ceed"
+    },
+    {
+      "path": "dashboard/src/components/AccessNavigation.tsx",
+      "bytes": 1254,
+      "sha256": "442c347b1a98d74909d83ebe9db2459ce9c35d78b02052ed58a891f7c9fbe5d6"
+    },
+    {
+      "path": "dashboard/src/components/AccessIssuedKeyModal.tsx",
+      "bytes": 3305,
+      "sha256": "52b1bc6aef3f6ea8d571f9aeedbcec713899ee2383bef7a396af6869fb9606aa"
+    },
+    {
+      "path": "dashboard/src/components/AccessUsagePanel.tsx",
+      "bytes": 11594,
+      "sha256": "b9c7266b39dcdf863f02d06238acb8ca886a090825e0c8d6a9e7f15a6c0c17a0"
+    },
+    {
+      "path": "dashboard/src/components/AuditEventTable.tsx",
+      "bytes": 2281,
+      "sha256": "529d0611a8092e5db7efed69d6017d0b6c9c8e3be13d796fac03fde0231b95f3"
+    },
+    {
+      "path": "dashboard/src/components/CapacityCommitments.tsx",
+      "bytes": 3920,
+      "sha256": "c0a34469b55c1a4a212bff03a90238db20d60d694d4393bed8da41fddd876dc0"
+    },
+    {
+      "path": "dashboard/src/components/SwaggerDocsPage.tsx",
+      "bytes": 15710,
+      "sha256": "35648433f742cb64fe00854563401b3844f678a1c7a6bc4765d884f8deab2def"
+    },
+    {
+      "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.test.tsx",
+      "bytes": 5873,
+      "sha256": "de27f99437c4964680be658d3c0b91c70a56fa8ad36f7478945bb7d5bfcdeed4"
+    },
+    {
+      "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.loadFailure.test.tsx",
+      "bytes": 3156,
+      "sha256": "c1766f84dd40975c1f5b1bbe6680a134b10946f7ee65390f9b5b58f2c0cc9a37"
+    },
+    {
+      "path": "dashboard/src/components/LazyLoadBoundary.tsx",
+      "bytes": 1345,
+      "sha256": "a9daf35cb46f04543308eb5054ae0bb15cb67f988d2b98119c18f1070896fa9a"
+    }
+  ],
+  "source_after": [
+    {
+      "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.tsx",
+      "bytes": 1923,
+      "sha256": "4995ab74b2be4e81f5dcc255877751160fc5f46db1515031e8ffdcea61fc3336"
+    },
+    {
+      "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.lazy.test.tsx",
+      "bytes": 3554,
+      "sha256": "6cfa39fd998c562302b900eb8c2c0084b7f9787b59022382d757bf117204e940"
+    },
+    {
+      "path": "dashboard/src/components/Pages.css",
+      "bytes": 171197,
+      "sha256": "ef6607910b2b9448d614577a1c3eeb0415c479175fe0411b4163fe8202613840"
+    },
+    {
+      "path": "dashboard/src/components/Access.css",
+      "bytes": 23670,
+      "sha256": "0526eca49722ec1086d2a9fd20830bf98a181ef31d8d1a2a7baff08e59593b67"
+    },
+    {
+      "path": "dashboard/src/components/AccessStyles.test.ts",
+      "bytes": 4978,
+      "sha256": "47d04cba8be7cb07e755d8f64730d047b3f26807744125215858b9273946bce7"
+    },
+    {
+      "path": "dashboard/src/components/AccessPage.tsx",
+      "bytes": 146848,
+      "sha256": "dbff095fb5757b2bb1b8407360abc1aacd6dd35329a27efb08f60c940059ceed"
+    },
+    {
+      "path": "dashboard/src/components/AccessNavigation.tsx",
+      "bytes": 1254,
+      "sha256": "442c347b1a98d74909d83ebe9db2459ce9c35d78b02052ed58a891f7c9fbe5d6"
+    },
+    {
+      "path": "dashboard/src/components/AccessIssuedKeyModal.tsx",
+      "bytes": 3305,
+      "sha256": "52b1bc6aef3f6ea8d571f9aeedbcec713899ee2383bef7a396af6869fb9606aa"
+    },
+    {
+      "path": "dashboard/src/components/AccessUsagePanel.tsx",
+      "bytes": 11594,
+      "sha256": "b9c7266b39dcdf863f02d06238acb8ca886a090825e0c8d6a9e7f15a6c0c17a0"
+    },
+    {
+      "path": "dashboard/src/components/AuditEventTable.tsx",
+      "bytes": 2281,
+      "sha256": "529d0611a8092e5db7efed69d6017d0b6c9c8e3be13d796fac03fde0231b95f3"
+    },
+    {
+      "path": "dashboard/src/components/CapacityCommitments.tsx",
+      "bytes": 3920,
+      "sha256": "c0a34469b55c1a4a212bff03a90238db20d60d694d4393bed8da41fddd876dc0"
+    },
+    {
+      "path": "dashboard/src/components/SwaggerDocsPage.tsx",
+      "bytes": 15710,
+      "sha256": "35648433f742cb64fe00854563401b3844f678a1c7a6bc4765d884f8deab2def"
+    },
+    {
+      "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.test.tsx",
+      "bytes": 5873,
+      "sha256": "de27f99437c4964680be658d3c0b91c70a56fa8ad36f7478945bb7d5bfcdeed4"
+    },
+    {
+      "path": "dashboard/src/components/ArchiveResourceInspectorDisclosure.loadFailure.test.tsx",
+      "bytes": 3156,
+      "sha256": "c1766f84dd40975c1f5b1bbe6680a134b10946f7ee65390f9b5b58f2c0cc9a37"
+    },
+    {
+      "path": "dashboard/src/components/LazyLoadBoundary.tsx",
+      "bytes": 1345,
+      "sha256": "a9daf35cb46f04543308eb5054ae0bb15cb67f988d2b98119c18f1070896fa9a"
+    }
+  ],
+  "findings": [],
+  "reasoning": "Replacing Array.indexOf(parent) with findIndex(node => node === parent) preserves exact object-identity lookup and runtime result. PostCSS parent union is accepted without broad cast. Missing/mismatched parent still produces -1 and fails the original later-responsive-order comparison, so no weakened oracle. Mixed media/declaration checks and all product source remain unchanged.",
+  "qualification_limit": "Static fixture-only repeat. Root owns current type/lint/unit/build/browser execution; previous preflight TypeScript failure remains retained evidence."
+}

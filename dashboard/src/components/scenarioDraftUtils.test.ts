@@ -3,6 +3,16 @@ import { describe, expect, it } from 'vitest'
 import { buildDefaultScenarioGroup, buildInitialScenarioDraft, buildScenarioDraftFromTest, scenarioDraftReducer } from './scenarioDraftUtils'
 
 describe('scenarioDraftUtils', () => {
+  it('retains iteration termination, empty duration and private root-clear provenance from a queued source', () => {
+    const source = { id: 'source', name: 'Iteration source', duration: '', start_delay: '10s', termination_mode: 'iterations', status: 'QUEUED', total_vusers: 1, created_at: '2026-10-05T00:00:00Z', runtime_settings: { log_level: 'full' }, groups: [{ name: 'orders', script_id: 'script', vusers: 1, iterations: 3, iteration_override: 3, iteration_override_known: true }] } as import('../types').TestSummary
+    const draft = buildInitialScenarioDraft(buildScenarioDraftFromTest(source), [])
+    expect(draft).toMatchObject({ terminationMode: 'iterations', duration: '', startDelay: '10s', groups: [{ iterations: 3 }], revisionContext: { sourceRuntimeSettingsPresent: true, sourceStartDelayPresent: true } })
+    const absent = buildInitialScenarioDraft(buildScenarioDraftFromTest({ ...source, start_delay: '', runtime_settings: undefined } as never), [])
+    expect(absent.revisionContext).not.toHaveProperty('sourceRuntimeSettingsPresent')
+    expect(absent.revisionContext).not.toHaveProperty('sourceStartDelayPresent')
+    expect(absent.duration).toBe('')
+  })
+
 	it('builds a default scenario group from the first available script', () => {
 	  const group = buildDefaultScenarioGroup([
 	    { id: 'script-1', name: 'Checkout', protocol: 'http' },

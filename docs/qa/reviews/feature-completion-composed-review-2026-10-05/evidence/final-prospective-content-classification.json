@@ -1,0 +1,51 @@
+{
+  "schema": "apexload-staging-nondisclosing-pattern-classification-v1",
+  "scope": "Bounded categories/counts only; no matched credential/capture values, contexts, URLs or private payloads retained. No parsing/printing source values or replay/target actions. Pattern matches require provenance review and are not automatically secrets. PNG/screenshots and other binary media not OCR-inspected.",
+  "audit_sha256": "72ef7d4e38eed711705b663c22a3bb7d65efa1506d4af98f63f12191fd5dd5ba",
+  "patterns": [
+    "private_key_marker",
+    "aws_access_key_id",
+    "github_token",
+    "slack_token",
+    "jwt_shape",
+    "azure_shared_access_key",
+    "azure_storage_account_key",
+    "har_log_structure"
+  ],
+  "plain_files_scanned": 1459,
+  "zip_archives_scanned": 11,
+  "readable_archive_and_gzip_decoded_bytes": 17768363,
+  "limits": [],
+  "aggregate_categories": {
+    "har_log_structure": 4
+  },
+  "flags": [
+    {
+      "path": "pkg/api/har_artifact_ownership_test.go",
+      "scan_kind": "plain byte-stream",
+      "categories": {
+        "har_log_structure": 1
+      }
+    },
+    {
+      "path": "pkg/protocol/browser/har_capture_integration_test.go",
+      "scan_kind": "plain byte-stream",
+      "categories": {
+        "har_log_structure": 2
+      }
+    },
+    {
+      "path": "pkg/protocol/browser/har_working_lease_test.go",
+      "scan_kind": "plain byte-stream",
+      "categories": {
+        "har_log_structure": 1
+      }
+    }
+  ],
+  "limits_config": {
+    "plain_file_bytes": 104857600,
+    "readable_member_bytes": 8388608,
+    "archive_total_bytes": 134217728,
+    "total_decoded_bytes": 268435456
+  }
+}

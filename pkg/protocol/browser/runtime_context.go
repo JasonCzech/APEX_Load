@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -48,15 +49,26 @@ type browserNetworkTask struct {
 }
 
 func (b *Browser) openBrowserContext() error {
-	pwBrowser, err := getBrowserInstance(b.engine, b.headless)
-	if err != nil {
+	options := b.browserContextOptions()
+	if err := b.applyHARCaptureOptions(&options); err != nil {
 		return err
 	}
-
-	browserContext, err := pwBrowser.NewContext(b.browserContextOptions())
+	pwBrowser, err := getBrowserInstance(b.engine, b.headless)
 	if err != nil {
-		b.discardHARWorkingFile()
-		return err
+		return errors.Join(err, b.discardHARWorkingFile())
+	}
+	b.mu.Lock()
+	owner := b.harOwner
+	b.mu.Unlock()
+	if owner != nil {
+		owner.beginWriter()
+	}
+	browserContext, err := pwBrowser.NewContext(options)
+	if err != nil {
+		return errors.Join(err, b.discardHARWorkingFile())
+	}
+	if owner != nil {
+		owner.bindWriter(func() error { return closeOwnedHARBrowserContext(browserContext) })
 	}
 	b.mu.Lock()
 	b.closing = false
@@ -64,42 +76,32 @@ func (b *Browser) openBrowserContext() error {
 	b.mu.Unlock()
 	if err := b.installRequestPolicy(browserContext); err != nil {
 		b.stopRequestPolicyWaiters()
-		_ = browserContext.Close()
-		b.discardHARWorkingFile()
-		return err
+		return b.failBrowserContextInitialization(browserContext, err)
 	}
 	if b.clientMetricsEnabled {
 		if err := browserContext.AddInitScript(playwright.Script{Content: playwright.String(browserMetricsBootstrapScript)}); err != nil {
 			b.stopRequestPolicyWaiters()
-			_ = browserContext.Close()
-			b.discardHARWorkingFile()
-			return err
+			return b.failBrowserContextInitialization(browserContext, err)
 		}
 	}
 
 	if err := b.installDocumentEvidence(browserContext, pwBrowser.Version()); err != nil {
 		b.stopRequestPolicyWaiters()
-		_ = browserContext.Close()
-		b.discardHARWorkingFile()
-		return err
+		return b.failBrowserContextInitialization(browserContext, err)
 	}
 	b.installBrowserContextHandlers(browserContext)
 
 	if script := b.environmentEmulationScript(); script != "" {
 		if err := browserContext.AddInitScript(playwright.Script{Content: playwright.String(script)}); err != nil {
 			b.stopRequestPolicyWaiters()
-			b.discardHARWorkingFile()
-			_ = browserContext.Close()
-			return err
+			return b.failBrowserContextInitialization(browserContext, err)
 		}
 	}
 
 	page, err := browserContext.NewPage()
 	if err != nil {
 		b.stopRequestPolicyWaiters()
-		_ = browserContext.Close()
-		b.discardHARWorkingFile()
-		return err
+		return b.failBrowserContextInitialization(browserContext, err)
 	}
 
 	b.setBrowserContext(browserContext)
@@ -107,6 +109,16 @@ func (b *Browser) openBrowserContext() error {
 	b.startNetworkWorkers()
 	b.registerPage(page, true)
 	return nil
+}
+
+func (b *Browser) failBrowserContextInitialization(browserContext playwright.BrowserContext, cause error) error {
+	b.mu.Lock()
+	owner := b.harOwner
+	b.mu.Unlock()
+	if owner != nil {
+		return errors.Join(cause, b.discardHARWorkingFile())
+	}
+	return errors.Join(cause, browserContext.Close())
 }
 
 func (b *Browser) browserContextOptions() playwright.BrowserNewContextOptions {
@@ -149,7 +161,6 @@ func (b *Browser) browserContextOptions() playwright.BrowserNewContextOptions {
 	if len(b.clientCertificates) > 0 {
 		contextOptions.ClientCertificates = b.clientCertificates
 	}
-	b.applyHARCaptureOptions(&contextOptions)
 	return contextOptions
 }
 

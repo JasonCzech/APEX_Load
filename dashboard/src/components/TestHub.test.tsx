@@ -1838,6 +1838,179 @@ describe('TestHub', () => {
     }))
   })
 
+  it.each([
+    ['absent whole goal', undefined],
+    ['absent early stop', { transaction_response_time_sla_ms: 0.001 }],
+    ['present empty early stop', { early_stop: {} }],
+    ['explicit disabled zero', { early_stop: { enabled: false, error_rate_pct: 0, breach_window: '' } }],
+    ['explicit enabled', { early_stop: { enabled: true, error_rate_pct: 12, breach_window: '7s' } }],
+  ] as const)('preserves authored early-stop presence during a real rename save: %s', async (_label, originalGoal) => {
+    const stored: StoredScenario = { id: 'existing-fidelity', name: 'Existing scenario', duration: '5m', scripts: [{ order: 0, script_id: 'script-1', vusers: 12 }], goal_config: originalGoal as StoredScenario['goal_config'], created_at: '', updated_at: '', script_count: 1 }
+    const original = structuredClone(stored)
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await clickWizardStep('Start')
+    const name = container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')
+    expect(name).not.toBeNull()
+    await act(async () => setInputValue(name!, 'Renamed only'))
+    await clickButton('Save draft')
+    await flushPromises()
+    expect(apiMock.updateScenario).toHaveBeenCalledOnce()
+    const [identity, payload] = apiMock.updateScenario.mock.calls[0]
+    expect(identity).toBe(stored.id)
+    expect(payload.name).toBe('Renamed only')
+    expect(payload.goal_config).toEqual(originalGoal)
+    expect(stored).toEqual(original)
+    if (payload.goal_config?.early_stop) {
+      payload.goal_config.early_stop.error_rate_pct = 99
+      expect(stored).toEqual(original)
+    }
+  })
+
+  it.each([
+    ['closed-vuser', undefined], ['stepped-ramp', undefined],
+    ['closed-vuser', {}], ['stepped-ramp', {}],
+    ['closed-vuser', { enabled: false, error_rate_pct: 0, breach_window: '' }],
+    ['stepped-ramp', { enabled: false, error_rate_pct: 0, breach_window: '' }],
+  ] as const)('preserves authored early-stop presence while patching an existing %s shape (%j)', async (shape, earlyStop) => {
+    const shapeConfig = shape === 'closed-vuser'
+      ? { closed_vuser: { scope: 'scenario' as const, scenario: { peak_vusers: 12, ramp_up: '1m', sustain: '4m', ramp_down_enabled: false, ramp_down: '0s' } } }
+      : { stepped_ramp: { scope: 'scenario' as const, scenario: { start_vusers: 0, end_vusers: 12, increment_by: 'step_count' as const, step_count: 3 } } }
+    const goal = { transaction_response_time_sla_ms: 0.001, workload_shape_config: shapeConfig, ...(earlyStop !== undefined ? { early_stop: earlyStop } : {}) }
+    const stored: StoredScenario = { id: 'existing-shaped-fidelity', name: 'Existing shaped scenario', duration: '5m', workload_shape_id: shape, scenario_mode: 'vuser_driven', scripts: [{ order: 0, script_id: 'script-1', vusers: 12 }], goal_config: goal as StoredScenario['goal_config'], created_at: '', updated_at: '', script_count: 1 }
+    const original = structuredClone(stored)
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await clickWizardStep('Run Settings')
+    const load = findControlByLabel<HTMLInputElement>(container, shape === 'closed-vuser' ? 'Peak VUsers' : 'Ending load level', 'input')
+    expect(load).toBeDefined()
+    await act(async () => setInputValue(load!, '14'))
+    await clickButton('Save draft')
+    await flushPromises()
+    expect(apiMock.updateScenario).toHaveBeenCalledOnce()
+    const [identity, payload] = apiMock.updateScenario.mock.calls[0]
+    expect(identity).toBe(stored.id)
+    expect(payload.groups[0].vusers).toBe(14)
+    expect(payload.goal_config.early_stop).toEqual(earlyStop)
+    expect(payload.goal_config.transaction_response_time_sla_ms).toBe(0.001)
+    expect(stored).toEqual(original)
+    if (payload.goal_config.early_stop) {
+      payload.goal_config.early_stop.error_rate_pct = 99
+      expect(stored).toEqual(original)
+    }
+  })
+
+  it.each([
+    ['edit', 'Stepped Ramp', 'stepped-ramp'], ['clone', 'Stepped Ramp', 'stepped-ramp'],
+    ['edit', 'Goal-Driven Scenario', 'open-arrival-rate'], ['clone', 'Goal-Driven Scenario', 'open-arrival-rate'],
+  ] as const)('preserves owned SLA and rules when a saved-source %s selects %s', async (operation, shapeName, shapeId) => {
+    const goal: NonNullable<StoredScenario['goal_config']> = { transaction_response_time_sla_ms: 0.001, max_error_count: 3, max_avg_transfer_ms: 125, max_throttled_requests: 0, max_partition_skew_pct: 0, stop_on_sla_breach: false, sla_breach_window: '7s', p95_latency_ms: 2300, max_error_pct: 9, transaction_rules: [{ transaction: 'orders', metric: 'p95_duration_ms', comparator: 'lte', threshold: 1250 }], monitor_rules: [], early_stop: { enabled: false, error_rate_pct: 0, breach_window: '' }, workload_shape_config: { closed_vuser: { scope: 'scenario', scenario: { peak_vusers: 12, ramp_up: '1m', sustain: '4m', ramp_down_enabled: false, ramp_down: '0s' } } } }
+    const stored: StoredScenario = { id: 'owned-guardrail-shape', name: 'Owned guardrail scenario', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven', scripts: [{ order: 0, script_id: 'script-1', vusers: 12 }], goal_config: goal, created_at: '', updated_at: '', script_count: 1 }
+    const original = structuredClone(stored)
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView={operation === 'edit' ? 'library' : 'builder'} />))
+    await flushPromises()
+    if (operation === 'edit') await clickButton('Edit')
+    else {
+      await clickButton('Copy Existing Scenario')
+      const row = Array.from(container.querySelectorAll<HTMLTableRowElement>('.scenario-clone-table tbody tr')).find(item => item.textContent?.includes(stored.name))
+      expect(row).toBeDefined()
+      await act(async () => row!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      await flushPromises()
+    }
+    await selectManualShapeByName(shapeName)
+    if (shapeId === 'open-arrival-rate') {
+      const art = container.querySelector<HTMLInputElement>('[aria-label="Average response time for Group 1"]')
+      expect(art).not.toBeNull()
+      await act(async () => setInputValue(art!, '400'))
+    }
+    await clickButton('Save draft')
+    await flushPromises()
+    const writer = operation === 'edit' ? apiMock.updateScenario : apiMock.createScenario
+    expect(writer).toHaveBeenCalledOnce()
+    const payload = writer.mock.calls[0][operation === 'edit' ? 1 : 0]
+    expect(payload.workload_shape_id).toBe(shapeId)
+    expect(payload.goal_config).toMatchObject({ transaction_response_time_sla_ms: goal.transaction_response_time_sla_ms, transaction_rules: goal.transaction_rules, monitor_rules: [], early_stop: goal.early_stop })
+    {
+      expect(payload.goal_config).toMatchObject({ max_error_count: 3, max_avg_transfer_ms: 125, max_throttled_requests: 0, max_partition_skew_pct: 0, sla_breach_window: '7s', p95_latency_ms: shapeId === 'open-arrival-rate' ? 800 : 2300, max_error_pct: shapeId === 'open-arrival-rate' ? 1 : 9, stop_on_sla_breach: false })
+      expect(payload.goal_config.stop_on_sla_breach ?? false).toBe(false)
+    }
+    expect(payload.goal_config.workload_shape_config).not.toHaveProperty('closed_vuser')
+    expect(payload.goal_config.workload_shape_config).toHaveProperty(shapeId === 'stepped-ramp' ? 'stepped_ramp' : 'goal_driven')
+    expect(stored).toEqual(original)
+    payload.goal_config.transaction_rules[0].threshold = 999
+    expect(stored).toEqual(original)
+  })
+
+  it('keeps omitted guardrails and applies explicit replacements from an actual workload template', async () => {
+    const goal: NonNullable<StoredScenario['goal_config']> = { transaction_response_time_sla_ms: 0.001, p95_latency_ms: 2300, max_error_pct: 9, max_error_count: 3, max_avg_transfer_ms: 125, max_throttled_requests: 0, transaction_rules: [{ transaction: 'orders', metric: 'p95_duration_ms', comparator: 'lte', threshold: 1250 }] }
+    const stored: StoredScenario = { id: 'template-guardrail-source', name: 'Template guardrail source', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven', scripts: [{ order: 0, script_id: 'script-1', vusers: 12 }], goal_config: goal, created_at: '', updated_at: '', script_count: 1 }
+    const template: LoadModelTemplate = { id: 'guardrail-template', name: 'Owned guardrail template', description: 'Explicit demand and SLA replacements', shape_id: 'open-arrival-rate', scenario: { duration: '5m', scenario_mode: 'goal_oriented', groups: [{ name: 'Templated', vusers: 5 }], goal_config: { target_average_tps: 25, min_vusers: 1, max_vusers: 20, transaction_response_time_sla_ms: 500, transaction_rules: [] } } }
+    const originals = structuredClone({ stored, template })
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    apiMock.listLoadModelTemplates.mockResolvedValue({ templates: [template], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await clickWizardStep('Model & Shape')
+    await clickModelFamily('Goal-Driven')
+    await clickButton('Owned guardrail template')
+    const art = container.querySelector<HTMLInputElement>('input[aria-label^="Average response time for "]')
+    expect(art).not.toBeNull()
+    await act(async () => setInputValue(art!, '400'))
+    await clickButton('Save draft')
+    await flushPromises()
+    expect(apiMock.updateScenario).toHaveBeenCalledOnce()
+    const payload = apiMock.updateScenario.mock.calls[0][1]
+    expect(payload.workload_shape_id).toBe('open-arrival-rate')
+    expect(payload.goal_config).toMatchObject({ transaction_response_time_sla_ms: 500, p95_latency_ms: 2300, max_error_pct: 9, max_error_count: 3, max_avg_transfer_ms: 125, max_throttled_requests: 0 })
+    expect(payload.goal_config.transaction_rules).toEqual([])
+    expect({ stored, template }).toEqual(originals)
+  })
+
+  it.each([
+    ['edit', undefined], ['clone', undefined],
+    ['edit', {}], ['clone', {}],
+    ['edit', { enabled: false, error_rate_pct: 0, breach_window: '' }],
+    ['clone', { enabled: false, error_rate_pct: 0, breach_window: '' }],
+  ] as const)('carries only owned early-stop intent when a saved-source %s selects a new shape (%j)', async (operation, earlyStop) => {
+    const goal = { workload_shape_config: { closed_vuser: { scope: 'scenario' as const, scenario: { peak_vusers: 12, ramp_up: '1m', sustain: '4m', ramp_down_enabled: false, ramp_down: '0s' } } }, ...(earlyStop !== undefined ? { early_stop: earlyStop } : {}) }
+    const stored: StoredScenario = { id: 'existing-seed-fidelity', name: 'Existing seed scenario', duration: '5m', workload_shape_id: 'closed-vuser', scenario_mode: 'vuser_driven', scripts: [{ order: 0, script_id: 'script-1', vusers: 12 }], goal_config: goal as StoredScenario['goal_config'], created_at: '', updated_at: '', script_count: 1 }
+    const original = structuredClone(stored)
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView={operation === 'edit' ? 'library' : 'builder'} />))
+    await flushPromises()
+    if (operation === 'edit') await clickButton('Edit')
+    else {
+      await clickButton('Copy Existing Scenario')
+      const row = Array.from(container.querySelectorAll<HTMLTableRowElement>('.scenario-clone-table tbody tr')).find(item => item.textContent?.includes(stored.name))
+      expect(row).toBeDefined()
+      await act(async () => row!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      await flushPromises()
+    }
+    await selectManualShapeByName('Stepped Ramp')
+    const load = findControlByLabel<HTMLInputElement>(container, 'Ending load level', 'input')
+    expect(load).toBeDefined()
+    await act(async () => setInputValue(load!, '16'))
+    await clickButton('Save draft')
+    await flushPromises()
+    const writer = operation === 'edit' ? apiMock.updateScenario : apiMock.createScenario
+    expect(writer).toHaveBeenCalledOnce()
+    const payload = writer.mock.calls[0][operation === 'edit' ? 1 : 0]
+    expect(payload.workload_shape_id).toBe('stepped-ramp')
+    expect(payload.groups[0].vusers).toBe(16)
+    expect(payload.goal_config.early_stop).toEqual(earlyStop)
+    expect(stored).toEqual(original)
+    if (payload.goal_config.early_stop) {
+      payload.goal_config.early_stop.error_rate_pct = 99
+      expect(stored).toEqual(original)
+    }
+  })
+
   it('preserves existing archived script references when the scenario draft refreshes', async () => {
     const script = { id: 'script-1', name: 'Archived checkout', protocol: 'http', version: '1', archived_at: '2026-10-02T00:00:00Z', created_at: '' }
     apiMock.listScripts.mockImplementation((_project, _folder, options) => Promise.resolve({ scripts: options?.archiveState === 'all' ? [script] : [], count: 1 }))

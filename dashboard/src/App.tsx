@@ -3418,6 +3418,7 @@ function AppShell({
               {(view.page === "command-center" || retainedCommandCenter) && !routeAssetScopeBlocked && (
                 <div hidden={view.page !== "command-center"}>
                 <CommandCenterPrototype
+                  canManageTests={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false)}
                   runViewMemory={commandRunViewMemory.current}
                   testId={commandCenterTestId}
                   active={view.page === "command-center"}
