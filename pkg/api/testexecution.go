@@ -1823,8 +1823,11 @@ func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest
 		// A resolution failure refuses Start: silently dropping a fail_ci
 		// policy would let CI pass without the telemetry gate it configured.
 		pins, pinErr := tr.resolveRunPolicyPins(freshAdmission.ProjectID)
-		if pinErr != nil {
-			persistErr = fmt.Errorf("resolve run policies: %w", pinErr)
+		if errors.Is(pinErr, errRunPolicyConfiguration) {
+			persistErr = pinErr
+		} else if pinErr != nil {
+			// A store read failure is retryable, like a failed receipt write.
+			persistErr = errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("resolve run policies: %w", pinErr))
 		} else {
 			freshAdmission.PolicyPins = pins
 			snapshot.record.InitialProvenance = initialProvenanceForStorage(freshAdmission)
@@ -6660,6 +6663,15 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 				pending.expectedStartAdmissionRevision = previousExpectedStartAdmissionRevision
 			}
 			tr.mu.Unlock()
+			if errors.Is(err, errRunPolicyConfiguration) {
+				// The project's policies refuse this run until they are fixed.
+				// Fail it visibly instead of leaving it at the head of the queue,
+				// where it would block every other project's queued runs.
+				if terminalErr := tr.failPendingPromotionGateWithTerm(pendingID, "pending test promotion refused: "+err.Error(), leaseTerm); terminalErr != nil {
+					return terminalErr
+				}
+				continue
+			}
 			slog.Warn("pending test promotion could not persist initializing state", "test_id", pending.ID, "error", err)
 			return err
 		}

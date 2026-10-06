@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"sync"
 	"testing"
 )
 
@@ -83,4 +84,65 @@ func TestConnectionLinkDefinitionsStayOutOfTheDefinitionBudget(t *testing.T) {
 	if _, err := s.SaveAnalysisDefinition(mapping, 0); err == nil {
 		t.Fatal("mapping budget not enforced")
 	}
+}
+
+func testPolicyDefault(raw json.RawMessage) (bool, error) {
+	var envelope struct {
+		ApplyByDefault bool `json:"apply_by_default"`
+	}
+	err := json.Unmarshal(raw, &envelope)
+	return envelope.ApplyByDefault, err
+}
+
+// exerciseExclusivePolicyDefaults races default saves of one kind; the check
+// under the project lock admits exactly one, and deleting it frees the slot.
+func exerciseExclusivePolicyDefaults(t *testing.T, store *SQLiteStore) {
+	kind := AnalysisDefinitionKindTelemetryAcceptancePolicy
+	defaultBody := json.RawMessage(`{"version":1,"apply_by_default":true,"max_loss_ratio":0}`)
+	errs := make(chan error, 8)
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, err := store.SaveAnalysisPolicyDefinition(AnalysisDefinition{ID: "default-" + strconv.Itoa(i), ProjectID: DefaultProjectID, Kind: kind, Name: "Default " + strconv.Itoa(i), Definition: defaultBody}, 0, testPolicyDefault)
+			errs <- err
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	winners := 0
+	for err := range errs {
+		switch {
+		case err == nil:
+			winners++
+		case !errors.Is(err, ErrAnalysisPolicyDefaultConflict):
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("%d concurrent defaults committed", winners)
+	}
+	if _, err := store.SaveAnalysisPolicyDefinition(AnalysisDefinition{ID: "opt-in", ProjectID: DefaultProjectID, Kind: kind, Name: "Opt in", Definition: json.RawMessage(`{"version":1,"max_loss_ratio":0}`)}, 0, testPolicyDefault); err != nil {
+		t.Fatalf("a non-default policy was refused: %v", err)
+	}
+	latest, err := store.ListLatestAnalysisDefinitions(DefaultProjectID, kind)
+	if err != nil || len(latest) != 2 {
+		t.Fatalf("latest policies %d %v", len(latest), err)
+	}
+	winner := latest[0]
+	if winner.ID == "opt-in" {
+		winner = latest[1]
+	}
+	winner.Deleted = true
+	if _, err := store.SaveAnalysisPolicyDefinition(winner, winner.Revision, testPolicyDefault); err != nil {
+		t.Fatalf("delete the default: %v", err)
+	}
+	if _, err := store.SaveAnalysisPolicyDefinition(AnalysisDefinition{ID: "replacement", ProjectID: DefaultProjectID, Kind: kind, Name: "Replacement", Definition: defaultBody}, 0, testPolicyDefault); err != nil {
+		t.Fatalf("a deleted default still blocks a new one: %v", err)
+	}
+}
+
+func TestExclusivePolicyDefaults(t *testing.T) {
+	exerciseExclusivePolicyDefaults(t, newAuthoringReceiptTestStore(t))
 }

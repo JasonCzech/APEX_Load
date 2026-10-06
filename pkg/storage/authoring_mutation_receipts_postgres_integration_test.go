@@ -70,3 +70,8 @@ func TestPostgresAuthoringReceiptTombstoneRestore(t *testing.T) {
 	store, _ := newPostgresScenarioRevisionFixture(t)
 	exerciseAuthoringReceiptTombstoneRestore(t, store)
 }
+
+func TestPostgresExclusivePolicyDefaults(t *testing.T) {
+	store, _ := newPostgresScenarioRevisionFixture(t)
+	exerciseExclusivePolicyDefaults(t, store)
+}

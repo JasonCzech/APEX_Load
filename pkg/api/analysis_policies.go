@@ -28,6 +28,9 @@ const analysisPolicyVersion = 1
 
 // RunPolicyPin is one policy revision a run was admitted under. SHA256 hashes
 // the stored definition bytes, so a report can prove which rules it applied.
+// Applied says whether anything enforced the pinned revision for this run.
+// Policies are pinned before their consumers exist, so it is false for now;
+// later reports and verdicts must not treat an unapplied pin as enforced.
 type RunPolicyPin struct {
 	Kind     string `json:"kind"`
 	ID       string `json:"id"`
@@ -35,6 +38,7 @@ type RunPolicyPin struct {
 	Revision int64  `json:"revision"`
 	SHA256   string `json:"sha256"`
 	Source   string `json:"source"`
+	Applied  bool   `json:"applied"`
 }
 
 func cloneRunPolicyPins(pins []RunPolicyPin) []RunPolicyPin {
@@ -53,14 +57,31 @@ type analysisPolicyEnvelope struct {
 	Description    string `json:"description,omitempty"`
 }
 
+// maxPolicyDescriptionBytes matches the strict definition decoder's bound on
+// every string scalar.
+const maxPolicyDescriptionBytes = 256
+
 func (e analysisPolicyEnvelope) validate() error {
 	if e.Version != analysisPolicyVersion {
 		return fmt.Errorf("policy version must be %d", analysisPolicyVersion)
 	}
-	if len(e.Description) > 2048 {
-		return errors.New("policy description exceeds 2048 bytes")
+	if len(e.Description) > maxPolicyDescriptionBytes {
+		return fmt.Errorf("policy description exceeds %d bytes", maxPolicyDescriptionBytes)
 	}
 	return nil
+}
+
+// policyAppliesByDefault reads only the envelope flag. Selecting the default
+// never depends on the rest of a stored definition still validating, so a
+// later, stricter validator cannot block Start through an unrelated policy.
+func policyAppliesByDefault(definition json.RawMessage) (bool, error) {
+	var envelope struct {
+		ApplyByDefault bool `json:"apply_by_default"`
+	}
+	if err := json.Unmarshal(definition, &envelope); err != nil {
+		return false, fmt.Errorf("policy envelope is not a JSON object: %w", err)
+	}
+	return envelope.ApplyByDefault, nil
 }
 
 // TelemetryPolicyDefinition overrides the system telemetry budgets for runs
@@ -110,8 +131,8 @@ type TelemetryLagPercentileRule struct {
 	MaxMs      float64 `json:"max_ms"`
 }
 
-// TelemetryAcceptancePolicyDefinition is a telemetry verdict policy. Advisory
-// is the default; only fail_ci can change a CI outcome, and unknown required
+// TelemetryAcceptancePolicyDefinition is a telemetry verdict policy. An empty
+// mode is advisory; only fail_ci can change a CI outcome, and unknown required
 // evidence is inconclusive, never a pass.
 type TelemetryAcceptancePolicyDefinition struct {
 	Version                      int                          `json:"version"`
@@ -125,12 +146,20 @@ type TelemetryAcceptancePolicyDefinition struct {
 	StageLagPercentiles          []TelemetryLagPercentileRule `json:"stage_lag_percentiles,omitempty"`
 }
 
+// EffectiveMode is the verdict mode; an omitted mode is advisory.
+func (p TelemetryAcceptancePolicyDefinition) EffectiveMode() string {
+	if p.Mode == "" {
+		return "advisory"
+	}
+	return p.Mode
+}
+
 func (p TelemetryAcceptancePolicyDefinition) validate() error {
 	if err := (analysisPolicyEnvelope{p.Version, p.ApplyByDefault, p.Description}).validate(); err != nil {
 		return err
 	}
-	if p.Mode != "advisory" && p.Mode != "fail_ci" {
-		return errors.New("mode must be advisory or fail_ci")
+	if p.Mode != "" && p.Mode != "advisory" && p.Mode != "fail_ci" {
+		return errors.New("mode must be advisory (the default) or fail_ci")
 	}
 	criteria := len(p.StageLagPercentiles)
 	for _, fraction := range []*float64{p.MinWallTimeCoverage, p.MaxLossRatio, p.MaxBreachedKnownTimeFraction} {
@@ -188,7 +217,8 @@ type BrowserPolicyApplicability struct {
 }
 
 // BrowserPolicyEffectFloors are the practical-significance floors baseline
-// anomalies must clear in addition to the statistical rule.
+// anomalies must clear in addition to the statistical rule. They can only
+// raise the minimums: 50 ms and 10% for timings, 0.02 for CLS.
 type BrowserPolicyEffectFloors struct {
 	TimingMs       *float64 `json:"timing_ms,omitempty"`
 	TimingRelative *float64 `json:"timing_relative,omitempty"`
@@ -256,13 +286,14 @@ func (p BrowserPolicyDefinition) validate() error {
 		}
 	}
 	floors := p.EffectFloors
-	for _, floor := range []*float64{floors.TimingMs, floors.CLS} {
-		if floor != nil && !finiteInRange(*floor, 0, 600_000) {
-			return errors.New("effect floors must be non-negative")
-		}
+	if floors.TimingMs != nil && !finiteInRange(*floors.TimingMs, 50, 600_000) {
+		return errors.New("effect floor timing_ms must be between 50 and 600000")
 	}
-	if floors.TimingRelative != nil && !finiteInRange(*floors.TimingRelative, 0, 10) {
-		return errors.New("timing_relative must be between 0 and 10")
+	if floors.TimingRelative != nil && !finiteInRange(*floors.TimingRelative, 0.1, 10) {
+		return errors.New("effect floor timing_relative must be between 0.1 and 10")
+	}
+	if floors.CLS != nil && !finiteInRange(*floors.CLS, 0.02, 10) {
+		return errors.New("effect floor cls must be between 0.02 and 10")
 	}
 	switch p.Baseline.Mode {
 	case "none", "latest_compatible":
@@ -347,7 +378,9 @@ func (p JourneyPolicyDefinition) validate() error {
 }
 
 // DerivedOperationDefinition saves one catalog derivation with bounded
-// numeric parameters. It never carries an expression or SQL.
+// numeric parameters. It never carries an expression or SQL. The operation
+// must be a derivation the metric's catalog entry declares, over an input
+// kind both accept, with only that operation's parameters in range.
 type DerivedOperationDefinition struct {
 	Version        int                `json:"version"`
 	ApplyByDefault bool               `json:"apply_by_default,omitempty"`
@@ -376,15 +409,49 @@ func (p DerivedOperationDefinition) validate() error {
 	if len(operation.Populations) > 0 && !slices.Contains(operation.Populations, p.Population) {
 		return fmt.Errorf("operation %s does not apply to population %q", p.Operation, p.Population)
 	}
-	if len(p.Parameters) > 8 {
-		return errors.New("at most 8 operation parameters")
+	if !slices.Contains(metric.Derivations, p.Operation) {
+		return fmt.Errorf("metric %s does not declare derivation %q", p.Metric, p.Operation)
 	}
+	if !slices.ContainsFunc(operation.InputKinds, func(kind string) bool { return slices.Contains(metric.InputKinds, kind) }) {
+		return fmt.Errorf("operation %s does not accept the input kinds of metric %s", p.Operation, p.Metric)
+	}
+	bounds := derivedOperationParameters[p.Operation]
 	for name, value := range p.Parameters {
-		if !operationParameterPattern.MatchString(name) || math.IsNaN(value) || math.IsInf(value, 0) {
-			return fmt.Errorf("invalid operation parameter %q", name)
+		bound, known := bounds[name]
+		if !operationParameterPattern.MatchString(name) || !known {
+			return fmt.Errorf("operation %s has no parameter %q", p.Operation, name)
+		}
+		if !finiteInRange(value, bound.low, bound.high) || (bound.integer && value != math.Trunc(value)) || (bound.exclusiveLow && value == bound.low) {
+			return fmt.Errorf("operation parameter %s is out of range", name)
+		}
+	}
+	for name, bound := range bounds {
+		if _, present := p.Parameters[name]; bound.required && !present {
+			return fmt.Errorf("operation %s requires parameter %s", p.Operation, name)
 		}
 	}
 	return nil
+}
+
+type derivedOperationParameter struct {
+	low, high         float64
+	integer, required bool
+	exclusiveLow      bool
+}
+
+// derivedOperationParameters are the engine's accepted ranges per derivation
+// (analysis.MovingStatistics); baseline deltas take none.
+var derivedOperationParameters = map[string]map[string]derivedOperationParameter{
+	"baseline_delta":         {},
+	"baseline_percent_delta": {},
+	"moving_mean":            movingStatisticParameters,
+	"moving_stddev":          movingStatisticParameters,
+}
+
+var movingStatisticParameters = map[string]derivedOperationParameter{
+	"window_buckets":   {low: 2, high: analysis.MaxMovingWindowBuckets, integer: true, required: true},
+	"bucket_seconds":   {low: 1, high: 86400, integer: true},
+	"minimum_coverage": {low: 0, high: 1, exclusiveLow: true},
 }
 
 func finiteInRange(value, low, high float64) bool {
@@ -433,8 +500,6 @@ type AnalysisPolicyRequest struct {
 	Definition json.RawMessage `json:"definition"`
 }
 
-const maxProjectPolicyDefinitions = 100
-
 func (s *Server) handleAnalysisPolicies(w http.ResponseWriter, r *http.Request) {
 	project := normalizeProjectID(r.URL.Query().Get("project_id"))
 	store, ok := s.store.(storage.AnalysisDefinitionStore)
@@ -452,18 +517,18 @@ func (s *Server) handleAnalysisPolicies(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 			limit, offset := parseLimitOffsetQuery(r, 50)
-			list, err := store.ListAnalysisDefinitions(project, kind, min(limit, 100), offset)
+			live, err := liveAnalysisPolicies(store, project, kind)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "cannot list analysis policies")
 				return
 			}
-			visible := make([]storage.AnalysisDefinition, 0, len(list))
-			for _, item := range list {
-				if !item.Deleted {
-					visible = append(visible, item)
-				}
+			// Deleted policies are dropped before paging, so only the last page
+			// is short.
+			page := []storage.AnalysisDefinition{}
+			if offset < len(live) {
+				page = live[offset:min(len(live), offset+min(limit, 100))]
 			}
-			writeJSON(w, http.StatusOK, visible)
+			writeJSON(w, http.StatusOK, page)
 			return
 		}
 		revision := int64(0)
@@ -498,12 +563,7 @@ func (s *Server) handleAnalysisPolicies(w http.ResponseWriter, r *http.Request) 
 		deleted := *current
 		deleted.Deleted = true
 		saved, err := store.SaveAnalysisDefinition(deleted, revision)
-		if errors.Is(err, storage.ErrAnalysisRevision) {
-			writeError(w, http.StatusConflict, "analysis policy revision changed")
-			return
-		}
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "cannot delete analysis policy")
+		if writeAnalysisPolicySaveError(w, err) {
 			return
 		}
 		s.recordAuditEvent(r, "analysis_policy.delete", "success", "analysis_policy", id, project, map[string]any{"kind": current.Kind, "revision": saved.Revision})
@@ -513,7 +573,12 @@ func (s *Server) handleAnalysisPolicies(w http.ResponseWriter, r *http.Request) 
 	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusRequestEntityTooLarge, "analysis policy exceeds request byte limit")
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "analysis policy exceeds request byte limit")
+			return
+		}
+		writeError(w, http.StatusBadRequest, "cannot read analysis policy")
 		return
 	}
 	var req AnalysisPolicyRequest
@@ -553,24 +618,29 @@ func (s *Server) handleAnalysisPolicies(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if envelope.ApplyByDefault {
-		// A second default would make Start ambiguous; resolution also refuses
-		// it, but saving it is the clearer place to report the conflict.
-		if other, err := projectDefaultPolicy(store, project, req.Kind); err != nil {
-			writeError(w, http.StatusServiceUnavailable, "analysis policies unavailable")
-			return
-		} else if other != nil && other.ID != id {
-			writeError(w, http.StatusConflict, fmt.Sprintf("policy %q already applies by default for %s", other.Name, req.Kind))
-			return
+	definition := storage.AnalysisDefinition{ID: id, ProjectID: project, Kind: req.Kind, Name: strings.TrimSpace(req.Name), Definition: req.Definition}
+	var saved *storage.AnalysisDefinition
+	if policyStore, exclusive := store.(storage.AnalysisPolicyStore); exclusive {
+		// The second-default check runs inside the save transaction, so two
+		// concurrent saves cannot both become the default.
+		saved, err = policyStore.SaveAnalysisPolicyDefinition(definition, expected, policyAppliesByDefault)
+	} else {
+		if envelope.ApplyByDefault {
+			if other, otherErr := projectDefaultPolicy(store, project, req.Kind); otherErr != nil {
+				writeError(w, http.StatusServiceUnavailable, "analysis policies unavailable")
+				return
+			} else if other != nil && other.ID != id {
+				writeError(w, http.StatusConflict, fmt.Sprintf("policy %q already applies by default for %s", other.Name, req.Kind))
+				return
+			}
 		}
+		saved, err = store.SaveAnalysisDefinition(definition, expected)
 	}
-	saved, err := store.SaveAnalysisDefinition(storage.AnalysisDefinition{ID: id, ProjectID: project, Kind: req.Kind, Name: strings.TrimSpace(req.Name), Definition: req.Definition}, expected)
-	if errors.Is(err, storage.ErrAnalysisRevision) {
-		writeError(w, http.StatusConflict, "analysis policy revision changed")
+	if errors.Is(err, storage.ErrAnalysisPolicyDefaultConflict) {
+		writeError(w, http.StatusConflict, fmt.Sprintf("another %s policy already applies by default (%s)", req.Kind, strings.TrimPrefix(err.Error(), storage.ErrAnalysisPolicyDefaultConflict.Error()+": ")))
 		return
 	}
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if writeAnalysisPolicySaveError(w, err) {
 		return
 	}
 	s.recordAuditEvent(r, "analysis_policy.save", "success", "analysis_policy", id, project, map[string]any{"kind": req.Kind, "revision": saved.Revision, "apply_by_default": envelope.ApplyByDefault})
@@ -581,37 +651,100 @@ func (s *Server) handleAnalysisPolicies(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, status, saved)
 }
 
-// projectDefaultPolicy returns the live policy of kind that applies by
-// default in the project, or nil. More than one is a configuration error.
-func projectDefaultPolicy(store storage.AnalysisDefinitionStore, project, kind string) (*storage.AnalysisDefinition, error) {
-	var found *storage.AnalysisDefinition
-	for offset := 0; offset < maxProjectPolicyDefinitions*10; offset += 100 {
-		page, err := store.ListAnalysisDefinitions(project, kind, 100, offset)
+// writeAnalysisPolicySaveError maps a policy save failure without exposing
+// storage detail.
+func writeAnalysisPolicySaveError(w http.ResponseWriter, err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, storage.ErrAnalysisRevision):
+		writeError(w, http.StatusConflict, "analysis policy revision changed")
+	case errors.Is(err, storage.ErrAnalysisDefinitionLimit):
+		writeError(w, http.StatusConflict, "analysis policy limit reached")
+	case errors.Is(err, storage.ErrAnalysisDefinitionInvalid):
+		writeError(w, http.StatusBadRequest, "invalid analysis policy")
+	default:
+		writeError(w, http.StatusInternalServerError, "cannot save analysis policy")
+	}
+	return true
+}
+
+// errRunPolicyConfiguration marks a project's policy configuration as
+// unusable for Start (ambiguous or undecodable defaults). It is fixed by
+// editing the policies, not by retrying.
+var errRunPolicyConfiguration = errors.New("run policy configuration prevents admission")
+
+// liveAnalysisPolicies returns every live policy of kind in ID order. Stores
+// without a single-statement read are paged, de-duplicated by ID.
+func liveAnalysisPolicies(store storage.AnalysisDefinitionStore, project, kind string) ([]storage.AnalysisDefinition, error) {
+	var all []storage.AnalysisDefinition
+	if policyStore, ok := store.(storage.AnalysisPolicyStore); ok {
+		latest, err := policyStore.ListLatestAnalysisDefinitions(project, kind)
 		if err != nil {
 			return nil, err
 		}
-		for index := range page {
-			item := page[index]
-			if item.Deleted {
-				continue
-			}
-			envelope, err := decodeAnalysisPolicy(kind, item.Definition)
+		all = latest
+	} else {
+		seen := map[string]bool{}
+		for offset := 0; ; offset += 100 {
+			page, err := store.ListAnalysisDefinitions(project, kind, 100, offset)
 			if err != nil {
-				// A stored policy that no longer decodes cannot be proven not to
-				// be a default; refuse rather than run without it.
-				return nil, fmt.Errorf("stored %s policy %q is invalid: %w", kind, item.ID, err)
+				return nil, err
 			}
-			if !envelope.ApplyByDefault {
-				continue
+			for _, item := range page {
+				if !seen[item.ID] {
+					seen[item.ID] = true
+					all = append(all, item)
+				}
 			}
-			if found != nil {
-				return nil, fmt.Errorf("more than one %s policy applies by default", kind)
+			if len(page) < 100 || offset >= maxAnalysisPolicyScan {
+				break
 			}
-			copied := item
-			found = &copied
 		}
-		if len(page) < 100 {
-			break
+	}
+	live := make([]storage.AnalysisDefinition, 0, len(all))
+	for _, item := range all {
+		if !item.Deleted {
+			live = append(live, item)
+		}
+	}
+	return live, nil
+}
+
+// maxAnalysisPolicyScan bounds the paged fallback at the storage budget.
+const maxAnalysisPolicyScan = 1000
+
+// projectDefaultPolicy returns the live policy of kind that applies by
+// default in the project, or nil. Only the envelope flag of other policies is
+// read; the selected default is fully decoded and validated. Ambiguity or an
+// undecodable default is an errRunPolicyConfiguration; store failures are
+// returned as they are.
+func projectDefaultPolicy(store storage.AnalysisDefinitionStore, project, kind string) (*storage.AnalysisDefinition, error) {
+	live, err := liveAnalysisPolicies(store, project, kind)
+	if err != nil {
+		return nil, err
+	}
+	var found *storage.AnalysisDefinition
+	for index := range live {
+		item := live[index]
+		isDefault, err := policyAppliesByDefault(item.Definition)
+		if err != nil {
+			// A row whose envelope cannot be read cannot be proven not to be a
+			// default; refuse rather than run without it.
+			return nil, fmt.Errorf("%w: stored %s policy %q is unreadable: %v", errRunPolicyConfiguration, kind, item.Name, err)
+		}
+		if !isDefault {
+			continue
+		}
+		if found != nil {
+			return nil, fmt.Errorf("%w: more than one %s policy applies by default", errRunPolicyConfiguration, kind)
+		}
+		copied := item
+		found = &copied
+	}
+	if found != nil {
+		if _, err := decodeAnalysisPolicy(kind, found.Definition); err != nil {
+			return nil, fmt.Errorf("%w: default %s policy %q is invalid: %v", errRunPolicyConfiguration, kind, found.Name, err)
 		}
 	}
 	return found, nil

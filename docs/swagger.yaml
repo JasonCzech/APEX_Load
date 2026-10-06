@@ -26488,7 +26488,35 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+                nullable: true
         "400":
           description: Bad Request
           content:
@@ -26601,7 +26629,35 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+                nullable: true
         "400":
           description: Bad Request
           content:
@@ -26715,7 +26771,35 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+                nullable: true
         "400":
           description: Bad Request
           content:
@@ -26818,7 +26902,35 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+                nullable: true
         "400":
           description: Bad Request
           content:
@@ -26936,7 +27048,35 @@ paths:
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+                nullable: true
         "400":
           description: Bad Request
           content:
@@ -344298,6 +344438,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            applied:
+                              type: boolean
                             id:
                               type: string
                             kind:
@@ -344312,6 +344454,7 @@ paths:
                             source:
                               type: string
                           required:
+                            - applied
                             - id
                             - kind
                             - name
@@ -345199,6 +345342,7 @@ paths:
                         nullable: true
                     required:
                       - execution_settings
+                      - policy_pins
                     nullable: true
                   interval_distribution_count:
                     type: integer
@@ -346841,6 +346985,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            applied:
+                              type: boolean
                             id:
                               type: string
                             kind:
@@ -346855,6 +347001,7 @@ paths:
                             source:
                               type: string
                           required:
+                            - applied
                             - id
                             - kind
                             - name
@@ -347742,6 +347889,7 @@ paths:
                         nullable: true
                     required:
                       - execution_settings
+                      - policy_pins
                   provider_lookup_count:
                     type: integer
                     format: int64
@@ -356752,6 +356900,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                applied:
+                                  type: boolean
                                 id:
                                   type: string
                                 kind:
@@ -356766,6 +356916,7 @@ paths:
                                 source:
                                   type: string
                               required:
+                                - applied
                                 - id
                                 - kind
                                 - name
@@ -357037,6 +357188,7 @@ paths:
                             nullable: true
                         required:
                           - execution_settings
+                          - policy_pins
                         nullable: true
                       interval_distribution_count:
                         type: integer
@@ -358028,6 +358180,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                applied:
+                                  type: boolean
                                 id:
                                   type: string
                                 kind:
@@ -358042,6 +358196,7 @@ paths:
                                 source:
                                   type: string
                               required:
+                                - applied
                                 - id
                                 - kind
                                 - name
@@ -358313,6 +358468,7 @@ paths:
                             nullable: true
                         required:
                           - execution_settings
+                          - policy_pins
                       provider_lookup_count:
                         type: integer
                         format: int64

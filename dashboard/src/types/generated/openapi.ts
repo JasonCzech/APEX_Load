@@ -10869,7 +10869,16 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          }) | null;
         };
       };
       "400": {
@@ -10940,7 +10949,16 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          }) | null;
         };
       };
       "400": {
@@ -11014,7 +11032,16 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          }) | null;
         };
       };
       "400": {
@@ -11079,7 +11106,16 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          }) | null;
         };
       };
       "400": {
@@ -11153,7 +11189,16 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": ({
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          }) | null;
         };
       };
       "400": {
@@ -64672,7 +64717,8 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
-              "policy_pins"?: Array<{
+              "policy_pins": Array<{
+                "applied": boolean;
                 "id": string;
                 "kind": string;
                 "name": string;
@@ -65524,7 +65570,8 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
-              "policy_pins"?: Array<{
+              "policy_pins": Array<{
+                "applied": boolean;
                 "id": string;
                 "kind": string;
                 "name": string;
@@ -68375,7 +68422,8 @@ export interface operations {
                   "transaction_response_time_sla_ms"?: (number) | null;
                   "vusers": number;
                 }>;
-                "policy_pins"?: Array<{
+                "policy_pins": Array<{
+                  "applied": boolean;
                   "id": string;
                   "kind": string;
                   "name": string;
@@ -68777,7 +68825,8 @@ export interface operations {
                   "transaction_response_time_sla_ms"?: (number) | null;
                   "vusers": number;
                 }>;
-                "policy_pins"?: Array<{
+                "policy_pins": Array<{
+                  "applied": boolean;
                   "id": string;
                   "kind": string;
                   "name": string;

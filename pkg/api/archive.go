@@ -205,9 +205,10 @@ type RunArchiveExecutionSettingsSnapshot struct {
 
 type RunArchiveProvenance struct {
 	TelemetryPolicy *TelemetryBudgetPolicy `json:"telemetry_policy,omitempty"`
-	// PolicyPins are the project policy revisions in force at Start. Absent on
-	// runs admitted before policies existed; empty when none applied.
-	PolicyPins            []RunPolicyPin                      `json:"policy_pins,omitempty"`
+	// PolicyPins are the project policy revisions in force at Start: null on
+	// runs admitted before policies existed, an empty list when no default
+	// policy was configured. The field is always present so the two differ.
+	PolicyPins            []RunPolicyPin                      `json:"policy_pins"`
 	ComparisonFingerprint string                              `json:"comparison_fingerprint,omitempty"`
 	ComparisonMetrics     map[string]BaselineMetricDefinition `json:"comparison_metrics,omitempty"`
 	TerminationMode       string                              `json:"termination_mode,omitempty"`
