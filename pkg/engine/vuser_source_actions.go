@@ -1011,6 +1011,9 @@ func (vu *VUser) handleSourceStateAction(ctx context.Context, action dsl.Action)
 
 func (vu *VUser) handleSourceParameterAction(function string, action dsl.Action) {
 	args := sourceActionArgs(action)
+	// Values keep their exact text (a saved " " or a "%s " format); names and
+	// numbers use the trimmed args.
+	values := sourceActionValueArgs(action)
 	vu.ensureVariables()
 	switch function {
 	case "lr_save_string", "lr_save_int":
@@ -1020,20 +1023,20 @@ func (vu *VUser) handleSourceParameterAction(function string, action dsl.Action)
 				// entry again would treat template-looking response bytes as source.
 				vu.setResolvedSourceVariable(args[1], vu.sourceParameterArrayValue(array))
 			} else {
-				vu.setSourceVariable(args[1], args[0])
+				vu.setSourceVariable(args[1], values[0])
 			}
 		}
 	case "lr_save_var":
 		if len(args) >= 4 {
-			vu.setResolvedSourceVariable(args[3], sourceSaveVarValue(vu.interpolate(args[0]), action.Params["source_offset"], args[1]))
+			vu.setResolvedSourceVariable(args[3], sourceSaveVarValue(vu.interpolate(values[0]), action.Params["source_offset"], args[1]))
 		}
 	case "lr_param_sprintf":
 		if len(args) >= 2 {
-			values := make([]any, 0, len(args)-2)
-			for _, arg := range args[2:] {
-				values = append(values, arg)
+			formatted := make([]any, 0, len(values)-2)
+			for _, arg := range values[2:] {
+				formatted = append(formatted, arg)
 			}
-			vu.setSourceVariable(args[0], renderPrintfLikeMessage(args[1], values))
+			vu.setSourceVariable(args[0], renderPrintfLikeMessage(values[1], formatted))
 		}
 	case "lr_param_increment":
 		if len(args) >= 1 {
@@ -1347,6 +1350,19 @@ func sourceActionArgs(action dsl.Action) []string {
 	args := make([]string, 0, len(values))
 	for _, value := range values {
 		args = append(args, strings.TrimSpace(fmt.Sprint(value)))
+	}
+	return args
+}
+
+// sourceActionValueArgs returns the action's arguments without trimming.
+func sourceActionValueArgs(action dsl.Action) []string {
+	if action.Params == nil {
+		return nil
+	}
+	values := anySlice(action.Params["args"])
+	args := make([]string, 0, len(values))
+	for _, value := range values {
+		args = append(args, fmt.Sprint(value))
 	}
 	return args
 }

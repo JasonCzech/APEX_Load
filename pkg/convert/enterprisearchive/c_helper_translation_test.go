@@ -179,3 +179,32 @@ func TestFileOutputReplaysAsOutputMessages(t *testing.T) {
 type dslActionView struct {
 	format, args, stream any
 }
+
+// Spaces at the edges of a built string survive translation and replay.
+func TestHelperStringOperationsKeepEdgeSpaces(t *testing.T) {
+	result := importHelperArchive(t, `Action()
+{
+	joinName(lr_eval_string("{first}"));
+	web_url("use", "URL=https://example.com/{FullName}", LAST);
+	return 0;
+}
+
+void joinName(char* first)
+{
+	char full[32]="\0";
+	strcpy(full, first);
+	strcat(full, " ");
+	strcat(full, "Smith");
+	sprintf(full, "%s ", full);
+	lr_save_string(full, "FullName");
+}
+`)
+	script := result.Script
+	script.Config.RunLogic.Iterations = 1
+	recorder := &targetRecorder{}
+	vu := &engine.VUser{ID: 1, Group: "g", Proto: recorder, Variables: map[string]string{"first": "Ann"}, Metrics: engine.NewMetricsCollector(64), Script: script}
+	vu.Run(context.Background())
+	if len(recorder.targets) != 1 || !strings.HasSuffix(recorder.targets[0], "/Ann Smith ") {
+		t.Fatalf("targets = %q, warnings = %v, want the spaces kept", recorder.targets, result.Warnings)
+	}
+}

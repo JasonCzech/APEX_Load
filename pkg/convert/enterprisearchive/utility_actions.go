@@ -520,7 +520,25 @@ func annotateSourceParameterAssignment(action *dsl.Action, fn ParsedFunction) {
 			}
 			action.Params["source_string"] = convertSourceMessageExpression(args[0])
 		}
-	case "lr_save_timestamp", "lr_param_sprintf":
+	case "lr_param_sprintf":
+		saveIndex = 0
+		// The format and literal values keep their exact text: leading or
+		// trailing spaces are part of the built string.
+		// Rebuild from the structured call so a whitespace-only literal (" ")
+		// is not dropped with the cleaned arguments.
+		if len(fn.CallArgs) >= 2 {
+			executable := make([]any, 0, len(fn.CallArgs))
+			for index, arg := range fn.CallArgs {
+				raw := strings.TrimSpace(arg.Raw)
+				if literal, ok := decodeAdjacentCStringLiterals(raw); ok && index > 0 {
+					executable = append(executable, convertParamReferences(literal))
+					continue
+				}
+				executable = append(executable, convertSourceMessageExpression(convertutil.FirstNonEmpty(raw, arg.Value)))
+			}
+			action.Params["args"] = executable
+		}
+	case "lr_save_timestamp":
 		saveIndex = 0
 	}
 	if saveIndex >= 0 && saveIndex < len(args) && strings.TrimSpace(args[saveIndex]) != "" {
