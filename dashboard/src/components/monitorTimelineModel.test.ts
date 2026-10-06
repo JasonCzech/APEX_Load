@@ -56,3 +56,11 @@ it('keeps native provider names and Dynatrace backend identities separate from P
   expect(monitorSeriesIdentity(dynatrace)).not.toBe(monitorSeriesIdentity({ ...dynatrace, provider: { ...dynatrace.provider!, backend: 'grail' } }))
   expect(monitorSeriesIdentity(dynatrace)).not.toBe(monitorSeriesIdentity({ ...dynatrace, provider: { ...dynatrace.provider!, resolution_seconds: 120 } }))
 })
+
+it('keeps instantaneous health separate from native buckets without fabricating gaps', () => {
+  const snapshot = { ...point(0, 0), provider: { ...point(0, 0).provider!, name: 'elasticsearch' as const, window_kind: 'instant' as const, resolution_seconds: 0 } }
+  const nextSnapshot = { ...snapshot, timestamp_utc: new Date(180000).toISOString(), provider: { ...snapshot.provider, resolution_seconds: 30 } }
+  expect(monitorSeriesIdentity(snapshot)).toBe(monitorSeriesIdentity(nextSnapshot))
+  expect(monitorSeriesIdentity(snapshot)).not.toBe(monitorSeriesIdentity({ ...snapshot, provider: { ...snapshot.provider, window_kind: 'bucket', resolution_seconds: 10 } }))
+  expect(buildMonitorTimelineRows([snapshot, nextSnapshot], [], 'latency')).toHaveLength(2)
+})

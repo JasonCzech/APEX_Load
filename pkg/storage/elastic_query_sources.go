@@ -158,7 +158,7 @@ func (c *ELKConnection) ElasticSnapshot() *ElasticConnectionSnapshot {
 
 func validateElasticMonitorSource(m MonitorSource, d monitorprovider.Descriptor) error {
 	if m.ConnectionID == "" || m.ElasticQuery == nil || m.ElasticQuery.ProjectID != m.ProjectID || m.ElasticQuery.Validate() != nil || intervalOutside(m, d) ||
-		m.CredentialRef != "" || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace != nil || m.ExecutorMode != "direct" {
+		m.CredentialRef != "" || m.Elastic != nil || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace != nil || m.ExecutorMode != "direct" {
 		return errors.New("invalid Elasticsearch query source")
 	}
 	return nil

@@ -71,6 +71,7 @@ pkg/
   monitorprovider/ — Provider-neutral monitoring topology, diagnostics, coverage, cursors, and the governed provider registry (dispatch through it; never compare provider names)
   deeplink/      — Provider link templates (HTTPS on the connection's own hosts, four placeholders, identifier values percent-encoded) and the shared provider-link target check
   monitorcontract/ — Passive retained monitoring DTOs for historical data; executable retired providers are archived
+  elastic/       — Governed Elasticsearch/OpenSearch query clients, discovery, signal normalization, and test monitoring
   dynatrace/     — Dynatrace SaaS Classic and Grail client, governed discovery, bounded queries and typed test monitoring
   Java execution stack:
   javarunner/    — Shared policy-enforcing Java Vuser primitives (classpath, command, containment);
@@ -170,7 +171,7 @@ Every new feature, bug fix, or refactor **must** include corresponding tests. Th
 requirement — not optional. When adding or modifying code:
 - Add unit tests for new functions and methods in `*_test.go` files alongside the source.
 - Cover both the happy path and meaningful edge cases (empty inputs, error conditions, boundary values).
-- During Go development, run the tests for the affected packages for fast feedback. The full `go test ./...` suite remains a required CI merge gate; run it locally before merge when the change crosses package boundaries, affects shared infrastructure, or is likely to change behavior outside the directly affected packages.
+- During Go development, run the tests for the affected packages for fast feedback. The full `go test -timeout=20m ./...` suite remains a required CI merge gate; run it locally before merge when the change crosses package boundaries, affects shared infrastructure, or is likely to change behavior outside the directly affected packages.
 - If a change touches the dashboard, verify UI behavior in a browser (type checking alone is insufficient).
 - During dashboard development, run typecheck, lint, relevant unit tests, and the affected Playwright workflows in each impacted auth profile. The full dashboard checks remain a required CI merge gate; CI builds the embedded dashboard and runs both dev-admin and local-auth Playwright profiles. Run `cd dashboard && npm run test:cycle` locally before merge for broad UI changes or changes to shared workflows, authentication, routing, or build configuration. Do not replace browser verification with route-only smoke checks.
 - Test files live next to the code they test (e.g. `pkg/engine/metrics_test.go` tests `metrics.go`).
@@ -195,7 +196,7 @@ cd dashboard && npm install && npm run dev   # http://localhost:4000
 cd dashboard && npm run build   # outputs to pkg/api/static/
 
 # Run tests
-go test ./...
+go test -timeout=20m ./...
 ```
 
 ## Build Cache Cleanup

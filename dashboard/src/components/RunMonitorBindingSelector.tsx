@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { request } from '../hooks/apiClient'
 import type { AnalysisCapabilities } from '../types/analysis'
 import type { MonitorBinding, MonitorSource } from '../types/runMonitoring'
+import './RunMonitoringControls.css'
 
 export default function RunMonitorBindingSelector({ projectId, value, onChange, legacyELKConnectionId, scenarioId, onConflictChange }: { projectId?: string; value: MonitorBinding[] | undefined; onChange: (value: MonitorBinding[] | undefined) => void; legacyELKConnectionId?: string; scenarioId?: string; onConflictChange?: (conflict: boolean) => void }) {
   const [sources, setSources] = useState<MonitorSource[]>([])

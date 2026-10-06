@@ -1,3 +1,5 @@
-mcp
+# The server uses the v1 FastMCP contract; v2 removes this import.
+mcp>=1.0,<2.0
 httpx
 pytest
+pytest-asyncio

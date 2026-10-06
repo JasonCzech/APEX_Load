@@ -42,18 +42,20 @@ export interface AppDynamicsSelection {
   settle_seconds: number
   run_header?: boolean; header_origins?: string[]
 }
+import type { ElasticSelection, ElasticCapability, ElasticMonitoringMetadata } from './elastic'
+
 export interface MonitorSource {
   id: string; name: string; project_id?: string; revision: number; collector_id: string
   pack: string; destination?: string; interval_seconds: number; enabled: boolean
   credential_ref?: string; collector_public_key?: string; service?: string
-  connection_id?: string; executor_mode?: 'direct' | 'collector'; appdynamics?: AppDynamicsSelection; prometheus?: PrometheusSelection; dynatrace?: DynatraceSelection
+  connection_id?: string; executor_mode?: 'direct' | 'collector'; appdynamics?: AppDynamicsSelection; prometheus?: PrometheusSelection; dynatrace?: DynatraceSelection; elastic?: ElasticSelection
 }
 export interface MonitorBinding { source_id: string; required: boolean }
 export interface MonitorRule {
-  provider?: 'appdynamics' | 'dynatrace'; backend?: string; metric_id?: string; entity_ids?: Record<string, string>
+  provider?: 'appdynamics' | 'dynatrace' | 'elasticsearch' | 'opensearch'; backend?: string; metric_id?: string; entity_ids?: Record<string, string>
   source_statistic?: string; resolution_seconds?: number; evaluation_operation?: 'avg' | 'time_average' | 'weighted_average' | 'min' | 'max' | 'sum'
   source_id: string; query_id?: string; evaluation_mode?: 'series_points' | 'exact_window'; require_freshness?: boolean; metric: string; dimensions?: Record<string, string>; unit: string
-  statistic: 'avg' | 'min' | 'max' | 'sum'; comparator: 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'neq'
+  statistic: 'avg' | 'min' | 'max' | 'sum' | 'value'; comparator: 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'neq'
   threshold: number; severity: 'fail' | 'warning'; min_coverage_pct: number
   start_offset_seconds: number; end_offset_seconds?: number
 }
@@ -65,15 +67,16 @@ export interface MonitorEvidence {
   business_transaction_id?: string; correlation?: string; correlation_strength?: string; status?: string
   entity_ids?: Record<string, string>; deep_link?: string; properties?: Record<string, string>
 }
+export interface RunMonitorCapability extends MonitorCapability, ElasticCapability {}
 export interface RunMonitorJob {
   id: string; source: MonitorSource; state: string; next_sequence: number; coverage_reason?: string
   started_at?: string; load_ended_at?: string; drain_deadline?: string; last_success_at?: string; query_watermark?: string
-  coverage?: Record<string, MonitorCapability>; points?: AnalysisPoint[]; topology?: MonitorEntity[]
+  coverage?: Record<string, RunMonitorCapability>; points?: AnalysisPoint[]; topology?: MonitorEntity[]
 }
 export interface RunMonitorCoverage {
   job_id: string; source_id: string; source_revision: number; binding_revision: number
   connection_id?: string; connection_revision?: number; executor_mode?: string
-  appdynamics?: AppDynamicsSelection; prometheus?: PrometheusSelection; dynatrace?: DynatraceSelection; required: boolean; state: string; reason?: string; batches: number
-  provider_coverage?: Record<string, MonitorCapability>; topology?: MonitorEntity[]
+  appdynamics?: AppDynamicsSelection; prometheus?: PrometheusSelection; dynatrace?: DynatraceSelection; elastic?: ElasticMonitoringMetadata; required: boolean; state: string; reason?: string; batches: number
+  provider_coverage?: Record<string, RunMonitorCapability>; topology?: MonitorEntity[]
 }
 export interface RunMonitorDiagnostic { source_id: string; diagnostic: MonitorEvidence }

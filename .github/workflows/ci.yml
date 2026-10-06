@@ -943,7 +943,7 @@ jobs:
           test -n "${postgres_test_port}"
           APEXLOAD_TEST_POSTGRES_URL="postgres://apexload:${POSTGRES_TEST_PASSWORD}@127.0.0.1:${postgres_test_port}/apexload?sslmode=disable" \
             go test -tags postgres_integration ./pkg/storage \
-              -run '^Test(Postgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle|AnalysisWorkflows)|PostgresMonitorRetirementHistory)$' -count=1
+              -run '^Test(Postgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle|AnalysisWorkflows)|PostgresMonitorRetirementHistory|ElasticPostgresDurableEvidenceMetadataAndRetry|ElasticPostgresVerifiedSourcePreparationAuthorization)$' -count=1
 
   containers:
     name: Container (${{ matrix.binary }}, ${{ matrix.profile }})

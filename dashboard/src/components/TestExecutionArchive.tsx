@@ -1,4 +1,5 @@
 import TelemetryPolicy from './TelemetryPolicy'
+import ElasticArchiveEvidence from './ElasticArchiveEvidence'
 import MonitorRuleResults from './MonitorRuleResults'
 import PrometheusArchiveEvidence from './PrometheusArchiveEvidence'
 import MonitorArchiveEvidence from './MonitorArchiveEvidence'
@@ -1140,7 +1141,7 @@ export default function TestExecutionArchive({
                     ))}
                   </div>
                   <MonitorRuleResults results={archiveReport.manifest.monitor_rule_results} />
-                  <PrometheusArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><MonitorArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} />
+                  <PrometheusArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><ElasticArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><MonitorArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} />
                   <CaptureArchiveSummary report={archiveReport} />
                   {(archiveReport.elk_samples?.length || 0) > 0 && (
                     <div className="advanced-group-table-wrap">
@@ -1329,7 +1330,7 @@ export default function TestExecutionArchive({
             </div>
           )}
 
-          {view === 'report-summary-timeline' && archiveReport && <><PrometheusArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><MonitorArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /></>}
+          {view === 'report-summary-timeline' && archiveReport && <><PrometheusArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><ElasticArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><MonitorArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /></>}
           {showReportSummaryTimelineView && (
             summaryTimelineEntriesAll.length > 0 ? (
               <div className="tx-section archive-summary-section">

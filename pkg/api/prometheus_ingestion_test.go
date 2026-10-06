@@ -341,6 +341,13 @@ func TestPrometheusDiagnosticSightingsUseDurableSnapshotHistory(t *testing.T) {
 		if d.Properties["first_observed_utc"] != first.Format(time.RFC3339Nano) {
 			t.Fatal("first sighting was replaced", d)
 		}
+		response := timeslotRequest(t, s, http.MethodGet, "/api/v1/tests/"+job.RunID+"/monitor-evidence?kind=alert", nil)
+		var result struct {
+			Evidence []RunMonitorEvidence `json:"evidence"`
+		}
+		if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &result) != nil || len(result.Evidence) != 1 || result.Evidence[0].Properties["first_observed_utc"] != first.Format(time.RFC3339Nano) {
+			t.Fatalf("filtered API lost provider first-sighting history: %d %s", response.Code, response.Body.String())
+		}
 		if sequence == 2 && (d.Status != "no_longer_observed" || !d.TimestampUTC.Equal(missing) || d.Properties["last_observed_utc"] != last.Format(time.RFC3339Nano) || d.Properties["state_observed_utc"] != missing.Format(time.RFC3339Nano)) {
 			t.Fatal("sampled absence was not projected", d)
 		}

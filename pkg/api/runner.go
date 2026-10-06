@@ -190,6 +190,7 @@ type runtimeSecretRecoveryState struct {
 }
 
 type TestRunner struct {
+	elasticPrepare        func(context.Context, storage.MonitorSource, *storage.ExpandedElasticConnectionSnapshot) error
 	prometheusPrepare     func(context.Context, storage.MonitorSource, *storage.PrometheusConnectionSnapshot, []analysis.MonitorRule) error
 	dynatracePrepare      func(context.Context, storage.MonitorSource, *storage.DynatraceConnectionSnapshot) error
 	thresholdJournal      *thresholdJournalWriter
@@ -488,6 +489,7 @@ func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
 type ManagedTest struct {
 	MonitorBindings *storage.MonitorBindings `json:"monitor_bindings,omitempty"`
 	TraceContext    *RunTraceContextSettings `json:"trace_context,omitempty"`
+	MonitorWarnings []string                 `json:"monitor_warnings,omitempty"`
 	Activity        *ObjectActivitySummary   `json:"activity,omitempty"`
 	preparationID   string
 	// Protected by tr.mu; checks only generator control-plane reservations.
@@ -1516,39 +1518,42 @@ type archiveRecorder interface {
 }
 
 type runArtifacts struct {
-	runner               *TestRunner
-	test                 *ManagedTest
-	recorder             archiveRecorder
-	saveRecord           func(record *storage.RunArchiveRecord) error
-	externalMetrics      *externalMetricCollector
-	monitorMu            sync.Mutex
-	monitorStarted       bool
-	monitorStopped       bool
-	monitorCancel        context.CancelFunc
-	monitorWorkers       sync.WaitGroup
-	monitorHTTPClient    *http.Client // Optional fixture client; production uses the restricted client.
-	elkPollMu            sync.Mutex
-	elkMu                sync.Mutex
-	elkLastPoll          time.Time
-	elkStatus            *ELKCaptureStatus
-	elkSampleIDs         map[string]struct{}
-	elkLookups           exemplarLookupSet // guarded by elkMu
-	elkSamples           []ELKLogSample
-	dynatracePollMu      sync.Mutex
-	dynatraceMu          sync.Mutex
-	dynatraceLastPoll    time.Time
-	dynatraceStatus      *DynatraceCaptureStatus
-	dynatraceEvidenceIDs map[string]struct{}
-	dynatraceLookups     exemplarLookupSet // legacy capture polls; guarded by dynatraceMu
-	nativeTraceLookups   exemplarLookupSet // native trace proof; guarded by dynatraceMu
-	nativeTraceStored    map[string]bool   // guarded by dynatraceMu
-	nativeDynatrace      atomic.Bool
-	nativeTraceChecked   bool // guarded by monitorMu
-	dynatraceLogs        []DynatraceLogSample
-	dynatraceProblems    []DynatraceProblemSummary
-	slaEvaluated         bool
-	slaBreached          bool
-	slaDetails           []string
+	runner                   *TestRunner
+	test                     *ManagedTest
+	recorder                 archiveRecorder
+	saveRecord               func(record *storage.RunArchiveRecord) error
+	externalMetrics          *externalMetricCollector
+	monitorMu                sync.Mutex
+	monitorStarted           bool
+	monitorStopped           bool
+	monitorCancel            context.CancelFunc
+	monitorWorkers           sync.WaitGroup
+	monitorHTTPClient        *http.Client // Optional fixture client; production uses the restricted client.
+	elkPollMu                sync.Mutex
+	elkMu                    sync.Mutex
+	elkLastPoll              time.Time
+	elkStatus                *ELKCaptureStatus
+	elkSampleIDs             map[string]struct{}
+	elkLookups               exemplarLookupSet // guarded by elkMu
+	elkTraceIDs              map[string]struct{}
+	elasticTraceEnabled      bool
+	elasticTraceLimitReached bool
+	elkSamples               []ELKLogSample
+	dynatracePollMu          sync.Mutex
+	dynatraceMu              sync.Mutex
+	dynatraceLastPoll        time.Time
+	dynatraceStatus          *DynatraceCaptureStatus
+	dynatraceEvidenceIDs     map[string]struct{}
+	dynatraceLookups         exemplarLookupSet // legacy capture polls; guarded by dynatraceMu
+	nativeTraceLookups       exemplarLookupSet // native trace proof; guarded by dynatraceMu
+	nativeTraceStored        map[string]bool   // guarded by dynatraceMu
+	nativeDynatrace          atomic.Bool
+	nativeTraceChecked       bool // guarded by monitorMu
+	dynatraceLogs            []DynatraceLogSample
+	dynatraceProblems        []DynatraceProblemSummary
+	slaEvaluated             bool
+	slaBreached              bool
+	slaDetails               []string
 	// Provider lookup outcomes for distributed archives; local runs also
 	// stream them through the archive writer.
 	lookupMu                 sync.Mutex

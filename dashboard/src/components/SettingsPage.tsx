@@ -6254,7 +6254,7 @@ export default function SettingsPage({
               setActiveIntegrationSubsection,
               integrationSubsectionSummaries,
             )}
-            {activeSection === 'integrations' && activeIntegrationSubsection === 'elk-capture' && <section aria-label="Elastic test capture settings"><ELKConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
+            {activeSection === 'integrations' && activeIntegrationSubsection === 'elk-capture' && <section aria-label="Elastic test capture settings"><ELKConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} canApprovePrivateNetworks={canManageSystem} /></section>}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'dynatrace-capture' && <section aria-label="Dynatrace test capture settings"><DynatraceConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'prometheus-capture' && <section aria-label="Prometheus test monitoring settings"><PrometheusConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} canApprovePrivateNetworks={canManageSystem} /></section>}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'confluence' && <section aria-label="Confluence publishing settings"><ConfluenceConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}

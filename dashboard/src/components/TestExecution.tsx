@@ -1048,7 +1048,8 @@ export default function TestExecution({
     <div className="execution">
       <OrchestrationReturn testId={testId} />
       <RunMonitorTimeline key={`monitor-${testId}`} projectId={test.project_id} testId={testId} history={filteredData} />
-      <PreparationControls canEdit={canManageTests} key={testId} testId={testId} projectId={test.project_id} status={test.status} />
+      {Boolean(test.monitor_warnings?.length) && <section className="tx-section" aria-label="Run monitoring warnings"><h3>Run monitoring warnings</h3><ul>{test.monitor_warnings?.map((warning, index) => <li key={index}>{warning}</li>)}</ul></section>}
+      <PreparationControls canEdit={canManageTests} key={`preparation-${testId}`} testId={testId} projectId={test.project_id} status={test.status} />
 
       {pendingAction && (
         <ConfirmRunActionModal

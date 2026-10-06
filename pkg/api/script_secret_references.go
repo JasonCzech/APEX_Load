@@ -103,7 +103,11 @@ func (s *Server) projectSecretUsage(projectID, name string) (projectSecretUsage,
 			}
 		}
 	}
-	return s.appendRetainedMonitorSecretUsage(projectSecretUsageFromScripts(projectID, name, scripts))
+	usage, err := s.appendRetainedMonitorSecretUsage(projectSecretUsageFromScripts(projectID, name, scripts))
+	if err != nil {
+		return usage, err
+	}
+	return s.appendElasticSecretUsage(usage)
 }
 
 func projectSecretUsageFromScripts(projectID, name string, scripts []*dsl.Script) projectSecretUsage {

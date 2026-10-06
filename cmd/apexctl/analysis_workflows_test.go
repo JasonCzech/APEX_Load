@@ -271,3 +271,44 @@ func TestRCAWorkflowCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestMonitoringEvidenceFiltersAndBounds(t *testing.T) {
+	var calls int
+	var gotQuery map[string][]string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		gotQuery = r.URL.Query()
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer api.Close()
+	for _, kind := range []string{"event", "violation", "snapshot", "log", "transaction", "error", "span", "health", "target", "alert", "problem", "trace"} {
+		t.Run(kind, func(t *testing.T) {
+			args := []string{"evidence", "--id", "run", "--api", api.URL, "--kind", kind, "--service", "checkout / payments", "--severity", "error", "--trace-id", "trace+id", "--from", "2026-10-06T10:00:00.123456789Z", "--until", "2026-10-06T10:01:00Z"}
+			if err := executeWorkflowCommand(context.Background(), "monitor", args, &bytes.Buffer{}); err != nil {
+				t.Fatal(err)
+			}
+			for key, want := range map[string]string{"kind": kind, "service": "checkout / payments", "severity": "error", "trace_id": "trace+id", "from": "2026-10-06T10:00:00.123456789Z", "until": "2026-10-06T10:01:00Z", "limit": "100"} {
+				if values := gotQuery[key]; len(values) != 1 || values[0] != want {
+					t.Fatalf("%s: got %v, want %q", key, values, want)
+				}
+			}
+		})
+	}
+	for _, invalid := range [][]string{
+		{"--limit", "101"}, {"--limit", "0"}, {"--kind", "unsupported"},
+		{"--from", "2026-10-06T10:00:00+00:00"}, {"--from", "2026-02-30T10:00:00Z"},
+		{"--from", "2026-10-06T10:00:00Z", "--until", "2026-10-06T10:00:00Z"},
+		{"--from", "2026-10-06T10:01:00Z", "--until", "2026-10-06T10:00:00Z"},
+		{"--service", strings.Repeat("x", 513)}, {"--severity", "error\nwarning"},
+		{"--source-id", strings.Repeat("s", 257)}, {"--after-key", strings.Repeat("c", 65)},
+	} {
+		before := calls
+		args := append([]string{"evidence", "--id", "run", "--api", api.URL}, invalid...)
+		if err := executeWorkflowCommand(context.Background(), "monitor", args, &bytes.Buffer{}); err == nil || calls != before {
+			t.Fatalf("invalid filters reached controller: %v", invalid)
+		}
+	}
+	if err := executeWorkflowCommand(context.Background(), "monitor", []string{"series", "--id", "run", "--api", api.URL, "--limit", "999"}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("series ceiling changed: %v", err)
+	}
+}

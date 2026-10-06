@@ -781,6 +781,7 @@ export interface TestSummary {
   /** Safe configured capture identities; credentials are never part of this projection. */
   elk_capture?: { connection_id: string; connection_name?: string }
   dynatrace_capture?: { connection_id: string; connection_name?: string }
+  monitor_warnings?: string[]
   monitor_bindings?: { revision?: number; sources: import('./types/runMonitoring').MonitorBinding[] }
   activity?: import("./types/objectActivity").ObjectActivitySummary
   termination_mode?: "duration" | "iterations"

@@ -12,7 +12,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postgresForeignKeySpecs returned error: %v", err)
 	}
-	if got, want := len(specs), 136; got != want {
+	if got, want := len(specs), 137; got != want {
 		t.Fatalf("foreign key count = %d, want %d", got, want)
 	}
 
@@ -93,6 +93,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 		"github_script_sync_target_owners.target_key":           "github_script_sync_targets.target_key",
 		"import_assets.project_id":                              "projects.id",
 		"project_secrets.project_id":                            "projects.id",
+		"elastic_inspections.project_id":                        "projects.id",
 		"elk_connections.project_id":                            "projects.id",
 		"confluence_connections.project_id":                     "projects.id",
 		"confluence_publications.project_id":                    "projects.id",

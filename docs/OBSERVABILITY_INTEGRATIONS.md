@@ -35,8 +35,10 @@ Intervals may go up to 3,600 seconds. Dynatrace defaults to direct execution. Th
 
 ### Provider qualification
 
-Each governed provider has a record in `docs/qa/qualification/<provider>.json`
-(`apexload.provider_qualification.v1`): its required permissions, any real
+Each governed provider/pack has a record in `docs/qa/qualification/<provider>.json`
+or a pack-specific `<provider>.<pack>.json` override. A legacy record applies
+only to the pack it names. Each record uses `apexload.provider_qualification.v1`
+and describes its required permissions, any real
 environments it was checked against (product and API versions, non-production
 tenant type, permissions, observed limits and date) and an outcome per
 capability with its evidence. **Qualified** means checked against such an
@@ -66,6 +68,22 @@ qualification succeeds, then regenerate the table with
 | Elasticsearch query | opensearch profile | fixture-tested | — |
 | Elasticsearch query | deep links | fixture-tested | — |
 | Elasticsearch query | legacy capture | fixture-tested | — |
+| Elasticsearch (elastic) | metrics | fixture-tested | — |
+| Elasticsearch (elastic) | diagnostics | fixture-tested | — |
+| Elasticsearch (elastic) | trace lookup | fixture-tested | — |
+| Elasticsearch (elastic) | run header | fixture-tested | — |
+| Elasticsearch (elastic) | esql | fixture-tested | — |
+| Elasticsearch (elastic) | pagination | fixture-tested | — |
+| Elasticsearch (elastic) | private collector | fixture-tested | — |
+| Elasticsearch (elastic) | component health | fixture-tested | — |
+| OpenSearch (elastic) | metrics | fixture-tested | — |
+| OpenSearch (elastic) | diagnostics | fixture-tested | — |
+| OpenSearch (elastic) | trace lookup | fixture-tested | — |
+| OpenSearch (elastic) | run header | fixture-tested | — |
+| OpenSearch (elastic) | esql | unsupported | — |
+| OpenSearch (elastic) | pagination | fixture-tested | — |
+| OpenSearch (elastic) | private collector | fixture-tested | — |
+| OpenSearch (elastic) | component health | fixture-tested | — |
 | Prometheus | metrics | qualified | Prometheus 2.55.1 (2026-10-04); Prometheus 3.13.0 (2026-10-04) |
 | Prometheus | diagnostics | qualified | Prometheus 2.55.1 (2026-10-04); Prometheus 3.13.0 (2026-10-04) |
 | Prometheus | discovery | qualified | Prometheus 2.55.1 (2026-10-04); Prometheus 3.13.0 (2026-10-04) |

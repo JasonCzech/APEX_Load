@@ -31,3 +31,14 @@ it('retains missing source identities until explicitly removed', async () => {
   await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Remove unavailable source')!.click())
   expect(onChange).toHaveBeenCalledWith([])
 })
+
+it('reports duplicate legacy collection for inherited Elastic sources and leaves explicit off unaffected', async () => {
+  request.mockImplementation(async (path: string) => path.includes('/analysis/capabilities') ? { monitoring_enabled: true } : path.includes('monitor-bindings') ? { sources: [{ source_id: 'elastic', required: false }] } : [{ id: 'elastic', name: 'Elastic logs', pack: 'elastic', connection_id: 'connection', enabled: true }])
+  const onConflictChange = vi.fn()
+  await act(async () => root.render(<RunMonitorBindingSelector projectId="p" scenarioId="scenario" legacyELKConnectionId="connection" value={undefined} onChange={vi.fn()} onConflictChange={onConflictChange} />))
+  expect(container.textContent).toContain('Turn legacy Elastic log capture off')
+  expect(onConflictChange).toHaveBeenLastCalledWith(true)
+  await act(async () => root.render(<RunMonitorBindingSelector projectId="p" scenarioId="scenario" legacyELKConnectionId="connection" value={[]} onChange={vi.fn()} onConflictChange={onConflictChange} />))
+  expect(container.textContent).not.toContain('Turn legacy Elastic log capture off')
+  expect(onConflictChange).toHaveBeenLastCalledWith(false)
+})

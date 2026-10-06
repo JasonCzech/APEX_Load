@@ -61,5 +61,8 @@ func (s *Server) invalidateRetainedMonitorSecretPreparations(_ context.Context, 
 			s.runner.cancelPreparationExecution(preparation.TestID, preparation.ID)
 		}
 	}
+	if err := s.invalidateElasticSecretPreparations(context.Background(), project, name); err != nil {
+		return err
+	}
 	return nil
 }

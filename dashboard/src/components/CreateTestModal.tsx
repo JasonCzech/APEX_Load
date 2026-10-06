@@ -3,7 +3,7 @@ import RunMonitorBindingSelector from './RunMonitorBindingSelector'
 import type { MonitorBinding } from '../types/runMonitoring'
 import DialogLayer from './ux/DialogLayer'
 import CaptureSelectionHelp from './CaptureSelectionHelp'
-import { captureSelectionNeedsReview, dynatraceCapabilities } from './captureConnectionModel'
+import { legacyELKCaptureReady, captureSelectionNeedsReview, dynatraceCapabilities } from './captureConnectionModel'
 import { useCallback, useContext, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -58,6 +58,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const [estimateLoading, setEstimateLoading] = useState(false)
   const [estimateError, setEstimateError] = useState('')
   const [error, setError] = useState('')
+  const [monitorEditorError, setMonitorEditorError] = useState('')
   const [loading, setLoading] = useState(false)
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
   const [captureRetry, setCaptureRetry] = useState(0)
@@ -68,6 +69,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const [dynatraceError, setDynatraceError] = useState(false)
   const [elkConnections, setELKConnections] = useState<ELKConnection[]>([])
   const [elkConnectionId, setELKConnectionId] = useState(() => initialScenario?.revisionContext?.elkConnectionId ?? '')
+  const [elasticMonitorConflict, setElasticMonitorConflict] = useState(false)
   const [dynatraceConnections, setDynatraceConnections] = useState<DynatraceConnection[]>([])
   const [dynatraceConnectionId, setDynatraceConnectionId] = useState(() => initialScenario?.revisionContext?.dynatraceConnectionId ?? '')
   const [monitorBindings, setMonitorBindings] = useState<MonitorBinding[] | undefined>(() => initialScenario?.revisionContext?.monitorBindings?.map(binding => ({ ...binding })))
@@ -166,7 +168,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     setELKLoading(true); setELKError(false)
     listELKConnections(effectiveProjectId).then(result => {
       if (!active) return
-      const ready = result.connections.filter(connection => connection.status === 'ready')
+      const ready = result.connections.filter(legacyELKCaptureReady)
       setELKConnections(ready)
       // Retain an unavailable selection until the user explicitly reviews it.
     }).catch(() => {
@@ -345,6 +347,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
   const performSubmitDraft = async (): Promise<boolean> => {
     if (!mountedRef.current) return false
+    if (monitorEditorError) { setError(monitorEditorError); return false }
+    if (elasticMonitorConflict) { setError('Turn legacy Elastic log capture off or remove the conflicting run-bound source before launching.'); return false }
     if (captureNeedsReview) { setError('Review the unavailable capture connection, retry, or explicitly turn capture off before launching.'); return false }
     setError('')
     setLoading(true)
@@ -649,8 +653,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 				onGroupOverrideChange={(index, value) => updateGroup(index, { transactionResponseTimeSlaMs: value })}
 			/>
 
-          <RunMonitorBindingSelector projectId={revisionContext?.projectId ?? projectId} scenarioId={revisionContext?.scenarioId} value={monitorBindings} onChange={setMonitorBindings} />
-          <MonitorRuleEditor projectId={revisionContext?.projectId ?? projectId} value={goalConfig.monitor_rules || []} onChange={rules => updateGoalConfig('monitor_rules', rules)} />
+          <RunMonitorBindingSelector projectId={revisionContext?.projectId ?? projectId} scenarioId={revisionContext?.scenarioId} legacyELKConnectionId={elkConnectionId} onConflictChange={setElasticMonitorConflict} value={monitorBindings} onChange={setMonitorBindings} />
+          <MonitorRuleEditor projectId={revisionContext?.projectId ?? projectId} value={goalConfig.monitor_rules || []} onChange={rules => updateGoalConfig('monitor_rules', rules)} onValidationChange={setMonitorEditorError} />
           <CreateTestRuntimeOverrides
             draftScope={`${revisionContext?.projectId ?? projectId ?? ''}:${revisionContext?.scenarioId ?? 'new'}`}
             runtimeSettings={runtimeSettings}
@@ -667,7 +671,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={loading || captureNeedsReview || groups.every((g) => !g.scriptId)}
+              disabled={loading || captureNeedsReview || elasticMonitorConflict || Boolean(monitorEditorError) || groups.every((g) => !g.scriptId)}
             >
               {loading ? loadingLabel : `${submitLabel} (${groups.length} group${groups.length > 1 ? 's' : ''})`}
             </button>

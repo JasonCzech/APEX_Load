@@ -52,6 +52,9 @@ kept for planning or audit context only.
 | [OBJECT_ACTIVITY.md](OBJECT_ACTIVITY.md) | Object history, dependency evidence, archive admission, and restoration |
 | [RETIRED_INTEGRATIONS.md](RETIRED_INTEGRATIONS.md) | Retired AppDynamics monitoring and Bruno Runner, retained history and restoration guidance |
 | [DYNATRACE_SPEC.md](DYNATRACE_SPEC.md) | Dynatrace SaaS native monitoring contracts, migration, lifecycle, limits, and fixture qualification |
+| [ELASTIC.md](ELASTIC.md) | Elasticsearch, ES\|QL and OpenSearch connections, collectors, schemas, budgets and coverage |
+| [ELASTIC_SPEC.md](ELASTIC_SPEC.md) | Elastic implementation contracts, lifecycle and qualification gates |
+| [ELASTIC_QUALIFICATION.md](ELASTIC_QUALIFICATION.md) | Exact-version Elasticsearch/OpenSearch vendor trials, evidence and deployment limits |
 | [SCRIPT_DEBUGGER_GUIDE.md](SCRIPT_DEBUGGER_GUIDE.md) | Script replay debugger workflow, routes, and imported runtime-setting/capture diagnostics |
 | [EVENT_HUBS_HOWTO.md](EVENT_HUBS_HOWTO.md) | Native Event Hubs deployment defaults, observer isolation and terminal lag gates |
 | [PROTOCOL_SUPPORT.md](PROTOCOL_SUPPORT.md) | Web/API, browser, messaging, Java Vuser, and SAP GUI support boundaries |

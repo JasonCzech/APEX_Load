@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -448,11 +449,19 @@ func readMonitorSeries(ctx context.Context, record *storage.RunArchiveRecord, ma
 // another, including whether its points count up.
 func monitorSeriesIdentity(point analysis.MetricPoint) string {
 	m := point.Provider
-	identity := []string{m.Name, point.Source, point.MetricName, m.QueryID, m.Statistic, point.Kind}
-	for _, key := range slices.Sorted(maps.Keys(point.Dimensions)) {
-		identity = append(identity, key+"="+point.Dimensions[key])
+	identity := struct {
+		Provider, Source, Metric, MetricID, QueryID, Statistic, Kind, Unit, WindowKind string
+		Resolution                                                                     int
+		QueryWindow, Approximate                                                       bool
+		DerivedAggregation                                                             string
+		ExactWindowDuration                                                            time.Duration
+		Dimensions                                                                     map[string]string
+	}{Provider: m.Name, Source: point.Source, Metric: point.MetricName, MetricID: m.MetricID, QueryID: m.QueryID, Statistic: m.Statistic, Kind: point.Kind, Unit: point.Unit, WindowKind: m.WindowKind, Resolution: m.ResolutionSeconds, QueryWindow: m.QueryWindow, Approximate: m.Approximate, DerivedAggregation: m.DerivedAggregation, Dimensions: point.Dimensions}
+	if m.QueryWindow {
+		identity.ExactWindowDuration = m.BucketEnd.Sub(m.BucketStart)
 	}
-	return strings.Join(identity, "\x00")
+	body, _ := json.Marshal(identity)
+	return string(body)
 }
 
 // monitorSeriesTemplate builds the series a provider point belongs to.
@@ -464,10 +473,15 @@ func monitorSeriesTemplate(point analysis.MetricPoint, identity, file string) (r
 		return rca.Series{}, false
 	}
 	observation := descriptor.Observation
-	if point.Kind == analysis.KindCounter || m.Statistic == "counter" {
+	if m.WindowKind == "instant" {
+		observation = rca.ObservationSnapshot
+	} else if point.Kind == analysis.KindCounter || m.Statistic == "counter" {
 		observation = rca.ObservationCumulative
 	}
 	seconds := m.ResolutionSeconds
+	if m.WindowKind == "instant" {
+		seconds = 0
+	}
 	if observation == rca.ObservationSnapshot && m.EvaluationStepSeconds > 0 {
 		seconds = m.EvaluationStepSeconds
 	}

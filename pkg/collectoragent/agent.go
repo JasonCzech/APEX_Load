@@ -15,6 +15,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/elastic"
+	"github.com/jasonczech/apexload/pkg/prometheus"
 	"io"
 	"log/slog"
 	"math"
@@ -29,10 +33,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
-	"github.com/jasonczech/apexload/pkg/prometheus"
 )
 
 // Config configures a collector agent.
@@ -90,6 +91,10 @@ type Agent struct {
 	// clock is the latest heartbeat's measurement of this collector's clock
 	// against the controller's.
 	clock collectorClock
+	// Private trusted embedding seam; normal configuration uses governed transport.
+	elasticClient            func(elastic.Config, elastic.Credentials) (*elastic.Client, error)
+	elasticCleanupAfter      string
+	elasticInspectionPending map[string]*ElasticInspectionResult
 }
 
 type metricPack struct {
@@ -175,7 +180,7 @@ func New(cfg Config) (*Agent, error) {
 		}
 		seenPacks[pack] = true
 		switch pack {
-		case "ssh-linux", "jmx", "jdbc", "otel-metrics", monitorprovider.PackDynatrace, "cloudwatch", "azure-monitor", monitorprovider.PackPrometheusQuery:
+		case "ssh-linux", "jmx", "jdbc", "otel-metrics", monitorprovider.PackDynatrace, "elastic", "cloudwatch", "azure-monitor", monitorprovider.PackPrometheusQuery:
 			if len(cfg.ControllerPublicKey) == 0 {
 				return nil, fmt.Errorf("remote adapters require signed run jobs")
 			}
@@ -318,7 +323,7 @@ func (a *Agent) runWithSolaceStartup(ctx context.Context, startup func(context.C
 	// provider task, then observes the sole exact startup lock cleanup result.
 	defer func() { retErr = errors.Join(retErr, unlockSolace()) }()
 	defer a.cancelDynatraceJobs()
-	defer a.providerWorkers.Wait()
+	defer func() { a.providerWorkers.Wait(); a.closeElasticSpoolHandles() }()
 	defer a.stopDynatraceTimers()
 	if err = a.loadSpool(); err != nil {
 		return err
@@ -358,6 +363,17 @@ func (a *Agent) tick(ctx context.Context) {
 			slog.Warn("collector heartbeat failed", "err", err)
 			return
 		}
+		for _, pack := range a.cfg.Packs {
+			if pack == "elastic" {
+				if err := a.elasticInspectionTick(ctx); err != nil {
+					slog.Debug("Elastic inspection poll unavailable")
+				}
+				if err := a.elasticCleanupTick(ctx); err != nil {
+					slog.Debug("Elastic cleanup poll unavailable")
+				}
+				break
+			}
+		}
 		if a.hasPrometheusQueryTarget() {
 			if err := a.prometheusInspectionTick(ctx); err != nil {
 				slog.Debug("provider inspection poll unavailable")
@@ -388,9 +404,15 @@ func (a *Agent) tick(ctx context.Context) {
 // collect only advertises packs backed by their actual source. Failed packs
 // make the heartbeat degraded and are omitted instead of relabeling host data.
 func (a *Agent) collect(ctx context.Context) (heartbeat, error) {
-	packs := make([]metricPack, 0, len(a.cfg.Packs))
+	return a.collectPacks(ctx, a.cfg.Packs)
+}
+
+// collectPacks narrows a collection to its assigned packs without mutating
+// configuration or copying the agent's locks and worker ownership.
+func (a *Agent) collectPacks(ctx context.Context, names []string) (heartbeat, error) {
+	packs := make([]metricPack, 0, len(names))
 	var firstErr error
-	for _, name := range a.cfg.Packs {
+	for _, name := range names {
 		pack := metricPack{Pack: name}
 		var samples map[string]float64
 		var err error

@@ -62,7 +62,24 @@ export interface ELKConnection {
   trace_id_field?: string
   base_filter?: string
   error_filter?: string
-  auth_type?: 'api_key' | 'basic'
+  auth_type?: 'api_key' | 'basic' | 'bearer' | 'mtls'
+  product?: import('./elastic').ElasticProduct
+  revision?: number
+  verified_revision?: number
+  collection_mode?: 'direct' | 'collector'
+  collector_agent_id?: string
+  config?: import('./elastic').ElasticConfig
+  capabilities?: import('./elastic').ElasticCapabilities
+  has_bearer_token?: boolean
+  has_client_certificate?: boolean
+  has_client_key?: boolean
+  legacy_capture_ready?: boolean
+  has_custom_ca?: boolean
+  has_approved_private_networks?: boolean
+  has_kibana_credentials?: boolean
+  has_logstash_credentials?: boolean
+  kibana_auth_type?: 'api_key' | 'basic' | 'bearer' | 'mtls'
+  logstash_auth_type?: 'api_key' | 'basic' | 'bearer' | 'mtls'
   has_api_key: boolean
   has_basic_username: boolean
   has_basic_password: boolean

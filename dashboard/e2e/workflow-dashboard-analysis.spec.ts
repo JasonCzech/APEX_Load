@@ -1,6 +1,12 @@
 import { test, expect, seedScript, json, idOf, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
+test.afterEach(async ({ page }) => {
+  // Let retained-evidence route projections finish before Playwright disposes
+  // their API response bodies with the browser context.
+  await page.unrouteAll({ behavior: 'wait' })
+})
+
 test('analysis preserves evidence gaps, saved baselines, filtered deltas and report context', async ({
   page,
 }, testInfo) => {
@@ -28,6 +34,8 @@ test('analysis preserves evidence gaps, saved baselines, filtered deltas and rep
       ),
     )
   const dates = ['2026-09-19T10:00:00Z', '2026-09-20T10:00:00Z']
+  const storedRuns = new Map(await Promise.all(ids.map(async id => [id, await json(await request.get(`/api/v1/tests/${id}`))] as const)))
+  const storedListing = await json(await request.get(`/api/v1/tests?project_id=${workspace.projectId}`))
   const stats = (index: number) => ({
     transactions: 1000,
     errors: 0,
@@ -100,15 +108,13 @@ test('analysis preserves evidence gaps, saved baselines, filtered deltas and rep
         !ids.some((id) => path === `/api/v1/tests/${id}`))
     )
       return route.continue()
-    const response = await route.fetch()
-    const payload = await response.json()
+    const payload = path === '/api/v1/tests' ? storedListing : storedRuns.get(path.split('/').at(-1)!)!
     await route.fulfill({
-      response,
       json:
         path === '/api/v1/tests'
-          ? { ...payload, tests: payload.tests.map(project) }
+          ? { ...payload, tests: (payload.tests as Record<string, unknown>[]).map(project) }
           : payload.test
-            ? { ...payload, test: project(payload.test) }
+            ? { ...payload, test: project(payload.test as Record<string, unknown>) }
             : project(payload),
     })
   })

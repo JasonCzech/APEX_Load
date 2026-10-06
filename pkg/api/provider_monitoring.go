@@ -50,6 +50,11 @@ func init() {
 			PopulateGrant: (*Server).populatePrometheusGrant, GrantUnavailable: "Prometheus executor unavailable", ContractLabel: "Prometheus query",
 			ValidateSubmission: validatePrometheusSubmission,
 		}),
+		monitorprovider.PackElastic: describe(monitorprovider.PackElastic, providerDescriptor{
+			Ingest: (*Server).ingestExpandedElasticBatch, CollectDirect: (*Server).collectDirectExpandedElastic,
+			PopulateGrant: (*Server).populateElasticGrant, GrantUnavailable: "Elastic credential or executor unavailable", ContractLabel: "Elastic",
+			ValidateSubmission: validateExpandedElasticSubmission,
+		}),
 		monitorprovider.PackElasticQuery: describe(monitorprovider.PackElasticQuery, providerDescriptor{
 			Ingest: (*Server).ingestElasticBatch, CollectDirect: (*Server).collectDirectElastic,
 			PopulateGrant: populateElasticGrant, GrantUnavailable: "Elasticsearch query sources run in the controller", ContractLabel: "Elasticsearch query",
@@ -110,4 +115,12 @@ func providerForCapability(capability string) (providerDescriptor, bool) {
 // Older point-only collector packs retain their existing ingestion contract.
 func nativeProviderPack(pack string) bool {
 	return monitorprovider.Canonical(pack)
+}
+
+func validateExpandedElasticSubmission(grant collectoragent.RunJob, job storage.RunMonitorJob, collector string, batch collectoragent.RunSampleBatch) (int, string) {
+	endpoint := grant.Elastic != nil && job.ElasticConnectionSnapshot != nil && grant.Elastic.Config.Endpoint == job.ElasticConnectionSnapshot.Config.Endpoint
+	if grant.ScenarioID != job.ScenarioID || batch.Sequence < 0 {
+		return 403, "Elastic grant does not match job"
+	}
+	return validateWindowedSubmission(grant, job, collector, batch, endpoint)
 }

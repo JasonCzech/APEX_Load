@@ -283,3 +283,48 @@ async def test_rca_v2_tools_call_expected_routes():
         ("POST", "/api/v1/tests/run-1/archive/root-cause/analyses/a1/critiques"),
     ]
     assert json.loads(seen[0][2]) == {"enrich": True}
+
+
+@pytest.mark.asyncio
+async def test_elastic_connection_and_inspection_parity():
+    seen: list[tuple[str, str, dict]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content) if request.content else {}
+        seen.append((request.method, request.url.path, payload))
+        return httpx.Response(200, json={"id": "op", "status": "complete"})
+
+    client = APEXLoadClient(APEXLoadClientConfig(base_url="http://storm.test/api/v1"), transport=httpx.MockTransport(handler))
+    params = {"id": "p", "connection_id": "c", "operation_id": "op"}
+    guarded = json.loads(await run_endpoint_tool(tool("elastic_inspection_create"), path_params=params, payload={"kind": "verify", "expected_revision": 2}, client=client))
+    assert guarded["error"]["code"] == "confirmation_required"
+    for name, kwargs in [
+        ("elastic_connection_list", {}),
+        ("elastic_inspection_create", {"payload": {"kind": "verify", "expected_revision": 2}, "confirm": True}),
+        ("elastic_inspection_get", {}),
+        ("elastic_inspection_cancel", {"confirm": True, "reason": "Cancel pending discovery"}),
+    ]:
+        result = json.loads(await run_endpoint_tool(tool(name), path_params=params, client=client, **kwargs))
+        assert result["ok"] is True
+    assert seen == [
+        ("GET", "/api/v1/projects/p/monitoring/elk-connections", {}),
+        ("POST", "/api/v1/projects/p/monitoring/elk-connections/c/inspections", {"kind": "verify", "expected_revision": 2}),
+        ("GET", "/api/v1/projects/p/monitoring/elk-connections/c/inspections/op", {}),
+        ("DELETE", "/api/v1/projects/p/monitoring/elk-connections/c/inspections/op", {}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_elastic_evidence_projection_filter_parity():
+    seen: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"evidence": [], "has_more": False})
+
+    client = APEXLoadClient(APEXLoadClientConfig(base_url="http://storm.test/api/v1"), transport=httpx.MockTransport(handler))
+    filters = {"kind": "span", "source_id": "elastic-source", "service": "checkout", "severity": "error", "trace_id": "trace+id", "from": "2026-10-06T10:00:00Z", "until": "2026-10-06T10:01:00Z", "limit": 100, "after_key": "cursor"}
+    result = json.loads(await run_endpoint_tool(tool("run_monitor_evidence"), path_params={"id": "run"}, query=filters, client=client))
+    assert result["ok"] is True
+    assert dict(seen[-1].url.params) == {key: str(value) for key, value in filters.items()}
+    assert "UTC from/until" in tool("run_monitor_evidence").description

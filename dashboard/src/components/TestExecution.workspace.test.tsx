@@ -13,6 +13,8 @@ const hooks = vi.hoisted(() => ({
   polling: vi.fn(), viewState: vi.fn(), scenario: vi.fn(), metrics: vi.fn(), resourceHistory: vi.fn(), summaryHistory: vi.fn(),
   chart: vi.fn(), actionBridge: vi.fn(), liveControls: vi.fn(), archive: vi.fn(), manifest: vi.fn(), importedGraphs: vi.fn(),
 }))
+const request = vi.hoisted(() => vi.fn())
+vi.mock('../hooks/apiClient', async importOriginal => ({ ...await importOriginal<typeof import('../hooks/apiClient')>(), request }))
 
 vi.mock('./TestExecutionRunState', () => ({ default: () => <div>Run State Content</div> }))
 vi.mock('./TestExecutionInfrastructure', () => ({ default: () => <div>Infrastructure Content</div> }))
@@ -61,6 +63,7 @@ describe('TestExecution advanced details', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     configure(makeTest('RUNNING'))
+    request.mockImplementation((path: string) => Promise.resolve(path.includes('/capabilities') ? { preparation_enabled: true, monitoring_enabled: false } : path.endsWith('/preparation') ? { id: 'prepared', state: 'none', revision: 1 } : path.endsWith('/analysis/annotations') ? { revision: 1, annotations: [] } : []))
   })
 
   afterEach(async () => {
@@ -103,6 +106,28 @@ describe('TestExecution advanced details', () => {
     await render({ initialWorkspaceTabId: 'infrastructure', onWorkspaceTabChange })
     expect(selectedTab()).toBe('Infrastructure')
     expect(onWorkspaceTabChange).toHaveBeenLastCalledWith('infrastructure', { replace: true })
+  })
+
+  it('retains monitoring warnings as readable text during a running test', async () => {
+    configure({ ...makeTest('RUNNING'), monitor_warnings: ['Optional Elastic: forbidden', '<img src=x onerror=alert(1)>'] })
+    await render()
+    const warnings = container.querySelector('[aria-label="Run monitoring warnings"]')!
+    expect(warnings.textContent).toContain('Optional Elastic: forbidden')
+    expect(warnings.textContent).toContain('<img src=x onerror=alert(1)>')
+    expect(warnings.querySelector('img')).toBeNull()
+  })
+
+  it('retains one preparation control when monitoring warnings appear and disappear', async () => {
+    const queued = { ...makeTest('QUEUED'), project_id: 'p' }
+    configure(queued)
+    await render({ canManageTests: true })
+    expect(container.querySelectorAll('[aria-label="Run preparation"]')).toHaveLength(1)
+    configure({ ...queued, monitor_warnings: ['Optional Elastic unavailable'] })
+    await render({ canManageTests: true })
+    expect(container.querySelectorAll('[aria-label="Run preparation"]')).toHaveLength(1)
+    configure(queued)
+    await render({ canManageTests: true })
+    expect(container.querySelectorAll('[aria-label="Run preparation"]')).toHaveLength(1)
   })
 
   async function render(props: Partial<Parameters<typeof TestExecution>[0]> = {}) {

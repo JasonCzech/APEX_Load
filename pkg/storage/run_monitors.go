@@ -15,6 +15,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/elastic"
 	"github.com/jasonczech/apexload/pkg/monitorcontract"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
@@ -94,6 +95,7 @@ type RunMonitorStore interface {
 // MonitorSource contains only public collection configuration. Credentials are
 // resolved on the assigned collector; bearer tokens must never enter this row.
 type MonitorSource struct {
+	Elastic                  *elastic.Selection                    `json:"elastic,omitempty"`
 	ManagementScope          *analysis.ManagementScope             `json:"management_scope,omitempty"`
 	ManagementIdentity       *analysis.ManagementIdentity          `json:"management_identity,omitempty"`
 	Prometheus               *prometheus.Selection                 `json:"prometheus,omitempty"`
@@ -132,44 +134,53 @@ type MonitorBindings struct {
 // RunMonitorJob is an immutable source snapshot. State and sequence are the
 // only mutable fields; changes to a source cannot redirect an existing job.
 type RunMonitorJob struct {
-	FlushOnly                    bool                                            `json:"flush_only,omitempty"`
-	FrozenMonitorRules           []analysis.MonitorRule                          `json:"frozen_monitor_rules,omitempty"`
-	RulesFrozen                  bool                                            `json:"rules_frozen,omitempty"`
-	QueryTime                    *time.Time                                      `json:"query_time,omitempty"`
-	PrometheusConnectionSnapshot *PrometheusConnectionSnapshot                   `json:"-"`
-	Topology                     []monitorprovider.Entity                        `json:"topology,omitempty"`
-	ConnectionSnapshot           *AppDynamicsConnectionSnapshot                  `json:"-"`
-	LoadEndedAt                  *time.Time                                      `json:"load_ended_at,omitempty"`
-	DrainDeadline                *time.Time                                      `json:"drain_deadline,omitempty"`
-	LastSuccessAt                *time.Time                                      `json:"last_success_at,omitempty"`
-	QueryCoverage                map[string]monitorprovider.Coverage             `json:"-"`
-	PrometheusDiagnosticTimes    map[string]PrometheusDiagnosticObservationTimes `json:"-"`
-	QueryOffset                  int                                             `json:"query_offset,omitempty"`
-	QueryFromUTC                 time.Time                                       `json:"query_from_utc,omitempty"`
-	QueryUntilUTC                time.Time                                       `json:"query_until_utc,omitempty"`
-	QueryWatermark               time.Time                                       `json:"query_watermark,omitempty,omitzero"`
-	Coverage                     map[string]monitorprovider.Coverage             `json:"coverage,omitempty"`
-	StablePasses                 int                                             `json:"stable_passes,omitempty"`
-	StableSinceAt                *time.Time                                      `json:"-"`
-	FinalDigest                  string                                          `json:"final_digest,omitempty"`
-	ID                           string                                          `json:"id"`
-	ProjectID                    string                                          `json:"project_id"`
-	RunID                        string                                          `json:"run_id"`
-	ScenarioID                   string                                          `json:"scenario_id,omitempty"`
-	BindingRevision              int64                                           `json:"binding_revision"`
-	Source                       MonitorSource                                   `json:"source"`
-	Required                     bool                                            `json:"required"`
-	StartedAt                    time.Time                                       `json:"started_at"`
-	ExpiresAt                    time.Time                                       `json:"expires_at"`
-	State                        string                                          `json:"state"`
-	NextSequence                 int64                                           `json:"next_sequence"`
-	CoverageReason               string                                          `json:"coverage_reason,omitempty"`
-	DynatraceSnapshot            *DynatraceConnectionSnapshot                    `json:"-"`
-	ElasticSnapshot              *ElasticConnectionSnapshot                      `json:"-"`
-	ProviderCursor               string                                          `json:"-"`
-	RunTraceIDs                  []string                                        `json:"-"`
-	ScanConsumedBytes            int64                                           `json:"scan_consumed_bytes,omitempty"`
-	ScanReservedBytes            int64                                           `json:"scan_reserved_bytes,omitempty"`
+	ElasticResolvedIndices           []string                                        `json:"-"`
+	ElasticIngestionWatermark        time.Time                                       `json:"elastic_ingestion_watermark,omitempty,omitzero"`
+	ElasticPendingIngestionWatermark time.Time                                       `json:"-"`
+	ElasticRetiredContinuations      []*analysis.ProviderContinuation                `json:"-"`
+	TruncatedQueries                 map[string]bool                                 `json:"-"`
+	ElasticConnectionSnapshot        *ExpandedElasticConnectionSnapshot              `json:"-"`
+	ElasticContinuation              *analysis.ProviderContinuation                  `json:"-"`
+	RetainedEvidenceBytes            int64                                           `json:"-"`
+	AcceptedArtifactBytes            int64                                           `json:"-"`
+	FlushOnly                        bool                                            `json:"flush_only,omitempty"`
+	FrozenMonitorRules               []analysis.MonitorRule                          `json:"frozen_monitor_rules,omitempty"`
+	RulesFrozen                      bool                                            `json:"rules_frozen,omitempty"`
+	QueryTime                        *time.Time                                      `json:"query_time,omitempty"`
+	PrometheusConnectionSnapshot     *PrometheusConnectionSnapshot                   `json:"-"`
+	Topology                         []monitorprovider.Entity                        `json:"topology,omitempty"`
+	ConnectionSnapshot               *AppDynamicsConnectionSnapshot                  `json:"-"`
+	LoadEndedAt                      *time.Time                                      `json:"load_ended_at,omitempty"`
+	DrainDeadline                    *time.Time                                      `json:"drain_deadline,omitempty"`
+	LastSuccessAt                    *time.Time                                      `json:"last_success_at,omitempty"`
+	QueryCoverage                    map[string]monitorprovider.Coverage             `json:"-"`
+	PrometheusDiagnosticTimes        map[string]PrometheusDiagnosticObservationTimes `json:"-"`
+	QueryOffset                      int                                             `json:"query_offset,omitempty"`
+	QueryFromUTC                     time.Time                                       `json:"query_from_utc,omitempty"`
+	QueryUntilUTC                    time.Time                                       `json:"query_until_utc,omitempty"`
+	QueryWatermark                   time.Time                                       `json:"query_watermark,omitempty,omitzero"`
+	Coverage                         map[string]monitorprovider.Coverage             `json:"coverage,omitempty"`
+	StablePasses                     int                                             `json:"stable_passes,omitempty"`
+	StableSinceAt                    *time.Time                                      `json:"-"`
+	FinalDigest                      string                                          `json:"final_digest,omitempty"`
+	ID                               string                                          `json:"id"`
+	ProjectID                        string                                          `json:"project_id"`
+	RunID                            string                                          `json:"run_id"`
+	ScenarioID                       string                                          `json:"scenario_id,omitempty"`
+	BindingRevision                  int64                                           `json:"binding_revision"`
+	Source                           MonitorSource                                   `json:"source"`
+	Required                         bool                                            `json:"required"`
+	StartedAt                        time.Time                                       `json:"started_at"`
+	ExpiresAt                        time.Time                                       `json:"expires_at"`
+	State                            string                                          `json:"state"`
+	NextSequence                     int64                                           `json:"next_sequence"`
+	CoverageReason                   string                                          `json:"coverage_reason,omitempty"`
+	DynatraceSnapshot                *DynatraceConnectionSnapshot                    `json:"-"`
+	ElasticSnapshot                  *ElasticConnectionSnapshot                      `json:"-"`
+	ProviderCursor                   string                                          `json:"-"`
+	RunTraceIDs                      []string                                        `json:"-"`
+	ScanConsumedBytes                int64                                           `json:"scan_consumed_bytes,omitempty"`
+	ScanReservedBytes                int64                                           `json:"scan_reserved_bytes,omitempty"`
 }
 
 type MonitorBatchReceipt struct {
@@ -354,6 +365,29 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 			}
 			if job.CoverageReason == "" && ValidateDynatraceVerifiedSelection(job.Source.Dynatrace, job.DynatraceSnapshot) != nil {
 				job.CoverageReason = "connection_capability_unavailable"
+			}
+		}
+		if job.CoverageReason == "" && job.Source.Pack == "elastic" {
+			if prepared != nil {
+				job.ElasticConnectionSnapshot = prepared.ExpandedElasticConnections[binding.SourceID]
+				if job.ElasticConnectionSnapshot == nil {
+					job.CoverageReason = "connection_not_ready"
+				}
+			}
+			if job.CoverageReason == "" && job.ElasticConnectionSnapshot == nil {
+				conn, e := scanELKConnection(tx.QueryRow(`SELECT `+elkConnectionColumns+` FROM elk_connections WHERE id=? AND project_id=?`, job.Source.ConnectionID, project))
+				if errors.Is(e, sql.ErrNoRows) {
+					job.CoverageReason = "connection_deleted"
+				} else if e != nil {
+					return nil, e
+				} else if conn.ConfigurationStatus() != "ready" || conn.VerifiedRevision != conn.Revision {
+					job.CoverageReason = "connection_not_ready"
+				} else {
+					job.ElasticConnectionSnapshot = conn.Snapshot()
+				}
+			}
+			if job.CoverageReason == "" && ValidateExpandedElasticSourceConnection(job.Source, job.ElasticConnectionSnapshot) != nil {
+				job.CoverageReason = "connection_source_mismatch"
 			}
 		}
 		if job.CoverageReason == "" && job.Source.ExecutorMode != "direct" {
@@ -648,7 +682,7 @@ func (m MonitorSource) Validate() error {
 		return errors.New("invalid legacy connection revision")
 	}
 	if m.ManagementScope != nil || m.ManagementIdentity != nil {
-		if m.Prometheus != nil || m.AppDynamics != nil || m.Dynatrace != nil || m.ElasticQuery != nil || m.ExecutorMode != "" || m.ConnectionID != "" {
+		if m.Prometheus != nil || m.AppDynamics != nil || m.Dynatrace != nil || m.Elastic != nil || m.ElasticQuery != nil || m.ExecutorMode != "" || m.ConnectionID != "" {
 			return errors.New("management source cannot include provider query configuration")
 		}
 		return validateManagementMonitorSource(m)
@@ -667,7 +701,7 @@ func (m MonitorSource) Validate() error {
 	if provider, governed := monitorprovider.Lookup(m.Pack); governed {
 		return monitorSourceValidators[provider.Pack](m, provider)
 	}
-	if m.ExecutorMode == "direct" || m.ConnectionID != "" || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace != nil || m.ElasticQuery != nil {
+	if m.ExecutorMode == "direct" || m.ConnectionID != "" || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace != nil || m.Elastic != nil || m.ElasticQuery != nil {
 		return errors.New("provider fields require a governed provider pack")
 	}
 	if m.IntervalSeconds < 1 || m.IntervalSeconds > 3600 {
@@ -719,12 +753,31 @@ func (m MonitorSource) Validate() error {
 // SaveMonitorSource uses revision zero for creation and CAS for updates. The
 // collector's project and approved packs are rechecked inside the transaction.
 func (s *SQLiteStore) SaveMonitorSource(m MonitorSource, expected int64) (*MonitorSource, error) {
-	if provider, governed := monitorprovider.Lookup(m.Pack); governed {
+	if provider, governed := monitorprovider.Lookup(m.Pack); governed && m.Pack != monitorprovider.PackElastic {
 		if m.IntervalSeconds == 0 {
 			m.IntervalSeconds = provider.DefaultIntervalSeconds
 		}
 		if m.ExecutorMode == "" {
 			m.ExecutorMode = provider.DefaultExecutorMode
+		}
+	}
+	if m.Pack == "elastic" && m.ExecutorMode == "" {
+		connection, e := s.GetELKConnection(m.ConnectionID)
+		if e != nil {
+			return nil, e
+		}
+		if connection.ProjectID != m.ProjectID {
+			return nil, errors.New("Elastic connection unavailable in project")
+		}
+		m.ExecutorMode = connection.Snapshot().CollectionMode
+		if m.ExecutorMode == "collector" && m.CollectorID == "" {
+			m.CollectorID = connection.CollectorAgentID
+		}
+	}
+	if m.Pack == "elastic" && m.IntervalSeconds == 0 {
+		m.IntervalSeconds = 10
+		if m.Elastic != nil && len(m.Elastic.Metrics) == 0 && len(m.Elastic.Queries) == 0 && !m.Elastic.Logs && !m.Elastic.Errors && !m.Elastic.Traces && !m.Elastic.Transactions {
+			m.IntervalSeconds = 30
 		}
 	}
 	if err := m.Validate(); err != nil {
@@ -832,6 +885,24 @@ func (s *SQLiteStore) DeleteMonitorSource(project, id string, expected int64) er
 	defer tx.Rollback()
 	if _, err = lockProjectForOwnedMutation(tx, project); err != nil {
 		return err
+	}
+	var sourceBody string
+	if err = tx.QueryRow(`SELECT payload FROM monitor_sources WHERE id=? AND project_id=?`, id, project).Scan(&sourceBody); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrMonitorRevision
+		}
+		return err
+	}
+	var source MonitorSource
+	if err = json.Unmarshal([]byte(sourceBody), &source); err != nil {
+		return err
+	}
+	if source.Pack == "elastic" {
+		if inUse, e := monitorResourceInUseTx(tx, project, id, ""); e != nil {
+			return e
+		} else if inUse {
+			return errors.New("monitor source is used by a preparation or active job")
+		}
 	}
 	result, err := tx.Exec(`DELETE FROM monitor_sources WHERE id=? AND project_id=? AND revision=?`, id, project, expected)
 	if err != nil {
@@ -983,6 +1054,7 @@ var monitorSourceValidators = map[string]func(MonitorSource, monitorprovider.Des
 	monitorprovider.PackPrometheusQuery: validatePrometheusMonitorSource,
 	monitorprovider.PackDynatrace:       validateDynatraceMonitorSource,
 	monitorprovider.PackElasticQuery:    validateElasticMonitorSource,
+	"elastic":                           validateExpandedElasticMonitorSource,
 }
 
 // monitorSourceTxValidators recheck each governed provider's connection
@@ -991,6 +1063,7 @@ var monitorSourceTxValidators = map[string]func(*storeTx, *MonitorSource) error{
 	monitorprovider.PackPrometheusQuery: validatePrometheusSourceTx,
 	monitorprovider.PackDynatrace:       validateDynatraceSourceTx,
 	monitorprovider.PackElasticQuery:    validateElasticSourceTx,
+	"elastic":                           validateExpandedElasticSourceTx,
 }
 
 func intervalOutside(m MonitorSource, d monitorprovider.Descriptor) bool {
@@ -998,15 +1071,22 @@ func intervalOutside(m MonitorSource, d monitorprovider.Descriptor) bool {
 }
 
 func validatePrometheusMonitorSource(m MonitorSource, d monitorprovider.Descriptor) error {
-	if m.ConnectionID == "" || m.Prometheus == nil || m.Prometheus.ProjectID != m.ProjectID || m.Prometheus.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" || m.AppDynamics != nil || m.Dynatrace != nil || m.ElasticQuery != nil {
+	if m.ConnectionID == "" || m.Prometheus == nil || m.Prometheus.ProjectID != m.ProjectID || m.Prometheus.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" || m.AppDynamics != nil || m.Dynatrace != nil || m.Elastic != nil || m.ElasticQuery != nil {
 		return errors.New("invalid Prometheus query source")
 	}
 	return nil
 }
 
 func validateDynatraceMonitorSource(m MonitorSource, d monitorprovider.Descriptor) error {
-	if m.ConnectionID == "" || m.Dynatrace == nil || m.Dynatrace.ProjectID != m.ProjectID || m.Dynatrace.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace.Cursor != "" || m.Dynatrace.QueryOffset != 0 || m.ElasticQuery != nil {
+	if m.ConnectionID == "" || m.Dynatrace == nil || m.Dynatrace.ProjectID != m.ProjectID || m.Dynatrace.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" || m.AppDynamics != nil || m.Prometheus != nil || m.Dynatrace.Cursor != "" || m.Dynatrace.QueryOffset != 0 || m.Elastic != nil || m.ElasticQuery != nil {
 		return errors.New("invalid Dynatrace monitor source")
+	}
+	return nil
+}
+
+func validateExpandedElasticMonitorSource(m MonitorSource, d monitorprovider.Descriptor) error {
+	if m.ConnectionID == "" || m.Elastic == nil || m.Elastic.ProjectID != m.ProjectID || m.Elastic.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" || m.AppDynamics != nil || m.Dynatrace != nil || m.Prometheus != nil || m.ElasticQuery != nil {
+		return errors.New("invalid Elastic monitor source")
 	}
 	return nil
 }

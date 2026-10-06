@@ -67,7 +67,7 @@ func TestDynatraceDurablePostgresHeadsCursorScanAndOwnerFence(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, _ := json.Marshal(legacy.DynatraceCapture)
-	for _, query := range []string{`DROP TABLE dynatrace_operations`, `DROP TABLE dynatrace_scan_reservations`, `ALTER TABLE dynatrace_connections DROP COLUMN revision`, `ALTER TABLE dynatrace_connections DROP COLUMN verified_revision`, `ALTER TABLE dynatrace_connections DROP COLUMN native_config_json`, `DELETE FROM schema_migrations WHERE version=35`} {
+	for _, query := range []string{`DROP TABLE dynatrace_operations`, `DROP TABLE dynatrace_scan_reservations`, `ALTER TABLE dynatrace_connections DROP COLUMN revision`, `ALTER TABLE dynatrace_connections DROP COLUMN verified_revision`, `ALTER TABLE dynatrace_connections DROP COLUMN native_config_json`, `DELETE FROM schema_migrations WHERE version>=35`} {
 		if _, err := store.db.Exec(query); err != nil {
 			t.Fatal(err)
 		}

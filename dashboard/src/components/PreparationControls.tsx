@@ -54,6 +54,7 @@ export default function PreparationControls({ testId, projectId, status, canEdit
       </>}
     </fieldset>}
     <RuntimeResourceReservations shards={Array.isArray(preparation?.allocation) ? preparation.allocation : undefined} />
+    {Boolean(preparation?.monitors?.warnings?.length) && <section aria-label="Monitoring readiness warnings"><h4>Monitoring readiness warnings</h4><p>Optional monitoring sources may be unavailable. Required readiness failures prevent Start.</p><ul>{preparation?.monitors?.warnings?.map((warning, index) => <li key={index}>{warning}</li>)}</ul></section>}
     {preparation?.failure && <p role="alert">{preparation.failure}</p>}
     {error && <p role="alert">{error}</p>}
     {canEdit && ['QUEUED', 'PENDING'].includes(status) && !['preparing', 'ready', 'consumed'].includes(preparation?.state ?? '') && <button type="button" disabled={busy} onClick={() => void act('prepare')}>Prepare</button>}

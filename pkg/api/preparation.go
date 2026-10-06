@@ -76,7 +76,15 @@ func (tr *TestRunner) preparationRevision(id string) (string, error) {
 			for _, binding := range snapshot.Bindings.Sources {
 				if binding.SourceID == source.ID {
 					snapshot.Sources = append(snapshot.Sources, source)
-
+					if source.Pack == "elastic" {
+						if connections, ok := tr.testStore.(storage.ELKConnectionStore); ok {
+							c, e := connections.GetELKConnection(source.ConnectionID)
+							if e != nil {
+								return "", e
+							}
+							snapshot.Connections = append(snapshot.Connections, c.Revision)
+						}
+					}
 					if source.Pack == monitorprovider.PackPrometheusQuery {
 						if connections, ok := tr.testStore.(storage.PrometheusConnectionStore); ok {
 							c, e := connections.GetPrometheusConnection(source.ConnectionID)
@@ -522,6 +530,37 @@ func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
 	if err := tr.validateDynatraceReadiness(readinessContext, record.ProjectID, bindings, sources); err != nil {
 		return err
 	}
+	monitorWarnings := []string{}
+	for _, binding := range bindings.Sources {
+		if binding.Required {
+			continue
+		}
+		for _, source := range sources {
+			if source.ID != binding.SourceID || source.Pack != "elastic" {
+				continue
+			}
+			optionalCtx, cancel := context.WithTimeout(readinessContext, 10*time.Second)
+			err := tr.validateRequiredElastic(optionalCtx, record.ProjectID, source)
+			cancel()
+			if err != nil {
+				monitorWarnings = append(monitorWarnings, "monitor "+source.ID+": optional_connection_unavailable")
+			}
+		}
+	}
+	tr.mu.Lock()
+	if current := tr.tests[id]; current != nil {
+		current.MonitorWarnings = append([]string(nil), monitorWarnings...)
+	}
+	tr.mu.Unlock()
+	if warnings, ok := tr.testStore.(interface {
+		SetPreparationMonitorWarnings(string, string, []string) error
+	}); ok {
+		if err := tr.trackDurableWrite(func() error {
+			return warnings.SetPreparationMonitorWarnings(record.ProjectID, id, monitorWarnings)
+		}); err != nil {
+			return err
+		}
+	}
 	for _, binding := range bindings.Sources {
 		if !binding.Required {
 			continue
@@ -530,7 +569,11 @@ func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
 			if source.ID != binding.SourceID {
 				continue
 			}
-			if source.Pack == monitorprovider.PackPrometheusQuery {
+			if source.Pack == "elastic" {
+				if err := tr.validateRequiredElastic(readinessContext, record.ProjectID, source); err != nil {
+					return err
+				}
+			} else if source.Pack == monitorprovider.PackPrometheusQuery {
 				if err := tr.validatePreparedPrometheus(readinessContext, source, record.ProjectID, goals); err != nil {
 					return err
 				}

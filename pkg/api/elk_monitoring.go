@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/elastic"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/scrub"
@@ -98,63 +99,108 @@ type ELKLogSample struct {
 }
 
 type ELKConnectionRequest struct {
-	Name               string                         `json:"name"`
-	Description        string                         `json:"description"`
-	Enabled            bool                           `json:"enabled"`
-	Endpoint           string                         `json:"endpoint"`
-	IndexPattern       string                         `json:"index_pattern"`
-	TimestampField     string                         `json:"timestamp_field"`
-	LevelField         string                         `json:"level_field"`
-	MessageField       string                         `json:"message_field"`
-	TestIDField        string                         `json:"test_id_field"`
-	TraceIDField       string                         `json:"trace_id_field"`
-	BaseFilter         string                         `json:"base_filter"`
-	ErrorFilter        string                         `json:"error_filter"`
-	AuthType           string                         `json:"auth_type"`
-	APIKeySecretName   *string                        `json:"api_key_secret_name,omitempty"`
-	UsernameSecretName *string                        `json:"username_secret_name,omitempty"`
-	PasswordSecretName *string                        `json:"password_secret_name,omitempty"`
-	MetricAggregations []storage.ELKMetricAggregation `json:"metric_aggregations"`
-	UpdatedAt          time.Time                      `json:"updated_at"`
+	LogstashClientKeySecretName         *string                            `json:"logstash_client_key_secret_name,omitempty"`
+	LogstashClientCertificateSecretName *string                            `json:"logstash_client_certificate_secret_name,omitempty"`
+	LogstashBearerTokenSecretName       *string                            `json:"logstash_bearer_token_secret_name,omitempty"`
+	LogstashPasswordSecretName          *string                            `json:"logstash_password_secret_name,omitempty"`
+	LogstashUsernameSecretName          *string                            `json:"logstash_username_secret_name,omitempty"`
+	LogstashAPIKeySecretName            *string                            `json:"logstash_api_key_secret_name,omitempty"`
+	LogstashAuthType                    *string                            `json:"logstash_auth_type,omitempty"`
+	KibanaClientKeySecretName           *string                            `json:"kibana_client_key_secret_name,omitempty"`
+	KibanaClientCertificateSecretName   *string                            `json:"kibana_client_certificate_secret_name,omitempty"`
+	KibanaBearerTokenSecretName         *string                            `json:"kibana_bearer_token_secret_name,omitempty"`
+	KibanaPasswordSecretName            *string                            `json:"kibana_password_secret_name,omitempty"`
+	KibanaUsernameSecretName            *string                            `json:"kibana_username_secret_name,omitempty"`
+	KibanaAPIKeySecretName              *string                            `json:"kibana_api_key_secret_name,omitempty"`
+	KibanaAuthType                      *string                            `json:"kibana_auth_type,omitempty"`
+	KibanaCredentials                   *storage.ComponentSecretReferences `json:"kibana_credentials,omitempty"`
+	LogstashCredentials                 *storage.ComponentSecretReferences `json:"logstash_credentials,omitempty"`
+	Product                             string                             `json:"product,omitempty"`
+	Config                              elastic.Config                     `json:"config,omitempty"`
+	Revision                            int64                              `json:"revision,omitempty"`
+	CollectionMode                      string                             `json:"collection_mode,omitempty"`
+	CollectorAgentID                    string                             `json:"collector_agent_id,omitempty"`
+	BearerTokenSecretName               *string                            `json:"bearer_token_secret_name,omitempty"`
+	ClientCertificateSecretName         *string                            `json:"client_certificate_secret_name,omitempty"`
+	ClientKeySecretName                 *string                            `json:"client_key_secret_name,omitempty"`
+	Name                                string                             `json:"name"`
+	Description                         string                             `json:"description"`
+	Enabled                             bool                               `json:"enabled"`
+	Endpoint                            string                             `json:"endpoint"`
+	IndexPattern                        string                             `json:"index_pattern"`
+	TimestampField                      string                             `json:"timestamp_field"`
+	LevelField                          string                             `json:"level_field"`
+	MessageField                        string                             `json:"message_field"`
+	TestIDField                         string                             `json:"test_id_field"`
+	TraceIDField                        string                             `json:"trace_id_field"`
+	BaseFilter                          string                             `json:"base_filter"`
+	ErrorFilter                         string                             `json:"error_filter"`
+	AuthType                            string                             `json:"auth_type"`
+	APIKeySecretName                    *string                            `json:"api_key_secret_name,omitempty"`
+	UsernameSecretName                  *string                            `json:"username_secret_name,omitempty"`
+	PasswordSecretName                  *string                            `json:"password_secret_name,omitempty"`
+	MetricAggregations                  []storage.ELKMetricAggregation     `json:"metric_aggregations"`
+	UpdatedAt                           time.Time                          `json:"updated_at"`
 }
 
 type ELKConnectionResponse struct {
-	ID                 string                         `json:"id"`
-	ProjectID          string                         `json:"project_id"`
-	Name               string                         `json:"name"`
-	Description        string                         `json:"description,omitempty"`
-	Enabled            bool                           `json:"enabled"`
-	Status             string                         `json:"status"`
-	Endpoint           string                         `json:"endpoint,omitempty"`
-	IndexPattern       string                         `json:"index_pattern,omitempty"`
-	TimestampField     string                         `json:"timestamp_field,omitempty"`
-	LevelField         string                         `json:"level_field,omitempty"`
-	MessageField       string                         `json:"message_field,omitempty"`
-	TestIDField        string                         `json:"test_id_field,omitempty"`
-	TraceIDField       string                         `json:"trace_id_field,omitempty"`
-	BaseFilter         string                         `json:"base_filter,omitempty"`
-	ErrorFilter        string                         `json:"error_filter,omitempty"`
-	AuthType           string                         `json:"auth_type,omitempty"`
-	HasAPIKey          bool                           `json:"has_api_key"`
-	HasBasicUsername   bool                           `json:"has_basic_username"`
-	HasBasicPassword   bool                           `json:"has_basic_password"`
-	MetricAggregations []storage.ELKMetricAggregation `json:"metric_aggregations"`
-	LastCheckedAt      *time.Time                     `json:"last_checked_at,omitempty"`
-	LastCheckStatus    string                         `json:"last_check_status,omitempty"`
-	LastCheckMessage   string                         `json:"last_check_message,omitempty"`
-	CreatedAt          time.Time                      `json:"created_at"`
-	UpdatedAt          time.Time                      `json:"updated_at"`
+	LegacyCaptureReady     bool                           `json:"legacy_capture_ready"`
+	KibanaAuthType         string                         `json:"kibana_auth_type,omitempty"`
+	LogstashAuthType       string                         `json:"logstash_auth_type,omitempty"`
+	HasKibanaCredentials   bool                           `json:"has_kibana_credentials"`
+	HasLogstashCredentials bool                           `json:"has_logstash_credentials"`
+	Product                string                         `json:"product,omitempty"`
+	Config                 elastic.Config                 `json:"config,omitempty"`
+	Revision               int64                          `json:"revision,omitempty"`
+	VerifiedRevision       int64                          `json:"verified_revision,omitempty"`
+	CollectionMode         string                         `json:"collection_mode,omitempty"`
+	CollectorAgentID       string                         `json:"collector_agent_id,omitempty"`
+	Capabilities           elastic.Capabilities           `json:"capabilities,omitempty"`
+	HasBearerToken         bool                           `json:"has_bearer_token"`
+	HasClientCertificate   bool                           `json:"has_client_certificate"`
+	HasClientKey           bool                           `json:"has_client_key"`
+	HasCustomCA            bool                           `json:"has_custom_ca"`
+	ID                     string                         `json:"id"`
+	ProjectID              string                         `json:"project_id"`
+	Name                   string                         `json:"name"`
+	Description            string                         `json:"description,omitempty"`
+	Enabled                bool                           `json:"enabled"`
+	Status                 string                         `json:"status"`
+	Endpoint               string                         `json:"endpoint,omitempty"`
+	IndexPattern           string                         `json:"index_pattern,omitempty"`
+	TimestampField         string                         `json:"timestamp_field,omitempty"`
+	LevelField             string                         `json:"level_field,omitempty"`
+	MessageField           string                         `json:"message_field,omitempty"`
+	TestIDField            string                         `json:"test_id_field,omitempty"`
+	TraceIDField           string                         `json:"trace_id_field,omitempty"`
+	BaseFilter             string                         `json:"base_filter,omitempty"`
+	ErrorFilter            string                         `json:"error_filter,omitempty"`
+	AuthType               string                         `json:"auth_type,omitempty"`
+	HasAPIKey              bool                           `json:"has_api_key"`
+	HasBasicUsername       bool                           `json:"has_basic_username"`
+	HasBasicPassword       bool                           `json:"has_basic_password"`
+	MetricAggregations     []storage.ELKMetricAggregation `json:"metric_aggregations"`
+	LastCheckedAt          *time.Time                     `json:"last_checked_at,omitempty"`
+	LastCheckStatus        string                         `json:"last_check_status,omitempty"`
+	LastCheckMessage       string                         `json:"last_check_message,omitempty"`
+	CreatedAt              time.Time                      `json:"created_at"`
+	UpdatedAt              time.Time                      `json:"updated_at"`
 }
 
 type ELKConnectionSelectableResponse struct {
-	ID        string `json:"id"`
-	ProjectID string `json:"project_id"`
-	Name      string `json:"name"`
-	Status    string `json:"status"`
+	LegacyCaptureReady bool   `json:"legacy_capture_ready"`
+	ID                 string `json:"id"`
+	ProjectID          string `json:"project_id"`
+	Name               string `json:"name"`
+	Status             string `json:"status"`
 }
 
 func elkConnectionResponse(c *storage.ELKConnection) ELKConnectionResponse {
-	return ELKConnectionResponse{ID: c.ID, ProjectID: c.ProjectID, Name: c.Name, Description: c.Description, Enabled: c.Enabled,
+	publicConfig := c.Config
+	publicConfig.CAPEM, publicConfig.ApprovedCIDRs = "", nil
+	publicConfig.KibanaCAPEM, publicConfig.KibanaApprovedCIDRs = "", nil
+	publicConfig.LogstashCAPEM, publicConfig.LogstashApprovedCIDRs = "", nil
+	return ELKConnectionResponse{LegacyCaptureReady: elkLegacyCaptureReady(c), KibanaAuthType: c.KibanaCredentials.AuthType, LogstashAuthType: c.LogstashCredentials.AuthType, HasKibanaCredentials: componentCredentialsPresent(c.KibanaCredentials), HasLogstashCredentials: componentCredentialsPresent(c.LogstashCredentials), Product: c.Product, Config: publicConfig, Revision: c.Revision, VerifiedRevision: c.VerifiedRevision, CollectionMode: c.CollectionMode, CollectorAgentID: c.CollectorAgentID, Capabilities: c.Capabilities, HasBearerToken: c.BearerTokenSecretName != "", HasClientCertificate: c.ClientCertificateSecretName != "", HasClientKey: c.ClientKeySecretName != "", HasCustomCA: c.Config.CAPEM != "", ID: c.ID, ProjectID: c.ProjectID, Name: c.Name, Description: c.Description, Enabled: c.Enabled,
 		Status: c.ConfigurationStatus(), Endpoint: c.Endpoint, IndexPattern: c.IndexPattern, TimestampField: c.TimestampField,
 		LevelField: c.LevelField, MessageField: c.MessageField, TestIDField: c.TestIDField, TraceIDField: c.TraceIDField,
 		BaseFilter: c.BaseFilter, ErrorFilter: c.ErrorFilter, AuthType: c.AuthType, HasAPIKey: c.APIKeySecretName != "",
@@ -164,6 +210,7 @@ func elkConnectionResponse(c *storage.ELKConnection) ELKConnectionResponse {
 }
 
 func applyELKConnectionRequest(c *storage.ELKConnection, req ELKConnectionRequest) {
+	previous := *c
 	c.Name, c.Description, c.Enabled = req.Name, req.Description, req.Enabled
 	c.Endpoint, c.IndexPattern, c.TimestampField = req.Endpoint, req.IndexPattern, req.TimestampField
 	c.LevelField, c.MessageField, c.TestIDField, c.TraceIDField = req.LevelField, req.MessageField, req.TestIDField, req.TraceIDField
@@ -189,6 +236,7 @@ func applyELKConnectionRequest(c *storage.ELKConnection, req ELKConnectionReques
 	if strings.TrimSpace(c.TimestampField) == "" {
 		c.TimestampField = "@timestamp"
 	}
+	applyElasticConnectionExtensions(c, previous, req)
 }
 
 func (s *Server) elkConnectionStore(w http.ResponseWriter) (storage.ELKConnectionStore, bool) {
@@ -201,16 +249,26 @@ func (s *Server) elkConnectionStore(w http.ResponseWriter) (storage.ELKConnectio
 }
 
 func (s *Server) handleCreateELKConnection(w http.ResponseWriter, r *http.Request) {
+	releaseReferences, referenceErr := s.acquireSecretReferenceMutation(r.PathValue("id"))
+	if referenceErr != nil {
+		writeError(w, 503, "project credential references temporarily unavailable")
+		return
+	}
+	defer releaseReferences()
 	store, ok := s.elkConnectionStore(w)
 	if !ok {
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 96<<10)
 	var req ELKConnectionRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	c := &storage.ELKConnection{ID: uuid.NewString(), ProjectID: strings.TrimSpace(r.PathValue("id"))}
 	applyELKConnectionRequest(c, req)
+	if !s.validateElasticConnectionMutation(w, r, c, nil) {
+		return
+	}
 	if err := c.Validate(); err != nil {
 		writeError(w, 400, err.Error())
 		return
@@ -279,24 +337,46 @@ func (s *Server) handleGetELKConnection(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleUpdateELKConnection(w http.ResponseWriter, r *http.Request) {
+	releaseReferences, referenceErr := s.acquireSecretReferenceMutation(r.PathValue("id"))
+	if referenceErr != nil {
+		writeError(w, 503, "project credential references temporarily unavailable")
+		return
+	}
+	defer releaseReferences()
 	c, store, ok := s.loadProjectELKConnection(w, r)
 	if !ok {
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 96<<10)
 	var req ELKConnectionRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if req.UpdatedAt.IsZero() {
-		writeError(w, 400, "updated_at is required")
+	if req.UpdatedAt.IsZero() && req.Revision < 1 {
+		writeError(w, 400, "updated_at or revision is required")
 		return
 	}
+	previous := *c
 	applyELKConnectionRequest(c, req)
+	if !s.validateElasticConnectionMutation(w, r, c, &previous) {
+		return
+	}
 	if err := c.Validate(); err != nil {
 		writeError(w, 400, err.Error())
 		return
 	}
-	updated, err := store.UpdateELKConnectionIfUnchanged(c, req.UpdatedAt)
+	var updated bool
+	var err error
+	if req.Revision > 0 {
+		versioned, supported := store.(storage.ElasticConnectionStore)
+		if !supported {
+			writeError(w, 503, "revisioned Elastic storage unavailable")
+			return
+		}
+		updated, err = versioned.UpdateElasticConnectionIfRevision(c, req.Revision)
+	} else {
+		updated, err = store.UpdateELKConnectionIfUnchanged(c, req.UpdatedAt)
+	}
 	if err != nil {
 		writeError(w, 409, "failed to update ELK connection: "+err.Error())
 		return
@@ -656,4 +736,8 @@ const elkSearchSampleLimit = 20
 // trace ID, which only happens when no test ID field is configured.
 func elkFiltersByTrace(cfg *ELKCaptureConfig, testID string, traceIDs []string) bool {
 	return cfg != nil && len(traceIDs) > 0 && strings.TrimSpace(cfg.TraceIDField) != "" && (testID == "" || strings.TrimSpace(cfg.TestIDField) == "")
+}
+
+func elkLegacyCaptureReady(c *storage.ELKConnection) bool {
+	return c != nil && c.Config.Endpoint == "" && c.ConfigurationStatus() == "ready" && c.IndexPattern != "" && c.MessageField != ""
 }

@@ -1,0 +1,10 @@
+[
+  {
+    "pack": "elastic",
+    "destination": "https://search.example.internal/elastic",
+    "approved_cidrs": ["10.20.0.0/16"],
+    "indices": ["logs-orders-*", "traces-orders-*"],
+    "elastic_esql": true,
+    "elastic_health": false
+  }
+]

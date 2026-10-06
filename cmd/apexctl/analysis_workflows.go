@@ -68,7 +68,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	sourceID := flags.String("source-id", "", "immutable monitor or processor source identity")
 	entityID := flags.String("entity-id", "", "approved management entity identity")
 	cursor := flags.String("cursor", "", "opaque management receipt cursor")
-	from := flags.String("from", "", "inclusive management capture timestamp (RFC3339)")
+	from := flags.String("from", "", "inclusive capture timestamp (evidence requires UTC RFC3339)")
 	to := flags.String("to", "", "exclusive management capture timestamp (RFC3339)")
 	defaultLimit := 100
 	if kind == "monitor" && action == "management" {
@@ -80,6 +80,10 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	ttl := flags.Duration("ttl", 30*time.Minute, "readiness lifetime")
 	metric := flags.String("metric", "", "monitor metric name filter")
 	evidenceKind := flags.String("kind", "", "diagnostic kind filter: event, violation, snapshot, log, transaction, target or alert; Dynatrace also supports problem, span and trace")
+	service := flags.String("service", "", "evidence service filter")
+	severity := flags.String("severity", "", "evidence severity filter")
+	traceID := flags.String("trace-id", "", "evidence trace ID filter")
+	until := flags.String("until", "", "exclusive evidence end (UTC RFC3339)")
 	afterKey := flags.String("after-key", "", "monitor evidence pagination cursor")
 	analysisID := flags.String("analysis-id", "", "root-cause v2 analysis ID")
 	enrich := flags.Bool("enrich", false, "capture a new root-cause evidence revision before analysis")
@@ -324,13 +328,34 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 				}
 			} else {
 				if *evidenceKind != "" {
-					if !strings.Contains("|event|violation|snapshot|log|transaction|target|alert|problem|span|trace|", "|"+*evidenceKind+"|") {
+					if !strings.Contains("|event|violation|snapshot|log|transaction|target|alert|problem|span|trace|error|health|", "|"+*evidenceKind+"|") {
 						return errors.New("unsupported diagnostic --kind")
 					}
 					query.Set("kind", *evidenceKind)
 				}
-				if *afterKey != "" {
-					query.Set("after_key", *afterKey)
+				filter := storage.EvidenceHeadFilter{Kind: *evidenceKind, Service: *service, Severity: *severity, TraceID: *traceID}
+				for key, value := range map[string]string{"service": *service, "severity": *severity, "trace_id": *traceID} {
+					if value != "" {
+						query.Set(key, value)
+					}
+				}
+				for _, bound := range []struct {
+					name, value string
+					target      **time.Time
+				}{{"from", *from, &filter.From}, {"until", *until, &filter.Until}} {
+					if bound.value == "" {
+						continue
+					}
+					parsed, err := time.Parse(time.RFC3339Nano, bound.value)
+					if err != nil || !strings.HasSuffix(bound.value, "Z") {
+						return fmt.Errorf("--%s must be a UTC RFC3339 timestamp ending in Z", bound.name)
+					}
+					parsed = parsed.UTC()
+					*bound.target = &parsed
+					query.Set(bound.name, parsed.Format(time.RFC3339Nano))
+				}
+				if err := filter.Validate(); err != nil || len(*sourceID) > 256 || len(*afterKey) > 64 {
+					return errors.New("invalid evidence filters: use bounded values and an until timestamp after from")
 				}
 			}
 			path += "?" + query.Encode()

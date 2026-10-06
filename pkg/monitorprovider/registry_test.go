@@ -24,7 +24,7 @@ func TestRegistryDescribesEveryGovernedProvider(t *testing.T) {
 		if d.MinIntervalSeconds <= 0 || d.DefaultIntervalSeconds < d.MinIntervalSeconds || d.MaxIntervalSeconds < d.DefaultIntervalSeconds {
 			t.Fatalf("%s interval bounds %+v", pack, d)
 		}
-		if byName, ok := ByProviderName(d.ProviderName); !ok || byName.Pack != pack {
+		if byName, ok := ByProviderName(d.ProviderName); !ok || !byName.AcceptsProvider(d.ProviderName) {
 			t.Fatalf("%s provider name %q does not map back", pack, d.ProviderName)
 		}
 	}
@@ -132,5 +132,18 @@ func TestRetiredProviderKeepsHistoricalIdentityWithoutActiveDiscovery(t *testing
 		if _, ok := ByCapabilityPack(active.CapabilityPack); !ok {
 			t.Fatalf("supported provider %s removed", pack)
 		}
+	}
+}
+
+func TestExpandedElasticRegistryPreservesProductLookup(t *testing.T) {
+	d, ok := Lookup(PackElastic)
+	if !ok || !d.AcceptsProvider(ProviderElasticsearch) || !d.AcceptsProvider(ProviderOpenSearch) || d.MinIntervalSeconds != 10 || d.DefaultIntervalSeconds != 10 || d.CapabilityPack != "elastic.v1" || !d.CollectorCredentialKey || !d.SupportsDiagnostics || !d.SupportsTraceLookup || !d.SupportsRunHeader {
+		t.Fatalf("invalid Elastic descriptor: %+v", d)
+	}
+	if legacy, ok := ByProviderName(ProviderElasticsearch); !ok || legacy.Pack != PackElasticQuery {
+		t.Fatal("legacy product lookup changed", legacy)
+	}
+	if open, ok := ByProviderName(ProviderOpenSearch); !ok || open.Pack != PackElastic {
+		t.Fatal("OpenSearch product lookup unavailable", open)
 	}
 }

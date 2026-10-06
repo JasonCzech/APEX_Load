@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/jasonczech/apexload/pkg/storage"
+	"time"
 )
 
 func cloneMonitorBindings(b *storage.MonitorBindings) *storage.MonitorBindings {
@@ -84,6 +85,14 @@ func safeMonitorJob(job storage.RunMonitorJob) storage.RunMonitorJob {
 	job.ElasticSnapshot = nil
 	job.ProviderCursor = ""
 	job.RunTraceIDs = nil
+	job.ElasticConnectionSnapshot = nil
+	job.ElasticContinuation = nil
+	job.ElasticResolvedIndices = nil
+	job.ElasticRetiredContinuations = nil
+	job.ElasticPendingIngestionWatermark = time.Time{}
+	job.TruncatedQueries = nil
+	job.AcceptedArtifactBytes = 0
+	job.RetainedEvidenceBytes = 0
 	job.QueryCoverage = nil
 	job.PrometheusDiagnosticTimes = nil
 	job.StableSinceAt = nil

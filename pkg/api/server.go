@@ -640,6 +640,7 @@ func NewServer(cfg ServerConfig) *Server {
 	s.configureReplaySessionReservations()
 	runner.prometheusPrepare = s.verifyPreparedPrometheus
 	runner.dynatracePrepare = s.verifyPreparedDynatrace
+	runner.elasticPrepare = s.verifyPreparedElastic
 	hub.SetOriginAuthProvider(s.authSettingsForRequest)
 	if leadership != nil {
 		leadership.setOnLoss(func() {
@@ -1123,6 +1124,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.registerAPIRouteCatalog(runMonitoringAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(prometheusAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(dynatraceNativeAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(elasticAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(analysisAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(objectActivityAPIRouteCatalog, standardRouteMiddleware)
 	s.mux.Handle("GET /api/v1/scenarios/{id}/results", cors(log(auth(http.HandlerFunc(s.handleScenarioResults)))))
@@ -2385,6 +2387,7 @@ func (s *Server) shutdown(ctx context.Context) error {
 	if err := s.waitForBackground(ctx); err != nil && shutdownErr == nil {
 		shutdownErr = err
 	}
+	s.closeElasticOnShutdown(ctx)
 	s.clearBoundAddrs()
 	return shutdownErr
 }

@@ -18,9 +18,10 @@ func (tr *TestRunner) runMonitorCorrelationOrigins(id string) []string {
 		return nil
 	}
 	record, err := tr.testStore.GetTest(id)
-	if err != nil || record == nil || !runMonitoringEnabled(record.ProjectID) {
+	if err != nil || record == nil {
 		return nil
 	}
+	enabled := runMonitoringEnabled(record.ProjectID)
 	sources := []storage.MonitorSource{}
 	jobs, err := store.ListRunMonitorJobs(record.ProjectID, id)
 	if err == nil && len(jobs) > 0 {
@@ -28,15 +29,20 @@ func (tr *TestRunner) runMonitorCorrelationOrigins(id string) []string {
 			sources = append(sources, job.Source)
 		}
 	} else {
+		hasFrozenPreparation := false
 		if preparations, ok := tr.testStore.(storage.PreparationStore); ok {
 			p, err := preparations.LatestPreparation(id)
-			if err == nil && p.Monitors != nil && (p.State == "ready" || p.State == "consumed") {
+			if err == nil && p != nil && p.Monitors != nil && (p.State == "ready" || p.State == "consumed") {
+				hasFrozenPreparation = true
 				for _, source := range p.Monitors.Sources {
 					sources = append(sources, source)
 				}
 			}
 		}
-		if len(sources) == 0 {
+		if !hasFrozenPreparation {
+			if !enabled {
+				return nil
+			}
 			bindings, err := tr.resolvedTestMonitorBindings(record)
 			if err != nil {
 				return nil
@@ -56,13 +62,16 @@ func (tr *TestRunner) runMonitorCorrelationOrigins(id string) []string {
 	}
 	out := []string{}
 	for _, source := range sources {
-		if !source.Enabled {
+		if !source.Enabled || !enabled && source.Pack != "elastic" {
 			continue
 		}
 		origins := []string{}
 
 		if source.Pack == monitorprovider.PackDynatrace && source.Dynatrace != nil && source.Dynatrace.RunHeader {
 			origins = source.Dynatrace.HeaderOrigins
+		}
+		if source.Pack == "elastic" && source.Elastic != nil && source.Elastic.RunHeader {
+			origins = source.Elastic.HeaderOrigins
 		}
 		for _, origin := range origins {
 			origin = strings.TrimSuffix(origin, "/")

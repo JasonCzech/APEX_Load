@@ -28,6 +28,8 @@ it('rejects insecure links and bounded artifact previews', async () => {
   expect(await readBoundedMonitorArchive(new Response(`${JSON.stringify(point)}\n${JSON.stringify({ source: 'legacy' })}\n`))).toEqual([point])
   const dynatrace = { ...point, source: 'dt', provider: { name: 'dynatrace' } }
   expect(await readBoundedMonitorArchive(new Response(`${JSON.stringify(dynatrace)}\n${JSON.stringify(point)}\n`))).toEqual([dynatrace, point])
+  const elastic = { ...point, source: 'es', provider: { name: 'elasticsearch' } }
+  expect(await readBoundedMonitorArchive(new Response(`${JSON.stringify(elastic)}\n${JSON.stringify(point)}\n`), ['elasticsearch', 'opensearch'])).toEqual([elastic])
 })
 
 it('renders archive diagnostics in bounded pages', async () => {

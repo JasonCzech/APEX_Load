@@ -18,6 +18,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/elastic"
 	"github.com/jasonczech/apexload/pkg/monitorcontract"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
@@ -26,6 +27,8 @@ import (
 // RunJob grants a short collection lease for one immutable run/source binding.
 // Destination is also checked against local operator configuration before I/O.
 type RunJob struct {
+	Cleanup           bool                               `json:"cleanup,omitempty"`
+	Elastic           *elastic.JobConfig                 `json:"elastic,omitempty"`
 	Dynatrace         *dynatrace.JobConfig               `json:"dynatrace,omitempty"`
 	Management        *ManagementJob                     `json:"management,omitempty"`
 	FlushOnly         bool                               `json:"flush_only,omitempty"`
@@ -62,6 +65,8 @@ type SignedRunJob struct {
 }
 
 type RunSampleBatch struct {
+	CleanupContinuations   []*analysis.ProviderContinuation        `json:"cleanup_continuations,omitempty"`
+	ResolvedIndices        []string                                `json:"resolved_indices,omitempty"`
 	EvidenceVersion        uint32                                  `json:"evidence_version,omitempty"`
 	MessagingManagement    *analysis.MessagingManagementSnapshot   `json:"messaging_management,omitempty"`
 	ManagementGrant        *SignedManagementPoll                   `json:"management_grant,omitempty"`
@@ -91,7 +96,7 @@ func SignRunJob(job RunJob, key ed25519.PrivateKey) (SignedRunJob, error) {
 	if err != nil {
 		return SignedRunJob{}, err
 	}
-	if len(body) > 96<<10 || job.Pack != monitorprovider.PackDynatrace && job.Prometheus == nil && len(body) > 32768 {
+	if len(body) > 96<<10 || job.Pack != monitorprovider.PackDynatrace && job.Pack != "elastic" && job.Prometheus == nil && len(body) > 32768 {
 		return SignedRunJob{}, errors.New("monitor job exceeds payload limit")
 	}
 	return SignedRunJob{Payload: string(body), Signature: base64.RawStdEncoding.EncodeToString(ed25519.Sign(key, body))}, nil
@@ -109,14 +114,17 @@ func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, 
 	if err = json.Unmarshal([]byte(signed.Payload), &job); err != nil {
 		return job, err
 	}
-	if job.Pack != monitorprovider.PackDynatrace && job.Prometheus == nil && len(signed.Payload) > 32768 {
+	if job.Pack != monitorprovider.PackDynatrace && job.Pack != "elastic" && job.Prometheus == nil && len(signed.Payload) > 32768 {
 		return RunJob{}, errors.New("monitor job exceeds payload limit")
 	}
 	if job.Pack == monitorprovider.PackAppDynamics {
 		return RunJob{}, errors.New("AppDynamics monitoring is retired")
 	}
-	if job.MaxBatches < 0 || job.MaxBatches > 32 || job.Pack != monitorprovider.PackDynatrace && job.Prometheus == nil && job.MaxBatches > 1 {
+	if job.MaxBatches < 0 || job.MaxBatches > 32 || job.Pack != monitorprovider.PackDynatrace && job.Pack != "elastic" && job.Prometheus == nil && job.MaxBatches > 1 {
 		return RunJob{}, errors.New("monitor grant batch budget rejected")
+	}
+	if job.Cleanup && (job.Pack != "elastic" || job.Elastic == nil || job.Elastic.Continuation == nil || job.MaxBatches != 0) {
+		return RunJob{}, errors.New("invalid Elastic cleanup grant")
 	}
 	if job.CollectorID != collector || job.ID == "" || job.ProjectID == "" || job.RunID == "" || job.SourceID == "" || job.SourceRevision < 1 || job.NextSequence < 0 || job.IntervalSeconds < 1 || job.IntervalSeconds > 3600 || job.StartedAt.IsZero() || job.StartedAt.After(now.Add(30*time.Second)) || !job.ExpiresAt.After(now) || !job.LeaseExpiresAt.After(now) || job.LeaseExpiresAt.After(now.Add(2*time.Minute)) || job.LeaseExpiresAt.After(job.ExpiresAt) {
 		return RunJob{}, errors.New("monitor job identity or collection lease rejected")
@@ -226,7 +234,7 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 				a.jobScanManagement[job.ID] = envelope
 				return nil
 			}
-			if job.Pack == monitorprovider.PackDynatrace || job.Prometheus != nil {
+			if job.Pack == monitorprovider.PackDynatrace || job.Pack == "elastic" || job.Prometheus != nil {
 				if !slices.Contains(a.cfg.Packs, job.Pack) || job.UnavailableReason != "" {
 					return errors.New("provider pack is disabled or temporarily unavailable")
 				}
@@ -235,6 +243,8 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 						a.rememberDynatraceJob(job)
 					}
 					a.dispatchDynatraceJob(ctx, job, envelope)
+				} else if job.Pack == "elastic" {
+					a.dispatchElasticJob(ctx, job, envelope)
 				} else {
 					a.dispatchProviderJob(ctx, job, envelope)
 				}
@@ -308,10 +318,8 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 						}
 					}
 				} else {
-					copyAgent := *a
-					copyAgent.cfg.Packs = []string{job.Pack}
 					leaseCtx, cancel := context.WithDeadline(ctx, job.LeaseExpiresAt)
-					hb, collectErr := copyAgent.collect(leaseCtx)
+					hb, collectErr := a.collectPacks(leaseCtx, []string{job.Pack})
 					cancel()
 					if collectErr != nil {
 						return collectErr
@@ -428,6 +436,10 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 	// before any retry is submitted.
 	if next == "" {
 		for id := range a.jobScanUnseen {
+			if a.elasticSpoolNeedsCleanup(id, now) {
+				a.dispatchCancelledElasticSpoolCleanup(ctx, id)
+				continue
+			}
 			if job, ok := a.dynatraceJobs[id]; ok {
 				a.dispatchDynatraceCancellation(ctx, a.dynatraceCancellationJob(job))
 				if timer := a.dynatraceCancelTimers[id]; timer != nil {
@@ -512,6 +524,9 @@ func (a *Agent) jobRequestWithHeaders(ctx context.Context, method, path string, 
 		}
 		if slices.Contains(a.cfg.Packs, "dynatrace") {
 			ad.Contracts = append(ad.Contracts, DynatraceBatchContract)
+		}
+		if slices.Contains(a.cfg.Packs, "elastic") {
+			ad.Contracts = append(ad.Contracts, ElasticBatchContract)
 		}
 		ad.Destinations = a.approvedDestinations()
 		payload, _ := json.Marshal(ad)
@@ -615,3 +630,5 @@ const PrometheusBatchContract = "prometheus-query.v1"
 
 // PrometheusScrapeContract advertises capture-only post-load spool flushing.
 const PrometheusScrapeContract = "prometheus-scrape.v2"
+
+const ElasticBatchContract = "elastic.v1"

@@ -1893,7 +1893,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           <div
             key={card.id}
             data-card-id={card.id}
-            className={`monitor-card${card.id === 'parquet-analysis' ? ' monitor-card-full' : ''}${staleCardIds.includes(card.id) ? ' stale' : ''}`}
+            className={`monitor-card${['parquet-analysis', 'run-monitor-sources'].includes(card.id) ? ' monitor-card-full' : ''}${staleCardIds.includes(card.id) ? ' stale' : ''}`}
           >
             <div className="monitor-header">
               {card.icon}

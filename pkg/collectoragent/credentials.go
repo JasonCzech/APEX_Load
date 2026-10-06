@@ -16,6 +16,7 @@ import (
 // to the collector spool. Destination identity is authenticated as associated data.
 type Credentials struct {
 	Prometheus *PrometheusCredentials `json:"prometheus,omitempty"`
+	Elastic    *ElasticCredentials    `json:"elastic,omitempty"`
 	Dynatrace  *DynatraceCredentials  `json:"dynatrace,omitempty"`
 	Username   string                 `json:"username,omitempty"`
 	Password   string                 `json:"password,omitempty"`

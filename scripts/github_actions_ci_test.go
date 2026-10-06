@@ -988,7 +988,7 @@ func TestPostgresStartupRegressionSelection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, name := range []string{"TestPostgresSchedulerLeaseGenerationMigration", "TestPostgresConcurrentInitialization", "TestPostgresInitializationLockLifecycle", "TestPostgresAnalysisWorkflows", "TestPostgresMonitorRetirementHistory"} {
+			for _, name := range []string{"TestPostgresSchedulerLeaseGenerationMigration", "TestPostgresConcurrentInitialization", "TestPostgresInitializationLockLifecycle", "TestPostgresAnalysisWorkflows", "TestPostgresMonitorRetirementHistory", "TestElasticPostgresDurableEvidenceMetadataAndRetry", "TestElasticPostgresVerifiedSourcePreparationAuthorization"} {
 				if !selector.MatchString(name) {
 					t.Errorf("live runner omits %s", name)
 				}

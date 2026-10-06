@@ -21,6 +21,7 @@ func (s *Server) startProviderMonitoring() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.providerMonitoringCancel = cancel
+	s.startElasticCleanup(ctx)
 	s.launchBackground(func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
@@ -52,12 +53,10 @@ func (s *Server) startProviderMonitoring() {
 			}
 			s.resumePrometheusInspections(ctx)
 			s.resumeDynatraceOperations(ctx)
+			s.resumeElasticInspections(ctx)
 			if cancellations, ok := s.store.(dynatraceCancellationStore); ok {
 				abandoned, _ := cancellations.PollDynatraceCancellationJobs(time.Now().UTC(), 2)
 				for _, job := range abandoned {
-					if !runMonitoringEnabled(job.ProjectID) {
-						continue
-					}
 					mu.Lock()
 					ready := !busy[job.ID] && !time.Now().Before(next[job.ID])
 					if ready {
@@ -103,7 +102,7 @@ func (s *Server) startProviderMonitoring() {
 			mu.Unlock()
 			for _, job := range jobs {
 				provider, governed := lookupProvider(job.Source.Pack)
-				if !runMonitoringEnabled(job.ProjectID) || !governed {
+				if !governed {
 					continue
 				}
 				if job.State == "reconciling" && !job.ExpiresAt.After(time.Now()) {

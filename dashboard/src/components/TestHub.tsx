@@ -1011,6 +1011,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     }
   }, [])
   const [error, setError] = useState('')
+  const [monitorEditorError, setMonitorEditorError] = useState('')
   const [savePending, setSavePending] = useState(false)
   const savingRef = useRef(false)
   const [savedNotice, setSavedNotice] = useState('')
@@ -2927,7 +2928,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       setError(assignmentValidationError)
       return null
     }
-    const transactionSLAError = validateGoalConfig(goalConfigFromForm(form)) || validateTransactionResponseTimeSLAOverrides(form.groups)
+    const transactionSLAError = monitorEditorError || validateGoalConfig(goalConfigFromForm(form)) || validateTransactionResponseTimeSLAOverrides(form.groups)
     if (transactionSLAError) {
       setError(transactionSLAError)
       return null
@@ -2972,6 +2973,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const checkpointFingerprint = JSON.stringify([form, scenarioSourceMode, scenarioStartChoice, selectedShapeId, selectedLoadModelTemplateId, selectedCloneScenarioId])
   const saveBrowserProgress = () => {
     if (!canManageTests) return false
+    if (monitorEditorError) { setError(monitorEditorError); return false }
     try {
       const draft: ScenarioAuthoringDraft = {
         version: 2, projectId: activeProjectId || '', savedAt: new Date().toISOString(),
@@ -3003,6 +3005,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     } else setAuthoringDraft(latest)
   }
   const saveScenario = async (): Promise<boolean> => {
+    if (monitorEditorError) { setError(monitorEditorError); return false }
     if (sourcePending || goalSizingIncomplete || blockedScriptGroups.length || !form.name.trim() || !(form.termination_mode === 'iterations' || isValidDurationInput(form.duration))
       || form.groups.some(group => !group.script_id) || blockingStageTimelineMessage || steppedRampBlockingMessage
       || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError
@@ -3151,11 +3154,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   }
 
   const currentWizardIndex = scenarioWizardSteps.findIndex(step => step.id === wizardStep)
-  const scenarioBuilderDirty = showForm && checkpointBaselineRef.current !== checkpointFingerprint && (
+  const scenarioBuilderDirty = showForm && (Boolean(monitorEditorError) || checkpointBaselineRef.current !== checkpointFingerprint && (
     editingId
       ? Boolean(editingBaselineFormRef.current) && (JSON.stringify(form) !== editingBaselineFormRef.current || sourcePending)
       : hasScenarioBuilderProgress({ form, scenarioStartChoice, maxVisitedWizardIndex })
-  )
+  ))
   resetScenarioBuilderRef.current = resetScenarioBuilder
   refreshRef.current = refresh
   isScenarioBuilderDirtyRef.current = () => scenarioBuilderDirty
@@ -4513,7 +4516,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           </details>
 
           {editingId && activeProjectId && <ScenarioMonitorBindings key={editingId} projectId={activeProjectId} scenarioId={editingId} canEdit={canManageTests} />}
-          <MonitorRuleEditor projectId={activeProjectId} value={form.goal_config?.monitor_rules || []} canEdit={canManageTests} onChange={rules => setForm(previous => scenarioFormWithGoalField(previous, 'monitor_rules', rules))} />
           <ScenarioDataBindings bindings={scenarioBindings} pools={dataPools} scripts={scripts.filter(script => form.groups.some(group => group.script_id === script.id))} canManage={canManageScripts} onChange={updateDataBindings} />
         </section>
       )
@@ -4712,6 +4714,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             <div className="scenario-builder-main" ref={wizardPanelRef} tabIndex={-1} role="region" aria-label={`Scenario step: ${wizardStep}`}>
               {sourcePending && wizardStep === 'source' && <p role="status" className="scenario-source-pending">{sourcePendingMessage}</p>}
               {renderWizardStep()}
+              <div hidden={wizardStep !== 'data'} style={wizardStep !== 'data' ? { display: 'none' } : undefined}>
+                <MonitorRuleEditor key={`${activeProjectId}:${scenarioDraftGenerationRef.current}`} projectId={activeProjectId} value={form.goal_config?.monitor_rules || []} canEdit={canManageTests} onChange={rules => setForm(previous => scenarioFormWithGoalField(previous, 'monitor_rules', rules))} onValidationChange={setMonitorEditorError} />
+              </div>
             </div>
 
             {showModelPreview && (

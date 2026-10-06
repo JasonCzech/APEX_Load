@@ -46,3 +46,14 @@ it('keeps approved Prometheus query sources canonical and validates their collec
   expect(monitorSourceSelectionComplete({ ...selected, prometheus: { ...selected.prometheus!, queries: [{ ...query, expression: '' }] } })).toBe(false)
   expect(monitorMetricCatalog(selected)).toEqual([{ name: 'cpu', unit: 'seconds', statistic: 'gauge', path: 'gauge' }])
 })
+
+
+it('keeps Elastic canonical readiness and health overlays beside existing native providers', () => {
+  const elastic: MonitorSource = { ...source, pack: 'elastic', dynatrace: undefined, interval_seconds: 10, elastic: { indices: [], cluster_health: true } }
+  expect(nativeMonitorProvider('elastic')).toBe(true)
+  expect(monitorSourceSelectionComplete(elastic)).toBe(true)
+  expect(monitorSourceSelectionComplete({ ...elastic, elastic: { ...elastic.elastic!, logs: true } })).toBe(false)
+  expect(monitorMetricCatalog(elastic).some(metric => metric.name === 'elasticsearch.cluster.status')).toBe(true)
+  const metricSource = { ...elastic, elastic: { indices: ['metrics-*'], metrics: [{ name: 'count', statistic: 'count', unit: 'count', bucket_seconds: 10 }] } }
+  expect(monitorMetricCatalog(metricSource)).toEqual([expect.objectContaining({ name: 'count', unit: 'count', statistic: 'count' })])
+})

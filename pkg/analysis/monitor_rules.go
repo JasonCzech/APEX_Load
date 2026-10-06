@@ -35,6 +35,7 @@ type MonitorRule struct {
 	EvaluationOperation string            `json:"evaluation_operation,omitempty"`
 }
 type MonitorRuleResult struct {
+	Approximate     bool        `json:"approximate,omitempty"`
 	Rule            MonitorRule `json:"rule"`
 	Status          string      `json:"status"`
 	Observed        *float64    `json:"observed,omitempty"`
@@ -66,6 +67,10 @@ func (r MonitorRule) Validate() error {
 	op := r.operation()
 	switch op {
 	case "avg", "min", "max", "sum":
+	case "value":
+		if r.Provider != "" && r.Provider != monitorprovider.ProviderElasticsearch && r.Provider != monitorprovider.ProviderOpenSearch {
+			return errors.New("value requires an Elastic exact-window metric")
+		}
 	case "time_average", "weighted_average":
 	default:
 		return errors.New("unsupported monitor statistic")
@@ -114,14 +119,18 @@ func EvaluateMonitorRule(rule MonitorRule, points []MetricPoint, start, end time
 	queryUntil := until.Truncate(time.Second)
 	var eligible []MetricPoint
 	for _, p := range points {
-		if p.Source != rule.SourceID || p.MetricName != rule.Metric || p.Unit != rule.Unit || p.Value == nil || p.Quality != QualityValid || p.Provider == nil || p.Provider.Synthetic || !p.Provider.Settled || !p.Provider.AggregationEligible || p.Provider.BucketStart.Before(from) || p.Provider.BucketEnd.After(until) || p.Validate() != nil {
+		if p.Source != rule.SourceID || p.MetricName != rule.Metric || p.Unit != rule.Unit || p.Value == nil || p.Quality != QualityValid || p.Provider == nil || p.Provider.Synthetic || !p.Provider.Settled || (rule.operation() != "value" && !p.Provider.AggregationEligible) || p.Provider.BucketStart.Before(from) || p.Provider.BucketEnd.After(until) || p.Validate() != nil {
 			continue
 		}
 		meta := p.Provider
-		if meta.Statistic == "p95" || meta.Statistic == "p99" {
+		if rule.operation() == "value" {
+			if !isElasticProvider(meta) || !meta.QueryWindow {
+				continue
+			}
+		} else if meta.Statistic == "p95" || meta.Statistic == "p99" || isElasticProvider(meta) && (meta.Statistic == "p50" || meta.Statistic == "p90" || meta.Approximate) {
 			continue
 		}
-		if rule.Provider != "" && meta.Name != rule.Provider || rule.Backend != "" && meta.Backend != rule.Backend || rule.MetricID != "" && meta.MetricID != rule.MetricID || rule.SourceStatistic != "" && meta.Statistic != rule.SourceStatistic || rule.ResolutionSeconds > 0 && meta.ResolutionSeconds != rule.ResolutionSeconds || len(rule.EntityIDs) > 0 && !maps.Equal(rule.EntityIDs, meta.EntityIDs) {
+		if isElasticProvider(meta) && rule.QueryID != "" && meta.QueryID != rule.QueryID || rule.Provider != "" && meta.Name != rule.Provider || rule.Backend != "" && meta.Backend != rule.Backend || rule.MetricID != "" && meta.MetricID != rule.MetricID || rule.SourceStatistic != "" && meta.Statistic != rule.SourceStatistic || rule.ResolutionSeconds > 0 && meta.ResolutionSeconds != rule.ResolutionSeconds || len(rule.EntityIDs) > 0 && !maps.Equal(rule.EntityIDs, meta.EntityIDs) {
 			continue
 		}
 		if len(rule.Dimensions) > 0 && !maps.Equal(rule.Dimensions, p.Dimensions) {
@@ -130,12 +139,42 @@ func EvaluateMonitorRule(rule MonitorRule, points []MetricPoint, start, end time
 		// Unbucketed Analytics aggregates describe their entire query window.
 		// Earlier overlapping live queries cannot be combined or substituted
 		// for the terminal evaluation window.
-		if p.Provider.QueryWindow && (!p.Provider.BucketStart.Equal(queryFrom) || !p.Provider.BucketEnd.Equal(queryUntil)) {
+		exactFrom, exactUntil := queryFrom, queryUntil
+		if isElasticProvider(p.Provider) {
+			exactFrom, exactUntil = from, until
+		}
+		if p.Provider.QueryWindow && (!p.Provider.BucketStart.Equal(exactFrom) || !p.Provider.BucketEnd.Equal(exactUntil)) {
 			continue
 		}
 		eligible = append(eligible, p)
 	}
 	if len(eligible) == 0 {
+		return result
+	}
+	if rule.operation() == "value" {
+		exactFrom, exactUntil := queryFrom, queryUntil
+		if len(eligible) == 1 && isElasticProvider(eligible[0].Provider) {
+			exactFrom, exactUntil = from, until
+		}
+		if len(eligible) != 1 || !eligible[0].Provider.QueryWindow || !eligible[0].Provider.BucketStart.Equal(exactFrom) || !eligible[0].Provider.BucketEnd.Equal(exactUntil) {
+			result.Message = "value requires one exact terminal query-window measurement"
+			return result
+		}
+		result.Approximate = eligible[0].Provider.Approximate
+		result.Observed = eligible[0].Value
+		result.CoveragePct = 100
+		result.EligibleBuckets = 1
+		result.Status = "pass"
+		result.Message = "monitoring criterion met"
+		v := *result.Observed
+		pass := rule.Comparator == "lt" && v < rule.Threshold || rule.Comparator == "lte" && v <= rule.Threshold || rule.Comparator == "gt" && v > rule.Threshold || rule.Comparator == "gte" && v >= rule.Threshold || rule.Comparator == "eq" && v == rule.Threshold || rule.Comparator == "neq" && v != rule.Threshold
+		if !pass {
+			result.Status = "fail"
+			if rule.Severity == "warning" {
+				result.Status = "warning"
+			}
+			result.Message = "monitoring criterion breached"
+		}
 		return result
 	}
 	sort.Slice(eligible, func(i, j int) bool { return eligible[i].TimestampUTC.Before(eligible[j].TimestampUTC) })
@@ -214,7 +253,7 @@ func EvaluateMonitorRule(rule MonitorRule, points []MetricPoint, start, end time
 	case "max":
 		observed = max
 	case "sum":
-		if identity.Provider.Statistic != "sum" {
+		if !providerIntervalSumEligible(identity.Provider) {
 			result.Message = "sum requires an interval count or sum metric"
 			return result
 		}

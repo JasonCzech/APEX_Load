@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/elastic"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -50,6 +51,22 @@ func (tr *TestRunner) validateSelectedMonitorRules(bindings *storage.MonitorBind
 			continue
 		}
 		found := false
+		if source.Elastic != nil {
+			if monitorRuleOperation(rule) == "value" {
+				for _, query := range source.Elastic.Queries {
+					if query.Name == rule.Metric && query.Language == "esql" && !query.ExactWindow {
+						return errors.New("value rules require an authored exact-window ES|QL aggregate")
+					}
+				}
+			}
+			for _, definition := range elastic.QueryMetricDefinitions(*source.Elastic) {
+				found = found || definition.Name == rule.Metric && (definition.Unit == rule.Unit || definition.Unit == "" && rule.Unit == "count")
+			}
+			if !found {
+				return errors.New("monitoring rule metric and unit must match an approved numeric selection")
+			}
+			continue
+		}
 
 		if source.Dynatrace != nil {
 			windowAggregate := false

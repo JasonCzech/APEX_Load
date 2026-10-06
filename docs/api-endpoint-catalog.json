@@ -2686,6 +2686,36 @@
       "access": "Public (no authentication required)"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/monitoring/collectors/{id}/elastic-cleanups",
+      "operationId": "handlePollElasticCleanups",
+      "summary": "Poll Elastic Cleanups",
+      "category": "Operations \u0026 Observability",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitoring/collectors/{id}/elastic-inspections",
+      "operationId": "handlePollElasticInspections",
+      "summary": "Poll Elastic Inspections",
+      "category": "Operations \u0026 Observability",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/collectors/{id}/elastic-inspections/{operation_id}/result",
+      "operationId": "handleElasticInspectionResult",
+      "summary": "Elastic Inspection Result",
+      "category": "Operations \u0026 Observability",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
       "method": "POST",
       "path": "/api/v1/monitoring/collectors/{id}/heartbeat",
       "operationId": "handleCollectorHeartbeat",
@@ -2724,6 +2754,16 @@
       "public": false,
       "authenticated": true,
       "access": "Collector token via Bearer or X-APEXLoad-API-Key"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/cleanup",
+      "operationId": "handleElasticCleanupReceipt",
+      "summary": "Elastic Cleanup Receipt",
+      "category": "Operations \u0026 Observability",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
     },
     {
       "method": "POST",
@@ -3394,6 +3434,36 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/inspections",
+      "operationId": "handleCreateElasticInspection",
+      "summary": "Create Elastic Inspection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/inspections/{operation_id}",
+      "operationId": "handleCancelElasticInspection",
+      "summary": "Cancel Elastic Inspection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/inspections/{operation_id}",
+      "operationId": "handleGetElasticInspection",
+      "summary": "Get Elastic Inspection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read"
     },
     {
       "method": "POST",

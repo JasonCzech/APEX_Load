@@ -12,7 +12,9 @@ export type MonitorLoadOverlay = keyof typeof monitorLoadOverlays
 export interface MonitorTimelineRow { time: number; monitor?: number | null; load?: number | null }
 
 export function monitorSeriesIdentity(point: AnalysisPoint): string {
-  return JSON.stringify([point.source, point.metric_name, point.unit, point.kind, point.host, point.provider?.name, point.provider?.backend, point.provider?.query_id, point.provider?.definition_hash, point.provider?.backend_profile, point.provider?.mode, point.provider?.evaluation_step_seconds, point.provider?.metric_id, point.provider?.statistic, point.provider?.query_window ? 'query_window' : point.provider?.resolution_seconds, Object.entries(point.dimensions || {}).sort(([a], [b]) => a.localeCompare(b)), Object.entries(point.provider?.entity_ids || {}).sort(([a], [b]) => a.localeCompare(b))])
+  const windowKind = point.provider?.window_kind || (point.provider?.query_window ? 'query_window' : 'bucket')
+  const resolution = windowKind === 'bucket' ? point.provider?.resolution_seconds : undefined
+  return JSON.stringify([point.source, point.metric_name, point.unit, point.kind, point.host, point.provider?.name, point.provider?.backend, point.provider?.query_id, point.provider?.definition_hash, point.provider?.backend_profile, point.provider?.mode, point.provider?.evaluation_step_seconds, point.provider?.metric_id, point.provider?.statistic, windowKind, resolution, Object.entries(point.dimensions || {}).sort(([a], [b]) => a.localeCompare(b)), Object.entries(point.provider?.entity_ids || {}).sort(([a], [b]) => a.localeCompare(b))])
 }
 
 export function latestMonitorQueryAggregate(points: AnalysisPoint[]): AnalysisPoint | undefined {
@@ -36,7 +38,7 @@ export function buildMonitorTimelineRows(points: AnalysisPoint[], history: Metri
     const time = Date.parse(point.timestamp_utc)
     if (!Number.isFinite(time)) return
     const previous = sorted[index - 1]
-    const previousEnd = previous?.provider?.name === 'prometheus' && previous.provider.mode === 'evaluation_point' ? Date.parse(previous.timestamp_utc) + (previous.provider.evaluation_step_seconds || 0) * 1000 : previous?.provider ? Date.parse(previous.provider.bucket_end) : NaN
+    const previousEnd = previous?.provider?.name === 'prometheus' && previous.provider.mode === 'evaluation_point' ? Date.parse(previous.timestamp_utc) + (previous.provider.evaluation_step_seconds || 0) * 1000 : previous?.provider && (!previous.provider.window_kind || previous.provider.window_kind === 'bucket') ? Date.parse(previous.provider.bucket_end) : NaN
     if (Number.isFinite(previousEnd) && time > previousEnd) rows.push({ time: previousEnd, monitor: null })
     rows.push({ time, monitor: point.quality === 'valid' && Number.isFinite(point.value) ? point.value : null })
   })

@@ -7,7 +7,7 @@ import ObjectArchiveControls from './ObjectArchiveControls'
 import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
 import { suggestedApplication, suggestedReleases } from './libraryLaunchAssignments'
 import CaptureSelectionHelp from './CaptureSelectionHelp'
-import { captureSelectionNeedsReview, dynatraceCapabilities } from './captureConnectionModel'
+import { legacyELKCaptureReady, captureSelectionNeedsReview, dynatraceCapabilities } from './captureConnectionModel'
 import type { StoredScript } from '../types/storedContent'
 import FormErrorSummary from './ux/FormErrorSummary'
 import FormField from './ux/FormField'
@@ -569,6 +569,9 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [traceContext, setTraceContext] = useState<RunTraceContextSettings | undefined>()
   const traceContextNeedsReview = traceContextErrors(traceContext).length > 0
   const [monitorRules, setMonitorRules] = useState<MonitorRule[] | undefined>()
+  const [monitorEditorError, setMonitorEditorError] = useState('')
+  const [monitorEditorRevision, setMonitorEditorRevision] = useState(0)
+  const [elasticMonitorConflict, setElasticMonitorConflict] = useState(false)
   useEffect(() => { setELKConnectionId(''); setDynatraceConnectionId(''); setMonitorBindings(undefined); setMonitorRules(undefined); setELKConnections([]); setDynatraceConnections([]) }, [activeProjectID])
   const captureNeedsReview = captureSelectionNeedsReview(elkConnectionId, elkConnections, elkLoading, elkError) || captureSelectionNeedsReview(dynatraceConnectionId, dynatraceConnections, dynatraceLoading, dynatraceError)
   const [activeApplication, setLaunchApplication] = useState(workspaceApplication)
@@ -627,7 +630,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setELKLoading(true); setELKError(false)
     void listELKConnections(activeProjectID).then(response => {
       if (cancelled) return
-      const ready = (response.connections || []).filter(connection => connection.status === 'ready')
+      const ready = (response.connections || []).filter(legacyELKCaptureReady)
       setELKConnections(ready)
       // Retain an unavailable selection until the user explicitly reviews it.
     }).catch(() => {
@@ -1354,8 +1357,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     () => timeslotValidationError || validateRunSetup(scenario, effectiveScenarioGroups),
     [effectiveScenarioGroups, scenario, timeslotValidationError],
   )
-  const monitorRuleValidationError = validateGoalConfig({ monitor_rules: monitorRules ?? scenario?.goal_config?.monitor_rules })
-  const canLaunch = !monitorRuleValidationError && !scenario?.archived_at && archivedDependencies.length === 0 && readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError && !captureNeedsReview && !traceContextNeedsReview
+  const monitorRuleValidationError = monitorEditorError || validateGoalConfig({ monitor_rules: monitorRules ?? scenario?.goal_config?.monitor_rules })
+  const canLaunch = !elasticMonitorConflict && !monitorRuleValidationError && !scenario?.archived_at && archivedDependencies.length === 0 && readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError && !captureNeedsReview && !traceContextNeedsReview
   const buildCurrentRunCreatePayload = useCallback((
     currentRunDefaults: RunDefaultOverrides,
     currentGroupOverrides: Record<string, GroupRunOverride>,
@@ -1544,6 +1547,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   )
 
   const createRun = async (intent: 'start' | 'reserve' | 'queue' | 'schedule', options: { navigate?: boolean } = {}): Promise<boolean> => {
+    if (elasticMonitorConflict) { setError('Turn legacy Elastic log capture off or remove the conflicting run-bound source before launching.'); return false }
     if (monitorRuleValidationError) { setError(monitorRuleValidationError); return false }
     if (captureNeedsReview) { setError('Review the unavailable capture connection, retry, or explicitly turn capture off before launching.'); return false }
     if (traceContextNeedsReview) { setError('Fix the trace context origins, or turn trace context off, before launching.'); return false }
@@ -1814,6 +1818,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
 	setDynatraceConnectionId('')
     setMonitorBindings(undefined)
     setMonitorRules(undefined)
+    setMonitorEditorError('')
+    setMonitorEditorRevision(value => value + 1)
     scheduledStartBaselineRef.current = ''
     setScheduledStartLocal('')
   }, [defaultReleaseId, scenario?.name])
@@ -1839,6 +1845,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     || monitorBindings !== undefined
     || traceContext !== undefined
     || monitorRules !== undefined
+    || Boolean(monitorEditorError)
     || scheduledStartLocal !== scheduledStartBaselineRef.current
     || newReleaseName.trim()
     || pendingDefaultDirty
@@ -1853,13 +1860,15 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       scheduleDraft, editingScheduleId,
     })
   const savedDraftMatches = savedDraft && JSON.stringify({ ...savedDraft, pageMode: null }) === JSON.stringify({ ...buildCurrentDraft(), pageMode: null })
-  const hasUnsavedChanges = (newTestDirty || scheduleDraftDirty) && (!savedDraftMatches || pendingDefaultDirty || pendingGroupDirty)
+  const hasUnsavedChanges = Boolean(monitorEditorError) || (newTestDirty || scheduleDraftDirty) && (!savedDraftMatches || pendingDefaultDirty || pendingGroupDirty)
   saveDraftRef.current = () => {
+    if (monitorEditorError) { setError(monitorEditorError); return false }
     if (!savePendingRunEditorsRef.current() || !activeProjectID || !activeApplication || !scenario) return false
     const draft = buildCurrentDraft()
     try {
       saveNewTestDraft(draft)
       setSavedDraft(draft)
+      setError('')
       setDraftNotice('Draft saved in this browser tab. No run or recurring trigger was created.')
       return true
     } catch {
@@ -2763,7 +2772,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
         </div>
       )}
 
-      {pageMode === 'schedules' ? (
+      {pageMode === 'schedules' && (
         <div className="new-test-layout new-test-schedules-layout">
           <div className="new-test-main">
             <NewTestScheduleCatalog scenarios={scenarios} projectId={activeProjectID} revision={catalogRefresh} onSelectScenario={id => runGuarded(() => { setScenarioId(id); setScheduleQuery('') })} />
@@ -3147,8 +3156,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
           </div>
 
         </div>
-      ) : (
-      <div className="new-test-layout new-test-workspace">
+      )}
+      <div className="new-test-layout new-test-workspace" hidden={pageMode === 'schedules'} style={pageMode === 'schedules' ? { display: 'none' } : undefined}>
         <div className="new-test-main">
           {scenario && <section className="new-test-selected" aria-label="Selected scenario">
             <span>Selected scenario</span><strong>{scenarioIdentity(scenario)}</strong>
@@ -3422,8 +3431,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     </select>
                   </div>
                 )}
-                <RunMonitorBindingSelector projectId={activeProjectID} scenarioId={scenarioId || undefined} value={monitorBindings} onChange={setMonitorBindings} />
-                <MonitorRuleEditor projectId={activeProjectID} value={monitorRules ?? scenario?.goal_config?.monitor_rules ?? []} onChange={setMonitorRules} />
+                <RunMonitorBindingSelector projectId={activeProjectID} scenarioId={scenario?.id} legacyELKConnectionId={elkConnectionId} onConflictChange={setElasticMonitorConflict} value={monitorBindings} onChange={setMonitorBindings} />
+                <MonitorRuleEditor key={`${activeProjectID}:${scenarioId}:${monitorEditorRevision}`} projectId={activeProjectID} value={monitorRules ?? scenario?.goal_config?.monitor_rules ?? []} onChange={setMonitorRules} onValidationChange={setMonitorEditorError} />
                 <div className="setting-row">
                   <div className="setting-info">
                     <span className="setting-label" id="new-test-elk-label">Elastic log capture</span>
@@ -3744,7 +3753,6 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
           </section>
         </aside>
       </div>
-      )}
 
       {editingDefaultKey && editingDefaultCard && (
         <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setEditingDefaultKey(null), 'Close run default editor')}>

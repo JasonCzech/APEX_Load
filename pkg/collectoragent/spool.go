@@ -16,10 +16,11 @@ import (
 )
 
 type collectorSpool struct {
-	ProviderBacklog map[string][]*RunSampleBatch    `json:"provider_backlog,omitempty"`
-	Version         int                             `json:"version"`
-	Pending         map[string]*RunSampleBatch      `json:"pending"`
-	OTLPAccepted    map[string]map[string]time.Time `json:"otlp_accepted,omitempty"`
+	InspectionPending map[string]*ElasticInspectionResult `json:"elastic_inspection_pending,omitempty"`
+	ProviderBacklog   map[string][]*RunSampleBatch        `json:"provider_backlog,omitempty"`
+	Version           int                                 `json:"version"`
+	Pending           map[string]*RunSampleBatch          `json:"pending"`
+	OTLPAccepted      map[string]map[string]time.Time     `json:"otlp_accepted,omitempty"`
 }
 
 // The job count is a local retry-storage bound across runs. The existing
@@ -73,7 +74,7 @@ func (a *Agent) loadSpool() error {
 		return errors.New("collector spool job limit exceeded")
 	}
 	for id, b := range batches {
-		if id == "" || len(id) > maxRunMonitorJobIDBytes || b == nil || b.Sequence < 0 || len(b.Points) > 512 || len(b.Evidence) > 100 || len(b.Points)+len(b.Evidence) == 0 && len(b.Coverage) == 0 || b.MessagingManagement != nil || b.ManagementGrant != nil {
+		if id == "" || len(id) > maxRunMonitorJobIDBytes || b == nil || b.Sequence < 0 || len(b.Points) > 512 || len(b.Evidence) > 100 || len(b.CleanupContinuations) > 32 || len(b.Points)+len(b.Evidence) == 0 && len(b.Coverage) == 0 || b.MessagingManagement != nil || b.ManagementGrant != nil {
 			return errors.New("invalid collector spool batch")
 		}
 		for _, p := range b.Points {
@@ -103,7 +104,7 @@ func (a *Agent) loadSpool() error {
 			return errors.New("provider spool backlog exceeds bounds")
 		}
 		for _, batch := range queue {
-			if batch == nil || len(batch.Points) > 512 || len(batch.Evidence) > 100 {
+			if batch == nil || len(batch.Points) > 512 || len(batch.Evidence) > 100 || len(batch.CleanupContinuations) > 32 {
 				return errors.New("invalid provider backlog")
 			}
 			for _, point := range batch.Points {
@@ -119,6 +120,9 @@ func (a *Agent) loadSpool() error {
 		batches = map[string]*RunSampleBatch{}
 	}
 	a.pendingBatches = batches
+	if err := a.restoreElasticInspectionSpool(document.InspectionPending); err != nil {
+		return err
+	}
 	return a.spoolBudget.restore("legacy", data, a.legacySpoolJobIDs())
 }
 
@@ -129,10 +133,10 @@ func (a *Agent) saveSpool() error {
 			delete(a.providerBacklog, id)
 		}
 	}
-	if len(a.pendingBatches) > maxCollectorSpoolJobs || len(a.providerBacklog) > maxCollectorSpoolJobs || len(a.otlpAccepted) > maxCollectorSpoolJobs {
+	if len(a.pendingBatches) > maxCollectorSpoolJobs || len(a.providerBacklog) > maxCollectorSpoolJobs || len(a.otlpAccepted) > maxCollectorSpoolJobs || len(a.elasticInspectionPending) > maxCollectorSpoolJobs {
 		return errors.New("collector spool job limit exceeded")
 	}
-	data, err := json.Marshal(collectorSpool{Version: 3, ProviderBacklog: a.providerBacklog, Pending: a.pendingBatches, OTLPAccepted: a.otlpAccepted})
+	data, err := json.Marshal(collectorSpool{Version: 3, ProviderBacklog: a.providerBacklog, Pending: a.pendingBatches, OTLPAccepted: a.otlpAccepted, InspectionPending: a.elasticInspectionPending})
 	if err != nil {
 		return err
 	}
@@ -144,6 +148,9 @@ func (a *Agent) saveSpool() error {
 		names := []string{}
 		for id := range a.pendingBatches {
 			names = append(names, "legacy-active:"+id)
+		}
+		for id := range a.elasticInspectionPending {
+			names = append(names, "inspection-active:"+id)
 		}
 		return names
 	}()...); err != nil {
@@ -188,7 +195,7 @@ func (a *Agent) admitMonitorRetry(id string, batch *RunSampleBatch, queue []*Run
 // job lifetime is immutable and every upload still needs a current lease.
 func (a *Agent) discardExpiredMonitorSpool(now time.Time) {
 	for id, batch := range a.pendingBatches {
-		if !a.spoolJobAlive(id, batch, now) {
+		if !a.spoolJobAlive(id, batch, now) && !a.elasticSpoolNeedsCleanup(id, now) {
 			delete(a.pendingBatches, id)
 			delete(a.providerBacklog, id)
 			delete(a.otlpAccepted, id)
@@ -201,7 +208,7 @@ func (a *Agent) discardExpiredMonitorSpool(now time.Time) {
 			delete(a.providerBacklog, id)
 			continue
 		}
-		if !a.spoolJobAlive(id, queue[0], now) {
+		if !a.spoolJobAlive(id, queue[0], now) && !a.elasticSpoolNeedsCleanup(id, now) {
 			delete(a.providerBacklog, id)
 			delete(a.otlpAccepted, id)
 			delete(a.nextCollection, id)
@@ -257,6 +264,9 @@ func (a *Agent) legacySpoolJobIDs() []string {
 	}
 	for id := range a.otlpAccepted {
 		seen[id] = true
+	}
+	for id := range a.elasticInspectionPending {
+		seen["inspection:"+id] = true
 	}
 	ids := make([]string, 0, len(seen))
 	for id := range seen {

@@ -3254,12 +3254,15 @@ export interface operations {
                 "connection_id"?: string;
                 "connection_revision"?: number;
                 "dynatrace"?: (Record<string, unknown>) | null;
+                "elastic"?: (Record<string, unknown>) | null;
+                "elastic_ingestion_watermark"?: string;
                 "executor_mode"?: string;
                 "job_id"?: string;
                 "management_incomplete_snapshots"?: number;
                 "management_snapshots"?: number;
                 "prometheus"?: (Record<string, unknown>) | null;
                 "provider_coverage"?: Record<string, Record<string, unknown>>;
+                "query_watermark"?: string;
                 "reason"?: string;
                 "required"?: boolean;
                 "source_id"?: string;
@@ -3276,6 +3279,7 @@ export interface operations {
               "monitor_management_snapshot_count"?: number;
               "monitor_management_version"?: number;
               "monitor_rule_results"?: Array<{
+                "approximate"?: boolean;
                 "coverage_pct"?: number;
                 "eligible_buckets"?: number;
                 "message"?: string;
@@ -3567,23 +3571,12 @@ export interface operations {
               }) | null;
             }>;
             "monitor_diagnostics"?: Array<{
-              "diagnostic"?: {
-                "application_id"?: string;
-                "backend"?: string;
-                "deep_link"?: string;
-                "entity_ids"?: Record<string, string>;
-                "id"?: string;
-                "kind"?: string;
-                "properties"?: Record<string, string>;
-                "provider"?: string;
-                "severity"?: string;
-                "status"?: string;
-                "summary"?: string;
-                "timestamp_utc"?: string;
-              };
+              "diagnostic"?: Record<string, unknown>;
+              "schema_version"?: string;
               "source_id"?: string;
             }>;
             "monitor_rule_results"?: Array<{
+              "approximate"?: boolean;
               "coverage_pct"?: number;
               "eligible_buckets"?: number;
               "message"?: string;
@@ -7146,6 +7139,7 @@ export interface operations {
             "error"?: string;
             "errors": number;
             "monitor_rule_results"?: Array<{
+              "approximate"?: boolean;
               "coverage_pct": number;
               "eligible_buckets": number;
               "message": string;
@@ -8040,6 +8034,7 @@ export interface operations {
               "provider"?: ({
                 "aggregation_eligible": boolean;
                 "analysis_statistic"?: string;
+                "approximate"?: boolean;
                 "backend"?: string;
                 "backend_profile"?: string;
                 "bucket_end": string;
@@ -8047,6 +8042,7 @@ export interface operations {
                 "catalog_path"?: string;
                 "count"?: (number) | null;
                 "definition_hash"?: string;
+                "derived_aggregation"?: string;
                 "display_labels"?: Record<string, string>;
                 "entity_ids"?: Record<string, string>;
                 "evaluation_step_seconds"?: number;
@@ -8064,6 +8060,7 @@ export interface operations {
                 "sum"?: (number) | null;
                 "synthetic"?: boolean;
                 "underlying_sample_time"?: (string) | null;
+                "window_kind"?: string;
               }) | null;
               "quality": string;
               "received_at"?: string;
@@ -8138,6 +8135,7 @@ export interface operations {
               "provider"?: ({
                 "aggregation_eligible": boolean;
                 "analysis_statistic"?: string;
+                "approximate"?: boolean;
                 "backend"?: string;
                 "backend_profile"?: string;
                 "bucket_end": string;
@@ -8145,6 +8143,7 @@ export interface operations {
                 "catalog_path"?: string;
                 "count"?: (number) | null;
                 "definition_hash"?: string;
+                "derived_aggregation"?: string;
                 "display_labels"?: Record<string, string>;
                 "entity_ids"?: Record<string, string>;
                 "evaluation_step_seconds"?: number;
@@ -8162,6 +8161,7 @@ export interface operations {
                 "sum"?: (number) | null;
                 "synthetic"?: boolean;
                 "underlying_sample_time"?: (string) | null;
+                "window_kind"?: string;
               }) | null;
               "quality": string;
               "received_at"?: string;
@@ -8290,6 +8290,7 @@ export interface operations {
               "provider"?: ({
                 "aggregation_eligible": boolean;
                 "analysis_statistic"?: string;
+                "approximate"?: boolean;
                 "backend"?: string;
                 "backend_profile"?: string;
                 "bucket_end": string;
@@ -8297,6 +8298,7 @@ export interface operations {
                 "catalog_path"?: string;
                 "count"?: (number) | null;
                 "definition_hash"?: string;
+                "derived_aggregation"?: string;
                 "display_labels"?: Record<string, string>;
                 "entity_ids"?: Record<string, string>;
                 "evaluation_step_seconds"?: number;
@@ -8314,6 +8316,7 @@ export interface operations {
                 "sum"?: (number) | null;
                 "synthetic"?: boolean;
                 "underlying_sample_time"?: (string) | null;
+                "window_kind"?: string;
               }) | null;
               "quality": string;
               "received_at"?: string;
@@ -23508,6 +23511,44 @@ export interface operations {
       };
     };
   };
+  "handleCancelElasticInspection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+        "operation_id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "204": {
+        content?: never;
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleCancelProvisioningRequest": {
     parameters: {
       "path": {
@@ -28843,6 +28884,7 @@ export interface operations {
             "error"?: string;
             "errors": number;
             "monitor_rule_results"?: Array<{
+              "approximate"?: boolean;
               "coverage_pct": number;
               "eligible_buckets": number;
               "message": string;
@@ -29966,12 +30008,72 @@ export interface operations {
           "api_key_secret_name"?: (string) | null;
           "auth_type"?: string;
           "base_filter"?: string;
+          "bearer_token_secret_name"?: (string) | null;
+          "client_certificate_secret_name"?: (string) | null;
+          "client_key_secret_name"?: (string) | null;
+          "collection_mode"?: string;
+          "collector_agent_id"?: string;
+          "config"?: {
+            "approved_cidrs"?: Array<string>;
+            "auth_type"?: string;
+            "ca_pem"?: string;
+            "dashboards_url"?: string;
+            "endpoint"?: string;
+            "kibana_approved_cidrs"?: Array<string>;
+            "kibana_ca_pem"?: string;
+            "kibana_endpoint"?: string;
+            "logstash_approved_cidrs"?: Array<string>;
+            "logstash_ca_pem"?: string;
+            "logstash_endpoint"?: string;
+            "max_evidence"?: number;
+            "max_points"?: number;
+            "max_poll_seconds"?: number;
+            "max_requests_per_poll"?: number;
+            "max_response_bytes"?: number;
+            "max_retries"?: number;
+            "max_series"?: number;
+            "product"?: string;
+            "requests_per_minute"?: number;
+            "timeout_seconds"?: number;
+          };
           "description"?: string;
           "enabled"?: boolean;
           "endpoint"?: string;
           "error_filter"?: string;
           "index_pattern"?: string;
+          "kibana_api_key_secret_name"?: (string) | null;
+          "kibana_auth_type"?: (string) | null;
+          "kibana_bearer_token_secret_name"?: (string) | null;
+          "kibana_client_certificate_secret_name"?: (string) | null;
+          "kibana_client_key_secret_name"?: (string) | null;
+          "kibana_credentials"?: ({
+            "api_key_secret_name"?: string;
+            "auth_type"?: string;
+            "bearer_token_secret_name"?: string;
+            "client_certificate_secret_name"?: string;
+            "client_key_secret_name"?: string;
+            "password_secret_name"?: string;
+            "username_secret_name"?: string;
+          }) | null;
+          "kibana_password_secret_name"?: (string) | null;
+          "kibana_username_secret_name"?: (string) | null;
           "level_field"?: string;
+          "logstash_api_key_secret_name"?: (string) | null;
+          "logstash_auth_type"?: (string) | null;
+          "logstash_bearer_token_secret_name"?: (string) | null;
+          "logstash_client_certificate_secret_name"?: (string) | null;
+          "logstash_client_key_secret_name"?: (string) | null;
+          "logstash_credentials"?: ({
+            "api_key_secret_name"?: string;
+            "auth_type"?: string;
+            "bearer_token_secret_name"?: string;
+            "client_certificate_secret_name"?: string;
+            "client_key_secret_name"?: string;
+            "password_secret_name"?: string;
+            "username_secret_name"?: string;
+          }) | null;
+          "logstash_password_secret_name"?: (string) | null;
+          "logstash_username_secret_name"?: (string) | null;
           "message_field"?: string;
           "metric_aggregations"?: Array<{
             "field"?: string;
@@ -29980,6 +30082,8 @@ export interface operations {
           }>;
           "name"?: string;
           "password_secret_name"?: (string) | null;
+          "product"?: string;
+          "revision"?: number;
           "test_id_field"?: string;
           "timestamp_field"?: string;
           "trace_id_field"?: string;
@@ -29994,6 +30098,48 @@ export interface operations {
           "application/json": {
             "auth_type"?: string;
             "base_filter"?: string;
+            "capabilities"?: {
+              "async_esql": boolean;
+              "dsl": boolean;
+              "esql": boolean;
+              "health": boolean;
+              "kibana_health": boolean;
+              "logs": boolean;
+              "logstash_health": boolean;
+              "metrics": boolean;
+              "pit": boolean;
+              "product": string;
+              "serverless": boolean;
+              "shard_doc": boolean;
+              "status"?: Record<string, string>;
+              "traces": boolean;
+              "version"?: string;
+            };
+            "collection_mode"?: string;
+            "collector_agent_id"?: string;
+            "config"?: {
+              "approved_cidrs"?: Array<string>;
+              "auth_type": string;
+              "ca_pem"?: string;
+              "dashboards_url"?: string;
+              "endpoint": string;
+              "kibana_approved_cidrs"?: Array<string>;
+              "kibana_ca_pem"?: string;
+              "kibana_endpoint"?: string;
+              "logstash_approved_cidrs"?: Array<string>;
+              "logstash_ca_pem"?: string;
+              "logstash_endpoint"?: string;
+              "max_evidence"?: number;
+              "max_points"?: number;
+              "max_poll_seconds"?: number;
+              "max_requests_per_poll"?: number;
+              "max_response_bytes"?: number;
+              "max_retries"?: number;
+              "max_series"?: number;
+              "product": string;
+              "requests_per_minute"?: number;
+              "timeout_seconds"?: number;
+            };
             "created_at": string;
             "description"?: string;
             "enabled": boolean;
@@ -30002,12 +30148,21 @@ export interface operations {
             "has_api_key": boolean;
             "has_basic_password": boolean;
             "has_basic_username": boolean;
+            "has_bearer_token": boolean;
+            "has_client_certificate": boolean;
+            "has_client_key": boolean;
+            "has_custom_ca": boolean;
+            "has_kibana_credentials": boolean;
+            "has_logstash_credentials": boolean;
             "id": string;
             "index_pattern"?: string;
+            "kibana_auth_type"?: string;
             "last_check_message"?: string;
             "last_check_status"?: string;
             "last_checked_at"?: (string) | null;
+            "legacy_capture_ready": boolean;
             "level_field"?: string;
+            "logstash_auth_type"?: string;
             "message_field"?: string;
             "metric_aggregations": Array<{
               "field": string;
@@ -30015,12 +30170,15 @@ export interface operations {
               "operation": string;
             }>;
             "name": string;
+            "product"?: string;
             "project_id": string;
+            "revision"?: number;
             "status": string;
             "test_id_field"?: string;
             "timestamp_field"?: string;
             "trace_id_field"?: string;
             "updated_at": string;
+            "verified_revision"?: number;
           };
         };
       };
@@ -30045,6 +30203,152 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleCreateElasticInspection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "expected_revision": number;
+          "from_utc"?: string;
+          "indices"?: Array<string>;
+          "kind": string;
+          "limit"?: number;
+          "run_id"?: string;
+          "selection"?: ({
+            "attribute_fields"?: Array<string>;
+            "cluster_health"?: boolean;
+            "duration_field"?: string;
+            "duration_unit"?: string;
+            "errors"?: boolean;
+            "header_origins"?: Array<string>;
+            "indices"?: Array<string>;
+            "ingested_field"?: string;
+            "kibana_health"?: boolean;
+            "logs"?: boolean;
+            "logstash_health"?: boolean;
+            "max_retained_bytes"?: number;
+            "max_retained_records"?: number;
+            "max_window_seconds"?: number;
+            "message_field"?: string;
+            "metrics"?: Array<{
+              "bucket_seconds"?: number;
+              "count_field"?: string;
+              "exact_window"?: boolean;
+              "field"?: string;
+              "group_by"?: Array<string>;
+              "kind"?: string;
+              "name"?: string;
+              "statistic"?: string;
+              "sum_field"?: string;
+              "unit"?: string;
+            }>;
+            "overlap_seconds"?: number;
+            "page_size"?: number;
+            "parent_span_id_field"?: string;
+            "preset"?: string;
+            "project_id"?: string;
+            "projected_fields"?: Array<string>;
+            "queries"?: Array<{
+              "approximate"?: boolean;
+              "async"?: boolean;
+              "bucket_seconds"?: number;
+              "count_column"?: string;
+              "dimension_columns"?: Array<string>;
+              "dsl"?: unknown;
+              "esql"?: string;
+              "exact_window"?: boolean;
+              "group_by"?: Array<string>;
+              "kind"?: string;
+              "language"?: string;
+              "name"?: string;
+              "params"?: Array<unknown>;
+              "statistic"?: string;
+              "sum_column"?: string;
+              "timestamp_column"?: string;
+              "unit"?: string;
+              "value_column"?: string;
+            }>;
+            "query_offset"?: number;
+            "run_header"?: boolean;
+            "run_id_field"?: string;
+            "service_field"?: string;
+            "service_values"?: Array<string>;
+            "settle_seconds"?: number;
+            "severity_field"?: string;
+            "span_id_field"?: string;
+            "status_field"?: string;
+            "timestamp_field"?: string;
+            "trace_id_field"?: string;
+            "traces"?: boolean;
+            "transaction_id_field"?: string;
+            "transactions"?: boolean;
+            "unique_sort_field"?: string;
+          }) | null;
+          "to_utc"?: string;
+        };
+      };
+    };
+    responses: {
+      "202": {
+        content: {
+          "application/json": {
+            "connection_id": string;
+            "connection_revision": number;
+            "created_at": string;
+            "expires_at": string;
+            "id": string;
+            "kind": string;
+            "message"?: string;
+            "result"?: unknown;
+            "status": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -33790,6 +34094,7 @@ export interface operations {
                   "source_id": string;
                 }>;
               }) | null;
+              "monitor_warnings"?: Array<string>;
               "name": string;
               "paused_at"?: (string) | null;
               "pending_reason"?: string;
@@ -42424,6 +42729,7 @@ export interface operations {
                 "source_id": string;
               }>;
             }) | null;
+            "monitor_warnings"?: Array<string>;
             "name": string;
             "paused_at"?: (string) | null;
             "pending_reason"?: string;
@@ -48643,6 +48949,7 @@ export interface operations {
               "verified_origins"?: Array<string>;
             };
             "coverage"?: Record<string, {
+              "as_of"?: (string) | null;
               "cache_age_seconds"?: number;
               "cached"?: boolean;
               "evidence"?: number;
@@ -48650,10 +48957,13 @@ export interface operations {
               "freshness"?: string;
               "from"?: string;
               "infos"?: Array<string>;
+              "late_arrival_seconds"?: number;
               "message"?: string;
               "missing_points"?: number;
               "observed_at"?: (string) | null;
               "points"?: number;
+              "query_id"?: string;
+              "reason"?: string;
               "status"?: string;
               "to"?: string;
               "truncated"?: boolean;
@@ -48662,16 +48972,26 @@ export interface operations {
             "evidence"?: Array<{
               "application_id"?: string;
               "backend"?: string;
+              "correlation"?: string;
               "deep_link"?: string;
+              "document_id"?: string;
               "entity_ids"?: Record<string, string>;
               "id"?: string;
+              "index"?: string;
+              "ingested_at"?: (string) | null;
               "kind"?: string;
+              "log"?: (Record<string, unknown>) | null;
               "properties"?: Record<string, string>;
               "provider"?: string;
+              "query_id"?: string;
+              "received_at"?: string;
+              "service"?: string;
               "severity"?: string;
+              "span"?: (Record<string, unknown>) | null;
               "status"?: string;
               "summary"?: string;
               "timestamp_utc"?: string;
+              "transaction"?: (Record<string, unknown>) | null;
             }>;
             "points"?: Array<{
               "active_runtime_ms"?: (number) | null;
@@ -48688,6 +49008,7 @@ export interface operations {
               "provider"?: ({
                 "aggregation_eligible"?: boolean;
                 "analysis_statistic"?: string;
+                "approximate"?: boolean;
                 "backend"?: string;
                 "backend_profile"?: string;
                 "bucket_end"?: string;
@@ -48695,6 +49016,7 @@ export interface operations {
                 "catalog_path"?: string;
                 "count"?: (number) | null;
                 "definition_hash"?: string;
+                "derived_aggregation"?: string;
                 "display_labels"?: Record<string, string>;
                 "entity_ids"?: Record<string, string>;
                 "evaluation_step_seconds"?: number;
@@ -48712,6 +49034,7 @@ export interface operations {
                 "sum"?: (number) | null;
                 "synthetic"?: boolean;
                 "underlying_sample_time"?: (string) | null;
+                "window_kind"?: string;
               }) | null;
               "quality"?: string;
               "received_at"?: string;
@@ -48736,6 +49059,7 @@ export interface operations {
             }>;
             "progress"?: {
               "complete"?: boolean;
+              "continuation"?: (Record<string, unknown>) | null;
               "cursor"?: string;
               "cursor_expires_at"?: (string) | null;
               "next_query"?: number;
@@ -48836,6 +49160,215 @@ export interface operations {
         };
       };
       "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleElasticCleanupReceipt": {
+    parameters: {
+      "path": {
+        "id": string;
+        "job_id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "job"?: {
+            "payload"?: string;
+            "signature"?: string;
+          };
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, boolean>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleElasticInspectionResult": {
+    parameters: {
+      "path": {
+        "id": string;
+        "operation_id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "cleanup_continuations"?: Array<({
+            "async_id"?: string;
+            "composite_after"?: Record<string, {
+              "bool_value"?: (boolean) | null;
+              "kind"?: string;
+              "number_value"?: (number) | null;
+              "string_value"?: string;
+            }>;
+            "keep_alive_until"?: string;
+            "pit_id"?: string;
+            "query_id"?: string;
+            "resolved_indices"?: Array<string>;
+            "search_after"?: Array<{
+              "bool_value"?: (boolean) | null;
+              "kind"?: string;
+              "number_value"?: (number) | null;
+              "string_value"?: string;
+            }>;
+            "window_from"?: string;
+            "window_until"?: string;
+          }) | null>;
+          "data"?: {
+            "capabilities"?: {
+              "async_esql"?: boolean;
+              "dsl"?: boolean;
+              "esql"?: boolean;
+              "health"?: boolean;
+              "kibana_health"?: boolean;
+              "logs"?: boolean;
+              "logstash_health"?: boolean;
+              "metrics"?: boolean;
+              "pit"?: boolean;
+              "product"?: string;
+              "serverless"?: boolean;
+              "shard_doc"?: boolean;
+              "status"?: Record<string, string>;
+              "traces"?: boolean;
+              "version"?: string;
+            };
+            "fields"?: Array<{
+              "aggregatable"?: boolean;
+              "conflict"?: boolean;
+              "name"?: string;
+              "partially_mapped"?: boolean;
+              "searchable"?: boolean;
+              "types"?: Array<string>;
+            }>;
+            "indices"?: Array<{
+              "name"?: string;
+              "type"?: string;
+            }>;
+            "preview"?: ({
+              "capabilities"?: {
+                "async_esql"?: boolean;
+                "dsl"?: boolean;
+                "esql"?: boolean;
+                "health"?: boolean;
+                "kibana_health"?: boolean;
+                "logs"?: boolean;
+                "logstash_health"?: boolean;
+                "metrics"?: boolean;
+                "pit"?: boolean;
+                "product"?: string;
+                "serverless"?: boolean;
+                "shard_doc"?: boolean;
+                "status"?: Record<string, string>;
+                "traces"?: boolean;
+                "version"?: string;
+              };
+              "continuation"?: (Record<string, unknown>) | null;
+              "coverage"?: Record<string, Record<string, unknown>>;
+              "evidence"?: Array<Record<string, unknown>>;
+              "points"?: Array<{
+                "active_runtime_ms"?: (number) | null;
+                "dataset_id"?: string;
+                "derivation"?: Array<Record<string, unknown>>;
+                "dimensions"?: Record<string, string>;
+                "host"?: string;
+                "input_kind"?: string;
+                "kind"?: string;
+                "metric_name"?: string;
+                "metric_version"?: string;
+                "population"?: string;
+                "project_id"?: string;
+                "provider"?: (Record<string, unknown>) | null;
+                "quality"?: string;
+                "received_at"?: string;
+                "relative_time_ms"?: (number) | null;
+                "run_id"?: string;
+                "scenario_id"?: string;
+                "schema_version"?: string;
+                "service"?: string;
+                "source"?: string;
+                "timestamp_utc"?: string;
+                "timing"?: (Record<string, unknown>) | null;
+                "unit"?: string;
+                "value"?: (number) | null;
+              }>;
+              "progress"?: Record<string, unknown>;
+            }) | null;
+            "truncated"?: boolean;
+          };
+          "job": {
+            "payload"?: string;
+            "signature"?: string;
+          };
+          "message"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, boolean>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -54418,6 +54951,7 @@ export interface operations {
             "error"?: string;
             "errors": number;
             "monitor_rule_results"?: Array<{
+              "approximate"?: boolean;
               "coverage_pct": number;
               "eligible_buckets": number;
               "message": string;
@@ -55349,6 +55883,48 @@ export interface operations {
           "application/json": {
             "auth_type"?: string;
             "base_filter"?: string;
+            "capabilities"?: {
+              "async_esql": boolean;
+              "dsl": boolean;
+              "esql": boolean;
+              "health": boolean;
+              "kibana_health": boolean;
+              "logs": boolean;
+              "logstash_health": boolean;
+              "metrics": boolean;
+              "pit": boolean;
+              "product": string;
+              "serverless": boolean;
+              "shard_doc": boolean;
+              "status"?: Record<string, string>;
+              "traces": boolean;
+              "version"?: string;
+            };
+            "collection_mode"?: string;
+            "collector_agent_id"?: string;
+            "config"?: {
+              "approved_cidrs"?: Array<string>;
+              "auth_type": string;
+              "ca_pem"?: string;
+              "dashboards_url"?: string;
+              "endpoint": string;
+              "kibana_approved_cidrs"?: Array<string>;
+              "kibana_ca_pem"?: string;
+              "kibana_endpoint"?: string;
+              "logstash_approved_cidrs"?: Array<string>;
+              "logstash_ca_pem"?: string;
+              "logstash_endpoint"?: string;
+              "max_evidence"?: number;
+              "max_points"?: number;
+              "max_poll_seconds"?: number;
+              "max_requests_per_poll"?: number;
+              "max_response_bytes"?: number;
+              "max_retries"?: number;
+              "max_series"?: number;
+              "product": string;
+              "requests_per_minute"?: number;
+              "timeout_seconds"?: number;
+            };
             "created_at": string;
             "description"?: string;
             "enabled": boolean;
@@ -55357,12 +55933,21 @@ export interface operations {
             "has_api_key": boolean;
             "has_basic_password": boolean;
             "has_basic_username": boolean;
+            "has_bearer_token": boolean;
+            "has_client_certificate": boolean;
+            "has_client_key": boolean;
+            "has_custom_ca": boolean;
+            "has_kibana_credentials": boolean;
+            "has_logstash_credentials": boolean;
             "id": string;
             "index_pattern"?: string;
+            "kibana_auth_type"?: string;
             "last_check_message"?: string;
             "last_check_status"?: string;
             "last_checked_at"?: (string) | null;
+            "legacy_capture_ready": boolean;
             "level_field"?: string;
+            "logstash_auth_type"?: string;
             "message_field"?: string;
             "metric_aggregations": Array<{
               "field": string;
@@ -55370,12 +55955,15 @@ export interface operations {
               "operation": string;
             }>;
             "name": string;
+            "product"?: string;
             "project_id": string;
+            "revision"?: number;
             "status": string;
             "test_id_field"?: string;
             "timestamp_field"?: string;
             "trace_id_field"?: string;
             "updated_at": string;
+            "verified_revision"?: number;
           };
         };
       };
@@ -55385,6 +55973,51 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetElasticInspection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+        "operation_id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "connection_id": string;
+            "connection_revision": number;
+            "created_at": string;
+            "expires_at": string;
+            "id": string;
+            "kind": string;
+            "message"?: string;
+            "result"?: unknown;
+            "status": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -61042,6 +61675,7 @@ export interface operations {
                   "source_id": string;
                 }>;
               }) | null;
+              "monitor_warnings"?: Array<string>;
               "name": string;
               "paused_at"?: (string) | null;
               "pending_reason"?: string;
@@ -62857,6 +63491,15 @@ export interface operations {
                 "smartscape_node_type"?: string;
                 "topology_mode"?: string;
               }) | null;
+              "elastic"?: ({
+                "mapping_revision": string;
+                "metrics"?: Array<Record<string, unknown>>;
+                "preset"?: string;
+                "product": string;
+                "queries"?: Array<Record<string, unknown>>;
+                "signals": Array<string>;
+              }) | null;
+              "elastic_ingestion_watermark"?: string;
               "executor_mode"?: string;
               "job_id": string;
               "management_incomplete_snapshots"?: number;
@@ -62875,6 +63518,7 @@ export interface operations {
                 "targets"?: boolean;
               }) | null;
               "provider_coverage"?: Record<string, {
+                "as_of"?: (string) | null;
                 "cache_age_seconds"?: number;
                 "cached"?: boolean;
                 "evidence": number;
@@ -62882,15 +63526,19 @@ export interface operations {
                 "freshness"?: string;
                 "from": string;
                 "infos"?: Array<string>;
+                "late_arrival_seconds"?: number;
                 "message"?: string;
                 "missing_points"?: number;
                 "observed_at"?: (string) | null;
                 "points": number;
+                "query_id"?: string;
+                "reason"?: string;
                 "status": string;
                 "to": string;
                 "truncated": boolean;
                 "warnings"?: Array<string>;
               }>;
+              "query_watermark"?: string;
               "reason"?: string;
               "required": boolean;
               "source_id": string;
@@ -62914,6 +63562,7 @@ export interface operations {
             "monitor_management_snapshot_count"?: number;
             "monitor_management_version"?: number;
             "monitor_rule_results"?: Array<{
+              "approximate"?: boolean;
               "coverage_pct": number;
               "eligible_buckets": number;
               "message": string;
@@ -66307,6 +66956,15 @@ export interface operations {
                   "smartscape_node_type"?: string;
                   "topology_mode"?: string;
                 }) | null;
+                "elastic"?: ({
+                  "mapping_revision": string;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "preset"?: string;
+                  "product": string;
+                  "queries"?: Array<Record<string, unknown>>;
+                  "signals": Array<string>;
+                }) | null;
+                "elastic_ingestion_watermark"?: string;
                 "executor_mode"?: string;
                 "job_id": string;
                 "management_incomplete_snapshots"?: number;
@@ -66325,6 +66983,7 @@ export interface operations {
                   "targets"?: boolean;
                 }) | null;
                 "provider_coverage"?: Record<string, Record<string, unknown>>;
+                "query_watermark"?: string;
                 "reason"?: string;
                 "required": boolean;
                 "source_id": string;
@@ -66341,6 +67000,7 @@ export interface operations {
               "monitor_management_snapshot_count"?: number;
               "monitor_management_version"?: number;
               "monitor_rule_results"?: Array<{
+                "approximate"?: boolean;
                 "coverage_pct": number;
                 "eligible_buckets": number;
                 "message": string;
@@ -66919,20 +67579,32 @@ export interface operations {
               "diagnostic": {
                 "application_id": string;
                 "backend"?: string;
+                "correlation"?: string;
                 "deep_link"?: string;
+                "document_id"?: string;
                 "entity_ids"?: Record<string, string>;
                 "id": string;
+                "index"?: string;
+                "ingested_at"?: (string) | null;
                 "kind": string;
+                "log"?: (Record<string, unknown>) | null;
                 "properties"?: Record<string, string>;
                 "provider"?: string;
+                "query_id"?: string;
+                "received_at"?: string;
+                "service"?: string;
                 "severity"?: string;
+                "span"?: (Record<string, unknown>) | null;
                 "status"?: string;
                 "summary"?: string;
                 "timestamp_utc": string;
+                "transaction"?: (Record<string, unknown>) | null;
               };
+              "schema_version"?: string;
               "source_id": string;
             }>;
             "monitor_rule_results"?: Array<{
+              "approximate"?: boolean;
               "coverage_pct": number;
               "eligible_buckets": number;
               "message": string;
@@ -75678,6 +76350,7 @@ export interface operations {
                 "source_id": string;
               }>;
             }) | null;
+            "monitor_warnings"?: Array<string>;
             "name": string;
             "paused_at"?: (string) | null;
             "pending_reason"?: string;
@@ -83136,6 +83809,7 @@ export interface operations {
                   "id": string;
                   "live_metrics"?: (Record<string, unknown>) | null;
                   "monitor_bindings"?: (Record<string, unknown>) | null;
+                  "monitor_warnings"?: Array<string>;
                   "name": string;
                   "paused_at"?: (string) | null;
                   "pending_reason"?: string;
@@ -87440,6 +88114,7 @@ export interface operations {
                   "provider"?: ({
                     "aggregation_eligible": boolean;
                     "analysis_statistic"?: string;
+                    "approximate"?: boolean;
                     "backend"?: string;
                     "backend_profile"?: string;
                     "bucket_end": string;
@@ -87447,6 +88122,7 @@ export interface operations {
                     "catalog_path"?: string;
                     "count"?: (number) | null;
                     "definition_hash"?: string;
+                    "derived_aggregation"?: string;
                     "display_labels"?: Record<string, string>;
                     "entity_ids"?: Record<string, string>;
                     "evaluation_step_seconds"?: number;
@@ -87464,6 +88140,7 @@ export interface operations {
                     "sum"?: (number) | null;
                     "synthetic"?: boolean;
                     "underlying_sample_time"?: (string) | null;
+                    "window_kind"?: string;
                   }) | null;
                   "quality": string;
                   "received_at"?: string;
@@ -87615,6 +88292,76 @@ export interface operations {
               "smartscape_entity_ids"?: Array<string>;
               "smartscape_node_type"?: string;
               "topology_mode"?: string;
+            }) | null;
+            "elastic"?: ({
+              "attribute_fields"?: Array<string>;
+              "cluster_health"?: boolean;
+              "duration_field"?: string;
+              "duration_unit"?: string;
+              "errors"?: boolean;
+              "header_origins"?: Array<string>;
+              "indices": Array<string>;
+              "ingested_field"?: string;
+              "kibana_health"?: boolean;
+              "logs"?: boolean;
+              "logstash_health"?: boolean;
+              "max_retained_bytes"?: number;
+              "max_retained_records"?: number;
+              "max_window_seconds"?: number;
+              "message_field"?: string;
+              "metrics"?: Array<{
+                "bucket_seconds"?: number;
+                "count_field"?: string;
+                "exact_window"?: boolean;
+                "field"?: string;
+                "group_by"?: Array<string>;
+                "kind"?: string;
+                "name": string;
+                "statistic": string;
+                "sum_field"?: string;
+                "unit"?: string;
+              }>;
+              "overlap_seconds"?: number;
+              "page_size"?: number;
+              "parent_span_id_field"?: string;
+              "preset"?: string;
+              "project_id": string;
+              "projected_fields"?: Array<string>;
+              "queries"?: Array<{
+                "approximate"?: boolean;
+                "async"?: boolean;
+                "bucket_seconds"?: number;
+                "count_column"?: string;
+                "dimension_columns"?: Array<string>;
+                "dsl"?: unknown;
+                "esql"?: string;
+                "exact_window"?: boolean;
+                "group_by"?: Array<string>;
+                "kind": string;
+                "language": string;
+                "name": string;
+                "params"?: Array<unknown>;
+                "statistic"?: string;
+                "sum_column"?: string;
+                "timestamp_column"?: string;
+                "unit"?: string;
+                "value_column"?: string;
+              }>;
+              "query_offset"?: number;
+              "run_header"?: boolean;
+              "run_id_field"?: string;
+              "service_field"?: string;
+              "service_values"?: Array<string>;
+              "settle_seconds"?: number;
+              "severity_field"?: string;
+              "span_id_field"?: string;
+              "status_field"?: string;
+              "timestamp_field"?: string;
+              "trace_id_field"?: string;
+              "traces"?: boolean;
+              "transaction_id_field"?: string;
+              "transactions"?: boolean;
+              "unique_sort_field"?: string;
             }) | null;
             "elastic_query"?: ({
               "bucket_seconds"?: number;
@@ -87823,6 +88570,76 @@ export interface operations {
             "smartscape_node_type"?: string;
             "topology_mode"?: string;
           }) | null;
+          "elastic"?: ({
+            "attribute_fields"?: Array<string>;
+            "cluster_health"?: boolean;
+            "duration_field"?: string;
+            "duration_unit"?: string;
+            "errors"?: boolean;
+            "header_origins"?: Array<string>;
+            "indices"?: Array<string>;
+            "ingested_field"?: string;
+            "kibana_health"?: boolean;
+            "logs"?: boolean;
+            "logstash_health"?: boolean;
+            "max_retained_bytes"?: number;
+            "max_retained_records"?: number;
+            "max_window_seconds"?: number;
+            "message_field"?: string;
+            "metrics"?: Array<{
+              "bucket_seconds"?: number;
+              "count_field"?: string;
+              "exact_window"?: boolean;
+              "field"?: string;
+              "group_by"?: Array<string>;
+              "kind"?: string;
+              "name"?: string;
+              "statistic"?: string;
+              "sum_field"?: string;
+              "unit"?: string;
+            }>;
+            "overlap_seconds"?: number;
+            "page_size"?: number;
+            "parent_span_id_field"?: string;
+            "preset"?: string;
+            "project_id"?: string;
+            "projected_fields"?: Array<string>;
+            "queries"?: Array<{
+              "approximate"?: boolean;
+              "async"?: boolean;
+              "bucket_seconds"?: number;
+              "count_column"?: string;
+              "dimension_columns"?: Array<string>;
+              "dsl"?: unknown;
+              "esql"?: string;
+              "exact_window"?: boolean;
+              "group_by"?: Array<string>;
+              "kind"?: string;
+              "language"?: string;
+              "name"?: string;
+              "params"?: Array<unknown>;
+              "statistic"?: string;
+              "sum_column"?: string;
+              "timestamp_column"?: string;
+              "unit"?: string;
+              "value_column"?: string;
+            }>;
+            "query_offset"?: number;
+            "run_header"?: boolean;
+            "run_id_field"?: string;
+            "service_field"?: string;
+            "service_values"?: Array<string>;
+            "settle_seconds"?: number;
+            "severity_field"?: string;
+            "span_id_field"?: string;
+            "status_field"?: string;
+            "timestamp_field"?: string;
+            "trace_id_field"?: string;
+            "traces"?: boolean;
+            "transaction_id_field"?: string;
+            "transactions"?: boolean;
+            "unique_sort_field"?: string;
+          }) | null;
           "elastic_query"?: ({
             "bucket_seconds"?: number;
             "overlap_seconds"?: number;
@@ -87978,6 +88795,76 @@ export interface operations {
               "smartscape_entity_ids"?: Array<string>;
               "smartscape_node_type"?: string;
               "topology_mode"?: string;
+            }) | null;
+            "elastic"?: ({
+              "attribute_fields"?: Array<string>;
+              "cluster_health"?: boolean;
+              "duration_field"?: string;
+              "duration_unit"?: string;
+              "errors"?: boolean;
+              "header_origins"?: Array<string>;
+              "indices": Array<string>;
+              "ingested_field"?: string;
+              "kibana_health"?: boolean;
+              "logs"?: boolean;
+              "logstash_health"?: boolean;
+              "max_retained_bytes"?: number;
+              "max_retained_records"?: number;
+              "max_window_seconds"?: number;
+              "message_field"?: string;
+              "metrics"?: Array<{
+                "bucket_seconds"?: number;
+                "count_field"?: string;
+                "exact_window"?: boolean;
+                "field"?: string;
+                "group_by"?: Array<string>;
+                "kind"?: string;
+                "name": string;
+                "statistic": string;
+                "sum_field"?: string;
+                "unit"?: string;
+              }>;
+              "overlap_seconds"?: number;
+              "page_size"?: number;
+              "parent_span_id_field"?: string;
+              "preset"?: string;
+              "project_id": string;
+              "projected_fields"?: Array<string>;
+              "queries"?: Array<{
+                "approximate"?: boolean;
+                "async"?: boolean;
+                "bucket_seconds"?: number;
+                "count_column"?: string;
+                "dimension_columns"?: Array<string>;
+                "dsl"?: unknown;
+                "esql"?: string;
+                "exact_window"?: boolean;
+                "group_by"?: Array<string>;
+                "kind": string;
+                "language": string;
+                "name": string;
+                "params"?: Array<unknown>;
+                "statistic"?: string;
+                "sum_column"?: string;
+                "timestamp_column"?: string;
+                "unit"?: string;
+                "value_column"?: string;
+              }>;
+              "query_offset"?: number;
+              "run_header"?: boolean;
+              "run_id_field"?: string;
+              "service_field"?: string;
+              "service_values"?: Array<string>;
+              "settle_seconds"?: number;
+              "severity_field"?: string;
+              "span_id_field"?: string;
+              "status_field"?: string;
+              "timestamp_field"?: string;
+              "trace_id_field"?: string;
+              "traces"?: boolean;
+              "transaction_id_field"?: string;
+              "transactions"?: boolean;
+              "unique_sort_field"?: string;
             }) | null;
             "elastic_query"?: ({
               "bucket_seconds"?: number;
@@ -88187,6 +89074,76 @@ export interface operations {
             "smartscape_node_type"?: string;
             "topology_mode"?: string;
           }) | null;
+          "elastic"?: ({
+            "attribute_fields"?: Array<string>;
+            "cluster_health"?: boolean;
+            "duration_field"?: string;
+            "duration_unit"?: string;
+            "errors"?: boolean;
+            "header_origins"?: Array<string>;
+            "indices"?: Array<string>;
+            "ingested_field"?: string;
+            "kibana_health"?: boolean;
+            "logs"?: boolean;
+            "logstash_health"?: boolean;
+            "max_retained_bytes"?: number;
+            "max_retained_records"?: number;
+            "max_window_seconds"?: number;
+            "message_field"?: string;
+            "metrics"?: Array<{
+              "bucket_seconds"?: number;
+              "count_field"?: string;
+              "exact_window"?: boolean;
+              "field"?: string;
+              "group_by"?: Array<string>;
+              "kind"?: string;
+              "name"?: string;
+              "statistic"?: string;
+              "sum_field"?: string;
+              "unit"?: string;
+            }>;
+            "overlap_seconds"?: number;
+            "page_size"?: number;
+            "parent_span_id_field"?: string;
+            "preset"?: string;
+            "project_id"?: string;
+            "projected_fields"?: Array<string>;
+            "queries"?: Array<{
+              "approximate"?: boolean;
+              "async"?: boolean;
+              "bucket_seconds"?: number;
+              "count_column"?: string;
+              "dimension_columns"?: Array<string>;
+              "dsl"?: unknown;
+              "esql"?: string;
+              "exact_window"?: boolean;
+              "group_by"?: Array<string>;
+              "kind"?: string;
+              "language"?: string;
+              "name"?: string;
+              "params"?: Array<unknown>;
+              "statistic"?: string;
+              "sum_column"?: string;
+              "timestamp_column"?: string;
+              "unit"?: string;
+              "value_column"?: string;
+            }>;
+            "query_offset"?: number;
+            "run_header"?: boolean;
+            "run_id_field"?: string;
+            "service_field"?: string;
+            "service_values"?: Array<string>;
+            "settle_seconds"?: number;
+            "severity_field"?: string;
+            "span_id_field"?: string;
+            "status_field"?: string;
+            "timestamp_field"?: string;
+            "trace_id_field"?: string;
+            "traces"?: boolean;
+            "transaction_id_field"?: string;
+            "transactions"?: boolean;
+            "unique_sort_field"?: string;
+          }) | null;
           "elastic_query"?: ({
             "bucket_seconds"?: number;
             "overlap_seconds"?: number;
@@ -88342,6 +89299,76 @@ export interface operations {
               "smartscape_entity_ids"?: Array<string>;
               "smartscape_node_type"?: string;
               "topology_mode"?: string;
+            }) | null;
+            "elastic"?: ({
+              "attribute_fields"?: Array<string>;
+              "cluster_health"?: boolean;
+              "duration_field"?: string;
+              "duration_unit"?: string;
+              "errors"?: boolean;
+              "header_origins"?: Array<string>;
+              "indices": Array<string>;
+              "ingested_field"?: string;
+              "kibana_health"?: boolean;
+              "logs"?: boolean;
+              "logstash_health"?: boolean;
+              "max_retained_bytes"?: number;
+              "max_retained_records"?: number;
+              "max_window_seconds"?: number;
+              "message_field"?: string;
+              "metrics"?: Array<{
+                "bucket_seconds"?: number;
+                "count_field"?: string;
+                "exact_window"?: boolean;
+                "field"?: string;
+                "group_by"?: Array<string>;
+                "kind"?: string;
+                "name": string;
+                "statistic": string;
+                "sum_field"?: string;
+                "unit"?: string;
+              }>;
+              "overlap_seconds"?: number;
+              "page_size"?: number;
+              "parent_span_id_field"?: string;
+              "preset"?: string;
+              "project_id": string;
+              "projected_fields"?: Array<string>;
+              "queries"?: Array<{
+                "approximate"?: boolean;
+                "async"?: boolean;
+                "bucket_seconds"?: number;
+                "count_column"?: string;
+                "dimension_columns"?: Array<string>;
+                "dsl"?: unknown;
+                "esql"?: string;
+                "exact_window"?: boolean;
+                "group_by"?: Array<string>;
+                "kind": string;
+                "language": string;
+                "name": string;
+                "params"?: Array<unknown>;
+                "statistic"?: string;
+                "sum_column"?: string;
+                "timestamp_column"?: string;
+                "unit"?: string;
+                "value_column"?: string;
+              }>;
+              "query_offset"?: number;
+              "run_header"?: boolean;
+              "run_id_field"?: string;
+              "service_field"?: string;
+              "service_values"?: Array<string>;
+              "settle_seconds"?: number;
+              "severity_field"?: string;
+              "span_id_field"?: string;
+              "status_field"?: string;
+              "timestamp_field"?: string;
+              "trace_id_field"?: string;
+              "traces"?: boolean;
+              "transaction_id_field"?: string;
+              "transactions"?: boolean;
+              "unique_sort_field"?: string;
             }) | null;
             "elastic_query"?: ({
               "bucket_seconds"?: number;
@@ -88551,6 +89578,76 @@ export interface operations {
             "smartscape_node_type"?: string;
             "topology_mode"?: string;
           }) | null;
+          "elastic"?: ({
+            "attribute_fields"?: Array<string>;
+            "cluster_health"?: boolean;
+            "duration_field"?: string;
+            "duration_unit"?: string;
+            "errors"?: boolean;
+            "header_origins"?: Array<string>;
+            "indices"?: Array<string>;
+            "ingested_field"?: string;
+            "kibana_health"?: boolean;
+            "logs"?: boolean;
+            "logstash_health"?: boolean;
+            "max_retained_bytes"?: number;
+            "max_retained_records"?: number;
+            "max_window_seconds"?: number;
+            "message_field"?: string;
+            "metrics"?: Array<{
+              "bucket_seconds"?: number;
+              "count_field"?: string;
+              "exact_window"?: boolean;
+              "field"?: string;
+              "group_by"?: Array<string>;
+              "kind"?: string;
+              "name"?: string;
+              "statistic"?: string;
+              "sum_field"?: string;
+              "unit"?: string;
+            }>;
+            "overlap_seconds"?: number;
+            "page_size"?: number;
+            "parent_span_id_field"?: string;
+            "preset"?: string;
+            "project_id"?: string;
+            "projected_fields"?: Array<string>;
+            "queries"?: Array<{
+              "approximate"?: boolean;
+              "async"?: boolean;
+              "bucket_seconds"?: number;
+              "count_column"?: string;
+              "dimension_columns"?: Array<string>;
+              "dsl"?: unknown;
+              "esql"?: string;
+              "exact_window"?: boolean;
+              "group_by"?: Array<string>;
+              "kind"?: string;
+              "language"?: string;
+              "name"?: string;
+              "params"?: Array<unknown>;
+              "statistic"?: string;
+              "sum_column"?: string;
+              "timestamp_column"?: string;
+              "unit"?: string;
+              "value_column"?: string;
+            }>;
+            "query_offset"?: number;
+            "run_header"?: boolean;
+            "run_id_field"?: string;
+            "service_field"?: string;
+            "service_values"?: Array<string>;
+            "settle_seconds"?: number;
+            "severity_field"?: string;
+            "span_id_field"?: string;
+            "status_field"?: string;
+            "timestamp_field"?: string;
+            "trace_id_field"?: string;
+            "traces"?: boolean;
+            "transaction_id_field"?: string;
+            "transactions"?: boolean;
+            "unique_sort_field"?: string;
+          }) | null;
           "elastic_query"?: ({
             "bucket_seconds"?: number;
             "overlap_seconds"?: number;
@@ -88706,6 +89803,76 @@ export interface operations {
               "smartscape_entity_ids"?: Array<string>;
               "smartscape_node_type"?: string;
               "topology_mode"?: string;
+            }) | null;
+            "elastic"?: ({
+              "attribute_fields"?: Array<string>;
+              "cluster_health"?: boolean;
+              "duration_field"?: string;
+              "duration_unit"?: string;
+              "errors"?: boolean;
+              "header_origins"?: Array<string>;
+              "indices": Array<string>;
+              "ingested_field"?: string;
+              "kibana_health"?: boolean;
+              "logs"?: boolean;
+              "logstash_health"?: boolean;
+              "max_retained_bytes"?: number;
+              "max_retained_records"?: number;
+              "max_window_seconds"?: number;
+              "message_field"?: string;
+              "metrics"?: Array<{
+                "bucket_seconds"?: number;
+                "count_field"?: string;
+                "exact_window"?: boolean;
+                "field"?: string;
+                "group_by"?: Array<string>;
+                "kind"?: string;
+                "name": string;
+                "statistic": string;
+                "sum_field"?: string;
+                "unit"?: string;
+              }>;
+              "overlap_seconds"?: number;
+              "page_size"?: number;
+              "parent_span_id_field"?: string;
+              "preset"?: string;
+              "project_id": string;
+              "projected_fields"?: Array<string>;
+              "queries"?: Array<{
+                "approximate"?: boolean;
+                "async"?: boolean;
+                "bucket_seconds"?: number;
+                "count_column"?: string;
+                "dimension_columns"?: Array<string>;
+                "dsl"?: unknown;
+                "esql"?: string;
+                "exact_window"?: boolean;
+                "group_by"?: Array<string>;
+                "kind": string;
+                "language": string;
+                "name": string;
+                "params"?: Array<unknown>;
+                "statistic"?: string;
+                "sum_column"?: string;
+                "timestamp_column"?: string;
+                "unit"?: string;
+                "value_column"?: string;
+              }>;
+              "query_offset"?: number;
+              "run_header"?: boolean;
+              "run_id_field"?: string;
+              "service_field"?: string;
+              "service_values"?: Array<string>;
+              "settle_seconds"?: number;
+              "severity_field"?: string;
+              "span_id_field"?: string;
+              "status_field"?: string;
+              "timestamp_field"?: string;
+              "trace_id_field"?: string;
+              "traces"?: boolean;
+              "transaction_id_field"?: string;
+              "transactions"?: boolean;
+              "unique_sort_field"?: string;
             }) | null;
             "elastic_query"?: ({
               "bucket_seconds"?: number;
@@ -95541,6 +96708,7 @@ export interface operations {
                 "source_id": string;
               }>;
             }) | null;
+            "monitor_warnings"?: Array<string>;
             "name": string;
             "paused_at"?: (string) | null;
             "pending_reason"?: string;
@@ -96159,6 +97327,74 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handlePollElasticCleanups": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "after_key"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Array<{
+            "payload": string;
+            "signature": string;
+          }>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handlePollElasticInspections": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "capacity"?: boolean;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Array<{
+            "payload": string;
+            "signature": string;
+          }>;
+        };
+      };
+      "400": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -97049,6 +98285,46 @@ export interface operations {
                   "smartscape_node_type"?: string;
                   "topology_mode"?: string;
                 }) | null;
+                "elastic"?: ({
+                  "attribute_fields"?: Array<string>;
+                  "cluster_health"?: boolean;
+                  "duration_field"?: string;
+                  "duration_unit"?: string;
+                  "errors"?: boolean;
+                  "header_origins"?: Array<string>;
+                  "indices": Array<string>;
+                  "ingested_field"?: string;
+                  "kibana_health"?: boolean;
+                  "logs"?: boolean;
+                  "logstash_health"?: boolean;
+                  "max_retained_bytes"?: number;
+                  "max_retained_records"?: number;
+                  "max_window_seconds"?: number;
+                  "message_field"?: string;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "overlap_seconds"?: number;
+                  "page_size"?: number;
+                  "parent_span_id_field"?: string;
+                  "preset"?: string;
+                  "project_id": string;
+                  "projected_fields"?: Array<string>;
+                  "queries"?: Array<Record<string, unknown>>;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "run_id_field"?: string;
+                  "service_field"?: string;
+                  "service_values"?: Array<string>;
+                  "settle_seconds"?: number;
+                  "severity_field"?: string;
+                  "span_id_field"?: string;
+                  "status_field"?: string;
+                  "timestamp_field"?: string;
+                  "trace_id_field"?: string;
+                  "traces"?: boolean;
+                  "transaction_id_field"?: string;
+                  "transactions"?: boolean;
+                  "unique_sort_field"?: string;
+                }) | null;
                 "elastic_query"?: ({
                   "bucket_seconds"?: number;
                   "overlap_seconds"?: number;
@@ -97111,6 +98387,7 @@ export interface operations {
                 "revision": number;
                 "service"?: string;
               }>;
+              "warnings"?: Array<string>;
             }) | null;
             "project_id": string;
             "ready_at"?: string;
@@ -97207,6 +98484,46 @@ export interface operations {
                   "smartscape_node_type"?: string;
                   "topology_mode"?: string;
                 }) | null;
+                "elastic"?: ({
+                  "attribute_fields"?: Array<string>;
+                  "cluster_health"?: boolean;
+                  "duration_field"?: string;
+                  "duration_unit"?: string;
+                  "errors"?: boolean;
+                  "header_origins"?: Array<string>;
+                  "indices": Array<string>;
+                  "ingested_field"?: string;
+                  "kibana_health"?: boolean;
+                  "logs"?: boolean;
+                  "logstash_health"?: boolean;
+                  "max_retained_bytes"?: number;
+                  "max_retained_records"?: number;
+                  "max_window_seconds"?: number;
+                  "message_field"?: string;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "overlap_seconds"?: number;
+                  "page_size"?: number;
+                  "parent_span_id_field"?: string;
+                  "preset"?: string;
+                  "project_id": string;
+                  "projected_fields"?: Array<string>;
+                  "queries"?: Array<Record<string, unknown>>;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "run_id_field"?: string;
+                  "service_field"?: string;
+                  "service_values"?: Array<string>;
+                  "settle_seconds"?: number;
+                  "severity_field"?: string;
+                  "span_id_field"?: string;
+                  "status_field"?: string;
+                  "timestamp_field"?: string;
+                  "trace_id_field"?: string;
+                  "traces"?: boolean;
+                  "transaction_id_field"?: string;
+                  "transactions"?: boolean;
+                  "unique_sort_field"?: string;
+                }) | null;
                 "elastic_query"?: ({
                   "bucket_seconds"?: number;
                   "overlap_seconds"?: number;
@@ -97269,6 +98586,7 @@ export interface operations {
                 "revision": number;
                 "service"?: string;
               }>;
+              "warnings"?: Array<string>;
             }) | null;
             "project_id": string;
             "ready_at"?: string;
@@ -97426,6 +98744,46 @@ export interface operations {
                   "smartscape_node_type"?: string;
                   "topology_mode"?: string;
                 }) | null;
+                "elastic"?: ({
+                  "attribute_fields"?: Array<string>;
+                  "cluster_health"?: boolean;
+                  "duration_field"?: string;
+                  "duration_unit"?: string;
+                  "errors"?: boolean;
+                  "header_origins"?: Array<string>;
+                  "indices": Array<string>;
+                  "ingested_field"?: string;
+                  "kibana_health"?: boolean;
+                  "logs"?: boolean;
+                  "logstash_health"?: boolean;
+                  "max_retained_bytes"?: number;
+                  "max_retained_records"?: number;
+                  "max_window_seconds"?: number;
+                  "message_field"?: string;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "overlap_seconds"?: number;
+                  "page_size"?: number;
+                  "parent_span_id_field"?: string;
+                  "preset"?: string;
+                  "project_id": string;
+                  "projected_fields"?: Array<string>;
+                  "queries"?: Array<Record<string, unknown>>;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "run_id_field"?: string;
+                  "service_field"?: string;
+                  "service_values"?: Array<string>;
+                  "settle_seconds"?: number;
+                  "severity_field"?: string;
+                  "span_id_field"?: string;
+                  "status_field"?: string;
+                  "timestamp_field"?: string;
+                  "trace_id_field"?: string;
+                  "traces"?: boolean;
+                  "transaction_id_field"?: string;
+                  "transactions"?: boolean;
+                  "unique_sort_field"?: string;
+                }) | null;
                 "elastic_query"?: ({
                   "bucket_seconds"?: number;
                   "overlap_seconds"?: number;
@@ -97488,6 +98846,7 @@ export interface operations {
                 "revision": number;
                 "service"?: string;
               }>;
+              "warnings"?: Array<string>;
             }) | null;
             "project_id": string;
             "ready_at"?: string;
@@ -97584,6 +98943,46 @@ export interface operations {
                   "smartscape_node_type"?: string;
                   "topology_mode"?: string;
                 }) | null;
+                "elastic"?: ({
+                  "attribute_fields"?: Array<string>;
+                  "cluster_health"?: boolean;
+                  "duration_field"?: string;
+                  "duration_unit"?: string;
+                  "errors"?: boolean;
+                  "header_origins"?: Array<string>;
+                  "indices": Array<string>;
+                  "ingested_field"?: string;
+                  "kibana_health"?: boolean;
+                  "logs"?: boolean;
+                  "logstash_health"?: boolean;
+                  "max_retained_bytes"?: number;
+                  "max_retained_records"?: number;
+                  "max_window_seconds"?: number;
+                  "message_field"?: string;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "overlap_seconds"?: number;
+                  "page_size"?: number;
+                  "parent_span_id_field"?: string;
+                  "preset"?: string;
+                  "project_id": string;
+                  "projected_fields"?: Array<string>;
+                  "queries"?: Array<Record<string, unknown>>;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "run_id_field"?: string;
+                  "service_field"?: string;
+                  "service_values"?: Array<string>;
+                  "settle_seconds"?: number;
+                  "severity_field"?: string;
+                  "span_id_field"?: string;
+                  "status_field"?: string;
+                  "timestamp_field"?: string;
+                  "trace_id_field"?: string;
+                  "traces"?: boolean;
+                  "transaction_id_field"?: string;
+                  "transactions"?: boolean;
+                  "unique_sort_field"?: string;
+                }) | null;
                 "elastic_query"?: ({
                   "bucket_seconds"?: number;
                   "overlap_seconds"?: number;
@@ -97646,6 +99045,7 @@ export interface operations {
                 "revision": number;
                 "service"?: string;
               }>;
+              "warnings"?: Array<string>;
             }) | null;
             "project_id": string;
             "ready_at"?: string;
@@ -97813,6 +99213,46 @@ export interface operations {
                   "smartscape_node_type"?: string;
                   "topology_mode"?: string;
                 }) | null;
+                "elastic"?: ({
+                  "attribute_fields"?: Array<string>;
+                  "cluster_health"?: boolean;
+                  "duration_field"?: string;
+                  "duration_unit"?: string;
+                  "errors"?: boolean;
+                  "header_origins"?: Array<string>;
+                  "indices": Array<string>;
+                  "ingested_field"?: string;
+                  "kibana_health"?: boolean;
+                  "logs"?: boolean;
+                  "logstash_health"?: boolean;
+                  "max_retained_bytes"?: number;
+                  "max_retained_records"?: number;
+                  "max_window_seconds"?: number;
+                  "message_field"?: string;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "overlap_seconds"?: number;
+                  "page_size"?: number;
+                  "parent_span_id_field"?: string;
+                  "preset"?: string;
+                  "project_id": string;
+                  "projected_fields"?: Array<string>;
+                  "queries"?: Array<Record<string, unknown>>;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "run_id_field"?: string;
+                  "service_field"?: string;
+                  "service_values"?: Array<string>;
+                  "settle_seconds"?: number;
+                  "severity_field"?: string;
+                  "span_id_field"?: string;
+                  "status_field"?: string;
+                  "timestamp_field"?: string;
+                  "trace_id_field"?: string;
+                  "traces"?: boolean;
+                  "transaction_id_field"?: string;
+                  "transactions"?: boolean;
+                  "unique_sort_field"?: string;
+                }) | null;
                 "elastic_query"?: ({
                   "bucket_seconds"?: number;
                   "overlap_seconds"?: number;
@@ -97875,6 +99315,7 @@ export interface operations {
                 "revision": number;
                 "service"?: string;
               }>;
+              "warnings"?: Array<string>;
             }) | null;
             "project_id": string;
             "ready_at"?: string;
@@ -97971,6 +99412,46 @@ export interface operations {
                   "smartscape_node_type"?: string;
                   "topology_mode"?: string;
                 }) | null;
+                "elastic"?: ({
+                  "attribute_fields"?: Array<string>;
+                  "cluster_health"?: boolean;
+                  "duration_field"?: string;
+                  "duration_unit"?: string;
+                  "errors"?: boolean;
+                  "header_origins"?: Array<string>;
+                  "indices": Array<string>;
+                  "ingested_field"?: string;
+                  "kibana_health"?: boolean;
+                  "logs"?: boolean;
+                  "logstash_health"?: boolean;
+                  "max_retained_bytes"?: number;
+                  "max_retained_records"?: number;
+                  "max_window_seconds"?: number;
+                  "message_field"?: string;
+                  "metrics"?: Array<Record<string, unknown>>;
+                  "overlap_seconds"?: number;
+                  "page_size"?: number;
+                  "parent_span_id_field"?: string;
+                  "preset"?: string;
+                  "project_id": string;
+                  "projected_fields"?: Array<string>;
+                  "queries"?: Array<Record<string, unknown>>;
+                  "query_offset"?: number;
+                  "run_header"?: boolean;
+                  "run_id_field"?: string;
+                  "service_field"?: string;
+                  "service_values"?: Array<string>;
+                  "settle_seconds"?: number;
+                  "severity_field"?: string;
+                  "span_id_field"?: string;
+                  "status_field"?: string;
+                  "timestamp_field"?: string;
+                  "trace_id_field"?: string;
+                  "traces"?: boolean;
+                  "transaction_id_field"?: string;
+                  "transactions"?: boolean;
+                  "unique_sort_field"?: string;
+                }) | null;
                 "elastic_query"?: ({
                   "bucket_seconds"?: number;
                   "overlap_seconds"?: number;
@@ -98033,6 +99514,7 @@ export interface operations {
                 "revision": number;
                 "service"?: string;
               }>;
+              "warnings"?: Array<string>;
             }) | null;
             "project_id": string;
             "ready_at"?: string;
@@ -104803,6 +106285,7 @@ export interface operations {
       content: {
         "application/json": {
           "coverage"?: Record<string, {
+            "as_of"?: (string) | null;
             "cache_age_seconds"?: number;
             "cached"?: boolean;
             "evidence"?: number;
@@ -104810,10 +106293,13 @@ export interface operations {
             "freshness"?: string;
             "from"?: string;
             "infos"?: Array<string>;
+            "late_arrival_seconds"?: number;
             "message"?: string;
             "missing_points"?: number;
             "observed_at"?: (string) | null;
             "points"?: number;
+            "query_id"?: string;
+            "reason"?: string;
             "status"?: string;
             "to"?: string;
             "truncated"?: boolean;
@@ -104851,6 +106337,7 @@ export interface operations {
             "provider"?: ({
               "aggregation_eligible"?: boolean;
               "analysis_statistic"?: string;
+              "approximate"?: boolean;
               "backend"?: string;
               "backend_profile"?: string;
               "bucket_end"?: string;
@@ -104858,6 +106345,7 @@ export interface operations {
               "catalog_path"?: string;
               "count"?: (number) | null;
               "definition_hash"?: string;
+              "derived_aggregation"?: string;
               "display_labels"?: Record<string, string>;
               "entity_ids"?: Record<string, string>;
               "evaluation_step_seconds"?: number;
@@ -104875,6 +106363,7 @@ export interface operations {
               "sum"?: (number) | null;
               "synthetic"?: boolean;
               "underlying_sample_time"?: (string) | null;
+              "window_kind"?: string;
             }) | null;
             "quality"?: string;
             "received_at"?: string;
@@ -109158,6 +110647,7 @@ export interface operations {
                   "source_id": string;
                 }>;
               }) | null;
+              "monitor_warnings"?: Array<string>;
               "name": string;
               "paused_at"?: (string) | null;
               "pending_reason"?: string;
@@ -110882,6 +112372,7 @@ export interface operations {
                   "source_id": string;
                 }>;
               }) | null;
+              "monitor_warnings"?: Array<string>;
               "name": string;
               "paused_at"?: (string) | null;
               "pending_reason"?: string;
@@ -112606,6 +114097,7 @@ export interface operations {
                   "source_id": string;
                 }>;
               }) | null;
+              "monitor_warnings"?: Array<string>;
               "name": string;
               "paused_at"?: (string) | null;
               "pending_reason"?: string;
@@ -114330,6 +115822,7 @@ export interface operations {
                   "source_id": string;
                 }>;
               }) | null;
+              "monitor_warnings"?: Array<string>;
               "name": string;
               "paused_at"?: (string) | null;
               "pending_reason"?: string;
@@ -116054,6 +117547,7 @@ export interface operations {
                   "source_id": string;
                 }>;
               }) | null;
+              "monitor_warnings"?: Array<string>;
               "name": string;
               "paused_at"?: (string) | null;
               "pending_reason"?: string;
@@ -121651,7 +123145,11 @@ export interface operations {
         "after_key"?: string;
         "kind"?: string;
         "limit"?: number;
+        "service"?: string;
+        "severity"?: string;
+        "signal"?: string;
         "source_id"?: string;
+        "trace_id"?: string;
       };
     };
     requestBody?: never;
@@ -121705,7 +123203,29 @@ export interface operations {
             "status"?: Record<string, string>;
             "violations"?: boolean;
           };
+          "cleanup_continuations"?: Array<({
+            "async_id"?: string;
+            "composite_after"?: Record<string, {
+              "bool_value"?: (boolean) | null;
+              "kind"?: string;
+              "number_value"?: (number) | null;
+              "string_value"?: string;
+            }>;
+            "keep_alive_until"?: string;
+            "pit_id"?: string;
+            "query_id"?: string;
+            "resolved_indices"?: Array<string>;
+            "search_after"?: Array<{
+              "bool_value"?: (boolean) | null;
+              "kind"?: string;
+              "number_value"?: (number) | null;
+              "string_value"?: string;
+            }>;
+            "window_from"?: string;
+            "window_until"?: string;
+          }) | null>;
           "coverage"?: Record<string, {
+            "as_of"?: (string) | null;
             "cache_age_seconds"?: number;
             "cached"?: boolean;
             "evidence"?: number;
@@ -121713,10 +123233,13 @@ export interface operations {
             "freshness"?: string;
             "from"?: string;
             "infos"?: Array<string>;
+            "late_arrival_seconds"?: number;
             "message"?: string;
             "missing_points"?: number;
             "observed_at"?: (string) | null;
             "points"?: number;
+            "query_id"?: string;
+            "reason"?: string;
             "status"?: string;
             "to"?: string;
             "truncated"?: boolean;
@@ -121725,16 +123248,41 @@ export interface operations {
           "evidence"?: Array<{
             "application_id"?: string;
             "backend"?: string;
+            "correlation"?: string;
             "deep_link"?: string;
+            "document_id"?: string;
             "entity_ids"?: Record<string, string>;
             "id"?: string;
+            "index"?: string;
+            "ingested_at"?: (string) | null;
             "kind"?: string;
+            "log"?: ({
+              "attributes"?: Record<string, Record<string, unknown>>;
+              "level"?: string;
+              "message"?: string;
+            }) | null;
             "properties"?: Record<string, string>;
             "provider"?: string;
+            "query_id"?: string;
+            "received_at"?: string;
+            "service"?: string;
             "severity"?: string;
+            "span"?: ({
+              "attributes"?: Record<string, Record<string, unknown>>;
+              "duration_ms"?: number;
+              "operation"?: string;
+              "parent_span_id"?: string;
+              "span_id"?: string;
+              "trace_id"?: string;
+            }) | null;
             "status"?: string;
             "summary"?: string;
             "timestamp_utc"?: string;
+            "transaction"?: ({
+              "attributes"?: Record<string, Record<string, unknown>>;
+              "duration_ms"?: number;
+              "name"?: string;
+            }) | null;
           }>;
           "evidence_version"?: number;
           "final"?: boolean;
@@ -121897,6 +123445,7 @@ export interface operations {
             "provider"?: ({
               "aggregation_eligible"?: boolean;
               "analysis_statistic"?: string;
+              "approximate"?: boolean;
               "backend"?: string;
               "backend_profile"?: string;
               "bucket_end"?: string;
@@ -121904,6 +123453,7 @@ export interface operations {
               "catalog_path"?: string;
               "count"?: (number) | null;
               "definition_hash"?: string;
+              "derived_aggregation"?: string;
               "display_labels"?: Record<string, string>;
               "entity_ids"?: Record<string, string>;
               "evaluation_step_seconds"?: number;
@@ -121921,6 +123471,7 @@ export interface operations {
               "sum"?: (number) | null;
               "synthetic"?: boolean;
               "underlying_sample_time"?: (string) | null;
+              "window_kind"?: string;
             }) | null;
             "quality"?: string;
             "received_at"?: string;
@@ -121945,6 +123496,17 @@ export interface operations {
           }>;
           "progress"?: ({
             "complete"?: boolean;
+            "continuation"?: ({
+              "async_id"?: string;
+              "composite_after"?: Record<string, Record<string, unknown>>;
+              "keep_alive_until"?: string;
+              "pit_id"?: string;
+              "query_id"?: string;
+              "resolved_indices"?: Array<string>;
+              "search_after"?: Array<Record<string, unknown>>;
+              "window_from"?: string;
+              "window_until"?: string;
+            }) | null;
             "cursor"?: string;
             "cursor_expires_at"?: (string) | null;
             "next_query"?: number;
@@ -121972,6 +123534,7 @@ export interface operations {
           "query_from_utc"?: string;
           "query_until_utc"?: string;
           "query_window_end"?: (string) | null;
+          "resolved_indices"?: Array<string>;
           "sequence"?: number;
           "topology"?: Array<{
             "entity_ids"?: Record<string, string>;
@@ -142018,6 +143581,7 @@ export interface operations {
                 "source_id": string;
               }>;
             }) | null;
+            "monitor_warnings"?: Array<string>;
             "name": string;
             "paused_at"?: (string) | null;
             "pending_reason"?: string;
@@ -145194,12 +146758,72 @@ export interface operations {
           "api_key_secret_name"?: (string) | null;
           "auth_type"?: string;
           "base_filter"?: string;
+          "bearer_token_secret_name"?: (string) | null;
+          "client_certificate_secret_name"?: (string) | null;
+          "client_key_secret_name"?: (string) | null;
+          "collection_mode"?: string;
+          "collector_agent_id"?: string;
+          "config"?: {
+            "approved_cidrs"?: Array<string>;
+            "auth_type"?: string;
+            "ca_pem"?: string;
+            "dashboards_url"?: string;
+            "endpoint"?: string;
+            "kibana_approved_cidrs"?: Array<string>;
+            "kibana_ca_pem"?: string;
+            "kibana_endpoint"?: string;
+            "logstash_approved_cidrs"?: Array<string>;
+            "logstash_ca_pem"?: string;
+            "logstash_endpoint"?: string;
+            "max_evidence"?: number;
+            "max_points"?: number;
+            "max_poll_seconds"?: number;
+            "max_requests_per_poll"?: number;
+            "max_response_bytes"?: number;
+            "max_retries"?: number;
+            "max_series"?: number;
+            "product"?: string;
+            "requests_per_minute"?: number;
+            "timeout_seconds"?: number;
+          };
           "description"?: string;
           "enabled"?: boolean;
           "endpoint"?: string;
           "error_filter"?: string;
           "index_pattern"?: string;
+          "kibana_api_key_secret_name"?: (string) | null;
+          "kibana_auth_type"?: (string) | null;
+          "kibana_bearer_token_secret_name"?: (string) | null;
+          "kibana_client_certificate_secret_name"?: (string) | null;
+          "kibana_client_key_secret_name"?: (string) | null;
+          "kibana_credentials"?: ({
+            "api_key_secret_name"?: string;
+            "auth_type"?: string;
+            "bearer_token_secret_name"?: string;
+            "client_certificate_secret_name"?: string;
+            "client_key_secret_name"?: string;
+            "password_secret_name"?: string;
+            "username_secret_name"?: string;
+          }) | null;
+          "kibana_password_secret_name"?: (string) | null;
+          "kibana_username_secret_name"?: (string) | null;
           "level_field"?: string;
+          "logstash_api_key_secret_name"?: (string) | null;
+          "logstash_auth_type"?: (string) | null;
+          "logstash_bearer_token_secret_name"?: (string) | null;
+          "logstash_client_certificate_secret_name"?: (string) | null;
+          "logstash_client_key_secret_name"?: (string) | null;
+          "logstash_credentials"?: ({
+            "api_key_secret_name"?: string;
+            "auth_type"?: string;
+            "bearer_token_secret_name"?: string;
+            "client_certificate_secret_name"?: string;
+            "client_key_secret_name"?: string;
+            "password_secret_name"?: string;
+            "username_secret_name"?: string;
+          }) | null;
+          "logstash_password_secret_name"?: (string) | null;
+          "logstash_username_secret_name"?: (string) | null;
           "message_field"?: string;
           "metric_aggregations"?: Array<{
             "field"?: string;
@@ -145208,6 +146832,8 @@ export interface operations {
           }>;
           "name"?: string;
           "password_secret_name"?: (string) | null;
+          "product"?: string;
+          "revision"?: number;
           "test_id_field"?: string;
           "timestamp_field"?: string;
           "trace_id_field"?: string;
@@ -145222,6 +146848,48 @@ export interface operations {
           "application/json": {
             "auth_type"?: string;
             "base_filter"?: string;
+            "capabilities"?: {
+              "async_esql": boolean;
+              "dsl": boolean;
+              "esql": boolean;
+              "health": boolean;
+              "kibana_health": boolean;
+              "logs": boolean;
+              "logstash_health": boolean;
+              "metrics": boolean;
+              "pit": boolean;
+              "product": string;
+              "serverless": boolean;
+              "shard_doc": boolean;
+              "status"?: Record<string, string>;
+              "traces": boolean;
+              "version"?: string;
+            };
+            "collection_mode"?: string;
+            "collector_agent_id"?: string;
+            "config"?: {
+              "approved_cidrs"?: Array<string>;
+              "auth_type": string;
+              "ca_pem"?: string;
+              "dashboards_url"?: string;
+              "endpoint": string;
+              "kibana_approved_cidrs"?: Array<string>;
+              "kibana_ca_pem"?: string;
+              "kibana_endpoint"?: string;
+              "logstash_approved_cidrs"?: Array<string>;
+              "logstash_ca_pem"?: string;
+              "logstash_endpoint"?: string;
+              "max_evidence"?: number;
+              "max_points"?: number;
+              "max_poll_seconds"?: number;
+              "max_requests_per_poll"?: number;
+              "max_response_bytes"?: number;
+              "max_retries"?: number;
+              "max_series"?: number;
+              "product": string;
+              "requests_per_minute"?: number;
+              "timeout_seconds"?: number;
+            };
             "created_at": string;
             "description"?: string;
             "enabled": boolean;
@@ -145230,12 +146898,21 @@ export interface operations {
             "has_api_key": boolean;
             "has_basic_password": boolean;
             "has_basic_username": boolean;
+            "has_bearer_token": boolean;
+            "has_client_certificate": boolean;
+            "has_client_key": boolean;
+            "has_custom_ca": boolean;
+            "has_kibana_credentials": boolean;
+            "has_logstash_credentials": boolean;
             "id": string;
             "index_pattern"?: string;
+            "kibana_auth_type"?: string;
             "last_check_message"?: string;
             "last_check_status"?: string;
             "last_checked_at"?: (string) | null;
+            "legacy_capture_ready": boolean;
             "level_field"?: string;
+            "logstash_auth_type"?: string;
             "message_field"?: string;
             "metric_aggregations": Array<{
               "field": string;
@@ -145243,12 +146920,15 @@ export interface operations {
               "operation": string;
             }>;
             "name": string;
+            "product"?: string;
             "project_id": string;
+            "revision"?: number;
             "status": string;
             "test_id_field"?: string;
             "timestamp_field"?: string;
             "trace_id_field"?: string;
             "updated_at": string;
+            "verified_revision"?: number;
           };
         };
       };
@@ -145273,6 +146953,11 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -158728,6 +160413,15 @@ export interface paths {
   "/api/v1/monitoring/collectors/{id}/dynatrace-operations/{operation_id}/result": {
     "post": operations["handleDynatraceOperationResult"];
   };
+  "/api/v1/monitoring/collectors/{id}/elastic-cleanups": {
+    "get": operations["handlePollElasticCleanups"];
+  };
+  "/api/v1/monitoring/collectors/{id}/elastic-inspections": {
+    "get": operations["handlePollElasticInspections"];
+  };
+  "/api/v1/monitoring/collectors/{id}/elastic-inspections/{operation_id}/result": {
+    "post": operations["handleElasticInspectionResult"];
+  };
   "/api/v1/monitoring/collectors/{id}/heartbeat": {
     "post": operations["handleCollectorHeartbeat"];
   };
@@ -158739,6 +160433,9 @@ export interface paths {
   };
   "/api/v1/monitoring/collectors/{id}/jobs": {
     "get": operations["handlePollRunMonitorJobs"];
+  };
+  "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/cleanup": {
+    "post": operations["handleElasticCleanupReceipt"];
   };
   "/api/v1/monitoring/collectors/{id}/jobs/{job_id}/management-polls": {
     "post": operations["handleManagementPoll"];
@@ -158892,6 +160589,13 @@ export interface paths {
     "get": operations["handleGetELKConnection"];
     "put": operations["handleUpdateELKConnection"];
     "delete": operations["handleDeleteELKConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/inspections": {
+    "post": operations["handleCreateElasticInspection"];
+  };
+  "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/inspections/{operation_id}": {
+    "get": operations["handleGetElasticInspection"];
+    "delete": operations["handleCancelElasticInspection"];
   };
   "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/test": {
     "post": operations["handleTestELKConnection"];

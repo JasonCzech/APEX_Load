@@ -189,6 +189,7 @@ var openAPICrossPackageDirectories = map[string]string{
 	"recorder":        "recorder",
 	"sample":          "convert/sample",
 	"storage":         "storage",
+	"elastic":         "elastic",
 }
 
 func addOpenAPICrossPackageTypeDefinitions(apiDir string, typeDefinitions map[string]ast.Expr) error {
@@ -282,6 +283,9 @@ var explicitRouteContractTypes = map[string]struct {
 	"POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/preview":                  {requestType: "PrometheusInspectionRequest", responseTypes: map[int]string{202: "PrometheusOperationResponse"}},
 	"POST /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/adopt-dashboard":          {requestType: "PrometheusDashboardAdoptionRequest", responseTypes: map[int]string{200: "PrometheusDashboardAdoptionResponse"}},
 	"GET /api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/operations/{operation_id}": {responseTypes: map[int]string{200: "PrometheusOperationResponse"}},
+	"POST /api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/inspections": {
+		requestType: "ElasticInspectionRequest",
+	},
 	"POST /api/v1/monitoring/collectors/{id}/inspections/{operation_id}/result": {
 		requestType: "collectoragent.InspectionResult",
 	},
@@ -1286,6 +1290,8 @@ func deprecatedCompatibilityInput(route discoveredRoute, name string) (string, b
 
 func explicitRequestRequiredFields(method, path string, properties map[string]oasSchema) ([]string, bool) {
 	declared := map[string][]string{
+		"POST /api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/inspections": {"kind", "expected_revision"},
+		"POST /api/v1/monitoring/collectors/{id}/elastic-inspections/{operation_id}/result": {"job"},
 		"POST /api/v1/auth/login":                                                                       {"password", "username"},
 		"POST /api/v1/auth/ci/github/exchange":                                                          {"id_token", "project_id"},
 		"POST /api/v1/projects/{id}/monitoring/prometheus-connections":                                  {"name"},

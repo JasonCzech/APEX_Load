@@ -3,6 +3,7 @@ package storage
 import (
 	"errors"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/elastic"
 	"net/url"
 	"regexp"
 	"strings"
@@ -25,6 +26,19 @@ type ELKMetricAggregation struct {
 // ELKConnection is project-scoped Elasticsearch query configuration.
 // Credential fields contain logical project-secret names, never secret values.
 type ELKConnection struct {
+	Product                     string                    `json:"product,omitempty"`
+	KibanaCredentials           ComponentSecretReferences `json:"-"`
+	LogstashCredentials         ComponentSecretReferences `json:"-"`
+	Config                      elastic.Config            `json:"config"`
+	Revision                    int64                     `json:"revision"`
+	VerifiedRevision            int64                     `json:"verified_revision"`
+	CollectionMode              string                    `json:"collection_mode,omitempty"`
+	CollectorAgentID            string                    `json:"collector_agent_id,omitempty"`
+	Capabilities                elastic.Capabilities      `json:"capabilities"`
+	BearerTokenSecretName       string                    `json:"-"`
+	ClientCertificateSecretName string                    `json:"-"`
+	ClientKeySecretName         string                    `json:"-"`
+
 	ID                 string                 `json:"id"`
 	ProjectID          string                 `json:"project_id"`
 	Name               string                 `json:"name"`
@@ -54,6 +68,9 @@ type ELKConnection struct {
 func (c *ELKConnection) ConfigurationStatus() string {
 	if c == nil || !c.Enabled {
 		return "disabled"
+	}
+	if c.Config.Endpoint != "" {
+		return c.elasticConfigurationStatus()
 	}
 	if strings.TrimSpace(c.Endpoint) == "" || strings.TrimSpace(c.IndexPattern) == "" || strings.TrimSpace(c.TimestampField) == "" || strings.TrimSpace(c.MessageField) == "" {
 		return "unconfigured"
@@ -93,7 +110,7 @@ func (c *ELKConnection) Validate() error {
 		}
 		c.Endpoint = strings.TrimRight(endpoint, "/")
 	}
-	if c.AuthType != "" && c.AuthType != ELKAuthAPIKey && c.AuthType != ELKAuthBasic {
+	if c.Config.Endpoint == "" && c.AuthType != "" && c.AuthType != ELKAuthAPIKey && c.AuthType != ELKAuthBasic {
 		return fmt.Errorf("unsupported ELK authentication type %q", c.AuthType)
 	}
 	if len(c.MetricAggregations) > 16 {
@@ -117,7 +134,7 @@ func (c *ELKConnection) Validate() error {
 		}
 		seen[key] = struct{}{}
 	}
-	return nil
+	return c.validateElasticProfile()
 }
 
 type ELKConnectionStore interface {

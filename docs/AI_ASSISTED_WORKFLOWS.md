@@ -99,5 +99,5 @@ Run:
 
 ```bash
 go test ./pkg/api -run 'TestAI|TestAIAuthoring|TestAIRoot'
-go test ./...
+go test -timeout=20m ./...
 ```

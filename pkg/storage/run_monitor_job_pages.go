@@ -22,7 +22,7 @@ func (s *SQLiteStore) PollRunMonitorJobPage(project, collector, after string, li
 	if limit < 1 || limit > MaxRunMonitorSources || len(after) > MaxRunMonitorJobIDBytes || strings.TrimSpace(after) != after || strings.ContainsAny(after, "\r\n\x00") {
 		return nil, false, errors.New("invalid collector job page")
 	}
-	rows, err := s.db.Query(`SELECT j.payload,j.state,j.next_sequence`+pollMonitorJobsScope+` AND j.id>? ORDER BY j.id LIMIT ?`, project, collector, now.UTC(), after, limit+1)
+	rows, err := s.db.Query(`SELECT j.payload,j.state,j.next_sequence`+pollMonitorJobsScope+s.elasticCleanupReadyPredicate("j.payload")+` AND j.id>? ORDER BY j.id LIMIT ?`, project, collector, now.UTC(), after, limit+1)
 	if err != nil {
 		return nil, false, err
 	}
@@ -42,7 +42,7 @@ func (s *SQLiteStore) PollRunMonitorJobPage(project, collector, after string, li
 // pages. No number of concurrent runs causes the whole collector poll to fail.
 func (s *SQLiteStore) pollLegacyRunMonitorJobs(project, collector string, now time.Time) ([]RunMonitorJob, error) {
 	var count int
-	if err := s.db.QueryRow(`SELECT COUNT(*)`+pollMonitorJobsScope, project, collector, now.UTC()).Scan(&count); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*)`+pollMonitorJobsScope+s.elasticCleanupReadyPredicate("j.payload"), project, collector, now.UTC()).Scan(&count); err != nil {
 		return nil, err
 	}
 	if count == 0 {
@@ -53,7 +53,7 @@ func (s *SQLiteStore) pollLegacyRunMonitorJobs(project, collector string, now ti
 	if page < 0 {
 		page += int64(pages)
 	}
-	rows, err := s.db.Query(`SELECT j.payload,j.state,j.next_sequence`+pollMonitorJobsScope+` ORDER BY j.id LIMIT ? OFFSET ?`, project, collector, now.UTC(), MaxRunMonitorSources, page*MaxRunMonitorSources)
+	rows, err := s.db.Query(`SELECT j.payload,j.state,j.next_sequence`+pollMonitorJobsScope+s.elasticCleanupReadyPredicate("j.payload")+` ORDER BY j.id LIMIT ? OFFSET ?`, project, collector, now.UTC(), MaxRunMonitorSources, page*MaxRunMonitorSources)
 	if err != nil {
 		return nil, err
 	}

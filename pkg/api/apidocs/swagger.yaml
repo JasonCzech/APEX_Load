@@ -9133,6 +9133,14 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              elastic:
+                                type: object
+                                description: 'Go type: ElasticMonitoringMetadata'
+                                additionalProperties: true
+                                nullable: true
+                              elastic_ingestion_watermark:
+                                type: string
+                                format: date-time
                               executor_mode:
                                 type: string
                               job_id:
@@ -9151,7 +9159,11 @@ paths:
                                 type: object
                                 additionalProperties:
                                   type: object
+                                  description: 'Go type: ProviderCoverage'
                                   additionalProperties: true
+                              query_watermark:
+                                type: string
+                                format: date-time
                               reason:
                                 type: string
                               required:
@@ -9167,6 +9179,7 @@ paths:
                                 type: array
                                 items:
                                   type: object
+                                  description: 'Go type: ProviderEntity'
                                   additionalProperties: true
                         monitor_diagnostics_count:
                           type: integer
@@ -9194,6 +9207,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              approximate:
+                                type: boolean
                               coverage_pct:
                                 type: number
                                 format: double
@@ -10009,36 +10024,9 @@ paths:
                         properties:
                           diagnostic:
                             type: object
-                            properties:
-                              application_id:
-                                type: string
-                              backend:
-                                type: string
-                              deep_link:
-                                type: string
-                              entity_ids:
-                                type: object
-                                additionalProperties:
-                                  type: string
-                              id:
-                                type: string
-                              kind:
-                                type: string
-                              properties:
-                                type: object
-                                additionalProperties:
-                                  type: string
-                              provider:
-                                type: string
-                              severity:
-                                type: string
-                              status:
-                                type: string
-                              summary:
-                                type: string
-                              timestamp_utc:
-                                type: string
-                                format: date-time
+                            additionalProperties: true
+                          schema_version:
+                            type: string
                           source_id:
                             type: string
                     monitor_rule_results:
@@ -10046,6 +10034,8 @@ paths:
                       items:
                         type: object
                         properties:
+                          approximate:
+                            type: boolean
                           coverage_pct:
                             type: number
                             format: double
@@ -20505,6 +20495,8 @@ paths:
                               type: boolean
                             analysis_statistic:
                               type: string
+                            approximate:
+                              type: boolean
                             backend:
                               type: string
                             backend_profile:
@@ -20522,6 +20514,8 @@ paths:
                               format: double
                               nullable: true
                             definition_hash:
+                              type: string
+                            derived_aggregation:
                               type: string
                             display_labels:
                               type: object
@@ -20571,6 +20565,8 @@ paths:
                               type: string
                               format: date-time
                               nullable: true
+                            window_kind:
+                              type: string
                           required:
                             - aggregation_eligible
                             - bucket_end
@@ -20783,6 +20779,8 @@ paths:
                               type: boolean
                             analysis_statistic:
                               type: string
+                            approximate:
+                              type: boolean
                             backend:
                               type: string
                             backend_profile:
@@ -20800,6 +20798,8 @@ paths:
                               format: double
                               nullable: true
                             definition_hash:
+                              type: string
+                            derived_aggregation:
                               type: string
                             display_labels:
                               type: object
@@ -20849,6 +20849,8 @@ paths:
                               type: string
                               format: date-time
                               nullable: true
+                            window_kind:
+                              type: string
                           required:
                             - aggregation_eligible
                             - bucket_end
@@ -22491,6 +22493,8 @@ paths:
                               type: boolean
                             analysis_statistic:
                               type: string
+                            approximate:
+                              type: boolean
                             backend:
                               type: string
                             backend_profile:
@@ -22508,6 +22512,8 @@ paths:
                               format: double
                               nullable: true
                             definition_hash:
+                              type: string
+                            derived_aggregation:
                               type: string
                             display_labels:
                               type: object
@@ -22557,6 +22563,8 @@ paths:
                               type: string
                               format: date-time
                               nullable: true
+                            window_kind:
+                              type: string
                           required:
                             - aggregation_eligible
                             - bucket_end
@@ -42985,6 +42993,8 @@ paths:
                     items:
                       type: object
                       properties:
+                        approximate:
+                          type: boolean
                         coverage_pct:
                           type: number
                           format: double
@@ -43224,6 +43234,8 @@ paths:
                     items:
                       type: object
                       properties:
+                        approximate:
+                          type: boolean
                         coverage_pct:
                           type: number
                           format: double
@@ -43434,6 +43446,8 @@ paths:
                     items:
                       type: object
                       properties:
+                        approximate:
+                          type: boolean
                         coverage_pct:
                           type: number
                           format: double
@@ -54752,6 +54766,10 @@ paths:
                                   type: object
                                   additionalProperties: true
                                   nullable: true
+                                monitor_warnings:
+                                  type: array
+                                  items:
+                                    type: string
                                 name:
                                   type: string
                                 paused_at:
@@ -57217,6 +57235,10 @@ paths:
                       additionalProperties:
                         type: object
                         properties:
+                          as_of:
+                            type: string
+                            format: date-time
+                            nullable: true
                           cache_age_seconds:
                             type: integer
                             format: int64
@@ -57237,6 +57259,9 @@ paths:
                             type: array
                             items:
                               type: string
+                          late_arrival_seconds:
+                            type: integer
+                            format: int64
                           message:
                             type: string
                           missing_points:
@@ -57249,6 +57274,10 @@ paths:
                           points:
                             type: integer
                             format: int64
+                          query_id:
+                            type: string
+                          reason:
+                            type: string
                           status:
                             type: string
                           to:
@@ -57269,7 +57298,11 @@ paths:
                             type: string
                           backend:
                             type: string
+                          correlation:
+                            type: string
                           deep_link:
+                            type: string
+                          document_id:
                             type: string
                           entity_ids:
                             type: object
@@ -57277,16 +57310,39 @@ paths:
                               type: string
                           id:
                             type: string
+                          index:
+                            type: string
+                          ingested_at:
+                            type: string
+                            format: date-time
+                            nullable: true
                           kind:
                             type: string
+                          log:
+                            type: object
+                            description: 'Go type: ProviderLog'
+                            additionalProperties: true
+                            nullable: true
                           properties:
                             type: object
                             additionalProperties:
                               type: string
                           provider:
                             type: string
+                          query_id:
+                            type: string
+                          received_at:
+                            type: string
+                            format: date-time
+                          service:
+                            type: string
                           severity:
                             type: string
+                          span:
+                            type: object
+                            description: 'Go type: ProviderSpan'
+                            additionalProperties: true
+                            nullable: true
                           status:
                             type: string
                           summary:
@@ -57294,6 +57350,11 @@ paths:
                           timestamp_utc:
                             type: string
                             format: date-time
+                          transaction:
+                            type: object
+                            description: 'Go type: ProviderTransaction'
+                            additionalProperties: true
+                            nullable: true
                     points:
                       type: array
                       items:
@@ -57335,6 +57396,8 @@ paths:
                                 type: boolean
                               analysis_statistic:
                                 type: string
+                              approximate:
+                                type: boolean
                               backend:
                                 type: string
                               backend_profile:
@@ -57352,6 +57415,8 @@ paths:
                                 format: double
                                 nullable: true
                               definition_hash:
+                                type: string
+                              derived_aggregation:
                                 type: string
                               display_labels:
                                 type: object
@@ -57401,6 +57466,8 @@ paths:
                                 type: string
                                 format: date-time
                                 nullable: true
+                              window_kind:
+                                type: string
                             nullable: true
                           quality:
                             type: string
@@ -57462,6 +57529,10 @@ paths:
                       properties:
                         complete:
                           type: boolean
+                        continuation:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
                         cursor:
                           type: string
                         cursor_expires_at:
@@ -57488,7 +57559,7 @@ paths:
                           type: array
                           items:
                             type: object
-                            description: 'Go type: ScanSettlement'
+                            description: 'Go type: ProviderScanSettlement'
                             additionalProperties: true
                         scanned_bytes:
                           type: integer
@@ -57572,6 +57643,446 @@ paths:
       tags:
         - Monitoring
       x-handler: handleDynatraceOperationResult
+  /api/v1/monitoring/collectors/{id}/elastic-cleanups:
+    get:
+      summary: Poll Elastic Cleanups
+      description: '**Access Control:** Public (no authentication required)'
+      operationId: handlePollElasticCleanups
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    payload:
+                      type: string
+                    signature:
+                      type: string
+                  required:
+                    - payload
+                    - signature
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: Public (no authentication required)
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: after_key
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Monitoring
+      x-handler: handlePollElasticCleanups
+  /api/v1/monitoring/collectors/{id}/elastic-inspections:
+    get:
+      summary: Poll Elastic Inspections
+      description: '**Access Control:** Public (no authentication required)'
+      operationId: handlePollElasticInspections
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    payload:
+                      type: string
+                    signature:
+                      type: string
+                  required:
+                    - payload
+                    - signature
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: Public (no authentication required)
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: capacity
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
+      tags:
+        - Monitoring
+      x-handler: handlePollElasticInspections
+  /api/v1/monitoring/collectors/{id}/elastic-inspections/{operation_id}/result:
+    post:
+      summary: Elastic Inspection Result
+      description: '**Access Control:** Public (no authentication required)'
+      operationId: handleElasticInspectionResult
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cleanup_continuations:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      async_id:
+                        type: string
+                      composite_after:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            bool_value:
+                              type: boolean
+                              nullable: true
+                            kind:
+                              type: string
+                            number_value:
+                              type: number
+                              format: double
+                              nullable: true
+                            string_value:
+                              type: string
+                      keep_alive_until:
+                        type: string
+                        format: date-time
+                      pit_id:
+                        type: string
+                      query_id:
+                        type: string
+                      resolved_indices:
+                        type: array
+                        items:
+                          type: string
+                      search_after:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bool_value:
+                              type: boolean
+                              nullable: true
+                            kind:
+                              type: string
+                            number_value:
+                              type: number
+                              format: double
+                              nullable: true
+                            string_value:
+                              type: string
+                      window_from:
+                        type: string
+                        format: date-time
+                      window_until:
+                        type: string
+                        format: date-time
+                    nullable: true
+                data:
+                  type: object
+                  properties:
+                    capabilities:
+                      type: object
+                      properties:
+                        async_esql:
+                          type: boolean
+                        dsl:
+                          type: boolean
+                        esql:
+                          type: boolean
+                        health:
+                          type: boolean
+                        kibana_health:
+                          type: boolean
+                        logs:
+                          type: boolean
+                        logstash_health:
+                          type: boolean
+                        metrics:
+                          type: boolean
+                        pit:
+                          type: boolean
+                        product:
+                          type: string
+                        serverless:
+                          type: boolean
+                        shard_doc:
+                          type: boolean
+                        status:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        traces:
+                          type: boolean
+                        version:
+                          type: string
+                    fields:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          aggregatable:
+                            type: boolean
+                          conflict:
+                            type: boolean
+                          name:
+                            type: string
+                          partially_mapped:
+                            type: boolean
+                          searchable:
+                            type: boolean
+                          types:
+                            type: array
+                            items:
+                              type: string
+                    indices:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          type:
+                            type: string
+                    preview:
+                      type: object
+                      properties:
+                        capabilities:
+                          type: object
+                          properties:
+                            async_esql:
+                              type: boolean
+                            dsl:
+                              type: boolean
+                            esql:
+                              type: boolean
+                            health:
+                              type: boolean
+                            kibana_health:
+                              type: boolean
+                            logs:
+                              type: boolean
+                            logstash_health:
+                              type: boolean
+                            metrics:
+                              type: boolean
+                            pit:
+                              type: boolean
+                            product:
+                              type: string
+                            serverless:
+                              type: boolean
+                            shard_doc:
+                              type: boolean
+                            status:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            traces:
+                              type: boolean
+                            version:
+                              type: string
+                        continuation:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
+                        coverage:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            additionalProperties: true
+                        evidence:
+                          type: array
+                          items:
+                            type: object
+                            additionalProperties: true
+                        points:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              active_runtime_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              dataset_id:
+                                type: string
+                              derivation:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DerivationStep'
+                                  additionalProperties: true
+                              dimensions:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              host:
+                                type: string
+                              input_kind:
+                                type: string
+                              kind:
+                                type: string
+                              metric_name:
+                                type: string
+                              metric_version:
+                                type: string
+                              population:
+                                type: string
+                              project_id:
+                                type: string
+                              provider:
+                                type: object
+                                description: 'Go type: ProviderMeasurement'
+                                additionalProperties: true
+                                nullable: true
+                              quality:
+                                type: string
+                              received_at:
+                                type: string
+                                format: date-time
+                              relative_time_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_id:
+                                type: string
+                              scenario_id:
+                                type: string
+                              schema_version:
+                                type: string
+                              service:
+                                type: string
+                              source:
+                                type: string
+                              timestamp_utc:
+                                type: string
+                                format: date-time
+                              timing:
+                                type: object
+                                description: 'Go type: PointTiming'
+                                additionalProperties: true
+                                nullable: true
+                              unit:
+                                type: string
+                              value:
+                                type: number
+                                format: double
+                                nullable: true
+                        progress:
+                          type: object
+                          additionalProperties: true
+                      nullable: true
+                    truncated:
+                      type: boolean
+                job:
+                  type: object
+                  properties:
+                    payload:
+                      type: string
+                    signature:
+                      type: string
+                message:
+                  type: string
+              required:
+                - job
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: Public (no authentication required)
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: operation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
+      x-handler: handleElasticInspectionResult
   /api/v1/monitoring/collectors/{id}/heartbeat:
     post:
       summary: Collector Heartbeat
@@ -57756,6 +58267,10 @@ paths:
                   additionalProperties:
                     type: object
                     properties:
+                      as_of:
+                        type: string
+                        format: date-time
+                        nullable: true
                       cache_age_seconds:
                         type: integer
                         format: int64
@@ -57776,6 +58291,9 @@ paths:
                         type: array
                         items:
                           type: string
+                      late_arrival_seconds:
+                        type: integer
+                        format: int64
                       message:
                         type: string
                       missing_points:
@@ -57788,6 +58306,10 @@ paths:
                       points:
                         type: integer
                         format: int64
+                      query_id:
+                        type: string
+                      reason:
+                        type: string
                       status:
                         type: string
                       to:
@@ -57875,6 +58397,8 @@ paths:
                             type: boolean
                           analysis_statistic:
                             type: string
+                          approximate:
+                            type: boolean
                           backend:
                             type: string
                           backend_profile:
@@ -57892,6 +58416,8 @@ paths:
                             format: double
                             nullable: true
                           definition_hash:
+                            type: string
+                          derived_aggregation:
                             type: string
                           display_labels:
                             type: object
@@ -57941,6 +58467,8 @@ paths:
                             type: string
                             format: date-time
                             nullable: true
+                          window_kind:
+                            type: string
                         nullable: true
                       quality:
                         type: string
@@ -58165,6 +58693,82 @@ paths:
       tags:
         - Monitoring
       x-handler: handlePollRunMonitorJobs
+  /api/v1/monitoring/collectors/{id}/jobs/{job_id}/cleanup:
+    post:
+      summary: Elastic Cleanup Receipt
+      description: '**Access Control:** Public (no authentication required)'
+      operationId: handleElasticCleanupReceipt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                job:
+                  type: object
+                  properties:
+                    payload:
+                      type: string
+                    signature:
+                      type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: Public (no authentication required)
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
+      x-handler: handleElasticCleanupReceipt
   /api/v1/monitoring/collectors/{id}/jobs/{job_id}/management-polls:
     post:
       summary: Management Poll
@@ -58305,11 +58909,72 @@ paths:
                         type: string
                     violations:
                       type: boolean
+                cleanup_continuations:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      async_id:
+                        type: string
+                      composite_after:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            bool_value:
+                              type: boolean
+                              nullable: true
+                            kind:
+                              type: string
+                            number_value:
+                              type: number
+                              format: double
+                              nullable: true
+                            string_value:
+                              type: string
+                      keep_alive_until:
+                        type: string
+                        format: date-time
+                      pit_id:
+                        type: string
+                      query_id:
+                        type: string
+                      resolved_indices:
+                        type: array
+                        items:
+                          type: string
+                      search_after:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bool_value:
+                              type: boolean
+                              nullable: true
+                            kind:
+                              type: string
+                            number_value:
+                              type: number
+                              format: double
+                              nullable: true
+                            string_value:
+                              type: string
+                      window_from:
+                        type: string
+                        format: date-time
+                      window_until:
+                        type: string
+                        format: date-time
+                    nullable: true
                 coverage:
                   type: object
                   additionalProperties:
                     type: object
                     properties:
+                      as_of:
+                        type: string
+                        format: date-time
+                        nullable: true
                       cache_age_seconds:
                         type: integer
                         format: int64
@@ -58330,6 +58995,9 @@ paths:
                         type: array
                         items:
                           type: string
+                      late_arrival_seconds:
+                        type: integer
+                        format: int64
                       message:
                         type: string
                       missing_points:
@@ -58342,6 +59010,10 @@ paths:
                       points:
                         type: integer
                         format: int64
+                      query_id:
+                        type: string
+                      reason:
+                        type: string
                       status:
                         type: string
                       to:
@@ -58362,7 +59034,11 @@ paths:
                         type: string
                       backend:
                         type: string
+                      correlation:
+                        type: string
                       deep_link:
+                        type: string
+                      document_id:
                         type: string
                       entity_ids:
                         type: object
@@ -58370,16 +59046,64 @@ paths:
                           type: string
                       id:
                         type: string
+                      index:
+                        type: string
+                      ingested_at:
+                        type: string
+                        format: date-time
+                        nullable: true
                       kind:
                         type: string
+                      log:
+                        type: object
+                        properties:
+                          attributes:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              description: 'Go type: ScalarValue'
+                              additionalProperties: true
+                          level:
+                            type: string
+                          message:
+                            type: string
+                        nullable: true
                       properties:
                         type: object
                         additionalProperties:
                           type: string
                       provider:
                         type: string
+                      query_id:
+                        type: string
+                      received_at:
+                        type: string
+                        format: date-time
+                      service:
+                        type: string
                       severity:
                         type: string
+                      span:
+                        type: object
+                        properties:
+                          attributes:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              description: 'Go type: ScalarValue'
+                              additionalProperties: true
+                          duration_ms:
+                            type: number
+                            format: double
+                          operation:
+                            type: string
+                          parent_span_id:
+                            type: string
+                          span_id:
+                            type: string
+                          trace_id:
+                            type: string
+                        nullable: true
                       status:
                         type: string
                       summary:
@@ -58387,6 +59111,21 @@ paths:
                       timestamp_utc:
                         type: string
                         format: date-time
+                      transaction:
+                        type: object
+                        properties:
+                          attributes:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              description: 'Go type: ScalarValue'
+                              additionalProperties: true
+                          duration_ms:
+                            type: number
+                            format: double
+                          name:
+                            type: string
+                        nullable: true
                 evidence_version:
                   type: integer
                   format: int64
@@ -58735,6 +59474,8 @@ paths:
                             type: boolean
                           analysis_statistic:
                             type: string
+                          approximate:
+                            type: boolean
                           backend:
                             type: string
                           backend_profile:
@@ -58752,6 +59493,8 @@ paths:
                             format: double
                             nullable: true
                           definition_hash:
+                            type: string
+                          derived_aggregation:
                             type: string
                           display_labels:
                             type: object
@@ -58801,6 +59544,8 @@ paths:
                             type: string
                             format: date-time
                             nullable: true
+                          window_kind:
+                            type: string
                         nullable: true
                       quality:
                         type: string
@@ -58862,6 +59607,39 @@ paths:
                   properties:
                     complete:
                       type: boolean
+                    continuation:
+                      type: object
+                      properties:
+                        async_id:
+                          type: string
+                        composite_after:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            additionalProperties: true
+                        keep_alive_until:
+                          type: string
+                          format: date-time
+                        pit_id:
+                          type: string
+                        query_id:
+                          type: string
+                        resolved_indices:
+                          type: array
+                          items:
+                            type: string
+                        search_after:
+                          type: array
+                          items:
+                            type: object
+                            additionalProperties: true
+                        window_from:
+                          type: string
+                          format: date-time
+                        window_until:
+                          type: string
+                          format: date-time
+                      nullable: true
                     cursor:
                       type: string
                     cursor_expires_at:
@@ -58933,6 +59711,10 @@ paths:
                   type: string
                   format: date-time
                   nullable: true
+                resolved_indices:
+                  type: array
+                  items:
+                    type: string
                 sequence:
                   type: integer
                   format: int64
@@ -64678,6 +65460,183 @@ paths:
                       required:
                         - project_id
                       nullable: true
+                    elastic:
+                      type: object
+                      properties:
+                        attribute_fields:
+                          type: array
+                          items:
+                            type: string
+                        cluster_health:
+                          type: boolean
+                        duration_field:
+                          type: string
+                        duration_unit:
+                          type: string
+                        errors:
+                          type: boolean
+                        header_origins:
+                          type: array
+                          items:
+                            type: string
+                        indices:
+                          type: array
+                          items:
+                            type: string
+                        ingested_field:
+                          type: string
+                        kibana_health:
+                          type: boolean
+                        logs:
+                          type: boolean
+                        logstash_health:
+                          type: boolean
+                        max_retained_bytes:
+                          type: integer
+                          format: int64
+                        max_retained_records:
+                          type: integer
+                          format: int64
+                        max_window_seconds:
+                          type: integer
+                          format: int64
+                        message_field:
+                          type: string
+                        metrics:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              bucket_seconds:
+                                type: integer
+                                format: int64
+                              count_field:
+                                type: string
+                              exact_window:
+                                type: boolean
+                              field:
+                                type: string
+                              group_by:
+                                type: array
+                                items:
+                                  type: string
+                              kind:
+                                type: string
+                              name:
+                                type: string
+                              statistic:
+                                type: string
+                              sum_field:
+                                type: string
+                              unit:
+                                type: string
+                            required:
+                              - name
+                              - statistic
+                        overlap_seconds:
+                          type: integer
+                          format: int64
+                        page_size:
+                          type: integer
+                          format: int64
+                        parent_span_id_field:
+                          type: string
+                        preset:
+                          type: string
+                        project_id:
+                          type: string
+                        projected_fields:
+                          type: array
+                          items:
+                            type: string
+                        queries:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              approximate:
+                                type: boolean
+                              async:
+                                type: boolean
+                              bucket_seconds:
+                                type: integer
+                                format: int64
+                              count_column:
+                                type: string
+                              dimension_columns:
+                                type: array
+                                items:
+                                  type: string
+                              dsl: {}
+                              esql:
+                                type: string
+                              exact_window:
+                                type: boolean
+                              group_by:
+                                type: array
+                                items:
+                                  type: string
+                              kind:
+                                type: string
+                              language:
+                                type: string
+                              name:
+                                type: string
+                              params:
+                                type: array
+                                items: {}
+                              statistic:
+                                type: string
+                              sum_column:
+                                type: string
+                              timestamp_column:
+                                type: string
+                              unit:
+                                type: string
+                              value_column:
+                                type: string
+                            required:
+                              - kind
+                              - language
+                              - name
+                        query_offset:
+                          type: integer
+                          format: int64
+                        run_header:
+                          type: boolean
+                        run_id_field:
+                          type: string
+                        service_field:
+                          type: string
+                        service_values:
+                          type: array
+                          items:
+                            type: string
+                        settle_seconds:
+                          type: integer
+                          format: int64
+                        severity_field:
+                          type: string
+                        span_id_field:
+                          type: string
+                        status_field:
+                          type: string
+                        timestamp_field:
+                          type: string
+                        trace_id_field:
+                          type: string
+                        traces:
+                          type: boolean
+                        transaction_id_field:
+                          type: string
+                        transactions:
+                          type: boolean
+                        unique_sort_field:
+                          type: string
+                      required:
+                        - indices
+                        - project_id
+                      nullable: true
                     elastic_query:
                       type: object
                       properties:
@@ -65137,6 +66096,173 @@ paths:
                     topology_mode:
                       type: string
                   nullable: true
+                elastic:
+                  type: object
+                  properties:
+                    attribute_fields:
+                      type: array
+                      items:
+                        type: string
+                    cluster_health:
+                      type: boolean
+                    duration_field:
+                      type: string
+                    duration_unit:
+                      type: string
+                    errors:
+                      type: boolean
+                    header_origins:
+                      type: array
+                      items:
+                        type: string
+                    indices:
+                      type: array
+                      items:
+                        type: string
+                    ingested_field:
+                      type: string
+                    kibana_health:
+                      type: boolean
+                    logs:
+                      type: boolean
+                    logstash_health:
+                      type: boolean
+                    max_retained_bytes:
+                      type: integer
+                      format: int64
+                    max_retained_records:
+                      type: integer
+                      format: int64
+                    max_window_seconds:
+                      type: integer
+                      format: int64
+                    message_field:
+                      type: string
+                    metrics:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          bucket_seconds:
+                            type: integer
+                            format: int64
+                          count_field:
+                            type: string
+                          exact_window:
+                            type: boolean
+                          field:
+                            type: string
+                          group_by:
+                            type: array
+                            items:
+                              type: string
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          statistic:
+                            type: string
+                          sum_field:
+                            type: string
+                          unit:
+                            type: string
+                    overlap_seconds:
+                      type: integer
+                      format: int64
+                    page_size:
+                      type: integer
+                      format: int64
+                    parent_span_id_field:
+                      type: string
+                    preset:
+                      type: string
+                    project_id:
+                      type: string
+                    projected_fields:
+                      type: array
+                      items:
+                        type: string
+                    queries:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          approximate:
+                            type: boolean
+                          async:
+                            type: boolean
+                          bucket_seconds:
+                            type: integer
+                            format: int64
+                          count_column:
+                            type: string
+                          dimension_columns:
+                            type: array
+                            items:
+                              type: string
+                          dsl: {}
+                          esql:
+                            type: string
+                          exact_window:
+                            type: boolean
+                          group_by:
+                            type: array
+                            items:
+                              type: string
+                          kind:
+                            type: string
+                          language:
+                            type: string
+                          name:
+                            type: string
+                          params:
+                            type: array
+                            items: {}
+                          statistic:
+                            type: string
+                          sum_column:
+                            type: string
+                          timestamp_column:
+                            type: string
+                          unit:
+                            type: string
+                          value_column:
+                            type: string
+                    query_offset:
+                      type: integer
+                      format: int64
+                    run_header:
+                      type: boolean
+                    run_id_field:
+                      type: string
+                    service_field:
+                      type: string
+                    service_values:
+                      type: array
+                      items:
+                        type: string
+                    settle_seconds:
+                      type: integer
+                      format: int64
+                    severity_field:
+                      type: string
+                    span_id_field:
+                      type: string
+                    status_field:
+                      type: string
+                    timestamp_field:
+                      type: string
+                    trace_id_field:
+                      type: string
+                    traces:
+                      type: boolean
+                    transaction_id_field:
+                      type: string
+                    transactions:
+                      type: boolean
+                    unique_sort_field:
+                      type: string
+                  nullable: true
                 elastic_query:
                   type: object
                   properties:
@@ -65516,6 +66642,183 @@ paths:
                       topology_mode:
                         type: string
                     required:
+                      - project_id
+                    nullable: true
+                  elastic:
+                    type: object
+                    properties:
+                      attribute_fields:
+                        type: array
+                        items:
+                          type: string
+                      cluster_health:
+                        type: boolean
+                      duration_field:
+                        type: string
+                      duration_unit:
+                        type: string
+                      errors:
+                        type: boolean
+                      header_origins:
+                        type: array
+                        items:
+                          type: string
+                      indices:
+                        type: array
+                        items:
+                          type: string
+                      ingested_field:
+                        type: string
+                      kibana_health:
+                        type: boolean
+                      logs:
+                        type: boolean
+                      logstash_health:
+                        type: boolean
+                      max_retained_bytes:
+                        type: integer
+                        format: int64
+                      max_retained_records:
+                        type: integer
+                        format: int64
+                      max_window_seconds:
+                        type: integer
+                        format: int64
+                      message_field:
+                        type: string
+                      metrics:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bucket_seconds:
+                              type: integer
+                              format: int64
+                            count_field:
+                              type: string
+                            exact_window:
+                              type: boolean
+                            field:
+                              type: string
+                            group_by:
+                              type: array
+                              items:
+                                type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            statistic:
+                              type: string
+                            sum_field:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - name
+                            - statistic
+                      overlap_seconds:
+                        type: integer
+                        format: int64
+                      page_size:
+                        type: integer
+                        format: int64
+                      parent_span_id_field:
+                        type: string
+                      preset:
+                        type: string
+                      project_id:
+                        type: string
+                      projected_fields:
+                        type: array
+                        items:
+                          type: string
+                      queries:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            approximate:
+                              type: boolean
+                            async:
+                              type: boolean
+                            bucket_seconds:
+                              type: integer
+                              format: int64
+                            count_column:
+                              type: string
+                            dimension_columns:
+                              type: array
+                              items:
+                                type: string
+                            dsl: {}
+                            esql:
+                              type: string
+                            exact_window:
+                              type: boolean
+                            group_by:
+                              type: array
+                              items:
+                                type: string
+                            kind:
+                              type: string
+                            language:
+                              type: string
+                            name:
+                              type: string
+                            params:
+                              type: array
+                              items: {}
+                            statistic:
+                              type: string
+                            sum_column:
+                              type: string
+                            timestamp_column:
+                              type: string
+                            unit:
+                              type: string
+                            value_column:
+                              type: string
+                          required:
+                            - kind
+                            - language
+                            - name
+                      query_offset:
+                        type: integer
+                        format: int64
+                      run_header:
+                        type: boolean
+                      run_id_field:
+                        type: string
+                      service_field:
+                        type: string
+                      service_values:
+                        type: array
+                        items:
+                          type: string
+                      settle_seconds:
+                        type: integer
+                        format: int64
+                      severity_field:
+                        type: string
+                      span_id_field:
+                        type: string
+                      status_field:
+                        type: string
+                      timestamp_field:
+                        type: string
+                      trace_id_field:
+                        type: string
+                      traces:
+                        type: boolean
+                      transaction_id_field:
+                        type: string
+                      transactions:
+                        type: boolean
+                      unique_sort_field:
+                        type: string
+                    required:
+                      - indices
                       - project_id
                     nullable: true
                   elastic_query:
@@ -65977,6 +67280,173 @@ paths:
                     topology_mode:
                       type: string
                   nullable: true
+                elastic:
+                  type: object
+                  properties:
+                    attribute_fields:
+                      type: array
+                      items:
+                        type: string
+                    cluster_health:
+                      type: boolean
+                    duration_field:
+                      type: string
+                    duration_unit:
+                      type: string
+                    errors:
+                      type: boolean
+                    header_origins:
+                      type: array
+                      items:
+                        type: string
+                    indices:
+                      type: array
+                      items:
+                        type: string
+                    ingested_field:
+                      type: string
+                    kibana_health:
+                      type: boolean
+                    logs:
+                      type: boolean
+                    logstash_health:
+                      type: boolean
+                    max_retained_bytes:
+                      type: integer
+                      format: int64
+                    max_retained_records:
+                      type: integer
+                      format: int64
+                    max_window_seconds:
+                      type: integer
+                      format: int64
+                    message_field:
+                      type: string
+                    metrics:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          bucket_seconds:
+                            type: integer
+                            format: int64
+                          count_field:
+                            type: string
+                          exact_window:
+                            type: boolean
+                          field:
+                            type: string
+                          group_by:
+                            type: array
+                            items:
+                              type: string
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          statistic:
+                            type: string
+                          sum_field:
+                            type: string
+                          unit:
+                            type: string
+                    overlap_seconds:
+                      type: integer
+                      format: int64
+                    page_size:
+                      type: integer
+                      format: int64
+                    parent_span_id_field:
+                      type: string
+                    preset:
+                      type: string
+                    project_id:
+                      type: string
+                    projected_fields:
+                      type: array
+                      items:
+                        type: string
+                    queries:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          approximate:
+                            type: boolean
+                          async:
+                            type: boolean
+                          bucket_seconds:
+                            type: integer
+                            format: int64
+                          count_column:
+                            type: string
+                          dimension_columns:
+                            type: array
+                            items:
+                              type: string
+                          dsl: {}
+                          esql:
+                            type: string
+                          exact_window:
+                            type: boolean
+                          group_by:
+                            type: array
+                            items:
+                              type: string
+                          kind:
+                            type: string
+                          language:
+                            type: string
+                          name:
+                            type: string
+                          params:
+                            type: array
+                            items: {}
+                          statistic:
+                            type: string
+                          sum_column:
+                            type: string
+                          timestamp_column:
+                            type: string
+                          unit:
+                            type: string
+                          value_column:
+                            type: string
+                    query_offset:
+                      type: integer
+                      format: int64
+                    run_header:
+                      type: boolean
+                    run_id_field:
+                      type: string
+                    service_field:
+                      type: string
+                    service_values:
+                      type: array
+                      items:
+                        type: string
+                    settle_seconds:
+                      type: integer
+                      format: int64
+                    severity_field:
+                      type: string
+                    span_id_field:
+                      type: string
+                    status_field:
+                      type: string
+                    timestamp_field:
+                      type: string
+                    trace_id_field:
+                      type: string
+                    traces:
+                      type: boolean
+                    transaction_id_field:
+                      type: string
+                    transactions:
+                      type: boolean
+                    unique_sort_field:
+                      type: string
+                  nullable: true
                 elastic_query:
                   type: object
                   properties:
@@ -66356,6 +67826,183 @@ paths:
                       topology_mode:
                         type: string
                     required:
+                      - project_id
+                    nullable: true
+                  elastic:
+                    type: object
+                    properties:
+                      attribute_fields:
+                        type: array
+                        items:
+                          type: string
+                      cluster_health:
+                        type: boolean
+                      duration_field:
+                        type: string
+                      duration_unit:
+                        type: string
+                      errors:
+                        type: boolean
+                      header_origins:
+                        type: array
+                        items:
+                          type: string
+                      indices:
+                        type: array
+                        items:
+                          type: string
+                      ingested_field:
+                        type: string
+                      kibana_health:
+                        type: boolean
+                      logs:
+                        type: boolean
+                      logstash_health:
+                        type: boolean
+                      max_retained_bytes:
+                        type: integer
+                        format: int64
+                      max_retained_records:
+                        type: integer
+                        format: int64
+                      max_window_seconds:
+                        type: integer
+                        format: int64
+                      message_field:
+                        type: string
+                      metrics:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bucket_seconds:
+                              type: integer
+                              format: int64
+                            count_field:
+                              type: string
+                            exact_window:
+                              type: boolean
+                            field:
+                              type: string
+                            group_by:
+                              type: array
+                              items:
+                                type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            statistic:
+                              type: string
+                            sum_field:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - name
+                            - statistic
+                      overlap_seconds:
+                        type: integer
+                        format: int64
+                      page_size:
+                        type: integer
+                        format: int64
+                      parent_span_id_field:
+                        type: string
+                      preset:
+                        type: string
+                      project_id:
+                        type: string
+                      projected_fields:
+                        type: array
+                        items:
+                          type: string
+                      queries:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            approximate:
+                              type: boolean
+                            async:
+                              type: boolean
+                            bucket_seconds:
+                              type: integer
+                              format: int64
+                            count_column:
+                              type: string
+                            dimension_columns:
+                              type: array
+                              items:
+                                type: string
+                            dsl: {}
+                            esql:
+                              type: string
+                            exact_window:
+                              type: boolean
+                            group_by:
+                              type: array
+                              items:
+                                type: string
+                            kind:
+                              type: string
+                            language:
+                              type: string
+                            name:
+                              type: string
+                            params:
+                              type: array
+                              items: {}
+                            statistic:
+                              type: string
+                            sum_column:
+                              type: string
+                            timestamp_column:
+                              type: string
+                            unit:
+                              type: string
+                            value_column:
+                              type: string
+                          required:
+                            - kind
+                            - language
+                            - name
+                      query_offset:
+                        type: integer
+                        format: int64
+                      run_header:
+                        type: boolean
+                      run_id_field:
+                        type: string
+                      service_field:
+                        type: string
+                      service_values:
+                        type: array
+                        items:
+                          type: string
+                      settle_seconds:
+                        type: integer
+                        format: int64
+                      severity_field:
+                        type: string
+                      span_id_field:
+                        type: string
+                      status_field:
+                        type: string
+                      timestamp_field:
+                        type: string
+                      trace_id_field:
+                        type: string
+                      traces:
+                        type: boolean
+                      transaction_id_field:
+                        type: string
+                      transactions:
+                        type: boolean
+                      unique_sort_field:
+                        type: string
+                    required:
+                      - indices
                       - project_id
                     nullable: true
                   elastic_query:
@@ -66821,6 +68468,173 @@ paths:
                     topology_mode:
                       type: string
                   nullable: true
+                elastic:
+                  type: object
+                  properties:
+                    attribute_fields:
+                      type: array
+                      items:
+                        type: string
+                    cluster_health:
+                      type: boolean
+                    duration_field:
+                      type: string
+                    duration_unit:
+                      type: string
+                    errors:
+                      type: boolean
+                    header_origins:
+                      type: array
+                      items:
+                        type: string
+                    indices:
+                      type: array
+                      items:
+                        type: string
+                    ingested_field:
+                      type: string
+                    kibana_health:
+                      type: boolean
+                    logs:
+                      type: boolean
+                    logstash_health:
+                      type: boolean
+                    max_retained_bytes:
+                      type: integer
+                      format: int64
+                    max_retained_records:
+                      type: integer
+                      format: int64
+                    max_window_seconds:
+                      type: integer
+                      format: int64
+                    message_field:
+                      type: string
+                    metrics:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          bucket_seconds:
+                            type: integer
+                            format: int64
+                          count_field:
+                            type: string
+                          exact_window:
+                            type: boolean
+                          field:
+                            type: string
+                          group_by:
+                            type: array
+                            items:
+                              type: string
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          statistic:
+                            type: string
+                          sum_field:
+                            type: string
+                          unit:
+                            type: string
+                    overlap_seconds:
+                      type: integer
+                      format: int64
+                    page_size:
+                      type: integer
+                      format: int64
+                    parent_span_id_field:
+                      type: string
+                    preset:
+                      type: string
+                    project_id:
+                      type: string
+                    projected_fields:
+                      type: array
+                      items:
+                        type: string
+                    queries:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          approximate:
+                            type: boolean
+                          async:
+                            type: boolean
+                          bucket_seconds:
+                            type: integer
+                            format: int64
+                          count_column:
+                            type: string
+                          dimension_columns:
+                            type: array
+                            items:
+                              type: string
+                          dsl: {}
+                          esql:
+                            type: string
+                          exact_window:
+                            type: boolean
+                          group_by:
+                            type: array
+                            items:
+                              type: string
+                          kind:
+                            type: string
+                          language:
+                            type: string
+                          name:
+                            type: string
+                          params:
+                            type: array
+                            items: {}
+                          statistic:
+                            type: string
+                          sum_column:
+                            type: string
+                          timestamp_column:
+                            type: string
+                          unit:
+                            type: string
+                          value_column:
+                            type: string
+                    query_offset:
+                      type: integer
+                      format: int64
+                    run_header:
+                      type: boolean
+                    run_id_field:
+                      type: string
+                    service_field:
+                      type: string
+                    service_values:
+                      type: array
+                      items:
+                        type: string
+                    settle_seconds:
+                      type: integer
+                      format: int64
+                    severity_field:
+                      type: string
+                    span_id_field:
+                      type: string
+                    status_field:
+                      type: string
+                    timestamp_field:
+                      type: string
+                    trace_id_field:
+                      type: string
+                    traces:
+                      type: boolean
+                    transaction_id_field:
+                      type: string
+                    transactions:
+                      type: boolean
+                    unique_sort_field:
+                      type: string
+                  nullable: true
                 elastic_query:
                   type: object
                   properties:
@@ -67200,6 +69014,183 @@ paths:
                       topology_mode:
                         type: string
                     required:
+                      - project_id
+                    nullable: true
+                  elastic:
+                    type: object
+                    properties:
+                      attribute_fields:
+                        type: array
+                        items:
+                          type: string
+                      cluster_health:
+                        type: boolean
+                      duration_field:
+                        type: string
+                      duration_unit:
+                        type: string
+                      errors:
+                        type: boolean
+                      header_origins:
+                        type: array
+                        items:
+                          type: string
+                      indices:
+                        type: array
+                        items:
+                          type: string
+                      ingested_field:
+                        type: string
+                      kibana_health:
+                        type: boolean
+                      logs:
+                        type: boolean
+                      logstash_health:
+                        type: boolean
+                      max_retained_bytes:
+                        type: integer
+                        format: int64
+                      max_retained_records:
+                        type: integer
+                        format: int64
+                      max_window_seconds:
+                        type: integer
+                        format: int64
+                      message_field:
+                        type: string
+                      metrics:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bucket_seconds:
+                              type: integer
+                              format: int64
+                            count_field:
+                              type: string
+                            exact_window:
+                              type: boolean
+                            field:
+                              type: string
+                            group_by:
+                              type: array
+                              items:
+                                type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            statistic:
+                              type: string
+                            sum_field:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - name
+                            - statistic
+                      overlap_seconds:
+                        type: integer
+                        format: int64
+                      page_size:
+                        type: integer
+                        format: int64
+                      parent_span_id_field:
+                        type: string
+                      preset:
+                        type: string
+                      project_id:
+                        type: string
+                      projected_fields:
+                        type: array
+                        items:
+                          type: string
+                      queries:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            approximate:
+                              type: boolean
+                            async:
+                              type: boolean
+                            bucket_seconds:
+                              type: integer
+                              format: int64
+                            count_column:
+                              type: string
+                            dimension_columns:
+                              type: array
+                              items:
+                                type: string
+                            dsl: {}
+                            esql:
+                              type: string
+                            exact_window:
+                              type: boolean
+                            group_by:
+                              type: array
+                              items:
+                                type: string
+                            kind:
+                              type: string
+                            language:
+                              type: string
+                            name:
+                              type: string
+                            params:
+                              type: array
+                              items: {}
+                            statistic:
+                              type: string
+                            sum_column:
+                              type: string
+                            timestamp_column:
+                              type: string
+                            unit:
+                              type: string
+                            value_column:
+                              type: string
+                          required:
+                            - kind
+                            - language
+                            - name
+                      query_offset:
+                        type: integer
+                        format: int64
+                      run_header:
+                        type: boolean
+                      run_id_field:
+                        type: string
+                      service_field:
+                        type: string
+                      service_values:
+                        type: array
+                        items:
+                          type: string
+                      settle_seconds:
+                        type: integer
+                        format: int64
+                      severity_field:
+                        type: string
+                      span_id_field:
+                        type: string
+                      status_field:
+                        type: string
+                      timestamp_field:
+                        type: string
+                      trace_id_field:
+                        type: string
+                      traces:
+                        type: boolean
+                      transaction_id_field:
+                        type: string
+                      transactions:
+                        type: boolean
+                      unique_sort_field:
+                        type: string
+                    required:
+                      - indices
                       - project_id
                     nullable: true
                   elastic_query:
@@ -69547,6 +71538,79 @@ paths:
                   type: string
                 base_filter:
                   type: string
+                bearer_token_secret_name:
+                  type: string
+                  nullable: true
+                client_certificate_secret_name:
+                  type: string
+                  nullable: true
+                client_key_secret_name:
+                  type: string
+                  nullable: true
+                collection_mode:
+                  type: string
+                collector_agent_id:
+                  type: string
+                config:
+                  type: object
+                  properties:
+                    approved_cidrs:
+                      type: array
+                      items:
+                        type: string
+                    auth_type:
+                      type: string
+                    ca_pem:
+                      type: string
+                    dashboards_url:
+                      type: string
+                    endpoint:
+                      type: string
+                    kibana_approved_cidrs:
+                      type: array
+                      items:
+                        type: string
+                    kibana_ca_pem:
+                      type: string
+                    kibana_endpoint:
+                      type: string
+                    logstash_approved_cidrs:
+                      type: array
+                      items:
+                        type: string
+                    logstash_ca_pem:
+                      type: string
+                    logstash_endpoint:
+                      type: string
+                    max_evidence:
+                      type: integer
+                      format: int64
+                    max_points:
+                      type: integer
+                      format: int64
+                    max_poll_seconds:
+                      type: integer
+                      format: int64
+                    max_requests_per_poll:
+                      type: integer
+                      format: int64
+                    max_response_bytes:
+                      type: integer
+                      format: int64
+                    max_retries:
+                      type: integer
+                      format: int64
+                    max_series:
+                      type: integer
+                      format: int64
+                    product:
+                      type: string
+                    requests_per_minute:
+                      type: integer
+                      format: int64
+                    timeout_seconds:
+                      type: integer
+                      format: int64
                 description:
                   type: string
                 enabled:
@@ -69557,8 +71621,86 @@ paths:
                   type: string
                 index_pattern:
                   type: string
+                kibana_api_key_secret_name:
+                  type: string
+                  nullable: true
+                kibana_auth_type:
+                  type: string
+                  nullable: true
+                kibana_bearer_token_secret_name:
+                  type: string
+                  nullable: true
+                kibana_client_certificate_secret_name:
+                  type: string
+                  nullable: true
+                kibana_client_key_secret_name:
+                  type: string
+                  nullable: true
+                kibana_credentials:
+                  type: object
+                  properties:
+                    api_key_secret_name:
+                      type: string
+                    auth_type:
+                      type: string
+                    bearer_token_secret_name:
+                      type: string
+                    client_certificate_secret_name:
+                      type: string
+                    client_key_secret_name:
+                      type: string
+                    password_secret_name:
+                      type: string
+                    username_secret_name:
+                      type: string
+                  nullable: true
+                kibana_password_secret_name:
+                  type: string
+                  nullable: true
+                kibana_username_secret_name:
+                  type: string
+                  nullable: true
                 level_field:
                   type: string
+                logstash_api_key_secret_name:
+                  type: string
+                  nullable: true
+                logstash_auth_type:
+                  type: string
+                  nullable: true
+                logstash_bearer_token_secret_name:
+                  type: string
+                  nullable: true
+                logstash_client_certificate_secret_name:
+                  type: string
+                  nullable: true
+                logstash_client_key_secret_name:
+                  type: string
+                  nullable: true
+                logstash_credentials:
+                  type: object
+                  properties:
+                    api_key_secret_name:
+                      type: string
+                    auth_type:
+                      type: string
+                    bearer_token_secret_name:
+                      type: string
+                    client_certificate_secret_name:
+                      type: string
+                    client_key_secret_name:
+                      type: string
+                    password_secret_name:
+                      type: string
+                    username_secret_name:
+                      type: string
+                  nullable: true
+                logstash_password_secret_name:
+                  type: string
+                  nullable: true
+                logstash_username_secret_name:
+                  type: string
+                  nullable: true
                 message_field:
                   type: string
                 metric_aggregations:
@@ -69577,6 +71719,11 @@ paths:
                 password_secret_name:
                   type: string
                   nullable: true
+                product:
+                  type: string
+                revision:
+                  type: integer
+                  format: int64
                 test_id_field:
                   type: string
                 timestamp_field:
@@ -69601,6 +71748,123 @@ paths:
                     type: string
                   base_filter:
                     type: string
+                  capabilities:
+                    type: object
+                    properties:
+                      async_esql:
+                        type: boolean
+                      dsl:
+                        type: boolean
+                      esql:
+                        type: boolean
+                      health:
+                        type: boolean
+                      kibana_health:
+                        type: boolean
+                      logs:
+                        type: boolean
+                      logstash_health:
+                        type: boolean
+                      metrics:
+                        type: boolean
+                      pit:
+                        type: boolean
+                      product:
+                        type: string
+                      serverless:
+                        type: boolean
+                      shard_doc:
+                        type: boolean
+                      status:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      traces:
+                        type: boolean
+                      version:
+                        type: string
+                    required:
+                      - async_esql
+                      - dsl
+                      - esql
+                      - health
+                      - kibana_health
+                      - logs
+                      - logstash_health
+                      - metrics
+                      - pit
+                      - product
+                      - serverless
+                      - shard_doc
+                      - traces
+                  collection_mode:
+                    type: string
+                  collector_agent_id:
+                    type: string
+                  config:
+                    type: object
+                    properties:
+                      approved_cidrs:
+                        type: array
+                        items:
+                          type: string
+                      auth_type:
+                        type: string
+                      ca_pem:
+                        type: string
+                      dashboards_url:
+                        type: string
+                      endpoint:
+                        type: string
+                      kibana_approved_cidrs:
+                        type: array
+                        items:
+                          type: string
+                      kibana_ca_pem:
+                        type: string
+                      kibana_endpoint:
+                        type: string
+                      logstash_approved_cidrs:
+                        type: array
+                        items:
+                          type: string
+                      logstash_ca_pem:
+                        type: string
+                      logstash_endpoint:
+                        type: string
+                      max_evidence:
+                        type: integer
+                        format: int64
+                      max_points:
+                        type: integer
+                        format: int64
+                      max_poll_seconds:
+                        type: integer
+                        format: int64
+                      max_requests_per_poll:
+                        type: integer
+                        format: int64
+                      max_response_bytes:
+                        type: integer
+                        format: int64
+                      max_retries:
+                        type: integer
+                        format: int64
+                      max_series:
+                        type: integer
+                        format: int64
+                      product:
+                        type: string
+                      requests_per_minute:
+                        type: integer
+                        format: int64
+                      timeout_seconds:
+                        type: integer
+                        format: int64
+                    required:
+                      - auth_type
+                      - endpoint
+                      - product
                   created_at:
                     type: string
                     format: date-time
@@ -69618,9 +71882,23 @@ paths:
                     type: boolean
                   has_basic_username:
                     type: boolean
+                  has_bearer_token:
+                    type: boolean
+                  has_client_certificate:
+                    type: boolean
+                  has_client_key:
+                    type: boolean
+                  has_custom_ca:
+                    type: boolean
+                  has_kibana_credentials:
+                    type: boolean
+                  has_logstash_credentials:
+                    type: boolean
                   id:
                     type: string
                   index_pattern:
+                    type: string
+                  kibana_auth_type:
                     type: string
                   last_check_message:
                     type: string
@@ -69630,7 +71908,11 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  legacy_capture_ready:
+                    type: boolean
                   level_field:
+                    type: string
+                  logstash_auth_type:
                     type: string
                   message_field:
                     type: string
@@ -69651,8 +71933,13 @@ paths:
                         - operation
                   name:
                     type: string
+                  product:
+                    type: string
                   project_id:
                     type: string
+                  revision:
+                    type: integer
+                    format: int64
                   status:
                     type: string
                   test_id_field:
@@ -69664,13 +71951,23 @@ paths:
                   updated_at:
                     type: string
                     format: date-time
+                  verified_revision:
+                    type: integer
+                    format: int64
                 required:
                   - created_at
                   - enabled
                   - has_api_key
                   - has_basic_password
                   - has_basic_username
+                  - has_bearer_token
+                  - has_client_certificate
+                  - has_client_key
+                  - has_custom_ca
+                  - has_kibana_credentials
+                  - has_logstash_credentials
                   - id
+                  - legacy_capture_ready
                   - metric_aggregations
                   - name
                   - project_id
@@ -69702,6 +71999,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "413":
           description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:
@@ -69783,6 +72086,123 @@ paths:
                     type: string
                   base_filter:
                     type: string
+                  capabilities:
+                    type: object
+                    properties:
+                      async_esql:
+                        type: boolean
+                      dsl:
+                        type: boolean
+                      esql:
+                        type: boolean
+                      health:
+                        type: boolean
+                      kibana_health:
+                        type: boolean
+                      logs:
+                        type: boolean
+                      logstash_health:
+                        type: boolean
+                      metrics:
+                        type: boolean
+                      pit:
+                        type: boolean
+                      product:
+                        type: string
+                      serverless:
+                        type: boolean
+                      shard_doc:
+                        type: boolean
+                      status:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      traces:
+                        type: boolean
+                      version:
+                        type: string
+                    required:
+                      - async_esql
+                      - dsl
+                      - esql
+                      - health
+                      - kibana_health
+                      - logs
+                      - logstash_health
+                      - metrics
+                      - pit
+                      - product
+                      - serverless
+                      - shard_doc
+                      - traces
+                  collection_mode:
+                    type: string
+                  collector_agent_id:
+                    type: string
+                  config:
+                    type: object
+                    properties:
+                      approved_cidrs:
+                        type: array
+                        items:
+                          type: string
+                      auth_type:
+                        type: string
+                      ca_pem:
+                        type: string
+                      dashboards_url:
+                        type: string
+                      endpoint:
+                        type: string
+                      kibana_approved_cidrs:
+                        type: array
+                        items:
+                          type: string
+                      kibana_ca_pem:
+                        type: string
+                      kibana_endpoint:
+                        type: string
+                      logstash_approved_cidrs:
+                        type: array
+                        items:
+                          type: string
+                      logstash_ca_pem:
+                        type: string
+                      logstash_endpoint:
+                        type: string
+                      max_evidence:
+                        type: integer
+                        format: int64
+                      max_points:
+                        type: integer
+                        format: int64
+                      max_poll_seconds:
+                        type: integer
+                        format: int64
+                      max_requests_per_poll:
+                        type: integer
+                        format: int64
+                      max_response_bytes:
+                        type: integer
+                        format: int64
+                      max_retries:
+                        type: integer
+                        format: int64
+                      max_series:
+                        type: integer
+                        format: int64
+                      product:
+                        type: string
+                      requests_per_minute:
+                        type: integer
+                        format: int64
+                      timeout_seconds:
+                        type: integer
+                        format: int64
+                    required:
+                      - auth_type
+                      - endpoint
+                      - product
                   created_at:
                     type: string
                     format: date-time
@@ -69800,9 +72220,23 @@ paths:
                     type: boolean
                   has_basic_username:
                     type: boolean
+                  has_bearer_token:
+                    type: boolean
+                  has_client_certificate:
+                    type: boolean
+                  has_client_key:
+                    type: boolean
+                  has_custom_ca:
+                    type: boolean
+                  has_kibana_credentials:
+                    type: boolean
+                  has_logstash_credentials:
+                    type: boolean
                   id:
                     type: string
                   index_pattern:
+                    type: string
+                  kibana_auth_type:
                     type: string
                   last_check_message:
                     type: string
@@ -69812,7 +72246,11 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  legacy_capture_ready:
+                    type: boolean
                   level_field:
+                    type: string
+                  logstash_auth_type:
                     type: string
                   message_field:
                     type: string
@@ -69833,8 +72271,13 @@ paths:
                         - operation
                   name:
                     type: string
+                  product:
+                    type: string
                   project_id:
                     type: string
+                  revision:
+                    type: integer
+                    format: int64
                   status:
                     type: string
                   test_id_field:
@@ -69846,13 +72289,23 @@ paths:
                   updated_at:
                     type: string
                     format: date-time
+                  verified_revision:
+                    type: integer
+                    format: int64
                 required:
                   - created_at
                   - enabled
                   - has_api_key
                   - has_basic_password
                   - has_basic_username
+                  - has_bearer_token
+                  - has_client_certificate
+                  - has_client_key
+                  - has_custom_ca
+                  - has_kibana_credentials
+                  - has_logstash_credentials
                   - id
+                  - legacy_capture_ready
                   - metric_aggregations
                   - name
                   - project_id
@@ -69905,6 +72358,79 @@ paths:
                   type: string
                 base_filter:
                   type: string
+                bearer_token_secret_name:
+                  type: string
+                  nullable: true
+                client_certificate_secret_name:
+                  type: string
+                  nullable: true
+                client_key_secret_name:
+                  type: string
+                  nullable: true
+                collection_mode:
+                  type: string
+                collector_agent_id:
+                  type: string
+                config:
+                  type: object
+                  properties:
+                    approved_cidrs:
+                      type: array
+                      items:
+                        type: string
+                    auth_type:
+                      type: string
+                    ca_pem:
+                      type: string
+                    dashboards_url:
+                      type: string
+                    endpoint:
+                      type: string
+                    kibana_approved_cidrs:
+                      type: array
+                      items:
+                        type: string
+                    kibana_ca_pem:
+                      type: string
+                    kibana_endpoint:
+                      type: string
+                    logstash_approved_cidrs:
+                      type: array
+                      items:
+                        type: string
+                    logstash_ca_pem:
+                      type: string
+                    logstash_endpoint:
+                      type: string
+                    max_evidence:
+                      type: integer
+                      format: int64
+                    max_points:
+                      type: integer
+                      format: int64
+                    max_poll_seconds:
+                      type: integer
+                      format: int64
+                    max_requests_per_poll:
+                      type: integer
+                      format: int64
+                    max_response_bytes:
+                      type: integer
+                      format: int64
+                    max_retries:
+                      type: integer
+                      format: int64
+                    max_series:
+                      type: integer
+                      format: int64
+                    product:
+                      type: string
+                    requests_per_minute:
+                      type: integer
+                      format: int64
+                    timeout_seconds:
+                      type: integer
+                      format: int64
                 description:
                   type: string
                 enabled:
@@ -69915,8 +72441,86 @@ paths:
                   type: string
                 index_pattern:
                   type: string
+                kibana_api_key_secret_name:
+                  type: string
+                  nullable: true
+                kibana_auth_type:
+                  type: string
+                  nullable: true
+                kibana_bearer_token_secret_name:
+                  type: string
+                  nullable: true
+                kibana_client_certificate_secret_name:
+                  type: string
+                  nullable: true
+                kibana_client_key_secret_name:
+                  type: string
+                  nullable: true
+                kibana_credentials:
+                  type: object
+                  properties:
+                    api_key_secret_name:
+                      type: string
+                    auth_type:
+                      type: string
+                    bearer_token_secret_name:
+                      type: string
+                    client_certificate_secret_name:
+                      type: string
+                    client_key_secret_name:
+                      type: string
+                    password_secret_name:
+                      type: string
+                    username_secret_name:
+                      type: string
+                  nullable: true
+                kibana_password_secret_name:
+                  type: string
+                  nullable: true
+                kibana_username_secret_name:
+                  type: string
+                  nullable: true
                 level_field:
                   type: string
+                logstash_api_key_secret_name:
+                  type: string
+                  nullable: true
+                logstash_auth_type:
+                  type: string
+                  nullable: true
+                logstash_bearer_token_secret_name:
+                  type: string
+                  nullable: true
+                logstash_client_certificate_secret_name:
+                  type: string
+                  nullable: true
+                logstash_client_key_secret_name:
+                  type: string
+                  nullable: true
+                logstash_credentials:
+                  type: object
+                  properties:
+                    api_key_secret_name:
+                      type: string
+                    auth_type:
+                      type: string
+                    bearer_token_secret_name:
+                      type: string
+                    client_certificate_secret_name:
+                      type: string
+                    client_key_secret_name:
+                      type: string
+                    password_secret_name:
+                      type: string
+                    username_secret_name:
+                      type: string
+                  nullable: true
+                logstash_password_secret_name:
+                  type: string
+                  nullable: true
+                logstash_username_secret_name:
+                  type: string
+                  nullable: true
                 message_field:
                   type: string
                 metric_aggregations:
@@ -69935,6 +72539,11 @@ paths:
                 password_secret_name:
                   type: string
                   nullable: true
+                product:
+                  type: string
+                revision:
+                  type: integer
+                  format: int64
                 test_id_field:
                   type: string
                 timestamp_field:
@@ -69959,6 +72568,123 @@ paths:
                     type: string
                   base_filter:
                     type: string
+                  capabilities:
+                    type: object
+                    properties:
+                      async_esql:
+                        type: boolean
+                      dsl:
+                        type: boolean
+                      esql:
+                        type: boolean
+                      health:
+                        type: boolean
+                      kibana_health:
+                        type: boolean
+                      logs:
+                        type: boolean
+                      logstash_health:
+                        type: boolean
+                      metrics:
+                        type: boolean
+                      pit:
+                        type: boolean
+                      product:
+                        type: string
+                      serverless:
+                        type: boolean
+                      shard_doc:
+                        type: boolean
+                      status:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      traces:
+                        type: boolean
+                      version:
+                        type: string
+                    required:
+                      - async_esql
+                      - dsl
+                      - esql
+                      - health
+                      - kibana_health
+                      - logs
+                      - logstash_health
+                      - metrics
+                      - pit
+                      - product
+                      - serverless
+                      - shard_doc
+                      - traces
+                  collection_mode:
+                    type: string
+                  collector_agent_id:
+                    type: string
+                  config:
+                    type: object
+                    properties:
+                      approved_cidrs:
+                        type: array
+                        items:
+                          type: string
+                      auth_type:
+                        type: string
+                      ca_pem:
+                        type: string
+                      dashboards_url:
+                        type: string
+                      endpoint:
+                        type: string
+                      kibana_approved_cidrs:
+                        type: array
+                        items:
+                          type: string
+                      kibana_ca_pem:
+                        type: string
+                      kibana_endpoint:
+                        type: string
+                      logstash_approved_cidrs:
+                        type: array
+                        items:
+                          type: string
+                      logstash_ca_pem:
+                        type: string
+                      logstash_endpoint:
+                        type: string
+                      max_evidence:
+                        type: integer
+                        format: int64
+                      max_points:
+                        type: integer
+                        format: int64
+                      max_poll_seconds:
+                        type: integer
+                        format: int64
+                      max_requests_per_poll:
+                        type: integer
+                        format: int64
+                      max_response_bytes:
+                        type: integer
+                        format: int64
+                      max_retries:
+                        type: integer
+                        format: int64
+                      max_series:
+                        type: integer
+                        format: int64
+                      product:
+                        type: string
+                      requests_per_minute:
+                        type: integer
+                        format: int64
+                      timeout_seconds:
+                        type: integer
+                        format: int64
+                    required:
+                      - auth_type
+                      - endpoint
+                      - product
                   created_at:
                     type: string
                     format: date-time
@@ -69976,9 +72702,23 @@ paths:
                     type: boolean
                   has_basic_username:
                     type: boolean
+                  has_bearer_token:
+                    type: boolean
+                  has_client_certificate:
+                    type: boolean
+                  has_client_key:
+                    type: boolean
+                  has_custom_ca:
+                    type: boolean
+                  has_kibana_credentials:
+                    type: boolean
+                  has_logstash_credentials:
+                    type: boolean
                   id:
                     type: string
                   index_pattern:
+                    type: string
+                  kibana_auth_type:
                     type: string
                   last_check_message:
                     type: string
@@ -69988,7 +72728,11 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  legacy_capture_ready:
+                    type: boolean
                   level_field:
+                    type: string
+                  logstash_auth_type:
                     type: string
                   message_field:
                     type: string
@@ -70009,8 +72753,13 @@ paths:
                         - operation
                   name:
                     type: string
+                  product:
+                    type: string
                   project_id:
                     type: string
+                  revision:
+                    type: integer
+                    format: int64
                   status:
                     type: string
                   test_id_field:
@@ -70022,13 +72771,23 @@ paths:
                   updated_at:
                     type: string
                     format: date-time
+                  verified_revision:
+                    type: integer
+                    format: int64
                 required:
                   - created_at
                   - enabled
                   - has_api_key
                   - has_basic_password
                   - has_basic_username
+                  - has_bearer_token
+                  - has_client_certificate
+                  - has_client_key
+                  - has_custom_ca
+                  - has_kibana_credentials
+                  - has_logstash_credentials
                   - id
+                  - legacy_capture_ready
                   - metric_aggregations
                   - name
                   - project_id
@@ -70064,6 +72823,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
@@ -70081,6 +72846,431 @@ paths:
       tags:
         - Projects
       x-handler: handleUpdateELKConnection
+  /api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/inspections:
+    post:
+      summary: Create Elastic Inspection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleCreateElasticInspection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expected_revision:
+                  type: integer
+                  format: int64
+                from_utc:
+                  type: string
+                  format: date-time
+                indices:
+                  type: array
+                  items:
+                    type: string
+                kind:
+                  type: string
+                limit:
+                  type: integer
+                  format: int64
+                run_id:
+                  type: string
+                selection:
+                  type: object
+                  properties:
+                    attribute_fields:
+                      type: array
+                      items:
+                        type: string
+                    cluster_health:
+                      type: boolean
+                    duration_field:
+                      type: string
+                    duration_unit:
+                      type: string
+                    errors:
+                      type: boolean
+                    header_origins:
+                      type: array
+                      items:
+                        type: string
+                    indices:
+                      type: array
+                      items:
+                        type: string
+                    ingested_field:
+                      type: string
+                    kibana_health:
+                      type: boolean
+                    logs:
+                      type: boolean
+                    logstash_health:
+                      type: boolean
+                    max_retained_bytes:
+                      type: integer
+                      format: int64
+                    max_retained_records:
+                      type: integer
+                      format: int64
+                    max_window_seconds:
+                      type: integer
+                      format: int64
+                    message_field:
+                      type: string
+                    metrics:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          bucket_seconds:
+                            type: integer
+                            format: int64
+                          count_field:
+                            type: string
+                          exact_window:
+                            type: boolean
+                          field:
+                            type: string
+                          group_by:
+                            type: array
+                            items:
+                              type: string
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          statistic:
+                            type: string
+                          sum_field:
+                            type: string
+                          unit:
+                            type: string
+                    overlap_seconds:
+                      type: integer
+                      format: int64
+                    page_size:
+                      type: integer
+                      format: int64
+                    parent_span_id_field:
+                      type: string
+                    preset:
+                      type: string
+                    project_id:
+                      type: string
+                    projected_fields:
+                      type: array
+                      items:
+                        type: string
+                    queries:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          approximate:
+                            type: boolean
+                          async:
+                            type: boolean
+                          bucket_seconds:
+                            type: integer
+                            format: int64
+                          count_column:
+                            type: string
+                          dimension_columns:
+                            type: array
+                            items:
+                              type: string
+                          dsl: {}
+                          esql:
+                            type: string
+                          exact_window:
+                            type: boolean
+                          group_by:
+                            type: array
+                            items:
+                              type: string
+                          kind:
+                            type: string
+                          language:
+                            type: string
+                          name:
+                            type: string
+                          params:
+                            type: array
+                            items: {}
+                          statistic:
+                            type: string
+                          sum_column:
+                            type: string
+                          timestamp_column:
+                            type: string
+                          unit:
+                            type: string
+                          value_column:
+                            type: string
+                    query_offset:
+                      type: integer
+                      format: int64
+                    run_header:
+                      type: boolean
+                    run_id_field:
+                      type: string
+                    service_field:
+                      type: string
+                    service_values:
+                      type: array
+                      items:
+                        type: string
+                    settle_seconds:
+                      type: integer
+                      format: int64
+                    severity_field:
+                      type: string
+                    span_id_field:
+                      type: string
+                    status_field:
+                      type: string
+                    timestamp_field:
+                      type: string
+                    trace_id_field:
+                      type: string
+                    traces:
+                      type: boolean
+                    transaction_id_field:
+                      type: string
+                    transactions:
+                      type: boolean
+                    unique_sort_field:
+                      type: string
+                  nullable: true
+                to_utc:
+                  type: string
+                  format: date-time
+              required:
+                - expected_revision
+                - kind
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection_id:
+                    type: string
+                  connection_revision:
+                    type: integer
+                    format: int64
+                  created_at:
+                    type: string
+                    format: date-time
+                  expires_at:
+                    type: string
+                    format: date-time
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  message:
+                    type: string
+                  result: {}
+                  status:
+                    type: string
+                required:
+                  - connection_id
+                  - connection_revision
+                  - created_at
+                  - expires_at
+                  - id
+                  - kind
+                  - status
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleCreateElasticInspection
+  /api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/inspections/{operation_id}:
+    delete:
+      summary: Cancel Elastic Inspection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleCancelElasticInspection
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: operation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleCancelElasticInspection
+    get:
+      summary: Get Elastic Inspection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read'
+      operationId: handleGetElasticInspection
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection_id:
+                    type: string
+                  connection_revision:
+                    type: integer
+                    format: int64
+                  created_at:
+                    type: string
+                    format: date-time
+                  expires_at:
+                    type: string
+                    format: date-time
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  message:
+                    type: string
+                  result: {}
+                  status:
+                    type: string
+                required:
+                  - connection_id
+                  - connection_revision
+                  - created_at
+                  - expires_at
+                  - id
+                  - kind
+                  - status
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: operation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleGetElasticInspection
   /api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/test:
     post:
       summary: Test ELK Connection
@@ -81604,6 +84794,10 @@ paths:
                           - scenario_id
                           - sources
                         nullable: true
+                      monitor_warnings:
+                        type: array
+                        items:
+                          type: string
                       name:
                         type: string
                       paused_at:
@@ -86905,6 +90099,10 @@ paths:
                           - scenario_id
                           - sources
                         nullable: true
+                      monitor_warnings:
+                        type: array
+                        items:
+                          type: string
                       name:
                         type: string
                       paused_at:
@@ -92207,6 +95405,10 @@ paths:
                           - scenario_id
                           - sources
                         nullable: true
+                      monitor_warnings:
+                        type: array
+                        items:
+                          type: string
                       name:
                         type: string
                       paused_at:
@@ -97521,6 +100723,10 @@ paths:
                           - scenario_id
                           - sources
                         nullable: true
+                      monitor_warnings:
+                        type: array
+                        items:
+                          type: string
                       name:
                         type: string
                       paused_at:
@@ -102835,6 +106041,10 @@ paths:
                           - scenario_id
                           - sources
                         nullable: true
+                      monitor_warnings:
+                        type: array
+                        items:
+                          type: string
                       name:
                         type: string
                       paused_at:
@@ -108149,6 +111359,10 @@ paths:
                           - scenario_id
                           - sources
                         nullable: true
+                      monitor_warnings:
+                        type: array
+                        items:
+                          type: string
                       name:
                         type: string
                       paused_at:
@@ -113463,6 +116677,10 @@ paths:
                           - scenario_id
                           - sources
                         nullable: true
+                      monitor_warnings:
+                        type: array
+                        items:
+                          type: string
                       name:
                         type: string
                       paused_at:
@@ -319964,6 +323182,10 @@ paths:
                       - scenario_id
                       - sources
                     nullable: true
+                  monitor_warnings:
+                    type: array
+                    items:
+                      type: string
                   name:
                     type: string
                   paused_at:
@@ -332161,6 +335383,10 @@ paths:
                       - scenario_id
                       - sources
                     nullable: true
+                  monitor_warnings:
+                    type: array
+                    items:
+                      type: string
                   name:
                     type: string
                   paused_at:
@@ -337856,6 +341082,37 @@ paths:
                           required:
                             - project_id
                           nullable: true
+                        elastic:
+                          type: object
+                          properties:
+                            mapping_revision:
+                              type: string
+                            metrics:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            preset:
+                              type: string
+                            product:
+                              type: string
+                            queries:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            signals:
+                              type: array
+                              items:
+                                type: string
+                          required:
+                            - mapping_revision
+                            - product
+                            - signals
+                          nullable: true
+                        elastic_ingestion_watermark:
+                          type: string
+                          format: date-time
                         executor_mode:
                           type: string
                         job_id:
@@ -337910,6 +341167,10 @@ paths:
                           additionalProperties:
                             type: object
                             properties:
+                              as_of:
+                                type: string
+                                format: date-time
+                                nullable: true
                               cache_age_seconds:
                                 type: integer
                                 format: int64
@@ -337930,6 +341191,9 @@ paths:
                                 type: array
                                 items:
                                   type: string
+                              late_arrival_seconds:
+                                type: integer
+                                format: int64
                               message:
                                 type: string
                               missing_points:
@@ -337942,6 +341206,10 @@ paths:
                               points:
                                 type: integer
                                 format: int64
+                              query_id:
+                                type: string
+                              reason:
+                                type: string
                               status:
                                 type: string
                               to:
@@ -337960,6 +341228,9 @@ paths:
                               - status
                               - to
                               - truncated
+                        query_watermark:
+                          type: string
+                          format: date-time
                         reason:
                           type: string
                         required:
@@ -338027,6 +341298,8 @@ paths:
                     items:
                       type: object
                       properties:
+                        approximate:
+                          type: boolean
                         coverage_pct:
                           type: number
                           format: double
@@ -349635,6 +352908,38 @@ paths:
                               required:
                                 - project_id
                               nullable: true
+                            elastic:
+                              type: object
+                              properties:
+                                mapping_revision:
+                                  type: string
+                                metrics:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
+                                preset:
+                                  type: string
+                                product:
+                                  type: string
+                                queries:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ElasticQueryMetadata'
+                                    additionalProperties: true
+                                signals:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - mapping_revision
+                                - product
+                                - signals
+                              nullable: true
+                            elastic_ingestion_watermark:
+                              type: string
+                              format: date-time
                             executor_mode:
                               type: string
                             job_id:
@@ -349689,7 +352994,11 @@ paths:
                               type: object
                               additionalProperties:
                                 type: object
+                                description: 'Go type: ProviderCoverage'
                                 additionalProperties: true
+                            query_watermark:
+                              type: string
+                              format: date-time
                             reason:
                               type: string
                             required:
@@ -349705,6 +353014,7 @@ paths:
                               type: array
                               items:
                                 type: object
+                                description: 'Go type: ProviderEntity'
                                 additionalProperties: true
                           required:
                             - batches
@@ -349740,6 +353050,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            approximate:
+                              type: boolean
                             coverage_pct:
                               type: number
                               format: double
@@ -351658,7 +354970,11 @@ paths:
                               type: string
                             backend:
                               type: string
+                            correlation:
+                              type: string
                             deep_link:
+                              type: string
+                            document_id:
                               type: string
                             entity_ids:
                               type: object
@@ -351666,16 +354982,37 @@ paths:
                                 type: string
                             id:
                               type: string
+                            index:
+                              type: string
+                            ingested_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             kind:
                               type: string
+                            log:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             properties:
                               type: object
                               additionalProperties:
                                 type: string
                             provider:
                               type: string
+                            query_id:
+                              type: string
+                            received_at:
+                              type: string
+                              format: date-time
+                            service:
+                              type: string
                             severity:
                               type: string
+                            span:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             status:
                               type: string
                             summary:
@@ -351683,11 +355020,17 @@ paths:
                             timestamp_utc:
                               type: string
                               format: date-time
+                            transaction:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                           required:
                             - application_id
                             - id
                             - kind
                             - timestamp_utc
+                        schema_version:
+                          type: string
                         source_id:
                           type: string
                       required:
@@ -351698,6 +355041,8 @@ paths:
                     items:
                       type: object
                       properties:
+                        approximate:
+                          type: boolean
                         coverage_pct:
                           type: number
                           format: double
@@ -369496,6 +372841,10 @@ paths:
                       - scenario_id
                       - sources
                     nullable: true
+                  monitor_warnings:
+                    type: array
+                    items:
+                      type: string
                   name:
                     type: string
                   paused_at:
@@ -381637,6 +384986,10 @@ paths:
                       - scenario_id
                       - sources
                     nullable: true
+                  monitor_warnings:
+                    type: array
+                    items:
+                      type: string
                   name:
                     type: string
                   paused_at:
@@ -401001,7 +404354,31 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: service
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: severity
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: signal
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: source_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: trace_id
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -401479,6 +404856,8 @@ paths:
                                         type: boolean
                                       analysis_statistic:
                                         type: string
+                                      approximate:
+                                        type: boolean
                                       backend:
                                         type: string
                                       backend_profile:
@@ -401496,6 +404875,8 @@ paths:
                                         format: double
                                         nullable: true
                                       definition_hash:
+                                        type: string
+                                      derived_aggregation:
                                         type: string
                                       display_labels:
                                         type: object
@@ -401545,6 +404926,8 @@ paths:
                                         type: string
                                         format: date-time
                                         nullable: true
+                                      window_kind:
+                                        type: string
                                     required:
                                       - aggregation_eligible
                                       - bucket_end
@@ -402740,6 +406123,114 @@ paths:
                               required:
                                 - project_id
                               nullable: true
+                            elastic:
+                              type: object
+                              properties:
+                                attribute_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                cluster_health:
+                                  type: boolean
+                                duration_field:
+                                  type: string
+                                duration_unit:
+                                  type: string
+                                errors:
+                                  type: boolean
+                                header_origins:
+                                  type: array
+                                  items:
+                                    type: string
+                                indices:
+                                  type: array
+                                  items:
+                                    type: string
+                                ingested_field:
+                                  type: string
+                                kibana_health:
+                                  type: boolean
+                                logs:
+                                  type: boolean
+                                logstash_health:
+                                  type: boolean
+                                max_retained_bytes:
+                                  type: integer
+                                  format: int64
+                                max_retained_records:
+                                  type: integer
+                                  format: int64
+                                max_window_seconds:
+                                  type: integer
+                                  format: int64
+                                message_field:
+                                  type: string
+                                metrics:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MetricSelection'
+                                    additionalProperties: true
+                                overlap_seconds:
+                                  type: integer
+                                  format: int64
+                                page_size:
+                                  type: integer
+                                  format: int64
+                                parent_span_id_field:
+                                  type: string
+                                preset:
+                                  type: string
+                                project_id:
+                                  type: string
+                                projected_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                queries:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: Query'
+                                    additionalProperties: true
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                run_header:
+                                  type: boolean
+                                run_id_field:
+                                  type: string
+                                service_field:
+                                  type: string
+                                service_values:
+                                  type: array
+                                  items:
+                                    type: string
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                severity_field:
+                                  type: string
+                                span_id_field:
+                                  type: string
+                                status_field:
+                                  type: string
+                                timestamp_field:
+                                  type: string
+                                trace_id_field:
+                                  type: string
+                                traces:
+                                  type: boolean
+                                transaction_id_field:
+                                  type: string
+                                transactions:
+                                  type: boolean
+                                unique_sort_field:
+                                  type: string
+                              required:
+                                - indices
+                                - project_id
+                              nullable: true
                             elastic_query:
                               type: object
                               properties:
@@ -402913,6 +406404,10 @@ paths:
                             - pack
                             - project_id
                             - revision
+                      warnings:
+                        type: array
+                        items:
+                          type: string
                     required:
                       - bindings
                       - sources
@@ -403188,6 +406683,114 @@ paths:
                               required:
                                 - project_id
                               nullable: true
+                            elastic:
+                              type: object
+                              properties:
+                                attribute_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                cluster_health:
+                                  type: boolean
+                                duration_field:
+                                  type: string
+                                duration_unit:
+                                  type: string
+                                errors:
+                                  type: boolean
+                                header_origins:
+                                  type: array
+                                  items:
+                                    type: string
+                                indices:
+                                  type: array
+                                  items:
+                                    type: string
+                                ingested_field:
+                                  type: string
+                                kibana_health:
+                                  type: boolean
+                                logs:
+                                  type: boolean
+                                logstash_health:
+                                  type: boolean
+                                max_retained_bytes:
+                                  type: integer
+                                  format: int64
+                                max_retained_records:
+                                  type: integer
+                                  format: int64
+                                max_window_seconds:
+                                  type: integer
+                                  format: int64
+                                message_field:
+                                  type: string
+                                metrics:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MetricSelection'
+                                    additionalProperties: true
+                                overlap_seconds:
+                                  type: integer
+                                  format: int64
+                                page_size:
+                                  type: integer
+                                  format: int64
+                                parent_span_id_field:
+                                  type: string
+                                preset:
+                                  type: string
+                                project_id:
+                                  type: string
+                                projected_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                queries:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: Query'
+                                    additionalProperties: true
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                run_header:
+                                  type: boolean
+                                run_id_field:
+                                  type: string
+                                service_field:
+                                  type: string
+                                service_values:
+                                  type: array
+                                  items:
+                                    type: string
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                severity_field:
+                                  type: string
+                                span_id_field:
+                                  type: string
+                                status_field:
+                                  type: string
+                                timestamp_field:
+                                  type: string
+                                trace_id_field:
+                                  type: string
+                                traces:
+                                  type: boolean
+                                transaction_id_field:
+                                  type: string
+                                transactions:
+                                  type: boolean
+                                unique_sort_field:
+                                  type: string
+                              required:
+                                - indices
+                                - project_id
+                              nullable: true
                             elastic_query:
                               type: object
                               properties:
@@ -403361,6 +406964,10 @@ paths:
                             - pack
                             - project_id
                             - revision
+                      warnings:
+                        type: array
+                        items:
+                          type: string
                     required:
                       - bindings
                       - sources
@@ -403713,6 +407320,114 @@ paths:
                               required:
                                 - project_id
                               nullable: true
+                            elastic:
+                              type: object
+                              properties:
+                                attribute_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                cluster_health:
+                                  type: boolean
+                                duration_field:
+                                  type: string
+                                duration_unit:
+                                  type: string
+                                errors:
+                                  type: boolean
+                                header_origins:
+                                  type: array
+                                  items:
+                                    type: string
+                                indices:
+                                  type: array
+                                  items:
+                                    type: string
+                                ingested_field:
+                                  type: string
+                                kibana_health:
+                                  type: boolean
+                                logs:
+                                  type: boolean
+                                logstash_health:
+                                  type: boolean
+                                max_retained_bytes:
+                                  type: integer
+                                  format: int64
+                                max_retained_records:
+                                  type: integer
+                                  format: int64
+                                max_window_seconds:
+                                  type: integer
+                                  format: int64
+                                message_field:
+                                  type: string
+                                metrics:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MetricSelection'
+                                    additionalProperties: true
+                                overlap_seconds:
+                                  type: integer
+                                  format: int64
+                                page_size:
+                                  type: integer
+                                  format: int64
+                                parent_span_id_field:
+                                  type: string
+                                preset:
+                                  type: string
+                                project_id:
+                                  type: string
+                                projected_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                queries:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: Query'
+                                    additionalProperties: true
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                run_header:
+                                  type: boolean
+                                run_id_field:
+                                  type: string
+                                service_field:
+                                  type: string
+                                service_values:
+                                  type: array
+                                  items:
+                                    type: string
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                severity_field:
+                                  type: string
+                                span_id_field:
+                                  type: string
+                                status_field:
+                                  type: string
+                                timestamp_field:
+                                  type: string
+                                trace_id_field:
+                                  type: string
+                                traces:
+                                  type: boolean
+                                transaction_id_field:
+                                  type: string
+                                transactions:
+                                  type: boolean
+                                unique_sort_field:
+                                  type: string
+                              required:
+                                - indices
+                                - project_id
+                              nullable: true
                             elastic_query:
                               type: object
                               properties:
@@ -403886,6 +407601,10 @@ paths:
                             - pack
                             - project_id
                             - revision
+                      warnings:
+                        type: array
+                        items:
+                          type: string
                     required:
                       - bindings
                       - sources
@@ -404161,6 +407880,114 @@ paths:
                               required:
                                 - project_id
                               nullable: true
+                            elastic:
+                              type: object
+                              properties:
+                                attribute_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                cluster_health:
+                                  type: boolean
+                                duration_field:
+                                  type: string
+                                duration_unit:
+                                  type: string
+                                errors:
+                                  type: boolean
+                                header_origins:
+                                  type: array
+                                  items:
+                                    type: string
+                                indices:
+                                  type: array
+                                  items:
+                                    type: string
+                                ingested_field:
+                                  type: string
+                                kibana_health:
+                                  type: boolean
+                                logs:
+                                  type: boolean
+                                logstash_health:
+                                  type: boolean
+                                max_retained_bytes:
+                                  type: integer
+                                  format: int64
+                                max_retained_records:
+                                  type: integer
+                                  format: int64
+                                max_window_seconds:
+                                  type: integer
+                                  format: int64
+                                message_field:
+                                  type: string
+                                metrics:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MetricSelection'
+                                    additionalProperties: true
+                                overlap_seconds:
+                                  type: integer
+                                  format: int64
+                                page_size:
+                                  type: integer
+                                  format: int64
+                                parent_span_id_field:
+                                  type: string
+                                preset:
+                                  type: string
+                                project_id:
+                                  type: string
+                                projected_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                queries:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: Query'
+                                    additionalProperties: true
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                run_header:
+                                  type: boolean
+                                run_id_field:
+                                  type: string
+                                service_field:
+                                  type: string
+                                service_values:
+                                  type: array
+                                  items:
+                                    type: string
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                severity_field:
+                                  type: string
+                                span_id_field:
+                                  type: string
+                                status_field:
+                                  type: string
+                                timestamp_field:
+                                  type: string
+                                trace_id_field:
+                                  type: string
+                                traces:
+                                  type: boolean
+                                transaction_id_field:
+                                  type: string
+                                transactions:
+                                  type: boolean
+                                unique_sort_field:
+                                  type: string
+                              required:
+                                - indices
+                                - project_id
+                              nullable: true
                             elastic_query:
                               type: object
                               properties:
@@ -404334,6 +408161,10 @@ paths:
                             - pack
                             - project_id
                             - revision
+                      warnings:
+                        type: array
+                        items:
+                          type: string
                     required:
                       - bindings
                       - sources
@@ -404706,6 +408537,114 @@ paths:
                               required:
                                 - project_id
                               nullable: true
+                            elastic:
+                              type: object
+                              properties:
+                                attribute_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                cluster_health:
+                                  type: boolean
+                                duration_field:
+                                  type: string
+                                duration_unit:
+                                  type: string
+                                errors:
+                                  type: boolean
+                                header_origins:
+                                  type: array
+                                  items:
+                                    type: string
+                                indices:
+                                  type: array
+                                  items:
+                                    type: string
+                                ingested_field:
+                                  type: string
+                                kibana_health:
+                                  type: boolean
+                                logs:
+                                  type: boolean
+                                logstash_health:
+                                  type: boolean
+                                max_retained_bytes:
+                                  type: integer
+                                  format: int64
+                                max_retained_records:
+                                  type: integer
+                                  format: int64
+                                max_window_seconds:
+                                  type: integer
+                                  format: int64
+                                message_field:
+                                  type: string
+                                metrics:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MetricSelection'
+                                    additionalProperties: true
+                                overlap_seconds:
+                                  type: integer
+                                  format: int64
+                                page_size:
+                                  type: integer
+                                  format: int64
+                                parent_span_id_field:
+                                  type: string
+                                preset:
+                                  type: string
+                                project_id:
+                                  type: string
+                                projected_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                queries:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: Query'
+                                    additionalProperties: true
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                run_header:
+                                  type: boolean
+                                run_id_field:
+                                  type: string
+                                service_field:
+                                  type: string
+                                service_values:
+                                  type: array
+                                  items:
+                                    type: string
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                severity_field:
+                                  type: string
+                                span_id_field:
+                                  type: string
+                                status_field:
+                                  type: string
+                                timestamp_field:
+                                  type: string
+                                trace_id_field:
+                                  type: string
+                                traces:
+                                  type: boolean
+                                transaction_id_field:
+                                  type: string
+                                transactions:
+                                  type: boolean
+                                unique_sort_field:
+                                  type: string
+                              required:
+                                - indices
+                                - project_id
+                              nullable: true
                             elastic_query:
                               type: object
                               properties:
@@ -404879,6 +408818,10 @@ paths:
                             - pack
                             - project_id
                             - revision
+                      warnings:
+                        type: array
+                        items:
+                          type: string
                     required:
                       - bindings
                       - sources
@@ -405154,6 +409097,114 @@ paths:
                               required:
                                 - project_id
                               nullable: true
+                            elastic:
+                              type: object
+                              properties:
+                                attribute_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                cluster_health:
+                                  type: boolean
+                                duration_field:
+                                  type: string
+                                duration_unit:
+                                  type: string
+                                errors:
+                                  type: boolean
+                                header_origins:
+                                  type: array
+                                  items:
+                                    type: string
+                                indices:
+                                  type: array
+                                  items:
+                                    type: string
+                                ingested_field:
+                                  type: string
+                                kibana_health:
+                                  type: boolean
+                                logs:
+                                  type: boolean
+                                logstash_health:
+                                  type: boolean
+                                max_retained_bytes:
+                                  type: integer
+                                  format: int64
+                                max_retained_records:
+                                  type: integer
+                                  format: int64
+                                max_window_seconds:
+                                  type: integer
+                                  format: int64
+                                message_field:
+                                  type: string
+                                metrics:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MetricSelection'
+                                    additionalProperties: true
+                                overlap_seconds:
+                                  type: integer
+                                  format: int64
+                                page_size:
+                                  type: integer
+                                  format: int64
+                                parent_span_id_field:
+                                  type: string
+                                preset:
+                                  type: string
+                                project_id:
+                                  type: string
+                                projected_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                queries:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: Query'
+                                    additionalProperties: true
+                                query_offset:
+                                  type: integer
+                                  format: int64
+                                run_header:
+                                  type: boolean
+                                run_id_field:
+                                  type: string
+                                service_field:
+                                  type: string
+                                service_values:
+                                  type: array
+                                  items:
+                                    type: string
+                                settle_seconds:
+                                  type: integer
+                                  format: int64
+                                severity_field:
+                                  type: string
+                                span_id_field:
+                                  type: string
+                                status_field:
+                                  type: string
+                                timestamp_field:
+                                  type: string
+                                trace_id_field:
+                                  type: string
+                                traces:
+                                  type: boolean
+                                transaction_id_field:
+                                  type: string
+                                transactions:
+                                  type: boolean
+                                unique_sort_field:
+                                  type: string
+                              required:
+                                - indices
+                                - project_id
+                              nullable: true
                             elastic_query:
                               type: object
                               properties:
@@ -405327,6 +409378,10 @@ paths:
                             - pack
                             - project_id
                             - revision
+                      warnings:
+                        type: array
+                        items:
+                          type: string
                     required:
                       - bindings
                       - sources
