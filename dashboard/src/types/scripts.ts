@@ -567,6 +567,9 @@ export interface JavaVuserConfig {
   use_xbootclasspath?: boolean
   dedicated_class_loader?: boolean
   skip_parameter_evaluation?: boolean
+  // Custom parameter delimiters (.usr ParamLeftBrace/ParamRightBrace); unset means { and }.
+  param_left_brace?: string
+  param_right_brace?: string
 }
 
 export interface JMSConfig {

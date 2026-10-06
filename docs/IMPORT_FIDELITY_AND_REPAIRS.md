@@ -195,6 +195,10 @@ C string literals are decoded exactly once, with C escape rules (`\'`, `\?`, oct
 
 Conditions of the form `strlen(lr_eval_string("{p}")) <op> N` translate to `control_if`. A registration with `NotFound=warning` stores an empty string on a miss, so `!= 0` tests "found". An `int` local declared once inside a function, and written only with integer-literal assignments, imports as `lr_save_int` steps on `clocal_<name>`. Conditions and `while` headers that read it then translate. A loop driven by such a local has no bound in the source, so it imports with `max_iterations: 1000` and an import warning.
 
+Parameter files keep VuGen's delimiter, including a tab written as a literal tab between quotes (`Delimiter="<TAB>"`, the usual Java Vuser layout). Trimming had read every tab-delimited data file as one comma-separated column, so each parameter held a whole line.
+
+Java Vuser scripts keep their recorded source, so the runner resolves `lr.eval_string` references the way LoadRunner does. The project's parameter delimiters (`.usr` `ParamLeftBrace`/`ParamRightBrace`, such as `<dbUrl>`) import as `config.java_vuser.param_left_brace`/`param_right_brace`. A reference resolves by exact name first. An identifier-shaped reference also matches the imported parameter's canonical lowercase name, because `.prm` parameters import as `connectionfactoryjndi` while the source asks for `{connectionFactoryJNDI}`. Substitution is a single pass, and text between delimiters that names no parameter stays literal. C conversion recognizes only `{name}`, so a C script with custom delimiters imports with a warning.
+
 The private acceptance archive is not committed. Regression tests use synthetic values and local HTTP servers. Live Salesforce replay and comparison with an LR baseline remain separate validation requiring usable credentials and target access.
 
 ### Local acceptance evidence

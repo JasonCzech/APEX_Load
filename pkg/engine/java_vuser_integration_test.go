@@ -729,3 +729,35 @@ func TestPerActionFinalBusinessTransactionGoalPreservesClaimedAutomaticTransacti
 		})
 	}
 }
+
+func TestJavaVuserCustomParamBracesReachRunner(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "braced-java",
+		Protocol: "java_vuser",
+		Config: dsl.ScriptConfig{
+			RunLogic:  dsl.RunLogicConfig{Iterations: 1},
+			JavaVuser: dsl.JavaVuserConfig{ParamLeftBrace: "<", ParamRightBrace: ">"},
+		},
+		Actions: []dsl.Action{{Name: "Actions.action", Type: "java_vuser_run", Params: map[string]any{"method": "action"}}},
+	}
+	adapter := &javaVuserParameterCaptureProtocol{}
+	vu := &VUser{Group: "java", Proto: adapter, Script: script, Metrics: NewMetricsCollector(8)}
+	vu.Run(context.Background())
+	if len(adapter.actions) != 1 {
+		t.Fatalf("executed actions = %d", len(adapter.actions))
+	}
+	assertJavaLRParameters(t, adapter.actions[0], map[string]any{
+		javaVuserParamLeftBraceKey: "<", javaVuserParamRightBraceKey: ">",
+	})
+
+	// The delimiters are configuration, so they travel even when automatic
+	// parameter evaluation is skipped.
+	skip := true
+	script.Config.JavaVuser.SkipParameterEvaluation = &skip
+	adapter = &javaVuserParameterCaptureProtocol{}
+	vu = &VUser{Group: "java", Proto: adapter, Script: script, Metrics: NewMetricsCollector(8)}
+	vu.Run(context.Background())
+	assertJavaLRParameters(t, adapter.actions[0], map[string]any{
+		javaVuserParamLeftBraceKey: "<", javaVuserParamRightBraceKey: ">",
+	})
+}

@@ -319,6 +319,11 @@ type JavaVuserConfig struct {
 	// is only user-suppliable when the user explicitly attaches an asset to it;
 	// unattached entries remain assumed operator-provisioned and fail closed.
 	ClasspathAssets []JavaClasspathAsset `json:"classpath_assets,omitempty" jsonschema:"maxItems=256"`
+	// ParamLeftBrace and ParamRightBrace are the parameter delimiters the
+	// Java source uses in lr.eval_string (the .usr ParamLeftBrace and
+	// ParamRightBrace); both empty means LoadRunner's default "{" and "}".
+	ParamLeftBrace  string `json:"param_left_brace,omitempty" jsonschema:"maxLength=8"`
+	ParamRightBrace string `json:"param_right_brace,omitempty" jsonschema:"maxLength=8"`
 }
 
 // JavaClasspathAsset binds one exact Java Vuser classpath entry to a

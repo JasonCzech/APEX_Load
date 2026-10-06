@@ -8158,6 +8158,14 @@
         "max_processes": {
           "type": "integer"
         },
+        "param_left_brace": {
+          "maxLength": 8,
+          "type": "string"
+        },
+        "param_right_brace": {
+          "maxLength": 8,
+          "type": "string"
+        },
         "runner_command": {
           "type": "string"
         },

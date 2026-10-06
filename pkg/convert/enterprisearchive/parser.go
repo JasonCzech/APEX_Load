@@ -116,6 +116,10 @@ type ProjectConfig struct {
 	BaseURL           string
 	ThinkTimeMin      float64
 	ThinkTimeMax      float64
+	// ParamLeftBrace and ParamRightBrace are the .usr parameter delimiters
+	// ("{" and "}" unless the script changed them, as Java scripts often do).
+	ParamLeftBrace  string
+	ParamRightBrace string
 	// Transactions are the transaction names the project declares in
 	// [TransactionsOrder]/[Transactions], in declared order. They let the
 	// importer cross-check that every declared transaction survived
@@ -1233,6 +1237,10 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 				cfg.ScriptLanguage = value
 			case "runtype":
 				cfg.RunType = value
+			case "paramleftbrace":
+				cfg.ParamLeftBrace = value
+			case "paramrightbrace":
+				cfg.ParamRightBrace = value
 			case "defaultcfg":
 				cfg.DefaultCfg = pathValue
 				cfg.RuntimeFile = pathValue
@@ -1509,7 +1517,11 @@ func cleanINIConfigValue(section, key, value string) string {
 		strings.EqualFold(strings.TrimSpace(section), "RunLogicFiles") {
 		return cleanRuntimePathValue(value)
 	}
-	return cleanConfigValue(value)
+	cleaned := cleanConfigValue(value)
+	if cleaned == "" && strings.EqualFold(strings.TrimSpace(key), "Delimiter") {
+		return whitespaceParameterDelimiter(value)
+	}
+	return cleaned
 }
 
 // cleanRuntimePathValue removes INI quoting without interpreting backslashes

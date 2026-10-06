@@ -37,6 +37,7 @@ func validateJavaVuserScriptIssuesWithPolicy(script *Script, allowPreservedCrede
 	} else if cfg.ActionTimeoutMs > MaxConfiguredProtocolTimeoutMS {
 		issues = append(issues, fmt.Sprintf("config.java_vuser.action_timeout_ms must not exceed %d", MaxConfiguredProtocolTimeoutMS))
 	}
+	issues = append(issues, validateJavaVuserParamBraces(cfg.ParamLeftBrace, cfg.ParamRightBrace)...)
 	selection := normalizeJavaVuserJDKSelection(cfg.JDKSelection)
 	if selection == "" {
 		issues = append(issues, "config.java_vuser.jdk_selection must be internal or specified")
@@ -158,4 +159,22 @@ func isPortableAbsolutePath(value string) bool {
 	}
 	return len(value) >= 3 && ((value[0] >= 'A' && value[0] <= 'Z') || (value[0] >= 'a' && value[0] <= 'z')) &&
 		value[1] == ':' && (value[2] == '/' || value[2] == '\\')
+}
+
+// validateJavaVuserParamBraces requires the custom parameter delimiters to be
+// set together and to be short, visible text the runner can scan for.
+func validateJavaVuserParamBraces(left, right string) []string {
+	if left == "" && right == "" {
+		return nil
+	}
+	if left == "" || right == "" {
+		return []string{"config.java_vuser.param_left_brace and param_right_brace must be set together"}
+	}
+	var issues []string
+	for _, brace := range []struct{ field, value string }{{"param_left_brace", left}, {"param_right_brace", right}} {
+		if len(brace.value) > 8 || strings.TrimSpace(brace.value) != brace.value || strings.ContainsFunc(brace.value, unicode.IsSpace) || containsJavaVuserControlCharacter(brace.value) {
+			issues = append(issues, "config.java_vuser."+brace.field+" must be 1 to 8 visible characters")
+		}
+	}
+	return issues
 }

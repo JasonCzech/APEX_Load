@@ -1333,3 +1333,53 @@ public class Actions {
   }
 }
 `
+
+// Imported .prm parameters arrive under canonical lowercase names while the
+// Java source keeps the recorded spelling, and a script may use custom
+// parameter delimiters (.usr ParamLeftBrace/ParamRightBrace).
+func TestLREvalStringResolvesCanonicalNamesAndCustomBraces(t *testing.T) {
+	source := `import lrapi.lr;
+
+public class Actions {
+  public int action() {
+    System.out.println("url:" + lr.eval_string("<dbUrl>"));
+    System.out.println("mixed:" + lr.eval_string("{connectionFactoryJNDI}|<Missing>|<dbUrl"));
+    System.out.println("xml:" + lr.eval_string("<root><ban></ban></root>"));
+    return lr.PASS;
+  }
+}`
+	braced := `{"class_name":"Actions","method":"full_lifecycle","params":{"lr_parameters":{"dburl":"jdbc:test","ban":"<dburl>","connectionfactoryjndi":"cf","__apexload_param_left_brace":"<","__apexload_param_right_brace":">"}}}` + "\n"
+	stdout, stderr, _, err := runHarnessFixtureWithInputTimed(t, source, braced)
+	if err != nil {
+		t.Fatalf("Harness failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+	for _, want := range []string{
+		"url:jdbc:test",
+		// With <> delimiters, {name} is literal text and an undefined <Missing> stays as written.
+		"mixed:{connectionFactoryJNDI}|<Missing>|<dbUrl",
+		// A substituted value is not rescanned, and a closing tag names no parameter.
+		"xml:<root><dburl></ban></root>",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout = %s, want %q", stdout, want)
+		}
+	}
+	defaults := `{"class_name":"Actions","method":"full_lifecycle","params":{"lr_parameters":{"connectionfactoryjndi":"cf"}}}` + "\n"
+	stdout, stderr, _, err = runHarnessFixtureWithInputTimed(t, `import lrapi.lr;
+
+public class Actions {
+  public int action() {
+    System.out.println("jndi:" + lr.eval_string("{connectionFactoryJNDI}/{CONNECTIONFACTORYJNDI}/{connection-factory.jndi}"));
+    return lr.PASS;
+  }
+}`, defaults)
+	if err != nil {
+		t.Fatalf("Harness failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "jndi:cf/cf/{connection-factory.jndi}") {
+		t.Fatalf("stdout = %s, want canonical-name resolution with default braces", stdout)
+	}
+	if strings.Contains(stdout+stderr, "__apexload_param") {
+		t.Fatalf("reserved brace keys leaked as parameters: %s %s", stdout, stderr)
+	}
+}

@@ -150,3 +150,32 @@ func TestApplyKnownParameterReferencesTraversesEveryRequestSurface(t *testing.T)
 		t.Fatalf("authoritative HeaderList values were not rewritten: %#v / %#v", script.Init[0], script.Actions[0])
 	}
 }
+
+// VuGen writes a tab delimiter as a literal tab between quotes. Trimming it
+// had turned every tab-delimited file into one comma-delimited column, so each
+// parameter held a whole line and same-line parameters lost their row partner.
+func TestParseParameterFileKeepsQuotedTabDelimiter(t *testing.T) {
+	section := func(name, selectNext, update string) string {
+		return "[parameter:" + name + "]\nColumnName=\"" + name + "\"\nDelimiter=\"\t\"\nGenerateNewVal=\"" + update + "\"\nParamName=\"" + name + "\"\nSelectNextRow=\"" + selectNext + "\"\nTable=\"Servers.dat\"\nType=\"Table\"\n"
+	}
+	parsed := ParseParameterFile("Java.prm",
+		section("serverURL", "Sequential", "EachIteration")+section("userName", "Same line as serverURL", "Once"),
+		map[string]string{"Servers.dat": "serverURL\tuserName\r\ntcp://a.example.test:1\tuser-a\r\ntcp://b.example.test:1\tuser-b\r\n"},
+	)
+	if len(parsed.Warnings) != 0 || len(parsed.DataSources) != 1 {
+		t.Fatalf("warnings = %#v, data sources = %#v, want one tab-delimited source", parsed.Warnings, parsed.DataSources)
+	}
+	if source := parsed.DataSources[0]; source.Delimiter != "\t" || !source.FirstRowHeader {
+		t.Fatalf("data source = %#v, want a tab delimiter and a header row", source)
+	}
+	params := map[string]dsl.Parameter{}
+	for _, parameter := range parsed.Parameters {
+		params[parameter.Name] = parameter
+	}
+	if got := params["username"]; got.SameLineAs != "serverurl" || got.DataSource != params["serverurl"].DataSource || got.Column != "userName" {
+		t.Fatalf("userName = %#v, want same-line sync to serverURL in one source", got)
+	}
+	if value, ok := firstParameterDataSourceValue(parsed.DataSources, parsed.DataSources[0].Name, "userName"); !ok || value != "user-a" {
+		t.Fatalf("first userName = %q (%v), want the second column only", value, ok)
+	}
+}

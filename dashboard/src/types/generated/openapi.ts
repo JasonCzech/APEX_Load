@@ -864,6 +864,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -4710,6 +4712,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -5518,6 +5522,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -6228,6 +6234,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -10105,6 +10113,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -10967,6 +10977,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -11654,6 +11666,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -12310,6 +12324,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -12856,6 +12872,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -13475,6 +13493,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -14106,6 +14126,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -15414,6 +15436,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -18781,6 +18805,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -19620,6 +19646,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -20423,6 +20451,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -22087,6 +22117,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -22759,6 +22791,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -23707,6 +23741,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -24715,6 +24751,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -25414,6 +25452,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -34186,6 +34226,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -35064,6 +35106,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -47922,6 +47966,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -49797,6 +49843,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -62900,6 +62948,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -73552,6 +73602,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -74243,6 +74295,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -89902,6 +89956,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -90759,6 +90815,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -91459,6 +91517,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -92228,6 +92288,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -93206,6 +93268,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -93893,6 +93957,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -94549,6 +94615,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -95095,6 +95163,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -96921,6 +96991,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -105839,6 +105911,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -106624,6 +106698,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -109170,6 +109246,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -111096,6 +111174,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -111719,6 +111799,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -114172,6 +114254,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -115417,6 +115501,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -116739,6 +116825,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -118084,6 +118172,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -119430,6 +119520,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -120775,6 +120867,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -129388,6 +129482,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -130086,6 +130182,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -135430,6 +135528,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;
@@ -136307,6 +136407,8 @@ export interface operations {
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "max_processes"?: number;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "runner_command"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
                   "startup_timeout_ms"?: number;
@@ -140783,6 +140885,8 @@ export interface operations {
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "max_processes"?: number;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "runner_command"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
                 "startup_timeout_ms"?: number;

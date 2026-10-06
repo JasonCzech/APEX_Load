@@ -53,6 +53,12 @@ public final class lr {
     public static final int EXIT_MAIN_ITERATION_AND_CONTINUE = 5;
 
     private static final Map<String, String> parameters = new ConcurrentHashMap<>();
+    // The script's parameter braces (.usr ParamLeftBrace/ParamRightBrace). The
+    // engine delivers non-default braces as these reserved lr_parameters keys.
+    static final String PARAM_LEFT_BRACE_KEY = "__apexload_param_left_brace";
+    static final String PARAM_RIGHT_BRACE_KEY = "__apexload_param_right_brace";
+    private static volatile String paramLeftBrace = "{";
+    private static volatile String paramRightBrace = "}";
     private static final Map<String, Long> timers = new ConcurrentHashMap<>();
     // Explicit per-transaction status overrides set via set_transaction /
     // set_transaction_status. An entry here wins over LR_AUTO error inference.
@@ -167,7 +173,19 @@ public final class lr {
         if (name == null || name.trim().isEmpty()) {
             return;
         }
-        parameters.put(name.trim(), value == null ? "" : value);
+        String trimmed = name.trim();
+        if (PARAM_LEFT_BRACE_KEY.equals(trimmed) || PARAM_RIGHT_BRACE_KEY.equals(trimmed)) {
+            String brace = value == null ? "" : value.trim();
+            if (!brace.isEmpty() && brace.length() <= 8) {
+                if (PARAM_LEFT_BRACE_KEY.equals(trimmed)) {
+                    paramLeftBrace = brace;
+                } else {
+                    paramRightBrace = brace;
+                }
+            }
+            return;
+        }
+        parameters.put(trimmed, value == null ? "" : value);
     }
 
     public static String __apexload_get_parameter(String name) {
@@ -351,15 +369,104 @@ public final class lr {
         }
     }
 
+    // Substitutes parameter references in one pass, as LoadRunner does: a
+    // substituted value is not scanned again, and text between braces that
+    // names no parameter stays literal. A reference resolves by exact name,
+    // then by the importer's canonical name (lowercase, other characters as
+    // "_"), because imported .prm parameters arrive under canonical names while
+    // the Java source keeps the recorded spelling.
     public static String eval_string(String value) {
         if (value == null) {
             return "";
         }
-        String out = value;
-        for (Map.Entry<String, String> entry : parameters.entrySet()) {
-            out = out.replace("{" + entry.getKey() + "}", entry.getValue());
+        String left = paramLeftBrace;
+        String right = paramRightBrace;
+        StringBuilder out = null;
+        int index = 0;
+        int scan = 0;
+        while (true) {
+            int start = value.indexOf(left, scan);
+            if (start < 0) {
+                break;
+            }
+            int nameStart = start + left.length();
+            int end = value.indexOf(right, nameStart);
+            if (end < 0) {
+                break;
+            }
+            String resolved = end - nameStart <= 128 ? resolveParameter(value.substring(nameStart, end)) : null;
+            if (resolved == null) {
+                scan = nameStart;
+                continue;
+            }
+            if (out == null) {
+                out = new StringBuilder(value.length());
+            }
+            out.append(value, index, start).append(resolved);
+            index = end + right.length();
+            scan = index;
         }
-        return out;
+        if (out == null) {
+            return value;
+        }
+        return out.append(value, index, value.length()).toString();
+    }
+
+    private static String resolveParameter(String name) {
+        if (name.isEmpty()) {
+            return null;
+        }
+        String exact = parameters.get(name);
+        if (exact != null) {
+            return exact;
+        }
+        // Only an identifier can name a parameter; "/ban" in "</ban>" must not
+        // resolve to "ban" when the delimiters are angle brackets.
+        if (!isParameterIdentifier(name)) {
+            return null;
+        }
+        String canonical = canonicalParameterName(name);
+        if (canonical.isEmpty()) {
+            return null;
+        }
+        for (Map.Entry<String, String> entry : parameters.entrySet()) {
+            if (canonical.equals(canonicalParameterName(entry.getKey()))) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    private static boolean isParameterIdentifier(String name) {
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            boolean letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+            if (!letter && (i == 0 || c < '0' || c > '9')) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Mirrors canonicalSourceParameterName in the Go importer.
+    static String canonicalParameterName(String name) {
+        StringBuilder out = new StringBuilder(name.length());
+        boolean underscore = true;
+        for (char c : name.trim().toLowerCase(java.util.Locale.ROOT).toCharArray()) {
+            boolean keep = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+            if (keep) {
+                out.append(c);
+                underscore = false;
+            } else if (!underscore) {
+                out.append('_');
+                underscore = true;
+            }
+        }
+        int length = out.length();
+        if (length > 0 && out.charAt(length - 1) == '_') {
+            out.setLength(length - 1);
+        }
+        return out.toString();
     }
 
     public static String eval_string(Object... args) {

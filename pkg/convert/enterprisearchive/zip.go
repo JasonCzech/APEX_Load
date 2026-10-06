@@ -568,6 +568,7 @@ func finalizeEnterpriseArchiveImportResult(
 	}
 	appendCSourceParseFailureGates(result, ctx.ParsedActions)
 	appendSplicedCommentWarnings(result, ctx.ParsedActions)
+	applySourceParamBraces(result, ctx.ProjectConfig)
 	applyBrowserEmulationRuntimeSettingsReview(result, ctx.RuntimeConfig)
 	parameterSections := make(map[string]map[string]map[string]string)
 	scripts := result.effectiveScripts()
