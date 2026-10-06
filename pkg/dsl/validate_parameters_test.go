@@ -1,6 +1,7 @@
 package dsl
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -190,5 +191,27 @@ func TestValidateScriptIssues_ParameterColumnsRespectInspectableSchema(t *testin
 				t.Fatalf("issues = %v, want none", issues)
 			}
 		})
+	}
+}
+
+func TestValidateSameLineAsAcrossDataSources(t *testing.T) {
+	script := &Script{
+		Name: "same line", Version: "1.0.0", Protocol: "http",
+		Config: ScriptConfig{BaseURL: "https://example.com"},
+		Parameters: []Parameter{
+			{Name: "market", Type: "file", DataSource: "accounts", Column: "market"},
+			{Name: "zip", Type: "file", DataSource: "addresses", Column: "zip", SameLineAs: "market"},
+			{Name: "counter", Type: "counter", Start: 1, Step: 1},
+			{Name: "zip_by_counter", Type: "file", DataSource: "addresses", Column: "zip", SameLineAs: "counter"},
+		},
+		DataSources: []DataSource{
+			{Name: "accounts", Type: "csv", InlineData: "market\nm1\n", FirstRowHeader: true},
+			{Name: "addresses", Type: "csv", InlineData: "zip\nz1\n", FirstRowHeader: true},
+		},
+		Actions: []Action{{Name: "call", Type: "request", Method: "GET", Target: "/ping"}},
+	}
+	issues := ValidateScriptIssues(script)
+	if len(issues) != 1 || !strings.Contains(issues[0], `"zip_by_counter": same_line_as must reference a file or list parameter`) {
+		t.Fatalf("issues = %v, want only the non-row reference rejected", issues)
 	}
 }
