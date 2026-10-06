@@ -40,12 +40,20 @@ func TestScenarioSavePolicyUnavailableOpenAPIRefusalContract(t *testing.T) {
 		t.Fatal("known capability codes or generic private-failure compatibility are undocumented")
 	}
 	get := doc.Paths["/api/v1/scenarios/{id}"]["get"]
+	view := false
 	for _, parameter := range get.Parameters {
 		if parameter.Name == "view" {
-			t.Fatal("foundation falsely advertises canonical authoring GET")
+			view = parameter.In == "query" && !parameter.Required && reflect.DeepEqual(parameter.Schema.Enum, []string{"authoring"})
 		}
 	}
-	if _, exists := get.Responses["200"].Headers["ETag"]; exists {
-		t.Fatal("foundation falsely advertises a strong scenario ETag")
+	if !view {
+		t.Fatal("scenario authoring view is undocumented")
+	}
+	etag, exists := get.Responses["200"].Headers["ETag"]
+	if !exists || !strings.Contains(etag.Description, "scenario-authoring-v1:") || !strings.Contains(etag.Description, "only for view=authoring") {
+		t.Fatalf("scenario authoring ETag is undocumented or ambiguous: %#v", etag)
+	}
+	if schemas := get.Responses["200"].Content["application/json"].Schema.OneOf; len(schemas) != 2 || !reflect.DeepEqual(schemas[1].Properties["projection_version"].Enum, []string{scenarioAuthoringProjectionVersion}) {
+		t.Fatal("scenario authoring projection schema is undocumented")
 	}
 }

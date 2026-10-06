@@ -68521,10 +68521,16 @@ export interface operations {
       "path": {
         "id": string;
       };
+      "query"?: {
+        "view"?: "authoring";
+      };
     };
     requestBody?: never;
     responses: {
       "200": {
+        headers: {
+          "ETag"?: string;
+        };
         content: {
           "application/json": ({
             "activity"?: ({
@@ -69408,7 +69414,420 @@ export interface operations {
             }) | null;
             "updated_at": string;
             "workload_shape_id"?: string;
-          }) | null;
+          } | {
+            "content_revision": string;
+            "id": string;
+            "library_placement": {
+              "application_id": (string) | null;
+              "release_ids": Array<string>;
+            };
+            "monitor_selection": {
+              "sources": Array<{
+                "required": boolean;
+                "source_id": string;
+              }>;
+            };
+            "project_id": string;
+            "projection_version": "apexload.scenario_authoring.v1";
+            "scenario": {
+              "assignment"?: ({
+                "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
+                "load_zone_weights"?: Record<string, number>;
+                "mode"?: string;
+                "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
+                "selected_targets"?: Array<string>;
+                "shard_strategy"?: string;
+                "sharing_mode"?: string;
+                "source_affinity"?: string;
+                "tolerate_generator_loss"?: boolean;
+              }) | null;
+              "data_pools": Array<{
+                "access_mode": string;
+                "alias": string;
+                "id": string;
+                "pool_id": string;
+                "selection_strategy": string;
+              }>;
+              "duration": string;
+              "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
+                "max_avg_server_processing_ms"?: (number) | null;
+                "max_avg_transfer_ms"?: (number) | null;
+                "max_cls"?: (number) | null;
+                "max_dead_letter_rate_pct"?: (number) | null;
+                "max_end_to_end_latency_ms"?: (number) | null;
+                "max_error_count"?: (number) | null;
+                "max_error_pct"?: (number) | null;
+                "max_inp_ms"?: (number) | null;
+                "max_lcp_ms"?: (number) | null;
+                "max_partition_skew_pct"?: (number) | null;
+                "max_redelivery_rate_pct"?: (number) | null;
+                "max_throttled_requests"?: (number) | null;
+                "max_vusers"?: (number) | null;
+                "min_vusers"?: (number) | null;
+                "monitor_rules"?: Array<{
+                  "backend"?: string;
+                  "comparator": string;
+                  "dimensions"?: Record<string, string>;
+                  "end_offset_seconds"?: (number) | null;
+                  "entity_ids"?: Record<string, string>;
+                  "evaluation_mode"?: string;
+                  "evaluation_operation"?: string;
+                  "metric": string;
+                  "metric_id"?: string;
+                  "min_coverage_pct"?: number;
+                  "provider"?: string;
+                  "query_id"?: string;
+                  "require_freshness"?: boolean;
+                  "resolution_seconds"?: number;
+                  "severity"?: string;
+                  "source_id": string;
+                  "source_statistic"?: string;
+                  "start_offset_seconds"?: number;
+                  "statistic": string;
+                  "threshold": number;
+                  "unit": string;
+                }>;
+                "p95_latency_ms"?: (number) | null;
+                "sla_breach_window"?: string;
+                "stop_on_max_errors"?: boolean;
+                "stop_on_sla_breach"?: boolean;
+                "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "group"?: string;
+                  "metric": string;
+                  "population"?: string;
+                  "protocol"?: string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
+                "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
+                  "goal_driven"?: (Record<string, unknown>) | null;
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
+              }) | null;
+              "groups": Array<{
+                "assignment"?: ({
+                  "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
+                  "load_zone_weights"?: Record<string, number>;
+                  "mode"?: string;
+                  "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
+                  "selected_targets"?: Array<string>;
+                  "shard_strategy"?: string;
+                  "sharing_mode"?: string;
+                  "source_affinity"?: string;
+                  "tolerate_generator_loss"?: boolean;
+                }) | null;
+                "initialization"?: string;
+                "iterations"?: (number) | null;
+                "name": string;
+                "ramp_down"?: string;
+                "ramp_up"?: string;
+                "role"?: string;
+                "runtime_settings"?: ({
+                  "auto_transactions"?: string;
+                  "base_url"?: string;
+                  "browser"?: (Record<string, unknown>) | null;
+                  "browser_config"?: (Record<string, unknown>) | null;
+                  "browser_emulation"?: (Record<string, unknown>) | null;
+                  "env"?: Record<string, string>;
+                  "error_handling"?: (Record<string, unknown>) | null;
+                  "http"?: (Record<string, unknown>) | null;
+                  "iterations"?: (number) | null;
+                  "java_vuser"?: (Record<string, unknown>) | null;
+                  "log"?: (Record<string, unknown>) | null;
+                  "log_level"?: string;
+                  "pacing"?: (Record<string, unknown>) | null;
+                  "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
+                  "run_logic"?: (Record<string, unknown>) | null;
+                  "think_time"?: (Record<string, unknown>) | null;
+                  "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
+                }) | null;
+                "script_id": string;
+                "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
+                "vusers": number;
+              }>;
+              "id": string;
+              "name": string;
+              "project_id": string;
+              "ref_key"?: string;
+              "resource_baseline"?: boolean;
+              "runtime_settings"?: ({
+                "auto_transactions"?: string;
+                "base_url"?: string;
+                "browser"?: ({
+                  "device_profile"?: string;
+                  "headless"?: (boolean) | null;
+                  "orientation"?: string;
+                  "touch_mode"?: (boolean) | null;
+                }) | null;
+                "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
+                  "cache_content_urls"?: (boolean) | null;
+                  "cache_enabled"?: (boolean) | null;
+                  "capture_document_metrics"?: (boolean) | null;
+                  "capture_screenshots"?: string;
+                  "check_newer_versions"?: (boolean) | null;
+                  "client_certificates"?: Array<Record<string, unknown>>;
+                  "client_metrics"?: (boolean) | null;
+                  "device_profile"?: string;
+                  "download_resources"?: string;
+                  "engine"?: string;
+                  "experience_canary"?: boolean;
+                  "geolocation"?: Record<string, unknown>;
+                  "har_artifact_dir"?: string;
+                  "har_capture"?: string;
+                  "har_capture_policy"?: string;
+                  "har_sla_threshold_ms"?: number;
+                  "headless"?: (boolean) | null;
+                  "http_credentials"?: Record<string, unknown>;
+                  "locale"?: string;
+                  "new_user_per_iteration"?: (boolean) | null;
+                  "orientation"?: string;
+                  "proxy"?: Record<string, unknown>;
+                  "review_policy"?: Record<string, unknown>;
+                  "slow_mo_ms"?: number;
+                  "storage_state"?: string;
+                  "system_language"?: string;
+                  "timezone"?: string;
+                  "touch_mode"?: (boolean) | null;
+                  "traceparent"?: (boolean) | null;
+                  "user_agent"?: string;
+                  "viewport"?: Record<string, unknown>;
+                }) | null;
+                "browser_emulation"?: ({
+                  "browser_type"?: string;
+                  "browser_version"?: string;
+                  "cache"?: (Record<string, unknown>) | null;
+                  "custom_user_agent"?: string;
+                  "language"?: string;
+                  "mode"?: string;
+                  "platform"?: string;
+                }) | null;
+                "env"?: Record<string, string>;
+                "error_handling"?: ({
+                  "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
+                  "max_retries"?: number;
+                  "retry_backoff"?: string;
+                  "retry_delay_ms"?: number;
+                  "snapshot_on_error"?: boolean;
+                }) | null;
+                "http"?: ({
+                  "accept_encoding"?: string;
+                  "accept_language"?: string;
+                  "aura_recorded_failures"?: string;
+                  "auth"?: Record<string, unknown>;
+                  "cache_enabled"?: (boolean) | null;
+                  "cache_excluded_mime_types"?: Array<string>;
+                  "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
+                  "clear_cookies_per_iteration"?: (boolean) | null;
+                  "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
+                  "cookies_enabled"?: (boolean) | null;
+                  "default_header_list"?: Array<Record<string, unknown>>;
+                  "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
+                  "html_excluded_mime_types"?: Array<string>;
+                  "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
+                  "idle_timeout_ms"?: number;
+                  "ip_version"?: string;
+                  "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
+                  "max_conns_per_host"?: number;
+                  "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
+                  "max_redirects"?: (number) | null;
+                  "page_timeout_ms"?: number;
+                  "proxy"?: Record<string, unknown>;
+                  "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
+                  "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
+                  "tls"?: Record<string, unknown>;
+                  "tls_timeout_ms"?: number;
+                  "traceparent"?: (boolean) | null;
+                  "traceparent_sampled"?: (boolean) | null;
+                  "user_agent"?: string;
+                  "version"?: string;
+                }) | null;
+                "iterations"?: (number) | null;
+                "java_vuser"?: ({
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: (boolean) | null;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: (boolean) | null;
+                  "use_xbootclasspath"?: (boolean) | null;
+                }) | null;
+                "log"?: ({
+                  "error_buffer_bytes"?: number;
+                  "extended_options"?: Array<string>;
+                  "level"?: string;
+                  "max_response_bytes"?: number;
+                  "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
+                }) | null;
+                "log_level"?: string;
+                "pacing"?: ({
+                  "delay_ms"?: number;
+                  "interval_ms"?: number;
+                  "max_delay_ms"?: number;
+                  "max_interval_ms"?: number;
+                  "min_delay_ms"?: number;
+                  "min_interval_ms"?: number;
+                  "tps"?: number;
+                  "type": string;
+                }) | null;
+                "redaction_rules"?: Array<{
+                  "name"?: string;
+                  "pattern": string;
+                  "replacement"?: string;
+                }>;
+                "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
+                  "message_detail"?: (Record<string, unknown>) | null;
+                  "property_analytics"?: Array<Record<string, unknown>>;
+                }) | null;
+                "run_logic"?: ({
+                  "action_sequence"?: Array<string>;
+                  "auto_transactions"?: string;
+                  "block_scheduling"?: string;
+                  "global_iterations"?: number;
+                  "iterations"?: number;
+                  "max_in_flight"?: number;
+                  "max_transactions"?: number;
+                  "termination_mode"?: string;
+                  "workload_model"?: string;
+                }) | null;
+                "think_time"?: ({
+                  "force"?: boolean;
+                  "ignore"?: boolean;
+                  "limit_ms"?: number;
+                  "max_ms"?: number;
+                  "max_percent"?: number;
+                  "mean_ms": number;
+                  "min_ms"?: number;
+                  "min_percent"?: number;
+                  "multiplier"?: number;
+                  "std_ms"?: number;
+                  "type": string;
+                }) | null;
+                "web_runtime"?: ({
+                  "additional_attributes"?: Record<string, string>;
+                  "content_checks"?: Array<Record<string, unknown>>;
+                  "data_formatting"?: Record<string, unknown>;
+                  "download_filters"?: Record<string, unknown>;
+                  "network_profiles"?: Array<Record<string, unknown>>;
+                  "network_simulation"?: Record<string, unknown>;
+                  "source_ips"?: Array<string>;
+                  "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
+                }) | null;
+              }) | null;
+              "scenario_mode"?: string;
+              "script_shakeout"?: boolean;
+              "start_delay"?: string;
+              "termination_mode"?: string;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "end_offset"?: string;
+                  "mode"?: string;
+                  "peak_scope"?: string;
+                  "start"?: string;
+                  "start_offset"?: string;
+                };
+              }) | null;
+              "workload_shape_id"?: string;
+            };
+          });
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {
@@ -69422,6 +69841,11 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

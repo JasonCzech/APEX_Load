@@ -76,6 +76,10 @@ func (s *Server) handleListScenarios(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetScenario(w http.ResponseWriter, r *http.Request) {
+	if views, present := r.URL.Query()["view"]; present {
+		s.writeScenarioAuthoringView(w, r, views)
+		return
+	}
 	scenario, ok := s.runner.GetScenario(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "scenario not found")

@@ -1,0 +1,252 @@
+package api
+
+import (
+	"database/sql"
+	"errors"
+	"net/http"
+	"sort"
+	"strings"
+
+	"github.com/jasonczech/apexload/pkg/storage"
+)
+
+var errScenarioAuthoringUnsupported = errors.New("durable scenario authoring store unsupported")
+
+const scenarioAuthoringProjectionVersion = "apexload.scenario_authoring.v1"
+const scenarioAuthoringTagPrefix = "scenario-authoring-v1:"
+
+// ScenarioAuthoringGroup uses the CreateGroupEntry field names so an authored
+// document can be edited and sent back as a scenario update. Array position is
+// the group order; joined script names and protocols are display context.
+type ScenarioAuthoringGroup struct {
+	Name                         string                       `json:"name"`
+	ScriptID                     string                       `json:"script_id"`
+	Role                         string                       `json:"role,omitempty"`
+	VUsers                       int                          `json:"vusers"`
+	RampUp                       string                       `json:"ramp_up,omitempty"`
+	RampDown                     string                       `json:"ramp_down,omitempty"`
+	StartOffset                  string                       `json:"start_offset,omitempty"`
+	Stages                       []storage.LoadStage          `json:"stages,omitempty"`
+	Iterations                   *int                         `json:"iterations,omitempty"`
+	Initialization               string                       `json:"initialization,omitempty"`
+	RuntimeSettings              *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	Assignment                   *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	TransactionResponseTimeSLAMs *float64                     `json:"transaction_response_time_sla_ms,omitempty"`
+}
+
+// ScenarioAuthoringDataPoolBinding keeps the binding's stable identity but not
+// its clocks or the joined pool name.
+type ScenarioAuthoringDataPoolBinding struct {
+	ID                string `json:"id"`
+	PoolID            string `json:"pool_id"`
+	Alias             string `json:"alias"`
+	AccessMode        string `json:"access_mode"`
+	SelectionStrategy string `json:"selection_strategy"`
+}
+
+// ScenarioAuthoringDocument holds only persisted authored fields, with
+// runtime credentials masked exactly as the ordinary scenario read masks them.
+type ScenarioAuthoringDocument struct {
+	ID               string                             `json:"id"`
+	RefKey           string                             `json:"ref_key,omitempty"`
+	Name             string                             `json:"name"`
+	ProjectID        string                             `json:"project_id"`
+	WorkloadShapeID  string                             `json:"workload_shape_id,omitempty"`
+	Duration         string                             `json:"duration"`
+	StartDelay       string                             `json:"start_delay,omitempty"`
+	TerminationMode  string                             `json:"termination_mode,omitempty"`
+	ScenarioMode     string                             `json:"scenario_mode,omitempty"`
+	ScriptShakeout   bool                               `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool                               `json:"resource_baseline,omitempty"`
+	Assignment       *GeneratorAssignmentSettings       `json:"assignment,omitempty"`
+	GoalConfig       *GoalConfig                        `json:"goal_config,omitempty"`
+	TrafficProfile   *TrafficProfile                    `json:"traffic_profile,omitempty"`
+	RuntimeSettings  *RuntimeSettingsOverride           `json:"runtime_settings,omitempty"`
+	Groups           []ScenarioAuthoringGroup           `json:"groups"`
+	DataPools        []ScenarioAuthoringDataPoolBinding `json:"data_pools"`
+}
+
+type ScenarioAuthoringPlacement struct {
+	ApplicationID *string  `json:"application_id"`
+	ReleaseIDs    []string `json:"release_ids"`
+}
+
+// ScenarioAuthoringMonitorSelection is the bound monitor source set, ordered by
+// source identity. Its separate CAS revision is not part of the document.
+type ScenarioAuthoringMonitorSelection struct {
+	Sources []storage.MonitorBinding `json:"sources"`
+}
+
+type ScenarioAuthoringProjection struct {
+	ProjectionVersion string                            `json:"projection_version"`
+	ID                string                            `json:"id"`
+	ProjectID         string                            `json:"project_id"`
+	ContentRevision   string                            `json:"content_revision"`
+	Scenario          ScenarioAuthoringDocument         `json:"scenario"`
+	LibraryPlacement  ScenarioAuthoringPlacement        `json:"library_placement"`
+	MonitorSelection  ScenarioAuthoringMonitorSelection `json:"monitor_selection"`
+}
+
+func scenarioAuthoringETag(revision string) (string, error) {
+	if !storage.ValidScenarioContentRevision(revision) {
+		return "", storage.ErrScenarioAuthoringInvalidRevision
+	}
+	return `"` + scenarioAuthoringTagPrefix + revision + `"`, nil
+}
+
+// parseScenarioAuthoringIfMatch accepts exactly one header field holding one
+// strong scenario authoring v1 tag. Header keys are matched case-insensitively
+// because callers can construct header maps without canonicalization.
+func parseScenarioAuthoringIfMatch(header http.Header) (string, bool, error) {
+	var values []string
+	fields := 0
+	for key, entries := range header {
+		if strings.EqualFold(key, "If-Match") {
+			fields++
+			values = append(values, entries...)
+		}
+	}
+	if fields == 0 {
+		return "", false, nil
+	}
+	if fields != 1 || len(values) != 1 {
+		return "", true, storage.ErrScenarioAuthoringInvalidRevision
+	}
+	value := strings.Trim(values[0], " \t")
+	if strings.ContainsAny(value, "\r\n") {
+		return "", true, storage.ErrScenarioAuthoringInvalidRevision
+	}
+	prefix := `"` + scenarioAuthoringTagPrefix
+	if !strings.HasPrefix(value, prefix) || !strings.HasSuffix(value, `"`) {
+		return "", true, storage.ErrScenarioAuthoringInvalidRevision
+	}
+	revision := strings.TrimSuffix(strings.TrimPrefix(value, prefix), `"`)
+	if !storage.ValidScenarioContentRevision(revision) {
+		return "", true, storage.ErrScenarioAuthoringInvalidRevision
+	}
+	return revision, true, nil
+}
+
+// buildScenarioAuthoringProjection is a pure function of one durable snapshot,
+// so the tag and the document always describe the same authored state.
+func buildScenarioAuthoringProjection(snapshot *storage.ScenarioAuthoringSnapshot) (*ScenarioAuthoringProjection, error) {
+	if snapshot == nil || snapshot.Scenario == nil || strings.TrimSpace(snapshot.ProjectID) == "" || !storage.ValidScenarioContentRevision(snapshot.ContentRevision) {
+		return nil, storage.ErrScenarioAuthoringUnavailable
+	}
+	scenario := snapshot.Scenario
+	groups := make([]storage.ScenarioScript, len(snapshot.Scripts))
+	copy(groups, snapshot.Scripts)
+	sort.SliceStable(groups, func(i, j int) bool { return groups[i].Order < groups[j].Order })
+	document := ScenarioAuthoringDocument{
+		ID: scenario.ID, RefKey: scenario.RefKey, Name: scenario.Name, ProjectID: snapshot.ProjectID,
+		WorkloadShapeID: scenario.WorkloadShapeID, Duration: scenario.Duration, StartDelay: scenario.StartDelay,
+		TerminationMode: scenario.TerminationMode, ScenarioMode: normalizeScenarioMode(scenario.ScenarioMode),
+		ScriptShakeout: scenario.ScriptShakeout, ResourceBaseline: scenario.ResourceBaseline,
+		Assignment:      decodeStoredGeneratorAssignment(scenario.Assignment),
+		GoalConfig:      decodeStoredGoalConfig(scenario.GoalConfig),
+		TrafficProfile:  decodeStoredTrafficProfile(scenario.TrafficProfile),
+		RuntimeSettings: maskRuntimeSettings(decodeStoredRuntimeSettings(scenario.RuntimeSettings)),
+		Groups:          make([]ScenarioAuthoringGroup, 0, len(groups)),
+		DataPools:       make([]ScenarioAuthoringDataPoolBinding, 0, len(snapshot.DataPools)),
+	}
+	for _, group := range groups {
+		document.Groups = append(document.Groups, ScenarioAuthoringGroup{
+			Name: group.Name, ScriptID: group.ScriptID, Role: group.Role, VUsers: group.VUsers,
+			RampUp: group.RampUp, RampDown: group.RampDown, StartOffset: group.StartOffset,
+			Stages: cloneLoadStages(group.Stages), Iterations: cloneIntPtr(group.Iterations),
+			Initialization:               group.Initialization,
+			RuntimeSettings:              maskRuntimeSettings(decodeStoredRuntimeSettings(group.RuntimeSettings)),
+			Assignment:                   decodeStoredGeneratorAssignment(group.Assignment),
+			TransactionResponseTimeSLAMs: cloneFloat64Ptr(group.TransactionResponseTimeSLAMs),
+		})
+	}
+	for _, binding := range snapshot.DataPools {
+		document.DataPools = append(document.DataPools, ScenarioAuthoringDataPoolBinding{
+			ID: binding.ID, PoolID: binding.PoolID, Alias: binding.Alias,
+			AccessMode: binding.AccessMode, SelectionStrategy: binding.SelectionStrategy,
+		})
+	}
+	placement := ScenarioAuthoringPlacement{ReleaseIDs: []string{}}
+	if assignment := snapshot.LibraryAssignment; assignment != nil {
+		if assignment.Application != nil {
+			id := assignment.Application.ID
+			placement.ApplicationID = &id
+		}
+		for _, release := range assignment.Releases {
+			placement.ReleaseIDs = append(placement.ReleaseIDs, release.ID)
+		}
+		sort.Strings(placement.ReleaseIDs)
+	}
+	monitors := ScenarioAuthoringMonitorSelection{Sources: []storage.MonitorBinding{}}
+	if snapshot.MonitorBindings != nil {
+		monitors.Sources = append(monitors.Sources, snapshot.MonitorBindings.Sources...)
+		sort.Slice(monitors.Sources, func(i, j int) bool { return monitors.Sources[i].SourceID < monitors.Sources[j].SourceID })
+	}
+	return &ScenarioAuthoringProjection{
+		ProjectionVersion: scenarioAuthoringProjectionVersion,
+		ID:                scenario.ID, ProjectID: snapshot.ProjectID, ContentRevision: snapshot.ContentRevision,
+		Scenario: document, LibraryPlacement: placement, MonitorSelection: monitors,
+	}, nil
+}
+
+// GetScenarioAuthoringDurable reads the authored scenario and its nonce from
+// one durable snapshot. Visibility follows the ordinary scenario read: a
+// scenario the controller would not list (for example a pending import
+// publication) is not found here either.
+func (tr *TestRunner) GetScenarioAuthoringDurable(id string) (*ScenarioAuthoringProjection, bool, error) {
+	tr.refreshScenariosForHARead()
+	tr.mu.RLock()
+	resolved := tr.resolveRefKeyLocked(strings.TrimSpace(id))
+	cached := tr.scenarios[resolved]
+	store, supported := tr.scenarioStore.(storage.ScenarioAuthoringStore)
+	tr.mu.RUnlock()
+	if cached == nil {
+		return nil, false, nil
+	}
+	if !supported {
+		return nil, false, errScenarioAuthoringUnsupported
+	}
+	snapshot, err := store.GetScenarioAuthoringSnapshot(resolved)
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, storage.ErrScenarioAuthoringNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	projection, err := buildScenarioAuthoringProjection(snapshot)
+	if err != nil {
+		return nil, false, err
+	}
+	return projection, true, nil
+}
+
+// writeScenarioAuthoringView serves view=authoring with its strong validator.
+// Ownership is resolved before any tag is emitted, so a foreign scenario is
+// indistinguishable from a missing one.
+func (s *Server) writeScenarioAuthoringView(w http.ResponseWriter, r *http.Request, views []string) {
+	if len(views) != 1 || views[0] != "authoring" {
+		writeError(w, http.StatusBadRequest, "unsupported scenario view")
+		return
+	}
+	projection, found, err := s.runner.GetScenarioAuthoringDurable(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "durable scenario content revisions unavailable")
+		return
+	}
+	if !found || projection == nil {
+		writeError(w, http.StatusNotFound, "scenario not found")
+		return
+	}
+	if expected, scoped := authorizedProjectFromRequest(r); scoped && normalizeProjectID(projection.ProjectID) != expected {
+		writeError(w, http.StatusNotFound, "scenario not found")
+		return
+	}
+	tag, err := scenarioAuthoringETag(projection.ContentRevision)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "durable scenario content revision unavailable")
+		return
+	}
+	w.Header().Set("ETag", tag)
+	w.Header().Set("Cache-Control", "private, no-store")
+	writeJSON(w, http.StatusOK, projection)
+}
