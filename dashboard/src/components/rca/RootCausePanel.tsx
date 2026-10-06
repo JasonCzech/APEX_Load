@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { RootCauseRouteState } from '../../appRouting'
 import type { MetricsHistoryPoint, RunArchiveReport } from '../../types'
-import type { RcaAssessment, RcaHypothesis } from '../../types/rca'
+import { useApi } from '../../hooks/useApi'
+import type { RcaAssessment, RcaCritique, RcaHypothesis } from '../../types/rca'
 import { formatNumber } from '../runReport/runReportModel'
 import RootCauseInvestigation from './RootCauseInvestigation'
 import {
@@ -82,6 +83,34 @@ function HypothesisCard({ assessment, hypothesis, selected, onInvestigate, onClo
       <p className="rca-falsification"><strong>Would disprove it:</strong> {hypothesis.falsification || 'No falsification check is defined for this signature.'}</p>
       {hypothesis.limitations.length > 0 && <ul className="rca-limitations" aria-label="Hypothesis limitations">{hypothesis.limitations.map((item, i) => <li key={i}>{item}</li>)}</ul>}
     </li>
+  )
+}
+
+// RcaCritiques lists the reviews stored for an analysis. Each passed the
+// narration check against the analysis's bundle; none changes it.
+function RcaCritiques({ testId, analysisId }: { testId: string; analysisId: string }) {
+  const api = useApi()
+  const [critiques, setCritiques] = useState<RcaCritique[]>([])
+  useEffect(() => {
+    const controller = new AbortController()
+    setCritiques([])
+    api.getRootCauseCritiques(testId, analysisId, { signal: controller.signal })
+      .then(r => { if (!controller.signal.aborted) setCritiques(Array.isArray(r?.critiques) ? r.critiques : []) })
+      .catch(() => { if (!controller.signal.aborted) setCritiques([]) })
+    return () => controller.abort()
+  }, [api, analysisId, testId])
+  if (critiques.length === 0) return null
+  return (
+    <details className="rca-critiques">
+      <summary>Critiques ({critiques.length})</summary>
+      <p className="run-report-muted">Reviews of this analysis by agents or analysts. Each was checked against the analysis's evidence; none changes it.</p>
+      <ul>{critiques.map(c => (
+        <li key={c.id}>
+          <strong>{c.author_kind === 'agent' ? `Agent${c.model ? ` (${c.model})` : ''}` : 'Analyst'}</strong>{c.created_by ? ` · ${c.created_by}` : ''} · {formatRcaTime(c.created_at)}
+          <p>{c.narrative}</p>
+        </li>
+      ))}</ul>
+    </details>
   )
 }
 
@@ -183,6 +212,7 @@ export default function RootCausePanel({ testId, model, report, history, history
           <summary>Capacity</summary>
           <ul>{assessment.capacity!.map((c, i) => <li key={i}>{rcaSeriesLabel(c.series)}: {c.knee !== undefined ? `latency bends at about ${formatNumber(c.knee, 1)} ${c.load_unit}` : c.reason || 'no knee found'}</li>)}</ul>
         </details>}
+        {response?.analysis_id && <RcaCritiques testId={testId} analysisId={response.analysis_id} />}
         <p className="run-report-muted rca-provenance">Engine {assessment.inputs.engine} · evidence revision {assessment.inputs.evidence_revision}{assessment.inputs.baseline ? ' · with baseline' : ''}</p>
       </>}
     </section>

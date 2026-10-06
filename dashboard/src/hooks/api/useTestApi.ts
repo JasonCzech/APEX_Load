@@ -41,7 +41,7 @@ import type { GoalConfig, GoalTargetStatus, ScenarioMode } from '../../types/goa
 import type { GeneratorAssignmentSettings } from '../../types/testConfiguration'
 import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
 import type { PowerBIPublishResponse, PowerBIPublishStatusResponse } from '../../types/settings'
-import type { ExemplarPage, RcaAnalysisResponse } from '../../types/rca'
+import type { ExemplarPage, RcaAnalysisResponse, RcaCritique } from '../../types/rca'
 import type {
   RunCalendarResponse,
   ScenarioSchedule,
@@ -695,6 +695,12 @@ export function useTestApi() {
     [],
   )
 
+  const getRootCauseCritiques = useCallback(
+    (id: string, analysisId: string, options?: ApiCallOptions) =>
+      request<{ critiques: RcaCritique[] }>(`/tests/${encodeURIComponent(id)}/archive/root-cause/analyses/${encodeURIComponent(analysisId)}/critiques`, withCallOptions(undefined, options)),
+    [],
+  )
+
   const getTestArchiveExemplars = useCallback(
     (id: string, query: { name?: string; group?: string; population?: string; from?: string; to?: string; limit?: number; offset?: number } = {}, options?: ApiCallOptions) =>
       request<ExemplarPage>(`/tests/${encodeURIComponent(id)}/archive/exemplars${buildQuery(query)}`, withCallOptions(undefined, options)),
@@ -912,6 +918,7 @@ export function useTestApi() {
       getRootCauseAnalysis,
       requestRootCauseAnalysis,
       getTestArchiveExemplars,
+      getRootCauseCritiques,
       listTestNotes,
       createTestNote,
       updateTestNote,
@@ -1010,6 +1017,7 @@ export function useTestApi() {
       getRootCauseAnalysis,
       requestRootCauseAnalysis,
       getTestArchiveExemplars,
+      getRootCauseCritiques,
       listTestNotes,
       createTestNote,
       updateTestNote,

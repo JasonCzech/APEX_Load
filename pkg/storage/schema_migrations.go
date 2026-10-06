@@ -63,6 +63,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 36, Name: "run-trace-context-policy", Fingerprint: "26cd04b1928418d383f28268ae70c20e2b943e08217c7fdb3855e8a092a6d8cc"},
 	{Version: 37, Name: "rca-analysis-revisions", Fingerprint: "0aa6b5258f7162db82e7647c622672b145dd1db69356907c774882a4071a54e3"},
 	{Version: 38, Name: "business-key-project-keys", Fingerprint: "385585ff3818a833a350cd25838901726297b40a458670abf302d52bbb667c52"},
+	{Version: 39, Name: "rca-critiques", Fingerprint: "5e31b89e22ce9909bc942ec9abaed9adb9c4fa48a06b838dbbaa13699e35f188"},
 }
 
 type SchemaMigrationRecord struct {

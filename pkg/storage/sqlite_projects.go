@@ -1679,6 +1679,7 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		)`, []any{id}},
 		{`DELETE FROM github_check_links WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?) OR script_id IN (SELECT id FROM scripts WHERE project_id = ?)`, []any{id, id}},
 		{`DELETE FROM test_history WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id}},
+		{`DELETE FROM rca_critiques WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id, id}},
 		{`DELETE FROM rca_analyses WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id, id}},
 		{`DELETE FROM business_key_project_keys WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM rca_evidence_revisions WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id, id}},

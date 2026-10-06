@@ -580,7 +580,10 @@ MCP tools keep returning v1.
 | `GET /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}` | Viewer | State (`queued`, `running`, `completed`, `failed`, `cancelled`), inputs and, once completed, the `apexload.root_cause.v2` assessment |
 | `POST /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/cancel` | Editor | The cancelled analysis; 409 when it already ended |
 | `GET /api/v1/tests/{id}/archive/root-cause/v2` | Viewer | The latest completed analysis, or `{"state":"none"}` |
-| `GET /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle` | Viewer | `apexload.rca_bundle.v1`: the assessment and its evidence revision, at most 256 KiB (`truncated` when windows or evidence were cut) |
+| `GET /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle` | Viewer | `apexload.rca_bundle.v2`: the assessment (with its coverage and limitations), the evidence excerpts its reference IDs name and the evidence revision's inventory, at most 256 KiB (`truncated` when something was cut) |
+| `POST /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/narration-check` | Viewer | Whether a narrative `{narrative}` stays within the analysis's bundle (see Agents and critiques) |
+| `GET /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/critiques` | Viewer | The analysis's critiques, oldest first |
+| `POST /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/critiques` | Editor | 201 with the stored critique; 422 with the check when the narrative fails it |
 
 - **Stored size.** An assessment larger than the 2 MiB stored limit is cut,
   not failed. The least load-bearing parts go first: validity windows,
@@ -647,15 +650,39 @@ MCP tools keep returning v1.
   summary, with a note when v2 is presented but no analysis completed. It
   is separate from the Findings section, which holds analyst-curated or
   derived findings, and never carries run annotations.
+- **Evidence excerpts.** Each analysis stores, beside its assessment, one
+  excerpt per anomaly evidence reference: the judged series' points from
+  three intervals before the onset's earliest time to one interval after the
+  anomaly's end, at most 24 (spread evenly, marked `sampled`), keyed by the
+  reference ID hypotheses cite; analyses made before excerpts existed have
+  none until re-analyzed. Excerpts no hypothesis cites are cut first
+  when an assessment is trimmed, and an excerpt goes with its anomaly. The
+  bundle is cut in this order: an evidence inventory over 16 KiB, uncited
+  excerpts, the assessment as stored assessments are cut, the inventory,
+  the remaining excerpts, and last the SLA details.
+- **Agents and critiques.** An agent narrates an analysis from its bundle.
+  The narration check rejects a narrative that cites a reference ID
+  (`anomaly-…`, `hypothesis-…`, `evidence-…` or the analysis ID) the bundle
+  does not hold, a time or date no bundle time matches at the precision
+  written, or a number no bundle number rounds to at the precision written.
+  Bundle numbers count in their own unit and as nanoseconds in ms, s or min,
+  milliseconds in s, and fractions in percent; integers up to ten count
+  things and pass; a number joined to a word (`p95`) names something and is
+  not checked. A critique is a narrative that passed the check, stored apart
+  from the analysis with its author kind (`agent` or `analyst`), model and
+  author, at most 100 per analysis; it never changes the assessment and
+  goes with its run. External LLM wiring stays disabled: the explain
+  provider remains `deterministic-local`.
 - **Clients.** `apexctl rca analyze --id RUN [--enrich] [--baseline-id RUN]`,
   `apexctl rca status --id RUN --analysis-id ID`, `apexctl rca show --id RUN`
   and `apexctl rca bundle --id RUN --analysis-id ID`, and `apexctl rca eval`
   for the evaluation corpus; MCP tools
-  `run_rca_analyze`, `run_rca_status`, `run_rca_assessment` and
-  `run_rca_bundle`.
+  `run_rca_analyze`, `run_rca_status`, `run_rca_assessment`,
+  `run_rca_bundle`, `run_rca_check_narration`, `run_rca_critiques` and
+  `run_rca_critique_add`.
 
 Schema release 37 (`rca-analysis-revisions`) adds `rca_evidence_revisions`
-and `rca_analyses`.
+and `rca_analyses`; release 39 (`rca-critiques`) adds `rca_critiques`.
 
 ## Business keys
 

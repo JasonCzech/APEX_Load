@@ -71,6 +71,16 @@ var runArchiveAPIRouteCatalog = preserveRawAccessRequirementsForMethod(apiRouteC
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle", "handleGetRCABundle", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRCABundle)
 		}),
+		// Narration checks are reads: they change nothing.
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/narration-check", "handleCheckRCANarration", rcaNarrationAccess(viewerProjectAccess(resolveTestProjectID)), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleCheckRCANarration)
+		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/critiques", "handleListRCACritiques", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleListRCACritiques)
+		}),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/critiques", "handleCreateRCACritique", rcaNarrationAccess(editorProjectAccess(resolveTestProjectID)), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleCreateRCACritique)
+		}),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/root-cause/v2", "handleGetRCAAssessmentV2", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRCAAssessmentV2)
 		}),

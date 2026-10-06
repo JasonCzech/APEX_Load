@@ -338,6 +338,9 @@ func (s *SQLiteStore) CancelRCAAnalysis(project, test, id string, now time.Time)
 // deleteRCAForTestTx removes a run's root-cause history; it follows the run
 // and its archive.
 func deleteRCAForTestTx(tx *storeTx, test string) error {
+	if _, err := tx.Exec(`DELETE FROM rca_critiques WHERE test_id = ?`, test); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM rca_analyses WHERE test_id = ?`, test); err != nil {
 		return err
 	}

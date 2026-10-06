@@ -12,7 +12,7 @@ import { normalizeRcaAssessment } from './rcaModel'
 import { rcaTestResponse } from './rcaTestFixture'
 import type { RootCauseAnalysisModel } from './useRootCauseAnalysis'
 
-const mocks = vi.hoisted(() => ({ api: { getTestArchiveExemplars: vi.fn(), downloadTestArchiveArtifact: vi.fn() } }))
+const mocks = vi.hoisted(() => ({ api: { getTestArchiveExemplars: vi.fn(), downloadTestArchiveArtifact: vi.fn(), getRootCauseCritiques: vi.fn() } }))
 vi.mock('../../hooks/useApi', () => ({ useApi: () => mocks.api }))
 
 const exemplar = (timestamp: string, trace: string) => ({
@@ -47,6 +47,7 @@ describe('RootCausePanel', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     onRouteChange.mockReset()
+    mocks.api.getRootCauseCritiques.mockReset().mockResolvedValue({ critiques: [] })
     mocks.api.getTestArchiveExemplars.mockReset().mockResolvedValue({
       exemplars: [exemplar('2026-10-05T12:04:00Z', 'trace-in-1'), exemplar('2026-10-05T12:05:30Z', 'trace-in-2')],
       total: 2,
@@ -144,6 +145,18 @@ describe('RootCausePanel', () => {
     expect(container.textContent).toContain('The link named revision 2; showing revision 3.')
     expect(container.textContent).toContain('The linked hypothesis is not in this analysis.')
     expect(container.querySelector('.rca-investigation')).toBeNull()
+  })
+
+  it('lists the analysis\'s critiques apart from the assessment', async () => {
+    mocks.api.getRootCauseCritiques.mockResolvedValue({ critiques: [
+      { id: 'c1', analysis_id: 'rca-1', revision: 2, created_at: '2026-10-05T13:00:00Z', created_by: 'service-account:sa-1', author_kind: 'agent', model: 'deterministic-local', narrative: 'CPU rose 60 points before Checkout slowed.' },
+    ] })
+    await render(model(rcaTestResponse()))
+    expect(mocks.api.getRootCauseCritiques).toHaveBeenCalledWith('run-1', 'rca-1', expect.anything())
+    const critiques = container.querySelector('.rca-critiques')!
+    expect(critiques.textContent).toContain('Critiques (1)')
+    expect(critiques.textContent).toContain('Agent (deterministic-local) · service-account:sa-1')
+    expect(critiques.textContent).toContain('CPU rose 60 points before Checkout slowed.')
   })
 
   it('stays hidden where the project does not present v2', async () => {

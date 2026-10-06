@@ -321910,6 +321910,44 @@ paths:
                   evidence_revision:
                     type: integer
                     format: int64
+                  excerpts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        anomaly_id:
+                          type: string
+                        locator:
+                          type: string
+                        points:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              at:
+                                type: string
+                                format: date-time
+                              value:
+                                type: number
+                                format: double
+                                nullable: true
+                            required:
+                              - at
+                              - value
+                        ref_id:
+                          type: string
+                        sampled:
+                          type: boolean
+                        series:
+                          type: string
+                        unit:
+                          type: string
+                      required:
+                        - anomaly_id
+                        - locator
+                        - points
+                        - ref_id
+                        - series
                   revision:
                     type: integer
                     format: int64
@@ -321921,6 +321959,7 @@ paths:
                   - analysis_id
                   - assessment
                   - evidence_revision
+                  - excerpts
                   - revision
                   - schema
                   - truncated
@@ -321932,12 +321971,6 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "409":
-          description: Conflict
           content:
             application/json:
               schema:
@@ -322045,6 +322078,302 @@ paths:
       tags:
         - Tests
       x-handler: handleCancelRCAAnalysis
+  /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/critiques:
+    get:
+      summary: List RCA Critiques
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleListRCACritiques
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: analysis_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleListRCACritiques
+    post:
+      summary: Create RCA Critique
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      operationId: handleCreateRCACritique
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                author_kind:
+                  type: string
+                model:
+                  type: string
+                narrative:
+                  type: string
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  analysis_id:
+                    type: string
+                  author_kind:
+                    type: string
+                  check:
+                    type: object
+                    properties:
+                      bundle_truncated:
+                        type: boolean
+                      issues:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            detail:
+                              type: string
+                            kind:
+                              type: string
+                            offset:
+                              type: integer
+                              format: int64
+                            text:
+                              type: string
+                          required:
+                            - detail
+                            - kind
+                            - offset
+                            - text
+                      numbers:
+                        type: integer
+                        format: int64
+                      ok:
+                        type: boolean
+                      references:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - bundle_truncated
+                      - issues
+                      - numbers
+                      - ok
+                      - references
+                  created_at:
+                    type: string
+                    format: date-time
+                  created_by:
+                    type: string
+                  id:
+                    type: string
+                  model:
+                    type: string
+                  narrative:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - analysis_id
+                  - author_kind
+                  - check
+                  - created_at
+                  - id
+                  - narrative
+                  - revision
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: analysis_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleCreateRCACritique
+  /api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/narration-check:
+    post:
+      summary: Check RCA Narration
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleCheckRCANarration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                narrative:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bundle_truncated:
+                    type: boolean
+                  issues:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        detail:
+                          type: string
+                        kind:
+                          type: string
+                        offset:
+                          type: integer
+                          format: int64
+                        text:
+                          type: string
+                      required:
+                        - detail
+                        - kind
+                        - offset
+                        - text
+                  numbers:
+                    type: integer
+                    format: int64
+                  ok:
+                    type: boolean
+                  references:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - bundle_truncated
+                  - issues
+                  - numbers
+                  - ok
+                  - references
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: analysis_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleCheckRCANarration
   /api/v1/tests/{id}/archive/root-cause/v2:
     get:
       summary: Get RCA Assessment V2

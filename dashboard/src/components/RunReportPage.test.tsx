@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
     getRootCauseAnalysis: vi.fn(),
     requestRootCauseAnalysis: vi.fn(),
     getTestArchiveExemplars: vi.fn(),
+    getRootCauseCritiques: vi.fn(),
   },
   polling: {
     test: null as TestSummary | null,
@@ -227,6 +228,7 @@ describe('RunReportPage', () => {
     mocks.api.getTestManifest.mockResolvedValue({ runtime_changes: [] })
     mocks.api.getRootCauseAssessment.mockResolvedValue({ state: 'none', presented: false })
     mocks.api.getTestArchiveExemplars.mockResolvedValue({ exemplars: [], total: 0 })
+    mocks.api.getRootCauseCritiques.mockResolvedValue({ critiques: [] })
     mocks.polling.test = null
     mocks.polling.error = ''
     mocks.archiveModel.archiveReport = null

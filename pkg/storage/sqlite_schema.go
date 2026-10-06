@@ -1773,6 +1773,16 @@ func schemaCreateTableStatements() []string {
 			lease_expires_at DATETIME,
 			UNIQUE(test_id, revision)
 		)`,
+		// Reviews of an analysis, kept apart from it.
+		`CREATE TABLE IF NOT EXISTS rca_critiques (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			test_id TEXT NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
+			analysis_id TEXT NOT NULL REFERENCES rca_analyses(id) ON DELETE CASCADE,
+			created_at DATETIME NOT NULL,
+			created_by TEXT NOT NULL DEFAULT '',
+			payload TEXT NOT NULL
+		)`,
 		// One wrapped HMAC key per project, for business-key digests.
 		`CREATE TABLE IF NOT EXISTS business_key_project_keys (
 			project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
@@ -2191,6 +2201,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_usage_snapshots_project_created ON usage_accounting_snapshots(project_id, created_at)`, "idx_usage_snapshots_project_created"},
 	{`CREATE INDEX IF NOT EXISTS idx_rca_analyses_test_digest ON rca_analyses(test_id, input_digest)`, "idx_rca_analyses_test_digest"},
 	{`CREATE INDEX IF NOT EXISTS idx_rca_analyses_claim ON rca_analyses(state, lease_expires_at)`, "idx_rca_analyses_claim"},
+	{`CREATE INDEX IF NOT EXISTS idx_rca_critiques_analysis ON rca_critiques(analysis_id, created_at)`, "idx_rca_critiques_analysis"},
 }
 
 func (s *SQLiteStore) init() error {

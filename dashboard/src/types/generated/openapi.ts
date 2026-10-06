@@ -22435,6 +22435,62 @@ export interface operations {
       };
     };
   };
+  "handleCheckRCANarration": {
+    parameters: {
+      "path": {
+        "analysis_id": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "narrative"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "bundle_truncated": boolean;
+            "issues": Array<{
+              "detail": string;
+              "kind": string;
+              "offset": number;
+              "text": string;
+            }>;
+            "numbers": number;
+            "ok": boolean;
+            "references": Array<string>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleCloneScriptDraft": {
     parameters: {
       "path": {
@@ -30241,6 +30297,89 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleCreateRCACritique": {
+    parameters: {
+      "path": {
+        "analysis_id": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "author_kind"?: string;
+          "model"?: string;
+          "narrative"?: string;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": {
+            "analysis_id": string;
+            "author_kind": string;
+            "check": {
+              "bundle_truncated": boolean;
+              "issues": Array<{
+                "detail": string;
+                "kind": string;
+                "offset": number;
+                "text": string;
+              }>;
+              "numbers": number;
+              "ok": boolean;
+              "references": Array<string>;
+            };
+            "created_at": string;
+            "created_by"?: string;
+            "id": string;
+            "model"?: string;
+            "narrative": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -55272,6 +55411,18 @@ export interface operations {
             "assessment": Record<string, unknown>;
             "evidence"?: (unknown) | null;
             "evidence_revision": number;
+            "excerpts": Array<{
+              "anomaly_id": string;
+              "locator": string;
+              "points": Array<{
+                "at": string;
+                "value": (number) | null;
+              }>;
+              "ref_id": string;
+              "sampled"?: boolean;
+              "series": string;
+              "unit"?: string;
+            }>;
             "revision": number;
             "schema": string;
             "truncated": boolean;
@@ -55284,11 +55435,6 @@ export interface operations {
         };
       };
       "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -79652,6 +79798,40 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListRCACritiques": {
+    parameters: {
+      "path": {
+        "analysis_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -146714,6 +146894,13 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/cancel": {
     "post": operations["handleCancelRCAAnalysis"];
+  };
+  "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/critiques": {
+    "get": operations["handleListRCACritiques"];
+    "post": operations["handleCreateRCACritique"];
+  };
+  "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/narration-check": {
+    "post": operations["handleCheckRCANarration"];
   };
   "/api/v1/tests/{id}/archive/root-cause/v2": {
     "get": operations["handleGetRCAAssessmentV2"];

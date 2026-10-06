@@ -144,9 +144,16 @@ func boundStoredRCAPayload(payload *rcaAnalysisPayload) ([]byte, error) {
 		return err == nil && len(b) <= storage.MaxRCAPayloadBytes-rcaTrimHeadroom
 	}
 	offered := len(body)
-	if trimRCAAssessment(payload.Assessment, fits) || trimRCADetails(payload.Assessment, fits) {
+	// Excerpts no hypothesis cites go first; the excerpts of anomalies the
+	// cut assessment drops go with them, and the rest go before the SLA
+	// details.
+	cutExcerpts := dropUncitedRCAExcerpts(payload.Assessment, &payload.Excerpts, fits)
+	cutAssessment := trimRCAAssessment(payload.Assessment, fits)
+	payload.Excerpts = citedExcerpts(payload.Assessment, payload.Excerpts)
+	cutExcerpts = halveRCAExcerpts(&payload.Excerpts, fits) || cutExcerpts
+	if cutExcerpts || cutAssessment || trimRCADetails(payload.Assessment, fits) {
 		payload.Assessment.Limitations = append(payload.Assessment.Limitations, rca.Limitation{Code: limitationAssessmentTrimmed,
-			Detail: fmt.Sprintf("the assessment was %d bytes and was cut to the stored limit of %d; the least load-bearing parts went first", offered, storage.MaxRCAPayloadBytes)})
+			Detail: fmt.Sprintf("the assessment and its evidence excerpts were %d bytes and were cut to the stored limit of %d; the least load-bearing parts went first", offered, storage.MaxRCAPayloadBytes)})
 	}
 	if body, err = json.Marshal(payload); err == nil && len(body) > storage.MaxRCAPayloadBytes {
 		err = errors.New("assessment exceeds the stored size limit")

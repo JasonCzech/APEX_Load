@@ -196,6 +196,19 @@ export interface RcaAnalysisResponse {
   presented: boolean
 }
 
+// RcaCritique is a review of an analysis that passed the narration check,
+// stored apart from it.
+export interface RcaCritique {
+  id: string
+  analysis_id: string
+  revision: number
+  created_at: string
+  created_by?: string
+  author_kind: 'agent' | 'analyst'
+  model?: string
+  narrative: string
+}
+
 // ReportRootCause is the generated root cause as every report format
 // presents it (Go ReportRootCause): from v2 where the project presents it,
 // else from v1. Analyst findings are never part of it.

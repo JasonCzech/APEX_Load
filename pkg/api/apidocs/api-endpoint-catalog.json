@@ -6557,6 +6557,36 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/critiques",
+      "operationId": "handleListRCACritiques",
+      "summary": "List RCA Critiques",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/critiques",
+      "operationId": "handleCreateRCACritique",
+      "summary": "Create RCA Critique",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/narration-check",
+      "operationId": "handleCheckRCANarration",
+      "summary": "Check RCA Narration",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/tests/{id}/archive/root-cause/v2",
       "operationId": "handleGetRCAAssessmentV2",
       "summary": "Get RCA Assessment V2",

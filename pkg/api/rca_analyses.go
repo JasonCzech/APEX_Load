@@ -25,7 +25,7 @@ import (
 // Root-cause v2 schemas and limits.
 const (
 	rcaEvidenceSchema = "apexload.rca_evidence.v1"
-	rcaBundleSchema   = "apexload.rca_bundle.v1"
+	rcaBundleSchema   = "apexload.rca_bundle.v2"
 	rcaMaxBundleBytes = 256 << 10
 	// An analysis lease outlives the engine's 120 s wall-time budget plus
 	// archive reading, so a live owner is not overtaken.
@@ -101,7 +101,10 @@ type rcaAnalysisPayload struct {
 	Request    rcaAnalysisRequest `json:"request"`
 	Inputs     rca.InputDigests   `json:"inputs"`
 	Assessment *rca.Assessment    `json:"assessment,omitempty"`
-	Error      string             `json:"error,omitempty"`
+	// Excerpts are the series windows the assessment's evidence references
+	// name, frozen with it.
+	Excerpts []RCAEvidenceExcerpt `json:"excerpts,omitempty"`
+	Error    string               `json:"error,omitempty"`
 }
 
 // RCAAnalysisResponse reports an analysis and, once completed, its
@@ -120,16 +123,20 @@ type RCAAnalysisResponse struct {
 	Presented bool `json:"presented"`
 }
 
-// RCABundle is an analysis with its evidence, bounded for agents and export.
+// RCABundle is an analysis with its evidence, bounded for agents and export
+// (apexload.rca_bundle.v2): the assessment, with its coverage and
+// limitations, the evidence excerpts its reference IDs name, and the frozen
+// evidence revision's inventory.
 type RCABundle struct {
-	Schema           string           `json:"schema"`
-	AnalysisID       string           `json:"analysis_id"`
-	Revision         int64            `json:"revision"`
-	Assessment       rca.Assessment   `json:"assessment"`
-	EvidenceRevision int64            `json:"evidence_revision"`
-	Evidence         *json.RawMessage `json:"evidence,omitempty"`
-	// Truncated means windows or evidence were left out to stay within
-	// 256 KiB.
+	Schema           string               `json:"schema"`
+	AnalysisID       string               `json:"analysis_id"`
+	Revision         int64                `json:"revision"`
+	Assessment       rca.Assessment       `json:"assessment"`
+	Excerpts         []RCAEvidenceExcerpt `json:"excerpts"`
+	EvidenceRevision int64                `json:"evidence_revision"`
+	Evidence         *json.RawMessage     `json:"evidence,omitempty"`
+	// Truncated means windows, excerpts or evidence were left out to stay
+	// within 256 KiB.
 	Truncated bool `json:"truncated"`
 }
 
@@ -422,37 +429,61 @@ func (s *Server) handleGetRCAAssessmentV2(w http.ResponseWriter, r *http.Request
 // handleGetRCABundle returns a completed analysis with its evidence, within
 // 256 KiB.
 func (s *Server) handleGetRCABundle(w http.ResponseWriter, r *http.Request) {
+	if bundle, _, ok := s.rcaBundleForRequest(w, r); ok {
+		writeJSON(w, http.StatusOK, bundle)
+	}
+}
+
+// rcaBundleForRequest builds the bounded bundle of the completed analysis a
+// request names, or writes the error.
+func (s *Server) rcaBundleForRequest(w http.ResponseWriter, r *http.Request) (RCABundle, *storage.RCAAnalysis, bool) {
 	analysis, ok := s.rcaAnalysisForRequest(w, r)
 	if !ok {
-		return
+		return RCABundle{}, nil, false
 	}
 	var payload rcaAnalysisPayload
 	if analysis.State != storage.RCAStateCompleted || json.Unmarshal(analysis.Payload, &payload) != nil || payload.Assessment == nil {
 		writeError(w, http.StatusConflict, "root-cause analysis has not completed")
-		return
+		return RCABundle{}, nil, false
 	}
-	bundle := RCABundle{Schema: rcaBundleSchema, AnalysisID: analysis.ID, Revision: analysis.Revision, Assessment: *payload.Assessment, EvidenceRevision: payload.Inputs.EvidenceRevision}
+	bundle := RCABundle{Schema: rcaBundleSchema, AnalysisID: analysis.ID, Revision: analysis.Revision, Assessment: *payload.Assessment, Excerpts: append([]RCAEvidenceExcerpt{}, payload.Excerpts...), EvidenceRevision: payload.Inputs.EvidenceRevision}
 	if store, ok := s.store.(storage.RCAStore); ok {
 		if evidence, err := store.GetRCAEvidenceRevision(analysis.ProjectID, analysis.TestID, payload.Inputs.EvidenceRevision); err == nil {
 			bundle.Evidence = &evidence.Payload
 		}
 	}
-	writeJSON(w, http.StatusOK, boundRCABundle(bundle))
+	return boundRCABundle(bundle), analysis, true
 }
 
-// boundRCABundle cuts the bundle until it fits 256 KiB, as the stored
-// assessment is cut, then drops the evidence and last the SLA details, and
-// marks what it cut.
+// rcaBundleInventoryReserve is the largest evidence inventory the bundle
+// keeps room for; a larger one goes before the assessment is cut for it.
+const rcaBundleInventoryReserve = 16 << 10
+
+// boundRCABundle cuts the bundle until it fits 256 KiB: an oversized
+// evidence inventory, excerpts no hypothesis cites, then the assessment as
+// the stored one is cut (with the excerpts of the anomalies it drops), then
+// the inventory, the remaining excerpts and last the SLA details. It marks
+// what it cut.
 func boundRCABundle(bundle RCABundle) RCABundle {
 	fits := func() bool {
 		body, err := json.Marshal(bundle)
 		return err == nil && len(body) <= rcaMaxBundleBytes
 	}
+	if bundle.Evidence != nil && len(*bundle.Evidence) > rcaBundleInventoryReserve && !fits() {
+		bundle.Evidence, bundle.Truncated = nil, true
+	}
+	if dropUncitedRCAExcerpts(&bundle.Assessment, &bundle.Excerpts, fits) {
+		bundle.Truncated = true
+	}
 	if trimRCAAssessment(&bundle.Assessment, fits) {
 		bundle.Truncated = true
 	}
+	bundle.Excerpts = citedExcerpts(&bundle.Assessment, bundle.Excerpts)
 	if !fits() && bundle.Evidence != nil {
 		bundle.Evidence, bundle.Truncated = nil, true
+	}
+	if halveRCAExcerpts(&bundle.Excerpts, fits) {
+		bundle.Truncated = true
 	}
 	if trimRCADetails(&bundle.Assessment, fits) {
 		bundle.Truncated = true
@@ -620,8 +651,11 @@ func (s *Server) runNextRCAAnalysis(ctx context.Context, claimed func()) (bool, 
 	var payload rcaAnalysisPayload
 	_ = json.Unmarshal(analysis.Payload, &payload)
 	state := storage.RCAStateCompleted
+	var excerpts []RCAEvidenceExcerpt
 	assessment, runErr := recoverRCAAssessment(analysis.ID, func() (*rca.Assessment, error) {
-		return s.assessRCAAnalysis(jobCtx, analysis, payload)
+		assessment, taken, err := s.assessRCAAnalysisWithExcerpts(jobCtx, analysis, payload)
+		excerpts = taken
+		return assessment, err
 	})
 	if runErr != nil && ctx.Err() != nil {
 		// Interrupted by shutdown: leave the analysis to be re-claimed when
@@ -631,7 +665,7 @@ func (s *Server) runNextRCAAnalysis(ctx context.Context, claimed func()) (bool, 
 	if runErr != nil {
 		state, payload.Error = storage.RCAStateFailed, runErr.Error()
 	} else {
-		payload.Assessment = assessment
+		payload.Assessment, payload.Excerpts = assessment, excerpts
 	}
 	body, err := boundStoredRCAPayload(&payload)
 	if err != nil {
@@ -663,41 +697,48 @@ func recoverRCAAssessment(analysisID string, assess func() (*rca.Assessment, err
 
 // assessRCAAnalysis computes an analysis's assessment from its frozen inputs.
 func (s *Server) assessRCAAnalysis(ctx context.Context, analysis *storage.RCAAnalysis, payload rcaAnalysisPayload) (*rca.Assessment, error) {
+	assessment, _, err := s.assessRCAAnalysisWithExcerpts(ctx, analysis, payload)
+	return assessment, err
+}
+
+// assessRCAAnalysisWithExcerpts also takes the evidence excerpts the
+// assessment's references name, from the series it judged.
+func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *storage.RCAAnalysis, payload rcaAnalysisPayload) (*rca.Assessment, []RCAEvidenceExcerpt, error) {
 	budget := rca.DefaultBudget
 	budgeter := rca.NewBudgeter(budget, nil, rca.LiveHeapBytes)
 	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, analysis.TestID)
 	if !ok {
-		return nil, errors.New("run archive not found")
+		return nil, nil, errors.New("run archive not found")
 	}
 	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
-		return nil, fmt.Errorf("materialize archive: %w", err)
+		return nil, nil, fmt.Errorf("materialize archive: %w", err)
 	}
 	defer lease.Release()
 	digest, err := rcaArchiveDigest(record)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if digest != payload.Inputs.Archive {
-		return nil, errRCAArchiveChanged
+		return nil, nil, errRCAArchiveChanged
 	}
 	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	summaries, err := readAllArchiveSummaries(record)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	resources, err := readAllArchiveResources(record)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	evidence, frozen := s.frozenRCAEvidence(analysis, payload)
 	// Mapping decisions are frozen inputs: without the revision that holds
 	// them, the analysis cannot judge what it was asked to.
 	if payload.Inputs.Mapping != "" && (!frozen || evidence.MappingDigest != payload.Inputs.Mapping) {
-		return nil, errors.New("the evidence revision holding the analysis's mapping decisions could not be read")
+		return nil, nil, errors.New("the evidence revision holding the analysis's mapping decisions could not be read")
 	}
 	// One pass over the rows counts results for validity and collects the
 	// calls the graph is built from.
@@ -710,7 +751,7 @@ func (s *Server) assessRCAAnalysis(ctx context.Context, analysis *storage.RCAAna
 		phases.add(tx)
 		return ctx.Err()
 	}); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	input := rca.AnalysisInput{
 		Acceptance: archiveAcceptance(manifest),
@@ -718,7 +759,7 @@ func (s *Server) assessRCAAnalysis(ctx context.Context, analysis *storage.RCAAna
 	}
 	observations := newGraphObservationCollector()
 	if input.Detection, err = archiveDetectionInput(ctx, record, manifest, summaries, input.Validity.ArrivalModel, budgeter, budget, observations.observe); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// The run's own connection timing per dependency joins the detected
 	// series, for the network-phase signature.
@@ -729,11 +770,11 @@ func (s *Server) assessRCAAnalysis(ctx context.Context, analysis *storage.RCAAna
 	input.Graph = archiveGraphInput(manifest, calls, observations, evidence.Mappings)
 	input.Coverage, input.Detection.Baseline = s.rcaCoverage(ctx, payload, manifest, input, evidence, frozen, budgeter, budget)
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	assessment := rca.Analyze(input, budgeter)
 	assessment.AnalysisID, assessment.Revision, assessment.Inputs = analysis.ID, analysis.Revision, payload.Inputs
-	return &assessment, nil
+	return &assessment, rcaEvidenceExcerpts(&assessment, input.Detection.Series), nil
 }
 
 // archiveAcceptance is the run's SLA verdict, apart from its validity.

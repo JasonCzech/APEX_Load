@@ -287,6 +287,9 @@ async def test_rca_v2_tools_call_expected_routes():
         (tool("run_rca_status"), {"path_params": {"id": "run-1", "analysis_id": "a1"}}),
         (tool("run_rca_assessment"), {"path_params": {"id": "run-1"}}),
         (tool("run_rca_bundle"), {"path_params": {"id": "run-1", "analysis_id": "a1"}}),
+        (tool("run_rca_check_narration"), {"path_params": {"id": "run-1", "analysis_id": "a1"}, "payload": {"narrative": "anomaly-0000000000000001 rose"}}),
+        (tool("run_rca_critiques"), {"path_params": {"id": "run-1", "analysis_id": "a1"}}),
+        (tool("run_rca_critique_add"), {"path_params": {"id": "run-1", "analysis_id": "a1"}, "payload": {"narrative": "grounded"}, "confirm": True}),
     ]
     for spec, kwargs in calls:
         result = json.loads(await run_endpoint_tool(spec, client=client, **kwargs))
@@ -297,5 +300,8 @@ async def test_rca_v2_tools_call_expected_routes():
         ("GET", "/api/v1/tests/run-1/archive/root-cause/analyses/a1"),
         ("GET", "/api/v1/tests/run-1/archive/root-cause/v2"),
         ("GET", "/api/v1/tests/run-1/archive/root-cause/analyses/a1/bundle"),
+        ("POST", "/api/v1/tests/run-1/archive/root-cause/analyses/a1/narration-check"),
+        ("GET", "/api/v1/tests/run-1/archive/root-cause/analyses/a1/critiques"),
+        ("POST", "/api/v1/tests/run-1/archive/root-cause/analyses/a1/critiques"),
     ]
     assert json.loads(seen[0][2]) == {"enrich": True}

@@ -265,3 +265,13 @@
     overflow-x: auto;
   }
 }
+
+.rca-critiques ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.rca-critiques li p {
+  margin: 4px 0 10px;
+  color: var(--text-secondary);
+}
