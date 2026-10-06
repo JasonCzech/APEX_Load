@@ -52,3 +52,24 @@ func TestConvertZipWarnsWhenCScriptUsesCustomParamBraces(t *testing.T) {
 		t.Fatalf("warnings = %#v, want the custom-delimiter warning", result.Warnings)
 	}
 }
+
+func TestConvertZipIgnoresVuGenJavaPlaceholderFiles(t *testing.T) {
+	archive := zipFilesForTest(t, map[string]string{
+		"Stub/Stub.usr":        "[General]\nType=Java_protocols\nScriptLanguage=JAVA\nRunType=Java-Interpreter\n[Actions]\nvuser_init=vuser_init.java\nActions=Actions.java\nvuser_end=vuser_end.java\n",
+		"Stub/vuser_init.java": "\r\n// Do not change this file\r\n",
+		"Stub/vuser_end.java":  "\r\n// Do not change this file\r\n",
+		"Stub/Actions.java": `import lrapi.lr;
+public class Actions {
+  public int init() { return 0; }
+  public int action() { lr.think_time(1); return 0; }
+  public int end() { return 0; }
+}`,
+	})
+	result, err := ConvertZip(archive, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip: %v", err)
+	}
+	if joined := strings.Join(result.Warnings, "\n"); strings.Contains(joined, "no Java methods found") {
+		t.Fatalf("warnings = %#v, want no finding for VuGen placeholder files", result.Warnings)
+	}
+}

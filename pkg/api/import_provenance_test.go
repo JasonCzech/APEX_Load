@@ -180,3 +180,29 @@ func TestCreateScriptDurableStillRejectsForeignScriptID(t *testing.T) {
 		t.Fatal("a different script reusing the id was accepted as a replay")
 	}
 }
+
+// Engine actions (imported source_* steps, custom_call) never send metadata,
+// so a long descriptive source file name that the scrubber masks as
+// token-shaped must not become a secret-binding requirement.
+func TestEngineActionProvenanceMetadataIsNotABindingRequirement(t *testing.T) {
+	const tokenShapedFile = "Action_Store_QA_08_Newactivation_Phone17Esim.c"
+	metadata := func() map[string]any {
+		return map[string]any{"source_file": tokenShapedFile, "source_line": 4}
+	}
+	script := &dsl.Script{
+		Name: "provenance", Version: "1.0.0", Protocol: "http",
+		Config: dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{
+			{Name: "message", Type: "source_message", Value: "hello", Params: map[string]any{"function": "lr_output_message"}, Metadata: metadata()},
+			{Name: "step", Type: "custom_call", Params: map[string]any{"function": "FormatValue"}, Metadata: metadata()},
+			{Name: "page", Type: "GET", Method: "GET", Target: "/", Metadata: metadata()},
+		},
+	}
+	masked := maskScriptSecrets(script)
+	if masked == nil {
+		t.Fatal("mask failed")
+	}
+	if requirements := discoverSecretBindingRequirements(masked, 0); len(requirements) != 0 {
+		t.Fatalf("requirements = %+v, want none for engine-action provenance metadata", requirements)
+	}
+}
