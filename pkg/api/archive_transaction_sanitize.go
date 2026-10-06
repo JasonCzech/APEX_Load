@@ -138,6 +138,7 @@ func sanitizeArchivedTransaction(item *TransactionEvent) {
 	item.DependencyTarget = scrubArchiveTarget(item.DependencyTarget, policy)
 	item.ErrorMessage = scrub.ValueLabel(item.ErrorMessage, policy)
 	item.Extractions = sanitizeArchivedStringMap(item.Extractions, policy)
+	item.ExtractionDigests = sanitizeBusinessKeyDigests(item.ExtractionDigests)
 	item.PageURL = scrub.ValueURL(item.PageURL, policy)
 	item.PageTitle = scrub.ValueLabel(item.PageTitle, policy)
 	item.ConsoleEntries = sanitizeArchivedConsoleEntries(item.ConsoleEntries, policy)

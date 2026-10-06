@@ -1,0 +1,91 @@
+.business-key-lookup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+}
+
+.business-key-lookup h2,
+.business-key-lookup h3 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.business-key-lookup h3 {
+  font-size: 15px;
+}
+
+.business-key-form,
+.business-key-mapping-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.business-key-form label,
+.business-key-mapping-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.business-key-form textarea {
+  min-height: 64px;
+  font-family: var(--font-mono, monospace);
+}
+
+.business-key-results {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.business-key-result {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.business-key-result p {
+  margin: 6px 0;
+}
+
+.business-key-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.business-key-table th,
+.business-key-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.business-key-table thead th {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.business-key-mappings ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.business-key-mappings li {
+  margin: 4px 0;
+}
+
+@media (max-width: 640px) {
+  .business-key-table {
+    display: block;
+    overflow-x: auto;
+  }
+}

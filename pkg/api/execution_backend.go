@@ -307,6 +307,9 @@ func newRunArtifacts(tr *TestRunner, test *ManagedTest, saveRecord func(record *
 	if err != nil {
 		return nil, err
 	}
+	keyCtx, cancelKey := context.WithTimeout(context.Background(), 30*time.Second)
+	recorder.businessKeys = tr.newBusinessKeyArchiver(keyCtx, authoritativeInitial.ProjectID, authoritativeInitial.BusinessKeys)
+	cancelKey()
 	return &runArtifacts{runner: tr, test: test, recorder: recorder, saveRecord: saveRecord, externalMetrics: newExternalMetricCollector(nil)}, nil
 }
 
@@ -322,9 +325,11 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	// lock so those reads don't race. tr.GetSystemSettings/SystemInventory take
 	// their own locks and must stay OUTSIDE this one.
 	snapshot := test
+	groupSpecs := test.groupSpecs
 	if tr != nil {
 		tr.mu.RLock()
 		copied := cloneManagedTestForReadLocked(test)
+		groupSpecs = test.groupSpecs
 		tr.mu.RUnlock()
 		snapshot = copied
 	}
@@ -382,6 +387,7 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	if inventoryBackend, ok := backend.(inventoryExecutionBackend); ok {
 		provenance.GeneratorInventory = generatorInventoryForProvenance(inventoryBackend, generatorInventoryRefreshTimeout)
 	}
+	provenance.BusinessKeys = tr.runArchiveBusinessKeys(provenance.ProjectID, snapshot.Groups, groupSpecs)
 	return provenance
 }
 

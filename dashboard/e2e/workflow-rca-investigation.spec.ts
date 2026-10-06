@@ -21,6 +21,17 @@ test('root-cause investigation opens from Summary, drills into a hypothesis and 
   })
   const exemplar = (timestamp: string, trace: string) => ({ population: 'transaction', name: 'Checkout', interval_start: timestamp, interval_end: timestamp, reason: 'slowest', trace_id: trace, duration_ms: 3100, success: false, status_code: 503, timestamp, links: [{ provider: 'dynatrace', connection_id: 'dt-1', url: `https://dt.example.test/trace/${trace}` }] })
   const exemplarQueries: string[] = []
+  let lookupBody: { mapping_id: string; values: string[] } | undefined
+  let approved: unknown
+  const mapping = { id: 'map-1', project_id: workspace.projectId, kind: 'business_key_mapping', name: 'Order ID', revision: 1, deleted: false, definition: { extraction: 'order_id', source_id: 'elastic-1', field: 'order.id', label: 'Order ID' } }
+  await page.route('**/api/v1/analysis/business-key-mappings**', async route => {
+    if (route.request().method() === 'POST') {
+      approved = route.request().postDataJSON()
+      return route.fulfill({ json: { ...mapping, id: 'map-2' } })
+    }
+    return route.fulfill({ json: [mapping] })
+  })
+  await page.route('**/api/v1/projects/*/monitor-sources', route => route.fulfill({ json: [{ id: 'elastic-1', name: 'Order logs', pack: 'elastic-query', revision: 1, collector_id: '', interval_seconds: 30, enabled: true }] }))
   let requested: unknown
   let rca2Polls = 0
   await page.route('**/api/v1/tests**', async route => {
@@ -60,6 +71,18 @@ test('root-cause investigation opens from Summary, drills into a hypothesis and 
     if (path === `${base}/archive/root-cause/analyses/rca-2`) {
       rca2Polls++
       return route.fulfill({ json: rca2Polls < 2 ? { analysis_id: 'rca-2', revision: 3, state: 'running', presented: true } : rcaTestResponse({ analysis_id: 'rca-2', revision: 3, completed_at: '2026-10-05T12:20:04Z' }) })
+    }
+    if (path === `${base}/archive/business-keys/lookup` && method === 'POST') {
+      lookupBody = route.request().postDataJSON()
+      return route.fulfill({ json: {
+        mapping: { id: 'map-1', revision: 1, label: 'Order ID', extraction: 'order_id', source_id: 'elastic-1', field: 'order.id' },
+        results: [
+          { index: 0, requests: { total: 2, matches: [{ timestamp: '2026-10-05T12:04:00Z', group: 'checkout', name: 'POST /pay', duration_ms: 3100, success: false, status_code: 503, trace_id: 'trace-in-window', matched_by: 'digest' }] },
+            logs: { status: 'found', total: 1, entries: [{ timestamp: '2026-10-05T12:04:01Z', trace_id: 'trace-in-window', message: 'payment gateway timeout' }] } },
+          { index: 1, requests: { total: 0, matches: [] }, logs: { status: 'not_found', total: 0, entries: [] } },
+        ],
+        limitations: [],
+      } })
     }
     if (path === `${base}/archive/exemplars`) {
       // The controller filters by name, population and window.
@@ -164,6 +187,27 @@ test('root-cause investigation opens from Summary, drills into a hypothesis and 
   // The first page runs the analysis poll; make it the active page again so
   // its timers are not throttled as a background page's.
   await page.bringToFront()
+
+  // Business keys: values typed for a lookup go out once and stay off the
+  // URL; project admins approve mappings in the same panel.
+  const keys = page.getByRole('region', { name: 'Business key lookup', exact: true })
+  await keys.getByLabel('Values, one per line (up to 20)').fill('ORD-1\nORD-404')
+  await keys.getByRole('button', { name: 'Look up', exact: true }).click()
+  await expect(keys.getByRole('region', { name: 'Result for ORD-1' })).toContainText('2 archived requests · Found in the logs (1)')
+  await expect(keys.getByRole('region', { name: 'Result for ORD-1' })).toContainText('payment gateway timeout')
+  await expect(keys.getByRole('region', { name: 'Result for ORD-404' })).toContainText('0 archived requests · Not found in the logs')
+  expect(lookupBody).toEqual({ mapping_id: 'map-1', values: ['ORD-1', 'ORD-404'] })
+  expect(page.url()).not.toContain('ORD-1')
+  await page.setViewportSize({ width: 1280, height: 2600 })
+  await keys.scrollIntoViewIfNeeded()
+  await keys.screenshot({ path: testInfo.outputPath('business-key-lookup.png') })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await keys.getByText('Approved business keys (1)').click()
+  await keys.getByLabel('Extraction').fill('account_id')
+  await keys.getByLabel('Log source').selectOption('elastic-1')
+  await keys.getByLabel('Log field').fill('account.ban')
+  await keys.getByRole('button', { name: 'Approve mapping', exact: true }).click()
+  await expect.poll(() => approved).toEqual({ name: 'account_id', definition: { extraction: 'account_id', source_id: 'elastic-1', field: 'account.ban' } })
 
   // Re-analyzing queues a new revision, routes to it and follows it to
   // completion.

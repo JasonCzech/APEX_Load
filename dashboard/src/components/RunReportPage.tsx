@@ -31,6 +31,7 @@ import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } fr
 import RunReportCompareBar from './runReport/RunReportCompareBar'
 import RunReportDiagnostics from './runReport/RunReportDiagnostics'
 import RootCausePanel from './rca/RootCausePanel'
+import BusinessKeyLookup from './runReport/BusinessKeyLookup'
 import { formatRcaWindow, rcaHypothesisWindow } from './rca/rcaModel'
 import { useRootCauseAnalysis } from './rca/useRootCauseAnalysis'
 import RunReportExportActions from './runReport/RunReportExportActions'
@@ -57,6 +58,8 @@ import './RunReportPage.css'
 interface Props {
   testId: string
   canPublishConfluence?: boolean
+  // canManageProject lets a project admin approve business keys.
+  canManageProject?: boolean
   initialLens?: ReportLens
   initialCompare?: string
   initialComparisonId?: string
@@ -90,6 +93,7 @@ function httpStatus(error: unknown): number | undefined {
 export default function RunReportPage({
   testId,
   canPublishConfluence = false,
+  canManageProject = false,
   initialLens,
   initialCompare,
   initialComparisonId,
@@ -576,6 +580,7 @@ export default function RunReportPage({
         {area === 'Diagnostics' && hasArchive && <>
           <RootCausePanel testId={testId} model={rootCause} report={report} history={timelineHistory} historyLoading={archiveSummariesLoading || archiveResourcesLoading}
             canAnalyze={canPublishConfluence} baselineTestId={effectiveCompareId || undefined} baselineName={baselineTest?.name} route={initialRootCause || {}} onRouteChange={navigateRootCause} />
+          <BusinessKeyLookup testId={testId} projectId={test.project_id || 'default'} canLookup={canPublishConfluence} canApprove={canManageProject} />
           <RunReportDiagnostics report={report} loading={archiveModel.archiveAnalysisLoading} error={archiveModel.archiveAnalysisError} />
           {renderEvidence('report-error-patterns')}
           {renderEvidence('transactions')}

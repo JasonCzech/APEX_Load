@@ -74,6 +74,9 @@ var runArchiveAPIRouteCatalog = preserveRawAccessRequirementsForMethod(apiRouteC
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/root-cause/v2", "handleGetRCAAssessmentV2", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRCAAssessmentV2)
 		}),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/archive/business-keys/lookup", "handleBusinessKeyLookup", editorProjectAccessWithBodyLimit(resolveTestProjectID, 16<<10), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleBusinessKeyLookup)
+		}),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/comparison", "handleGetRunArchiveComparison", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRunArchiveComparison)
 		}),

@@ -69,6 +69,13 @@ type RunArchiveManifest struct {
 	// This process-local copy excludes the legacy remote-provenance fallback.
 	// It is authoritative only while constructing a controller-owned archive.
 	controllerInitialProvenance *RunArchiveProvenance
+	// businessKeys applies the run's business-key policy while a
+	// controller-owned archive is built.
+	businessKeys *businessKeyArchiver
+	// BusinessKeyDigestsUnavailable records that business-key values of
+	// digest-only groups were dropped without a digest (no key wrapper), so
+	// lookups cannot match them.
+	BusinessKeyDigestsUnavailable bool `json:"business_key_digests_unavailable,omitempty"`
 	// Continuity records the HA controller failovers the run survived
 	// (docs/HA_RUN_CONTINUITY_PLAN.md); absent when the run never failed over.
 	Continuity                        *RunContinuityStatus               `json:"continuity,omitempty"`
@@ -226,6 +233,9 @@ type RunArchiveProvenance struct {
 	// Workload is the offered workload frozen from the compiled run, used to
 	// qualify baselines.
 	Workload *rca.WorkloadKey `json:"workload,omitempty"`
+
+	// BusinessKeys is the run's business-key archive policy (G16).
+	BusinessKeys *RunArchiveBusinessKeys `json:"business_keys,omitempty"`
 }
 
 type RunArchiveGovernanceSnapshot struct {
@@ -319,6 +329,10 @@ type TransactionEvent struct {
 	SourceAction          string                    `json:"source_action,omitempty"`
 	SourceActionName      string                    `json:"source_action_name,omitempty"`
 	SourceProfile         string                    `json:"source_profile,omitempty"`
+
+	// ExtractionDigests are the business-key digests of mapped extractions,
+	// computed from the raw values before scrubbing.
+	ExtractionDigests map[string]string `json:"extraction_digests,omitempty"`
 }
 
 type ResourceSample struct {
@@ -975,6 +989,8 @@ var archiveErrorWhitespacePattern = regexp.MustCompile(`\s+`)
 var archiveSnapshotLeadingTemplateBasePattern = regexp.MustCompile(`^\{\{\s*(?:var|param)\.[^{}]+\s*\}\}\s*(.*)$`)
 
 type runArchiveWriter struct {
+	// businessKeys digests the run's business-key values (G16).
+	businessKeys        *businessKeyArchiver
 	captureBudget       *archiveCaptureBudget
 	conversionBudget    *archiveOutputBudget
 	mu                  sync.Mutex

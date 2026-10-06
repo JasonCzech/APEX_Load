@@ -944,6 +944,17 @@ func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []rem
 			manifest.InitialProvenance = &initial
 		}
 	}
+	// The policy frozen at run start governs; a mapping approved since does
+	// not change how this run is archived.
+	policy := manifest.Provenance.BusinessKeys
+	if manifest.InitialProvenance != nil {
+		policy = manifest.InitialProvenance.BusinessKeys
+	}
+	if tr != nil && policy != nil {
+		keyCtx, cancelKey := context.WithTimeout(context.Background(), 30*time.Second)
+		manifest.businessKeys = tr.newBusinessKeyArchiver(keyCtx, manifest.Provenance.ProjectID, policy)
+		cancelKey()
+	}
 	return manifest
 }
 
@@ -1269,6 +1280,11 @@ func mergeRemoteArchiveTransactions(destinationPath string, manifest *RunArchive
 				_ = source.Close()
 				return fmt.Errorf("decode remote transaction record for target %q: %w", bundle.target, decodeErr)
 			}
+			// Business keys are digested here, on the controller, from the
+			// generators' raw values. Generators never hold the project key,
+			// so any digest a bundle carries is discarded.
+			event.ExtractionDigests = nil
+			manifest.businessKeys.apply(&event)
 			sanitizeArchivedTransaction(&event)
 			// Region is controller-owned placement metadata. Never accept a label
 			// supplied by a generator archive, even when that label looks valid.
@@ -1299,6 +1315,9 @@ func mergeRemoteArchiveTransactions(destinationPath string, manifest *RunArchive
 		if count != bundle.manifest.TransactionCount {
 			return fmt.Errorf("remote transaction count for target %q is %d, manifest declares %d", bundle.target, count, bundle.manifest.TransactionCount)
 		}
+	}
+	if manifest.businessKeys != nil && manifest.businessKeys.unavailable {
+		manifest.BusinessKeyDigestsUnavailable = true
 	}
 	if err := output.Flush(); err != nil {
 		return err

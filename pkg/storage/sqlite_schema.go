@@ -1773,6 +1773,12 @@ func schemaCreateTableStatements() []string {
 			lease_expires_at DATETIME,
 			UNIQUE(test_id, revision)
 		)`,
+		// One wrapped HMAC key per project, for business-key digests.
+		`CREATE TABLE IF NOT EXISTS business_key_project_keys (
+			project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+			wrapped_key TEXT NOT NULL,
+			created_at DATETIME NOT NULL
+		)`,
 	}
 }
 

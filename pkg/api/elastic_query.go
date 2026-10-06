@@ -276,29 +276,42 @@ func decodeElasticBuckets(data []byte, job storage.RunMonitorJob, sel storage.El
 // queryElastic runs one bucketed search with the connection's ELK
 // authentication through the host-allowlisted outbound client.
 func (s *Server) queryElastic(ctx context.Context, job storage.RunMonitorJob, from, to time.Time, traceIDs []string) (elasticQueryResult, error) {
-	conn := job.ElasticSnapshot
 	sel := job.Source.ElasticQuery.Defaults()
+	body, fields := buildElasticQueryBody(job.ElasticSnapshot, sel, from, to, traceIDs)
+	data, err := s.searchElastic(ctx, job, body)
+	if err != nil {
+		return elasticQueryResult{}, err
+	}
+	return decodeElasticBuckets(data, job, sel, fields, from, to, time.Now().UTC())
+}
+
+// searchElastic posts one _search body to an elastic-query source's frozen
+// connection and returns the bounded response.
+func (s *Server) searchElastic(ctx context.Context, job storage.RunMonitorJob, body map[string]any) ([]byte, error) {
+	conn := job.ElasticSnapshot
+	if conn == nil {
+		return nil, errors.New("Elasticsearch connection snapshot is missing")
+	}
 	parsed, err := url.Parse(conn.Endpoint)
 	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Hostname() == "" || parsed.User != nil {
-		return elasticQueryResult{}, errors.New("invalid Elasticsearch endpoint")
+		return nil, errors.New("invalid Elasticsearch endpoint")
 	}
 	endpoint := strings.TrimRight(conn.Endpoint, "/") + "/" + url.PathEscape(conn.IndexPattern) + "/_search"
 	if err := validateOutboundURLAllowingHosts(endpoint, map[string]struct{}{strings.ToLower(parsed.Hostname()): {}}); err != nil {
-		return elasticQueryResult{}, errors.New("Elasticsearch endpoint is not permitted")
+		return nil, errors.New("Elasticsearch endpoint is not permitted")
 	}
-	body, fields := buildElasticQueryBody(conn, sel, from, to, traceIDs)
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return elasticQueryResult{}, err
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return elasticQueryResult{}, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	auth := &ELKCaptureConfig{AuthType: conn.AuthType, APIKeySecretName: conn.APIKeySecretName, UsernameSecretName: conn.UsernameSecretName, PasswordSecretName: conn.PasswordSecretName}
 	if err := applyELKAuthentication(ctx, req, s.runner.secretResolverForProject(job.ProjectID), auth); err != nil {
-		return elasticQueryResult{}, err
+		return nil, err
 	}
 	client := s.elasticHTTPClient
 	if client == nil {
@@ -306,17 +319,17 @@ func (s *Server) queryElastic(ctx context.Context, job storage.RunMonitorJob, fr
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return elasticQueryResult{}, errors.New("Elasticsearch request failed")
+		return nil, errors.New("Elasticsearch request failed")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return elasticQueryResult{}, fmt.Errorf("Elasticsearch returned HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("Elasticsearch returned HTTP %d", resp.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, elasticQueryMaxResponseBytes+1))
 	if err != nil || len(data) > elasticQueryMaxResponseBytes {
-		return elasticQueryResult{}, errors.New("Elasticsearch response is unreadable or too large")
+		return nil, errors.New("Elasticsearch response is unreadable or too large")
 	}
-	return decodeElasticBuckets(data, job, sel, fields, from, to, time.Now().UTC())
+	return data, nil
 }
 
 // collectDirectElastic polls one window and ingests it through the shared

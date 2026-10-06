@@ -19,9 +19,21 @@ func (s *Server) handleAnalysisDefinitions(w http.ResponseWriter, r *http.Reques
 		kind = "comparison"
 	case strings.Contains(r.URL.Path, "/rca-mappings"):
 		kind = storage.AnalysisDefinitionKindRCAMapping
+	case strings.Contains(r.URL.Path, "/business-key-mappings"):
+		kind = storage.AnalysisDefinitionKindBusinessKeyMapping
 	}
-	// Root-cause mappings follow the root-cause v2 gate.
-	if kind == storage.AnalysisDefinitionKindRCAMapping && !rcaV2ProjectEnabled(project) || kind != storage.AnalysisDefinitionKindRCAMapping && !analysisProjectEnabled(project) {
+	// Root-cause mappings follow the root-cause v2 gate and business-key
+	// mappings the business-key gate.
+	var enabled bool
+	switch kind {
+	case storage.AnalysisDefinitionKindRCAMapping:
+		enabled = rcaV2ProjectEnabled(project)
+	case storage.AnalysisDefinitionKindBusinessKeyMapping:
+		enabled = businessKeyProjectEnabled(project)
+	default:
+		enabled = analysisProjectEnabled(project)
+	}
+	if !enabled {
 		writeError(w, 409, "analysis is not enabled for project")
 		return
 	}
@@ -97,6 +109,10 @@ func (s *Server) handleAnalysisDefinitions(w http.ResponseWriter, r *http.Reques
 		if kind == storage.AnalysisDefinitionKindRCAMapping {
 			if err := validateRCAMappingDefinition(in.Definition); err != nil {
 				writeError(w, 400, err.Error())
+				return
+			}
+		} else if kind == storage.AnalysisDefinitionKindBusinessKeyMapping {
+			if !s.validBusinessKeyMapping(w, project, in.Definition) {
 				return
 			}
 		} else if kind == "mapping" {

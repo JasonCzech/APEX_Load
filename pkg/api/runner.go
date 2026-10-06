@@ -452,6 +452,8 @@ type TestRunner struct {
 	// not a ManagedTest field, because lifecycle broadcasts record phases and
 	// some run while holding mu.
 	phaseLogs sync.Map
+	// businessKeys caches each project's business-key digester.
+	businessKeys sync.Map
 }
 
 type archiveCommitGate struct {

@@ -8589,6 +8589,8 @@ paths:
                               size_bytes:
                                 type: integer
                                 format: int64
+                        business_key_digests_unavailable:
+                          type: boolean
                         clock_observation_count:
                           type: integer
                           format: int64
@@ -8731,6 +8733,10 @@ paths:
                             baseline_pinned_at:
                               type: string
                               format: date-time
+                              nullable: true
+                            business_keys:
+                              type: object
+                              additionalProperties: true
                               nullable: true
                             comparison_fingerprint:
                               type: string
@@ -9011,6 +9017,10 @@ paths:
                             baseline_pinned_at:
                               type: string
                               format: date-time
+                              nullable: true
+                            business_keys:
+                              type: object
+                              additionalProperties: true
                               nullable: true
                             comparison_fingerprint:
                               type: string
@@ -18755,6 +18765,690 @@ paths:
       tags:
         - Ai
       x-handler: handleAIReviewQueue
+  /api/v1/analysis/business-key-mappings:
+    get:
+      summary: Analysis Definitions
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleAnalysisDefinitions
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: offset
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Analysis
+      x-handler: handleAnalysisDefinitions
+    post:
+      summary: Analysis Definitions
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleAnalysisDefinitions_2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                created_at:
+                  type: string
+                  format: date-time
+                definition: {}
+                deleted:
+                  type: boolean
+                id:
+                  type: string
+                kind:
+                  type: string
+                name:
+                  type: string
+                project_id:
+                  type: string
+                revision:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: offset
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Analysis
+      x-handler: handleAnalysisDefinitions
+  /api/v1/analysis/business-key-mappings/{id}:
+    delete:
+      summary: Analysis Definitions
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleAnalysisDefinitions_3
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                created_at:
+                  type: string
+                  format: date-time
+                definition: {}
+                deleted:
+                  type: boolean
+                id:
+                  type: string
+                kind:
+                  type: string
+                name:
+                  type: string
+                project_id:
+                  type: string
+                revision:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: offset
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Analysis
+      x-handler: handleAnalysisDefinitions
+    get:
+      summary: Analysis Definitions
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleAnalysisDefinitions_4
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: offset
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Analysis
+      x-handler: handleAnalysisDefinitions
+    put:
+      summary: Analysis Definitions
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleAnalysisDefinitions_5
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                created_at:
+                  type: string
+                  format: date-time
+                definition: {}
+                deleted:
+                  type: boolean
+                id:
+                  type: string
+                kind:
+                  type: string
+                name:
+                  type: string
+                project_id:
+                  type: string
+                revision:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: offset
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Analysis
+      x-handler: handleAnalysisDefinitions
   /api/v1/analysis/capabilities:
     get:
       summary: Analysis Capabilities
@@ -19180,7 +19874,7 @@ paths:
     get:
       summary: Analysis Definitions
       description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
-      operationId: handleAnalysisDefinitions
+      operationId: handleAnalysisDefinitions_6
       responses:
         "200":
           description: OK
@@ -19299,7 +19993,7 @@ paths:
     post:
       summary: Analysis Definitions
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
-      operationId: handleAnalysisDefinitions_2
+      operationId: handleAnalysisDefinitions_7
       requestBody:
         required: true
         content:
@@ -19443,7 +20137,7 @@ paths:
     delete:
       summary: Analysis Definitions
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
-      operationId: handleAnalysisDefinitions_3
+      operationId: handleAnalysisDefinitions_8
       requestBody:
         required: true
         content:
@@ -19591,7 +20285,7 @@ paths:
     get:
       summary: Analysis Definitions
       description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
-      operationId: handleAnalysisDefinitions_4
+      operationId: handleAnalysisDefinitions_9
       responses:
         "200":
           description: OK
@@ -19715,7 +20409,7 @@ paths:
     put:
       summary: Analysis Definitions
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
-      operationId: handleAnalysisDefinitions_5
+      operationId: handleAnalysisDefinitions_10
       requestBody:
         required: true
         content:
@@ -21652,690 +22346,6 @@ paths:
     get:
       summary: Analysis Definitions
       description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
-      operationId: handleAnalysisDefinitions_6
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  created_at:
-                    type: string
-                    format: date-time
-                  definition: {}
-                  deleted:
-                    type: boolean
-                  id:
-                    type: string
-                  kind:
-                    type: string
-                  name:
-                    type: string
-                  project_id:
-                    type: string
-                  revision:
-                    type: integer
-                    format: int64
-                required:
-                  - created_at
-                  - definition
-                  - deleted
-                  - id
-                  - kind
-                  - name
-                  - project_id
-                  - revision
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Authentication required or invalid.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "403":
-          description: Authenticated principal lacks the required role or service-account scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Not Found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "409":
-          description: Conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "413":
-          description: Request Entity Too Large
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "500":
-          description: Internal Server Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "503":
-          description: Service Unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        default:
-          description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
-      parameters:
-        - name: limit
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: offset
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: project_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: revision
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-      tags:
-        - Analysis
-      x-handler: handleAnalysisDefinitions
-    post:
-      summary: Analysis Definitions
-      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
-      operationId: handleAnalysisDefinitions_7
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                created_at:
-                  type: string
-                  format: date-time
-                definition: {}
-                deleted:
-                  type: boolean
-                id:
-                  type: string
-                kind:
-                  type: string
-                name:
-                  type: string
-                project_id:
-                  type: string
-                revision:
-                  type: integer
-                  format: int64
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  created_at:
-                    type: string
-                    format: date-time
-                  definition: {}
-                  deleted:
-                    type: boolean
-                  id:
-                    type: string
-                  kind:
-                    type: string
-                  name:
-                    type: string
-                  project_id:
-                    type: string
-                  revision:
-                    type: integer
-                    format: int64
-                required:
-                  - created_at
-                  - definition
-                  - deleted
-                  - id
-                  - kind
-                  - name
-                  - project_id
-                  - revision
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Authentication required or invalid.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "403":
-          description: Authenticated principal lacks the required role or service-account scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Not Found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "409":
-          description: Conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "413":
-          description: Request Entity Too Large
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "500":
-          description: Internal Server Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "503":
-          description: Service Unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        default:
-          description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
-      parameters:
-        - name: limit
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: offset
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: project_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: revision
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-      tags:
-        - Analysis
-      x-handler: handleAnalysisDefinitions
-  /api/v1/analysis/mappings/{id}:
-    delete:
-      summary: Analysis Definitions
-      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
-      operationId: handleAnalysisDefinitions_8
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                created_at:
-                  type: string
-                  format: date-time
-                definition: {}
-                deleted:
-                  type: boolean
-                id:
-                  type: string
-                kind:
-                  type: string
-                name:
-                  type: string
-                project_id:
-                  type: string
-                revision:
-                  type: integer
-                  format: int64
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  created_at:
-                    type: string
-                    format: date-time
-                  definition: {}
-                  deleted:
-                    type: boolean
-                  id:
-                    type: string
-                  kind:
-                    type: string
-                  name:
-                    type: string
-                  project_id:
-                    type: string
-                  revision:
-                    type: integer
-                    format: int64
-                required:
-                  - created_at
-                  - definition
-                  - deleted
-                  - id
-                  - kind
-                  - name
-                  - project_id
-                  - revision
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Authentication required or invalid.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "403":
-          description: Authenticated principal lacks the required role or service-account scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Not Found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "409":
-          description: Conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "413":
-          description: Request Entity Too Large
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "500":
-          description: Internal Server Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "503":
-          description: Service Unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        default:
-          description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: limit
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: offset
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: project_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: revision
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-      tags:
-        - Analysis
-      x-handler: handleAnalysisDefinitions
-    get:
-      summary: Analysis Definitions
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
-      operationId: handleAnalysisDefinitions_9
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  created_at:
-                    type: string
-                    format: date-time
-                  definition: {}
-                  deleted:
-                    type: boolean
-                  id:
-                    type: string
-                  kind:
-                    type: string
-                  name:
-                    type: string
-                  project_id:
-                    type: string
-                  revision:
-                    type: integer
-                    format: int64
-                required:
-                  - created_at
-                  - definition
-                  - deleted
-                  - id
-                  - kind
-                  - name
-                  - project_id
-                  - revision
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Authentication required or invalid.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "403":
-          description: Authenticated principal lacks the required role or service-account scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Not Found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "409":
-          description: Conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "413":
-          description: Request Entity Too Large
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "500":
-          description: Internal Server Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "503":
-          description: Service Unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        default:
-          description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: limit
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: offset
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: project_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: revision
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-      tags:
-        - Analysis
-      x-handler: handleAnalysisDefinitions
-    put:
-      summary: Analysis Definitions
-      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
-      operationId: handleAnalysisDefinitions_10
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                created_at:
-                  type: string
-                  format: date-time
-                definition: {}
-                deleted:
-                  type: boolean
-                id:
-                  type: string
-                kind:
-                  type: string
-                name:
-                  type: string
-                project_id:
-                  type: string
-                revision:
-                  type: integer
-                  format: int64
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  created_at:
-                    type: string
-                    format: date-time
-                  definition: {}
-                  deleted:
-                    type: boolean
-                  id:
-                    type: string
-                  kind:
-                    type: string
-                  name:
-                    type: string
-                  project_id:
-                    type: string
-                  revision:
-                    type: integer
-                    format: int64
-                required:
-                  - created_at
-                  - definition
-                  - deleted
-                  - id
-                  - kind
-                  - name
-                  - project_id
-                  - revision
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Authentication required or invalid.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "403":
-          description: Authenticated principal lacks the required role or service-account scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Not Found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "409":
-          description: Conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "413":
-          description: Request Entity Too Large
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "500":
-          description: Internal Server Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "503":
-          description: Service Unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        default:
-          description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: limit
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: offset
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: project_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: revision
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-      tags:
-        - Analysis
-      x-handler: handleAnalysisDefinitions
-  /api/v1/analysis/rca-mappings:
-    get:
-      summary: Analysis Definitions
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleAnalysisDefinitions_11
       responses:
         "200":
@@ -22595,7 +22605,7 @@ paths:
       tags:
         - Analysis
       x-handler: handleAnalysisDefinitions
-  /api/v1/analysis/rca-mappings/{id}:
+  /api/v1/analysis/mappings/{id}:
     delete:
       summary: Analysis Definitions
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
@@ -22872,6 +22882,690 @@ paths:
       summary: Analysis Definitions
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleAnalysisDefinitions_15
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                created_at:
+                  type: string
+                  format: date-time
+                definition: {}
+                deleted:
+                  type: boolean
+                id:
+                  type: string
+                kind:
+                  type: string
+                name:
+                  type: string
+                project_id:
+                  type: string
+                revision:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: offset
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Analysis
+      x-handler: handleAnalysisDefinitions
+  /api/v1/analysis/rca-mappings:
+    get:
+      summary: Analysis Definitions
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleAnalysisDefinitions_16
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: offset
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Analysis
+      x-handler: handleAnalysisDefinitions
+    post:
+      summary: Analysis Definitions
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      operationId: handleAnalysisDefinitions_17
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                created_at:
+                  type: string
+                  format: date-time
+                definition: {}
+                deleted:
+                  type: boolean
+                id:
+                  type: string
+                kind:
+                  type: string
+                name:
+                  type: string
+                project_id:
+                  type: string
+                revision:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: offset
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Analysis
+      x-handler: handleAnalysisDefinitions
+  /api/v1/analysis/rca-mappings/{id}:
+    delete:
+      summary: Analysis Definitions
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      operationId: handleAnalysisDefinitions_18
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                created_at:
+                  type: string
+                  format: date-time
+                definition: {}
+                deleted:
+                  type: boolean
+                id:
+                  type: string
+                kind:
+                  type: string
+                name:
+                  type: string
+                project_id:
+                  type: string
+                revision:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: offset
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Analysis
+      x-handler: handleAnalysisDefinitions
+    get:
+      summary: Analysis Definitions
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleAnalysisDefinitions_19
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  definition: {}
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  revision:
+                    type: integer
+                    format: int64
+                required:
+                  - created_at
+                  - definition
+                  - deleted
+                  - id
+                  - kind
+                  - name
+                  - project_id
+                  - revision
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: offset
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Analysis
+      x-handler: handleAnalysisDefinitions
+    put:
+      summary: Analysis Definitions
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      operationId: handleAnalysisDefinitions_20
       requestBody:
         required: true
         content:
@@ -303408,6 +304102,155 @@ paths:
       tags:
         - Tests
       x-handler: handleDownloadRunArchiveBrowserDiagnostics
+  /api/v1/tests/{id}/archive/business-keys/lookup:
+    post:
+      summary: Business Key Lookup
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      operationId: handleBusinessKeyLookup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mapping_id:
+                  type: string
+                values:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  limitations:
+                    type: array
+                    items:
+                      type: string
+                  mapping:
+                    type: object
+                    properties:
+                      extraction:
+                        type: string
+                      field:
+                        type: string
+                      id:
+                        type: string
+                      label:
+                        type: string
+                      revision:
+                        type: integer
+                        format: int64
+                      source_id:
+                        type: string
+                    required:
+                      - extraction
+                      - field
+                      - id
+                      - revision
+                      - source_id
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        index:
+                          type: integer
+                          format: int64
+                        logs:
+                          type: object
+                          properties:
+                            detail:
+                              type: string
+                            entries:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            status:
+                              type: string
+                            total:
+                              type: integer
+                              format: int64
+                          required:
+                            - entries
+                            - status
+                            - total
+                        requests:
+                          type: object
+                          properties:
+                            matches:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            total:
+                              type: integer
+                              format: int64
+                          required:
+                            - matches
+                            - total
+                      required:
+                        - index
+                        - logs
+                        - requests
+                required:
+                  - limitations
+                  - mapping
+                  - results
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleBusinessKeyLookup
   /api/v1/tests/{id}/archive/comparison:
     get:
       summary: Get Run Archive Comparison
@@ -303751,6 +304594,8 @@ paths:
                           format: int64
                       required:
                         - name
+                  business_key_digests_unavailable:
+                    type: boolean
                   clock_observation_count:
                     type: integer
                     format: int64
@@ -303986,6 +304831,20 @@ paths:
                       baseline_pinned_at:
                         type: string
                         format: date-time
+                        nullable: true
+                      business_keys:
+                        type: object
+                        properties:
+                          digest_only_groups:
+                            type: array
+                            items:
+                              type: string
+                          extractions:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - extractions
                         nullable: true
                       comparison_fingerprint:
                         type: string
@@ -306422,6 +307281,20 @@ paths:
                       baseline_pinned_at:
                         type: string
                         format: date-time
+                        nullable: true
+                      business_keys:
+                        type: object
+                        properties:
+                          digest_only_groups:
+                            type: array
+                            items:
+                              type: string
+                          extractions:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - extractions
                         nullable: true
                       comparison_fingerprint:
                         type: string
@@ -316105,6 +316978,8 @@ paths:
                               format: int64
                           required:
                             - name
+                      business_key_digests_unavailable:
+                        type: boolean
                       clock_observation_count:
                         type: integer
                         format: int64
@@ -316328,6 +317203,20 @@ paths:
                           baseline_pinned_at:
                             type: string
                             format: date-time
+                            nullable: true
+                          business_keys:
+                            type: object
+                            properties:
+                              digest_only_groups:
+                                type: array
+                                items:
+                                  type: string
+                              extractions:
+                                type: array
+                                items:
+                                  type: string
+                            required:
+                              - extractions
                             nullable: true
                           comparison_fingerprint:
                             type: string
@@ -317504,6 +318393,20 @@ paths:
                           baseline_pinned_at:
                             type: string
                             format: date-time
+                            nullable: true
+                          business_keys:
+                            type: object
+                            properties:
+                              digest_only_groups:
+                                type: array
+                                items:
+                                  type: string
+                              extractions:
+                                type: array
+                                items:
+                                  type: string
+                            required:
+                              - extractions
                             nullable: true
                           comparison_fingerprint:
                             type: string

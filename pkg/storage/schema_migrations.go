@@ -62,6 +62,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 35, Name: "dynatrace-saas-durable-run-monitoring", Fingerprint: "de996ade9928b95fa97e6ede0c811d2ee20ee73e0f44d1e26945547814066d7a"},
 	{Version: 36, Name: "run-trace-context-policy", Fingerprint: "26cd04b1928418d383f28268ae70c20e2b943e08217c7fdb3855e8a092a6d8cc"},
 	{Version: 37, Name: "rca-analysis-revisions", Fingerprint: "0aa6b5258f7162db82e7647c622672b145dd1db69356907c774882a4071a54e3"},
+	{Version: 38, Name: "business-key-project-keys", Fingerprint: "385585ff3818a833a350cd25838901726297b40a458670abf302d52bbb667c52"},
 }
 
 type SchemaMigrationRecord struct {

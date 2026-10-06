@@ -29,6 +29,15 @@ const AnalysisDefinitionKindConnectionLinks = "connection_links"
 // run dependency is, or is not, a provider entity, for root-cause graphs.
 const AnalysisDefinitionKindRCAMapping = "rca_mapping"
 
+// AnalysisDefinitionKindBusinessKeyMapping is a project admin's approval to
+// join a script extraction (a business key such as an order ID) to a log
+// field of a monitor source.
+const AnalysisDefinitionKindBusinessKeyMapping = "business_key_mapping"
+
+// ownBudgetAnalysisKinds have a definition budget of their own, apart from
+// the mappings' and comparisons' shared budget.
+var ownBudgetAnalysisKinds = map[string]bool{AnalysisDefinitionKindRCAMapping: true, AnalysisDefinitionKindBusinessKeyMapping: true}
+
 type AnalysisDefinitionStore interface {
 	SaveAnalysisDefinition(AnalysisDefinition, int64) (*AnalysisDefinition, error)
 	GetAnalysisDefinition(string, string, int64) (*AnalysisDefinition, error)
@@ -36,7 +45,7 @@ type AnalysisDefinitionStore interface {
 }
 
 func (s *SQLiteStore) SaveAnalysisDefinition(in AnalysisDefinition, expected int64) (*AnalysisDefinition, error) {
-	if in.ID == "" || len(in.ID) > 128 || in.ProjectID == "" || strings.TrimSpace(in.Name) == "" || len(in.Name) > 256 || expected < 0 || expected >= 1<<62 || (in.Kind != "mapping" && in.Kind != "comparison" && in.Kind != AnalysisDefinitionKindConnectionLinks && in.Kind != AnalysisDefinitionKindRCAMapping) || !json.Valid(in.Definition) || len(in.Definition) > 128<<10 {
+	if in.ID == "" || len(in.ID) > 128 || in.ProjectID == "" || strings.TrimSpace(in.Name) == "" || len(in.Name) > 256 || expected < 0 || expected >= 1<<62 || (in.Kind != "mapping" && in.Kind != "comparison" && in.Kind != AnalysisDefinitionKindConnectionLinks && !ownBudgetAnalysisKinds[in.Kind]) || !json.Valid(in.Definition) || len(in.Definition) > 128<<10 {
 		return nil, errors.New("invalid analytical definition")
 	}
 	tx, err := s.db.Begin()
@@ -57,14 +66,14 @@ func (s *SQLiteStore) SaveAnalysisDefinition(in AnalysisDefinition, expected int
 		return nil, ErrAnalysisRevision
 	}
 	// Connection link settings are one per connection and stay out of the
-	// mappings' and comparisons' budget; root-cause mapping decisions have a
-	// budget of their own.
+	// mappings' and comparisons' budget; root-cause and business-key mapping
+	// decisions each have a budget of their own.
 	if expected == 0 && in.Kind != AnalysisDefinitionKindConnectionLinks {
 		var n int
-		query := `SELECT COUNT(DISTINCT id) FROM analysis_definitions WHERE project_id=? AND kind<>? AND kind<>?`
-		args := []any{in.ProjectID, AnalysisDefinitionKindConnectionLinks, AnalysisDefinitionKindRCAMapping}
-		if in.Kind == AnalysisDefinitionKindRCAMapping {
-			query, args = `SELECT COUNT(DISTINCT id) FROM analysis_definitions WHERE project_id=? AND kind=?`, []any{in.ProjectID, AnalysisDefinitionKindRCAMapping}
+		query := `SELECT COUNT(DISTINCT id) FROM analysis_definitions WHERE project_id=? AND kind<>? AND kind<>? AND kind<>?`
+		args := []any{in.ProjectID, AnalysisDefinitionKindConnectionLinks, AnalysisDefinitionKindRCAMapping, AnalysisDefinitionKindBusinessKeyMapping}
+		if ownBudgetAnalysisKinds[in.Kind] {
+			query, args = `SELECT COUNT(DISTINCT id) FROM analysis_definitions WHERE project_id=? AND kind=?`, []any{in.ProjectID, in.Kind}
 		}
 		if err = tx.QueryRow(query, args...).Scan(&n); err != nil {
 			return nil, err

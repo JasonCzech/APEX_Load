@@ -657,6 +657,50 @@ MCP tools keep returning v1.
 Schema release 37 (`rca-analysis-revisions`) adds `rca_evidence_revisions`
 and `rca_analyses`.
 
+## Business keys
+
+A business key is a value a script extracts that also appears in the system
+under test's logs: an order ID, a billing account number (BAN). A business
+key lookup finds a run's requests and the matching log entries for values an
+operator types in. Projects opt in with `APEXLOAD_BUSINESS_KEY_PROJECTS`.
+
+- **Approved mappings.** A project admin approves a mapping from an
+  extraction name to a log field of one of the project's Elasticsearch or
+  OpenSearch query sources, as an analysis definition of kind
+  `business_key_mapping`: `{"extraction": "order_id", "source_id": "...",
+  "field": "order.id", "label": "Order ID"}`. The field should be a keyword
+  field: lookups use exact term queries. Routes:
+  `/api/v1/analysis/business-key-mappings` (viewers read; project admins
+  create, revise and delete), with the same revision rules as other
+  definitions. A project holds at most 1,000.
+- **Archives.** When a run's archive recording begins, the mapped extraction
+  names (at most 64) are frozen into its provenance (`business_keys`). Each archived
+  request keeps a digest of every mapped value in `extraction_digests`: an
+  HMAC-SHA-256 under a key of the project's own, created on first use and
+  stored wrapped by the controller's key wrapper (`business_key_project_keys`,
+  schema release 38). Groups whose effective script sets
+  `config.log.redact_run_evidence` keep only the digest; other groups also
+  keep the value, as before. A group whose script cannot be read is treated as
+  redacting. Remote generators never hold the key: the controller digests
+  their rows when it merges their archives and discards any digest a bundle
+  carries. Without a key wrapper the values of redacting groups are dropped
+  without a digest, and the archive records
+  `business_key_digests_unavailable`.
+- **Lookups.** `POST /api/v1/tests/{id}/archive/business-keys/lookup`
+  (editors) takes `{"mapping_id": "...", "values": [...]}`, 1 to 20 values of
+  at most 256 bytes. It matches archived requests by digest, or by the value
+  where it was kept, and searches the mapped source's logs over the run (with
+  five minutes either side), one query per value, four at a time. Results are keyed
+  by each value's position in the request: values are not echoed, stored,
+  logged or audited (the audit event records the mapping and the count). Each
+  result has up to 50 requests and 50 log entries with their totals, and the
+  response states what could not be matched, such as runs archived before
+  the mapping was approved.
+- **Dashboard.** Run report Diagnostics shows a Business key lookup panel in
+  projects that opt in. Values typed there stay in the page; they never go
+  into the URL or browser storage. Project admins approve and remove
+  mappings from the same panel.
+
 ## Preparation capacity policies
 
 Preparation accepts an immutable `capacity` object. `selection: existing`

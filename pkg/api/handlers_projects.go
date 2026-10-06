@@ -788,6 +788,13 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteProjectDurably(id string) (storage.LeaseFencedDeleteResult, error) {
+	// The project's business key goes with it; a later project with the same
+	// ID must not reuse the cached digester.
+	defer func() {
+		if s != nil && s.runner != nil {
+			s.runner.businessKeys.Delete(normalizeProjectID(id))
+		}
+	}()
 	if s == nil || s.store == nil {
 		return storage.LeaseFencedDeleteFenced, fmt.Errorf("project storage is not configured")
 	}

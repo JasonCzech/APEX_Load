@@ -3501,6 +3501,7 @@ function AppShell({
                 <RunReportPage
                   testId={view.testId}
                   canPublishConfluence={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false)}
+                  canManageProject={canManageProjects}
                   initialSection={view.section}
                   initialLens={view.lens}
                   initialCompare={view.compare}

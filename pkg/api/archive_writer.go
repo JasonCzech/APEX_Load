@@ -376,6 +376,12 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 			}
 		}
 	}
+	// Business keys are digested from their raw extracted values, before
+	// scrubbing can change them.
+	if w.businessKeys != nil {
+		w.businessKeys.apply(&event)
+		w.manifest.BusinessKeyDigestsUnavailable = w.manifest.BusinessKeyDigestsUnavailable || w.businessKeys.unavailable
+	}
 	// Defense in depth for callers that record protocol results without going
 	// through the VUser projection seam. This also detaches nested evidence from
 	// the live result before the encoder observes it.

@@ -3032,6 +3032,7 @@ export interface operations {
                 "sha256"?: string;
                 "size_bytes"?: number;
               }>;
+              "business_key_digests_unavailable"?: boolean;
               "clock_observation_count"?: number;
               "clock_observations_file"?: string;
               "clock_observations_truncated"?: boolean;
@@ -3089,6 +3090,7 @@ export interface operations {
                 "assignment"?: (Record<string, unknown>) | null;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
+                "business_keys"?: (Record<string, unknown>) | null;
                 "comparison_fingerprint"?: string;
                 "comparison_metrics"?: Record<string, Record<string, unknown>>;
                 "controller_env"?: Record<string, string>;
@@ -3184,6 +3186,7 @@ export interface operations {
                 "assignment"?: (Record<string, unknown>) | null;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
+                "business_keys"?: (Record<string, unknown>) | null;
                 "comparison_fingerprint"?: string;
                 "comparison_metrics"?: Record<string, Record<string, unknown>>;
                 "controller_env"?: Record<string, string>;
@@ -8319,8 +8322,406 @@ export interface operations {
       };
     };
   };
+  "handleAnalysisDefinitions_16": {
+    parameters: {
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDefinitions_17": {
+    parameters: {
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "created_at"?: string;
+          "definition"?: unknown;
+          "deleted"?: boolean;
+          "id"?: string;
+          "kind"?: string;
+          "name"?: string;
+          "project_id"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDefinitions_18": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "created_at"?: string;
+          "definition"?: unknown;
+          "deleted"?: boolean;
+          "id"?: string;
+          "kind"?: string;
+          "name"?: string;
+          "project_id"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDefinitions_19": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleAnalysisDefinitions_2": {
     parameters: {
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "created_at"?: string;
+          "definition"?: unknown;
+          "deleted"?: boolean;
+          "id"?: string;
+          "kind"?: string;
+          "name"?: string;
+          "project_id"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisDefinitions_20": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
       "query"?: {
         "limit"?: number;
         "offset"?: number;
@@ -21774,6 +22175,84 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleBusinessKeyLookup": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "mapping_id"?: string;
+          "values"?: Array<string>;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "limitations": Array<string>;
+            "mapping": {
+              "extraction": string;
+              "field": string;
+              "id": string;
+              "label"?: string;
+              "revision": number;
+              "source_id": string;
+            };
+            "results": Array<{
+              "index": number;
+              "logs": {
+                "detail"?: string;
+                "entries": Array<Record<string, unknown>>;
+                "status": string;
+                "total": number;
+              };
+              "requests": {
+                "matches": Array<Record<string, unknown>>;
+                "total": number;
+              };
+            }>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -57162,6 +57641,7 @@ export interface operations {
               "sha256"?: string;
               "size_bytes"?: number;
             }>;
+            "business_key_digests_unavailable"?: boolean;
             "clock_observation_count"?: number;
             "clock_observations_file"?: string;
             "clock_observations_truncated"?: boolean;
@@ -57245,6 +57725,10 @@ export interface operations {
               }) | null;
               "baseline_pinned"?: boolean;
               "baseline_pinned_at"?: (string) | null;
+              "business_keys"?: ({
+                "digest_only_groups"?: Array<string>;
+                "extractions": Array<string>;
+              }) | null;
               "comparison_fingerprint"?: string;
               "comparison_metrics"?: Record<string, {
                 "aggregation"?: string;
@@ -58063,6 +58547,10 @@ export interface operations {
               }) | null;
               "baseline_pinned"?: boolean;
               "baseline_pinned_at"?: (string) | null;
+              "business_keys"?: ({
+                "digest_only_groups"?: Array<string>;
+                "extractions": Array<string>;
+              }) | null;
               "comparison_fingerprint"?: string;
               "comparison_metrics"?: Record<string, {
                 "aggregation"?: string;
@@ -60838,6 +61326,7 @@ export interface operations {
                 "sha256"?: string;
                 "size_bytes"?: number;
               }>;
+              "business_key_digests_unavailable"?: boolean;
               "clock_observation_count"?: number;
               "clock_observations_file"?: string;
               "clock_observations_truncated"?: boolean;
@@ -60917,6 +61406,10 @@ export interface operations {
                 }) | null;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
+                "business_keys"?: ({
+                  "digest_only_groups"?: Array<string>;
+                  "extractions": Array<string>;
+                }) | null;
                 "comparison_fingerprint"?: string;
                 "comparison_metrics"?: Record<string, {
                   "aggregation"?: string;
@@ -61288,6 +61781,10 @@ export interface operations {
                 }) | null;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
+                "business_keys"?: ({
+                  "digest_only_groups"?: Array<string>;
+                  "extractions": Array<string>;
+                }) | null;
                 "comparison_fingerprint"?: string;
                 "comparison_metrics"?: Record<string, {
                   "aggregation"?: string;
@@ -144540,6 +145037,15 @@ export interface paths {
   "/api/v1/ai/review-queue": {
     "get": operations["handleAIReviewQueue"];
   };
+  "/api/v1/analysis/business-key-mappings": {
+    "get": operations["handleAnalysisDefinitions"];
+    "post": operations["handleAnalysisDefinitions_2"];
+  };
+  "/api/v1/analysis/business-key-mappings/{id}": {
+    "get": operations["handleAnalysisDefinitions_4"];
+    "put": operations["handleAnalysisDefinitions_5"];
+    "delete": operations["handleAnalysisDefinitions_3"];
+  };
   "/api/v1/analysis/capabilities": {
     "get": operations["handleAnalysisCapabilities"];
   };
@@ -144547,13 +145053,13 @@ export interface paths {
     "post": operations["handleAnalysisComparison"];
   };
   "/api/v1/analysis/comparisons": {
-    "get": operations["handleAnalysisDefinitions"];
-    "post": operations["handleAnalysisDefinitions_2"];
+    "get": operations["handleAnalysisDefinitions_6"];
+    "post": operations["handleAnalysisDefinitions_7"];
   };
   "/api/v1/analysis/comparisons/{id}": {
-    "get": operations["handleAnalysisDefinitions_4"];
-    "put": operations["handleAnalysisDefinitions_5"];
-    "delete": operations["handleAnalysisDefinitions_3"];
+    "get": operations["handleAnalysisDefinitions_9"];
+    "put": operations["handleAnalysisDefinitions_10"];
+    "delete": operations["handleAnalysisDefinitions_8"];
   };
   "/api/v1/analysis/datasets/{id}": {
     "get": operations["handleAnalysisImport"];
@@ -144588,22 +145094,22 @@ export interface paths {
     "put": operations["handleAnalysisMapping"];
   };
   "/api/v1/analysis/mappings": {
-    "get": operations["handleAnalysisDefinitions_6"];
-    "post": operations["handleAnalysisDefinitions_7"];
-  };
-  "/api/v1/analysis/mappings/{id}": {
-    "get": operations["handleAnalysisDefinitions_9"];
-    "put": operations["handleAnalysisDefinitions_10"];
-    "delete": operations["handleAnalysisDefinitions_8"];
-  };
-  "/api/v1/analysis/rca-mappings": {
     "get": operations["handleAnalysisDefinitions_11"];
     "post": operations["handleAnalysisDefinitions_12"];
   };
-  "/api/v1/analysis/rca-mappings/{id}": {
+  "/api/v1/analysis/mappings/{id}": {
     "get": operations["handleAnalysisDefinitions_14"];
     "put": operations["handleAnalysisDefinitions_15"];
     "delete": operations["handleAnalysisDefinitions_13"];
+  };
+  "/api/v1/analysis/rca-mappings": {
+    "get": operations["handleAnalysisDefinitions_16"];
+    "post": operations["handleAnalysisDefinitions_17"];
+  };
+  "/api/v1/analysis/rca-mappings/{id}": {
+    "get": operations["handleAnalysisDefinitions_19"];
+    "put": operations["handleAnalysisDefinitions_20"];
+    "delete": operations["handleAnalysisDefinitions_18"];
   };
   "/api/v1/application-repository/categories/{id}": {
     "put": operations["handleUpdateRepositoryCategory"];
@@ -146169,6 +146675,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/browser-diagnostics": {
     "get": operations["handleDownloadRunArchiveBrowserDiagnostics"];
+  };
+  "/api/v1/tests/{id}/archive/business-keys/lookup": {
+    "post": operations["handleBusinessKeyLookup"];
   };
   "/api/v1/tests/{id}/archive/comparison": {
     "get": operations["handleGetRunArchiveComparison"];

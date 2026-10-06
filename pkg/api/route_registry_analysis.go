@@ -33,6 +33,13 @@ var analysisAPIRouteCatalog = apiRouteCatalog{Domain: "analysis", Routes: []apiR
 	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/rca-mappings/{id}", "handleAnalysisDefinitions", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
 	newAuthenticatedAPIRoute(http.MethodPut, "/api/v1/analysis/rca-mappings/{id}", "handleAnalysisDefinitions", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
 	newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/analysis/rca-mappings/{id}", "handleAnalysisDefinitions", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
+	// Business-key mappings (business_key_mapping definitions): project admins
+	// approve them.
+	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/business-key-mappings", "handleAnalysisDefinitions", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
+	newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/analysis/business-key-mappings", "handleAnalysisDefinitions", projectAdminAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
+	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/business-key-mappings/{id}", "handleAnalysisDefinitions", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
+	newAuthenticatedAPIRoute(http.MethodPut, "/api/v1/analysis/business-key-mappings/{id}", "handleAnalysisDefinitions", projectAdminAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
+	newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/analysis/business-key-mappings/{id}", "handleAnalysisDefinitions", projectAdminAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
 }}
 
 func analysisQueryAccess(lookup projectScopedLookup) accessRequirement {
