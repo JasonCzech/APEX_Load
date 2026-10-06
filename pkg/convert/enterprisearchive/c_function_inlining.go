@@ -2,6 +2,7 @@ package enterprisearchive
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 )
 
@@ -15,6 +16,11 @@ import (
 // maxSourceHelperInlineDepth bounds nested helper inlining; deeper chains keep
 // the remaining calls as custom_call actions and report it.
 const maxSourceHelperInlineDepth = 16
+
+// maxInlinedSourceCalls bounds the calls one action produces through inlining,
+// so a helper that calls another many times, several levels deep, cannot
+// multiply into an unbounded script. Further calls stay custom_call actions.
+const maxInlinedSourceCalls = 20000
 
 // sourceHelperDefinition is a C function the archive defines: the calls its
 // body makes, in source order.
@@ -123,6 +129,8 @@ func inlineSourceHelpers(functions []ParsedFunction, table sourceHelperTable) ([
 		return functions, nil
 	}
 	var warnings []string
+	produced := 0
+	budgetWarned := false
 	var expand func(calls []ParsedFunction, stack []string) []ParsedFunction
 	expand = func(calls []ParsedFunction, stack []string) []ParsedFunction {
 		out := make([]ParsedFunction, 0, len(calls))
@@ -132,6 +140,15 @@ func inlineSourceHelpers(functions []ParsedFunction, table sourceHelperTable) ([
 				out = append(out, call)
 				continue
 			}
+			if produced+len(definition.calls) > maxInlinedSourceCalls {
+				if !budgetWarned {
+					budgetWarned = true
+					warnings = append(warnings, fmt.Sprintf("line %d: inlining %s() would exceed %d calls for one action; it and later helper calls were not inlined and need review", call.LineNumber, definition.name, maxInlinedSourceCalls))
+				}
+				out = append(out, call)
+				continue
+			}
+			produced += len(definition.calls)
 			key := strings.ToLower(definition.name)
 			if stackContains(stack, key) {
 				warnings = append(warnings, fmt.Sprintf("line %d: %s() calls itself through %s; the recursive call was not inlined and needs review", call.LineNumber, definition.name, strings.Join(append(stack, key), " -> ")))
@@ -151,6 +168,10 @@ func inlineSourceHelpers(functions []ParsedFunction, table sourceHelperTable) ([
 				inner.Loops = append(append([]string(nil), call.Loops...), inner.Loops...)
 				inner.LoopIDs = append(append([]string(nil), call.LoopIDs...), prefixedIDs(site, inner.LoopIDs)...)
 				inner.dependsOnUnsupportedTransactionFlow = inner.dependsOnUnsupportedTransactionFlow || call.dependsOnUnsupportedTransactionFlow
+				// Conversion may rewrite a call's argument maps (web_find aliases
+				// What to Text); each inlined copy owns its own.
+				inner.Args = maps.Clone(inner.Args)
+				inner.Headers = maps.Clone(inner.Headers)
 				out = append(out, inner)
 			}
 		}

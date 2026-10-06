@@ -1,6 +1,7 @@
 package enterprisearchive
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -180,5 +181,26 @@ func TestConvertZipInlinesHelperFromUnscheduledActionFile(t *testing.T) {
 	}
 	if got := strings.Join(flatTargets(result.Script.Actions), " "); got != "/shared" {
 		t.Fatalf("action targets = %q, want the helper from the unscheduled file", got)
+	}
+}
+
+func TestInlineSourceHelpersStopsAtTheCallBudget(t *testing.T) {
+	// Each level calls the next one ten times; six levels would expand to a
+	// million calls without the budget.
+	var sources []ParsedFunction
+	for level := 0; level < 6; level++ {
+		owner := fmt.Sprintf("L%d", level)
+		for i := 0; i < 10; i++ {
+			name := fmt.Sprintf("L%d", level+1)
+			if level == 5 {
+				name = "lr_think_time"
+			}
+			sources = append(sources, ParsedFunction{Name: name, Filename: "Action.c", LineNumber: level*10 + i + 1, sourceFunction: owner})
+		}
+	}
+	table := buildSourceHelperTable([]*ParsedAction{{Filename: "Action.c", Functions: sources}})
+	out, warnings := inlineSourceHelpers([]ParsedFunction{{Name: "L0", Filename: "Action.c", LineNumber: 100}}, table)
+	if len(out) > maxInlinedSourceCalls+10 || len(warnings) == 0 {
+		t.Fatalf("calls = %d, warnings = %v, want the budget to stop expansion", len(out), warnings)
 	}
 }
