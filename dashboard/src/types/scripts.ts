@@ -44,6 +44,8 @@ export interface ScriptAssertionDefinition {
   value?: string
   min?: number
   max?: number
+  // HTTP body_contains / body_not_contains ignore case (LoadRunner Text/IC).
+  case_insensitive?: boolean
 }
 
 export interface ScriptAuthConfig {

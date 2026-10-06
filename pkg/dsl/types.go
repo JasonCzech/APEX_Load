@@ -1246,4 +1246,7 @@ type Assertion struct {
 	Value    string `json:"value,omitempty"`
 	Min      int    `json:"min,omitempty"`
 	Max      int    `json:"max,omitempty"`
+	// CaseInsensitive makes HTTP body_contains and body_not_contains ignore
+	// case, as LoadRunner's Text/IC does.
+	CaseInsensitive bool `json:"case_insensitive,omitempty"`
 }

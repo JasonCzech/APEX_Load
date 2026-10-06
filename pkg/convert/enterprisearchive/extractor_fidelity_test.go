@@ -360,3 +360,36 @@ func TestPruneUnusedWholeBodyExtractors(t *testing.T) {
 		t.Fatalf("referenced prune = %#v actions=%#v", removed, referenced.Actions)
 	}
 }
+
+// VuGen's Text/IC= is a case-insensitive web_reg_find.
+func TestConvertFindAssertionHonorsTextFlags(t *testing.T) {
+	source := `Action()
+{
+	web_reg_find("Search=Body", "SaveCount=error_count", "Text/IC=Tuxedo", LAST);
+	web_url("count", "URL=https://example.com/count", LAST);
+	web_reg_find("Fail=NotFound", "Search=Body", "Text/IC=Shipping", LAST);
+	web_url("check", "URL=https://example.com/check", LAST);
+	web_reg_find("Text/BIN=\\x00", LAST);
+	web_url("binary", "URL=https://example.com/binary", LAST);
+	return 0;
+}
+`
+	parsed, err := ParseActionFile("Action.c", source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{ScriptName: "Flags"})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	actions := result.Script.Actions
+	if got := actions[0].Extractors; len(got) != 1 || got[0].Expression != "(?i)Tuxedo" {
+		t.Fatalf("count extractor = %+v, want a case-insensitive count", got)
+	}
+	if got := actions[1].Assertions; len(got) != 1 || got[0].Type != "body_contains" || got[0].Value != "Shipping" || !got[0].CaseInsensitive {
+		t.Fatalf("assertion = %+v, want case-insensitive body_contains", got)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "Text/BIN has no DSL equivalent") {
+		t.Fatalf("warnings = %#v, want the unsupported-flag warning", result.Warnings)
+	}
+}

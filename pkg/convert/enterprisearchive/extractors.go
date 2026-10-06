@@ -349,7 +349,8 @@ func normalizeSourceContentCheckScope(value string) string {
 }
 
 func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, SourceFunctionSupportMode, string) {
-	text := firstNonEmptyArg(fn, "Text")
+	// Text may carry modifier flags (Text/IC= is case-insensitive).
+	text, flags := sourceFlaggedArgument(fn, "Text")
 	if text == "" {
 		return nil, nil, SourceFunctionSupportReviewOnly, fmt.Sprintf("line %d: web_reg_find '%s' — manual review recommended because no Text argument was found", fn.LineNumber, fn.StepName)
 	}
@@ -357,6 +358,15 @@ func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, So
 	mode := SourceFunctionSupportExecutable
 	searchScope := strings.ToLower(strings.TrimSpace(firstNonEmptyArg(fn, "Search")))
 	warnings := make([]string, 0, 2)
+	caseInsensitive := false
+	for _, flag := range flags {
+		if strings.EqualFold(strings.TrimSpace(flag), "IC") {
+			caseInsensitive = true
+			continue
+		}
+		mode = SourceFunctionSupportReviewOnly
+		warnings = append(warnings, fmt.Sprintf("line %d: web_reg_find Text/%s has no DSL equivalent and requires review", fn.LineNumber, strings.TrimSpace(flag)))
+	}
 	if searchScope == "all" {
 		// LoadRunner's ALL scope spans the main response body, response headers,
 		// and downloaded resources. APEX extractors can scan one response surface
@@ -380,8 +390,9 @@ func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, So
 			assertionType = "body_not_contains"
 		}
 		assertion = &dsl.Assertion{
-			Type:  assertionType,
-			Value: convertParamReferences(text),
+			Type:            assertionType,
+			Value:           convertParamReferences(text),
+			CaseInsensitive: caseInsensitive,
 		}
 	}
 
@@ -392,7 +403,7 @@ func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, So
 				Name:       name,
 				Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Search")),
 				Type:       "regex_count",
-				Expression: regexp.QuoteMeta(convertParamReferences(text)),
+				Expression: caseInsensitiveRegexPrefix(caseInsensitive) + regexp.QuoteMeta(convertParamReferences(text)),
 			}
 		}
 	}
@@ -498,4 +509,11 @@ func sourceFlagsInclude(flags []string, expected string) bool {
 		}
 	}
 	return false
+}
+
+func caseInsensitiveRegexPrefix(caseInsensitive bool) string {
+	if caseInsensitive {
+		return "(?i)"
+	}
+	return ""
 }

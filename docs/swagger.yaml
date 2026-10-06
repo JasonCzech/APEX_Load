@@ -158573,6 +158573,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -160038,6 +160040,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -160407,6 +160411,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -165087,6 +165093,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -166552,6 +166560,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -166921,6 +166931,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -264967,6 +264979,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -266432,6 +266446,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean
@@ -266801,6 +266817,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                case_insensitive:
+                                  type: boolean
                                 expected: {}
                                 legacy_html_check:
                                   type: boolean

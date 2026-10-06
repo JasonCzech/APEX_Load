@@ -6759,6 +6759,9 @@
     "Assertion": {
       "additionalProperties": false,
       "properties": {
+        "case_insensitive": {
+          "type": "boolean"
+        },
         "expected": true,
         "legacy_html_check": {
           "type": "boolean"

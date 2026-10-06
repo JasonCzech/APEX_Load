@@ -33902,6 +33902,7 @@ export interface operations {
           "script"?: {
             "actions"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -34500,6 +34501,7 @@ export interface operations {
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -34645,6 +34647,7 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -135204,6 +135207,7 @@ export interface operations {
           "script"?: {
             "actions"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -135802,6 +135806,7 @@ export interface operations {
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -135947,6 +135952,7 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -140561,6 +140567,7 @@ export interface operations {
           "script"?: {
             "actions"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -141159,6 +141166,7 @@ export interface operations {
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;
@@ -141304,6 +141312,7 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<{
+                "case_insensitive"?: boolean;
                 "expected"?: unknown;
                 "legacy_html_check"?: boolean;
                 "max"?: number;

@@ -1283,6 +1283,7 @@ func toProtocolAssertions(asserts []dsl.Assertion, vu *VUser) []protocol.Asserti
 			Value:           value,
 			Min:             a.Min,
 			Max:             a.Max,
+			CaseInsensitive: a.CaseInsensitive,
 		}
 	}
 	return out

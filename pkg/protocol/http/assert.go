@@ -137,12 +137,12 @@ func evaluateResponseAssertion(a protocol.Assertion, result *protocol.Result, re
 		}
 
 	case "body_contains":
-		if !strings.Contains(bodyText, a.Value) {
+		if !bodyContains(bodyText, a.Value, a.CaseInsensitive) {
 			return fmt.Errorf("response body does not contain %q", a.Value)
 		}
 
 	case "body_not_contains":
-		if strings.Contains(bodyText, a.Value) {
+		if bodyContains(bodyText, a.Value, a.CaseInsensitive) {
 			return fmt.Errorf("response body contains %q (unexpected)", a.Value)
 		}
 
@@ -487,4 +487,11 @@ func retainAuraOutcomeEvidence(report aura.Report) aura.Report {
 		report.Issues = append([]aura.Issue(nil), report.Issues[:maxRetainedAuraDetails]...)
 	}
 	return report
+}
+
+func bodyContains(body, text string, caseInsensitive bool) bool {
+	if caseInsensitive {
+		return strings.Contains(strings.ToLower(body), strings.ToLower(text))
+	}
+	return strings.Contains(body, text)
 }
