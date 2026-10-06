@@ -33,7 +33,7 @@ type rcaE2E struct {
 func newRCAE2E(t *testing.T) *rcaE2E {
 	t.Helper()
 	if os.Getenv("APEXLOAD_RCA_E2E") != "1" {
-		t.Skip("set APEXLOAD_RCA_E2E=1 to run the root-cause end-to-end tests")
+		t.Skip("set APEXLOAD_RCA_E2E=1 to run the root-cause end-to-end tests: APEXLOAD_RCA_E2E=1 go test ./pkg/api -run TestRCAEndToEnd -count=1 -timeout 30m")
 	}
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)

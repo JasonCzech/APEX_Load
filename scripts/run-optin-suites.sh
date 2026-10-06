@@ -135,6 +135,10 @@ run_suite "performance smoke (perf evidence probes)" \
   "--all" "[[ ${run_all} == 1 ]]" \
   env APEXLOAD_RUN_PERFORMANCE_SMOKE=1 go test -count=1 ./pkg/perfevidence
 
+run_suite "root-cause v2 end to end (real local runs, about eight minutes)" \
+  "--all" "[[ ${run_all} == 1 ]]" \
+  env APEXLOAD_RCA_E2E=1 go test -count=1 -timeout 30m -run TestRCAEndToEnd ./pkg/api
+
 run_suite "live PostgreSQL migration and concurrent startup" \
   "--all and APEXLOAD_TEST_POSTGRES_URL (dedicated test database)" \
   "[[ ${run_all} == 1 && -n \"\${APEXLOAD_TEST_POSTGRES_URL:-}\" ]]" \

@@ -377,9 +377,10 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 	if manifest.TestManifestFile != testRunManifestFileName || manifest.TestNotesFile != testNotesArchiveFileName {
 		t.Fatalf("persisted adjunct files = %q / %q", manifest.TestManifestFile, manifest.TestNotesFile)
 	}
-	// Eight finalized artifacts plus the interval distribution and exemplar sidecars.
-	if len(manifest.Artifacts) != 10 || manifest.IntervalDistributionsFile != intervalDistributionsArchiveFileName || manifest.ExemplarsFile != exemplarsArchiveFileName {
-		t.Fatalf("artifact inventory has %d entries, want 10 with both sidecars: %#v", len(manifest.Artifacts), manifest.Artifacts)
+	// Eight finalized artifacts plus the interval distribution, exemplar and
+	// phase event sidecars; a run that held one level archives its stop.
+	if len(manifest.Artifacts) != 11 || manifest.IntervalDistributionsFile != intervalDistributionsArchiveFileName || manifest.ExemplarsFile != exemplarsArchiveFileName || manifest.PhaseEventsFile != phaseEventsFileName {
+		t.Fatalf("artifact inventory has %d entries, want 11 with the three sidecars: %#v", len(manifest.Artifacts), manifest.Artifacts)
 	}
 	integrity := verifyRunArchiveIntegrity(record, manifest)
 	if !integrity.Verified || integrity.Status != integrityStatusVerified {
