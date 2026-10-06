@@ -165,13 +165,17 @@ type PauseResult struct {
 }
 
 type MetricsBatch struct {
-	BrowserDocuments           *protocol.BrowserDocumentSummary
-	BrowserDocumentsVersion    uint32
-	MessagingProgress          *protocol.MessagingProgressSnapshot
-	MessagingProgressVersion   uint32
-	TestID                     string
-	ExecutionGeneration        uint64
-	BatchSequence              uint64
+	BrowserDocuments         *protocol.BrowserDocumentSummary
+	BrowserDocumentsVersion  uint32
+	MessagingProgress        *protocol.MessagingProgressSnapshot
+	MessagingProgressVersion uint32
+	TestID                   string
+	ExecutionGeneration      uint64
+	BatchSequence            uint64
+	// SourceEpoch identifies the generator process that numbered
+	// BatchSequence; sequences restart with each epoch. Empty for older peers.
+	SourceEpoch                string
+	SourceEpochStartedUnixMs   int64
 	GeneratorID                string
 	TimestampUnixMs            int64
 	WindowMs                   int64
@@ -1602,6 +1606,8 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		TestID:                     batch.GetTestId(),
 		ExecutionGeneration:        batch.GetExecutionGeneration(),
 		BatchSequence:              batch.GetBatchSequence(),
+		SourceEpoch:                batch.GetSourceEpoch(),
+		SourceEpochStartedUnixMs:   batch.GetSourceEpochStartedUnixMs(),
 		GeneratorID:                batch.GetGeneratorId(),
 		TimestampUnixMs:            batch.GetTimestampUnixMs(),
 		WindowMs:                   batch.GetWindowMs(),

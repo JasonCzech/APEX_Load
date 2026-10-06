@@ -143,6 +143,11 @@ type RunArchiveManifest struct {
 	ClockObservationsFile      string `json:"clock_observations_file,omitempty"`
 	ClockObservationCount      int64  `json:"clock_observation_count,omitempty"`
 	ClockObservationsTruncated bool   `json:"clock_observations_truncated,omitempty"`
+	// TelemetrySourcesFile holds per-generator source epochs: received,
+	// duplicate, out-of-order and lost publication sequences.
+	TelemetrySourcesFile      string `json:"telemetry_sources_file,omitempty"`
+	TelemetrySourceEpochCount int64  `json:"telemetry_source_epoch_count,omitempty"`
+	TelemetrySourcesTruncated bool   `json:"telemetry_sources_truncated,omitempty"`
 	// PhaseEventsFile holds generated load-phase transitions and their sink
 	// outcomes (apexload.phase_event.v1), apart from analyst annotations.
 	PhaseEventsFile      string `json:"phase_events_file,omitempty"`

@@ -9661,6 +9661,13 @@ paths:
                           nullable: true
                         status:
                           type: string
+                        telemetry_source_epoch_count:
+                          type: integer
+                          format: int64
+                        telemetry_sources_file:
+                          type: string
+                        telemetry_sources_truncated:
+                          type: boolean
                         termination_reason:
                           type: string
                         test_id:
@@ -82091,6 +82098,11 @@ paths:
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
+                                sources:
+                                  type: object
+                                  description: 'Go type: TelemetrySourceSummary'
+                                  additionalProperties: true
+                                  nullable: true
                                 transport_lag_ms:
                                   type: number
                                   format: double
@@ -83678,6 +83690,10 @@ paths:
                               shedded_arrivals:
                                 type: integer
                                 format: int64
+                              sources:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               transport_lag_ms:
                                 type: number
                                 format: double
@@ -87392,6 +87408,11 @@ paths:
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
+                                sources:
+                                  type: object
+                                  description: 'Go type: TelemetrySourceSummary'
+                                  additionalProperties: true
+                                  nullable: true
                                 transport_lag_ms:
                                   type: number
                                   format: double
@@ -88979,6 +89000,10 @@ paths:
                               shedded_arrivals:
                                 type: integer
                                 format: int64
+                              sources:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               transport_lag_ms:
                                 type: number
                                 format: double
@@ -92694,6 +92719,11 @@ paths:
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
+                                sources:
+                                  type: object
+                                  description: 'Go type: TelemetrySourceSummary'
+                                  additionalProperties: true
+                                  nullable: true
                                 transport_lag_ms:
                                   type: number
                                   format: double
@@ -94281,6 +94311,10 @@ paths:
                               shedded_arrivals:
                                 type: integer
                                 format: int64
+                              sources:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               transport_lag_ms:
                                 type: number
                                 format: double
@@ -98008,6 +98042,11 @@ paths:
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
+                                sources:
+                                  type: object
+                                  description: 'Go type: TelemetrySourceSummary'
+                                  additionalProperties: true
+                                  nullable: true
                                 transport_lag_ms:
                                   type: number
                                   format: double
@@ -99595,6 +99634,10 @@ paths:
                               shedded_arrivals:
                                 type: integer
                                 format: int64
+                              sources:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               transport_lag_ms:
                                 type: number
                                 format: double
@@ -103322,6 +103365,11 @@ paths:
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
+                                sources:
+                                  type: object
+                                  description: 'Go type: TelemetrySourceSummary'
+                                  additionalProperties: true
+                                  nullable: true
                                 transport_lag_ms:
                                   type: number
                                   format: double
@@ -104909,6 +104957,10 @@ paths:
                               shedded_arrivals:
                                 type: integer
                                 format: int64
+                              sources:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               transport_lag_ms:
                                 type: number
                                 format: double
@@ -108636,6 +108688,11 @@ paths:
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
+                                sources:
+                                  type: object
+                                  description: 'Go type: TelemetrySourceSummary'
+                                  additionalProperties: true
+                                  nullable: true
                                 transport_lag_ms:
                                   type: number
                                   format: double
@@ -110223,6 +110280,10 @@ paths:
                               shedded_arrivals:
                                 type: integer
                                 format: int64
+                              sources:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               transport_lag_ms:
                                 type: number
                                 format: double
@@ -113950,6 +114011,11 @@ paths:
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
+                                sources:
+                                  type: object
+                                  description: 'Go type: TelemetrySourceSummary'
+                                  additionalProperties: true
+                                  nullable: true
                                 transport_lag_ms:
                                   type: number
                                   format: double
@@ -115537,6 +115603,10 @@ paths:
                               shedded_arrivals:
                                 type: integer
                                 format: int64
+                              sources:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               transport_lag_ms:
                                 type: number
                                 format: double
@@ -320332,6 +320402,31 @@ paths:
                             shedded_arrivals:
                               type: integer
                               format: int64
+                            sources:
+                              type: object
+                              properties:
+                                epochs:
+                                  type: integer
+                                  format: int64
+                                legacy_epochs:
+                                  type: integer
+                                  format: int64
+                                loss_exact:
+                                  type: boolean
+                                lost_publications:
+                                  type: integer
+                                  format: int64
+                                sources:
+                                  type: integer
+                                  format: int64
+                                truncated:
+                                  type: boolean
+                              required:
+                                - epochs
+                                - loss_exact
+                                - lost_publications
+                                - sources
+                              nullable: true
                             transport_lag_ms:
                               type: number
                               format: double
@@ -325591,6 +325686,31 @@ paths:
                           shedded_arrivals:
                             type: integer
                             format: int64
+                          sources:
+                            type: object
+                            properties:
+                              epochs:
+                                type: integer
+                                format: int64
+                              legacy_epochs:
+                                type: integer
+                                format: int64
+                              loss_exact:
+                                type: boolean
+                              lost_publications:
+                                type: integer
+                                format: int64
+                              sources:
+                                type: integer
+                                format: int64
+                              truncated:
+                                type: boolean
+                            required:
+                              - epochs
+                              - loss_exact
+                              - lost_publications
+                              - sources
+                            nullable: true
                           transport_lag_ms:
                             type: number
                             format: double
@@ -332529,6 +332649,31 @@ paths:
                             shedded_arrivals:
                               type: integer
                               format: int64
+                            sources:
+                              type: object
+                              properties:
+                                epochs:
+                                  type: integer
+                                  format: int64
+                                legacy_epochs:
+                                  type: integer
+                                  format: int64
+                                loss_exact:
+                                  type: boolean
+                                lost_publications:
+                                  type: integer
+                                  format: int64
+                                sources:
+                                  type: integer
+                                  format: int64
+                                truncated:
+                                  type: boolean
+                              required:
+                                - epochs
+                                - loss_exact
+                                - lost_publications
+                                - sources
+                              nullable: true
                             transport_lag_ms:
                               type: number
                               format: double
@@ -337788,6 +337933,31 @@ paths:
                           shedded_arrivals:
                             type: integer
                             format: int64
+                          sources:
+                            type: object
+                            properties:
+                              epochs:
+                                type: integer
+                                format: int64
+                              legacy_epochs:
+                                type: integer
+                                format: int64
+                              loss_exact:
+                                type: boolean
+                              lost_publications:
+                                type: integer
+                                format: int64
+                              sources:
+                                type: integer
+                                format: int64
+                              truncated:
+                                type: boolean
+                            required:
+                              - epochs
+                              - loss_exact
+                              - lost_publications
+                              - sources
+                            nullable: true
                           transport_lag_ms:
                             type: number
                             format: double
@@ -346855,6 +347025,13 @@ paths:
                     nullable: true
                   status:
                     type: string
+                  telemetry_source_epoch_count:
+                    type: integer
+                    format: int64
+                  telemetry_sources_file:
+                    type: string
+                  telemetry_sources_truncated:
+                    type: boolean
                   termination_reason:
                     type: string
                   test_id:
@@ -357413,6 +357590,13 @@ paths:
                         nullable: true
                       status:
                         type: string
+                      telemetry_source_epoch_count:
+                        type: integer
+                        format: int64
+                      telemetry_sources_file:
+                        type: string
+                      telemetry_sources_truncated:
+                        type: boolean
                       termination_reason:
                         type: string
                       test_id:
@@ -369964,6 +370148,31 @@ paths:
                             shedded_arrivals:
                               type: integer
                               format: int64
+                            sources:
+                              type: object
+                              properties:
+                                epochs:
+                                  type: integer
+                                  format: int64
+                                legacy_epochs:
+                                  type: integer
+                                  format: int64
+                                loss_exact:
+                                  type: boolean
+                                lost_publications:
+                                  type: integer
+                                  format: int64
+                                sources:
+                                  type: integer
+                                  format: int64
+                                truncated:
+                                  type: boolean
+                              required:
+                                - epochs
+                                - loss_exact
+                                - lost_publications
+                                - sources
+                              nullable: true
                             transport_lag_ms:
                               type: number
                               format: double
@@ -375223,6 +375432,31 @@ paths:
                           shedded_arrivals:
                             type: integer
                             format: int64
+                          sources:
+                            type: object
+                            properties:
+                              epochs:
+                                type: integer
+                                format: int64
+                              legacy_epochs:
+                                type: integer
+                                format: int64
+                              loss_exact:
+                                type: boolean
+                              lost_publications:
+                                type: integer
+                                format: int64
+                              sources:
+                                type: integer
+                                format: int64
+                              truncated:
+                                type: boolean
+                            required:
+                              - epochs
+                              - loss_exact
+                              - lost_publications
+                              - sources
+                            nullable: true
                           transport_lag_ms:
                             type: number
                             format: double
@@ -382105,6 +382339,31 @@ paths:
                             shedded_arrivals:
                               type: integer
                               format: int64
+                            sources:
+                              type: object
+                              properties:
+                                epochs:
+                                  type: integer
+                                  format: int64
+                                legacy_epochs:
+                                  type: integer
+                                  format: int64
+                                loss_exact:
+                                  type: boolean
+                                lost_publications:
+                                  type: integer
+                                  format: int64
+                                sources:
+                                  type: integer
+                                  format: int64
+                                truncated:
+                                  type: boolean
+                              required:
+                                - epochs
+                                - loss_exact
+                                - lost_publications
+                                - sources
+                              nullable: true
                             transport_lag_ms:
                               type: number
                               format: double
@@ -387364,6 +387623,31 @@ paths:
                           shedded_arrivals:
                             type: integer
                             format: int64
+                          sources:
+                            type: object
+                            properties:
+                              epochs:
+                                type: integer
+                                format: int64
+                              legacy_epochs:
+                                type: integer
+                                format: int64
+                              loss_exact:
+                                type: boolean
+                              lost_publications:
+                                type: integer
+                                format: int64
+                              sources:
+                                type: integer
+                                format: int64
+                              truncated:
+                                type: boolean
+                            required:
+                              - epochs
+                              - loss_exact
+                              - lost_publications
+                              - sources
+                            nullable: true
                           transport_lag_ms:
                             type: number
                             format: double
@@ -401388,6 +401672,31 @@ paths:
                             shedded_arrivals:
                               type: integer
                               format: int64
+                            sources:
+                              type: object
+                              properties:
+                                epochs:
+                                  type: integer
+                                  format: int64
+                                legacy_epochs:
+                                  type: integer
+                                  format: int64
+                                loss_exact:
+                                  type: boolean
+                                lost_publications:
+                                  type: integer
+                                  format: int64
+                                sources:
+                                  type: integer
+                                  format: int64
+                                truncated:
+                                  type: boolean
+                              required:
+                                - epochs
+                                - loss_exact
+                                - lost_publications
+                                - sources
+                              nullable: true
                             transport_lag_ms:
                               type: number
                               format: double
@@ -406648,6 +406957,31 @@ paths:
                           shedded_arrivals:
                             type: integer
                             format: int64
+                          sources:
+                            type: object
+                            properties:
+                              epochs:
+                                type: integer
+                                format: int64
+                              legacy_epochs:
+                                type: integer
+                                format: int64
+                              loss_exact:
+                                type: boolean
+                              lost_publications:
+                                type: integer
+                                format: int64
+                              sources:
+                                type: integer
+                                format: int64
+                              truncated:
+                                type: boolean
+                            required:
+                              - epochs
+                              - loss_exact
+                              - lost_publications
+                              - sources
+                            nullable: true
                           transport_lag_ms:
                             type: number
                             format: double

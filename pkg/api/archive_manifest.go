@@ -52,6 +52,7 @@ func archiveManifestArtifactNames(manifest *RunArchiveManifest) (map[string]stru
 		manifest.ProviderLookupsFile,
 		manifest.ExemplarsFile,
 		manifest.ClockObservationsFile,
+		manifest.TelemetrySourcesFile,
 		manifest.PhaseEventsFile,
 		"manifest.json",
 	} {
@@ -138,6 +139,9 @@ func validateRunArchiveManifestArtifacts(manifest *RunArchiveManifest) error {
 		return err
 	}
 	if manifest.PhaseEventsFile, err = optionalArchiveArtifactName("phase_events_file", manifest.PhaseEventsFile); err != nil {
+		return err
+	}
+	if manifest.TelemetrySourcesFile, err = optionalArchiveArtifactName("telemetry_sources_file", manifest.TelemetrySourcesFile); err != nil {
 		return err
 	}
 	return nil

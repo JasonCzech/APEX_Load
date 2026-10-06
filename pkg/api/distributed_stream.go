@@ -830,6 +830,18 @@ func isTerminalRemoteLifecycle(state string) bool {
 // lifecycle transition as authoritative while continuing to reject ordinary
 // duplicate/stale windows and any non-terminal update after a terminal state.
 func remoteMetricsBatchSupersedes(prior, next generatorrpc.MetricsBatch) bool {
+	if next.SourceEpoch != "" && prior.SourceEpoch != "" && next.SourceEpoch != prior.SourceEpoch {
+		// A restarted generator process starts a new epoch whose sequences
+		// begin again at one. The newer epoch wins; a late window from an
+		// older epoch never replaces it. Lifecycle validity still applies.
+		if next.SourceEpochStartedUnixMs <= prior.SourceEpochStartedUnixMs {
+			return false
+		}
+		if isTerminalRemoteLifecycle(next.LifecycleState) {
+			return true
+		}
+		return !isTerminalRemoteLifecycle(prior.LifecycleState)
+	}
 	if next.BatchSequence > 0 && prior.BatchSequence > 0 {
 		if next.BatchSequence > prior.BatchSequence {
 			// Continue below so lifecycle validity is still enforced.
@@ -1232,6 +1244,9 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 	if len(fences) > 0 && !distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fences[0], isTerminalRemoteLifecycle(batch.LifecycleState)) {
 		return false
 	}
+	// Every fenced publication counts toward source coverage, including
+	// duplicates and late arrivals the live view rejects below.
+	tr.telemetrySourceLedgerFor(test.ID).observe(target, batch, time.Now())
 	if test.remoteMetricsBatchesByTarget == nil {
 		test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
 	}
@@ -1280,7 +1295,9 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 		if prior.Telemetry != nil {
 			missing = prior.Telemetry.MissingMetricWindows
 		}
-		if prior.BatchSequence > 0 && batch.BatchSequence > prior.BatchSequence && batch.BatchSequence-prior.BatchSequence > 1 {
+		// Sequences restart with each source epoch, so a gap is only measured
+		// within one epoch.
+		if prior.BatchSequence > 0 && prior.SourceEpoch == batch.SourceEpoch && batch.BatchSequence > prior.BatchSequence && batch.BatchSequence-prior.BatchSequence > 1 {
 			gap := batch.BatchSequence - prior.BatchSequence - 1
 			if gap > math.MaxInt64 {
 				missing = math.MaxInt64
@@ -1600,6 +1617,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 			tr.mu.Unlock()
 			return nil, "", "", false, distributedMetricsPublication{}
 		}
+		tr.telemetrySourceLedgerFor(test.ID).observe(target, batch, time.Now())
 		if test.remoteMetricsBatchesByTarget == nil {
 			test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
 		}
@@ -1742,6 +1760,9 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 	aggregated, fleetTPS, groupTPS := aggregateDistributedMetricsBatches(test.ID, batches)
 	tr.mu.Lock()
 	live := buildLiveMetricsFromDistributedBatch(test, aggregated, fleetTPS, groupTPS)
+	if live.Telemetry != nil {
+		live.Telemetry.Sources = tr.existingTelemetrySourceLedger(test.ID).summary()
+	}
 	qualifyExpectedMessagingProgress(test, live, batches)
 	if live.Telemetry != nil {
 		// A cold assigned peer is absent from the resident batch map. Its missing

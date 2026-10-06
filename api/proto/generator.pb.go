@@ -3235,8 +3235,14 @@ type MetricsBatch struct {
 	// Document lifecycle observations are independent of legacy action samples.
 	BrowserDocumentSummaryJson    string `protobuf:"bytes,29,opt,name=browser_document_summary_json,json=browserDocumentSummaryJson,proto3" json:"browser_document_summary_json,omitempty"`
 	BrowserDocumentSummaryVersion uint32 `protobuf:"varint,30,opt,name=browser_document_summary_version,json=browserDocumentSummaryVersion,proto3" json:"browser_document_summary_version,omitempty"`
-	unknownFields                 protoimpl.UnknownFields
-	sizeCache                     protoimpl.SizeCache
+	// source_epoch is a random identity minted when the generator process
+	// starts. batch_sequence restarts with each epoch, so (generator,
+	// execution_generation, source_epoch, batch_sequence) identifies one
+	// publication. Empty means an older generator without epochs.
+	SourceEpoch              string `protobuf:"bytes,31,opt,name=source_epoch,json=sourceEpoch,proto3" json:"source_epoch,omitempty"`
+	SourceEpochStartedUnixMs int64  `protobuf:"varint,32,opt,name=source_epoch_started_unix_ms,json=sourceEpochStartedUnixMs,proto3" json:"source_epoch_started_unix_ms,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *MetricsBatch) Reset() {
@@ -3475,6 +3481,20 @@ func (x *MetricsBatch) GetBrowserDocumentSummaryJson() string {
 func (x *MetricsBatch) GetBrowserDocumentSummaryVersion() uint32 {
 	if x != nil {
 		return x.BrowserDocumentSummaryVersion
+	}
+	return 0
+}
+
+func (x *MetricsBatch) GetSourceEpoch() string {
+	if x != nil {
+		return x.SourceEpoch
+	}
+	return ""
+}
+
+func (x *MetricsBatch) GetSourceEpochStartedUnixMs() int64 {
+	if x != nil {
+		return x.SourceEpochStartedUnixMs
 	}
 	return 0
 }
@@ -7014,7 +7034,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x15run_supervision_token\x18\x04 \x01(\fR\x13runSupervisionToken\"T\n" +
 	"\aStopAck\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x12%\n" +
-	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xee\x0e\n" +
+	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xd1\x0f\n" +
 	"\fMetricsBatch\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12!\n" +
 	"\fgenerator_id\x18\x02 \x01(\tR\vgeneratorId\x12*\n" +
@@ -7046,7 +7066,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x17messaging_progress_json\x18\x1b \x01(\tR\x15messagingProgressJson\x12<\n" +
 	"\x1amessaging_progress_version\x18\x1c \x01(\rR\x18messagingProgressVersion\x12A\n" +
 	"\x1dbrowser_document_summary_json\x18\x1d \x01(\tR\x1abrowserDocumentSummaryJson\x12G\n" +
-	" browser_document_summary_version\x18\x1e \x01(\rR\x1dbrowserDocumentSummaryVersion\"\x98\x03\n" +
+	" browser_document_summary_version\x18\x1e \x01(\rR\x1dbrowserDocumentSummaryVersion\x12!\n" +
+	"\fsource_epoch\x18\x1f \x01(\tR\vsourceEpoch\x12>\n" +
+	"\x1csource_epoch_started_unix_ms\x18  \x01(\x03R\x18sourceEpochStartedUnixMs\"\x98\x03\n" +
 	"\x15MetricsBatchTelemetry\x12'\n" +
 	"\x0fdropped_results\x18\x01 \x01(\x03R\x0edroppedResults\x12/\n" +
 	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x12/\n" +

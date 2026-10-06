@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -2620,6 +2621,19 @@ func TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion(t *testing.T
 		if _, err := os.Stat(filepath.Join(completed.Archive.ArchivePath, name)); err != nil {
 			t.Fatalf("expected staged remote archive file %s to exist: %v", name, err)
 		}
+	}
+	// The generator's publications were sequenced within one source epoch, and
+	// the controller archived their coverage.
+	if manifest.TelemetrySourcesFile != telemetrySourcesFileName || manifest.TelemetrySourceEpochCount < 1 {
+		t.Fatalf("expected archived telemetry source epochs, got file=%q count=%d", manifest.TelemetrySourcesFile, manifest.TelemetrySourceEpochCount)
+	}
+	sources, err := os.ReadFile(filepath.Join(completed.Archive.ArchivePath, telemetrySourcesFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var epoch TelemetrySourceEpoch
+	if err := json.Unmarshal(bytes.SplitN(sources, []byte("\n"), 2)[0], &epoch); err != nil || epoch.Source == "" || epoch.Epoch == "" || epoch.FirstSequence == 0 || epoch.Received == 0 {
+		t.Fatalf("archived source epoch %s: %v", sources, err)
 	}
 }
 

@@ -604,6 +604,10 @@ func cloneTelemetryHealth(in *TelemetryHealth) *TelemetryHealth {
 		return nil
 	}
 	out := *in
+	if in.Sources != nil {
+		sources := *in.Sources
+		out.Sources = &sources
+	}
 	return &out
 }
 

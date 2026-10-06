@@ -3432,6 +3432,9 @@ export interface operations {
                 "sources"?: Array<Record<string, unknown>>;
               }) | null;
               "status"?: string;
+              "telemetry_source_epoch_count"?: number;
+              "telemetry_sources_file"?: string;
+              "telemetry_sources_truncated"?: boolean;
               "termination_reason"?: string;
               "test_id"?: string;
               "test_manifest_file"?: string;
@@ -34261,6 +34264,7 @@ export interface operations {
                   "published_at"?: string;
                   "sample_age_ms"?: number;
                   "shedded_arrivals"?: number;
+                  "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
@@ -34742,6 +34746,7 @@ export interface operations {
                   "published_at"?: string;
                   "sample_age_ms"?: number;
                   "shedded_arrivals"?: number;
+                  "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
@@ -41864,6 +41869,14 @@ export interface operations {
                 "published_at"?: string;
                 "sample_age_ms"?: number;
                 "shedded_arrivals"?: number;
+                "sources"?: ({
+                  "epochs": number;
+                  "legacy_epochs"?: number;
+                  "loss_exact": boolean;
+                  "lost_publications": number;
+                  "sources": number;
+                  "truncated"?: boolean;
+                }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
@@ -43394,6 +43407,14 @@ export interface operations {
                 "published_at"?: string;
                 "sample_age_ms"?: number;
                 "shedded_arrivals"?: number;
+                "sources"?: ({
+                  "epochs": number;
+                  "legacy_epochs"?: number;
+                  "loss_exact": boolean;
+                  "lost_publications": number;
+                  "sources": number;
+                  "truncated"?: boolean;
+                }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
@@ -58774,6 +58795,14 @@ export interface operations {
                 "published_at"?: string;
                 "sample_age_ms"?: number;
                 "shedded_arrivals"?: number;
+                "sources"?: ({
+                  "epochs": number;
+                  "legacy_epochs"?: number;
+                  "loss_exact": boolean;
+                  "lost_publications": number;
+                  "sources": number;
+                  "truncated"?: boolean;
+                }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
@@ -60304,6 +60333,14 @@ export interface operations {
                 "published_at"?: string;
                 "sample_age_ms"?: number;
                 "shedded_arrivals"?: number;
+                "sources"?: ({
+                  "epochs": number;
+                  "legacy_epochs"?: number;
+                  "loss_exact": boolean;
+                  "lost_publications": number;
+                  "sources": number;
+                  "truncated"?: boolean;
+                }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
@@ -62427,6 +62464,7 @@ export interface operations {
                   "published_at"?: string;
                   "sample_age_ms"?: number;
                   "shedded_arrivals"?: number;
+                  "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
@@ -62908,6 +62946,7 @@ export interface operations {
                   "published_at"?: string;
                   "sample_age_ms"?: number;
                   "shedded_arrivals"?: number;
+                  "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
@@ -65642,6 +65681,9 @@ export interface operations {
               }>;
             }) | null;
             "status"?: string;
+            "telemetry_source_epoch_count"?: number;
+            "telemetry_sources_file"?: string;
+            "telemetry_sources_truncated"?: boolean;
             "termination_reason"?: string;
             "test_id": string;
             "test_manifest_file"?: string;
@@ -68658,6 +68700,9 @@ export interface operations {
                 }>;
               }) | null;
               "status"?: string;
+              "telemetry_source_epoch_count"?: number;
+              "telemetry_sources_file"?: string;
+              "telemetry_sources_truncated"?: boolean;
               "termination_reason"?: string;
               "test_id": string;
               "test_manifest_file"?: string;
@@ -76433,6 +76478,14 @@ export interface operations {
                 "published_at"?: string;
                 "sample_age_ms"?: number;
                 "shedded_arrivals"?: number;
+                "sources"?: ({
+                  "epochs": number;
+                  "legacy_epochs"?: number;
+                  "loss_exact": boolean;
+                  "lost_publications": number;
+                  "sources": number;
+                  "truncated"?: boolean;
+                }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
@@ -77963,6 +78016,14 @@ export interface operations {
                 "published_at"?: string;
                 "sample_age_ms"?: number;
                 "shedded_arrivals"?: number;
+                "sources"?: ({
+                  "epochs": number;
+                  "legacy_epochs"?: number;
+                  "loss_exact": boolean;
+                  "lost_publications": number;
+                  "sources": number;
+                  "truncated"?: boolean;
+                }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
@@ -96355,6 +96416,14 @@ export interface operations {
                 "published_at"?: string;
                 "sample_age_ms"?: number;
                 "shedded_arrivals"?: number;
+                "sources"?: ({
+                  "epochs": number;
+                  "legacy_epochs"?: number;
+                  "loss_exact": boolean;
+                  "lost_publications": number;
+                  "sources": number;
+                  "truncated"?: boolean;
+                }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
@@ -97885,6 +97954,14 @@ export interface operations {
                 "published_at"?: string;
                 "sample_age_ms"?: number;
                 "shedded_arrivals"?: number;
+                "sources"?: ({
+                  "epochs": number;
+                  "legacy_epochs"?: number;
+                  "loss_exact": boolean;
+                  "lost_publications": number;
+                  "sources": number;
+                  "truncated"?: boolean;
+                }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
@@ -111071,6 +111148,7 @@ export interface operations {
                   "published_at"?: string;
                   "sample_age_ms"?: number;
                   "shedded_arrivals"?: number;
+                  "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
@@ -111552,6 +111630,7 @@ export interface operations {
                   "published_at"?: string;
                   "sample_age_ms"?: number;
                   "shedded_arrivals"?: number;
+                  "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
@@ -112795,6 +112874,7 @@ export interface operations {
                   "published_at"?: string;
                   "sample_age_ms"?: number;
                   "shedded_arrivals"?: number;
+                  "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
@@ -113276,6 +113356,7 @@ export interface operations {
                   "published_at"?: string;
                   "sample_age_ms"?: number;
                   "shedded_arrivals"?: number;
+                  "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
@@ -114519,6 +114600,7 @@ export interface operations {
                   "published_at"?: string;
                   "sample_age_ms"?: number;
                   "shedded_arrivals"?: number;
+                  "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
@@ -115000,6 +115082,7 @@ export interface operations {
                   "published_at"?: string;
                   "sample_age_ms"?: number;
                   "shedded_arrivals"?: number;
+                  "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
@@ -116243,6 +116326,7 @@ export interface operations {
                   "published_at"?: string;
                   "sample_age_ms"?: number;
                   "shedded_arrivals"?: number;
+                  "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
@@ -116724,6 +116808,7 @@ export interface operations {
                   "published_at"?: string;
                   "sample_age_ms"?: number;
                   "shedded_arrivals"?: number;
+                  "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
@@ -117967,6 +118052,7 @@ export interface operations {
                   "published_at"?: string;
                   "sample_age_ms"?: number;
                   "shedded_arrivals"?: number;
+                  "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
@@ -118448,6 +118534,7 @@ export interface operations {
                   "published_at"?: string;
                   "sample_age_ms"?: number;
                   "shedded_arrivals"?: number;
+                  "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
@@ -142764,6 +142851,14 @@ export interface operations {
                 "published_at"?: string;
                 "sample_age_ms"?: number;
                 "shedded_arrivals"?: number;
+                "sources"?: ({
+                  "epochs": number;
+                  "legacy_epochs"?: number;
+                  "loss_exact": boolean;
+                  "lost_publications": number;
+                  "sources": number;
+                  "truncated"?: boolean;
+                }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
@@ -144294,6 +144389,14 @@ export interface operations {
                 "published_at"?: string;
                 "sample_age_ms"?: number;
                 "shedded_arrivals"?: number;
+                "sources"?: ({
+                  "epochs": number;
+                  "legacy_epochs"?: number;
+                  "loss_exact": boolean;
+                  "lost_publications": number;
+                  "sources": number;
+                  "truncated"?: boolean;
+                }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;

@@ -263,7 +263,10 @@ type TestRunner struct {
 	libraryAssignmentStore      storage.LibraryAssignmentStore
 	// continuityKeyWrapper seals the run-supervision token into HA run-continuity
 	// checkpoints (run_continuity.go). Nil disables arming.
-	continuityKeyWrapper  keywrap.KeyWrapper
+	continuityKeyWrapper keywrap.KeyWrapper
+	// telemetrySources holds each live run's source-epoch publication ledger
+	// (test ID -> *telemetrySourceLedger), released once archived.
+	telemetrySources      sync.Map
 	elkStore              storage.ELKConnectionStore
 	dynatraceStore        storage.DynatraceConnectionStore
 	dynatraceOAuthMu      sync.Mutex
@@ -1064,6 +1067,9 @@ type TelemetryHealth struct {
 	ControllerFanoutLagMs    float64   `json:"controller_fanout_lag_ms,omitempty"`
 	BrowserRenderLagMs       float64   `json:"browser_render_lag_ms,omitempty"`
 	SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
+	// Sources rolls up per-generator source epochs: publications lost
+	// between received sequence numbers, exact or a lower bound.
+	Sources *TelemetrySourceSummary `json:"sources,omitempty"`
 }
 
 type TelemetryRunHealth struct {

@@ -524,6 +524,12 @@ message MetricsBatch {
  // Document lifecycle observations are independent of legacy action samples.
  string browser_document_summary_json = 29;
  uint32 browser_document_summary_version = 30;
+  // source_epoch is a random identity minted when the generator process
+  // starts. batch_sequence restarts with each epoch, so (generator,
+  // execution_generation, source_epoch, batch_sequence) identifies one
+  // publication. Empty means an older generator without epochs.
+  string source_epoch = 31;
+  int64 source_epoch_started_unix_ms = 32;
 }
 
 message MetricsBatchTelemetry {

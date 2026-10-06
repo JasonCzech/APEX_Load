@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	pb "github.com/jasonczech/apexload/api/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -268,6 +269,9 @@ func (broker *metricsBroker) registerLocked(executionGeneration uint64, testID s
 			// gap-detection baseline to zero.
 			clone.BatchSequence = current
 		}
+		if clone.GetSourceEpoch() == "" {
+			clone.SourceEpoch, clone.SourceEpochStartedUnixMs = processSourceEpoch.id, processSourceEpoch.startedUnixMs
+		}
 		initial = append(initial, clone)
 	}
 	for key, tombstone := range broker.terminalBatches {
@@ -365,6 +369,13 @@ func (broker *metricsBroker) publishOwnedLocked(batch *pb.MetricsBatch, accept f
 	}
 }
 
+// processSourceEpoch identifies this generator process. A restarted process
+// starts a new epoch whose batch sequences begin again at one.
+var processSourceEpoch = struct {
+	id            string
+	startedUnixMs int64
+}{id: uuid.NewString(), startedUnixMs: time.Now().UnixMilli()}
+
 // assignBatchSequenceLocked runs under publishMu and gives every newly
 // published window a stable position in its execution-generation stream.
 // Terminal state ends the sequence's lifetime; the retained terminal clone
@@ -372,6 +383,10 @@ func (broker *metricsBroker) publishOwnedLocked(batch *pb.MetricsBatch, accept f
 func (broker *metricsBroker) assignBatchSequenceLocked(batch *pb.MetricsBatch) {
 	if broker == nil || batch == nil {
 		return
+	}
+	// Sequences are numbered by this process, so they belong to its epoch.
+	if batch.GetSourceEpoch() == "" {
+		batch.SourceEpoch, batch.SourceEpochStartedUnixMs = processSourceEpoch.id, processSourceEpoch.startedUnixMs
 	}
 	key := terminalBatchKey{testID: batch.GetTestId(), generation: batch.GetExecutionGeneration()}
 	if batch.GetBatchSequence() != 0 {
