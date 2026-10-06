@@ -37,6 +37,7 @@ var apexctlCommandHandlers = map[string]func(){
 	"monitor":      monitorCmd,
 	"analysis":     analysisCmd,
 	"rca":          rcaCmd,
+	"qa":           qaCmd,
 	"appdynamics":  appDynamicsCmd,
 	"prometheus":   prometheusCmd,
 	"dynatrace":    dynatraceCmd,
@@ -430,6 +431,7 @@ Commands:
   prometheus  Manage target-system monitoring connections, discovery and previews
   dynatrace  Manage Dynatrace SaaS connections, discovery and query previews
   analysis  Import/query datasets, save analysis definitions, and assess baseline regressions
+  qa        Record and read feature acceptance evidence (record-acceptance, acceptance)
   version   Print version information
   help      Show this help
 

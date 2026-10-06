@@ -5817,6 +5817,36 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/system/acceptance-records",
+      "operationId": "handleFeatureAcceptanceRecords",
+      "summary": "Feature Acceptance Records",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/acceptance-records",
+      "operationId": "handleFeatureAcceptanceRecords_2",
+      "summary": "Feature Acceptance Records",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/acceptance-status",
+      "operationId": "handleFeatureAcceptanceStatus",
+      "summary": "Feature Acceptance Status",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/system/browser-benchmarks",
       "operationId": "handleGetBrowserBenchmarkEvidence",
       "summary": "Get Browser Benchmark Evidence",

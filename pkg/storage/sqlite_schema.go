@@ -1836,6 +1836,23 @@ func schemaCreateTableStatements() []string {
 			updated_at DATETIME NOT NULL,
 			completed_at DATETIME
 		)`,
+		// Append-only qualification evidence behind support claims.
+		`CREATE TABLE IF NOT EXISTS feature_acceptance_records (
+			id TEXT PRIMARY KEY,
+			requirement_id TEXT NOT NULL,
+			feature TEXT NOT NULL,
+			profile TEXT NOT NULL DEFAULT '',
+			provider TEXT NOT NULL DEFAULT '',
+			platform TEXT NOT NULL DEFAULT '',
+			commit_sha TEXT NOT NULL,
+			binary_sha256 TEXT NOT NULL DEFAULT '',
+			suite TEXT NOT NULL,
+			result TEXT NOT NULL CHECK(result IN ('passed', 'failed', 'pending', 'revoked')),
+			artifacts TEXT NOT NULL DEFAULT '[]',
+			notes TEXT NOT NULL DEFAULT '',
+			recorded_at DATETIME NOT NULL,
+			recorded_by TEXT NOT NULL
+		)`,
 	}
 }
 
@@ -2257,6 +2274,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_key ON feature_evaluation_jobs(project_id, actor, kind, idempotency_key_hash) WHERE idempotency_key_hash <> ''`, "idx_feature_evaluation_jobs_key"},
 	{`CREATE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_claim ON feature_evaluation_jobs(state, created_at)`, "idx_feature_evaluation_jobs_claim"},
 	{`CREATE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_project ON feature_evaluation_jobs(project_id, created_at)`, "idx_feature_evaluation_jobs_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_feature_acceptance_records_subject ON feature_acceptance_records(requirement_id, feature, recorded_at)`, "idx_feature_acceptance_records_subject"},
 }
 
 func (s *SQLiteStore) init() error {

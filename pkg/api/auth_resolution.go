@@ -565,6 +565,8 @@ var serviceAccountScopeRules = []serviceAccountScopeRule{
 	{method: http.MethodPatch, exact: "/api/v1/system/settings", scope: "settings:manage"},
 	{method: http.MethodDelete, exact: "/api/v1/system/settings", scope: "settings:manage"},
 	{method: http.MethodPatch, exact: "/api/v1/system/generators/drain", scope: "settings:manage"},
+	// Recording qualification evidence changes what the system claims to support.
+	{method: http.MethodPost, exact: "/api/v1/system/acceptance-records", scope: "settings:manage"},
 	{prefix: "/api/v1/system/restarts", scope: "settings:manage"},
 	{method: http.MethodPost, prefix: "/api/v1/system/deployment-lease/", scope: "deployments:manage"},
 	// Cluster connections hold control-plane credentials, so every mutating

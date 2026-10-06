@@ -53208,6 +53208,176 @@ export interface operations {
       };
     };
   };
+  "handleFeatureAcceptanceRecords": {
+    parameters: {
+      "query"?: {
+        "feature"?: string;
+        "limit"?: number;
+        "offset"?: number;
+        "requirement"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "201": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleFeatureAcceptanceRecords_2": {
+    parameters: {
+      "query"?: {
+        "feature"?: string;
+        "limit"?: number;
+        "offset"?: number;
+        "requirement"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "artifacts"?: Array<{
+            "name"?: string;
+            "sha256"?: string;
+          }>;
+          "binary_sha256"?: string;
+          "commit_sha"?: string;
+          "feature"?: string;
+          "notes"?: string;
+          "platform"?: string;
+          "profile"?: string;
+          "provider"?: string;
+          "requirement_id"?: string;
+          "result"?: string;
+          "suite"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "201": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleFeatureAcceptanceStatus": {
+    parameters: {
+      "query"?: {
+        "feature"?: string;
+        "requirement"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleFleetPoolAllocationPreflight": {
     parameters: {
       "path": {
@@ -162212,6 +162382,13 @@ export interface paths {
   };
   "/api/v1/selectors/diagnose": {
     "post": operations["handleDiagnoseSelectors"];
+  };
+  "/api/v1/system/acceptance-records": {
+    "get": operations["handleFeatureAcceptanceRecords"];
+    "post": operations["handleFeatureAcceptanceRecords_2"];
+  };
+  "/api/v1/system/acceptance-status": {
+    "get": operations["handleFeatureAcceptanceStatus"];
   };
   "/api/v1/system/browser-benchmarks": {
     "get": operations["handleGetBrowserBenchmarkEvidence"];
