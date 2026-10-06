@@ -2128,6 +2128,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "feature_evaluation_jobs.request_digest", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN request_digest TEXT NOT NULL DEFAULT ''`},
 		{name: "feature_evaluation_jobs.attempts", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`},
 		{name: "feature_evaluation_jobs.failure_code", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN failure_code TEXT NOT NULL DEFAULT ''`},
+		{name: "feature_acceptance_records.seq", query: `ALTER TABLE feature_acceptance_records ADD COLUMN seq BIGINT NOT NULL DEFAULT 0`},
 	}
 }
 
@@ -2277,6 +2278,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_key ON feature_evaluation_jobs(project_id, actor, kind, idempotency_key_hash) WHERE idempotency_key_hash <> ''`, "idx_feature_evaluation_jobs_key"},
 	{`CREATE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_claim ON feature_evaluation_jobs(state, created_at)`, "idx_feature_evaluation_jobs_claim"},
 	{`CREATE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_project ON feature_evaluation_jobs(project_id, created_at)`, "idx_feature_evaluation_jobs_project"},
+	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_feature_acceptance_records_seq ON feature_acceptance_records(seq) WHERE seq > 0`, "idx_feature_acceptance_records_seq"},
 	{`CREATE INDEX IF NOT EXISTS idx_feature_acceptance_records_subject ON feature_acceptance_records(requirement_id, feature, recorded_at)`, "idx_feature_acceptance_records_subject"},
 }
 

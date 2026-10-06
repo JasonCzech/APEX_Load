@@ -290,6 +290,22 @@ visible in the test UI rather than buried in the build log:
 - **GitHub Actions:** `dorny/test-reporter` (reporter `java-junit`) or upload as
   an artifact.
 
+## Feature acceptance evidence
+
+Support claims rest on append-only acceptance records: which commit and binary ran which suite for a requirement and feature, optionally per profile, provider and platform, with SHA-256 hashes of the sanitized evidence. `apexctl qa record-acceptance` hashes the binary and every `--artifact` locally and posts only the hashes; a `passed` record needs at least one artifact. Records are ordered by a database-assigned sequence, never by a controller clock.
+
+```bash
+apexctl qa record-acceptance --api "$APEX_URL" --requirement BE-4 --feature browser-har --platform linux-amd64 --commit "$GITHUB_SHA" --binary ./apexload --suite browser-acceptance --result passed --artifact evidence/browser-matrix.json
+```
+
+A subject is supported when its latest record is `passed`. A newer `failed`, `pending` or `revoked` record withdraws it, and one recorded without a profile, provider or platform withdraws every narrower subject of that requirement and feature. `apexctl qa acceptance` reads the status; with `--commit` or `--binary` a subject is supported only by a pass recorded for exactly that build, and `--require-supported` exits 1 unless at least one subject matches and every match is supported, so it can gate a release:
+
+```bash
+apexctl qa acceptance --api "$APEX_URL" --requirement BE-4 --feature browser-har --commit "$GITHUB_SHA" --require-supported
+```
+
+Each command refuses flags that do not apply to it. Deleting evidence files does not withdraw a claim; record a `revoked` result instead. The status endpoint returns at most 5,000 subjects and says when it truncated.
+
 ## Migration history
 
 GitHub Actions is the sole CI/CD system for APEX Load; Jenkins, Azure Pipelines

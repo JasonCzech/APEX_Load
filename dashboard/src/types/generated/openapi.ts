@@ -53592,7 +53592,12 @@ export interface operations {
   "handleFeatureAcceptanceStatus": {
     parameters: {
       "query"?: {
+        "binary_sha256"?: string;
+        "commit_sha"?: string;
         "feature"?: string;
+        "platform"?: string;
+        "profile"?: string;
+        "provider"?: string;
         "requirement"?: string;
       };
     };
@@ -53601,6 +53606,11 @@ export interface operations {
       "200": {
         content: {
           "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {

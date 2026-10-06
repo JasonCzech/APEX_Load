@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -55,5 +56,43 @@ func TestQARecordAcceptanceHashesEvidenceLocally(t *testing.T) {
 func TestQACommandRejectsUnknownActions(t *testing.T) {
 	if err := executeQACommand(context.Background(), []string{"delete"}, io.Discard); err == nil {
 		t.Fatal("unknown action accepted")
+	}
+}
+
+func TestQAAcceptanceGateAndFilters(t *testing.T) {
+	var query string
+	body := `{"statuses":[{"supported":true},{"supported":false}],"truncated":false}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.RawQuery
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+	binary := filepath.Join(t.TempDir(), "apexload")
+	if err := os.WriteFile(binary, []byte("binary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"acceptance", "--api", server.URL, "--feature", "browser-har", "--platform", "linux-amd64", "--commit", "ABCDEF1", "--binary", binary, "--require-supported"}
+	if err := executeQACommand(context.Background(), args, io.Discard); !errors.Is(err, errAcceptanceUnsupported) {
+		t.Fatalf("gate with an unsupported subject: %v", err)
+	}
+	sum := sha256.Sum256([]byte("binary"))
+	for _, want := range []string{"feature=browser-har", "platform=linux-amd64", "commit_sha=abcdef1", "binary_sha256=" + hex.EncodeToString(sum[:])} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("query %q lacks %s", query, want)
+		}
+	}
+	body = `{"statuses":[{"supported":true}],"truncated":false}`
+	if err := executeQACommand(context.Background(), args, io.Discard); err != nil {
+		t.Fatalf("gate with every subject supported: %v", err)
+	}
+	body = `{"statuses":[],"truncated":false}`
+	if err := executeQACommand(context.Background(), args, io.Discard); !errors.Is(err, errAcceptanceUnsupported) {
+		t.Fatalf("gate with no matching subject: %v", err)
+	}
+	if err := executeQACommand(context.Background(), []string{"acceptance", "--api", server.URL, "--result", "passed"}, io.Discard); err == nil || !strings.Contains(err.Error(), "--result") {
+		t.Fatalf("a record-only flag was accepted on a read: %v", err)
+	}
+	if err := executeQACommand(context.Background(), []string{"record-acceptance", "--api", server.URL, "--require-supported"}, io.Discard); err == nil {
+		t.Fatal("the gate flag was accepted on a write")
 	}
 }

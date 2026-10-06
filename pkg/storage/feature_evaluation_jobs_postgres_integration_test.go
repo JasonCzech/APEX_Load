@@ -85,3 +85,8 @@ func TestPostgresEvaluationJobTakeoverAndCancelThenLatePublish(t *testing.T) {
 		t.Fatalf("cancelled job: %#v %v", job, err)
 	}
 }
+
+func TestPostgresFeatureAcceptanceSequence(t *testing.T) {
+	store, _ := newPostgresScenarioRevisionFixture(t)
+	exerciseFeatureAcceptanceSequence(t, store)
+}

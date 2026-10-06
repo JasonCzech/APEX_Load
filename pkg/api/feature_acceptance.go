@@ -78,13 +78,17 @@ func (req FeatureAcceptanceRequest) validate() error {
 			return errors.New("each artifact needs a name and a lowercase SHA-256")
 		}
 	}
-	if len(req.Notes) > 2048 {
-		return errors.New("notes exceed 2048 bytes")
+	if len(req.Notes) > 256 {
+		return errors.New("notes exceed 256 bytes")
 	}
 	return nil
 }
 
 // FeatureSupportStatus is the latest result for one acceptance subject.
+// Supported needs the subject's latest record to be a pass, not withdrawn by
+// a newer failed, pending or revoked record of a broader subject (one whose
+// unset profile, provider or platform covers this one), and, when the query
+// names a commit or binary, recorded for exactly that commit or binary.
 type FeatureSupportStatus struct {
 	RequirementID string                           `json:"requirement_id"`
 	Feature       string                           `json:"feature"`
@@ -92,8 +96,21 @@ type FeatureSupportStatus struct {
 	Provider      string                           `json:"provider,omitempty"`
 	Platform      string                           `json:"platform,omitempty"`
 	Supported     bool                             `json:"supported"`
+	Reason        string                           `json:"reason,omitempty"`
 	Latest        *storage.FeatureAcceptanceRecord `json:"latest"`
+	WithdrawnBy   *storage.FeatureAcceptanceRecord `json:"withdrawn_by,omitempty"`
 }
+
+// Reasons a subject is not supported.
+const (
+	acceptanceReasonLatestNotPassed = "latest_not_passed"
+	acceptanceReasonWithdrawn       = "withdrawn_by_broader_record"
+	acceptanceReasonCommitMismatch  = "commit_mismatch"
+	acceptanceReasonBinaryMismatch  = "binary_mismatch"
+)
+
+// maxAcceptanceSubjects bounds one status response.
+const maxAcceptanceSubjects = 5000
 
 func (s *Server) handleFeatureAcceptanceRecords(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.store.(storage.FeatureAcceptanceStore)
@@ -114,12 +131,17 @@ func (s *Server) handleFeatureAcceptanceRecords(w http.ResponseWriter, r *http.R
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusRequestEntityTooLarge, "acceptance record exceeds its byte limit")
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "acceptance record exceeds its byte limit")
+			return
+		}
+		writeError(w, http.StatusBadRequest, "cannot read acceptance record")
 		return
 	}
 	var req FeatureAcceptanceRequest
 	if err := decodeAnalysisDefinitionJSON(body, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusBadRequest, "invalid acceptance record: strings are at most 256 bytes and unknown or repeated fields are refused")
 		return
 	}
 	if err := req.validate(); err != nil {
@@ -140,41 +162,97 @@ func (s *Server) handleFeatureAcceptanceRecords(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusCreated, record)
 }
 
-// handleFeatureAcceptanceStatus reports, per subject, whether the latest
-// record is a pass. A subject without records is simply absent.
+// handleFeatureAcceptanceStatus reports, per subject, whether it is
+// supported (see FeatureSupportStatus). A subject without records is absent.
+// Optional profile, provider and platform filters narrow the subjects after
+// broader records are applied; commit_sha or binary_sha256 ask whether that
+// exact build is supported.
 func (s *Server) handleFeatureAcceptanceStatus(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.store.(storage.FeatureAcceptanceStore)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "feature acceptance records unavailable")
 		return
 	}
-	latest := map[string]*storage.FeatureAcceptanceRecord{}
-	for offset := 0; ; offset += 500 {
-		page, err := store.ListFeatureAcceptanceRecords(r.URL.Query().Get("requirement"), r.URL.Query().Get("feature"), 500, offset)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "cannot read feature acceptance records")
-			return
-		}
-		for _, record := range page {
-			key := strings.Join([]string{record.RequirementID, record.Feature, record.Profile, record.Provider, record.Platform}, "\x00")
-			if _, seen := latest[key]; !seen {
-				latest[key] = record
-			}
-		}
-		if len(page) < 500 || offset >= 20_000 {
-			break
+	query := r.URL.Query()
+	commit, binary := strings.ToLower(query.Get("commit_sha")), strings.ToLower(query.Get("binary_sha256"))
+	if commit != "" && !acceptanceCommitPattern.MatchString(commit) || binary != "" && !acceptanceSHA256Pattern.MatchString(binary) {
+		writeError(w, http.StatusBadRequest, "commit_sha must be a hex commit and binary_sha256 a hex SHA-256")
+		return
+	}
+	latest, truncated, err := store.LatestFeatureAcceptanceRecords(query.Get("requirement"), query.Get("feature"), maxAcceptanceSubjects)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "cannot read feature acceptance records")
+		return
+	}
+	statuses := resolveFeatureSupport(latest, commit, binary)
+	filtered := statuses[:0]
+	for _, status := range statuses {
+		if dimensionMatches(query.Get("profile"), status.Profile) && dimensionMatches(query.Get("provider"), status.Provider) && dimensionMatches(query.Get("platform"), status.Platform) {
+			filtered = append(filtered, status)
 		}
 	}
+	writeJSON(w, http.StatusOK, map[string]any{"statuses": filtered, "truncated": truncated})
+}
+
+func dimensionMatches(filter, value string) bool {
+	return filter == "" || filter == value
+}
+
+// acceptanceRecordNewer orders records by their database sequence, falling
+// back to time for records written before the sequence existed.
+func acceptanceRecordNewer(a, b *storage.FeatureAcceptanceRecord) bool {
+	if a.Seq != b.Seq {
+		return a.Seq > b.Seq
+	}
+	if !a.RecordedAt.Equal(b.RecordedAt) {
+		return a.RecordedAt.After(b.RecordedAt)
+	}
+	return a.ID > b.ID
+}
+
+// acceptanceSubjectCovers reports whether broad's set dimensions all equal
+// narrow's; an unset dimension covers every value.
+func acceptanceSubjectCovers(broad, narrow *storage.FeatureAcceptanceRecord) bool {
+	return broad.RequirementID == narrow.RequirementID && broad.Feature == narrow.Feature &&
+		(broad.Profile == "" || broad.Profile == narrow.Profile) &&
+		(broad.Provider == "" || broad.Provider == narrow.Provider) &&
+		(broad.Platform == "" || broad.Platform == narrow.Platform)
+}
+
+func commitMatches(recorded, queried string) bool {
+	return strings.HasPrefix(recorded, queried) || strings.HasPrefix(queried, recorded)
+}
+
+func resolveFeatureSupport(latest []*storage.FeatureAcceptanceRecord, commit, binary string) []FeatureSupportStatus {
 	statuses := make([]FeatureSupportStatus, 0, len(latest))
 	for _, record := range latest {
-		statuses = append(statuses, FeatureSupportStatus{
+		status := FeatureSupportStatus{
 			RequirementID: record.RequirementID, Feature: record.Feature, Profile: record.Profile, Provider: record.Provider,
 			Platform: record.Platform, Supported: record.Result == storage.AcceptancePassed, Latest: record,
-		})
+		}
+		if !status.Supported {
+			status.Reason = acceptanceReasonLatestNotPassed
+		}
+		for _, broader := range latest {
+			if !status.Supported {
+				break
+			}
+			if broader == record || broader.Result == storage.AcceptancePassed || !acceptanceSubjectCovers(broader, record) || !acceptanceRecordNewer(broader, record) {
+				continue
+			}
+			status.Supported, status.Reason, status.WithdrawnBy = false, acceptanceReasonWithdrawn, broader
+		}
+		if status.Supported && commit != "" && !commitMatches(record.CommitSHA, commit) {
+			status.Supported, status.Reason = false, acceptanceReasonCommitMismatch
+		}
+		if status.Supported && binary != "" && record.BinarySHA256 != binary {
+			status.Supported, status.Reason = false, acceptanceReasonBinaryMismatch
+		}
+		statuses = append(statuses, status)
 	}
 	sort.Slice(statuses, func(i, j int) bool {
 		a, b := statuses[i], statuses[j]
 		return strings.Join([]string{a.RequirementID, a.Feature, a.Profile, a.Provider, a.Platform}, "\x00") < strings.Join([]string{b.RequirementID, b.Feature, b.Profile, b.Provider, b.Platform}, "\x00")
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"statuses": statuses})
+	return statuses
 }
