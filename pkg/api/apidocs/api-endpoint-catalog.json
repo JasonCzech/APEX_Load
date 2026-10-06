@@ -234,6 +234,46 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/analysis/evaluations",
+      "operationId": "handleEvaluationJobs",
+      "summary": "Evaluation Jobs",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/analysis/evaluations",
+      "operationId": "handleEvaluationJobs_2",
+      "summary": "Evaluation Jobs",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/analysis/evaluations/{id}",
+      "operationId": "handleEvaluationJobs_3",
+      "summary": "Evaluation Jobs",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/evaluations/{id}",
+      "operationId": "handleEvaluationJobs_4",
+      "summary": "Evaluation Jobs",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/analysis/imports",
       "operationId": "handleAnalysisImports",
       "summary": "Analysis Imports",

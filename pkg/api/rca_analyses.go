@@ -13,10 +13,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/rca/signatures"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -541,8 +539,8 @@ func (s *Server) handleCancelRCAAnalysis(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusConflict, "root-cause analysis has already ended")
 		return
 	}
-	if running, ok := s.rcaRunning.Load(analysis.ID); ok {
-		running.(context.CancelFunc)()
+	if jobs := s.rcaJobRunner(); jobs != nil {
+		jobs.cancelRunning(analysis.ID)
 	}
 	s.recordAuditEvent(r, "rca.analysis.cancel", "success", "rca_analysis", analysis.ID, analysis.ProjectID, map[string]any{"test_id": analysis.TestID})
 	if current, err := store.GetRCAAnalysis(analysis.ProjectID, analysis.TestID, analysis.ID); err == nil {
@@ -552,149 +550,78 @@ func (s *Server) handleCancelRCAAnalysis(w http.ResponseWriter, r *http.Request)
 }
 
 // rcaWorker holds the controller's analysis slots and wake signal.
-type rcaWorker struct {
-	once  sync.Once
-	wake  chan struct{}
-	slots chan struct{}
-}
-
-func (s *Server) rcaWorkerState() *rcaWorker {
-	s.rcaWorker.once.Do(func() {
-		s.rcaWorker.wake = make(chan struct{}, 1)
-		s.rcaWorker.slots = make(chan struct{}, rcaMaxConcurrentAnalyses)
+// rcaJobRunner returns the shared leased-job runner for root-cause analyses,
+// or nil when the store keeps no analyses.
+func (s *Server) rcaJobRunner() *leasedJobRunner[storage.RCAAnalysis] {
+	store, ok := s.store.(storage.RCAStore)
+	if !ok {
+		return nil
+	}
+	s.rcaJobsOnce.Do(func() {
+		s.rcaJobs = &leasedJobRunner[storage.RCAAnalysis]{
+			name: "root-cause analysis", lease: rcaAnalysisLease, slots: rcaMaxConcurrentAnalyses,
+			idOf:  func(analysis *storage.RCAAnalysis) string { return analysis.ID },
+			claim: store.ClaimRCAAnalysis,
+			renew: store.RenewRCAAnalysis,
+			run: func(ctx context.Context, analysis *storage.RCAAnalysis, owner string, term executionLeaseTerm) error {
+				return s.runRCAAnalysis(ctx, store, analysis, owner, term)
+			},
+			fail: func(analysis *storage.RCAAnalysis, owner string, term executionLeaseTerm, message string) error {
+				var payload rcaAnalysisPayload
+				_ = json.Unmarshal(analysis.Payload, &payload)
+				payload.Assessment, payload.Excerpts, payload.Error = nil, nil, message
+				body, _ := json.Marshal(payload)
+				leaseName, leaseOwner, generation := s.fencedLease(term)
+				_, err := store.CompleteRCAAnalysisFenced(analysis.ID, owner, storage.RCAStateFailed, body, time.Now(), leaseName, leaseOwner, generation)
+				return err
+			},
+		}
 	})
-	return &s.rcaWorker
+	return s.rcaJobs
 }
 
 func (s *Server) wakeRCAWorker() {
-	select {
-	case s.rcaWorkerState().wake <- struct{}{}:
-	default:
+	if jobs := s.rcaJobRunner(); jobs != nil {
+		jobs.wakeUp()
 	}
 }
 
 // startRCAAnalysisWorker runs queued analyses on the execution leader, at
 // most two at a time.
 func (s *Server) startRCAAnalysisWorker() {
-	if _, ok := s.store.(storage.RCAStore); !ok || s.runner == nil {
+	jobs := s.rcaJobRunner()
+	if jobs == nil || s.runner == nil {
 		return
 	}
-	worker := s.rcaWorkerState()
-	ctx, cancel := context.WithCancel(context.Background())
-	s.rcaCancel = cancel
-	s.launchBackground(func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			case <-worker.wake:
-			}
-			s.fillRCASlots(ctx, worker)
-		}
-	})
-}
-
-// fillRCASlots starts analyses while slots are free and work is queued.
-func (s *Server) fillRCASlots(ctx context.Context, worker *rcaWorker) {
-	for ctx.Err() == nil {
-		select {
-		case worker.slots <- struct{}{}:
-		default:
-			return
-		}
-		claimed := make(chan bool, 1)
-		started := s.launchBackground(func() {
-			signalled := false
-			defer func() {
-				// Even a panicking job must release the fill loop.
-				if !signalled {
-					claimed <- false
-				}
-				<-worker.slots
-			}()
-			ran, err := s.runNextRCAAnalysis(ctx, func() { signalled = true; claimed <- true })
-			if err != nil {
-				slog.Warn("root-cause analysis failed", "error", err)
-			}
-			_ = ran
-		})
-		if !started {
-			<-worker.slots
-			return
-		}
-		if !<-claimed {
-			return
-		}
-	}
+	s.rcaCancel = jobs.start(s)
 }
 
 // runNextRCAAnalysis claims the next queued analysis and runs it. claimed is
 // called once an analysis is held. It reports whether one ran.
 func (s *Server) runNextRCAAnalysis(ctx context.Context, claimed func()) (bool, error) {
-	store, ok := s.store.(storage.RCAStore)
-	if !ok || s.runner == nil || !s.runner.isExecutionLeader() {
+	jobs := s.rcaJobRunner()
+	if jobs == nil {
 		return false, nil
 	}
-	term, err := s.runner.captureExecutionLeaseTerm()
-	if err != nil {
-		return false, nil
-	}
-	owner := uuid.NewString()
-	analysis, err := store.ClaimRCAAnalysis(owner, time.Now(), rcaAnalysisLease)
-	if err != nil || analysis == nil {
-		return false, err
-	}
-	if claimed != nil {
-		claimed()
-	}
-	jobCtx, cancel := context.WithCancel(ctx)
-	s.rcaRunning.Store(analysis.ID, cancel)
-	// Reading a large archive can outlast one lease; renew it while the job
-	// runs so another controller does not start over.
-	renewed := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(rcaAnalysisLease / 3)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-renewed:
-				return
-			case <-ticker.C:
-				ok, err := store.RenewRCAAnalysis(analysis.ID, owner, time.Now(), rcaAnalysisLease)
-				if err != nil {
-					// The lease survives a missed renewal; retry at the next tick.
-					slog.Warn("failed to renew root-cause analysis lease", "analysis_id", analysis.ID, "error", err)
-					continue
-				}
-				if !ok {
-					// Cancelled or overtaken: nothing this job records would stand.
-					cancel()
-					return
-				}
-			}
-		}
-	}()
-	defer func() {
-		close(renewed)
-		s.rcaRunning.Delete(analysis.ID)
-		cancel()
-	}()
+	return jobs.runNext(s, ctx, claimed)
+}
+
+// runRCAAnalysis assesses one claimed analysis and records the outcome. A
+// cancelled, overtaken or shut-down job records nothing.
+func (s *Server) runRCAAnalysis(ctx context.Context, store storage.RCAStore, analysis *storage.RCAAnalysis, owner string, term executionLeaseTerm) error {
 	var payload rcaAnalysisPayload
 	_ = json.Unmarshal(analysis.Payload, &payload)
 	state := storage.RCAStateCompleted
 	var excerpts []RCAEvidenceExcerpt
 	assessment, runErr := recoverRCAAssessment(analysis.ID, func() (*rca.Assessment, error) {
-		assessment, taken, err := s.assessRCAAnalysisWithExcerpts(jobCtx, analysis, payload)
+		assessment, taken, err := s.assessRCAAnalysisWithExcerpts(ctx, analysis, payload)
 		excerpts = taken
 		return assessment, err
 	})
 	if runErr != nil && ctx.Err() != nil {
-		// Interrupted by shutdown: leave the analysis to be re-claimed when
-		// its lease ends.
-		return true, nil
+		// Interrupted by shutdown, cancellation or a lost lease: leave the
+		// analysis to be re-claimed when its lease ends, or to stay cancelled.
+		return nil
 	}
 	if runErr != nil {
 		state, payload.Error = storage.RCAStateFailed, runErr.Error()
@@ -706,15 +633,10 @@ func (s *Server) runNextRCAAnalysis(ctx context.Context, claimed func()) (bool, 
 		state, payload.Assessment, payload.Error = storage.RCAStateFailed, nil, "assessment exceeds the stored size limit"
 		body, _ = json.Marshal(payload)
 	}
-	leaseName, leaseOwner, generation := "", "", uint64(0)
-	if s.runner.durableExecutionFence {
-		leaseName, leaseOwner, generation = executionLeaseName, term.ownerID, term.generation
-	}
+	leaseName, leaseOwner, generation := s.fencedLease(term)
 	// A cancelled analysis, an overtaken owner or a lost term records nothing.
-	if _, err := store.CompleteRCAAnalysisFenced(analysis.ID, owner, state, body, time.Now(), leaseName, leaseOwner, generation); err != nil {
-		return true, err
-	}
-	return true, nil
+	_, err = store.CompleteRCAAnalysisFenced(analysis.ID, owner, state, body, time.Now(), leaseName, leaseOwner, generation)
+	return err
 }
 
 // recoverRCAAssessment turns a panic into a failure, so an analysis that

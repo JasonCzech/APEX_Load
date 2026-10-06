@@ -327,9 +327,13 @@ type Server struct {
 	dynatraceClient func(dynatrace.Config, dynatrace.Credentials) (*dynatrace.Client, error)
 
 	// Root-cause v2 analysis jobs (rca_analyses.go).
-	rcaWorker  rcaWorker
-	rcaRunning sync.Map
-	rcaCancel  context.CancelFunc
+	rcaJobsOnce sync.Once
+	rcaJobs     *leasedJobRunner[storage.RCAAnalysis]
+	rcaCancel   context.CancelFunc
+
+	evaluationJobsOnce sync.Once
+	evaluationJobs     *leasedJobRunner[storage.EvaluationJob]
+	evaluationCancel   context.CancelFunc
 }
 
 // ServerConfig configures API server startup behavior and integrations.
@@ -1719,6 +1723,7 @@ func (s *Server) Start() (startErr error) {
 	s.startArchiveFinalizationRetry()
 	s.startAppDynamicsMonitoring()
 	s.startRCAAnalysisWorker()
+	s.startEvaluationWorker()
 	s.startAccessReviewNotifierCadence()
 	s.startCIGitHubCheckReconciliation()
 
@@ -2315,6 +2320,10 @@ func (s *Server) shutdown(ctx context.Context) error {
 	if s.appDynamicsCancel != nil {
 		s.appDynamicsCancel()
 		s.appDynamicsCancel = nil
+	}
+	if s.evaluationCancel != nil {
+		s.evaluationCancel()
+		s.evaluationCancel = nil
 	}
 	if s.rcaCancel != nil {
 		s.rcaCancel()

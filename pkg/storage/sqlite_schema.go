@@ -1814,6 +1814,28 @@ func schemaCreateTableStatements() []string {
 			updated_at DATETIME NOT NULL,
 			UNIQUE(project_id, actor, purpose, key_hash)
 		)`,
+		// Bounded analytical evaluations run by the shared leased-job runner.
+		`CREATE TABLE IF NOT EXISTS feature_evaluation_jobs (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			actor TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			idempotency_key_hash TEXT NOT NULL DEFAULT '',
+			request TEXT NOT NULL,
+			input_fingerprint TEXT NOT NULL,
+			state TEXT NOT NULL CHECK(state IN ('queued', 'running', 'ready', 'failed', 'cancelled', 'expired')),
+			revision BIGINT NOT NULL DEFAULT 1,
+			owner TEXT NOT NULL DEFAULT '',
+			lease_expires_at DATETIME,
+			progress TEXT NOT NULL DEFAULT '',
+			result TEXT NOT NULL DEFAULT '',
+			result_sha256 TEXT NOT NULL DEFAULT '',
+			failure TEXT NOT NULL DEFAULT '',
+			hidden_at DATETIME,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			completed_at DATETIME
+		)`,
 	}
 }
 
@@ -2232,6 +2254,9 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_rca_analyses_claim ON rca_analyses(state, lease_expires_at)`, "idx_rca_analyses_claim"},
 	{`CREATE INDEX IF NOT EXISTS idx_rca_critiques_analysis ON rca_critiques(analysis_id, created_at)`, "idx_rca_critiques_analysis"},
 	{`CREATE INDEX IF NOT EXISTS idx_authoring_mutation_receipts_resource ON authoring_mutation_receipts(resource_type, resource_id)`, "idx_authoring_mutation_receipts_resource"},
+	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_key ON feature_evaluation_jobs(project_id, actor, kind, idempotency_key_hash) WHERE idempotency_key_hash <> ''`, "idx_feature_evaluation_jobs_key"},
+	{`CREATE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_claim ON feature_evaluation_jobs(state, created_at)`, "idx_feature_evaluation_jobs_claim"},
+	{`CREATE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_project ON feature_evaluation_jobs(project_id, created_at)`, "idx_feature_evaluation_jobs_project"},
 }
 
 func (s *SQLiteStore) init() error {

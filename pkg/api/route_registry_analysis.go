@@ -40,6 +40,12 @@ var analysisAPIRouteCatalog = apiRouteCatalog{Domain: "analysis", Routes: []apiR
 	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/business-key-mappings/{id}", "handleAnalysisDefinitions", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
 	newAuthenticatedAPIRoute(http.MethodPut, "/api/v1/analysis/business-key-mappings/{id}", "handleAnalysisDefinitions", projectAdminAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
 	newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/analysis/business-key-mappings/{id}", "handleAnalysisDefinitions", projectAdminAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
+	// Bounded evaluation jobs. Viewers may queue and read evaluations and
+	// cancel their own; cancelling or hiding another actor's needs an editor.
+	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/evaluations", "handleEvaluationJobs", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleEvaluationJobs) }),
+	newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/analysis/evaluations", "handleEvaluationJobs", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleEvaluationJobs) }),
+	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/evaluations/{id}", "handleEvaluationJobs", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleEvaluationJobs) }),
+	newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/analysis/evaluations/{id}", "handleEvaluationJobs", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleEvaluationJobs) }),
 	// Revisioned project policies; a run pins the defaults in force at Start.
 	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/policies", "handleAnalysisPolicies", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisPolicies) }),
 	newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/analysis/policies", "handleAnalysisPolicies", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisPolicies) }),

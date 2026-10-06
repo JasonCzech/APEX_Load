@@ -1726,6 +1726,7 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		{`DELETE FROM external_result_imports WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM direct_import_receipts WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM authoring_mutation_receipts WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM feature_evaluation_jobs WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM usage_accounting_snapshots WHERE project_id = ?`, []any{id}},
 		// Audit history is intentionally retained after project deletion. It is an
 		// immutable governance trail, not project-owned mutable content.
