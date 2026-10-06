@@ -72,6 +72,9 @@ func TestScenarioAuthoringOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
+	if created, exists := doc.Paths["/api/v1/scenarios"]["post"].Responses["201"]; !exists || created.Headers["ETag"].Description == "" {
+		t.Fatal("scenario create does not document the ETag of the created baseline")
+	}
 	get := doc.Paths["/api/v1/scenarios/{id}"]["get"]
 	view := false
 	for _, parameter := range get.Parameters {

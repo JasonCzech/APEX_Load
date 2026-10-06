@@ -14,9 +14,10 @@ import (
 )
 
 // Feature acceptance records hold the qualification evidence behind support
-// claims: which commit and binaries ran which suite on which profile,
-// provider and platform, with hashes of the sanitized evidence. Records are
-// append-only; a claim is withdrawn by recording a newer revoked result.
+// claims: which commit and binary ran which suite on which profile, provider
+// and platform, with hashes of the sanitized evidence. Records are
+// append-only; a newer failed, pending or revoked record of the subject, or
+// of a broader subject that covers it, withdraws its claim.
 
 var (
 	acceptanceRequirementPattern = regexp.MustCompile(`^[A-Z]{1,6}-[0-9A-Za-z]{1,8}$`)

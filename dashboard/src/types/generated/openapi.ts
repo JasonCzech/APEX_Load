@@ -7869,6 +7869,7 @@ export interface operations {
                   "identity_version": number;
                   "kind": string;
                   "max_time"?: (string) | null;
+                  "max_window_end"?: (string) | null;
                   "metric"?: (string) | null;
                   "min_time"?: (string) | null;
                   "missing": number;
@@ -7978,6 +7979,7 @@ export interface operations {
                   "identity_version": number;
                   "kind": string;
                   "max_time"?: (string) | null;
+                  "max_window_end"?: (string) | null;
                   "metric"?: (string) | null;
                   "min_time"?: (string) | null;
                   "missing": number;
@@ -10292,6 +10294,7 @@ export interface operations {
                   "identity_version": number;
                   "kind": string;
                   "max_time"?: (string) | null;
+                  "max_window_end"?: (string) | null;
                   "metric"?: (string) | null;
                   "min_time"?: (string) | null;
                   "missing": number;
@@ -10442,6 +10445,7 @@ export interface operations {
                   "identity_version": number;
                   "kind": string;
                   "max_time"?: (string) | null;
+                  "max_window_end"?: (string) | null;
                   "metric"?: (string) | null;
                   "min_time"?: (string) | null;
                   "missing": number;
@@ -10592,6 +10596,7 @@ export interface operations {
                   "identity_version": number;
                   "kind": string;
                   "max_time"?: (string) | null;
+                  "max_window_end"?: (string) | null;
                   "metric"?: (string) | null;
                   "min_time"?: (string) | null;
                   "missing": number;
@@ -10846,397 +10851,6 @@ export interface operations {
         };
       };
       "413": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
-  "handleAnalysisPolicies": {
-    parameters: {
-      "query"?: {
-        "kind"?: string;
-        "limit"?: number;
-        "offset"?: number;
-        "project_id"?: string;
-        "revision"?: string;
-      };
-    };
-    requestBody?: never;
-    responses: {
-      "200": {
-        content: {
-          "application/json": ({
-            "created_at": string;
-            "definition": unknown;
-            "deleted": boolean;
-            "id": string;
-            "kind": string;
-            "name": string;
-            "project_id": string;
-            "revision": number;
-          }) | null;
-        };
-      };
-      "400": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "409": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "413": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
-  "handleAnalysisPolicies_2": {
-    parameters: {
-      "query"?: {
-        "kind"?: string;
-        "limit"?: number;
-        "offset"?: number;
-        "project_id"?: string;
-        "revision"?: string;
-      };
-    };
-    requestBody: {
-      content: {
-        "application/json": {
-          "definition"?: unknown;
-          "kind"?: string;
-          "name"?: string;
-          "revision"?: number;
-        };
-      };
-    };
-    responses: {
-      "200": {
-        content: {
-          "application/json": ({
-            "created_at": string;
-            "definition": unknown;
-            "deleted": boolean;
-            "id": string;
-            "kind": string;
-            "name": string;
-            "project_id": string;
-            "revision": number;
-          }) | null;
-        };
-      };
-      "400": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "409": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "413": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
-  "handleAnalysisPolicies_3": {
-    parameters: {
-      "path": {
-        "id": string;
-      };
-      "query"?: {
-        "kind"?: string;
-        "limit"?: number;
-        "offset"?: number;
-        "project_id"?: string;
-        "revision"?: string;
-      };
-    };
-    requestBody: {
-      content: {
-        "application/json": {
-          "definition"?: unknown;
-          "kind"?: string;
-          "name"?: string;
-          "revision"?: number;
-        };
-      };
-    };
-    responses: {
-      "200": {
-        content: {
-          "application/json": ({
-            "created_at": string;
-            "definition": unknown;
-            "deleted": boolean;
-            "id": string;
-            "kind": string;
-            "name": string;
-            "project_id": string;
-            "revision": number;
-          }) | null;
-        };
-      };
-      "400": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "409": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "413": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
-  "handleAnalysisPolicies_4": {
-    parameters: {
-      "path": {
-        "id": string;
-      };
-      "query"?: {
-        "kind"?: string;
-        "limit"?: number;
-        "offset"?: number;
-        "project_id"?: string;
-        "revision"?: string;
-      };
-    };
-    requestBody?: never;
-    responses: {
-      "200": {
-        content: {
-          "application/json": ({
-            "created_at": string;
-            "definition": unknown;
-            "deleted": boolean;
-            "id": string;
-            "kind": string;
-            "name": string;
-            "project_id": string;
-            "revision": number;
-          }) | null;
-        };
-      };
-      "400": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "409": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "413": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
-  "handleAnalysisPolicies_5": {
-    parameters: {
-      "path": {
-        "id": string;
-      };
-      "query"?: {
-        "kind"?: string;
-        "limit"?: number;
-        "offset"?: number;
-        "project_id"?: string;
-        "revision"?: string;
-      };
-    };
-    requestBody: {
-      content: {
-        "application/json": {
-          "definition"?: unknown;
-          "kind"?: string;
-          "name"?: string;
-          "revision"?: number;
-        };
-      };
-    };
-    responses: {
-      "200": {
-        content: {
-          "application/json": ({
-            "created_at": string;
-            "definition": unknown;
-            "deleted": boolean;
-            "id": string;
-            "kind": string;
-            "name": string;
-            "project_id": string;
-            "revision": number;
-          }) | null;
-        };
-      };
-      "400": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "409": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "413": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -27682,6 +27296,73 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleCreateAnalysisPolicy": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "definition"?: unknown;
+          "kind"?: string;
+          "name"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": ({
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          }) | null;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -44748,6 +44429,47 @@ export interface operations {
       };
     };
   };
+  "handleDeleteAnalysisPolicy": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleDeleteAppDynamicsConnection": {
     parameters: {
       "path": {
@@ -53794,6 +53516,47 @@ export interface operations {
         };
       };
       "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetAnalysisPolicy": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -86863,6 +86626,55 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListAnalysisPolicies": {
+    parameters: {
+      "query"?: {
+        "kind"?: string;
+        "limit"?: number;
+        "offset"?: number;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Array<{
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          }>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -145557,6 +145369,77 @@ export interface operations {
       };
     };
   };
+  "handleUpdateAnalysisPolicy": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "definition"?: unknown;
+          "kind"?: string;
+          "name"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "created_at": string;
+            "definition": unknown;
+            "deleted": boolean;
+            "id": string;
+            "kind": string;
+            "name": string;
+            "project_id": string;
+            "revision": number;
+          }) | null;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleUpdateAppDynamicsConnection": {
     parameters: {
       "path": {
@@ -161491,13 +161374,13 @@ export interface paths {
     "delete": operations["handleAnalysisDefinitions_13"];
   };
   "/api/v1/analysis/policies": {
-    "get": operations["handleAnalysisPolicies"];
-    "post": operations["handleAnalysisPolicies_2"];
+    "get": operations["handleListAnalysisPolicies"];
+    "post": operations["handleCreateAnalysisPolicy"];
   };
   "/api/v1/analysis/policies/{id}": {
-    "get": operations["handleAnalysisPolicies_4"];
-    "put": operations["handleAnalysisPolicies_5"];
-    "delete": operations["handleAnalysisPolicies_3"];
+    "get": operations["handleGetAnalysisPolicy"];
+    "put": operations["handleUpdateAnalysisPolicy"];
+    "delete": operations["handleDeleteAnalysisPolicy"];
   };
   "/api/v1/analysis/rca-mappings": {
     "get": operations["handleAnalysisDefinitions_16"];

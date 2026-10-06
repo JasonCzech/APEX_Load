@@ -386,37 +386,52 @@ func shortenReadmissionBackoff(t *testing.T, backoff time.Duration) {
 	t.Cleanup(func() { browserContextReadmissionBackoff = previous })
 }
 
-// A refused session retries admission before its actions, but only after the
-// backoff: its actions neither spin nor fail without a new attempt.
-func TestRefusedContextRetriesAdmissionAfterTheBackoff(t *testing.T) {
+// A refused session tries admission again only at an iteration boundary,
+// after the backoff: its actions fail at once as resource limits, its
+// iterations do not spin, and its refusals log once per run.
+func TestRefusedContextRetriesAdmissionAtIterationBoundaries(t *testing.T) {
 	budget := useTestEvidenceBudget(t, 64<<30, func() (int64, error) { return 2 << 30, nil }, 1<<30)
 	shortenReadmissionBackoff(t, 60*time.Millisecond)
 	b := &Browser{}
 	if err := b.openBrowserContext(); err != nil {
 		t.Fatal(err)
 	}
+	action := &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"}
 	started := time.Now()
+	result, err := b.Execute(context.Background(), action)
+	if err != nil || result.Success || !strings.HasPrefix(result.ErrorMessage, "browser resource limit ("+resourceLimitAdmission+")") || time.Since(started) > 50*time.Millisecond {
+		t.Fatalf("a refused action waited or did not fail as a resource limit: %+v %v", result, err)
+	}
 	for range 2 {
-		result, err := b.Execute(context.Background(), &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"})
-		if err != nil || result.Success || !strings.HasPrefix(result.ErrorMessage, "browser resource limit ("+resourceLimitAdmission+")") {
-			t.Fatalf("refused session action: %+v %v", result, err)
+		if err := b.BeginIteration(context.Background()); err != nil {
+			t.Fatalf("a refused retry failed the iteration: %v", err)
 		}
 	}
 	if elapsed := time.Since(started); elapsed < 110*time.Millisecond {
-		t.Fatalf("two refused actions took %s; the backoff was not honoured", elapsed)
+		t.Fatalf("two iteration retries took %s; the backoff was not honoured", elapsed)
 	}
 	if refused := budget.counters.contextsRefused.Load(); refused != 3 {
-		t.Fatalf("admission attempts = %d, want the open plus one retry per action", refused)
+		t.Fatalf("admission attempts = %d, want the open plus one per iteration", refused)
 	}
-	// A cancelled action does not wait out the backoff.
+	b.mu.Lock()
+	logged := b.admissionRefusalLogged
+	b.mu.Unlock()
+	if !logged {
+		t.Fatal("the refusal run was not logged")
+	}
+	// A cancelled boundary does not wait out the backoff or try again.
 	shortenReadmissionBackoff(t, time.Hour)
 	b.mu.Lock()
 	b.admissionRetryAt = time.Now().Add(time.Hour)
 	b.mu.Unlock()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if result, _ := b.Execute(ctx, &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"}); result.Success {
-		t.Fatal("a cancelled action on a refused session succeeded")
+	if err := b.BeginIteration(ctx); err != nil || budget.counters.contextsRefused.Load() != 3 {
+		t.Fatalf("a cancelled boundary: %v, attempts %d", err, budget.counters.contextsRefused.Load())
+	}
+	// A session that was never refused does nothing at the boundary.
+	if err := (&Browser{}).BeginIteration(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 

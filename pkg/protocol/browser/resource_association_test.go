@@ -48,6 +48,7 @@ func associationBrowser(t *testing.T) (*Browser, *cdpEvidencePage, playwright.Pa
 	main, child := &associationFrame{}, &associationFrame{}
 	state := newCDPEvidencePage()
 	b.evidence.cdpPages[page] = state
+	bindingInstalled(b, state)
 	return b, state, page, main, child
 }
 
@@ -70,6 +71,14 @@ func beginDocument(b *Browser, frame playwright.Frame, page playwright.Page, tim
 
 func commitFrame(b *Browser, state *cdpEvidencePage, frame, loader string) {
 	b.observeCDPCommit(state, map[string]any{"frame": map[string]any{"id": frame, "loaderId": loader}}, b.evidence.generation)
+}
+
+// bindingInstalled marks the session's binding ready, as the addBinding
+// reply does; contexts created before it prove nothing.
+func bindingInstalled(b *Browser, state *cdpEvidencePage) {
+	b.mu.Lock()
+	state.provableAfter, state.bindingReady = state.contextsSeen, true
+	b.mu.Unlock()
 }
 
 func createContext(b *Browser, state *cdpEvidencePage, id int, frame string) {
@@ -461,5 +470,53 @@ func TestWebKitNavigationRequestsNeverTakeAResourceTimingJoin(t *testing.T) {
 	}
 	if subresource.urlHash == "" || b.evidence.timingRequests[resourceTimingKey{frame: frame, hash: subresource.urlHash}] != 1 {
 		t.Fatalf("a subresource was not counted for its join: %+v", subresource)
+	}
+}
+
+// A context that existed before the session installed its binding never ran
+// the bootstrap's report, so a report from it (a page script calling the
+// still-global binding) proves nothing; neither does one from another frame
+// or after the contexts were cleared.
+func TestLoaderReportsNeedAContextCreatedAfterTheBinding(t *testing.T) {
+	b := &Browser{}
+	if err := b.resetBrowserEvidence("test"); err != nil {
+		t.Fatal(err)
+	}
+	state := newCDPEvidencePage()
+	commitFrame(b, state, "F", "L1")
+	createContext(b, state, 1, "F")
+	bindingInstalled(b, state)
+	reportDocument(b, state, 1, documentToken(1))
+	if _, reported := state.loaderTokens["L1"]; reported {
+		t.Fatal("a context from before the binding proved a document")
+	}
+	commitFrame(b, state, "F", "L2")
+	createContext(b, state, 2, "F")
+	b.observeCDPContextsCleared(state, b.evidence.generation)
+	reportDocument(b, state, 2, documentToken(2))
+	if _, reported := state.loaderTokens["L2"]; reported {
+		t.Fatal("a cleared context proved a document")
+	}
+	createContext(b, state, 3, "F")
+	reportDocument(b, state, 3, documentToken(3))
+	if state.loaderTokens["L2"] != documentToken(3) {
+		t.Fatalf("a context created after the binding was not admitted: %v", state.loaderTokens)
+	}
+}
+
+// A record no association pass examined keeps version 2, so older readers
+// accept it.
+func TestUnexaminedRequestEvidenceKeepsVersionTwo(t *testing.T) {
+	b, _, page, main, _ := associationBrowser(t)
+	evidence := associationEvidence(t, b, 1_800_000_000_000)
+	evidence.Version = protocol.BrowserEvidenceVersion
+	for name, join := range map[string]resourceJoin{
+		"no page":    {frame: main},
+		"no ordinal": {page: page, frame: main},
+		"no session": {page: &browserFinalityCurrentPage{}, frame: main, ordinal: 1},
+	} {
+		if v := b.associateResourceEvidence(evidence, join, b.evidence.generation); v.Version != protocol.BrowserEvidenceVersion {
+			t.Fatalf("%s: an unexamined record became version %d", name, v.Version)
+		}
 	}
 }

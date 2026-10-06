@@ -22324,6 +22324,10 @@ paths:
                                   type: string
                                   format: date-time
                                   nullable: true
+                                max_window_end:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 metric:
                                   type: string
                                   nullable: true
@@ -23924,6 +23928,10 @@ paths:
                                   type: string
                                   format: date-time
                                   nullable: true
+                                max_window_end:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 metric:
                                   type: string
                                   nullable: true
@@ -24329,6 +24337,10 @@ paths:
                                 kind:
                                   type: string
                                 max_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                max_window_end:
                                   type: string
                                   format: date-time
                                   nullable: true
@@ -24741,6 +24753,10 @@ paths:
                                   type: string
                                   format: date-time
                                   nullable: true
+                                max_window_end:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 metric:
                                   type: string
                                   nullable: true
@@ -25097,6 +25113,10 @@ paths:
                                 kind:
                                   type: string
                                 max_time:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                max_window_end:
                                   type: string
                                   format: date-time
                                   nullable: true
@@ -26489,44 +26509,45 @@ paths:
       x-handler: handleAnalysisDefinitions
   /api/v1/analysis/policies:
     get:
-      summary: Analysis Policies
+      summary: List Analysis Policies
       description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
-      operationId: handleAnalysisPolicies
+      operationId: handleListAnalysisPolicies
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  created_at:
-                    type: string
-                    format: date-time
-                  definition: {}
-                  deleted:
-                    type: boolean
-                  id:
-                    type: string
-                  kind:
-                    type: string
-                  name:
-                    type: string
-                  project_id:
-                    type: string
-                  revision:
-                    type: integer
-                    format: int64
-                required:
-                  - created_at
-                  - definition
-                  - deleted
-                  - id
-                  - kind
-                  - name
-                  - project_id
-                  - revision
-                nullable: true
+                type: array
+                items:
+                  type: object
+                  properties:
+                    created_at:
+                      type: string
+                      format: date-time
+                    definition: {}
+                    deleted:
+                      type: boolean
+                    id:
+                      type: string
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                    project_id:
+                      type: string
+                    revision:
+                      type: integer
+                      format: int64
+                  required:
+                    - created_at
+                    - definition
+                    - deleted
+                    - id
+                    - kind
+                    - name
+                    - project_id
+                    - revision
         "400":
           description: Bad Request
           content:
@@ -26545,32 +26566,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Not Found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "409":
-          description: Conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "413":
-          description: Request Entity Too Large
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "503":
-          description: Service Unavailable
           content:
             application/json:
               schema:
@@ -26599,25 +26596,13 @@ paths:
           schema:
             type: integer
             format: int64
-        - name: project_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: revision
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
       tags:
         - Analysis
-      x-handler: handleAnalysisPolicies
+      x-handler: handleListAnalysisPolicies
     post:
-      summary: Analysis Policies
+      summary: Create Analysis Policy
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
-      operationId: handleAnalysisPolicies_2
+      operationId: handleCreateAnalysisPolicy
       requestBody:
         required: true
         content:
@@ -26634,8 +26619,8 @@ paths:
                   type: integer
                   format: int64
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           content:
             application/json:
               schema:
@@ -26704,12 +26689,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "500":
-          description: Internal Server Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -26719,97 +26698,21 @@ paths:
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
-      parameters:
-        - name: kind
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: limit
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: offset
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: project_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: revision
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
       tags:
         - Analysis
-      x-handler: handleAnalysisPolicies
+      x-handler: handleCreateAnalysisPolicy
   /api/v1/analysis/policies/{id}:
     delete:
-      summary: Analysis Policies
+      summary: Delete Analysis Policy
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
-      operationId: handleAnalysisPolicies_3
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                definition: {}
-                kind:
-                  type: string
-                name:
-                  type: string
-                revision:
-                  type: integer
-                  format: int64
+      operationId: handleDeleteAnalysisPolicy
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  created_at:
-                    type: string
-                    format: date-time
-                  definition: {}
-                  deleted:
-                    type: boolean
-                  id:
-                    type: string
-                  kind:
-                    type: string
-                  name:
-                    type: string
-                  project_id:
-                    type: string
-                  revision:
-                    type: integer
-                    format: int64
-                required:
-                  - created_at
-                  - definition
-                  - deleted
-                  - id
-                  - kind
-                  - name
-                  - project_id
-                  - revision
-                nullable: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -26830,30 +26733,6 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "409":
-          description: Conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "413":
-          description: Request Entity Too Large
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "500":
-          description: Internal Server Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "503":
-          description: Service Unavailable
           content:
             application/json:
               schema:
@@ -26867,32 +26746,6 @@ paths:
           required: true
           schema:
             type: string
-        - name: kind
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: limit
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: offset
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: project_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
         - name: revision
           in: query
           description: Handler-defined query parameter.
@@ -26901,46 +26754,18 @@ paths:
             type: string
       tags:
         - Analysis
-      x-handler: handleAnalysisPolicies
+      x-handler: handleDeleteAnalysisPolicy
     get:
-      summary: Analysis Policies
+      summary: Get Analysis Policy
       description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
-      operationId: handleAnalysisPolicies_4
+      operationId: handleGetAnalysisPolicy
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  created_at:
-                    type: string
-                    format: date-time
-                  definition: {}
-                  deleted:
-                    type: boolean
-                  id:
-                    type: string
-                  kind:
-                    type: string
-                  name:
-                    type: string
-                  project_id:
-                    type: string
-                  revision:
-                    type: integer
-                    format: int64
-                required:
-                  - created_at
-                  - definition
-                  - deleted
-                  - id
-                  - kind
-                  - name
-                  - project_id
-                  - revision
-                nullable: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -26961,30 +26786,6 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "409":
-          description: Conflict
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "413":
-          description: Request Entity Too Large
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "500":
-          description: Internal Server Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "503":
-          description: Service Unavailable
           content:
             application/json:
               schema:
@@ -26998,32 +26799,6 @@ paths:
           required: true
           schema:
             type: string
-        - name: kind
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: limit
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: offset
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: project_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
         - name: revision
           in: query
           description: Handler-defined query parameter.
@@ -27032,11 +26807,11 @@ paths:
             type: string
       tags:
         - Analysis
-      x-handler: handleAnalysisPolicies
+      x-handler: handleGetAnalysisPolicy
     put:
-      summary: Analysis Policies
+      summary: Update Analysis Policy
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
-      operationId: handleAnalysisPolicies_5
+      operationId: handleUpdateAnalysisPolicy
       requestBody:
         required: true
         content:
@@ -27123,12 +26898,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "500":
-          description: Internal Server Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -27144,41 +26913,9 @@ paths:
           required: true
           schema:
             type: string
-        - name: kind
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: limit
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: offset
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: project_id
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: revision
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
       tags:
         - Analysis
-      x-handler: handleAnalysisPolicies
+      x-handler: handleUpdateAnalysisPolicy
   /api/v1/analysis/rca-mappings:
     get:
       summary: Analysis Definitions

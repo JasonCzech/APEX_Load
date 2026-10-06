@@ -16,7 +16,7 @@ export interface AnalysisImport {
   mapping?: AnalysisMapping; accepted: number; rejected: number; error?: string; run_id?: string
   /** Normalized partitions with their actual time ranges; their starts give each metric's source
    * window grid. */
-  partition_manifest?: { partitions?: { stats?: { kind?: string; metric?: string; min_time?: string } }[] }
+  partition_manifest?: { partitions?: { stats?: { kind?: string; metric?: string; min_time?: string; identity?: { source: string; host: string; service: string; dimensions: Record<string, string> } } }[] }
 }
 export interface AnalysisProviderMeasurement {
   name: 'appdynamics' | 'dynatrace' | 'prometheus'; mode?: string; backend_profile?: string; query_id?: string; definition_hash?: string; evaluation_step_seconds?: number; analysis_statistic?: 'avg' | 'min' | 'max'; underlying_sample_time?: string; freshness_known?: boolean; metric_id: string; catalog_path?: string; entity_ids?: Record<string, string>; display_labels?: Record<string, string>

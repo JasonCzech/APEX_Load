@@ -144,3 +144,23 @@ it('queries a histogram for counts and percentiles over whole windows', async ()
   const body = JSON.parse(String(request.mock.calls.find(([path]) => String(path).endsWith('/series'))![1].body))
   expect(body).toMatchObject({ metric: 'latency', aggregation: 'p99', bucket_seconds: 300 })
 })
+
+it('starts buckets on the metric\'s own window grid and honours an explicit bucket', async () => {
+  // Windows start two minutes past each five-minute mark.
+  const ready = { ...draft, state: 'ready', partition_manifest: { partitions: [{ stats: { kind: 'histogram', metric: 'latency', min_time: '2026-01-01T00:02:00Z' } }] }, mapping: { ...draft.mapping, measures: [
+    { value: ['p95'], name: 'latency', kind: 'histogram', unit: 'ms', histogram: { bounds: ['10', '+Inf'], bucket_counts: 'per_bin', temporality: 'delta', window_seconds: 300, count_columns: [['b10']] } },
+  ] } }
+  await openDraft(caps, ready)
+  const query = [...container.querySelectorAll('fieldset')].find(f => f.querySelector('legend')?.textContent === 'Query dataset')!
+  const dates = query.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]')
+  await choose(dates[0], '2026-01-01T00:10:00')
+  await choose(dates[1], '2026-01-01T01:00:00')
+  await choose(labelled<HTMLInputElement>('Bucket (seconds, optional)')!, '700')
+  await act(async () => button('Show series').click())
+  const seriesCalls = request.mock.calls.filter(([path]) => String(path).endsWith('/series'))
+  const body = JSON.parse(String(seriesCalls[seriesCalls.length - 1][1].body))
+  expect(body.from).toBe('2026-01-01T00:07:00.000Z')
+  expect(body.to).toBe('2026-01-01T01:02:00.000Z')
+  // 700 seconds widen to whole 300-second windows.
+  expect(body.bucket_seconds).toBe(900)
+})

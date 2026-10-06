@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -121,11 +123,12 @@ func TestIdempotentScenarioReplayCarriesTheValidatorOnlyForTheDurableState(t *te
 	if later.Code != http.StatusCreated || later.Header().Get("Idempotent-Replayed") != "true" {
 		t.Fatalf("later replay: %d %s", later.Code, later.Body.String())
 	}
-	if tag := later.Header().Get("ETag"); tag != "" {
-		_, currentTag, _ := requireScenarioAuthoringView(t, server, replayed.ID)
-		if tag != currentTag || laterBody.Name != "Edited elsewhere" || laterBody.AuthoringProjection == nil || laterBody.AuthoringProjection.Scenario.Name != laterBody.Name {
-			t.Fatalf("later replay paired body %q with tag %q (current %q)", laterBody.Name, tag, currentTag)
-		}
+	// The replay reloaded this replica, so its copy is durable again and the
+	// validator it carries describes the edited body.
+	tag := later.Header().Get("ETag")
+	_, currentTag, _ := requireScenarioAuthoringView(t, server, replayed.ID)
+	if tag == "" || tag != currentTag || laterBody.Name != "Edited elsewhere" || laterBody.AuthoringProjection == nil || laterBody.AuthoringProjection.Scenario.Name != laterBody.Name {
+		t.Fatalf("later replay paired body %q with tag %q (current %q)", laterBody.Name, tag, currentTag)
 	}
 }
 
@@ -151,5 +154,67 @@ func TestScenarioValidatorIsOmittedForAStaleCopy(t *testing.T) {
 	attachScenarioAuthoringValidator(recorder, staleResponse, &stale, snapshot)
 	if recorder.Header().Get("ETag") != "" || staleResponse.AuthoringProjection != nil || staleResponse.ContentRevision != "" {
 		t.Fatalf("stale copy received validator %q", recorder.Header().Get("ETag"))
+	}
+}
+
+// scenarioCreateLostAckStore commits the create and then reports its outcome
+// as unknown, as a connection reset during COMMIT does.
+type scenarioCreateLostAckStore struct {
+	*storage.SQLiteStore
+}
+
+func (s *scenarioCreateLostAckStore) CreateScenarioAuthoringIfAbsent(scenario *storage.Scenario, groups []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding) (*storage.ScenarioAuthoringMutationResult, error) {
+	if _, err := s.SQLiteStore.CreateScenarioAuthoringIfAbsent(scenario, groups, pools); err != nil {
+		return nil, err
+	}
+	return nil, fmt.Errorf("%w: connection reset during commit", storage.ErrScenarioAuthoringOutcomeUnknown)
+}
+
+// A create whose commit acknowledgement is lost answers 503, keeps its key
+// pinned, makes the committed scenario visible on this replica, and the
+// retry adopts it instead of creating another.
+func TestScenarioCreateWithALostCommitAckIsAdoptedOnRetry(t *testing.T) {
+	server, store, _, _ := newScenarioPolicyAvailabilityFixture(t)
+	body := scenarioSaveRequest("Lost ack create", 1)
+	server.runner.scenarioStore = &scenarioCreateLostAckStore{SQLiteStore: store}
+	first := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
+	server.runner.scenarioStore = store
+	if first.Code != http.StatusServiceUnavailable || !strings.Contains(first.Body.String(), "scenario_save_outcome_unknown") {
+		t.Fatalf("lost acknowledgement: %d %s", first.Code, first.Body.String())
+	}
+	if countScenariosNamed(server, "Lost ack create") != 1 {
+		t.Fatal("the committed scenario is not visible on this replica")
+	}
+	retry := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
+	if retry.Code != http.StatusCreated || retry.Header().Get("Idempotent-Replayed") != "true" || countScenariosNamed(server, "Lost ack create") != 1 {
+		t.Fatalf("retry after a lost acknowledgement: %d %s", retry.Code, retry.Body.String())
+	}
+}
+
+// A delete refused inside its transaction (the strict policy requires a
+// validator) withdraws its tombstone, so the create key still replays.
+func TestStrictPolicyRefusedDeleteKeepsTheCreateKeyReplaying(t *testing.T) {
+	server, store, _, _ := newScenarioPolicyAvailabilityFixture(t)
+	body := scenarioSaveRequest("Strict delete", 1)
+	first := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", first.Code, first.Body.String())
+	}
+	setScenarioStrictPolicy(t, store, true)
+	if response := authoringAPIRequest(t, server, http.MethodDelete, "/api/v1/scenarios/"+decodeScenarioID(t, first), nil, ""); response.Code != http.StatusPreconditionRequired {
+		t.Fatalf("unconditioned delete under the strict policy: %d %s", response.Code, response.Body.String())
+	}
+	replay := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
+	if replay.Code != http.StatusCreated || replay.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("create key after a refused delete: %d %s", replay.Code, replay.Body.String())
+	}
+}
+
+// DELETE resolves ownership before it reads If-Match: an unknown scenario is
+// 404 even with a malformed validator.
+func TestDeleteOfAnUnknownScenarioIsNotFoundBeforeItsValidator(t *testing.T) {
+	server, _, _, _ := newScenarioPolicyAvailabilityFixture(t)
+	if response := authoringAPIRequest(t, server, http.MethodDelete, "/api/v1/scenarios/no-such-scenario", nil, "W/\"weak\""); response.Code != http.StatusNotFound {
+		t.Fatalf("unknown scenario with a malformed If-Match: %d %s", response.Code, response.Body.String())
 	}
 }

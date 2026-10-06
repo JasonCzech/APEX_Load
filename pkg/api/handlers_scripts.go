@@ -605,6 +605,7 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	deleteCommitted = true
+	s.retombstoneAuthoringReceipts("script", stored.ID)
 	s.cleanupUnreferencedBrunoArtifacts(importSourceArtifacts)
 	s.recordAuditEvent(r, "script.delete", "success", "script", id, stored.ProjectID, map[string]any{"name": disclosureSafeScriptName(stored.Name, stored.Script), "folder_id": stored.FolderID})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})

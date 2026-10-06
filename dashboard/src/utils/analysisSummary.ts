@@ -1,4 +1,4 @@
-import type { AnalysisImport, AnalysisMapping, AnalysisMeasure } from '../types/analysis'
+import type { AnalysisIdentitySelection, AnalysisImport, AnalysisMapping, AnalysisMeasure } from '../types/analysis'
 
 // A summary measure is a statistic the source already computed over a fixed
 // window. The server re-buckets it only where that is exact; these helpers
@@ -130,15 +130,25 @@ export function analysisWindowAlignedRange(fromMs: number, toMs: number, windowS
 const positiveModulo = (value: number, step: number) => ((value % step) + step) % step
 
 /** A start of metric's source window grid in a dataset: the earliest normalized partition start
- * of that metric, provided every partition of it starts on the same grid. Undefined when the grid
- * is unknown or inconsistent. */
-export function analysisWindowAnchor(dataset: AnalysisImport | undefined, metric: string, windowSeconds?: number): number | undefined {
+ * of that metric (and of the selected series, when a selection narrows it), provided every such
+ * partition starts on the same grid. Undefined when the grid is unknown or inconsistent: series
+ * of one metric can sit on different grids. */
+export function analysisWindowAnchor(dataset: AnalysisImport | undefined, metric: string, windowSeconds?: number, selection: AnalysisIdentitySelection = {}): number | undefined {
   if (!windowSeconds || windowSeconds < 1) return
   const step = windowSeconds * 1000
   const partitions = dataset?.partition_manifest?.partitions ?? []
   const named = partitions.filter(p => p.stats?.metric === metric)
   // Partitions of name-column measures may mix metrics and carry no single name.
-  const candidates = named.length ? named : partitions.filter(p => p.stats?.metric === undefined && (p.stats?.kind === 'summary' || p.stats?.kind === 'histogram'))
+  let candidates = named.length ? named : partitions.filter(p => p.stats?.metric === undefined && (p.stats?.kind === 'summary' || p.stats?.kind === 'histogram'))
+  const dimensions = Object.entries(selection.dimensions ?? {})
+  if (selection.source_id || selection.host || selection.service || dimensions.length) {
+    // A partition holding several series cannot tell the selected series' grid.
+    if (candidates.some(p => !p.stats?.identity)) return
+    candidates = candidates.filter(p => {
+      const identity = p.stats!.identity!
+      return (!selection.source_id || identity.source === selection.source_id) && (!selection.host || identity.host === selection.host) && (!selection.service || identity.service === selection.service) && dimensions.every(([name, value]) => identity.dimensions?.[name] === value)
+    })
+  }
   const starts = candidates.map(p => p.stats?.min_time ? Date.parse(p.stats.min_time) : NaN).filter(Number.isFinite)
   if (!starts.length) return
   const anchor = Math.min(...starts)

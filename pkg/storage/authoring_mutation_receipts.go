@@ -79,6 +79,7 @@ type AuthoringMutationReceiptStore interface {
 	ClaimAuthoringMutationReceipt(in AuthoringMutationReceiptClaimInput, now time.Time, lease time.Duration) (*AuthoringMutationReceiptClaim, error)
 	CompleteAuthoringMutationReceipt(id, ownerToken, resourceRevision string, now time.Time) (bool, error)
 	AbandonAuthoringMutationReceipt(id, ownerToken string) (bool, error)
+	ReleaseAuthoringMutationReceiptLease(id, ownerToken string) (bool, error)
 	TombstoneAuthoringMutationReceipts(resourceType, resourceID, reason string, now time.Time) error
 	RestoreAuthoringMutationReceiptTombstones(resourceType, resourceID, reason string, at time.Time) error
 }
@@ -187,6 +188,23 @@ func (s *SQLiteStore) CompleteAuthoringMutationReceipt(id, ownerToken, resourceR
 	return rows == 1, err
 }
 
+// ReleaseAuthoringMutationReceiptLease keeps a pending reservation but drops
+// its owner and lease, so the next retry resumes it at once and its durable
+// read decides between adopting a committed resource and creating it.
+func (s *SQLiteStore) ReleaseAuthoringMutationReceiptLease(id, ownerToken string) (bool, error) {
+	id, ownerToken = strings.TrimSpace(id), strings.TrimSpace(ownerToken)
+	if id == "" || ownerToken == "" {
+		return false, errors.New("authoring receipt lease release requires id and owner token")
+	}
+	result, err := s.db.Exec(`UPDATE authoring_mutation_receipts SET owner_token = '', lease_expires_at = NULL, updated_at = ? WHERE id = ? AND state = ? AND owner_token = ?`,
+		time.Now().UTC(), id, AuthoringReceiptPending, ownerToken)
+	if err != nil {
+		return false, fmt.Errorf("release authoring receipt lease: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
 // AbandonAuthoringMutationReceipt removes a pending reservation whose create
 // definitely did not happen (for example a validation failure), so the same
 // key can be retried with a corrected request.
@@ -224,7 +242,9 @@ func (s *SQLiteStore) TombstoneAuthoringMutationReceipts(resourceType, resourceI
 }
 
 // RestoreAuthoringMutationReceiptTombstones withdraws the tombstones written
-// at exactly at for this resource, after its delete was definitely refused.
+// at exactly at for this resource, after its delete was definitely refused,
+// and only while the resource still exists: a refused delete that raced a
+// successful one must not withdraw the tombstone the deleted resource needs.
 // Earlier tombstones are untouched. A withdrawn pending receipt has no owner
 // or lease, so the next retry resumes it and adopts the live resource.
 func (s *SQLiteStore) RestoreAuthoringMutationReceiptTombstones(resourceType, resourceID, reason string, at time.Time) error {
@@ -232,9 +252,19 @@ func (s *SQLiteStore) RestoreAuthoringMutationReceiptTombstones(resourceType, re
 	if resourceType == "" || resourceID == "" {
 		return errors.New("authoring receipt tombstone restore requires resource type and id")
 	}
+	table := ""
+	switch resourceType {
+	case "scenario":
+		table = "scenarios"
+	case "script":
+		table = "scripts"
+	default:
+		return fmt.Errorf("authoring receipt tombstone restore: unsupported resource type %q", resourceType)
+	}
 	_, err := s.db.Exec(`UPDATE authoring_mutation_receipts SET tombstoned_at = NULL, tombstone_reason = '', updated_at = ?
-		WHERE resource_type = ? AND resource_id = ? AND tombstoned_at = ? AND tombstone_reason = ?`,
-		time.Now().UTC(), resourceType, resourceID, at.UTC(), strings.TrimSpace(reason))
+		WHERE resource_type = ? AND resource_id = ? AND tombstoned_at = ? AND tombstone_reason = ?
+		AND EXISTS (SELECT 1 FROM `+table+` WHERE id = ?)`,
+		time.Now().UTC(), resourceType, resourceID, at.UTC(), strings.TrimSpace(reason), resourceID)
 	if err != nil {
 		return fmt.Errorf("restore authoring receipt tombstones: %w", err)
 	}

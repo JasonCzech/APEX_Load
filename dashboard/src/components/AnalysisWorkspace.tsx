@@ -38,6 +38,7 @@ export default function AnalysisWorkspace({ projectId, canEdit = false }: { proj
   const [metric, setMetric] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [bucket, setBucket] = useState('')
   const [aggregation, setAggregation] = useState('avg')
   const [identityFilters, setIdentityFilters] = useState(emptyAnalysisIdentityFilters)
   const operation = useRef<AbortController>()
@@ -206,6 +207,7 @@ export default function AnalysisWorkspace({ projectId, canEdit = false }: { proj
             <label>Metric<input list="analysis-metric-names" value={metric} onChange={e => setMetric(e.target.value)} /><datalist id="analysis-metric-names">{analysisMetricNames(selected.mapping).map(name => <option key={name} value={name} />)}</datalist></label>
             <label>From (UTC)<input type="datetime-local" step="1" value={from} onChange={e => setFrom(e.target.value)} /></label>
             <label>To (UTC)<input type="datetime-local" step="1" value={to} onChange={e => setTo(e.target.value)} /></label>
+            <label>Bucket (seconds, optional)<input type="number" min={1} max={86400} step={1} placeholder="automatic" value={bucket} onChange={e => setBucket(e.target.value)} /></label>
             <label>{histogramDeclaration ? 'Histogram statistic' : summaryDeclarations.length ? 'Summary statistic' : 'Aggregation'}<select value={queryAggregation} onChange={e => setAggregation(e.target.value)}>{aggregationOptions.map(v => <option key={v}>{v}</option>)}</select></label>
             {selected.mapping?.version === 2 && <AnalysisIdentityFilters value={identityFilters} onChange={setIdentityFilters} label="Dataset identity filters" />}
             <button type="button" disabled={!metric || !from || !to || !!selectedMappingDisclosureError || selectedIdentityUnsupported || selected.mapping?.version === 2 && !!analysisIdentityFilterError(identityFilters)} onClick={() => void act(async signal => {
@@ -213,8 +215,13 @@ export default function AnalysisWorkspace({ projectId, canEdit = false }: { proj
               if (selectedMappingDisclosureError) throw new Error(selectedMappingDisclosureError)
               const identitySelection = selected.mapping?.version === 2 ? buildAnalysisIdentitySelection(identityFilters) : {}
               // Buckets start on the metric's own source window grid, so a bucket never cuts a window in two.
-              const range = analysisWindowAlignedRange(Date.parse(`${from}Z`), Date.parse(`${to}Z`), summaryWindowSeconds, analysisWindowAnchor(selected, metric, summaryWindowSeconds))
-              const result = await request<{ points: AnalysisPoint[] }>(`/analysis/datasets/${encodeURIComponent(selected.id)}/series`, { method: 'POST', signal, body: JSON.stringify({ ...identitySelection, metric, from: new Date(range.fromMs).toISOString(), to: new Date(range.toMs).toISOString(), bucket_seconds: analysisBucketSeconds((range.toMs - range.fromMs) / 1000, summaryWindowSeconds), aggregation: queryAggregation }) })
+              const range = analysisWindowAlignedRange(Date.parse(`${from}Z`), Date.parse(`${to}Z`), summaryWindowSeconds, analysisWindowAnchor(selected, metric, summaryWindowSeconds, identitySelection))
+              // An explicit bucket (for example a whole multiple of a cumulative histogram's scrape
+              // interval) still widens to whole source windows.
+              const requestedBucket = bucket.trim() === '' ? undefined : Number(bucket)
+              if (requestedBucket !== undefined && (!Number.isSafeInteger(requestedBucket) || requestedBucket < 1 || requestedBucket > 86400)) throw new Error('The bucket must be 1-86400 whole seconds.')
+              const bucketSeconds = requestedBucket === undefined ? analysisBucketSeconds((range.toMs - range.fromMs) / 1000, summaryWindowSeconds) : summaryWindowSeconds ? Math.ceil(requestedBucket / summaryWindowSeconds) * summaryWindowSeconds : requestedBucket
+              const result = await request<{ points: AnalysisPoint[] }>(`/analysis/datasets/${encodeURIComponent(selected.id)}/series`, { method: 'POST', signal, body: JSON.stringify({ ...identitySelection, metric, from: new Date(range.fromMs).toISOString(), to: new Date(range.toMs).toISOString(), bucket_seconds: bucketSeconds, aggregation: queryAggregation }) })
               if (!signal.aborted) { setPoints(result.points); setSeriesSelection({ dataset_id: selected.id, ...identitySelection, metric, from, to, aggregation: queryAggregation }) }
             })}>Show series</button>
           </fieldset>}

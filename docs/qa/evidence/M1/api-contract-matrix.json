@@ -1044,7 +1044,7 @@
     {
       "method": "GET",
       "path": "/api/v1/analysis/policies",
-      "operation_id": "handleAnalysisPolicies",
+      "operation_id": "handleListAnalysisPolicies",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -1071,7 +1071,7 @@
     {
       "method": "POST",
       "path": "/api/v1/analysis/policies",
-      "operation_id": "handleAnalysisPolicies_2",
+      "operation_id": "handleCreateAnalysisPolicy",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -1096,7 +1096,7 @@
     {
       "method": "DELETE",
       "path": "/api/v1/analysis/policies/{id}",
-      "operation_id": "handleAnalysisPolicies_3",
+      "operation_id": "handleDeleteAnalysisPolicy",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -1121,7 +1121,7 @@
     {
       "method": "GET",
       "path": "/api/v1/analysis/policies/{id}",
-      "operation_id": "handleAnalysisPolicies_4",
+      "operation_id": "handleGetAnalysisPolicy",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -1148,7 +1148,7 @@
     {
       "method": "PUT",
       "path": "/api/v1/analysis/policies/{id}",
-      "operation_id": "handleAnalysisPolicies_5",
+      "operation_id": "handleUpdateAnalysisPolicy",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

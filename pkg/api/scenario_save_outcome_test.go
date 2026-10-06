@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -93,5 +94,51 @@ func TestScenarioConditionedSaveRefreshesAStaleCacheWithoutHA(t *testing.T) {
 	}
 	if response := authoringAPIRequest(t, server, http.MethodPut, "/api/v1/scenarios/"+scenario.ID, scenarioSaveRequest("Conditioned without HA", 2), tag); response.Code != http.StatusOK {
 		t.Fatalf("conditioned save against the durable revision without HA: %d %s", response.Code, response.Body.String())
+	}
+}
+
+// fingerprintAtCommitStore records the commit fingerprint of the typed
+// scenario the create writes, as the credential attempt journals it.
+type fingerprintAtCommitStore struct {
+	*storage.SQLiteStore
+	committed string
+}
+
+func (s *fingerprintAtCommitStore) CreateScenarioAuthoringIfAbsent(scenario *storage.Scenario, groups []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding) (*storage.ScenarioAuthoringMutationResult, error) {
+	s.committed = scenarioRuntimeCommitFingerprint(scenario, groups)
+	return s.SQLiteStore.CreateScenarioAuthoringIfAbsent(scenario, groups, pools)
+}
+
+// The commit fingerprint a credential attempt records equals the one
+// recovery recomputes from storage, where typed settings come back as maps
+// with sorted keys: recovery must keep a committed scenario's credentials.
+func TestScenarioRuntimeCommitFingerprintSurvivesStorage(t *testing.T) {
+	store, err := storage.NewSQLiteStore(t.TempDir() + "/apexload.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	server := NewServer(ServerConfig{Store: store})
+	script := httpScript("fingerprint-script", "Fingerprint")
+	if _, err := server.runner.StoreScriptDurable(script); err != nil {
+		t.Fatal(err)
+	}
+	recorder := &fingerprintAtCommitStore{SQLiteStore: store}
+	server.runner.scenarioStore = recorder
+	thinkTime := &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 250, MinPercent: 50, MaxPercent: 150}
+	created, _, err := server.runner.CreateScenarioAuthoringDurable("", CreateScenarioRequest{
+		Name: "Fingerprint", Duration: "1m", Groups: []CreateGroupEntry{{ScriptID: script.ID, VUsers: 1, RuntimeSettings: &RuntimeSettingsOverride{ThinkTime: thinkTime}}},
+		RuntimeSettings: &RuntimeSettingsOverride{ThinkTime: thinkTime},
+	})
+	server.runner.scenarioStore = store
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, scripts, err := store.GetScenario(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recorder.committed == "" || scenarioRuntimeCommitFingerprint(stored, scripts) != recorder.committed {
+		t.Fatalf("recovered fingerprint %s, committed %s", scenarioRuntimeCommitFingerprint(stored, scripts), recorder.committed)
 	}
 }

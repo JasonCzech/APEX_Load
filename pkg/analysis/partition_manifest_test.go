@@ -80,6 +80,30 @@ func TestPartitionManifestConservativeSelection(t *testing.T) {
 	if got, err := m.Select(later); err != nil || len(got) != 0 {
 		t.Fatal("an earlier scalar partition was kept", got, err)
 	}
+	// Recording its latest window end prunes it again once no window
+	// reaches From, and keeps it while one crosses into the range.
+	ends := func(end time.Time) *NormalizedPartitionManifest {
+		bounded := histogram.Clone()
+		bounded.Partitions[0].Stats.MaxWindowEnd = &end
+		bounded.Digest, _ = bounded.canonicalDigest()
+		if bounded.Validate() != nil {
+			t.Fatal("a histogram partition with its window end was refused")
+		}
+		return bounded
+	}
+	if got, err := ends(at.Add(30 * time.Second)).Select(later); err != nil || len(got) != 0 {
+		t.Fatal("a histogram partition whose windows end before From was kept", got, err)
+	}
+	if got, err := ends(at.Add(90 * time.Second)).Select(later); err != nil || len(got) != 1 {
+		t.Fatal("a histogram partition whose window crosses From was pruned", got, err)
+	}
+	invalid := m.Clone()
+	end := at.Add(time.Minute)
+	invalid.Partitions[0].Stats.MaxWindowEnd = &end
+	invalid.Digest, _ = invalid.canonicalDigest()
+	if invalid.Validate() == nil {
+		t.Fatal("a scalar partition carried a window end")
+	}
 	before := base
 	before.From, before.To = at.Add(-2*time.Minute), at.Add(-time.Minute)
 	if got, err := histogram.Select(before); err != nil || len(got) != 0 {

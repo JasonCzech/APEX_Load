@@ -65,8 +65,14 @@ func (b *Browser) openBrowserContext() error {
 		b.mu.Lock()
 		b.resourceLimit = resourceLimitAdmission
 		b.admissionRetryAt = time.Now().Add(browserContextReadmissionBackoff)
+		// One log line per run of refusals: a refused session retries every
+		// iteration while memory stays short.
+		logRefusal := !b.admissionRefusalLogged
+		b.admissionRefusalLogged = true
 		b.mu.Unlock()
-		logEvidenceEvent("browser context refused to protect the generator", "error", err)
+		if logRefusal {
+			logEvidenceEvent("browser context refused to protect the generator; the session retries at each iteration", "error", err)
+		}
 		return nil
 	}
 	if err != nil {
@@ -76,24 +82,30 @@ func (b *Browser) openBrowserContext() error {
 		browserEvidenceBudget.releaseBrowserContext(b)
 		return err
 	}
+	b.mu.Lock()
+	b.admissionRefusalLogged = false
+	b.mu.Unlock()
 	return nil
 }
 
 // browserContextReadmissionBackoff is how long a refused session waits
-// before its context is admitted again; several memory samples fit inside it.
+// before its next iteration tries admission again; several memory samples
+// fit inside it.
 var browserContextReadmissionBackoff = 5 * time.Second
 
-// readmitRefusedContext retries the admission of a context refused at open.
-// Each attempt first waits out the backoff, so a refused VUser's actions
-// neither spin nor flood the results while the generator is short of memory,
-// and the VUser rejoins the run once memory recovers. It reports whether the
-// context is now open.
-func (b *Browser) readmitRefusedContext(ctx context.Context) (bool, error) {
+// BeginIteration gives a session refused at admission another try at an
+// iteration boundary, so a reopened context starts the iteration at its
+// first action instead of joining it midway on a blank page. The try first
+// waits out the backoff, so a refused VUser's iterations neither spin nor
+// flood the results; while it stays refused, each action fails at once as a
+// resource limit. A context that is admitted but cannot open fails the
+// iteration setup, as the same error fails Init.
+func (b *Browser) BeginIteration(ctx context.Context) error {
 	b.mu.Lock()
-	refused, retryAt := b.resourceLimit == resourceLimitAdmission, b.admissionRetryAt
+	refused, retryAt, lifecycle := b.resourceLimit == resourceLimitAdmission, b.admissionRetryAt, b.evidence.lifecycleContext
 	b.mu.Unlock()
 	if !refused {
-		return false, nil
+		return nil
 	}
 	if wait := time.Until(retryAt); wait > 0 {
 		timer := time.NewTimer(wait)
@@ -101,13 +113,17 @@ func (b *Browser) readmitRefusedContext(ctx context.Context) (bool, error) {
 		case <-timer.C:
 		case <-ctx.Done():
 			timer.Stop()
-			return false, nil
+			return nil
 		}
 	}
 	if err := b.openBrowserContext(); err != nil {
-		return false, err
+		return err
 	}
-	return b.currentPage() != nil, nil
+	// Opening reset the evidence state; it keeps the session's lifecycle.
+	b.mu.Lock()
+	b.evidence.lifecycleContext = lifecycle
+	b.mu.Unlock()
+	return nil
 }
 
 func (b *Browser) openAdmittedBrowserContext() error {

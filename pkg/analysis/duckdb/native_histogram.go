@@ -269,7 +269,23 @@ func nativeDistributionPartitionStats(ctx context.Context, db *sql.DB, path stri
 	if request.Mapping.Version == 1 {
 		valid += " AND source=" + literal(request.DatasetID) + " AND host='' AND service='' AND dimensions_json='{}'"
 	}
-	return nativePartitionStatsScan(ctx, db, table, valid, stats)
+	stats, err = nativePartitionStatsScan(ctx, db, table, valid, stats)
+	if err != nil || stats.Rows == 0 {
+		return stats, err
+	}
+	var end sql.NullTime
+	if err := db.QueryRowContext(ctx, "SELECT max(timestamp_utc+window_us*INTERVAL '1 microsecond') FROM "+table).Scan(&end); err != nil {
+		return stats, err
+	}
+	if !end.Valid {
+		return stats, errWorkerProtocol
+	}
+	maxEnd := end.Time.UTC()
+	stats.MaxWindowEnd = &maxEnd
+	if stats.Validate() != nil {
+		return stats, errWorkerProtocol
+	}
+	return stats, nil
 }
 
 // nativeClassifyArtifacts separates metric-point artifacts from distribution

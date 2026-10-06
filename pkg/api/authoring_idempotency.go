@@ -100,13 +100,22 @@ func (attempt *authoringCreateAttempt) fail(err error) {
 }
 
 // release abandons a receipt whose create definitely did not happen, so the
-// same key can be retried with a corrected request. Deferred by handlers.
+// same key can be retried with a corrected request, and frees the lease of
+// one whose outcome is unknown. Deferred by handlers.
 // Before the durable create is called this request cannot have created
 // anything; afterwards, and for a receipt resumed from an earlier attempt
 // that may have committed, only a durable read proving the resource absent
 // allows the key to be reused.
 func (attempt *authoringCreateAttempt) release() {
-	if attempt == nil || attempt.completed || attempt.outcomeUnknown {
+	if attempt == nil || attempt.completed {
+		return
+	}
+	if attempt.outcomeUnknown {
+		// The create may have committed: keep the receipt, but let the next
+		// retry resume it now rather than wait out this request's lease.
+		if _, err := attempt.store.ReleaseAuthoringMutationReceiptLease(attempt.receipt.ID, attempt.ownerToken); err != nil {
+			slog.Warn("authoring create receipt lease not released", "purpose", attempt.receipt.Purpose, "error", err)
+		}
 		return
 	}
 	if attempt.attempted || attempt.resumed {
@@ -252,9 +261,11 @@ func markAuthoringReplay(w http.ResponseWriter, attempt *authoringCreateAttempt)
 // tombstoneAuthoringReceipts must run before a script or scenario is deleted,
 // so a retry of the request that created it cannot recreate it. The returned
 // restore withdraws exactly these tombstones; handlers call it when the delete
-// was definitely refused, so a live resource is never reported as deleted.
-// The restore first proves the resource still exists: a delete that lost to a
-// concurrent delete is refused too, and that resource is gone.
+// was definitely refused, so a live resource is not reported as deleted. The
+// restore applies only while the resource still exists: a delete that lost to
+// a concurrent delete is refused too, and that resource is gone. If the
+// restore itself fails, the tombstone stays and the create key answers 410
+// until it expires: refusing a retry is safe, recreating a resource is not.
 func (s *Server) tombstoneAuthoringReceipts(resourceType, resourceID string) (func(), error) {
 	store, supported := s.store.(storage.AuthoringMutationReceiptStore)
 	if s.store == nil || !supported {
@@ -265,9 +276,9 @@ func (s *Server) tombstoneAuthoringReceipts(resourceType, resourceID string) (fu
 		return nil, err
 	}
 	return func() {
-		if !s.durableAuthoredResourceExists(resourceType, resourceID) {
-			return
-		}
+		// The store restores only while the resource still exists, in the
+		// same statement, so a refused delete never strips the tombstone of
+		// a resource a concurrent delete removed.
 		if err := store.RestoreAuthoringMutationReceiptTombstones(resourceType, resourceID, "deleted", at); err != nil {
 			slog.Warn("authoring receipt tombstone not withdrawn after a refused delete", "resource_type", resourceType, "resource_id", resourceID, "error", err)
 		}
@@ -354,18 +365,17 @@ func (s *Server) durableScenarioExists(id string) (bool, error) {
 	}
 }
 
-// durableAuthoredResourceExists reports true only when the store proves the
-// script or scenario still exists.
-func (s *Server) durableAuthoredResourceExists(resourceType, resourceID string) bool {
-	switch resourceType {
-	case "scenario":
-		exists, err := s.durableScenarioExists(resourceID)
-		return err == nil && exists
-	case "script":
-		stored, found, err := s.runner.GetScriptAuthoringDurable(resourceID)
-		return err == nil && found && stored != nil
+// retombstoneAuthoringReceipts tombstones a deleted resource's receipts again
+// after its delete committed. A concurrent refused delete may have withdrawn
+// the tombstone this delete relied on before the delete committed.
+func (s *Server) retombstoneAuthoringReceipts(resourceType, resourceID string) {
+	store, supported := s.store.(storage.AuthoringMutationReceiptStore)
+	if s.store == nil || !supported {
+		return
 	}
-	return false
+	if err := store.TombstoneAuthoringMutationReceipts(resourceType, resourceID, "deleted", time.Now().UTC().Truncate(time.Microsecond)); err != nil {
+		slog.Warn("authoring receipt tombstone not renewed after a delete", "resource_type", resourceType, "resource_id", resourceID, "error", err)
+	}
 }
 
 // durableScenarioAbsent reports true only when the store proves the scenario

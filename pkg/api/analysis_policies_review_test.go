@@ -250,7 +250,7 @@ func TestAnalysisPolicyBodyErrors(t *testing.T) {
 	}
 	request := httptest.NewRequest(http.MethodPost, policiesPath, failingPolicyBody{})
 	response := httptest.NewRecorder()
-	server.handleAnalysisPolicies(response, request)
+	server.handleCreateAnalysisPolicy(response, request)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("failed body read: %d %s", response.Code, response.Body.String())
 	}
@@ -419,5 +419,57 @@ func TestPagedPolicyReadDeduplicatesAPolicyShiftedAcrossPages(t *testing.T) {
 	}
 	if len(live) != 101 || seen["policy-099"] != 1 || seen["policy-101"] != 0 {
 		t.Fatalf("paged read listed %d policies: %v", len(live), seen)
+	}
+}
+
+// flakyPolicyListStore fails the first policy reads, then recovers.
+type flakyPolicyListStore struct {
+	*storage.SQLiteStore
+	mu        sync.Mutex
+	remaining int
+}
+
+func (s *flakyPolicyListStore) ListLatestAnalysisDefinitions(project, kind string) ([]storage.AnalysisDefinition, error) {
+	s.mu.Lock()
+	failing := s.remaining > 0
+	if failing {
+		s.remaining--
+	}
+	s.mu.Unlock()
+	if failing {
+		return nil, errors.New("database is locked")
+	}
+	return s.SQLiteStore.ListLatestAnalysisDefinitions(project, kind)
+}
+
+// A queued run whose policies cannot be read for a moment is retried, not
+// failed: only a configuration refusal fails a pending run.
+func TestPendingPromotionRetriesAPolicyStoreFailure(t *testing.T) {
+	t.Setenv(config.EnvArchiveDir, t.TempDir())
+	runner, store, test := newPassiveTransitionTestRunner(t, "policy-retry")
+	runner.testStore = &flakyPolicyListStore{SQLiteStore: store, remaining: 1}
+	pendingSince := time.Now().UTC().Add(-time.Minute)
+	runner.mu.Lock()
+	test.Status = "PENDING"
+	test.PendingSince = &pendingSince
+	test.PendingReason = "waiting for capacity"
+	record := buildManagedTestRecord(test)
+	runner.mu.Unlock()
+	if err := store.SaveTest(record); err != nil {
+		t.Fatal(err)
+	}
+	backend := &executionBackendSpy{called: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.promotePendingTests()
+	select {
+	case started := <-backend.called:
+		if started != test.ID {
+			t.Fatalf("backend started %q, want %q", started, test.ID)
+		}
+	case <-time.After(5 * time.Second):
+		if got, _ := runner.GetTest(test.ID); got != nil {
+			t.Fatalf("the run was not retried after the policy store recovered: %s %s", got.Status, got.Error)
+		}
+		t.Fatal("the run was not retried after the policy store recovered")
 	}
 }

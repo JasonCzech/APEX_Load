@@ -559,11 +559,15 @@ func (tr *TestRunner) storeScenarioLockedWithSources(id string, req CreateScenar
 	return stored, nil
 }
 
+// scenarioRuntimeCommitFingerprint identifies the scenario content a runtime
+// credential attempt committed with. Recovery recomputes it from storage,
+// where settings decode into maps, so the value is canonicalized through
+// generic JSON first: typed settings and their decoded form hash alike.
 func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []storage.ScenarioScript) string {
 	if scenario == nil {
 		return ""
 	}
-	return hashCanonical(struct {
+	return hashCanonical(canonicalJSONValue(struct {
 		ID               string
 		RefKey           string
 		Name             string
@@ -595,7 +599,7 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 		TrafficProfile:   scenario.TrafficProfile,
 		RuntimeSettings:  scenario.RuntimeSettings,
 		Scripts:          scripts,
-	})
+	}))
 }
 
 func normalizeScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) ([]storage.ScenarioDataPoolBinding, error) {

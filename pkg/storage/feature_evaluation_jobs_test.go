@@ -192,7 +192,11 @@ func TestEvaluationJobReviewFixes(t *testing.T) {
 // A completion records only under the current execution term, and a job
 // whose project was deleted while it ran records nothing.
 func TestEvaluationJobCompletionIsFencedByTermAndProjectDeletion(t *testing.T) {
-	store := newAuthoringReceiptTestStore(t)
+	exerciseEvaluationJobCompletionFences(t, newAuthoringReceiptTestStore(t))
+}
+
+func exerciseEvaluationJobCompletionFences(t *testing.T, store *SQLiteStore) {
+	t.Helper()
 	if _, _, err := store.CreateEvaluationJob(evaluationJob("fenced", "", "fp-fenced"), 10); err != nil {
 		t.Fatal(err)
 	}

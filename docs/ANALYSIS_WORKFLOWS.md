@@ -155,15 +155,19 @@ missing for a percentile, and for an average without sample counts, whatever
 number of rows it happens to hold. The workspace and comparison panel widen
 buckets to whole source windows (in a comparison, to a common multiple of both
 sides' windows) and start them on the metric's own window grid, read from the
-first window of its imported partitions; windows anchored at a test start or a
-local midnight keep their phase. When that grid is unknown or inconsistent the
-range is left as entered. A cumulative histogram is differenced per series across
+first window of its imported partitions (of the selected series, when identity
+filters narrow it); windows anchored at a test start keep their phase. When that
+grid is unknown or inconsistent, as with series on different grids in one file
+or daily windows at a local midnight across a daylight-saving change, the range
+is left as entered. The workspace also takes an explicit bucket size. A cumulative histogram is differenced per series across
 every file of an import; an instant several files report is one sample when they
 agree and `duplicate_histogram_window` when they disagree. Its windows run between
 consecutive scrapes, so a bucket is missing as `partial_histogram_window` when a
 window ends past it or a window of an earlier bucket (or from before `from`) ends
 inside it: choose a `from` at a scrape time and a bucket that is a whole multiple
-of the scrape interval.
+of the scrape interval. A query staged from imported partitions also reads an
+earlier histogram partition whose last window reaches past `from`, so a window
+crossing into the range is seen.
 Histogram bounds that differ within a selection are refused, and a FLOAT bound
 column is matched at its own precision. Summary rows rejected only for their
 sample count or sum are recorded as `invalid_summary_sample`.

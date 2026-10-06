@@ -4,6 +4,7 @@ package api
 // explicit JSON null is a valid empty population and preserves completeness
 // fields; fixed-size distributions and unrelated model slices retain their
 // existing schema. Required-field presence remains independent of nullability.
+// A run's policy_pins are null for runs admitted before analysis policies.
 func applyBrowserEvidenceWireNullability(pkg, name string, schema *oasSchema) {
 	if schema == nil {
 		return

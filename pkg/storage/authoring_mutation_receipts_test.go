@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func newAuthoringReceiptTestStore(t *testing.T) *SQLiteStore {
@@ -149,6 +151,10 @@ func TestAuthoringReceiptsAreScopedByActorAndPurpose(t *testing.T) {
 // exerciseAuthoringReceiptTombstoneRestore withdraws only the tombstones a
 // refused delete wrote, never an earlier one.
 func exerciseAuthoringReceiptTombstoneRestore(t *testing.T, store *SQLiteStore) {
+	// A tombstone is restored only while its resource still exists.
+	if err := store.SaveScript(&dsl.Script{ID: "derived-script-id", Name: "Derived", Version: "1.0.0", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "request", Type: "request", Method: "GET", Target: "/"}}}); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	claim, err := store.ClaimAuthoringMutationReceipt(authoringReceiptInput("owner-1"), now, time.Minute)
 	if err != nil {
@@ -187,6 +193,17 @@ func exerciseAuthoringReceiptTombstoneRestore(t *testing.T, store *SQLiteStore) 
 	}
 	if _, err := store.ClaimAuthoringMutationReceipt(authoringReceiptInput("owner-3"), now, time.Minute); !errors.Is(err, ErrAuthoringReceiptTombstoned) {
 		t.Fatalf("committed delete's tombstone was withdrawn: %v", err)
+	}
+	// Once the resource is gone, even the matching restore keeps the
+	// tombstone: that refused delete lost to one that committed.
+	if err := store.DeleteScript("derived-script-id"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RestoreAuthoringMutationReceiptTombstones("script", "derived-script-id", "deleted", deleted); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimAuthoringMutationReceipt(authoringReceiptInput("owner-4"), now, time.Minute); !errors.Is(err, ErrAuthoringReceiptTombstoned) {
+		t.Fatalf("a deleted resource's tombstone was restored: %v", err)
 	}
 }
 

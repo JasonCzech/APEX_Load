@@ -2640,6 +2640,22 @@ func TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion(t *testing.T
 	if epoch.TerminalSequence == 0 || epoch.TerminalSequence != epoch.LastSequence || !epoch.LossExact {
 		t.Fatalf("archived source epoch is not exact after a complete run: %s", sources)
 	}
+	// The live roll-up reached the interval summaries the run archived.
+	intervals, err := os.ReadFile(filepath.Join(completed.Archive.ArchivePath, "interval_summaries.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rolledUp := false
+	for _, line := range bytes.Split(bytes.TrimSpace(intervals), []byte("\n")) {
+		var interval IntervalSummaryRecord
+		if json.Unmarshal(line, &interval) == nil && interval.Telemetry != nil && interval.Telemetry.Sources != nil && interval.Telemetry.Sources.Epochs >= 1 && interval.Telemetry.Sources.Sources >= 1 {
+			rolledUp = true
+			break
+		}
+	}
+	if !rolledUp {
+		t.Fatal("no archived interval carried the live telemetry source roll-up")
+	}
 }
 
 func TestDistributedExecutionBackendPropagatesRemoteFailure(t *testing.T) {

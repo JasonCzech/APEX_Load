@@ -501,123 +501,160 @@ type AnalysisPolicyRequest struct {
 	Definition json.RawMessage `json:"definition"`
 }
 
-func (s *Server) handleAnalysisPolicies(w http.ResponseWriter, r *http.Request) {
-	project := normalizeProjectID(r.URL.Query().Get("project_id"))
+// analysisPolicyStore resolves the policy store and the request's project.
+func (s *Server) analysisPolicyStore(w http.ResponseWriter, r *http.Request) (storage.AnalysisDefinitionStore, string, bool) {
 	store, ok := s.store.(storage.AnalysisDefinitionStore)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "analysis policies unavailable")
+		return nil, "", false
+	}
+	return store, normalizeProjectID(r.URL.Query().Get("project_id")), true
+}
+
+func (s *Server) handleListAnalysisPolicies(w http.ResponseWriter, r *http.Request) {
+	store, project, ok := s.analysisPolicyStore(w, r)
+	if !ok {
+		return
+	}
+	kind := r.URL.Query().Get("kind")
+	if !slices.Contains(storage.AnalysisPolicyKinds, kind) {
+		writeError(w, http.StatusBadRequest, "kind must be one of "+strings.Join(storage.AnalysisPolicyKinds, ", "))
+		return
+	}
+	limit, offset := parseLimitOffsetQuery(r, 50)
+	live, err := liveAnalysisPolicies(store, project, kind)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "cannot list analysis policies")
+		return
+	}
+	// Deleted policies are dropped before paging, so only the last page is
+	// short.
+	page := []storage.AnalysisDefinition{}
+	if offset < len(live) {
+		page = live[offset:min(len(live), offset+min(limit, 100))]
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (s *Server) handleGetAnalysisPolicy(w http.ResponseWriter, r *http.Request) {
+	store, project, ok := s.analysisPolicyStore(w, r)
+	if !ok {
 		return
 	}
 	id := r.PathValue("id")
-	switch r.Method {
-	case http.MethodGet:
-		if id == "" {
-			kind := r.URL.Query().Get("kind")
-			if !slices.Contains(storage.AnalysisPolicyKinds, kind) {
-				writeError(w, http.StatusBadRequest, "kind must be one of "+strings.Join(storage.AnalysisPolicyKinds, ", "))
-				return
-			}
-			limit, offset := parseLimitOffsetQuery(r, 50)
-			live, err := liveAnalysisPolicies(store, project, kind)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "cannot list analysis policies")
-				return
-			}
-			// Deleted policies are dropped before paging, so only the last page
-			// is short.
-			page := []storage.AnalysisDefinition{}
-			if offset < len(live) {
-				page = live[offset:min(len(live), offset+min(limit, 100))]
-			}
-			writeJSON(w, http.StatusOK, page)
+	revision := int64(0)
+	if raw := r.URL.Query().Get("revision"); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed < 1 {
+			writeError(w, http.StatusBadRequest, "revision must be a positive integer")
 			return
 		}
-		revision := int64(0)
-		if raw := r.URL.Query().Get("revision"); raw != "" {
-			parsed, err := strconv.ParseInt(raw, 10, 64)
-			if err != nil || parsed < 1 {
-				writeError(w, http.StatusBadRequest, "revision must be a positive integer")
-				return
-			}
-			revision = parsed
-		}
-		// A pinned revision stays readable after deletion; the latest of a
-		// deleted policy does not.
-		in, err := store.GetAnalysisDefinition(project, id, revision)
-		if err != nil || !slices.Contains(storage.AnalysisPolicyKinds, in.Kind) || (revision == 0 && in.Deleted) {
-			writeError(w, http.StatusNotFound, "analysis policy not found")
-			return
-		}
-		writeJSON(w, http.StatusOK, in)
-		return
-	case http.MethodDelete:
-		revision, err := strconv.ParseInt(r.URL.Query().Get("revision"), 10, 64)
-		if err != nil || revision < 1 {
-			writeError(w, http.StatusBadRequest, "revision required")
-			return
-		}
-		current, err := store.GetAnalysisDefinition(project, id, 0)
-		if err != nil || !slices.Contains(storage.AnalysisPolicyKinds, current.Kind) || current.Deleted {
-			writeError(w, http.StatusNotFound, "analysis policy not found")
-			return
-		}
-		deleted := *current
-		deleted.Deleted = true
-		saved, err := store.SaveAnalysisDefinition(deleted, revision)
-		if writeAnalysisPolicySaveError(w, err) {
-			return
-		}
-		s.recordAuditEvent(r, "analysis_policy.delete", "success", "analysis_policy", id, project, map[string]any{"kind": current.Kind, "revision": saved.Revision})
-		writeJSON(w, http.StatusOK, saved)
+		revision = parsed
+	}
+	// A pinned revision stays readable after deletion; the latest of a
+	// deleted policy does not.
+	in, err := store.GetAnalysisDefinition(project, id, revision)
+	if err != nil || !slices.Contains(storage.AnalysisPolicyKinds, in.Kind) || (revision == 0 && in.Deleted) {
+		writeError(w, http.StatusNotFound, "analysis policy not found")
 		return
 	}
+	writeJSON(w, http.StatusOK, in)
+}
+
+func (s *Server) handleDeleteAnalysisPolicy(w http.ResponseWriter, r *http.Request) {
+	store, project, ok := s.analysisPolicyStore(w, r)
+	if !ok {
+		return
+	}
+	id := r.PathValue("id")
+	revision, err := strconv.ParseInt(r.URL.Query().Get("revision"), 10, 64)
+	if err != nil || revision < 1 {
+		writeError(w, http.StatusBadRequest, "revision required")
+		return
+	}
+	current, err := store.GetAnalysisDefinition(project, id, 0)
+	if err != nil || !slices.Contains(storage.AnalysisPolicyKinds, current.Kind) || current.Deleted {
+		writeError(w, http.StatusNotFound, "analysis policy not found")
+		return
+	}
+	deleted := *current
+	deleted.Deleted = true
+	saved, err := store.SaveAnalysisDefinition(deleted, revision)
+	if writeAnalysisPolicySaveError(w, err) {
+		return
+	}
+	s.recordAuditEvent(r, "analysis_policy.delete", "success", "analysis_policy", id, project, map[string]any{"kind": current.Kind, "revision": saved.Revision})
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) handleCreateAnalysisPolicy(w http.ResponseWriter, r *http.Request) {
+	if saved, ok := s.readAnalysisPolicySave(w, r, ""); ok {
+		writeJSON(w, http.StatusCreated, saved)
+	}
+}
+
+func (s *Server) handleUpdateAnalysisPolicy(w http.ResponseWriter, r *http.Request) {
+	if saved, ok := s.readAnalysisPolicySave(w, r, r.PathValue("id")); ok {
+		writeJSON(w, http.StatusOK, saved)
+	}
+}
+
+// readAnalysisPolicySave reads, validates and saves a policy: a new one when
+// id is empty, otherwise the next revision of id. It writes every failure
+// and leaves the success response to the caller.
+func (s *Server) readAnalysisPolicySave(w http.ResponseWriter, r *http.Request, id string) (*storage.AnalysisDefinition, bool) {
+	store, project, ok := s.analysisPolicyStore(w, r)
+	if !ok {
+		return nil, false
+	}
+	create := id == ""
 	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			writeError(w, http.StatusRequestEntityTooLarge, "analysis policy exceeds request byte limit")
-			return
+			return nil, false
 		}
 		writeError(w, http.StatusBadRequest, "cannot read analysis policy")
-		return
+		return nil, false
 	}
 	var req AnalysisPolicyRequest
 	if err := decodeAnalysisDefinitionJSON(body, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, false
 	}
 	expected := int64(0)
-	if r.Method == http.MethodPost {
-		if id != "" || req.Revision != 0 {
+	if create {
+		if req.Revision != 0 {
 			writeError(w, http.StatusBadRequest, "new policy must omit revision")
-			return
+			return nil, false
 		}
 		id = uuid.NewString()
 	} else {
 		current, err := store.GetAnalysisDefinition(project, id, 0)
 		if err != nil || current.Deleted || !slices.Contains(storage.AnalysisPolicyKinds, current.Kind) {
 			writeError(w, http.StatusNotFound, "analysis policy not found")
-			return
+			return nil, false
 		}
 		if req.Kind != current.Kind {
 			writeError(w, http.StatusBadRequest, "policy kind cannot change")
-			return
+			return nil, false
 		}
 		if req.Revision < 1 {
 			writeError(w, http.StatusBadRequest, "revision required")
-			return
+			return nil, false
 		}
 		expected = req.Revision
 	}
 	if !slices.Contains(storage.AnalysisPolicyKinds, req.Kind) {
 		writeError(w, http.StatusBadRequest, "kind must be one of "+strings.Join(storage.AnalysisPolicyKinds, ", "))
-		return
+		return nil, false
 	}
 	envelope, err := decodeAnalysisPolicy(req.Kind, req.Definition)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, false
 	}
 	definition := storage.AnalysisDefinition{ID: id, ProjectID: project, Kind: req.Kind, Name: strings.TrimSpace(req.Name), Definition: req.Definition}
 	var saved *storage.AnalysisDefinition
@@ -629,27 +666,23 @@ func (s *Server) handleAnalysisPolicies(w http.ResponseWriter, r *http.Request) 
 		if envelope.ApplyByDefault {
 			if other, otherErr := projectDefaultPolicy(store, project, req.Kind); otherErr != nil {
 				writeError(w, http.StatusServiceUnavailable, "analysis policies unavailable")
-				return
+				return nil, false
 			} else if other != nil && other.ID != id {
 				writeError(w, http.StatusConflict, fmt.Sprintf("policy %q already applies by default for %s", other.Name, req.Kind))
-				return
+				return nil, false
 			}
 		}
 		saved, err = store.SaveAnalysisDefinition(definition, expected)
 	}
 	if errors.Is(err, storage.ErrAnalysisPolicyDefaultConflict) {
 		writeError(w, http.StatusConflict, fmt.Sprintf("another %s policy already applies by default (%s)", req.Kind, strings.TrimPrefix(err.Error(), storage.ErrAnalysisPolicyDefaultConflict.Error()+": ")))
-		return
+		return nil, false
 	}
 	if writeAnalysisPolicySaveError(w, err) {
-		return
+		return nil, false
 	}
 	s.recordAuditEvent(r, "analysis_policy.save", "success", "analysis_policy", id, project, map[string]any{"kind": req.Kind, "revision": saved.Revision, "apply_by_default": envelope.ApplyByDefault})
-	status := http.StatusOK
-	if r.Method == http.MethodPost {
-		status = http.StatusCreated
-	}
-	writeJSON(w, status, saved)
+	return saved, true
 }
 
 // writeAnalysisPolicySaveError maps a policy save failure without exposing

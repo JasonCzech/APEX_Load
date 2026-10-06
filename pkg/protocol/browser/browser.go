@@ -158,12 +158,14 @@ type Browser struct {
 	// budget refused this context's HAR writer, reported once per context;
 	// resourceLimit is set when the context was refused or closed to protect
 	// the generator, and every later result of the context then fails; a
-	// refused context is retried after admissionRetryAt.
-	harUnavailableReason   string
-	harUnavailableReported bool
-	resourceLimit          string
-	// admissionRetryAt is when a context refused at admission is tried again.
+	// refused context is retried at the next iteration after
+	// admissionRetryAt, and admissionRefusalLogged limits its log to one line
+	// per run of refusals.
+	harUnavailableReason        string
+	harUnavailableReported      bool
+	resourceLimit               string
 	admissionRetryAt            time.Time
+	admissionRefusalLogged      bool
 	networkTasksDroppedReported int64
 }
 
@@ -280,17 +282,6 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		result.ErrorMessage = err.Error()
 		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 		return result, nil
-	}
-	if b.currentPage() == nil {
-		readmitted, err := b.readmitRefusedContext(ctx)
-		if err != nil {
-			result.Duration = time.Since(result.StartTime)
-			result.ErrorMessage = "browser context could not be opened: " + err.Error()
-			return result, nil
-		}
-		if readmitted {
-			result.StartTime = time.Now()
-		}
 	}
 	if b.currentPage() == nil {
 		result.ErrorMessage = "browser protocol is not initialized"

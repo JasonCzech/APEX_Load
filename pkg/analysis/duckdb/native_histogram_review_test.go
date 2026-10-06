@@ -57,6 +57,11 @@ func TestNativeCumulativeHistogramDifferencesAcrossFiles(t *testing.T) {
 	if windows != 4 || sources != 10 || result.Accepted != 10 {
 		t.Fatalf("windows %d sources %d %+v", windows, sources, result)
 	}
+	for _, partition := range result.Partitions {
+		if stats := partition.Stats; stats.Rows > 0 && (stats.MaxWindowEnd == nil || !stats.MaxWindowEnd.After(*stats.MaxTime)) {
+			t.Fatalf("a distribution partition did not record its latest window end: %+v", stats)
+		}
+	}
 	// Every observation from the first to the last scrape is counted once:
 	// 12 total at the end minus 2 at the start.
 	wantHistogramBuckets(t, "count/240", histogramSeries(t, e, result.Files, "latency", "count", summaryStart(), 1, 240), counted(10))
@@ -89,6 +94,24 @@ func TestNativeCumulativeHistogramInstantsReportedByTwoFiles(t *testing.T) {
 	}
 	result = retainNativeFixtureOutputs(t, e, result)
 	wantHistogramBuckets(t, "mixed count/60", histogramSeries(t, e, result.Files, "latency", "count", summaryStart(), 1, 60), unscored(analysis.MissingDuplicateHistogramRow))
+}
+
+// A disagreeing instant in the middle of a series is missing as a
+// duplicate on both sides: the window it closes and the one it opens. The
+// next window, between agreeing samples, is whole again.
+func TestNativeCumulativeHistogramDisagreeingInstantMidSeries(t *testing.T) {
+	scrape := func(ts int, low, total float64) string {
+		return "(" + itoa(ts) + ", '100', " + ftoa(low) + "), (" + itoa(ts) + ", '+Inf', " + ftoa(total) + ")"
+	}
+	e, a := nativeFixture(t, "SELECT * FROM (VALUES "+scrape(1700000040, 1, 2)+", "+scrape(1700000100, 2, 4)+", "+scrape(1700000160, 4, 7)+", "+scrape(1700000220, 5, 9)+") t(ts, le, requests)")
+	b := nativeExtraFixture(t, e, "b.parquet", "SELECT * FROM (VALUES "+scrape(1700000100, 3, 5)+") t(ts, le, requests)")
+	result, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{a, b}, Mapping: cumulativeLatency(Column{"le"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result = retainNativeFixtureOutputs(t, e, result)
+	wantHistogramBuckets(t, "count/60", histogramSeries(t, e, result.Files, "latency", "count", summaryStart(), 3, 60),
+		unscored(analysis.MissingDuplicateHistogramRow), unscored(analysis.MissingDuplicateHistogramRow), counted(2))
 }
 
 // The lead-in that makes a first bucket partial belongs to the queried

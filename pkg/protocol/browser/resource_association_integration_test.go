@@ -204,14 +204,14 @@ func TestChromiumNavigationRaceKeepsResourcesWithTheirDocument(t *testing.T) {
 			t.Fatalf("the abandoned document's image joined %q (%s)", v.DocumentID, v.IdentityUnavailableReason)
 		}
 	}
-	// The keepalive fetch completed after the navigation; it must join the
-	// document that issued it, never the landing page that was loading.
+	// The fetch ended after the navigation (aborted mid-body); it must join
+	// the document that issued it, never the landing page that was loading.
 	slow := entriesFor(entries, "/slow.json")
 	if len(slow) != 1 {
-		t.Fatalf("keepalive fetch rows: %d", len(slow))
+		t.Fatalf("streaming fetch rows: %d", len(slow))
 	}
 	if v := slow[0].BrowserEvidence; v.DocumentID != raceDoc || v.DocumentAssociation != "cdp_loader_join" {
-		t.Fatalf("the abandoned document's keepalive fetch joined %q (%s, %s), want %s", v.DocumentID, v.DocumentAssociation, v.IdentityUnavailableReason, raceDoc)
+		t.Fatalf("the abandoned document's fetch joined %q (%s, %s), want %s", v.DocumentID, v.DocumentAssociation, v.IdentityUnavailableReason, raceDoc)
 	}
 	css := entriesFor(entries, "/app.css")
 	if len(css) == 0 {

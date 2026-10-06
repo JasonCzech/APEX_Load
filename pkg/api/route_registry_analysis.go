@@ -47,11 +47,11 @@ var analysisAPIRouteCatalog = apiRouteCatalog{Domain: "analysis", Routes: []apiR
 	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/evaluations/{id}", "handleGetEvaluationJob", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleGetEvaluationJob) }),
 	newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/analysis/evaluations/{id}", "handleDeleteEvaluationJob", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleDeleteEvaluationJob) }),
 	// Revisioned project policies; a run pins the defaults in force at Start.
-	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/policies", "handleAnalysisPolicies", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisPolicies) }),
-	newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/analysis/policies", "handleAnalysisPolicies", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisPolicies) }),
-	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/policies/{id}", "handleAnalysisPolicies", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisPolicies) }),
-	newAuthenticatedAPIRoute(http.MethodPut, "/api/v1/analysis/policies/{id}", "handleAnalysisPolicies", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisPolicies) }),
-	newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/analysis/policies/{id}", "handleAnalysisPolicies", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisPolicies) }),
+	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/policies", "handleListAnalysisPolicies", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleListAnalysisPolicies) }),
+	newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/analysis/policies", "handleCreateAnalysisPolicy", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleCreateAnalysisPolicy) }),
+	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/policies/{id}", "handleGetAnalysisPolicy", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleGetAnalysisPolicy) }),
+	newAuthenticatedAPIRoute(http.MethodPut, "/api/v1/analysis/policies/{id}", "handleUpdateAnalysisPolicy", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleUpdateAnalysisPolicy) }),
+	newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/analysis/policies/{id}", "handleDeleteAnalysisPolicy", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleDeleteAnalysisPolicy) }),
 }}
 
 func analysisQueryAccess(lookup projectScopedLookup) accessRequirement {

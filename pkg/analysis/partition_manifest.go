@@ -46,6 +46,10 @@ type NormalizedPartitionStats struct {
 	Metric          *string                      `json:"metric,omitempty"`
 	Identity        *NormalizedPartitionIdentity `json:"identity,omitempty"`
 	SourceRows      int64                        `json:"source_rows,omitempty"` // Histogram only: accepted source rows grouped into its windows.
+	// MaxWindowEnd is, for a histogram partition, the latest end of any of
+	// its windows: a partition whose windows all end by a query's start
+	// cannot hold the window that crosses into it.
+	MaxWindowEnd *time.Time `json:"max_window_end,omitempty"`
 }
 type NormalizedPartition struct {
 	ObjectKey string                   `json:"object_key"`
@@ -107,10 +111,13 @@ func (s NormalizedPartitionStats) Validate() error {
 		return ErrPartitionManifest
 	}
 	if s.Rows == 0 {
-		if s.MinTime != nil || s.MaxTime != nil || s.Metric != nil || s.Identity != nil {
+		if s.MinTime != nil || s.MaxTime != nil || s.Metric != nil || s.Identity != nil || s.MaxWindowEnd != nil {
 			return ErrPartitionManifest
 		}
 	} else if !canonicalPartitionTime(s.MinTime) || !canonicalPartitionTime(s.MaxTime) || s.MaxTime.Before(*s.MinTime) {
+		return ErrPartitionManifest
+	}
+	if s.MaxWindowEnd != nil && (s.Kind != KindHistogram || !canonicalPartitionTime(s.MaxWindowEnd) || !s.MaxWindowEnd.After(*s.MaxTime)) {
 		return ErrPartitionManifest
 	}
 	if s.Metric != nil && !partitionText(*s.Metric, 256, true) {
@@ -149,6 +156,10 @@ func (s NormalizedPartitionStats) Clone() NormalizedPartitionStats {
 	if s.MaxTime != nil {
 		v := *s.MaxTime
 		s.MaxTime = &v
+	}
+	if s.MaxWindowEnd != nil {
+		v := *s.MaxWindowEnd
+		s.MaxWindowEnd = &v
 	}
 	if s.Metric != nil {
 		v := *s.Metric
@@ -306,9 +317,14 @@ func (m *NormalizedPartitionManifest) Select(q PartitionSelection) ([]int, error
 			continue
 		}
 		// A histogram window can start before From and end inside the range:
-		// its earlier partition stays selected so the query sees the lead-in
-		// and marks the bucket partial rather than complete.
-		if timeKnown && (s.Kind != KindHistogram && s.MaxTime.Before(q.From) || !s.MinTime.Before(q.To)) {
+		// its earlier partition stays selected, unless all of its windows end
+		// by From, so the query sees the lead-in and marks the bucket partial
+		// rather than complete.
+		before := s.MaxTime.Before(q.From)
+		if s.Kind == KindHistogram {
+			before = s.MaxWindowEnd != nil && !s.MaxWindowEnd.After(q.From)
+		}
+		if timeKnown && (before || !s.MinTime.Before(q.To)) {
 			continue
 		}
 		if i := s.Identity; i != nil {

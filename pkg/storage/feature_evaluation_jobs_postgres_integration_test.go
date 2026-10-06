@@ -43,6 +43,11 @@ func TestPostgresEvaluationJobReviewFixes(t *testing.T) {
 	exerciseEvaluationJobReviewFixes(t, store)
 }
 
+func TestPostgresEvaluationJobCompletionFences(t *testing.T) {
+	store, _ := newPostgresScenarioRevisionFixture(t)
+	exerciseEvaluationJobCompletionFences(t, store)
+}
+
 // Two PostgreSQL controllers: a takeover after lease expiry fences the first
 // owner, and a cancel makes a late completion invisible.
 func TestPostgresEvaluationJobTakeoverAndCancelThenLatePublish(t *testing.T) {

@@ -96,5 +96,19 @@ describe('analysis summary helpers', () => {
     expect((shared! - left) % 120000).toBe(0)
     expect((((shared! - right) % 300000) + 300000) % 300000).toBe(0)
     expect(analysisCommonWindowAnchor([{ windowSeconds: 120, anchorMs: left }, { windowSeconds: 300 }], 600)).toBeUndefined()
+    // Two 60-second grids half a minute apart never share a start.
+    expect(analysisCommonWindowAnchor([{ windowSeconds: 60, anchorMs: left }, { windowSeconds: 60, anchorMs: left + 30000 }], 60)).toBeUndefined()
+  })
+
+  it('reads the grid of the selected series', () => {
+    const series = (host: string, iso: string) => ({ stats: { kind: 'summary', metric: 'latency', min_time: iso, identity: { source: 's', host, service: '', dimensions: {} } } })
+    const dataset = { id: 'd', project_id: 'p', name: 'd', revision: 1, state: 'ready', files: [], accepted: 1, rejected: 0, partition_manifest: { partitions: [series('a', '2026-01-01T00:00:00Z'), series('b', '2026-01-01T00:00:30Z')] } }
+    // Together the hosts disagree; each on its own has a grid.
+    expect(analysisWindowAnchor(dataset, 'latency', 60)).toBeUndefined()
+    expect(analysisWindowAnchor(dataset, 'latency', 60, { host: 'b' })).toBe(Date.parse('2026-01-01T00:00:30Z'))
+    // A partition mixing series cannot tell one series' grid.
+    const mixed = { ...dataset, partition_manifest: { partitions: [{ stats: { kind: 'summary', metric: 'latency', min_time: '2026-01-01T00:00:00Z' } }] } }
+    expect(analysisWindowAnchor(mixed, 'latency', 60)).toBe(Date.parse('2026-01-01T00:00:00Z'))
+    expect(analysisWindowAnchor(mixed, 'latency', 60, { host: 'b' })).toBeUndefined()
   })
 })

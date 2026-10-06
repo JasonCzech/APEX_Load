@@ -89,6 +89,9 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, storage.ErrScenarioAuthoringOutcomeUnknown) {
+			// The create may have committed; reload so this replica lists it
+			// if it did.
+			s.runner.refreshScenariosAfterDurableMismatch()
 			writeScenarioAuthoringSaveOutcomeUnavailable(w, true)
 			return
 		}
@@ -441,6 +444,7 @@ func (s *Server) handleDeleteScenario(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "scenario not found or has results")
 		return
 	}
+	s.retombstoneAuthoringReceipts("scenario", id)
 	s.recordAuditEvent(r, "scenario.delete", "success", "scenario", id, projectID, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }

@@ -26,8 +26,10 @@ import (
 // context creation and binding calls arrive in order on that one session, so
 // the context belongs to the loader its frame had committed when the context
 // was created; a context that predates its frame's latest commit (a late call
-// from a replaced document) proves nothing. No clock is compared across the
-// renderer and browser processes.
+// from a replaced document) or the binding itself proves nothing. No clock is
+// compared across the renderer and browser processes. Enabling Runtime on
+// this session also reports console calls and exceptions to it, an inspector
+// cost that only opted-in document capture pays.
 //
 // WebKit: a request joins the one document of its frame holding exactly one
 // Resource Timing entry for its URL (page_resource_timing_join); its document
@@ -86,7 +88,7 @@ type cdpFrameCommit struct {
 // default execution contexts was created.
 type cdpContextLoader struct {
 	frameID, loaderID string
-	commit            uint64
+	commit, created   uint64
 }
 
 type cdpEvidencePage struct {
@@ -100,9 +102,16 @@ type cdpEvidencePage struct {
 	// ambiguous.
 	loaderTokens     map[string]string
 	ambiguousLoaders map[string]bool
-	ordinals         map[resourceJoinKey]int
-	count            int
-	truncated        bool
+	// contextsSeen numbers default contexts in creation order. Only contexts
+	// created after the binding was installed (beyond provableAfter) can
+	// prove a document: an older context never ran the bootstrap's report
+	// and leaves the binding to page scripts.
+	contextsSeen  uint64
+	provableAfter uint64
+	bindingReady  bool
+	ordinals      map[resourceJoinKey]int
+	count         int
+	truncated     bool
 }
 
 type loaderDocument struct {
@@ -186,6 +195,13 @@ func (b *Browser) installResourceAssociation(browserContext playwright.BrowserCo
 	}
 	if err == nil {
 		_, err = cdp.Send("Runtime.addBinding", map[string]any{"name": loaderBinding})
+	}
+	if err == nil {
+		// Contexts reported so far, including the replay of existing ones,
+		// predate the binding; only later ones can prove a document.
+		b.mu.Lock()
+		state.provableAfter, state.bindingReady = state.contextsSeen, true
+		b.mu.Unlock()
 	}
 	if err != nil {
 		b.mu.Lock()
@@ -346,7 +362,8 @@ func (b *Browser) observeCDPContextCreated(state *cdpEvidencePage, params map[st
 		state.truncated = true
 		return
 	}
-	state.contexts[id] = cdpContextLoader{frameID: frameID, loaderID: frame.loaderID, commit: frame.commit}
+	state.contextsSeen++
+	state.contexts[id] = cdpContextLoader{frameID: frameID, loaderID: frame.loaderID, commit: frame.commit, created: state.contextsSeen}
 }
 
 func (b *Browser) observeCDPContextDestroyed(state *cdpEvidencePage, params map[string]any, generation string) {
@@ -384,7 +401,7 @@ func (b *Browser) observeCDPDocumentReport(state *cdpEvidencePage, params map[st
 		return
 	}
 	context, known := state.contexts[id]
-	if !known || state.frames[context.frameID].commit != context.commit {
+	if !known || !state.bindingReady || context.created <= state.provableAfter || state.frames[context.frameID].commit != context.commit {
 		return
 	}
 	if previous, reported := state.loaderTokens[context.loaderID]; reported {

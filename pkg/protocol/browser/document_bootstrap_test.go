@@ -62,3 +62,34 @@ func TestBrowserDocumentBootstrapOfficialSessionWindowAndInteractionRank(t *test
 }
 
 func javascriptSourceQuote(s string) string { b, _ := json.Marshal(s); return string(b) }
+
+// The bootstrap reports its document token to the evidence session's loader
+// binding exactly once, from the begin, then removes the binding so page
+// scripts cannot call it; without the binding it simply carries on.
+func TestBrowserDocumentBootstrapReportsItsTokenToTheLoaderBindingOnce(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("Node is unavailable for the bootstrap unit test")
+	}
+	harness := `const vm=require('node:vm');const assert=require('node:assert/strict');
+ const run=withLoader=>{const payloads=[],reports=[],listeners=new Map();
+  class NativeObserver{static supportedEntryTypes=[];constructor(){}observe(){}disconnect(){}takeRecords(){return []}}
+  const context={console,performance:{timeOrigin:1710000000000,now:()=>1,getEntriesByType:()=>[]},PerformanceObserver:NativeObserver,Uint8Array,crypto:require('node:crypto').webcrypto,document:{visibilityState:'visible',readyState:'complete'},addEventListener:(name,fn)=>{if(!listeners.has(name))listeners.set(name,[]);listeners.get(name).push(fn)},removeEventListener:()=>{},requestAnimationFrame:fn=>setTimeout(fn,0),setTimeout,queueMicrotask,Promise,Map,Set,Math,Date,Infinity,__binding:payload=>{payloads.push(payload);return Promise.resolve(true)}};
+  if(withLoader)context.__loader=token=>{reports.push(token)};
+  context.window=context;context.globalThis=context;vm.createContext(context);vm.runInContext(SCRIPT,context);
+  for(const listener of listeners.get('pageshow')||[])listener({persisted:true,timeStamp:5});
+  return {payloads,reports,context}};
+ const reported=run(true);const begin=reported.payloads.find(p=>p.kind==='begin');
+ assert.deepEqual(reported.reports,[begin.document_token],'one report of the begin token');
+ assert.equal('__loader' in reported.context,false,'the binding is removed after the report');
+ const plain=run(false);assert.equal(plain.payloads.filter(p=>p.kind==='begin').length>=1,true,'the begin still runs without the binding');
+ console.log('loader-report-unit PASS');`
+	encoded := strings.ReplaceAll(harness, "SCRIPT", javascriptSourceQuote(browserDocumentBootstrap("__binding", "__finalizer", "__loader", true, false)))
+	output, err := exec.Command(node, "-e", encoded).CombinedOutput()
+	if err != nil {
+		t.Fatalf("loader report unit: %v\n%s", err, output)
+	}
+	if !strings.Contains(string(output), "loader-report-unit PASS") {
+		t.Fatalf("missing explicit unit completion: %s", output)
+	}
+}
