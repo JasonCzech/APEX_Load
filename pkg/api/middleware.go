@@ -385,6 +385,7 @@ func enforceIdempotencyKey(w http.ResponseWriter, r *http.Request, store Idempot
 	// committed resource rather than the generic mutation layer's duplicate-key
 	// conflict.
 	if r.Method == http.MethodPost && (r.URL.Path == "/api/v1/ci/runs" ||
+		r.URL.Path == "/api/v1/scripts" || r.URL.Path == "/api/v1/scenarios" ||
 		r.URL.Path == "/api/v1/scripts/import/jmeter/save" ||
 		(strings.HasPrefix(r.URL.Path, "/api/v1/browser-recorder/sessions/") &&
 			strings.HasSuffix(r.URL.Path, "/convert"))) {

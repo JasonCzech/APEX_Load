@@ -548,6 +548,12 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
 		return
 	}
+	// Tombstone first: a failed delete then refuses retries of the create that
+	// made this script, but can never let one recreate it.
+	if err := s.tombstoneAuthoringReceipts("script", stored.ID); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "script delete unavailable; no deletion was attempted")
+		return
+	}
 	var importSourceArtifacts []storage.ImportSourceArtifact
 	if importSourceStore, ok := s.store.(storage.ImportSourceStore); ok {
 		revisions, listErr := importSourceStore.ListImportSourceRevisions(id, stored.ProjectID)

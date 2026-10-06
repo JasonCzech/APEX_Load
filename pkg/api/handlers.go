@@ -727,6 +727,15 @@ func (s *Server) handleGetLiveErrorEvidence(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// scriptCreateFingerprint is the request identity an Idempotency-Key binds:
+// the create request as the client sent it.
+type scriptCreateFingerprint struct {
+	ProjectID                string     `json:"project_id,omitempty"`
+	FolderID                 *string    `json:"folder_id,omitempty"`
+	Script                   dsl.Script `json:"script"`
+	SourceRecordingSessionID string     `json:"source_recording_session_id,omitempty"`
+}
+
 func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	var wrapper struct {
 		ProjectID string     `json:"project_id,omitempty"`
@@ -757,6 +766,24 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// An Idempotency-Key makes an ordinary create retry-safe. Credential-
+	// preserving imports are fenced by their single-use import attestations.
+	var receipt *authoringCreateAttempt
+	if !isCredentialPreservingImport(script) {
+		attempt, outcome := s.claimAuthoringCreate(w, r, storage.AuthoringPurposeScriptCreate, "script", script.ProjectID, script.ID, scriptCreateFingerprint(wrapper))
+		switch outcome {
+		case authoringCreateHandled:
+			return
+		case authoringCreateReplay:
+			s.replayScriptCreate(w, r, attempt)
+			return
+		}
+		receipt = attempt
+		defer receipt.release()
+		if receipt != nil && strings.TrimSpace(script.ID) == "" {
+			script.ID = receipt.resourceID()
+		}
+	}
 	// Resolve duplicate IDs before credential/source work. The durable insert
 	// repeats this check atomically after validation to close concurrent creates.
 	if strings.TrimSpace(script.ID) != "" && !(isCredentialPreservingImport(script) && importDraftAttestationToken(script) != "") {
@@ -768,6 +795,12 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		if exists && existing != nil {
 			if isCIScriptSnapshot(existing) || normalizeProjectID(existing.ProjectID) != normalizeProjectID(script.ProjectID) {
 				writeError(w, http.StatusNotFound, "script not found")
+				return
+			}
+			if receipt.adoptsExisting() && existing.ID == receipt.resourceID() {
+				// An earlier attempt with this key created the script but its
+				// response (and receipt completion) was lost.
+				s.replayScriptCreate(w, r, receipt)
 				return
 			}
 			writeError(w, http.StatusConflict, "script ID already exists; use a conditioned update")
@@ -895,10 +928,15 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 			importAttestationClaim.Profile,
 		)
 	} else {
+		receipt.markAttempted()
 		stored, err = s.runner.CreateScriptAuthoringDurable(script)
 	}
 	if err != nil {
 		if errors.Is(err, errScriptAuthoringAlreadyExists) {
+			if receipt.adoptsExisting() {
+				s.replayScriptCreate(w, r, receipt)
+				return
+			}
 			writeError(w, http.StatusConflict, "script ID already exists; use a conditioned update")
 			return
 		}
@@ -924,6 +962,7 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("failed to persist attested recorded baseline", "script_id", stored.ID, "error", err)
 		}
 	}
+	receipt.complete(stored.ContentRevision)
 	s.recordAuditEvent(r, "script.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": disclosureSafeScriptName(stored.Name, stored.Script), "folder_id": stored.FolderID})
 	writeJSON(w, http.StatusCreated, viewStoredScript(stored))
 }

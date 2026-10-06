@@ -1792,6 +1792,28 @@ func schemaCreateTableStatements() []string {
 			wrapped_key TEXT NOT NULL,
 			created_at DATETIME NOT NULL
 		)`,
+		// Retry fences for ordinary script/scenario creates. Keys and request
+		// bodies are stored only as keyed digests.
+		`CREATE TABLE IF NOT EXISTS authoring_mutation_receipts (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+			actor TEXT NOT NULL,
+			purpose TEXT NOT NULL,
+			key_hash TEXT NOT NULL,
+			request_digest TEXT NOT NULL,
+			resource_type TEXT NOT NULL,
+			resource_id TEXT NOT NULL,
+			resource_revision TEXT NOT NULL DEFAULT '',
+			state TEXT NOT NULL CHECK(state IN ('pending', 'complete')),
+			owner_token TEXT NOT NULL DEFAULT '',
+			lease_expires_at DATETIME,
+			expires_at DATETIME NOT NULL,
+			tombstoned_at DATETIME,
+			tombstone_reason TEXT NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			UNIQUE(project_id, actor, purpose, key_hash)
+		)`,
 	}
 }
 
@@ -2209,6 +2231,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_rca_analyses_test_digest ON rca_analyses(test_id, input_digest)`, "idx_rca_analyses_test_digest"},
 	{`CREATE INDEX IF NOT EXISTS idx_rca_analyses_claim ON rca_analyses(state, lease_expires_at)`, "idx_rca_analyses_claim"},
 	{`CREATE INDEX IF NOT EXISTS idx_rca_critiques_analysis ON rca_critiques(analysis_id, created_at)`, "idx_rca_critiques_analysis"},
+	{`CREATE INDEX IF NOT EXISTS idx_authoring_mutation_receipts_resource ON authoring_mutation_receipts(resource_type, resource_id)`, "idx_authoring_mutation_receipts_resource"},
 }
 
 func (s *SQLiteStore) init() error {

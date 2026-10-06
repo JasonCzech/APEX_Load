@@ -244,35 +244,42 @@ func (s *Server) directImportDigestKey() ([]byte, error) {
 	if _, ok := s.store.(storage.DirectImportReceiptStore); !ok {
 		return nil, nil
 	}
-	raw, err := s.store.GetSetting(directImportDigestKeySetting)
+	return s.persistentDigestKey(directImportDigestKeySetting, "direct import")
+}
+
+// persistentDigestKey loads, or atomically initializes, a random HMAC key held
+// in a durable setting. Every replica adopts the first key written, so keyed
+// digests compare across replicas and restarts.
+func (s *Server) persistentDigestKey(setting, purpose string) ([]byte, error) {
+	raw, err := s.store.GetSetting(setting)
 	if err != nil {
-		return nil, fmt.Errorf("load direct import digest key: %w", err)
+		return nil, fmt.Errorf("load %s digest key: %w", purpose, err)
 	}
 	if strings.TrimSpace(raw) == "" {
 		generated := make([]byte, directImportDigestKeyBytes)
 		if _, err := rand.Read(generated); err != nil {
-			return nil, fmt.Errorf("generate direct import digest key: %w", err)
+			return nil, fmt.Errorf("generate %s digest key: %w", purpose, err)
 		}
 		encoded := base64.RawURLEncoding.EncodeToString(generated)
 		cas, ok := s.store.(settingsCompareAndSwapper)
 		if !ok {
-			return nil, errors.New("durable direct import receipts require atomic digest-key initialization")
+			return nil, fmt.Errorf("durable %s receipts require atomic digest-key initialization", purpose)
 		}
-		won, err := cas.CompareAndSwapSetting(directImportDigestKeySetting, "", encoded)
+		won, err := cas.CompareAndSwapSetting(setting, "", encoded)
 		if err != nil {
-			return nil, fmt.Errorf("initialize direct import digest key: %w", err)
+			return nil, fmt.Errorf("initialize %s digest key: %w", purpose, err)
 		}
 		if won {
 			return generated, nil
 		}
-		raw, err = s.store.GetSetting(directImportDigestKeySetting)
+		raw, err = s.store.GetSetting(setting)
 		if err != nil {
-			return nil, fmt.Errorf("reload direct import digest key: %w", err)
+			return nil, fmt.Errorf("reload %s digest key: %w", purpose, err)
 		}
 	}
 	key, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
 	if err != nil || len(key) != directImportDigestKeyBytes {
-		return nil, errors.New("direct import digest key is invalid")
+		return nil, fmt.Errorf("%s digest key is invalid", purpose)
 	}
 	return key, nil
 }

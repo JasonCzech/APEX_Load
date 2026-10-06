@@ -28,6 +28,15 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, projectErr.Error())
 		return
 	}
+	receipt, outcome := s.claimAuthoringCreate(w, r, storage.AuthoringPurposeScenarioCreate, "scenario", projectID, "", req)
+	switch outcome {
+	case authoringCreateHandled:
+		return
+	case authoringCreateReplay:
+		s.replayScenarioCreate(w, r, receipt)
+		return
+	}
+	defer receipt.release()
 	domainID, featureID, shapeErr := s.validateScenarioWorkloadShape(req, projectID, "")
 	if errors.Is(shapeErr, errUnknownWorkloadShape) {
 		writeError(w, http.StatusBadRequest, "unknown workload_shape_id")
@@ -41,7 +50,20 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		writeDomainFeatureDisabled(w, domainID, featureID)
 		return
 	}
-	scenario, err := s.runner.StoreScenario(req)
+	var scenario *StoredScenario
+	var err error
+	if receipt != nil {
+		// The receipt fixes the scenario ID, so a retry after a lost response
+		// finds the scenario this request created instead of making another.
+		receipt.markAttempted()
+		scenario, err = s.runner.StoreScenarioWithIDCreateOnly(receipt.resourceID(), req)
+		if errors.Is(err, errScenarioConcurrentChange) && receipt.adoptsExisting() {
+			s.replayScenarioCreate(w, r, receipt)
+			return
+		}
+	} else {
+		scenario, err = s.runner.StoreScenario(req)
+	}
 	if err != nil {
 		if errors.Is(err, errServiceAccountRuntimeSecretWrite) || errors.Is(err, errUnattributedRuntimeSecretWrite) {
 			writeError(w, http.StatusForbidden, err.Error())
@@ -49,6 +71,9 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if receipt != nil {
+		receipt.complete(s.scenarioContentRevision(scenario.ID))
 	}
 	s.recordAuditEvent(r, "scenario.create", "success", "scenario", scenario.ID, scenario.ProjectID, map[string]any{"name": scenario.Name, "duration": scenario.Duration})
 	writeJSON(w, http.StatusCreated, maskStoredScenario(scenario))
@@ -343,6 +368,13 @@ func (s *Server) handleDeleteScenario(w http.ResponseWriter, r *http.Request) {
 	projectID := ""
 	if scenario, ok := s.runner.GetScenario(id); ok {
 		projectID = scenario.ProjectID
+		id = scenario.ID
+	}
+	// Tombstone first: a failed delete then refuses retries of the create that
+	// made this scenario, but can never let one recreate it.
+	if err := s.tombstoneAuthoringReceipts("scenario", id); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "scenario delete unavailable; no deletion was attempted")
+		return
 	}
 	deleted, err := s.runner.DeleteScenarioDurable(id)
 	if err != nil {

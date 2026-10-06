@@ -35355,7 +35355,11 @@ export interface operations {
     };
   };
   "handleCreateScenario": {
-    parameters?: never;
+    parameters: {
+      "header"?: {
+        "Idempotency-Key"?: string;
+      };
+    };
     requestBody: {
       content: {
         "application/json": {
@@ -36083,6 +36087,10 @@ export interface operations {
     };
     responses: {
       "201": {
+        headers: {
+          "Idempotent-Replayed"?: "true";
+          "X-APEX-Original-Content-Revision"?: string;
+        };
         content: {
           "application/json": ({
             "activity"?: ({
@@ -37101,7 +37109,10 @@ export interface operations {
       };
       "400": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            "code"?: "idempotency_key_invalid";
+            "error": string;
+          };
         };
       };
       "401": {
@@ -37114,6 +37125,22 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "409": {
+        content: {
+          "application/json": {
+            "code"?: "idempotency_key_reused" | "idempotency_key_expired" | "idempotency_request_in_progress";
+            "error": string;
+          };
+        };
+      };
+      "410": {
+        content: {
+          "application/json": {
+            "code"?: "idempotency_resource_deleted";
+            "error": string;
+          };
+        };
+      };
       "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -37121,7 +37148,10 @@ export interface operations {
       };
       "503": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            "code"?: "idempotency_unavailable";
+            "error": string;
+          };
         };
       };
       "default": {
@@ -37288,7 +37318,11 @@ export interface operations {
     };
   };
   "handleCreateScript": {
-    parameters?: never;
+    parameters: {
+      "header"?: {
+        "Idempotency-Key"?: string;
+      };
+    };
     requestBody: {
       content: {
         "application/json": {
@@ -38155,6 +38189,10 @@ export interface operations {
     };
     responses: {
       "201": {
+        headers: {
+          "Idempotent-Replayed"?: "true";
+          "X-APEX-Original-Content-Revision"?: string;
+        };
         content: {
           "application/json": ({
             "activity"?: ({
@@ -39158,7 +39196,10 @@ export interface operations {
       };
       "400": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            "code"?: "idempotency_key_invalid";
+            "error": string;
+          };
         };
       };
       "401": {
@@ -39178,7 +39219,18 @@ export interface operations {
       };
       "409": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            "code"?: "idempotency_key_reused" | "idempotency_key_expired" | "idempotency_request_in_progress";
+            "error": string;
+          };
+        };
+      };
+      "410": {
+        content: {
+          "application/json": {
+            "code"?: "idempotency_resource_deleted";
+            "error": string;
+          };
         };
       };
       "413": {
@@ -39193,7 +39245,10 @@ export interface operations {
       };
       "503": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            "code"?: "idempotency_unavailable";
+            "error": string;
+          };
         };
       };
       "default": {
@@ -45574,6 +45629,11 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

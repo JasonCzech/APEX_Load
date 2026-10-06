@@ -136336,12 +136336,32 @@ paths:
                   - scripts
                   - updated_at
                 nullable: true
+          headers:
+            Idempotent-Replayed:
+              description: true when the response returns the resource an earlier request with the same Idempotency-Key created. The body is the resource as it is now.
+              schema:
+                type: string
+                enum:
+                  - "true"
+            X-APEX-Original-Content-Revision:
+              description: On a replay, the authored content revision the original create produced, when recorded.
+              schema:
+                type: string
         "400":
-          description: Bad Request
+          description: Bad Request Idempotency outcomes carry a code; other failures keep the generic error body.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_key_invalid
+                  error:
+                    type: string
+                required:
+                  - error
         "401":
           description: Authentication required or invalid.
           content:
@@ -136354,6 +136374,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict Idempotency outcomes carry a code; other failures keep the generic error body.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_key_reused
+                      - idempotency_key_expired
+                      - idempotency_request_in_progress
+                  error:
+                    type: string
+                required:
+                  - error
+        "410":
+          description: Gone Idempotency outcomes carry a code; other failures keep the generic error body.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_resource_deleted
+                  error:
+                    type: string
+                required:
+                  - error
         "413":
           description: Request Entity Too Large
           content:
@@ -136361,14 +136413,30 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "503":
-          description: Service Unavailable
+          description: Service Unavailable Idempotency outcomes carry a code; other failures keep the generic error body.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_unavailable
+                  error:
+                    type: string
+                required:
+                  - error
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: 'Optional retry key (16-512 visible ASCII characters), scoped to project, caller and create kind. The same key and request replay the originally created resource for 24 hours with Idempotent-Replayed: true; a changed request returns 409 idempotency_key_reused, an expired key 409 idempotency_key_expired, a deleted original 410 idempotency_resource_deleted (it is never recreated), and an in-flight duplicate 409 idempotency_request_in_progress with Retry-After. Controllers without durable receipts refuse the key with 503 idempotency_unavailable. Credential-preserving script imports are fenced by their import attestation instead.'
+          required: false
+          schema:
+            type: string
       tags:
         - Scenarios
       x-handler: handleCreateScenario
@@ -186889,12 +186957,32 @@ paths:
                   - script
                   - version
                 nullable: true
+          headers:
+            Idempotent-Replayed:
+              description: true when the response returns the resource an earlier request with the same Idempotency-Key created. The body is the resource as it is now.
+              schema:
+                type: string
+                enum:
+                  - "true"
+            X-APEX-Original-Content-Revision:
+              description: On a replay, the authored content revision the original create produced, when recorded.
+              schema:
+                type: string
         "400":
-          description: Bad Request
+          description: Bad Request Idempotency outcomes carry a code; other failures keep the generic error body.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_key_invalid
+                  error:
+                    type: string
+                required:
+                  - error
         "401":
           description: Authentication required or invalid.
           content:
@@ -186914,11 +187002,37 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
-          description: Conflict
+          description: Conflict Idempotency outcomes carry a code; other failures keep the generic error body.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_key_reused
+                      - idempotency_key_expired
+                      - idempotency_request_in_progress
+                  error:
+                    type: string
+                required:
+                  - error
+        "410":
+          description: Gone Idempotency outcomes carry a code; other failures keep the generic error body.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_resource_deleted
+                  error:
+                    type: string
+                required:
+                  - error
         "413":
           description: Request Entity Too Large
           content:
@@ -186932,14 +187046,30 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "503":
-          description: Service Unavailable
+          description: Service Unavailable Idempotency outcomes carry a code; other failures keep the generic error body.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_unavailable
+                  error:
+                    type: string
+                required:
+                  - error
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: 'Optional retry key (16-512 visible ASCII characters), scoped to project, caller and create kind. The same key and request replay the originally created resource for 24 hours with Idempotent-Replayed: true; a changed request returns 409 idempotency_key_reused, an expired key 409 idempotency_key_expired, a deleted original 410 idempotency_resource_deleted (it is never recreated), and an in-flight duplicate 409 idempotency_request_in_progress with Retry-After. Controllers without durable receipts refuse the key with 503 idempotency_unavailable. Credential-preserving script imports are fenced by their import attestation instead.'
+          required: false
+          schema:
+            type: string
       tags:
         - Scripts
       x-handler: handleCreateScript
@@ -186983,6 +187113,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:

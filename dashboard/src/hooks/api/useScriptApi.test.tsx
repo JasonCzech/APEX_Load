@@ -48,6 +48,17 @@ describe('useScriptApi import wrappers', () => {
     vi.clearAllMocks()
   })
 
+  it('sends a caller-supplied Idempotency-Key on script and scenario creates', async () => {
+    const options = { headers: { 'Idempotency-Key': 'create-intent-key-0001' } }
+    const lastKey = () => new Headers(((request as Mock).mock.lastCall?.[1] as RequestInit).headers).get('Idempotency-Key')
+    await api.createScript({ id: '', name: 'Retry safe', protocol: 'http', version: '1', config: { base_url: 'https://example.test' }, actions: [] } as never, 'project', null, undefined, options)
+    expect((request as Mock).mock.lastCall?.[0]).toBe('/scripts')
+    expect(lastKey()).toBe('create-intent-key-0001')
+    await api.createScenario({ name: 'Retry safe', duration: '1m', groups: [] } as never, options)
+    expect((request as Mock).mock.lastCall?.[0]).toBe('/scenarios')
+    expect(lastKey()).toBe('create-intent-key-0001')
+  })
+
   it('serializes the complete shared scenario shape for create and save, including explicit clears and advanced group fields', async () => {
     const payload = {
       name: 'Iteration snapshot', project_id: 'project', workload_shape_id: '', duration: '', termination_mode: 'iterations' as const, start_delay: '2s',

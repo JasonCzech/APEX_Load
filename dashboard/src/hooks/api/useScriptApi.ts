@@ -49,6 +49,7 @@ export interface ScriptRecordingStatus {
 import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type ApplySharedValuesRequest, type ApplySharedValuesResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixResponse, type CommitAsyncAPIImportBatchRequest, type CommitAsyncAPIImportBatchResponse, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitGenericImportBatchRequest, type CommitGenericImportBatchResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JavaClasspathAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveEnterpriseArchiveImportRequest, type SaveEnterpriseArchiveImportResponse, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { type JsonRequestBody } from '../../types/generated/openapi'
 import { ApiError, apiFetch, request, requestWithResponse } from '../apiClient'
+import { type ApiCallOptions, withCallOptions } from './requestOptions'
 
 import { admitScriptAuthoringBaseline, baselineFromSavedScript, ScriptSaveOutcomeUnknown, withoutScriptAuthoringReadContext } from '../../utils/scriptAuthoringRevision'
 
@@ -360,9 +361,11 @@ export function useScriptApi() {
     [],
   )
 
+  // Pass an Idempotency-Key header in options to make a user-initiated retry
+  // return the script the first attempt created instead of a duplicate.
   const createScript = useCallback(
-    (script: ScriptDefinition, projectId?: string, folderId?: string | null, sourceRecordingSessionId?: string) =>
-      request<StoredScript>('/scripts', {
+    (script: ScriptDefinition, projectId?: string, folderId?: string | null, sourceRecordingSessionId?: string, options?: ApiCallOptions) =>
+      request<StoredScript>('/scripts', withCallOptions({
         method: 'POST',
         body: JSON.stringify({
           script,
@@ -370,7 +373,7 @@ export function useScriptApi() {
           folder_id: folderId,
           source_recording_session_id: sourceRecordingSessionId,
         }),
-      }),
+      }, options)),
     [],
   )
 
@@ -1481,7 +1484,7 @@ export function useScriptApi() {
   const listScenarios = useCallback((projectId?: string, archiveState?: "active" | "archived" | "all") => request<ScenarioListResponse>(`/scenarios${buildScenarioQuery(projectId)}${archiveState ? `${projectId ? "&" : "?"}archive_state=${archiveState}` : ""}`), [])
 
   const createScenario = useCallback(
-    (data: ScenarioUpsertRequest) => request<StoredScenario>('/scenarios', { method: 'POST', body: JSON.stringify(data) }),
+    (data: ScenarioUpsertRequest, options?: ApiCallOptions) => request<StoredScenario>('/scenarios', withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
     [],
   )
 
