@@ -174,3 +174,31 @@ func TestHistogramPartitionsAccountForTheirSourceRows(t *testing.T) {
 		}
 	}
 }
+
+// Rounding at a bin's top edge stays inside the bin, so the point validates.
+func TestHistogramValueStaysInsideItsBin(t *testing.T) {
+	bounds := []float64{0.1, 0.3, 0.9, math.Inf(1)}
+	value, bin, reason, err := HistogramValue(bounds, []float64{0, 0, 2, 2}, "p50")
+	if err != nil || reason != "" || bin == nil || value < bin.Lower || value > bin.Upper {
+		t.Fatalf("p50 at the top edge: %v %+v %q %v", value, bin, reason, err)
+	}
+}
+
+// No histogram column may reuse the timestamp or an identity column.
+func TestHistogramColumnsAvoidTimestampAndIdentity(t *testing.T) {
+	schema := ParquetSchemaPreview{Columns: []ParquetColumn{{PathComponents: ParquetColumnPath{"ts"}}, {PathComponents: ParquetColumnPath{"host"}}, {PathComponents: ParquetColumnPath{"le"}}, {PathComponents: ParquetColumnPath{"n"}}}}
+	mapping := func(bound string) ParquetMapping {
+		return ParquetMapping{Version: 2, Timestamp: ParquetColumnPath{"ts"}, TimestampEncoding: "unix_s", Timezone: "UTC", Identity: &ParquetIdentityMapping{Host: ParquetColumnPath{"host"}}, Measures: []ParquetMeasure{{
+			Value: ParquetColumnPath{"n"}, Name: "latency", Kind: KindHistogram, Unit: "ms",
+			Histogram: &ParquetHistogram{Bounds: []string{"1", "+Inf"}, BucketCounts: HistogramPerBin, Temporality: HistogramDelta, WindowSeconds: 60, BoundColumn: ParquetColumnPath{bound}},
+		}}}
+	}
+	if err := mapping("le").Validate(schema); err != nil {
+		t.Fatalf("a distinct bound column was refused: %v", err)
+	}
+	for _, reused := range []string{"ts", "host"} {
+		if err := mapping(reused).Validate(schema); err == nil {
+			t.Fatalf("bound column %q reusing the timestamp or identity was accepted", reused)
+		}
+	}
+}

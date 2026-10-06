@@ -20,7 +20,8 @@ import (
 // Histogram measures normalize into distribution artifacts: one row per
 // histogram window with its bounds (in the canonical unit) and per-bin counts.
 // Cumulative histograms become deltas between consecutive samples of one
-// series; a bin that decreases is a counter reset and that window is missing.
+// series across every input file of the import; a bin that decreases is a
+// counter reset and that window is missing.
 
 var nativeDistributionColumns = []string{"schema_version", "project_id", "dataset_id", "identity_version", "source", "host", "service", "dimensions_json", "timestamp_utc", "metric_name", "kind", "unit", "quality", "missing_reason", "window_us", "source_window_us", "bounds", "counts"}
 
@@ -35,6 +36,16 @@ func nativeDoubleList(values []float64) string {
 		}
 	}
 	return "[" + strings.Join(parts, ",") + "]::DOUBLE[]"
+}
+
+// nativeFloat32List spells bounds rounded to float32 as a DOUBLE list, to
+// match a FLOAT column exactly.
+func nativeFloat32List(values []float64) string {
+	rounded := make([]float64, len(values))
+	for i, v := range values {
+		rounded[i] = float64(float32(v))
+	}
+	return nativeDoubleList(rounded)
 }
 
 // nativeHistogramBounds returns the declared bounds and the same bounds in
@@ -57,13 +68,26 @@ func nativeHistogramBounds(measure Measure) (declared, scaled []float64, unit st
 	return declared, scaled, unit, nil
 }
 
-// nativeHistogramNormalize maps one histogram measure of one input file.
-func nativeHistogramNormalize(ctx context.Context, db *sql.DB, request NormalizeRequest, i, j int, path, dir string, result *NormalizeResult) error {
+// nativeCumulativeSlot is one input file's admitted samples of a cumulative
+// histogram measure, emitted once every file has been read.
+type nativeCumulativeSlot struct {
+	file, measure int
+	accepted      int64
+}
+
+func nativeCumulativeTable(j int) string { return fmt.Sprintf("histogram_cumulative_%02d", j) }
+
+// nativeHistogramNormalize maps one histogram measure of one input file. A
+// delta histogram is written at once. A cumulative histogram's samples are
+// kept until every file is read, because a series' window can open in one
+// file and close in the next; the returned slot is emitted by
+// nativeHistogramEmitCumulative.
+func nativeHistogramNormalize(ctx context.Context, db *sql.DB, request NormalizeRequest, i, j int, path, dir string, result *NormalizeResult) (*nativeCumulativeSlot, error) {
 	measure := request.Mapping.Measures[j]
 	h := measure.Histogram
 	declared, scaled, unit, err := nativeHistogramBounds(measure)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	n := strconv.Itoa(len(declared))
 	name := literal(measure.Name)
@@ -77,17 +101,26 @@ func nativeHistogramNormalize(ctx context.Context, db *sql.DB, request Normalize
 	head := "SELECT " + identityProjection + ", file_row_number AS source_row, " + timestampExpression(request.Mapping) + " AS timestamp_utc, " + name + " AS metric_name"
 	key := "PARTITION BY source, host, service, dimensions_json, timestamp_utc, metric_name"
 	cumulativeBins := h.BucketCounts == analysis.HistogramLeCumulative
-	var raw, canon, mapped, groups string
+	var raw, canon, mapped, groups, longOrdered string
 	if len(h.BoundColumn) > 0 {
 		// Long table: one row per bound. The group of one timestamp, identity
 		// and metric must hold exactly the declared bounds once each.
-		raw = head + ", try_cast(" + column(h.BoundColumn) + " AS DOUBLE) AS bound, try_cast(" + value + " AS DOUBLE) AS bin_count, (" + value + " IS NULL) AS count_null" + from
-		canon = "SELECT source_row, timestamp_utc, metric_name, bound, bin_count, count_null, coalesce((" + base + " AND bound IS NOT NULL AND list_contains(" + nativeDoubleList(declared) + ", bound) AND (count_null OR (bin_count IS NOT NULL AND isfinite(bin_count) AND bin_count>=0))),false) AS row_ok, " + identityCanonical + " FROM histogram_raw"
+		// A FLOAT bound column holds the declared bounds rounded to float32,
+		// so they are compared at that precision.
+		raw = head + ", try_cast(" + column(h.BoundColumn) + " AS DOUBLE) AS bound, typeof(" + column(h.BoundColumn) + ")='FLOAT' AS bound_float, try_cast(" + value + " AS DOUBLE) AS bin_count, (" + value + " IS NULL) AS count_null" + from
+		canon = "SELECT source_row, timestamp_utc, metric_name, bound, bin_count, count_null, coalesce((" + base + " AND bound IS NOT NULL AND list_contains(CASE WHEN bound_float THEN " + nativeFloat32List(declared) + " ELSE " + nativeDoubleList(declared) + " END, bound) AND (count_null OR (bin_count IS NOT NULL AND isfinite(bin_count) AND bin_count>=0))),false) AS row_ok, " + identityCanonical + " FROM histogram_raw"
 		ordered := "true"
 		if cumulativeBins {
 			ordered = "count_null OR coalesce(bin_count>=lag(bin_count) OVER (" + key + " ORDER BY bound),true)"
 		}
-		mapped = "SELECT *, coalesce(bool_and(row_ok) OVER k AND count(*) OVER k=" + n + " AND list_sort(list(bound) OVER k)=" + nativeDoubleList(declared) + " AND sum(count_null::INTEGER) OVER k IN (0," + n + ") AND bool_and(bins_ordered) OVER k,false) AS row_valid FROM (SELECT *, " + ordered + " AS bins_ordered FROM histogram_canon) WINDOW k AS (" + key + ")"
+		// The group verdict is one aggregate per group: every row valid,
+		// exactly the declared bounds once each (all are declared, so n
+		// distinct of n rows is the declared set), all counts present or all
+		// absent. It is joined back to its rows, never built per row.
+		groupKey := "source, host, service, dimensions_json, timestamp_utc, metric_name"
+		verdict := "SELECT " + groupKey + ", coalesce(bool_and(row_ok) AND count(*)=" + n + " AND count(DISTINCT bound)=" + n + " AND sum(count_null::INTEGER) IN (0," + n + ") AND bool_and(bins_ordered),false) AS group_ok FROM histogram_ordered GROUP BY " + groupKey
+		longOrdered = ordered
+		mapped = "SELECT o.*, coalesce(v.group_ok,false) AS row_valid FROM histogram_ordered o LEFT JOIN (" + verdict + ") v USING (" + groupKey + ")"
 		groups = "SELECT identity_version, source, host, service, dimensions_json, timestamp_utc, metric_name, list(bin_count ORDER BY bound) AS counts, bool_and(count_null) AS missing FROM mapped WHERE row_valid GROUP BY ALL"
 	} else {
 		// Wide table: one row per histogram, the value holding the last bound.
@@ -110,32 +143,66 @@ func nativeHistogramNormalize(ctx context.Context, db *sql.DB, request Normalize
 		mapped = "SELECT *, row_ok AND " + unique + " AS row_valid FROM histogram_canon"
 		groups = "SELECT identity_version, source, host, service, dimensions_json, timestamp_utc, metric_name, counts, nulls=" + n + " AS missing FROM mapped WHERE row_valid"
 	}
-	for _, view := range [][2]string{{"histogram_raw", raw}, {"histogram_canon", canon}, {"mapped", mapped}} {
+	for _, view := range [][2]string{{"histogram_raw", raw}, {"histogram_canon", canon}} {
 		if _, err := db.ExecContext(ctx, "CREATE OR REPLACE TEMP VIEW "+view[0]+" AS "+view[1]); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	accepted, err := nativeAdmitMappedRows(ctx, db, request, i, j, "row_valid", "invalid_histogram_row", dir, result)
+	if len(h.BoundColumn) > 0 {
+		if _, err := db.ExecContext(ctx, "CREATE OR REPLACE TEMP VIEW histogram_ordered AS SELECT *, "+longOrdered+" AS bins_ordered FROM histogram_canon"); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := db.ExecContext(ctx, "CREATE OR REPLACE TEMP VIEW mapped AS "+mapped); err != nil {
+		return nil, err
+	}
+	accepted, err := nativeAdmitMappedRows(ctx, db, request, i, j, "row_valid", literal("invalid_histogram_row"), dir, result)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	bins := "counts"
 	if cumulativeBins {
 		bins = "list_transform(range(1," + n + "+1), i -> counts[i]-coalesce(counts[i-1],0))"
 	}
+	if h.Temporality == analysis.HistogramCumulative {
+		samples := "SELECT CAST(" + strconv.Itoa(i) + " AS INTEGER) AS source_file, identity_version, source, host, service, dimensions_json, timestamp_utc, metric_name, " + bins + " AS bins FROM (" + groups + ") WHERE NOT missing"
+		statement := "INSERT INTO " + nativeCumulativeTable(j) + " " + samples
+		if i == 0 {
+			statement = "CREATE OR REPLACE TEMP TABLE " + nativeCumulativeTable(j) + " AS " + samples
+		}
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			return nil, err
+		}
+		return &nativeCumulativeSlot{file: i, measure: j, accepted: accepted}, nil
+	}
 	head = "SELECT " + literal(analysis.DistributionSchemaVersion) + " AS schema_version, " + literal(request.ProjectID) + " AS project_id, " + literal(request.DatasetID) + " AS dataset_id, identity_version, source, host, service, dimensions_json, "
 	tail := ", metric_name, 'histogram' AS kind, " + literal(unit) + " AS unit, "
-	var artifact string
-	if h.Temporality == analysis.HistogramDelta {
-		window := strconv.FormatInt(int64(h.WindowSeconds)*1_000_000, 10)
-		artifact = head + "timestamp_utc" + tail + "CASE WHEN missing THEN 'missing' ELSE 'valid' END AS quality, '' AS missing_reason, CAST(" + window + " AS BIGINT) AS window_us, CAST(" + window + " AS BIGINT) AS source_window_us, " + nativeDoubleList(scaled) + " AS bounds, CASE WHEN missing THEN NULL ELSE " + bins + " END AS counts FROM (" + groups + ")"
-	} else {
-		// Each window runs from one present sample to the next; the first
-		// sample of a series only opens the first window.
-		deltas := "SELECT *, list_transform(range(1," + n + "+1), i -> bins[i]-prev[i]) AS delta, epoch_us(timestamp_utc)-epoch_us(prev_ts) AS span_us FROM (SELECT *, lag(bins) OVER s AS prev, lag(timestamp_utc) OVER s AS prev_ts FROM (SELECT *, " + bins + " AS bins FROM (" + groups + ") WHERE NOT missing) WINDOW s AS (PARTITION BY source, host, service, dimensions_json, metric_name ORDER BY timestamp_utc)) WHERE prev IS NOT NULL"
-		artifact = head + "prev_ts AS timestamp_utc" + tail + "CASE WHEN list_min(delta)<0 THEN 'missing' ELSE 'valid' END AS quality, CASE WHEN list_min(delta)<0 THEN " + literal(analysis.MissingHistogramCounterReset) + " ELSE '' END AS missing_reason, span_us AS window_us, CAST(0 AS BIGINT) AS source_window_us, " + nativeDoubleList(scaled) + " AS bounds, CASE WHEN list_min(delta)<0 THEN NULL ELSE delta END AS counts FROM (" + deltas + ")"
+	window := strconv.FormatInt(int64(h.WindowSeconds)*1_000_000, 10)
+	artifact := head + "timestamp_utc" + tail + "CASE WHEN missing THEN 'missing' ELSE 'valid' END AS quality, '' AS missing_reason, CAST(" + window + " AS BIGINT) AS window_us, CAST(" + window + " AS BIGINT) AS source_window_us, " + nativeDoubleList(scaled) + " AS bounds, CASE WHEN missing THEN NULL ELSE " + bins + " END AS counts FROM (" + groups + ")"
+	return nil, nativeWriteDistribution(ctx, db, request, measure, artifact, filepath.Join(dir, fmt.Sprintf("part-%04d-%02d.parquet", i, j)), accepted, result)
+}
+
+// nativeHistogramEmitCumulative writes each input file's slot of a cumulative
+// histogram measure: the windows whose closing sample came from that file,
+// differenced against the previous sample of the series in any file. Each
+// window runs from one present sample to the next; a series' first sample
+// only opens the first window, and two samples at one instant open none.
+func nativeHistogramEmitCumulative(ctx context.Context, db *sql.DB, request NormalizeRequest, slot nativeCumulativeSlot, dir string, result *NormalizeResult) error {
+	measure := request.Mapping.Measures[slot.measure]
+	declared, scaled, unit, err := nativeHistogramBounds(measure)
+	if err != nil {
+		return err
 	}
-	out := filepath.Join(dir, fmt.Sprintf("part-%04d-%02d.parquet", i, j))
+	n := strconv.Itoa(len(declared))
+	series := "PARTITION BY source, host, service, dimensions_json, metric_name ORDER BY timestamp_utc, source_file"
+	deltas := "SELECT *, list_transform(range(1," + n + "+1), k -> bins[k]-prev[k]) AS delta, epoch_us(timestamp_utc)-epoch_us(prev_ts) AS span_us FROM (SELECT *, lag(bins) OVER (" + series + ") AS prev, lag(timestamp_utc) OVER (" + series + ") AS prev_ts FROM " + nativeCumulativeTable(slot.measure) + ") WHERE prev IS NOT NULL AND source_file=" + strconv.Itoa(slot.file) + " AND epoch_us(timestamp_utc)>epoch_us(prev_ts)"
+	artifact := "SELECT " + literal(analysis.DistributionSchemaVersion) + " AS schema_version, " + literal(request.ProjectID) + " AS project_id, " + literal(request.DatasetID) + " AS dataset_id, identity_version, source, host, service, dimensions_json, prev_ts AS timestamp_utc, metric_name, 'histogram' AS kind, " + literal(unit) + " AS unit, CASE WHEN list_min(delta)<0 THEN 'missing' ELSE 'valid' END AS quality, CASE WHEN list_min(delta)<0 THEN " + literal(analysis.MissingHistogramCounterReset) + " ELSE '' END AS missing_reason, span_us AS window_us, CAST(0 AS BIGINT) AS source_window_us, " + nativeDoubleList(scaled) + " AS bounds, CASE WHEN list_min(delta)<0 THEN NULL ELSE delta END AS counts FROM (" + deltas + ")"
+	return nativeWriteDistribution(ctx, db, request, measure, artifact, filepath.Join(dir, fmt.Sprintf("part-%04d-%02d.parquet", slot.file, slot.measure)), slot.accepted, result)
+}
+
+// nativeWriteDistribution copies one distribution artifact and records its
+// partition with the source rows it was normalized from.
+func nativeWriteDistribution(ctx context.Context, db *sql.DB, request NormalizeRequest, measure Measure, artifact, out string, accepted int64, result *NormalizeResult) error {
 	if _, err := db.ExecContext(ctx, "COPY ("+artifact+") TO "+literal(out)+" (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 122880)"); err != nil {
 		return err
 	}
@@ -251,7 +318,7 @@ func nativeHistogramSeries(ctx context.Context, db *sql.DB, paths []string, q Se
 		return nil, template, true, errors.New("multiple histogram identities, units or windows require a narrower series selection")
 	}
 	if boundSets != 1 {
-		return nil, template, true, fmt.Errorf("histogram bounds differ within the selected series (%d bound sets); only identical bounds merge", boundSets)
+		return nil, template, true, fmt.Errorf("%w (%d bound sets)", ErrIncompatibleHistogramBounds, boundSets)
 	}
 	var schemaVersion, kind, unit, source, host, service, dimensionsJSON string
 	var identityVersion int
@@ -344,14 +411,20 @@ func nativeHistogramSeries(ctx context.Context, db *sql.DB, paths []string, q Se
 
 // nativeHistogramMergeSQL sums per-bin counts of every window starting in a
 // bucket, with the counts needed to refuse duplicated or crossing windows and
-// the reason of any missing window.
+// the reason of any missing window. A bucket is crossed when one of its
+// windows ends past the bucket's end, or when a window from an earlier bucket
+// (or from before the query start) ends inside it: either way part of the
+// bucket's observations sit in a window it cannot split.
 func nativeHistogramMergeSQL(table string, q SeriesQuery, bins int) string {
 	origin := "TIMESTAMPTZ " + literal(q.From.UTC().Format(time.RFC3339Nano))
 	seconds := strconv.Itoa(q.BucketSeconds)
+	end := "timestamp_utc+window_us*INTERVAL '1 microsecond'"
 	rows := "SELECT (" + origin + " + floor(epoch(timestamp_utc-" + origin + ")/" + seconds + ")*" + seconds + "*INTERVAL '1 second') AS bucket, timestamp_utc, window_us, quality, missing_reason, counts FROM " + table + " WHERE " + nativeSeriesFilter(q)
-	stats := "SELECT bucket, count(*) AS n, count(*) FILTER(WHERE quality='valid') AS nv, count(DISTINCT timestamp_utc) AS nt, bool_or(timestamp_utc+window_us*INTERVAL '1 microsecond' > bucket+" + seconds + "*INTERVAL '1 second') AS crossing, coalesce(min(missing_reason) FILTER(WHERE quality='missing'),'') AS reason FROM histogram_rows GROUP BY bucket"
+	leadIn := "(SELECT max(" + end + ") FROM " + table + " WHERE " + nativeSeriesLeadInFilter(q) + ")"
+	stats := "SELECT bucket, count(*) AS n, count(*) FILTER(WHERE quality='valid') AS nv, count(DISTINCT timestamp_utc) AS nt, bool_or(" + end + " > bucket+" + seconds + "*INTERVAL '1 second') AS crossing, max(" + end + ") AS max_end, coalesce(min(missing_reason) FILTER(WHERE quality='missing'),'') AS reason FROM histogram_rows GROUP BY bucket"
+	earlier := "SELECT *, coalesce(max(max_end) OVER (ORDER BY bucket ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), " + leadIn + ") AS earlier_end FROM (" + stats + ")"
 	sums := "SELECT bucket, list(total ORDER BY i) AS merged FROM (SELECT bucket, i, sum(counts[i]) AS total FROM histogram_rows, range(1," + strconv.Itoa(bins) + "+1) t(i) WHERE quality='valid' GROUP BY bucket, i) GROUP BY bucket"
-	return "WITH histogram_rows AS (" + rows + ") SELECT s.bucket, s.n, s.nv, s.nt, s.crossing, s.reason, coalesce(m.merged, []::DOUBLE[]) FROM (" + stats + ") s LEFT JOIN (" + sums + ") m USING (bucket) ORDER BY s.bucket LIMIT 10001"
+	return "WITH histogram_rows AS (" + rows + ") SELECT s.bucket, s.n, s.nv, s.nt, s.crossing OR coalesce(s.earlier_end > s.bucket, false), s.reason, coalesce(m.merged, []::DOUBLE[]) FROM (" + earlier + ") s LEFT JOIN (" + sums + ") m USING (bucket) ORDER BY s.bucket LIMIT 10001"
 }
 
 func nativeFloatList(values []any) ([]float64, error) {

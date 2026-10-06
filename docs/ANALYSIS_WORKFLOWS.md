@@ -149,6 +149,24 @@ resets, duplicate instants and missing samples interrupt the rate chain. Queries
 are bounded to 10,000 buckets and 366 days. Unsupported semantics produce an
 explicit error instead of a misleading chart.
 
+A declared summary measure names the statistic and window the source computed;
+the editor never guesses either. A bucket spanning several source windows is
+missing for a percentile, and for an average without sample counts, whatever
+number of rows it happens to hold. The workspace and comparison panel start
+buckets on the source window grid and widen them to whole windows. A cumulative
+histogram is differenced per series across every file of an import; a bucket is
+missing as `partial_histogram_window` when a window ends past it or a window of
+an earlier bucket ends inside it, so buckets must cover whole scrape intervals.
+Histogram bounds that differ within a selection are refused, and a FLOAT bound
+column is matched at its own precision. Summary rows rejected only for their
+sample count or sum are recorded as `invalid_summary_sample`.
+
+Summary and histogram declarations are stored as fields of mapping versions 1
+and 2. An older controller that rewrites a dataset's association drops them, and
+queries of that dataset then fail; do not run controllers older than this
+release against datasets that declare summary statistics or histograms, and
+re-import a dataset that an older controller rewrote.
+
 An external dataset keeps its own identity. Associate it explicitly with a run
 in the same project before comparing it with managed evidence. Comparisons
 select datasets, bound monitor evidence, or archived transaction durations and

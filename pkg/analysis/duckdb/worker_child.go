@@ -238,6 +238,9 @@ finished:
 		if errors.Is(operation.err, errWorkerProtocol) {
 			code = "invalid_input"
 		}
+		if errors.Is(operation.err, ErrIncompatibleHistogramBounds) {
+			code = "incompatible_histogram_bounds"
+		}
 		if writes.send(workerFrame{Kind: "result", Result: &workerResult{Status: "error", Code: code}}) != nil {
 			return 78
 		}

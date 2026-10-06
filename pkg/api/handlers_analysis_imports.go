@@ -161,8 +161,17 @@ func (s *Server) handleAnalysisCapabilities(w http.ResponseWriter, r *http.Reque
 		DiagnosticsEnabled: diagnosticsProjectEnabled(project), MonitoringEnabled: runMonitoringEnabled(project), PreparationEnabled: preparationProjectEnabled(project),
 		NativeParquet: analytics.Available(), PartitionManifestVersion: analysis.PartitionManifestVersion, PartitionPruningAvailable: analytics.Available(), ImportedIdentityVersion: analysisImportedIdentityVersion, Enabled: analysisProjectEnabled(project), ChunkBytes: analysisUploadChunk, MaxImportBytes: analysisImportMaxBytes,
 		HeavyJobs: 1, Threads: 2, MemoryLimit: memory, SpillLimit: spill, ResourceConfigurationAccepted: accepted, MetricCatalog: analysis.Catalog(),
-		SummaryStatistics: slices.Clone(analysis.SummaryStatistics), HistogramBoundLimit: analysis.MaxHistogramBounds,
+		SummaryStatistics: slices.Clone(analysis.SummaryStatistics), HistogramBoundLimit: analysisHistogramBoundLimit(),
 	})
+}
+
+// analysisHistogramBoundLimit advertises histogram imports only where the
+// native engine that normalizes them is built in.
+func analysisHistogramBoundLimit() int {
+	if !analytics.Available() {
+		return 0
+	}
+	return analysis.MaxHistogramBounds
 }
 
 func (s *Server) handleAnalysisImports(w http.ResponseWriter, r *http.Request) {

@@ -5,6 +5,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { request } from '../hooks/apiClient'
 import type { AnalysisImport, AnalysisPoint } from '../types/analysis'
 import AnalysisIdentityFilters from './AnalysisIdentityFilters'
+import { allAnalysisAggregations, analysisMetricAggregations, analysisWindowAlignedRange, defaultAnalysisAggregations } from '../utils/analysisSummary'
 import { analysisIdentityFilterError, analysisMappingDisclosureError, analysisIdentityTextError, analysisImportedIdentityAvailable, analysisImportedSelectorsRequested, analysisMappingRequiresImportedIdentity, buildAnalysisIdentitySelection, emptyAnalysisIdentityFilters, restoreAnalysisIdentityFilters, restoreAnalysisImportedIdentityFilters } from '../utils/analysisIdentity'
 
 interface Score { lag_seconds: number; pairs: number; expected_buckets: number; coverage: number; coefficient?: number }
@@ -64,7 +65,7 @@ export default function AnalysisComparison({ projectId, dataset, datasets, canEd
         const failure = analysisIdentityTextError(text, limit)
         if (failure) throw new Error(failure)
       }
-      if (!selection.metric || !['avg', 'min', 'max', 'sum', 'count', 'rate', 'p50', 'p95', 'p99'].includes(selection.aggregation)) throw new Error('Saved comparison has invalid measurement semantics.')
+      if (!selection.metric || !allAnalysisAggregations.includes(selection.aggregation)) throw new Error('Saved comparison has invalid measurement semantics.')
     }
     const leftIdentity = restoreAnalysisImportedIdentityFilters(d.left)
     const admittedRightIdentity = d.right.dataset_id ? restoreAnalysisImportedIdentityFilters(d.right) : restoreAnalysisIdentityFilters(d.right)
@@ -94,11 +95,21 @@ export default function AnalysisComparison({ projectId, dataset, datasets, canEd
     try { await work(controller.signal) } catch (e) { if (!controller.signal.aborted) setError(String(e)) }
     finally { if (!controller.signal.aborted) setBusy(false) }
   }
-  const definition = (): Definition => ({
-    left: { dataset_id: dataset.id, ...buildAnalysisIdentitySelection(leftFilters), metric: leftMetric, aggregation },
-    right: target === 'run' ? { run_id: runId, source_id: sourceId, transaction, host, service, dimensions: JSON.parse(dimensions), ...(!sourceId ? { protocol, group } : {}), metric: sourceId ? rightMetric : 'transaction.duration', aggregation: rightAggregation } : { dataset_id: target, ...buildAnalysisIdentitySelection(rightFilters), metric: rightMetric, aggregation: rightAggregation },
-    from: new Date(`${from}Z`).toISOString(), to: new Date(`${to}Z`).toISOString(), bucket_seconds: bucket, max_lag_seconds: mode === 'correlation' ? lag : 0, mode,
-  })
+  // A dataset metric declared as a summary or histogram answers only its own
+  // statistics, over whole source windows.
+  const leftAggregations = analysisMetricAggregations(dataset.mapping, leftMetric)
+  const rightAggregations = target && target !== 'run' ? analysisMetricAggregations(datasets.find(item => item.id === target)?.mapping, rightMetric) : { options: defaultAnalysisAggregations }
+  const sourceWindows = [leftAggregations.windowSeconds?.(aggregation), rightAggregations.windowSeconds?.(rightAggregation)].filter((w): w is number => !!w)
+  const sourceWindow = sourceWindows.length ? Math.max(...sourceWindows) : undefined
+  const effectiveBucket = sourceWindow ? Math.ceil(bucket / sourceWindow) * sourceWindow : bucket
+  const definition = (): Definition => {
+    const range = analysisWindowAlignedRange(Date.parse(`${from}Z`), Date.parse(`${to}Z`), sourceWindow)
+    return {
+      left: { dataset_id: dataset.id, ...buildAnalysisIdentitySelection(leftFilters), metric: leftMetric, aggregation },
+      right: target === 'run' ? { run_id: runId, source_id: sourceId, transaction, host, service, dimensions: JSON.parse(dimensions), ...(!sourceId ? { protocol, group } : {}), metric: sourceId ? rightMetric : 'transaction.duration', aggregation: rightAggregation } : { dataset_id: target, ...buildAnalysisIdentitySelection(rightFilters), metric: rightMetric, aggregation: rightAggregation },
+      from: new Date(range.fromMs).toISOString(), to: new Date(range.toMs).toISOString(), bucket_seconds: effectiveBucket, max_lag_seconds: mode === 'correlation' ? Math.ceil(lag / effectiveBucket) * effectiveBucket : 0, mode,
+    }
+  }
   const chart = new Map<string, { timestamp: string; left?: number; right?: number; left_quality?: string; right_quality?: string }>()
   for (const side of ['left', 'right'] as const) for (const point of result?.[side] ?? []) {
     const row = chart.get(point.timestamp_utc) ?? { timestamp: point.timestamp_utc }
@@ -132,8 +143,9 @@ export default function AnalysisComparison({ projectId, dataset, datasets, canEd
       <label>From (UTC)<input type="datetime-local" step="0.001" value={from} onChange={e => setFrom(e.target.value)} /></label>
       <label>To (UTC)<input type="datetime-local" step="0.001" value={to} onChange={e => setTo(e.target.value)} /></label>
       <label>Bucket seconds<input type="number" min={1} max={86400} value={bucket} onChange={e => setBucket(Number(e.target.value))} /></label>
-      <label>Dataset aggregation<select value={aggregation} onChange={e => setAggregation(e.target.value)}>{['avg', 'min', 'max', 'sum', 'count', 'rate', 'p50', 'p95', 'p99'].map(x => <option key={x}>{x}</option>)}</select></label>
-      <label>Comparison aggregation<select value={rightAggregation} onChange={e => setRightAggregation(e.target.value)}>{['avg', 'min', 'max', 'sum', 'count', 'rate', 'p50', 'p95', 'p99'].map(x => <option key={x}>{x}</option>)}</select></label>
+      {sourceWindow && effectiveBucket !== bucket && <p>Buckets widen to {effectiveBucket} seconds to cover whole {sourceWindow}-second source windows.</p>}
+      <label>Dataset aggregation<select value={aggregation} onChange={e => setAggregation(e.target.value)}>{(leftAggregations.options.includes(aggregation) ? leftAggregations.options : [aggregation, ...leftAggregations.options]).map(x => <option key={x}>{x}</option>)}</select></label>
+      <label>Comparison aggregation<select value={rightAggregation} onChange={e => setRightAggregation(e.target.value)}>{(rightAggregations.options.includes(rightAggregation) ? rightAggregations.options : [rightAggregation, ...rightAggregations.options]).map(x => <option key={x}>{x}</option>)}</select></label>
       <label>Analysis<select value={mode} onChange={e => setMode(e.target.value)}><option value="overlay">Overlay compatible measurements</option><option value="correlation">Lagged correlation</option></select></label>
       {mode === 'correlation' && <label>Maximum lag seconds<input type="number" min={0} max={3600} step={bucket} value={lag} onChange={e => setLag(Number(e.target.value))} /></label>}
       <button type="button" disabled={!!identityDisclosureError || identityUnsupported || !target || !leftMetric || !from || !to || !!analysisIdentityFilterError(leftFilters) || target !== 'run' && !!analysisIdentityFilterError(rightFilters)} onClick={() => void act(async signal => { if (identityDisclosureError) throw new Error(identityDisclosureError); if (identityUnsupported) throw new Error('Imported identity schema 2 is unavailable on this controller.'); const next = await request<Comparison>(`/analysis/compare?project_id=${encodeURIComponent(projectId)}`, { method: 'POST', signal, body: JSON.stringify(definition()) }); if (!signal.aborted) setResult(next) })}>Analyze comparison</button>

@@ -44,8 +44,11 @@ it('declares the statistic, window and sample count of a summary column', async 
   let submitted: Record<string, unknown> | undefined
   await openDraft(caps, draft, body => { submitted = body })
   await choose(labelled<HTMLSelectElement>('Semantics')!, 'summary')
-  expect(labelled<HTMLSelectElement>('Statistic reported')!.value).toBe('avg')
-  expect(labelled<HTMLInputElement>('Source window (seconds)')!.value).toBe('60')
+  // Nothing is guessed: the statistic and window must be declared.
+  expect(labelled<HTMLSelectElement>('Statistic reported')!.value).toBe('')
+  expect(labelled<HTMLInputElement>('Source window (seconds)')!.value).toBe('')
+  expect(container.textContent).toContain('choose the statistic this summary reports')
+  expect(button('Validate and import').disabled).toBe(true)
   // Leaving summary semantics drops every summary-only field.
   await choose(labelled<HTMLSelectElement>('Semantics')!, 'gauge')
   expect(labelled('Statistic reported')).toBeNull()
@@ -99,9 +102,10 @@ it('declares a wide histogram with a count column for every bound but the last',
   await choose(bounds, '10, 100, +Inf')
   expect(container.textContent).toContain('choose a count column for every bound but the last')
   expect(button('Validate and import').disabled).toBe(true)
-  await choose(labelled<HTMLSelectElement>('Count for ≤ 10')!, JSON.stringify(['b10']))
-  await choose(labelled<HTMLSelectElement>('Count for ≤ 100')!, JSON.stringify(['n']))
+  await choose(labelled<HTMLSelectElement>('Count for the bin ending at 10')!, JSON.stringify(['b10']))
+  await choose(labelled<HTMLSelectElement>('Count for the bin ending at 100')!, JSON.stringify(['n']))
   await choose(labelled<HTMLSelectElement>('Bucket counts')!, 'le_cumulative')
+  expect(labelled('Count for ≤ 10')).not.toBeNull()
   expect(button('Validate and import').disabled).toBe(false)
   await act(async () => button('Validate and import').click())
   const measure = (submitted?.mapping as { measures: Record<string, unknown>[] }).measures[0]

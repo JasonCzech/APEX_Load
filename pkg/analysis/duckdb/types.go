@@ -16,6 +16,11 @@ import (
 )
 
 var ErrUnavailable = errors.New("native analytics unavailable: build controller with CGO and analytics_duckdb")
+
+// ErrIncompatibleHistogramBounds refuses a histogram series whose selected
+// rows declare different bounds: only identical bounds merge. It crosses the
+// worker boundary as its own result code.
+var ErrIncompatibleHistogramBounds = errors.New("histogram bounds differ within the selected series; only identical bounds merge")
 var ErrBusy = errors.New("another heavy analytics job is running")
 
 type Column = analysis.ParquetColumnPath

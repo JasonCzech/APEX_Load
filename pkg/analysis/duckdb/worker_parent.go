@@ -562,6 +562,8 @@ func runWorkerParentOwned(a *workerAttempt, request workerRequest, options worke
 			return nil, errWorkerResourceLimit
 		case "unavailable":
 			return nil, ErrUnavailable
+		case "incompatible_histogram_bounds":
+			return nil, ErrIncompatibleHistogramBounds
 		default:
 			return nil, errWorkerProtocol
 		}

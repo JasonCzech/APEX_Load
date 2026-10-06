@@ -33,7 +33,7 @@ func (r workerResult) validate(b workerBootstrap, request workerRequest) error {
 				return errWorkerProtocol
 			}
 		case "error":
-			if r.CancelSequence != 0 || (r.Code != "invalid_input" && r.Code != "resource_limit" && r.Code != "crash" && r.Code != "unavailable" && r.Code != "internal") {
+			if r.CancelSequence != 0 || (r.Code != "invalid_input" && r.Code != "resource_limit" && r.Code != "crash" && r.Code != "unavailable" && r.Code != "internal" && r.Code != "incompatible_histogram_bounds") {
 				return errWorkerProtocol
 			}
 		default:
@@ -141,9 +141,13 @@ func (r workerResult) validate(b workerBootstrap, request workerRequest) error {
 	return r.Normalize.validate(b, *request.Normalize)
 }
 
-// workerSeriesLineage recomputes the lineage a child must report. Summary and
-// histogram series carry their source window in their first step; a summary
-// statistic must be the requested aggregation.
+// workerSeriesLineage recomputes the lineage a child must report from the
+// source window the child declares in its first step. The parent cannot see
+// the dataset's declared window, so this proves the lineage internally
+// consistent rather than independently correct: a summary statistic must be
+// the requested aggregation, the window must divide the bucket, every point
+// must share one lineage (checked by the caller), and a raw point carries no
+// missing reason.
 func workerSeriesLineage(point analysis.MetricPoint, q SeriesQuery) ([]analysis.DerivationStep, error) {
 	if point.InputKind == analysis.KindHistogram {
 		window, ok := analysis.HistogramWindowFromDerivation(point.Derivation)

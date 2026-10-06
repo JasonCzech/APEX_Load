@@ -295,3 +295,22 @@ for (const side of ['left', 'right']) for (const source of ['timestamp', 'value'
   expect([...container.querySelectorAll('button')].find(button => button.textContent === 'Analyze comparison')!.disabled).toBe(true)
   expect(request.mock.calls.some(([path]) => String(path).startsWith('/analysis/compare?'))).toBe(false)
 })
+
+it('restores a saved histogram statistic and widens buckets to whole source windows', async () => {
+  let executed: { bucket_seconds: number; from: string; to: string; left: { aggregation: string } } | undefined
+  const summaryDataset: AnalysisImport = { ...dataset, mapping: { version: 1, timestamp: ['ts'], timestamp_encoding: 'unix_s', timezone: 'UTC', measures: [{ value: ['p90'], name: 'latency', kind: 'summary', unit: 'ms', statistic: 'p90', window_seconds: 300 }] } }
+  const p90 = { ...saved, definition: { ...definition, left: { dataset_id: 'a', metric: 'latency', aggregation: 'p90' }, mode: 'overlay', max_lag_seconds: 0 } }
+  request.mockImplementation(async (path: string, opts?: RequestInit) => {
+    if (path.startsWith('/analysis/compare?')) { executed = JSON.parse(String(opts?.body)); return { request: executed, left: [], right: [] } }
+    return [p90]
+  })
+  await act(async () => root.render(<AnalysisComparison importedIdentityVersion={2} projectId="p" dataset={summaryDataset} datasets={[summaryDataset, { ...dataset, id: 'b', name: 'B' }]} canEdit onAssociated={() => {}} />))
+  await change('Saved comparison', 'saved')
+  expect(container.textContent).not.toContain('invalid measurement semantics')
+  expect(input('Dataset aggregation').value).toBe('p90')
+  expect(container.textContent).toContain('Buckets widen to 300 seconds')
+  await act(async () => [...container.querySelectorAll('button')].find(x => x.textContent === 'Analyze comparison')!.click())
+  expect(executed?.bucket_seconds).toBe(300)
+  expect(executed?.left.aggregation).toBe('p90')
+  expect(Date.parse(executed!.to) % 300000).toBe(0)
+})

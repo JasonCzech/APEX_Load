@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AnalysisMeasure } from '../types/analysis'
-import { analysisBucketSeconds, analysisHistogramDeclaration, analysisHistogramMeasureError, analysisSummaryDeclarations, analysisSummaryMeasureError, parseAnalysisHistogramBounds, withAnalysisMeasureKind } from './analysisSummary'
+import { analysisBucketSeconds, analysisHistogramDeclaration, analysisHistogramMeasureError, analysisSummaryDeclarations, analysisSummaryMeasureError, parseAnalysisHistogramBounds, withAnalysisMeasureKind, analysisWindowAlignedRange, analysisMetricNames, analysisMetricAggregations } from './analysisSummary'
 
 const statistics = ['avg', 'count', 'p95']
 const summary: AnalysisMeasure = { value: ['v'], name: 'latency', kind: 'summary', unit: 'ms', statistic: 'p95', window_seconds: 60 }
@@ -15,8 +15,13 @@ describe('analysis summary helpers', () => {
     expect(analysisSummaryMeasureError({ ...summary, statistic: undefined }, undefined)).toBeUndefined()
   })
 
-  it('adds editable defaults for summaries and strips them otherwise', () => {
-    expect(withAnalysisMeasureKind({ value: ['v'], name: 'x', kind: 'gauge', unit: 'ms' }, 'summary', { summaryStatistics: statistics })).toMatchObject({ kind: 'summary', statistic: 'avg', window_seconds: 60 })
+  it('never guesses a summary statistic or window and strips them otherwise', () => {
+    const fresh = withAnalysisMeasureKind({ value: ['v'], name: 'x', kind: 'gauge', unit: 'ms' }, 'summary', { summaryStatistics: statistics })
+    expect(fresh).toMatchObject({ kind: 'summary' })
+    expect(fresh).not.toHaveProperty('statistic')
+    expect(fresh).not.toHaveProperty('window_seconds')
+    expect(analysisSummaryMeasureError(fresh, statistics)).toContain('choose the statistic')
+    expect(withAnalysisMeasureKind(summary, 'summary', { summaryStatistics: statistics })).toMatchObject({ statistic: summary.statistic, window_seconds: summary.window_seconds })
     const gauge = withAnalysisMeasureKind({ ...summary, sample_count_column: ['n'] }, 'gauge', { summaryStatistics: statistics })
     expect(gauge).toEqual({ value: ['v'], name: 'latency', kind: 'gauge', unit: 'ms' })
     expect(withAnalysisMeasureKind(summary, 'summary')).toEqual({ value: ['v'], name: 'latency', kind: 'summary', unit: 'ms' })
@@ -51,5 +56,18 @@ describe('analysis summary helpers', () => {
     const mapping = { version: 1, timestamp: ['ts'], timestamp_encoding: 'unix_s', timezone: 'UTC', measures: [histogram] }
     expect(analysisHistogramDeclaration(mapping, 'latency')?.window_seconds).toBe(60)
     expect(analysisHistogramDeclaration(mapping, 'other')).toBeUndefined()
+  })
+
+  it('snaps ranges to the source window grid and lists each metric name once', () => {
+    expect(analysisWindowAlignedRange(Date.parse('2026-01-01T10:01:00Z'), Date.parse('2026-01-01T11:01:00Z'), 300)).toEqual({ fromMs: Date.parse('2026-01-01T10:00:00Z'), toMs: Date.parse('2026-01-01T11:05:00Z') })
+    expect(analysisWindowAlignedRange(5, 7)).toEqual({ fromMs: 5, toMs: 7 })
+    const mapping = { version: 1, timestamp: ['ts'], timestamp_encoding: 'unix_s', timezone: 'UTC', measures: [summary, { ...summary, value: ['w'], statistic: 'avg' }, { ...summary, value: ['x'], statistic: 'p50' }] }
+    expect(analysisMetricNames(mapping)).toEqual(['latency'])
+    expect(analysisMetricAggregations(mapping, 'latency').options).toEqual([summary.statistic, 'avg', 'p50'])
+    const named = { ...mapping, measures: [{ value: ['c'], name: '', name_column: ['metric'], kind: 'histogram', unit: 'ms', histogram: { bounds: ['1', '+Inf'], bucket_counts: 'per_bin', temporality: 'delta', window_seconds: 30, bound_column: ['le'] } }] }
+    const aggregations = analysisMetricAggregations(named, 'anything')
+    expect(aggregations.options).toEqual(expect.arrayContaining(['p75', 'p90', 'p999', 'avg']))
+    expect(aggregations.windowSeconds?.('p90')).toBe(30)
+    expect(aggregations.windowSeconds?.('avg')).toBeUndefined()
   })
 })

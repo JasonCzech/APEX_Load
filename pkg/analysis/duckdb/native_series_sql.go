@@ -18,6 +18,12 @@ func nativeSeriesFilter(q SeriesQuery) string {
 	return filter + nativeIdentityFilter(q)
 }
 
+// nativeSeriesLeadInFilter selects the series' rows that start before the
+// query; a histogram window among them can still end inside the first bucket.
+func nativeSeriesLeadInFilter(q SeriesQuery) string {
+	return "project_id=" + literal(q.ProjectID) + " AND dataset_id=" + literal(q.DatasetID) + " AND metric_name=" + literal(q.Metric) + " AND timestamp_utc < TIMESTAMPTZ " + literal(q.From.UTC().Format(time.RFC3339Nano)) + nativeIdentityFilter(q)
+}
+
 // nativeSeriesSelectionFilter also selects one summary statistic: the
 // aggregation names it, and rows without a declaration match any aggregation.
 func nativeSeriesSelectionFilter(q SeriesQuery) string {
@@ -63,9 +69,12 @@ func nativeSeriesAggregationSQL(table string, q SeriesQuery, kind string) (strin
 // nativeSummaryAggregationSQL re-buckets whole windows of one declared
 // summary statistic. Counts and sums add; extrema take the extreme; averages
 // weight by sample counts (exact sums when present); percentiles pass through
-// only when a bucket holds a single window. Any missing sample, duplicated
-// window or window crossing the bucket end makes the bucket missing, and the
-// third column names the reason when the input existed.
+// only when the bucket is one source window. Whether a coarser bucket merges
+// depends on how many windows it spans, never on how many rows happen to be
+// present: a sparse bucket holding one p95 row of several windows is still
+// not a p95 of the bucket. Any missing sample, duplicated window or window
+// crossing the bucket end makes the bucket missing, and the third column
+// names the reason when the input existed.
 func nativeSummaryAggregationSQL(table string, q SeriesQuery, statistic string, windowSeconds int) (string, error) {
 	if err := q.Validate(); err != nil {
 		return "", err
@@ -78,6 +87,7 @@ func nativeSummaryAggregationSQL(table string, q SeriesQuery, statistic string, 
 	bucket := "(" + origin + " + floor(epoch(timestamp_utc-" + origin + ")/" + bucketSeconds + ")*" + bucketSeconds + "*INTERVAL '1 second')"
 	rows := "SELECT " + bucket + " AS bucket, timestamp_utc, value, summary_sample_count, summary_sample_sum FROM " + table + " WHERE " + nativeSeriesSelectionFilter(q)
 	grouped := "SELECT bucket, count(*) AS n, count(value) AS nv, count(DISTINCT timestamp_utc) AS nt, bool_or(timestamp_utc+" + strconv.Itoa(windowSeconds) + "*INTERVAL '1 second' > bucket+" + bucketSeconds + "*INTERVAL '1 second') AS partial, sum(value) AS vsum, min(value) AS vmin, max(value) AS vmax, count(summary_sample_count) AS nc, sum(summary_sample_count) AS csum, count(summary_sample_sum) AS ns, sum(summary_sample_sum) AS ssum, sum(value*summary_sample_count) AS wsum FROM (" + rows + ") GROUP BY bucket"
+	spansWindows := q.BucketSeconds > windowSeconds
 	value, reason := "", "''"
 	switch {
 	case statistic == "count" || statistic == "sum":
@@ -86,9 +96,15 @@ func nativeSummaryAggregationSQL(table string, q SeriesQuery, statistic string, 
 		value = "vmin"
 	case statistic == "max":
 		value = "vmax"
+	case statistic == "avg" && spansWindows:
+		value = "CASE WHEN nc=n AND csum>0 THEN (CASE WHEN ns=n THEN ssum ELSE wsum END)/csum ELSE NULL END"
+		reason = "CASE WHEN nc<n THEN " + literal(analysis.MissingAverageWithoutCounts) + " ELSE '' END"
 	case statistic == "avg":
 		value = "CASE WHEN n=1 THEN vmin WHEN nc=n AND csum>0 THEN (CASE WHEN ns=n THEN ssum ELSE wsum END)/csum ELSE NULL END"
 		reason = "CASE WHEN n>1 AND nc<n THEN " + literal(analysis.MissingAverageWithoutCounts) + " ELSE '' END"
+	case analysis.SummaryPercentile(statistic) && spansWindows:
+		value = "NULL"
+		reason = literal(analysis.MissingPercentileNotMergeable)
 	case analysis.SummaryPercentile(statistic):
 		value = "CASE WHEN n=1 THEN vmin ELSE NULL END"
 		reason = "CASE WHEN n>1 THEN " + literal(analysis.MissingPercentileNotMergeable) + " ELSE '' END"

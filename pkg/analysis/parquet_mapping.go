@@ -175,7 +175,7 @@ func (m ParquetMapping) Validate(schema ParquetSchemaPreview) error {
 		if err := measure.validateSummaryFields(check); err != nil {
 			return err
 		}
-		if err := measure.validateHistogram(check); err != nil {
+		if err := measure.validateHistogram(check, m.reservedColumns()...); err != nil {
 			return err
 		}
 		if _, _, err := NormalizeUnit(measure.Unit); err != nil {
@@ -247,4 +247,16 @@ type ParquetRejectionSummary struct {
 	Measure int     `json:"measure"`
 	Count   int64   `json:"count"`
 	Rows    []int64 `json:"rows"`
+}
+
+// reservedColumns are the timestamp and identity columns of the mapping.
+func (m ParquetMapping) reservedColumns() []ParquetColumnPath {
+	reserved := []ParquetColumnPath{m.Timestamp}
+	if m.Identity != nil {
+		reserved = append(reserved, m.Identity.Source, m.Identity.Host, m.Identity.Service)
+		for _, dimension := range m.Identity.Dimensions {
+			reserved = append(reserved, dimension.Value)
+		}
+	}
+	return reserved
 }

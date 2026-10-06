@@ -93,7 +93,9 @@ func (h *ParquetHistogram) Paths() []ParquetColumnPath {
 	return paths
 }
 
-func (m ParquetMeasure) validateHistogram(check func(ParquetColumnPath) error) error {
+// validateHistogram checks a histogram measure; reserved are the mapping's
+// timestamp and identity columns, which no histogram column may reuse.
+func (m ParquetMeasure) validateHistogram(check func(ParquetColumnPath) error, reserved ...ParquetColumnPath) error {
 	if m.Kind != KindHistogram {
 		if m.Histogram != nil {
 			return errors.New("histogram declarations apply only to histogram measures")
@@ -133,6 +135,11 @@ func (m ParquetMeasure) validateHistogram(check func(ParquetColumnPath) error) e
 	seen := [][]string{m.Value}
 	if len(m.NameColumn) != 0 {
 		seen = append(seen, m.NameColumn)
+	}
+	for _, path := range reserved {
+		if len(path) != 0 {
+			seen = append(seen, path)
+		}
 	}
 	for _, path := range h.Paths() {
 		for _, other := range seen {
@@ -263,7 +270,10 @@ func HistogramValue(bounds, counts []float64, aggregation string) (value float64
 		} else if upper <= 0 {
 			return upper, &EstimateBin{Lower: upper, Upper: upper}, "", nil
 		}
-		return lower + (upper-lower)*(rank-before)/count, &EstimateBin{Lower: lower, Upper: upper}, "", nil
+		// Rounding can push the interpolation a hair outside its bin; the
+		// estimate is defined only inside it.
+		estimate := min(max(lower+(upper-lower)*(rank-before)/count, lower), upper)
+		return estimate, &EstimateBin{Lower: lower, Upper: upper}, "", nil
 	}
 	return 0, nil, "", errors.New("histogram rank beyond its counts")
 }

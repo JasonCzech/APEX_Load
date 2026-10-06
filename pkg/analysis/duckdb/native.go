@@ -267,11 +267,16 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 		}
 	}()
 	err = e.withDB(ctx, func(ctx context.Context, db *sql.DB) error {
+		var cumulative []nativeCumulativeSlot
 		for i, path := range paths {
 			for j, measure := range request.Mapping.Measures {
 				if measure.Kind == analysis.KindHistogram {
-					if err := nativeHistogramNormalize(ctx, db, request, i, j, path, dir, &result); err != nil {
+					slot, err := nativeHistogramNormalize(ctx, db, request, i, j, path, dir, &result)
+					if err != nil {
 						return err
+					}
+					if slot != nil {
+						cumulative = append(cumulative, *slot)
 					}
 					continue
 				}
@@ -289,8 +294,14 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 					return err
 				}
 				valid := "timestamp_utc IS NOT NULL AND isfinite(timestamp_utc) AND timestamp_utc>=TIMESTAMPTZ '0001-01-01 00:00:00+00' AND timestamp_utc<TIMESTAMPTZ '10000-01-01 00:00:00+00' AND " + nativeRequiredIdentityText("metric_name", 256) + " AND (was_null OR (value IS NOT NULL AND isfinite(value)))"
-				valid += " AND " + identityValid + summaryValid
-				if _, err := nativeAdmitMappedRows(ctx, db, request, i, j, valid, "invalid_timestamp_name_or_value", dir, &result); err != nil {
+				valid += " AND " + identityValid
+				// A row rejected only for its sample count or sum says so.
+				reason := literal("invalid_timestamp_name_or_value")
+				if summaryValid != "" {
+					reason = "CASE WHEN coalesce((" + valid + "),false) THEN " + literal(analysis.RejectionInvalidSummarySample) + " ELSE " + reason + " END"
+				}
+				valid += summaryValid
+				if _, err := nativeAdmitMappedRows(ctx, db, request, i, j, valid, reason, dir, &result); err != nil {
 					return err
 				}
 				out := filepath.Join(dir, fmt.Sprintf("part-%04d-%02d.parquet", i, j))
@@ -309,6 +320,13 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 				result.Partitions = append(result.Partitions, NormalizedFilePartition{File: out, Stats: stats})
 			}
 		}
+		// Every file is read, so a cumulative series can be differenced
+		// across file boundaries.
+		for _, slot := range cumulative {
+			if err := nativeHistogramEmitCumulative(ctx, db, request, slot, dir, &result); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	return result, err
@@ -316,7 +334,8 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 
 // nativeAdmitMappedRows counts the rows of the temporary view mapped that pass
 // valid, records rejected source rows (and their durable set when accepted)
-// and refuses rejections unless explicitly accepted.
+// and refuses rejections unless explicitly accepted. reason is the SQL
+// expression naming each rejected row's reason.
 func nativeAdmitMappedRows(ctx context.Context, db *sql.DB, request NormalizeRequest, i, j int, valid, reason, dir string, result *NormalizeResult) (int64, error) {
 	var accepted, rejected int64
 	if err := db.QueryRowContext(ctx, "SELECT count(*) FILTER(WHERE "+valid+"), count(*) FILTER(WHERE NOT coalesce(("+valid+"),false)) FROM mapped").Scan(&accepted, &rejected); err != nil {
@@ -346,7 +365,7 @@ func nativeAdmitMappedRows(ctx context.Context, db *sql.DB, request NormalizeReq
 		result.Rejections = append(result.Rejections, summary)
 		if request.AllowRejected {
 			out := filepath.Join(dir, fmt.Sprintf("reject-%04d-%02d.parquet", i, j))
-			query := "COPY (SELECT source_row, " + strconv.Itoa(i) + " AS source_file, " + strconv.Itoa(j) + " AS mapped_measure, " + literal(reason) + " AS reason FROM mapped WHERE NOT coalesce((" + valid + "),false)) TO " + literal(out) + " (FORMAT PARQUET, COMPRESSION ZSTD)"
+			query := "COPY (SELECT source_row, " + strconv.Itoa(i) + " AS source_file, " + strconv.Itoa(j) + " AS mapped_measure, " + reason + " AS reason FROM mapped WHERE NOT coalesce((" + valid + "),false)) TO " + literal(out) + " (FORMAT PARQUET, COMPRESSION ZSTD)"
 			if _, err = db.ExecContext(ctx, query); err != nil {
 				return 0, err
 			}

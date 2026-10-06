@@ -14,7 +14,7 @@ import AnalysisIdentityFilters from './AnalysisIdentityFilters'
 import { analysisIdentityFilterError, analysisMappingDisclosureError, analysisImportedIdentityAvailable, analysisMappingRequiresImportedIdentity, buildAnalysisIdentitySelection, emptyAnalysisIdentityFilters } from '../utils/analysisIdentity'
 import AnalysisSummaryMeasureFields from './AnalysisSummaryMeasureFields'
 import AnalysisHistogramMeasureFields from './AnalysisHistogramMeasureFields'
-import { analysisBucketSeconds, analysisHistogramDeclaration, analysisHistogramMeasureError, analysisHistogramStatistics, analysisMissingReasonLabels, analysisSummaryDeclarations, analysisSummaryMeasureError, defaultAnalysisAggregations, withAnalysisMeasureKind } from '../utils/analysisSummary'
+import { analysisBucketSeconds, analysisHistogramDeclaration, analysisHistogramMeasureError, analysisMetricAggregations, analysisMetricNames, analysisMissingReasonLabels, analysisSummaryDeclarations, analysisSummaryMeasureError, analysisWindowAlignedRange, withAnalysisMeasureKind } from '../utils/analysisSummary'
 
 const importPath = (id: string) => `/analysis/imports/${encodeURIComponent(id)}`
 const initialMapping: AnalysisMapping = { version: 1, timestamp: [], timestamp_encoding: 'timestamp', timezone: 'UTC', measures: [] }
@@ -126,9 +126,10 @@ export default function AnalysisWorkspace({ projectId, canEdit = false }: { proj
   // A histogram answers counts and interpolated percentiles.
   const summaryDeclarations = analysisSummaryDeclarations(selected?.mapping, metric)
   const histogramDeclaration = analysisHistogramDeclaration(selected?.mapping, metric)
-  const aggregationOptions = histogramDeclaration ? analysisHistogramStatistics : summaryDeclarations.length ? summaryDeclarations.map(d => d.statistic) : defaultAnalysisAggregations
+  const metricAggregations = analysisMetricAggregations(selected?.mapping, metric)
+  const aggregationOptions = metricAggregations.options
   const queryAggregation = aggregationOptions.includes(aggregation) ? aggregation : aggregationOptions[0]
-  const summaryWindowSeconds = histogramDeclaration ? histogramDeclaration.window_seconds : summaryDeclarations.find(d => d.statistic === queryAggregation)?.window_seconds
+  const summaryWindowSeconds = metricAggregations.windowSeconds?.(queryAggregation)
   if (!projectId) return <p>Select a project to analyze datasets.</p>
   return <section className="analysis-workspace" aria-label="Analysis workspace">
     <h2>Parquet analysis</h2>
@@ -202,7 +203,7 @@ export default function AnalysisWorkspace({ projectId, canEdit = false }: { proj
             <legend>Query dataset</legend>
             {selectedMappingDisclosureError && <p role="alert">{selectedMappingDisclosureError} This stored mapping is retained; querying its mapped source values is unavailable.</p>}
             {selectedIdentityUnsupported && <p role="alert">This dataset requires imported identity schema 2. Querying is unavailable on this controller; its mapping and labels remain unchanged.</p>}
-            <label>Metric<input list="analysis-metric-names" value={metric} onChange={e => setMetric(e.target.value)} /><datalist id="analysis-metric-names">{selected.mapping?.measures.filter(m => m.name).map(m => <option key={m.name} value={m.name} />)}</datalist></label>
+            <label>Metric<input list="analysis-metric-names" value={metric} onChange={e => setMetric(e.target.value)} /><datalist id="analysis-metric-names">{analysisMetricNames(selected.mapping).map(name => <option key={name} value={name} />)}</datalist></label>
             <label>From (UTC)<input type="datetime-local" value={from} onChange={e => setFrom(e.target.value)} /></label>
             <label>To (UTC)<input type="datetime-local" value={to} onChange={e => setTo(e.target.value)} /></label>
             <label>{histogramDeclaration ? 'Histogram statistic' : summaryDeclarations.length ? 'Summary statistic' : 'Aggregation'}<select value={queryAggregation} onChange={e => setAggregation(e.target.value)}>{aggregationOptions.map(v => <option key={v}>{v}</option>)}</select></label>
@@ -211,7 +212,9 @@ export default function AnalysisWorkspace({ projectId, canEdit = false }: { proj
               if (selectedIdentityUnsupported) throw new Error('Imported identity schema 2 is unavailable on this controller.')
               if (selectedMappingDisclosureError) throw new Error(selectedMappingDisclosureError)
               const identitySelection = selected.mapping?.version === 2 ? buildAnalysisIdentitySelection(identityFilters) : {}
-              const result = await request<{ points: AnalysisPoint[] }>(`/analysis/datasets/${encodeURIComponent(selected.id)}/series`, { method: 'POST', signal, body: JSON.stringify({ ...identitySelection, metric, from: new Date(`${from}Z`).toISOString(), to: new Date(`${to}Z`).toISOString(), bucket_seconds: analysisBucketSeconds((Date.parse(`${to}Z`) - Date.parse(`${from}Z`)) / 1000, summaryWindowSeconds), aggregation: queryAggregation }) })
+              // Buckets start on the source window grid, so a bucket never cuts a window in two.
+              const range = analysisWindowAlignedRange(Date.parse(`${from}Z`), Date.parse(`${to}Z`), summaryWindowSeconds)
+              const result = await request<{ points: AnalysisPoint[] }>(`/analysis/datasets/${encodeURIComponent(selected.id)}/series`, { method: 'POST', signal, body: JSON.stringify({ ...identitySelection, metric, from: new Date(range.fromMs).toISOString(), to: new Date(range.toMs).toISOString(), bucket_seconds: analysisBucketSeconds((range.toMs - range.fromMs) / 1000, summaryWindowSeconds), aggregation: queryAggregation }) })
               if (!signal.aborted) { setPoints(result.points); setSeriesSelection({ dataset_id: selected.id, ...identitySelection, metric, from, to, aggregation: queryAggregation }) }
             })}>Show series</button>
           </fieldset>}

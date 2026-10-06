@@ -188,3 +188,8 @@ func (m ParquetMapping) SummaryDeclarations(metric string) (declared []SummaryDe
 	}
 	return declared, legacy
 }
+
+// RejectionInvalidSummarySample is the rejection reason of a summary row whose
+// timestamp, name and value are valid but whose sample count or sample sum is
+// not (negative, non-numeric or non-finite).
+const RejectionInvalidSummarySample = "invalid_summary_sample"

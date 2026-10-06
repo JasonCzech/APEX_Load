@@ -22,11 +22,15 @@ export interface AnalysisMeasureCapabilities { summaryStatistics?: string[]; his
 
 export const analysisHistogramStatistics = ['count', 'p50', 'p75', 'p90', 'p95', 'p99', 'p999']
 
-/** Switching kind keeps summary or histogram fields only on that kind, with editable defaults. */
+/** Every aggregation a dataset series or comparison may request. */
+export const allAnalysisAggregations = Array.from(new Set([...defaultAnalysisAggregations, ...analysisHistogramStatistics]))
+
+/** Switching kind keeps summary or histogram fields only on that kind. A summary's statistic and
+ * window are never guessed: the user declares what the source computed. */
 export function withAnalysisMeasureKind(measure: AnalysisMeasure, kind: string, capabilities: AnalysisMeasureCapabilities = {}): AnalysisMeasure {
   const rest: AnalysisMeasure = { ...measure }
   delete rest.statistic; delete rest.window_seconds; delete rest.sample_count_column; delete rest.sample_sum_column; delete rest.histogram
-  if (kind === 'summary' && capabilities.summaryStatistics?.length) return { ...rest, kind, statistic: measure.statistic ?? 'avg', window_seconds: measure.window_seconds ?? 60 }
+  if (kind === 'summary' && capabilities.summaryStatistics?.length) return { ...rest, kind, ...(measure.statistic ? { statistic: measure.statistic } : {}), ...(measure.window_seconds ? { window_seconds: measure.window_seconds } : {}) }
   if (kind === 'histogram' && capabilities.histogramBoundLimit) return { ...rest, kind, histogram: measure.histogram ?? { bounds: ['+Inf'], bucket_counts: 'per_bin', temporality: 'delta', window_seconds: 60, count_columns: [] } }
   return { ...rest, kind }
 }
@@ -51,7 +55,7 @@ export function analysisHistogramMeasureError(measure: AnalysisMeasure, limit?: 
     previous = value
   }
   if (h.temporality === 'delta' && (!Number.isSafeInteger(h.window_seconds) || (h.window_seconds ?? 0) < 1 || (h.window_seconds ?? 0) > 86400)) return `${label}: a per-window histogram needs a window of 1-86400 seconds.`
-  if (h.bound_column?.length) return
+  if (h.bound_column !== undefined) return h.bound_column.length ? undefined : `${label}: choose the bound column.`
   if ((h.count_columns ?? []).length !== h.bounds.length - 1 || h.count_columns?.some(path => !path.length)) return `${label}: choose a count column for every bound but the last (the measure column holds the last).`
   return
 }
@@ -59,6 +63,31 @@ export function analysisHistogramMeasureError(measure: AnalysisMeasure, limit?: 
 /** Fixed-name histogram measure called metric, if any. */
 export function analysisHistogramDeclaration(mapping: AnalysisMapping | undefined, metric: string) {
   return mapping?.measures.find(m => m.kind === 'histogram' && m.histogram && !m.name_column?.length && m.name === metric)?.histogram
+}
+
+/** Histogram measures whose metric names come from a name column; their names are not known
+ * until the data is read, so a query for any unmatched metric may be one of them. */
+export function analysisNameColumnHistograms(mapping: AnalysisMapping | undefined) {
+  return (mapping?.measures ?? []).filter(m => m.kind === 'histogram' && m.histogram && m.name_column?.length).map(m => m.histogram!)
+}
+
+/** Distinct fixed metric names of a mapping, for a metric picker. */
+export function analysisMetricNames(mapping: AnalysisMapping | undefined): string[] {
+  return Array.from(new Set((mapping?.measures ?? []).map(m => m.name).filter((name): name is string => !!name)))
+}
+
+/** Aggregations a dataset metric can answer, and the source window its buckets must cover. */
+export function analysisMetricAggregations(mapping: AnalysisMapping | undefined, metric: string): { options: string[]; windowSeconds?: (aggregation: string) => number | undefined } {
+  const histogram = analysisHistogramDeclaration(mapping, metric)
+  if (histogram) return { options: analysisHistogramStatistics, windowSeconds: () => histogram.window_seconds }
+  const summaries = analysisSummaryDeclarations(mapping, metric)
+  if (summaries.length) return { options: summaries.map(d => d.statistic), windowSeconds: aggregation => summaries.find(d => d.statistic === aggregation)?.window_seconds }
+  const named = analysisNameColumnHistograms(mapping)
+  if (named.length) {
+    const windows = Array.from(new Set(named.map(h => h.window_seconds).filter((w): w is number => !!w)))
+    return { options: allAnalysisAggregations, windowSeconds: aggregation => analysisHistogramStatistics.includes(aggregation) && windows.length === 1 ? windows[0] : undefined }
+  }
+  return { options: defaultAnalysisAggregations }
 }
 
 export function analysisSummaryMeasureError(measure: AnalysisMeasure, statistics?: string[]): string | undefined {
@@ -85,4 +114,13 @@ export function analysisBucketSeconds(rangeSeconds: number, windowSeconds?: numb
   const target = Math.max(1, Math.ceil(rangeSeconds / 500))
   if (!windowSeconds) return target
   return Math.ceil(target / windowSeconds) * windowSeconds
+}
+
+/** Snaps a UTC range outward onto the source window grid (multiples of the window since the
+ * epoch), so every bucket starts where a source window starts. Without a window the range is
+ * unchanged. */
+export function analysisWindowAlignedRange(fromMs: number, toMs: number, windowSeconds?: number): { fromMs: number; toMs: number } {
+  if (!windowSeconds || windowSeconds < 1) return { fromMs, toMs }
+  const step = windowSeconds * 1000
+  return { fromMs: Math.floor(fromMs / step) * step, toMs: Math.ceil(toMs / step) * step }
 }
