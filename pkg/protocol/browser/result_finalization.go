@@ -16,6 +16,7 @@ type capturedBrowserPageState struct {
 }
 
 func (b *Browser) finalizeActionResult(ctx context.Context, action *protocol.Action, result *protocol.Result, actionErr error, consoleStart, networkStart int, networkOwner browserNetworkActionOwner, processBefore browserProcessSnapshot, actionDuration time.Duration) {
+	defer b.applyEvidenceOutcome(result)
 	pageState, captureErr := b.captureActionPageState(ctx, action, actionErr != nil)
 	networkEntries, acquisitionReason := b.acquireActionNetworkEntries(ctx, networkOwner, networkStart)
 	b.applyCapturedPageStateWithNetwork(result, pageState, consoleStart, networkEntries)

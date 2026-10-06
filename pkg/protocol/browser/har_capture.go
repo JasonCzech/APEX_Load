@@ -82,6 +82,7 @@ func (b *Browser) discardHARWorkingFile() error {
 		unregisterRuntimeHARWorkingPath(owner.path)
 	}
 	b.mu.Unlock()
+	browserEvidenceBudget.releaseHARWriter(b)
 	return err
 }
 
@@ -118,10 +119,18 @@ func (b *Browser) applyHARCaptureOptions(contextOptions *playwright.BrowserNewCo
 		return errHAROwnershipUnproven
 	}
 	purgeInactiveRuntimeHARWorkingFiles(b.harDir)
+	if reason := browserEvidenceBudget.reserveHARWriter(b, b.harDir); reason != "" {
+		// HAR is optional evidence: record why it is missing and run on.
+		b.mu.Lock()
+		b.harUnavailableReason = reason
+		b.mu.Unlock()
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), runtimeHARCloseWait)
 	defer cancel()
 	owner, err := newHARCaptureOwner(ctx, b.harDir)
 	if err != nil {
+		browserEvidenceBudget.releaseHARWriter(b)
 		return err
 	}
 	b.mu.Lock()
@@ -187,11 +196,20 @@ func (b *Browser) closeOwnedOversizedHARContext(owner *harCaptureOwner, expected
 		return
 	}
 	b.harErrorSeen = true
+	overflow := b.resourceLimit == ""
+	if overflow {
+		b.resourceLimit = resourceLimitHARCapture
+	}
 	browserContext := b.pwContext
 	if owner == nil {
 		b.pwContext = nil
 	}
 	b.mu.Unlock()
+	if overflow {
+		browserEvidenceBudget.counters.harOverflow.Add(1)
+	}
+	// Unfinished observations end at the limit, not at an ordinary close.
+	b.censorDocumentEvidence(nil, "resource_limit")
 	if owner != nil {
 		owner.startClose()
 	} else if browserContext != nil {

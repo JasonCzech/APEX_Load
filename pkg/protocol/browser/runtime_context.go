@@ -50,6 +50,15 @@ type browserNetworkTask struct {
 }
 
 func (b *Browser) openBrowserContext() error {
+	b.mu.Lock()
+	b.resourceLimit, b.harUnavailableReason, b.harUnavailableReported = "", "", false
+	b.mu.Unlock()
+	admission, cancel := context.WithTimeout(context.Background(), runtimeHARCloseWait)
+	err := browserEvidenceBudget.admitBrowserContext(admission)
+	cancel()
+	if err != nil {
+		return err
+	}
 	options := b.browserContextOptions()
 	if err := b.applyHARCaptureOptions(&options); err != nil {
 		return err

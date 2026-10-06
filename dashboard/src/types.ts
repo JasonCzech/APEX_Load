@@ -2609,6 +2609,7 @@ export interface MetricsHistoryPoint {
   errHttp4xx?: number
   errHttp5xx?: number
   errAssertion?: number
+  errResourceLimit?: number
   errOther?: number
   // Set on synthetic spacer rows inserted at a detected data gap so series
   // break (rather than interpolate) across missing intervals.

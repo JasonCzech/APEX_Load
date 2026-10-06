@@ -153,6 +153,15 @@ type Browser struct {
 	// rewinding the wait watermark for future waits.
 	wsLastWaitMinSeq int64
 	wsLastWaitValid  bool
+
+	// Evidence budget state, guarded by mu. harUnavailableReason is why the
+	// budget refused this context's HAR writer, reported once per context;
+	// resourceLimit is set when the context was closed to protect the
+	// generator, and every later result of the context then fails.
+	harUnavailableReason        string
+	harUnavailableReported      bool
+	resourceLimit               string
+	networkTasksDroppedReported int64
 }
 
 // SetRuntimeTextRedactor installs a memory-only projection owned by the VUser.
@@ -271,6 +280,8 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	}
 	if b.currentPage() == nil {
 		result.ErrorMessage = "browser protocol is not initialized"
+		// A context closed to protect the generator says so explicitly.
+		b.applyEvidenceOutcome(result)
 		return result, nil
 	}
 

@@ -189,6 +189,7 @@ export const TIMELINE_GRAPHS: TimelineGraph[] = [
       { key: 'errHttp4xx', name: 'HTTP 4xx' },
       { key: 'errHttp5xx', name: 'HTTP 5xx' },
       { key: 'errAssertion', name: 'Assertion' },
+      { key: 'errResourceLimit', name: 'Generator resource limit' },
       { key: 'errOther', name: 'Other' },
     ],
   },

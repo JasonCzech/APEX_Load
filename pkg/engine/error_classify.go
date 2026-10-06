@@ -11,7 +11,11 @@ const (
 	ErrorClassHTTP4xx    = "http_4xx"
 	ErrorClassHTTP5xx    = "http_5xx"
 	ErrorClassAssertion  = "assertion"
-	ErrorClassOther      = "other"
+	// ErrorClassResourceLimit is a session the generator refused or closed
+	// to protect itself (browser memory or evidence budgets), not a target
+	// failure.
+	ErrorClassResourceLimit = "resource_limit"
+	ErrorClassOther         = "other"
 )
 
 // ClassifyError buckets a failed result into a taxonomy class for the error
@@ -30,6 +34,8 @@ func ClassifyError(statusCode int, errorMessage string, success bool) string {
 	}
 	msg := strings.ToLower(errorMessage)
 	switch {
+	case strings.HasPrefix(msg, "browser resource limit"):
+		return ErrorClassResourceLimit
 	case containsAny(msg, "timeout", "timed out", "deadline exceeded"):
 		return ErrorClassTimeout
 	case containsAny(msg, "connection refused", "connection reset", "no such host", "broken pipe", "connection closed", "dial ", "eof"):

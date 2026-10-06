@@ -99,6 +99,7 @@ func (b *Browser) admitNetworkTaskLocked(task browserNetworkTask) bool {
 
 func (b *Browser) noteNetworkTaskDropLocked(workers *browserNetworkWorkerState) {
 	b.networkTasksDropped++
+	browserEvidenceBudget.counters.networkDropped.Add(1)
 	b.evidence.incomplete = true
 	if workers != nil && workers == b.networkWorkers {
 		workers.incompleteGeneration = b.evidence.generation

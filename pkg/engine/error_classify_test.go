@@ -24,6 +24,8 @@ func TestClassifyError(t *testing.T) {
 		{name: "validation failure", statusCode: 200, message: "response validation error", want: ErrorClassAssertion},
 		{name: "unknown failure is other", statusCode: 0, message: "something weird happened", want: ErrorClassOther},
 		{name: "status wins over message", statusCode: 502, message: "context deadline exceeded", want: ErrorClassHTTP5xx},
+		{name: "browser resource limit", statusCode: 0, message: "browser resource limit (browser_memory): the browser context was closed to protect the generator", want: ErrorClassResourceLimit},
+		{name: "refused browser context", statusCode: 0, message: "browser resource limit: measured browser and generator memory 900 MiB plus a new context would exceed 1000 MiB", want: ErrorClassResourceLimit},
 	}
 
 	for _, tc := range tests {

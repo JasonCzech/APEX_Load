@@ -323,6 +323,7 @@ export const chartConfigs: ChartConfig[] = [
       { k: 'errHttp4xx', n: 'HTTP 4xx', c: 'var(--chart-2)' },
       { k: 'errHttp5xx', n: 'HTTP 5xx', c: 'var(--danger)' },
       { k: 'errAssertion', n: 'Assertion', c: 'var(--chart-4)' },
+      { k: 'errResourceLimit', n: 'Generator resource limit', c: 'var(--chart-5)' },
       { k: 'errOther', n: 'Other', c: 'var(--text-muted)' },
     ],
     domain: [0, 'auto'],

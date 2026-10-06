@@ -91,6 +91,7 @@ func (b *Browser) closeWithContext(ctx context.Context) error {
 	}
 	artifactPath, harErr := b.finalizeHARCaptureContext(ctx)
 	closeErr = errors.Join(closeErr, harErr)
+	browserEvidenceBudget.releaseHARWriter(b)
 	if owner != nil && !owner.retiredSuccessfully() {
 		return errors.Join(closeErr, errHAROwnershipUnproven)
 	}
