@@ -385,15 +385,20 @@ public final class lr {
   public static final int FAIL = 1;
   public static final int AUTO = 2;
   public static final int EXIT_ITERATION_AND_CONTINUE = 2;
+  public static int debug_message(int level, String message) { return 0; }
   public static int end_sub_trans(String name, int status) { return 0; }
   public static int end_sub_transaction(String name, int status) { return 0; }
   public static int end_transaction(String name, int status) { return 0; }
+  public static int error_message(String message) { return 0; }
   public static void exit(int continuation, int status) {}
   public static String eval_string(String value) { return value; }
   public static double get_transaction_duration(String name) { return 0; }
   public static int get_transaction_status(String name) { return 0; }
   public static double get_transaction_think_time(String name) { return 0; }
   public static double get_transaction_wasted_time(String name) { return 0; }
+  public static int log_message(String message) { return 0; }
+  public static int message(String message) { return 0; }
+  public static int output_message(String message) { return 0; }
   public static int save_int(int value, String name) { return 0; }
   public static int save_string(String value, String name) { return 0; }
   public static int set_transaction(String name, double duration, int status) { return 0; }
@@ -401,6 +406,7 @@ public final class lr {
   public static int start_sub_transaction(String name, String parent) { return 0; }
   public static int start_transaction(String name) { return 0; }
   public static void think_time(double seconds) {}
+  public static int vuser_status_message(String message) { return 0; }
   public static int wasted_time(int millis) { return 0; }
 }`
 	stubPath := filepath.Join(stubSourceDir, "lr.java")
@@ -431,6 +437,12 @@ public class Actions {
     if (lr.wasted_time(0) != 0) return 99;
     if (lr.end_transaction("Outer", lr.PASS) != 0) return 100;
     if (lr.set_transaction("Manual", 0.001, lr.FAIL) != 0) return 101;
+    if (lr.debug_message(16, "debug") != 0) return 102;
+    if (lr.log_message("log") != 0) return 103;
+    if (lr.message("message") != 0) return 104;
+    if (lr.output_message("output") != 0) return 105;
+    if (lr.vuser_status_message("status") != 0) return 106;
+    if (lr.error_message("error") < 0) return 107;
     return lr.PASS;
   }
 }`

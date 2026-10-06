@@ -218,6 +218,14 @@ public final class lr {
         return PASS;
     }
 
+    // Exact OpenText lrapi descriptor (ILjava/lang/String;)I, so Actions
+    // classes compiled against the real lrapi jar link without
+    // NoSuchMethodError. The Object... overload serves source-level calls.
+    public static int debug_message(int messageLevel, String message) {
+        emit("debug", Integer.toString(messageLevel), message == null ? "" : message);
+        return PASS;
+    }
+
     public static String decrypt(Object... args) {
         emit("review", "decrypt", "Machine-key-bound ciphertext was passed through by the sidecar shim.");
         return valueAt(args, 0);
@@ -578,8 +586,20 @@ public final class lr {
         return PASS;
     }
 
+    // Exact OpenText lrapi descriptor (Ljava/lang/String;)I.
+    public static int log_message(String message) {
+        emit("log", "", message == null ? "" : message);
+        return PASS;
+    }
+
     public static int message(Object... args) {
         emit("log", "", join(args));
+        return PASS;
+    }
+
+    // Exact OpenText lrapi descriptor (Ljava/lang/String;)I.
+    public static int message(String message) {
+        emit("log", "", message == null ? "" : message);
         return PASS;
     }
 
@@ -590,6 +610,12 @@ public final class lr {
 
     public static int output_message(Object... args) {
         emit("log", "", join(args));
+        return PASS;
+    }
+
+    // Exact OpenText lrapi descriptor (Ljava/lang/String;)I.
+    public static int output_message(String message) {
+        emit("log", "", message == null ? "" : message);
         return PASS;
     }
 
@@ -787,6 +813,12 @@ public final class lr {
 
     public static int vuser_status_message(Object... args) {
         emit("status", "", join(args));
+        return PASS;
+    }
+
+    // Exact OpenText lrapi descriptor (Ljava/lang/String;)I.
+    public static int vuser_status_message(String message) {
+        emit("status", "", message == null ? "" : message);
         return PASS;
     }
 
