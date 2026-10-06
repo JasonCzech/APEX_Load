@@ -687,7 +687,8 @@ systems can tell a load step from an incident:
   (`apexload.phase_event.v1`) holds each phase event with every sink's outcome
   (`pending`, `delivered`, `failed` or `dropped`, named by the webhook's name,
   never its URL). It is kept apart from analyst-authored run annotations. A run
-  with no recorded stop gets one at its end time. Phase events live with the
+  with no recorded stop gets one at its end time, so a run that held one load
+  level archives just its stop. Phase events live with the
   controller that recorded them, so after an HA adoption the archive holds only
   the transitions the adopting controller saw; delivered notifications are not
   affected.

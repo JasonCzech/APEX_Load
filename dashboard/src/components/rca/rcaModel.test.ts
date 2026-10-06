@@ -14,6 +14,7 @@ import {
   rcaPhaseMarkers,
   rcaSeriesLabel,
   rcaSeriesPopulation,
+  rcaTimelinePhases,
   rcaTimelineRows,
   rcaTone,
   rcaValidityConcerns,
@@ -92,6 +93,20 @@ describe('rcaModel', () => {
       ['12:02:00', 'checkout reached 20 VUsers'],
       ['12:10:00', 'The run stopped'],
     ])
+  })
+
+  it('infers load steps when the archived events mark no level', () => {
+    const inferred = rcaLoadSteps([{ start: '2026-10-05T12:00:30Z', end: '2026-10-05T12:02:00Z', vusers: 4 }], 30e9)
+    // A run that held one level archives only its stop.
+    const stopOnly = rcaPhaseMarkers('{"kind":"stop","at":"2026-10-05T12:02:00Z"}')
+    const held = rcaTimelinePhases(stopOnly, inferred)
+    expect(held.inferred).toBe(true)
+    expect(held.phases.map(p => p.label)).toEqual(['Load step to 4 VUsers', 'The run stopped'])
+    // Archived level events are used as they are.
+    const ramped = rcaPhaseMarkers('{"kind":"level_reached","level":4,"at":"2026-10-05T12:00:05Z"}\n{"kind":"stop","at":"2026-10-05T12:02:00Z"}')
+    expect(rcaTimelinePhases(ramped, inferred)).toEqual({ phases: ramped, inferred: false })
+    expect(rcaTimelinePhases(null, inferred)).toEqual({ phases: inferred, inferred: true })
+    expect(rcaTimelinePhases(null, [])).toEqual({ phases: [], inferred: false })
   })
 
   it('draws each interval at its start, as onsets are', () => {

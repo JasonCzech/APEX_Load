@@ -194,6 +194,9 @@ export interface RcaAnalysisResponse {
   // presented says whether the project presents v2 in Summary and
   // Diagnostics.
   presented: boolean
+  // archive_changed says the run's archive changed after the analysis read
+  // it; evidence archived since is not in the analysis.
+  archive_changed?: boolean
 }
 
 // RcaCritique is a review of an analysis that passed the narration check,

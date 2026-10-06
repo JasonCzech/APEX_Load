@@ -21,6 +21,10 @@ func baselineStableWindows(summaries []IntervalSummaryRecord, started time.Time,
 	})
 }
 
+// stableWindowContiguity is how far, as a share of an interval's length, its
+// start may sit from the previous interval's end and still continue a span.
+const stableWindowContiguity = 0.25
+
 // stableLoadWindows finds the steady spans of the load loadOf measures; an
 // interval it cannot measure ends a span.
 func stableLoadWindows(summaries []IntervalSummaryRecord, started time.Time, group string, selection BaselineComparisonWindow, loadOf func(IntervalSummaryRecord) (float64, bool)) []BaselineLoadWindow {
@@ -66,8 +70,16 @@ func stableLoadWindows(summaries []IntervalSummaryRecord, started time.Time, gro
 		if seconds < 60 {
 			return
 		}
+		// Weights are each interval's share of the measured time, not of the
+		// span: tolerated timestamp jitter leaves the span a few
+		// milliseconds off the intervals' sum, and a steady load must
+		// average to exactly that load.
+		measured := 0.0
 		for _, v := range kept {
-			weight := (v.end - v.start) / seconds
+			measured += v.end - v.start
+		}
+		for _, v := range kept {
+			weight := (v.end - v.start) / measured
 			w.Load += v.load * weight
 			w.TotalLoad += v.total * weight
 			for k, m := range v.mix {
@@ -103,7 +115,10 @@ func stableLoadWindows(summaries []IntervalSummaryRecord, started time.Time, gro
 			low, high := math.Min(minimum, load), math.Max(maximum, load)
 			valid := math.Abs(low-mean) <= mean*.05+1e-9 && math.Abs(high-mean) <= mean*.05+1e-9
 
-			if !valid || math.Abs(start-pending[len(pending)-1].end) > .001 {
+			// A missed interval leaves a gap of about an interval; the jitter
+			// between a summary's timestamp and its measured window is a few
+			// milliseconds and must not end a steady span.
+			if !valid || math.Abs(start-pending[len(pending)-1].end) > math.Max(.001, duration*stableWindowContiguity) {
 				flush()
 			}
 		}

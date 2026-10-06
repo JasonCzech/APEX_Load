@@ -167,6 +167,7 @@ export default function RootCausePanel({ testId, model, report, history, history
       {response?.state === 'failed' && <p className="run-report-error" role="alert">The analysis failed: {response.error || 'no reason was recorded'}.</p>}
       {response?.state === 'cancelled' && <p>This analysis was cancelled before it completed.</p>}
       {route.rev && response?.revision && String(response.revision) !== route.rev && <p className="run-report-muted" role="note">The link named revision {route.rev}; showing revision {response.revision}.</p>}
+      {response?.archive_changed && <p className="run-report-muted" role="note">This analysis judged an earlier revision of the run's archive; evidence archived since is not in it.{canAnalyze ? ' Re-analyze to include it.' : ''}</p>}
       {assessment && <>
         <dl className="rca-facts">
           <div><dt>Acceptance</dt><dd><Badge tone={rcaTone(assessment.acceptance.status)}>{rcaStatusLabel(assessment.acceptance.status)}</Badge></dd></div>

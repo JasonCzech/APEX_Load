@@ -198,4 +198,11 @@ describe('RootCausePanel', () => {
     await render(model({ analysis_id: 'rca-2', revision: 3, state: 'failed', error: 'budget exhausted', presented: true }))
     expect(container.querySelector('[role="alert"]')!.textContent).toBe('The analysis failed: budget exhausted.')
   })
+
+  it('says when the archive changed after the analysis read it', async () => {
+    await render(model(rcaTestResponse()))
+    expect(container.textContent).not.toContain('earlier revision')
+    await render(model({ ...rcaTestResponse(), archive_changed: true }))
+    expect(container.textContent).toContain("This analysis judged an earlier revision of the run's archive; evidence archived since is not in it. Re-analyze to include it.")
+  })
 })

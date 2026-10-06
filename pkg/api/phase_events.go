@@ -222,18 +222,24 @@ func (tr *TestRunner) dispatchPhaseNotification(log *phaseEventLog, index int, e
 }
 
 // persistPhaseEventArchive writes phase_events.jsonl once after finalize,
-// adding the run's stop when no lifecycle event recorded one yet.
+// adding the run's stop when no lifecycle event recorded one yet. Finalize
+// runs before the completion broadcast, so a run that held one load level
+// has recorded nothing yet; its archive still records the stop rather than
+// reading as missing phase evidence.
 func (tr *TestRunner) persistPhaseEventArchive(ctx context.Context, test *ManagedTest, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) error {
 	if test == nil || manifest.PhaseEventsFile != "" {
 		return nil
 	}
-	stored, ok := tr.phaseLogs.Load(test.ID)
-	if !ok {
-		return nil
+	log := &phaseEventLog{}
+	if stored, ok := tr.phaseLogs.Load(test.ID); ok {
+		log = stored.(*phaseEventLog)
 	}
-	log := stored.(*phaseEventLog)
-	if test.EndedAt != nil {
-		log.record(PhaseEvent{Schema: phaseEventSchema, Kind: PhaseStop, At: test.EndedAt.UTC()})
+	// The run's end time may not be set on the run yet when finalize runs;
+	// the archive's completion time is.
+	if ended := test.EndedAt; ended != nil {
+		log.record(PhaseEvent{Schema: phaseEventSchema, Kind: PhaseStop, At: ended.UTC()})
+	} else if !manifest.CompletedAt.IsZero() {
+		log.record(PhaseEvent{Schema: phaseEventSchema, Kind: PhaseStop, At: manifest.CompletedAt.UTC()})
 	}
 	events, truncated := log.snapshot()
 	budget, err := newEvidenceSidecarBudget(ctx, record, envArchivePhaseMax, 8<<20)

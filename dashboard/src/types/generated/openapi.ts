@@ -22358,6 +22358,7 @@ export interface operations {
         content: {
           "application/json": {
             "analysis_id"?: string;
+            "archive_changed"?: boolean;
             "assessment"?: (Record<string, unknown>) | null;
             "completed_at"?: (string) | null;
             "created_at"?: (string) | null;
@@ -55341,6 +55342,7 @@ export interface operations {
         content: {
           "application/json": {
             "analysis_id"?: string;
+            "archive_changed"?: boolean;
             "assessment"?: (Record<string, unknown>) | null;
             "completed_at"?: (string) | null;
             "created_at"?: (string) | null;
@@ -55379,6 +55381,7 @@ export interface operations {
         content: {
           "application/json": {
             "analysis_id"?: string;
+            "archive_changed"?: boolean;
             "assessment"?: (Record<string, unknown>) | null;
             "completed_at"?: (string) | null;
             "created_at"?: (string) | null;

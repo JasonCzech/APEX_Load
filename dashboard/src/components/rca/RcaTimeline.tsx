@@ -92,7 +92,7 @@ export default function RcaTimeline({ history, anomalies, phases, phasesInferred
           {concerns.map(c => <li key={`validity-${c.start}`} data-role="validity"><span className="rca-marker" aria-hidden="true" />{rcaValidityLabel(c.verdict)} from {formatRcaTime(c.start)} to {formatRcaTime(c.end)}: symptoms here may come from the load generators</li>)}
           {steps.map((step, i) => <li key={`phase-${i}`} data-role="phase"><span className="rca-marker" aria-hidden="true" />{step.label} at {formatRcaTime(step.at)}</li>)}
         </ul>
-        {phasesInferred && steps.length > 0 && <p className="run-report-muted">This run archived no load-phase events; the load steps are inferred from its steady load levels.</p>}
+        {phasesInferred && steps.length > 0 && <p className="run-report-muted">This run archived no load-level events; the load steps are inferred from its steady load levels.</p>}
       </figcaption>
     </figure>
   )

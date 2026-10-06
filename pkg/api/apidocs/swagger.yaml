@@ -321886,6 +321886,8 @@ paths:
                 properties:
                   analysis_id:
                     type: string
+                  archive_changed:
+                    type: boolean
                   assessment:
                     type: object
                     description: 'Go type: rca.Assessment'
@@ -322066,6 +322068,8 @@ paths:
                 properties:
                   analysis_id:
                     type: string
+                  archive_changed:
+                    type: boolean
                   assessment:
                     type: object
                     description: 'Go type: rca.Assessment'
@@ -322448,6 +322452,8 @@ paths:
                 properties:
                   analysis_id:
                     type: string
+                  archive_changed:
+                    type: boolean
                   assessment:
                     type: object
                     description: 'Go type: rca.Assessment'

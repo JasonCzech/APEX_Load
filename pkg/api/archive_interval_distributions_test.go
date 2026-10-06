@@ -184,6 +184,32 @@ func TestIntervalDistributionsReconstructionBounds(t *testing.T) {
 			t.Fatalf("incomplete flags: first %v, last %v", records[0].Incomplete, last.Incomplete)
 		}
 	})
+	t.Run("observations in merged order", func(t *testing.T) {
+		defer restore(500, 1000, 128)()
+		server, store := baselineTestServer(t)
+		comparisonArchiveFixture(t, server, store, "merged", 100, 100)
+		// A merged distributed archive lists each generator's rows in turn,
+		// so rows are not in time order; reversing them stands in for that.
+		record := server.runner.archives["merged"]
+		path := filepath.Join(record.ArchivePath, "transactions.jsonl")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := bytes.Split(bytes.TrimSpace(data), []byte("\n"))
+		for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
+			lines[i], lines[j] = lines[j], lines[i]
+		}
+		if err := os.WriteFile(path, append(bytes.Join(lines, []byte("\n")), '\n'), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		record, _ = persistIntervalDistributionsForTest(t, server, "merged")
+		for _, r := range readIntervalDistributions(t, record) {
+			if !r.Incomplete {
+				t.Fatalf("interval %s claims every row though the cut scan was unordered", r.Timestamp)
+			}
+		}
+	})
 	t.Run("buckets", func(t *testing.T) {
 		defer restore(100000, 10, 128)()
 		server, store := baselineTestServer(t)

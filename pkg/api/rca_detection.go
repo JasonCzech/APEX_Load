@@ -263,15 +263,42 @@ func (t *transactionSeries) add(r IntervalDistributionRecord, current distributi
 	}
 }
 
-// readTransactionSeries reads the run's transaction series. A run that
-// defined no business transactions is judged on its actions instead; once a
-// transaction appears, actions are no longer collected. Runs archived
-// without the distributions sidecar are rebuilt from their rows, within
-// bounds.
+// automaticIterationTransactions are the names the engine gives the
+// per-iteration transaction it records for a script that defines none: the
+// script's name, or script_iteration.
+func automaticIterationTransactions(manifest *RunArchiveManifest) map[string]bool {
+	provenance := manifest.Provenance
+	if manifest.InitialProvenance != nil {
+		provenance = *manifest.InitialProvenance
+	}
+	names := map[string]bool{"script_iteration": true}
+	for _, g := range provenance.Groups {
+		if name := strings.TrimSpace(g.ScriptName); name != "" {
+			names[name] = true
+		}
+	}
+	return names
+}
+
+// readTransactionSeries reads the run's transaction series. A run whose
+// scripts defined no business transactions, so that it recorded at most the
+// engine's automatic per-iteration ones, is judged on its actions too; once
+// an authored transaction appears, actions are no longer collected. Runs
+// archived without the distributions sidecar are rebuilt from their rows,
+// within bounds.
 func readTransactionSeries(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, budgeter *rca.Budgeter, limit, maxPoints int) (*rcaSeriesReader, []rca.Limitation, error) {
 	var limitations []rca.Limitation
 	transactions := newTransactionSeries("transaction", limit, maxPoints)
 	actions := newTransactionSeries("action", limit, maxPoints)
+	automatic := automaticIterationTransactions(manifest)
+	authored := func() bool {
+		for _, name := range transactions.names {
+			if !automatic[name] {
+				return true
+			}
+		}
+		return false
+	}
 	var intervals []distributionInterval
 	emit := func(r IntervalDistributionRecord) error {
 		if len(intervals)%1000 == 999 && budgeter.Exhausted() {
@@ -283,7 +310,7 @@ func readTransactionSeries(ctx context.Context, record *storage.RunArchiveRecord
 		bucket := time.Duration(r.WindowSeconds * float64(time.Second))
 		current := distributionInterval{start: r.Timestamp.UTC().Add(-bucket), complete: !r.Incomplete}
 		transactions.add(r, current, intervals, bucket)
-		if len(transactions.names) > 0 {
+		if actions != nil && authored() {
 			actions = nil
 		} else if actions != nil {
 			actions.add(r, current, intervals, bucket)
@@ -314,9 +341,24 @@ func readTransactionSeries(ctx context.Context, record *storage.RunArchiveRecord
 		return nil, nil, err
 	}
 	chosen := transactions
-	if len(transactions.names) == 0 && actions != nil && len(actions.names) > 0 {
+	switch {
+	case actions == nil || len(actions.names) == 0:
+	case len(transactions.names) == 0:
 		chosen = actions
 		limitations = append(limitations, rca.Limitation{Code: limitationActionsJudged, Detail: "the run defined no business transactions, so its actions were judged"})
+	default:
+		// The automatic per-iteration transactions say an iteration slowed;
+		// the actions say which request did.
+		for _, id := range slices.Sorted(maps.Keys(actions.reader.series)) {
+			if transactions.reader.limit >= 0 && len(transactions.reader.series) >= transactions.reader.limit {
+				transactions.reader.droppedSeries++
+				continue
+			}
+			transactions.reader.series[id] = actions.reader.series[id]
+			transactions.reader.maxOffered = max(transactions.reader.maxOffered, actions.reader.offered[id])
+		}
+		transactions.reader.droppedSeries += actions.reader.droppedSeries
+		limitations = append(limitations, rca.Limitation{Code: limitationActionsJudged, Detail: "the run's scripts defined no business transactions, so its actions were judged beside their automatic per-iteration transactions"})
 	}
 	if len(chosen.names) == 0 {
 		limitations = append(limitations, rca.Limitation{Code: limitationIntervalDistributionsMissing, Detail: "no transaction intervals were available, so only provider series were judged"})

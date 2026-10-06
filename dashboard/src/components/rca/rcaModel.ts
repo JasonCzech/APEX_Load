@@ -239,10 +239,26 @@ export function rcaHypothesisWindow(h: RcaHypothesis, anomalies: RcaAnomaly[]): 
   return { start: Math.round(start - pad), end: Math.round(end + pad) }
 }
 
-// RcaPhaseMarker is a load-phase transition on the timeline.
+// RcaPhaseMarker is a load-phase transition on the timeline. kind is the
+// archived event's kind; inferred steps have none.
 export interface RcaPhaseMarker {
   at: number
   label: string
+  kind?: string
+}
+
+// Archived kinds that mark a load level, as opposed to pause, resume and stop.
+const LEVEL_PHASE_KINDS = new Set(['ramp_start', 'level_reached', 'level_change'])
+
+// rcaTimelinePhases chooses the timeline's load steps: the archived events
+// when they mark the run's levels, otherwise the steps inferred from its
+// steady levels together with any archived pause, resume or stop. A run that
+// held one level archives only its stop. inferred says the steps were
+// inferred.
+export function rcaTimelinePhases(archived: RcaPhaseMarker[] | null, inferredSteps: RcaPhaseMarker[]): { phases: RcaPhaseMarker[]; inferred: boolean } {
+  if (archived?.some(p => p.kind && LEVEL_PHASE_KINDS.has(p.kind))) return { phases: archived, inferred: false }
+  const phases = [...inferredSteps, ...(archived || [])].sort((a, b) => a.at - b.at)
+  return { phases, inferred: inferredSteps.length > 0 }
 }
 
 const MAX_PHASE_EVENTS = 1000
@@ -271,7 +287,7 @@ export function rcaPhaseMarkers(jsonl: string): RcaPhaseMarker[] {
       resume: 'The run resumed',
       stop: 'The run stopped',
     }
-    out.push({ at, label: labels[event.kind] || humanize(event.kind) })
+    out.push({ at, label: labels[event.kind] || humanize(event.kind), kind: event.kind })
   }
   return out.sort((a, b) => a.at - b.at)
 }

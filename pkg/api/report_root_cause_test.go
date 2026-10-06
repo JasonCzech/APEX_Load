@@ -227,4 +227,14 @@ func TestArchiveReportAttachesV2RootCauseWherePresented(t *testing.T) {
 	if reply.Code != http.StatusOK || !strings.Contains(reply.Body.String(), "rca,,source,v2") || !strings.Contains(reply.Body.String(), "rca,,analysis_id,"+assessment.AnalysisID) {
 		t.Fatalf("csv: %d %s", reply.Code, reply.Body.String())
 	}
+	if v := view(); len(v.Notes) != 0 {
+		t.Fatalf("a current analysis carries notes: %+v", v.Notes)
+	}
+	// Evidence archived after the analysis changes the archive it judged.
+	rewriteCIRunArchiveManifest(t, store, server.runner.archives["rca-report-run"], func(m *RunArchiveManifest) {
+		m.SLADetails = append(m.SLADetails, "late monitoring evidence")
+	})
+	if v := view(); v == nil || v.Source != reportRootCauseV2 || len(v.Notes) != 1 || !strings.Contains(v.Notes[0], "earlier revision") {
+		t.Fatalf("an analysis of an earlier archive revision: %+v", v)
+	}
 }

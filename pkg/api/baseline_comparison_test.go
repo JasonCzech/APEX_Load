@@ -79,6 +79,29 @@ func TestBaselineComparisonStableAlignment(t *testing.T) {
 	}
 }
 
+// Real runs' summary timestamps sit a millisecond or two off their measured
+// windows; that jitter must not split a steady level, while a missed interval
+// still does.
+func TestBaselineStableWindowsTolerateTimestampJitter(t *testing.T) {
+	start := time.Now().UTC()
+	summaries := comparisonSummaries(start, repeatComparisonLoad(100, 24))
+	for i := range summaries {
+		jitter := time.Duration(i%3-1) * 1500 * time.Microsecond
+		summaries[i].Timestamp = summaries[i].Timestamp.Add(jitter)
+	}
+	// A steady load averages to that load within the 1e-9 that exact
+	// baseline matching allows.
+	if windows := baselineStableWindows(summaries, start, "checkout", BaselineComparisonWindow{}); len(windows) != 1 || windows[0].EndSeconds-windows[0].StartSeconds < 85 || math.Abs(windows[0].Load-100) > 1e-9 || math.Abs(windows[0].TotalLoad-100) > 1e-9 {
+		t.Fatalf("jittered steady level = %+v", windows)
+	}
+	missed := append(append([]IntervalSummaryRecord{}, summaries[:12]...), summaries[13:]...)
+	for _, w := range baselineStableWindows(missed, start, "checkout", BaselineComparisonWindow{}) {
+		if w.StartSeconds < summaries[12].Timestamp.Sub(start).Seconds() && w.EndSeconds > summaries[12].Timestamp.Sub(start).Seconds() {
+			t.Fatalf("a missed interval was bridged: %+v", w)
+		}
+	}
+}
+
 func TestBaselineResourceTimeWeightingGapsAndCounters(t *testing.T) {
 	w := BaselineLoadWindow{BaselineComparisonWindow: BaselineComparisonWindow{0, 100}, Load: 100}
 	s := baselineResourceSeries{kind: "gauge", instances: 2, points: []BaselineMetricPoint{{Seconds: 0, Value: 10}, {Seconds: 10, Value: 20}, {Seconds: 20, Value: 30}, {Seconds: 30, Value: 40}, {Seconds: 90, Value: 50}, {Seconds: 100, Value: 60}}}

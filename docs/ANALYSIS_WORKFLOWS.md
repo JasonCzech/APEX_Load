@@ -363,8 +363,11 @@ evidence.
 - **Series.** Per transaction: the interval p95, error rate and throughput
   from `interval_distributions.jsonl`. Archives without that sidecar are
   rebuilt from their rows within bounds (`interval_distributions_reconstructed`).
-  A run that defined no business transactions is judged on its actions
-  (`actions_judged`). A transaction absent from a complete interval completed
+  A run whose scripts authored no business transactions is judged on its
+  actions too (`actions_judged`), beside the automatic per-iteration
+  transaction the engine records under each script's name, so a slow request
+  is named rather than only a slow iteration; an authored transaction takes
+  precedence. A transaction absent from a complete interval completed
   nothing in it, so its throughput there is zero. Provider series come from the
   archived monitor points, one per provider, source, metric, query, statistic
   and dimension set. Interval and snapshot providers are compared bucket to
@@ -603,9 +606,11 @@ MCP tools keep returning v1.
   engine version (`rca.EngineVersion`) carries the rules', parameters' and
   signatures' versions and a fingerprint of every value the stages use: the
   budget, detection parameters, validity rules, hypothesis, graph and
-  capacity bounds, signature weights and the classifier. Changing a value
-  makes a new analysis; a change to a stage's logic bumps the engine's base
-  version. A POST
+  capacity bounds, signature weights and the classifier, followed by the
+  archive adapter's version (how the archive is read into series, levels and
+  evidence; `archive.2`). Changing a value makes a new analysis; a change to
+  a stage's logic bumps the engine's base version, and a change to how the
+  archive is read bumps the adapter's. A POST
   whose digest matches a queued, running or completed analysis returns it;
   a failed or cancelled one can be retried. A run keeps at most 50
   analyses and 50 evidence revisions.
@@ -643,9 +648,12 @@ MCP tools keep returning v1.
   (anomaly windows, onset uncertainty bands, the archived load-phase
   events, suspect and invalid spans, throughput and p95 drawn at interval
   starts) with the symptom's transaction population, exemplars with trace
-  links, the cause evidence and the matching error patterns. A run that
-  archived no phase events shows load steps inferred from the detection
-  levels, marked as inferred. The report URL carries `analysis`, `rev`,
+  links, the cause evidence and the matching error patterns. A run whose
+  archived phase events mark no load level (one that held a single level
+  archives only its stop) shows load steps inferred from the detection
+  levels, marked as inferred, beside any archived pause, resume or stop. When
+  the run's archive changed after the analysis read it, as late monitoring
+  evidence does, the panel and the report say so. The report URL carries `analysis`, `rev`,
   `hypothesis` and `window`, so a shared link reopens the same view.
 - **Reports.** The report section `rca` renders the generated root cause in
   the dashboard's report preview, HTML, PDF, Word, CSV and the analysis ZIP

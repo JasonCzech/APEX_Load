@@ -284,8 +284,11 @@ func reconstructIntervalDistributions(ctx context.Context, record *storage.RunAr
 	buckets := make([]map[string]map[string]*accumulator, len(windows))
 	observations := 0
 	// The interval the observation bound stopped in, and every later one,
-	// hold only part of their rows.
+	// hold only part of their rows. That holds only for rows read in time
+	// order; a merged distributed archive lists each generator's rows in
+	// turn, so a cut there leaves every interval partial.
 	stopped := len(windows)
+	ordered, latest := true, -1
 	err = forEachArchiveRecordContext(ctx, record, func(m *RunArchiveManifest) string { return m.TransactionsFile }, func(tx *intervalDistributionRow) error {
 		at := tx.Timestamp.UTC()
 		index := sort.Search(len(windows), func(i int) bool { return !windows[i].end.Before(at) })
@@ -301,8 +304,15 @@ func reconstructIntervalDistributions(ctx context.Context, record *storage.RunAr
 		}
 		if observations >= intervalDistributionMaxObservations {
 			truncated, stopped = true, index
+			if !ordered {
+				stopped = 0
+			}
 			return errStopIntervalReconstruction
 		}
+		if index < latest {
+			ordered = false
+		}
+		latest = max(latest, index)
 		observations++
 		if buckets[index] == nil {
 			buckets[index] = map[string]map[string]*accumulator{}

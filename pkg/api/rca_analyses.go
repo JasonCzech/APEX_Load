@@ -34,9 +34,18 @@ const (
 	rcaMaxConcurrentAnalyses = 2
 )
 
+// rcaArchiveAdapterVersion names how this package reads an archive into the
+// engine's inputs: which series, load levels and evidence it offers. It
+// changes whenever that reading changes, as the engine's version does for
+// the engine itself.
+//
+// archive.2: plateaus tolerate timestamp jitter, and actions are judged
+// beside automatic per-iteration transactions.
+const rcaArchiveAdapterVersion = "archive.2"
+
 // rcaEngineVersion changes whenever the engine's output for the same frozen
 // inputs could change, so it is part of every input digest.
-var rcaEngineVersion = rca.EngineVersion()
+var rcaEngineVersion = rca.EngineVersion() + "+" + rcaArchiveAdapterVersion
 
 var errRCAArchiveChanged = errors.New("the run archive changed after the analysis was requested")
 
@@ -121,6 +130,10 @@ type RCAAnalysisResponse struct {
 	// Presented says whether the project presents v2 in Summary,
 	// Diagnostics and reports.
 	Presented bool `json:"presented"`
+
+	// ArchiveChanged says the run's archive changed after the analysis read
+	// it, as when late monitoring evidence arrives; it is not in the analysis.
+	ArchiveChanged bool `json:"archive_changed,omitempty"`
 }
 
 // RCABundle is an analysis with its evidence, bounded for agents and export
@@ -398,8 +411,29 @@ func (s *Server) rcaAnalysisForRequest(w http.ResponseWriter, r *http.Request) (
 // assessment. Saved analyses stay readable when the project gate is off.
 func (s *Server) handleGetRCAAnalysis(w http.ResponseWriter, r *http.Request) {
 	if analysis, ok := s.rcaAnalysisForRequest(w, r); ok {
-		writeJSON(w, http.StatusOK, rcaAnalysisResponse(analysis))
+		writeJSON(w, http.StatusOK, s.currentRCAAnalysisResponse(r.Context(), analysis))
 	}
+}
+
+// currentRCAAnalysisResponse is rcaAnalysisResponse that also says whether
+// a completed analysis predates the run's current archive.
+func (s *Server) currentRCAAnalysisResponse(ctx context.Context, analysis *storage.RCAAnalysis) RCAAnalysisResponse {
+	out := rcaAnalysisResponse(analysis)
+	if out.Assessment != nil && out.Inputs != nil {
+		out.ArchiveChanged = s.rcaArchiveChanged(ctx, analysis.TestID, *out.Inputs)
+	}
+	return out
+}
+
+// rcaArchiveChanged reports whether the run's archive is no longer the one
+// an analysis read. An archive without a recorded digest is not judged.
+func (s *Server) rcaArchiveChanged(ctx context.Context, testID string, inputs rca.InputDigests) bool {
+	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, testID)
+	if !ok || record == nil {
+		return false
+	}
+	current := strings.TrimSpace(record.ManifestSHA256)
+	return current != "" && inputs.Archive != "" && current != inputs.Archive
 }
 
 // handleGetRCAAssessmentV2 returns the run's latest completed assessment.
@@ -423,7 +457,7 @@ func (s *Server) handleGetRCAAssessmentV2(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusOK, RCAAnalysisResponse{State: "none", Presented: rcaV2PresentEnabled(project)})
 		return
 	}
-	writeJSON(w, http.StatusOK, rcaAnalysisResponse(latest))
+	writeJSON(w, http.StatusOK, s.currentRCAAnalysisResponse(r.Context(), latest))
 }
 
 // handleGetRCABundle returns a completed analysis with its evidence, within

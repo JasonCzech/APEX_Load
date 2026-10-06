@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -268,5 +269,30 @@ func TestGrafanaWebhookRequiresTokenAndKeepsItAcrossEdits(t *testing.T) {
 	payload := buildGrafanaNotificationPayload(NotificationEvent{Type: "test_started", TestID: "r1", TestName: "Peak", Timestamp: time.UnixMilli(1_790_000_000_000)})
 	if payload["time"] != int64(1_790_000_000_000) || strings.Join(payload["tags"].([]string), ",") != "apexload,run:r1,event:test_started" {
 		t.Fatalf("payload %+v", payload)
+	}
+}
+
+// A run that held one level records no phase while it runs, and finalize
+// archives before the run's end is set; the archive still records its stop.
+func TestPhaseEventArchiveRecordsTheStopOfARunWithOneLevel(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	completed := time.Date(2026, 10, 6, 8, 4, 34, 0, time.UTC)
+	archive := t.TempDir()
+	record := &storage.RunArchiveRecord{TestID: "one-level", ArchivePath: archive, ManifestPath: filepath.Join(archive, "manifest.json")}
+	admitArchiveForTest(t, record)
+	manifest := &RunArchiveManifest{CompletedAt: completed}
+	if err := runner.persistPhaseEventArchive(context.Background(), &ManagedTest{ID: "one-level"}, record, manifest); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(archive, manifest.PhaseEventsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var event PhaseEvent
+	if err := json.Unmarshal(bytes.TrimSpace(data), &event); err != nil || event.Kind != PhaseStop || !event.At.Equal(completed) || manifest.PhaseEventCount != 1 {
+		t.Fatalf("archived %q (count %d): %v", data, manifest.PhaseEventCount, err)
+	}
+	if _, kept := runner.phaseLogs.Load("one-level"); kept {
+		t.Fatal("archiving a run's phases must not keep a log for it")
 	}
 }

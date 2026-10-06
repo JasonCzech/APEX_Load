@@ -17,6 +17,7 @@ import {
   rcaHypothesisWindow,
   rcaLoadSteps,
   rcaPhaseMarkers,
+  rcaTimelinePhases,
   rcaPopulationStats,
   rcaProviderLabel,
   rcaSeriesLabel,
@@ -52,8 +53,8 @@ export default function RootCauseInvestigation({ testId, assessment, hypothesis,
   const involved = useMemo(() => rcaHypothesisAnomalies(hypothesis, assessment.anomalies), [assessment.anomalies, hypothesis])
   const span = useMemo(() => rcaHypothesisWindow(hypothesis, assessment.anomalies), [assessment.anomalies, hypothesis])
   const inferredSteps = useMemo(() => rcaLoadSteps(assessment.detection?.levels || [], assessment.detection?.params?.level_settle_ns), [assessment.detection])
-  // The run's archived phase events mark its load steps; a run without them
-  // falls back to steps inferred from the detection levels.
+  // The run's archived phase events mark its load steps; a run without level
+  // events falls back to steps inferred from the detection levels.
   const phaseFile = report?.manifest?.phase_events_file || ''
   // undefined while the archived events load; null when the run has none or
   // they could not be read.
@@ -71,6 +72,8 @@ export default function RootCauseInvestigation({ testId, assessment, hypothesis,
       .catch(() => { if (!controller.signal.aborted) setPhases(null) })
     return () => controller.abort()
   }, [api, phaseFile, testId])
+  // While the archived events load, no steps are shown.
+  const timeline = useMemo(() => (phases === undefined ? { phases: [], inferred: false } : rcaTimelinePhases(phases, inferredSteps)), [inferredSteps, phases])
   const populations = useMemo(() => {
     const seen = new Set<string>()
     return involved.flatMap(({ anomaly, role }) => {
@@ -121,7 +124,7 @@ export default function RootCauseInvestigation({ testId, assessment, hypothesis,
         </div>
       </div>
 
-      <RcaTimeline history={history} anomalies={involved} phases={phases === undefined ? [] : phases ?? inferredSteps} phasesInferred={phases === null} validity={validityConcerns} window={window} loading={historyLoading} />
+      <RcaTimeline history={history} anomalies={involved} phases={timeline.phases} phasesInferred={timeline.inferred} validity={validityConcerns} window={window} loading={historyLoading} />
       {report?.manifest?.phase_events_truncated && <p className="run-report-muted">The run recorded more load-phase events than its archive keeps; later ones are missing.</p>}
 
       <div className="rca-investigation-grid">

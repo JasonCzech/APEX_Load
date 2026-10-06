@@ -275,6 +275,53 @@ func TestRCADetectionInputFromSidecars(t *testing.T) {
 	}
 }
 
+// A script without authored transactions records the engine's automatic
+// per-iteration transaction under the script's name; its actions are judged
+// beside it, so a slow request is named, not only a slow iteration.
+func TestRCAJudgesActionsBesideAutomaticIterationTransactions(t *testing.T) {
+	server, store := baselineTestServer(t)
+	record := exemplarArchiveFixture(t, server, store, "rca-run", nil)
+	var distributions []IntervalDistributionRecord
+	for i := 1; i <= 36; i++ {
+		distributions = append(distributions, IntervalDistributionRecord{Schema: intervalDistributionSchema, Timestamp: exemplarFixtureStart.Add(time.Duration(i) * 10 * time.Second), WindowSeconds: 10,
+			Dimensions: map[string]map[string]IntervalDistributionMetric{
+				"transaction": {"Checkout script": {Count: 10, P95: 300}},
+				"action":      {"GET /cart": {Count: 10, P95: 100}, "POST /pay": {Count: 10, P95: 200}},
+			}})
+	}
+	writeArchiveSidecar(t, record, intervalDistributionsArchiveFileName, distributions, func(m *RunArchiveManifest) {
+		m.IntervalDistributionsFile = intervalDistributionsArchiveFileName
+		m.Provenance.Groups = []TestGroup{{Name: "shop", ScriptName: "Checkout script"}}
+		if m.InitialProvenance != nil {
+			m.InitialProvenance.Groups = m.Provenance.Groups
+		}
+	})
+	manifest, _ := loadRunArchiveManifestFromRecord(record)
+	read := func(manifest *RunArchiveManifest) (map[string]bool, string) {
+		t.Helper()
+		reader, limitations, err := readTransactionSeries(context.Background(), record, manifest, rca.NewBudgeter(rca.DefaultBudget, nil, nil), -1, rca.MaxSeriesPoints)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := map[string]bool{}
+		for _, s := range reader.list() {
+			ids[s.ID] = true
+		}
+		return ids, limitationCodes(limitations)
+	}
+	ids, codes := read(manifest)
+	if !ids["transaction/Checkout script/p95_ms"] || !ids["action/GET /cart/p95_ms"] || !ids["action/POST /pay/p95_ms"] || !strings.Contains(codes, limitationActionsJudged) {
+		t.Fatalf("series %v, limitations %s", ids, codes)
+	}
+	// A transaction the script authored takes precedence, as before.
+	authored := *manifest
+	authored.Provenance.Groups = []TestGroup{{Name: "shop", ScriptName: "Another script"}}
+	authored.InitialProvenance = nil
+	if ids, codes := read(&authored); ids["action/GET /cart/p95_ms"] || !ids["transaction/Checkout script/p95_ms"] || strings.Contains(codes, limitationActionsJudged) {
+		t.Fatalf("authored transaction: series %v, limitations %s", ids, codes)
+	}
+}
+
 func limitationCodes(limitations []rca.Limitation) string {
 	codes := make([]string, 0, len(limitations))
 	for _, l := range limitations {
