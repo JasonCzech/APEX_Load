@@ -195,8 +195,17 @@ func TestEvaluationJobCancellationStopsRunningWorkAndRecordsNothing(t *testing.T
 	if done := readEvaluation(t, server, job.ID); done.State != storage.EvaluationJobCancelled || done.Result != nil {
 		t.Fatalf("cancelled job: %#v", done)
 	}
-	if hide := evaluationRequest(t, server, http.MethodDelete, "/api/v1/analysis/evaluations/"+job.ID+"?project_id="+storage.DefaultProjectID, nil, ""); hide.Code != http.StatusOK {
-		t.Fatalf("hide: %d %s", hide.Code, hide.Body.String())
+	// A retried cancel is idempotent: it neither fails nor hides the job.
+	if retried := evaluationRequest(t, server, http.MethodDelete, "/api/v1/analysis/evaluations/"+job.ID+"?project_id="+storage.DefaultProjectID, nil, ""); retried.Code != http.StatusOK {
+		t.Fatalf("retried cancel: %d %s", retried.Code, retried.Body.String())
+	}
+	if again := readEvaluation(t, server, job.ID); again.Hidden || again.State != storage.EvaluationJobCancelled {
+		t.Fatalf("a retried cancel changed the job: %#v", again)
+	}
+	for range 2 {
+		if hide := evaluationRequest(t, server, http.MethodDelete, "/api/v1/analysis/evaluations/"+job.ID+"?project_id="+storage.DefaultProjectID+"&hide=true", nil, ""); hide.Code != http.StatusOK {
+			t.Fatalf("hide: %d %s", hide.Code, hide.Body.String())
+		}
 	}
 	list := evaluationRequest(t, server, http.MethodGet, evaluationsPath, nil, "")
 	var listed struct {

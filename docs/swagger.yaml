@@ -23019,7 +23019,7 @@ paths:
   /api/v1/analysis/evaluations:
     get:
       summary: Evaluation Jobs
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
       operationId: handleEvaluationJobs
       responses:
         "200":
@@ -23031,6 +23031,9 @@ paths:
                 properties:
                   actor:
                     type: string
+                  attempts:
+                    type: integer
+                    format: int64
                   completed_at:
                     type: string
                     format: date-time
@@ -23039,6 +23042,8 @@ paths:
                     type: string
                     format: date-time
                   failure:
+                    type: string
+                  failure_code:
                     type: string
                   hidden:
                     type: boolean
@@ -23052,6 +23057,9 @@ paths:
                     type: string
                   request: {}
                   result: {}
+                  result_bytes:
+                    type: integer
+                    format: int64
                   result_sha256:
                     type: string
                   revision:
@@ -23064,12 +23072,12 @@ paths:
                     format: date-time
                 required:
                   - actor
+                  - attempts
                   - created_at
                   - id
                   - input_fingerprint
                   - kind
                   - project_id
-                  - request
                   - revision
                   - state
                   - updated_at
@@ -23105,7 +23113,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
       parameters:
         - name: kind
           in: query
@@ -23138,7 +23146,7 @@ paths:
       x-handler: handleEvaluationJobs
     post:
       summary: Evaluation Jobs
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: write'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
       operationId: handleEvaluationJobs_2
       responses:
         "200":
@@ -23150,6 +23158,9 @@ paths:
                 properties:
                   actor:
                     type: string
+                  attempts:
+                    type: integer
+                    format: int64
                   completed_at:
                     type: string
                     format: date-time
@@ -23158,6 +23169,8 @@ paths:
                     type: string
                     format: date-time
                   failure:
+                    type: string
+                  failure_code:
                     type: string
                   hidden:
                     type: boolean
@@ -23171,6 +23184,9 @@ paths:
                     type: string
                   request: {}
                   result: {}
+                  result_bytes:
+                    type: integer
+                    format: int64
                   result_sha256:
                     type: string
                   revision:
@@ -23183,12 +23199,12 @@ paths:
                     format: date-time
                 required:
                   - actor
+                  - attempts
                   - created_at
                   - id
                   - input_fingerprint
                   - kind
                   - project_id
-                  - request
                   - revision
                   - state
                   - updated_at
@@ -23224,7 +23240,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: write'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
       parameters:
         - name: kind
           in: query
@@ -23258,7 +23274,7 @@ paths:
   /api/v1/analysis/evaluations/{id}:
     delete:
       summary: Evaluation Jobs
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: write'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
       operationId: handleEvaluationJobs_3
       responses:
         "200":
@@ -23270,6 +23286,9 @@ paths:
                 properties:
                   actor:
                     type: string
+                  attempts:
+                    type: integer
+                    format: int64
                   completed_at:
                     type: string
                     format: date-time
@@ -23278,6 +23297,8 @@ paths:
                     type: string
                     format: date-time
                   failure:
+                    type: string
+                  failure_code:
                     type: string
                   hidden:
                     type: boolean
@@ -23291,6 +23312,9 @@ paths:
                     type: string
                   request: {}
                   result: {}
+                  result_bytes:
+                    type: integer
+                    format: int64
                   result_sha256:
                     type: string
                   revision:
@@ -23303,12 +23327,12 @@ paths:
                     format: date-time
                 required:
                   - actor
+                  - attempts
                   - created_at
                   - id
                   - input_fingerprint
                   - kind
                   - project_id
-                  - request
                   - revision
                   - state
                   - updated_at
@@ -23344,7 +23368,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: write'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
       parameters:
         - name: id
           in: path
@@ -23382,7 +23406,7 @@ paths:
       x-handler: handleEvaluationJobs
     get:
       summary: Evaluation Jobs
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
       operationId: handleEvaluationJobs_4
       responses:
         "200":
@@ -23394,6 +23418,9 @@ paths:
                 properties:
                   actor:
                     type: string
+                  attempts:
+                    type: integer
+                    format: int64
                   completed_at:
                     type: string
                     format: date-time
@@ -23402,6 +23429,8 @@ paths:
                     type: string
                     format: date-time
                   failure:
+                    type: string
+                  failure_code:
                     type: string
                   hidden:
                     type: boolean
@@ -23415,6 +23444,9 @@ paths:
                     type: string
                   request: {}
                   result: {}
+                  result_bytes:
+                    type: integer
+                    format: int64
                   result_sha256:
                     type: string
                   revision:
@@ -23427,12 +23459,12 @@ paths:
                     format: date-time
                 required:
                   - actor
+                  - attempts
                   - created_at
                   - id
                   - input_fingerprint
                   - kind
                   - project_id
-                  - request
                   - revision
                   - state
                   - updated_at
@@ -23468,7 +23500,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
       parameters:
         - name: id
           in: path

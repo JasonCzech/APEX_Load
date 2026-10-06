@@ -2,8 +2,13 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
+
+// ErrOwnedProjectNotFound is returned when a project-owned mutation names a
+// project that does not exist.
+var ErrOwnedProjectNotFound = errors.New("project not found")
 
 // lockProjectForOwnedMutation both validates a project owner and serializes the
 // child mutation with project deletion. Several newer project-owned tables do
@@ -24,7 +29,7 @@ func lockProjectForOwnedMutationContext(ctx context.Context, tx *storeTx, projec
 		return "", err
 	}
 	if affected != 1 {
-		return "", fmt.Errorf("project not found: %s", projectID)
+		return "", fmt.Errorf("%w: %s", ErrOwnedProjectNotFound, projectID)
 	}
 	return projectID, nil
 }

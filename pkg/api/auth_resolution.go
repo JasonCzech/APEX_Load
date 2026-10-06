@@ -554,6 +554,9 @@ func (r serviceAccountScopeRule) matches(method string, path string) bool {
 }
 
 var serviceAccountScopeRules = []serviceAccountScopeRule{
+	// Evaluations are read-only analyses of results: a results:read account
+	// may queue, read and cancel its own.
+	{prefix: "/api/v1/analysis/evaluations", scope: "results:read"},
 	{prefix: "/api/v1/auth/service-accounts", scope: "service_accounts:manage"},
 	{prefix: "/api/v1/auth/users", scope: "service_accounts:manage"},
 	{prefix: "/api/v1/auth/user-activity", scope: "audit:read"},

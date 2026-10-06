@@ -549,7 +549,6 @@ func (s *Server) handleCancelRCAAnalysis(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, rcaAnalysisResponse(analysis))
 }
 
-// rcaWorker holds the controller's analysis slots and wake signal.
 // rcaJobRunner returns the shared leased-job runner for root-cause analyses,
 // or nil when the store keeps no analyses.
 func (s *Server) rcaJobRunner() *leasedJobRunner[storage.RCAAnalysis] {

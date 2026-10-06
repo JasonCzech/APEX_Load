@@ -2125,6 +2125,9 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "cluster_connections.aws_secret_key_wrapped_key", query: `ALTER TABLE cluster_connections ADD COLUMN aws_secret_key_wrapped_key TEXT`},
 		{name: "cluster_connections.aws_external_id_ciphertext", query: `ALTER TABLE cluster_connections ADD COLUMN aws_external_id_ciphertext TEXT`},
 		{name: "cluster_connections.aws_external_id_wrapped_key", query: `ALTER TABLE cluster_connections ADD COLUMN aws_external_id_wrapped_key TEXT`},
+		{name: "feature_evaluation_jobs.request_digest", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN request_digest TEXT NOT NULL DEFAULT ''`},
+		{name: "feature_evaluation_jobs.attempts", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`},
+		{name: "feature_evaluation_jobs.failure_code", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN failure_code TEXT NOT NULL DEFAULT ''`},
 	}
 }
 

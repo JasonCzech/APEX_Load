@@ -51953,16 +51953,19 @@ export interface operations {
         content: {
           "application/json": {
             "actor": string;
+            "attempts": number;
             "completed_at"?: (string) | null;
             "created_at": string;
             "failure"?: string;
+            "failure_code"?: string;
             "hidden"?: boolean;
             "id": string;
             "input_fingerprint": string;
             "kind": string;
             "project_id": string;
-            "request": unknown;
+            "request"?: unknown;
             "result"?: unknown;
+            "result_bytes"?: number;
             "result_sha256"?: string;
             "revision": number;
             "state": string;
@@ -52015,16 +52018,19 @@ export interface operations {
         content: {
           "application/json": {
             "actor": string;
+            "attempts": number;
             "completed_at"?: (string) | null;
             "created_at": string;
             "failure"?: string;
+            "failure_code"?: string;
             "hidden"?: boolean;
             "id": string;
             "input_fingerprint": string;
             "kind": string;
             "project_id": string;
-            "request": unknown;
+            "request"?: unknown;
             "result"?: unknown;
+            "result_bytes"?: number;
             "result_sha256"?: string;
             "revision": number;
             "state": string;
@@ -52080,16 +52086,19 @@ export interface operations {
         content: {
           "application/json": {
             "actor": string;
+            "attempts": number;
             "completed_at"?: (string) | null;
             "created_at": string;
             "failure"?: string;
+            "failure_code"?: string;
             "hidden"?: boolean;
             "id": string;
             "input_fingerprint": string;
             "kind": string;
             "project_id": string;
-            "request": unknown;
+            "request"?: unknown;
             "result"?: unknown;
+            "result_bytes"?: number;
             "result_sha256"?: string;
             "revision": number;
             "state": string;
@@ -52145,16 +52154,19 @@ export interface operations {
         content: {
           "application/json": {
             "actor": string;
+            "attempts": number;
             "completed_at"?: (string) | null;
             "created_at": string;
             "failure"?: string;
+            "failure_code"?: string;
             "hidden"?: boolean;
             "id": string;
             "input_fingerprint": string;
             "kind": string;
             "project_id": string;
-            "request": unknown;
+            "request"?: unknown;
             "result"?: unknown;
+            "result_bytes"?: number;
             "result_sha256"?: string;
             "revision": number;
             "state": string;
