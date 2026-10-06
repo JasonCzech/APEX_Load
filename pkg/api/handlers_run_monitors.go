@@ -92,8 +92,9 @@ func (s *Server) handleMonitorSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	source.ProjectID = project
-	if source.AppDynamics != nil {
-		source.AppDynamics.ProjectID = project
+	if source.Pack == monitorprovider.PackAppDynamics || source.AppDynamics != nil {
+		writeError(w, 400, retiredAppDynamicsMessage)
+		return
 	}
 	if source.Dynatrace != nil {
 		source.Dynatrace.ProjectID = project
@@ -252,7 +253,13 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 			writeError(w, 400, "collector contracts must be advertised separately")
 			return
 		}
+		ad.Packs = slices.DeleteFunc(ad.Packs, func(pack string) bool {
+			return pack == monitorprovider.PackAppDynamics || pack == collectoragent.AppDynamicsBatchContract
+		})
 		for _, contract := range ad.Contracts {
+			if contract == collectoragent.AppDynamicsBatchContract {
+				continue
+			}
 			if provider, governed := providerForCapability(contract); governed {
 				if !slices.Contains(ad.Packs, provider.Pack) {
 					writeError(w, 400, provider.ContractLabel+" contract requires pack approval")
@@ -410,6 +417,10 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 	job, err := store.GetRunMonitorJob(c.ProjectID, grant.ID)
 	if err != nil {
 		writeError(w, 404, "monitor job unavailable")
+		return
+	}
+	if job.Source.Pack == monitorprovider.PackAppDynamics || grant.Pack == monitorprovider.PackAppDynamics {
+		writeError(w, 409, retiredAppDynamicsMessage)
 		return
 	}
 	if job.Source.ManagementScope != nil || grant.Management != nil {

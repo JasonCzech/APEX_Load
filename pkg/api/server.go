@@ -230,7 +230,7 @@ type Server struct {
 	scheduleOccurrenceRetentionCancel context.CancelFunc
 	archiveCleanupCancel              context.CancelFunc
 	archiveCleanupDone                chan struct{}
-	appDynamicsCancel                 context.CancelFunc
+	providerMonitoringCancel          context.CancelFunc
 	archiveFinalizationCancel         context.CancelFunc
 	archiveFinalizationWake           chan struct{}
 	archiveOrphanWake                 chan struct{}
@@ -638,7 +638,6 @@ func NewServer(cfg ServerConfig) *Server {
 		tracing:                 cfg.TracingStatus,
 	}
 	s.configureReplaySessionReservations()
-	runner.appDynamicsPrepare = s.verifyPreparedAppDynamics
 	runner.prometheusPrepare = s.verifyPreparedPrometheus
 	runner.dynatracePrepare = s.verifyPreparedDynatrace
 	hub.SetOriginAuthProvider(s.authSettingsForRequest)
@@ -1122,7 +1121,6 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.registerAPIRouteCatalog(scenarioSchedulingAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(baselineComparisonAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(runMonitoringAPIRouteCatalog, standardRouteMiddleware)
-	s.registerAPIRouteCatalog(appDynamicsAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(prometheusAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(dynatraceNativeAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(analysisAPIRouteCatalog, standardRouteMiddleware)
@@ -1202,8 +1200,6 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scripts/{id}/bruno-imports/source", cors(log(auth(http.HandlerFunc(s.handleGetImportSource)))))
 	s.mux.Handle("GET /api/v1/scripts/{id}/bruno-imports/revisions", cors(log(auth(http.HandlerFunc(s.handleListImportSourceRevisions)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/bruno-imports/rollback", cors(log(auth(http.HandlerFunc(s.handleRollbackImportSource)))))
-	s.mux.Handle("POST /api/v1/scripts/{id}/bruno-projection/preview", cors(log(auth(http.HandlerFunc(s.handlePreviewBrunoProjection)))))
-	s.mux.Handle("POST /api/v1/scripts/{id}/bruno-projection/commit", cors(log(auth(http.HandlerFunc(s.handleCommitBrunoProjection)))))
 	s.mux.Handle("POST /api/v1/scripts/validate", cors(log(auth(http.HandlerFunc(s.handleValidateDraftScript)))))
 	s.mux.Handle("POST /api/v1/scripts/replay", cors(log(auth(http.HandlerFunc(s.handleReplayDraftScript)))))
 	s.mux.Handle("POST /api/v1/scripts/replay/sessions", cors(log(auth(http.HandlerFunc(s.handleStartReplaySessionDraftScript)))))
@@ -1717,7 +1713,7 @@ func (s *Server) Start() (startErr error) {
 	s.startScheduleOccurrenceRetentionCadence()
 	s.startArchiveCleanupRetry()
 	s.startArchiveFinalizationRetry()
-	s.startAppDynamicsMonitoring()
+	s.startProviderMonitoring()
 	s.startRCAAnalysisWorker()
 	s.startAccessReviewNotifierCadence()
 	s.startCIGitHubCheckReconciliation()
@@ -2312,9 +2308,9 @@ func (s *Server) shutdown(ctx context.Context) error {
 			s.archiveCleanupDone = nil
 		}
 	}
-	if s.appDynamicsCancel != nil {
-		s.appDynamicsCancel()
-		s.appDynamicsCancel = nil
+	if s.providerMonitoringCancel != nil {
+		s.providerMonitoringCancel()
+		s.providerMonitoringCancel = nil
 	}
 	if s.rcaCancel != nil {
 		s.rcaCancel()

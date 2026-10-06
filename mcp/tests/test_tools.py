@@ -180,35 +180,13 @@ async def test_project_activity_tool_forwards_resource_filters():
     assert result["ok"] is True
 
 
-@pytest.mark.asyncio
-async def test_appdynamics_tools_routes_query_and_confirmation():
-    seen: list[httpx.Request] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request)
-        return httpx.Response(202, json={"id": "inspection", "status": "pending"})
-
-    client = APEXLoadClient(APEXLoadClientConfig(base_url="http://storm.test/api/v1"), transport=httpx.MockTransport(handler))
-    params = {"id": "project", "connection_id": "connection"}
-    guarded = json.loads(await run_endpoint_tool(tool("appdynamics_discover_metrics"), path_params=params, client=client))
-    assert guarded["error"]["code"] == "confirmation_required"
-    assert seen == []
-    result = json.loads(await run_endpoint_tool(tool("appdynamics_discover_metrics"), path_params=params, query={"application_id": "42", "metric_path": "Business Transactions|Checkout"}, confirm=True, client=client))
-    assert result["ok"] is True
-    assert seen[-1].method == "GET"
-    assert seen[-1].url.path == "/api/v1/projects/project/monitoring/appdynamics-connections/connection/metrics"
-    assert seen[-1].url.params["application_id"] == "42"
-    assert seen[-1].url.params["metric_path"] == "Business Transactions|Checkout"
-    await run_endpoint_tool(tool("appdynamics_connection_delete"), path_params=params, query={"revision": 2}, confirm=True, reason="Retire connection", client=client)
-    assert seen[-1].method == "DELETE"
-    assert seen[-1].url.params["revision"] == "2"
-    await run_endpoint_tool(tool("run_monitor_evidence"), path_params={"id": "run"}, query={"after_key": "cursor"}, client=client)
-    assert seen[-1].url.path == "/api/v1/tests/run/monitor-evidence"
-    assert seen[-1].url.params["after_key"] == "cursor"
+def test_retired_integrations_are_not_registered():
+    assert not any(spec.name.startswith("appdynamics_") for spec in ENDPOINT_TOOLS)
+    assert not any("bruno-projection" in spec.path or "bruno-sync" in spec.path for spec in ENDPOINT_TOOLS)
 
 
 @pytest.mark.asyncio
-async def test_appdynamics_source_and_test_selection_parity():
+async def test_supported_source_and_test_selection_parity():
     seen: list[httpx.Request] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -217,7 +195,7 @@ async def test_appdynamics_source_and_test_selection_parity():
 
     client = APEXLoadClient(APEXLoadClientConfig(base_url="http://storm.test/api/v1"), transport=httpx.MockTransport(handler))
     source = {"id": "project", "source_id": "source"}
-    result = json.loads(await run_endpoint_tool(tool("monitor_source_update"), path_params=source, payload={"revision": 3, "connection_id": "connection", "appdynamics": {"applications": ["42"]}}, confirm=True, client=client))
+    result = json.loads(await run_endpoint_tool(tool("monitor_source_update"), path_params=source, payload={"revision": 3, "connection_id": "connection", "dynatrace": {"entities": ["SERVICE-42"]}}, confirm=True, client=client))
     assert result["ok"] is True
     assert seen[-1].method == "PUT"
     assert seen[-1].url.path == "/api/v1/projects/project/monitor-sources/source"

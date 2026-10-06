@@ -412,7 +412,7 @@ func TestSaveStoredScriptFallbackEnforcesSecretBoundary(t *testing.T) {
 	assertAuthoringDraftDisclosureSafe(t, store.savedScripts[0], reviewSecret)
 }
 
-func TestBrunoSecretBindingsRequireExactGovernedReferencesAtDurableBoundary(t *testing.T) {
+func TestBrunoRunnerRetirementPrecedesSecretBindingsAtDurableBoundary(t *testing.T) {
 	newScript := func(id, value string) *dsl.Script {
 		return &dsl.Script{
 			ID: id, Name: "Bruno binding boundary", Version: "1.0.0", Protocol: "bruno", ProjectID: "project-a",
@@ -427,7 +427,7 @@ func TestBrunoSecretBindingsRequireExactGovernedReferencesAtDurableBoundary(t *t
 	runner := NewTestRunner(1, NewHub(), nil)
 	const plaintext = "innocuous-alias-plaintext-password"
 	unsafe := newScript("bruno-unsafe", plaintext)
-	if _, err := runner.StoreScriptDurable(unsafe); err == nil || !strings.Contains(err.Error(), "require logical secret bindings") {
+	if _, err := runner.StoreScriptDurable(unsafe); err == nil || !strings.Contains(err.Error(), "Bruno Runner has been retired") {
 		t.Fatalf("unsafe Bruno durable create error = %v", err)
 	}
 	if len(runner.ListScripts()) != 0 {
@@ -442,21 +442,11 @@ func TestBrunoSecretBindingsRequireExactGovernedReferencesAtDurableBoundary(t *t
 		t.Fatalf("Bruno response projection disclosed executable binding: %s", encoded)
 	}
 
-	safe, err := runner.StoreScriptDurable(newScript("bruno-safe", "{{secret.BRUNO_FOO}}"))
-	if err != nil {
-		t.Fatal(err)
+	if _, err := runner.StoreScriptDurable(newScript("bruno-safe", "{{secret.BRUNO_FOO}}")); err == nil || !strings.Contains(err.Error(), "Bruno Runner has been retired") {
+		t.Fatalf("governed binding cannot restore the retired runtime: %v", err)
 	}
-	if got := safe.Script.Config.Bruno.SecretBindings["FOO"]; got != "{{secret.BRUNO_FOO}}" {
-		t.Fatalf("stored safe Bruno binding = %q", got)
+	if len(runner.ListScripts()) != 0 {
+		t.Fatal("retired runner reached durable storage")
 	}
 
-	update := cloneScriptDefinition(safe.Script)
-	update.Config.Bruno.SecretBindings["FOO"] = plaintext
-	if _, _, err := runner.UpdateScriptDurableInProject(safe.ID, update, safe.ProjectID); err == nil || !strings.Contains(err.Error(), "require logical secret bindings") {
-		t.Fatalf("unsafe Bruno durable update error = %v", err)
-	}
-	unchanged, ok := runner.GetScript(safe.ID)
-	if !ok || unchanged.Script.Config.Bruno.SecretBindings["FOO"] != "{{secret.BRUNO_FOO}}" {
-		t.Fatalf("blocked update changed durable Bruno binding: %#v", unchanged)
-	}
 }

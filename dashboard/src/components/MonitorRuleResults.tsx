@@ -1,4 +1,4 @@
-import type { MonitorRuleResult } from '../types/appdynamics'
+import type { MonitorRuleResult } from '../types/runMonitoring'
 
 export default function MonitorRuleResults({ results }: { results?: MonitorRuleResult[] }) {
   if (!results?.length) return null

@@ -110,8 +110,8 @@ func TestPrometheusDirectSelectedInspectionHonorsOperationDeadline(t *testing.T)
 	}{{"twenty_queries_fit_one_minute", time.Minute, time.Minute, 1}, {"persisted_expiry_is_shorter", 30 * time.Second, time.Minute, 0}, {"parent_deadline_is_shorter", time.Minute, 30 * time.Second, 0}} {
 		t.Run(tc.name, func(t *testing.T) {
 			server, durable := newTimeslotServer(t)
-			if server.appDynamicsCancel != nil {
-				server.appDynamicsCancel()
+			if server.providerMonitoringCancel != nil {
+				server.providerMonitoringCancel()
 			}
 			connections := durable.(storage.PrometheusConnectionStore)
 			connection := &storage.PrometheusConnection{ID: "inspection-deadline", ProjectID: "proj-a", Name: "deadline", CollectionMode: "direct", Config: prometheus.Config{Endpoint: "https://prom.example"}}

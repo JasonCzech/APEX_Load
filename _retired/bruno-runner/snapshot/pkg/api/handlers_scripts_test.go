@@ -1,0 +1,6679 @@
+package api
+
+import (
+	"archive/zip"
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+	"unicode/utf16"
+
+	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
+	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/trueclient"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
+)
+
+type authoringSessionFailureStore struct {
+	*storage.SQLiteStore
+	authoringSaveCalls int
+	failOnCall         int
+	failScriptSave     bool
+	err                error
+}
+
+func seedAuthoringScriptProjects(t *testing.T, store *storage.SQLiteStore, projectIDs ...string) {
+	t.Helper()
+	now := time.Now().UTC()
+	for _, projectID := range projectIDs {
+		if err := store.SaveProject(&storage.Project{
+			ID:        projectID,
+			Name:      projectID,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("SaveProject(%s): %v", projectID, err)
+		}
+	}
+}
+
+func (s *authoringSessionFailureStore) SaveAuthoringSession(session *storage.AuthoringSession) error {
+	s.authoringSaveCalls++
+	if s.failOnCall > 0 && s.authoringSaveCalls == s.failOnCall {
+		return s.err
+	}
+	return s.SQLiteStore.SaveAuthoringSession(session)
+}
+
+func (s *authoringSessionFailureStore) CompareAndSwapAuthoringSession(session *storage.AuthoringSession, expectedUpdatedAt time.Time, expectedStatus string) (bool, error) {
+	s.authoringSaveCalls++
+	if s.failOnCall > 0 && s.authoringSaveCalls == s.failOnCall {
+		return false, s.err
+	}
+	return s.SQLiteStore.CompareAndSwapAuthoringSession(session, expectedUpdatedAt, expectedStatus)
+}
+
+func (s *authoringSessionFailureStore) DeleteAuthoringSessionUnlessApproving(id string) (bool, error) {
+	return s.SQLiteStore.DeleteAuthoringSessionUnlessApproving(id)
+}
+
+func (s *authoringSessionFailureStore) SaveScript(script *dsl.Script) error {
+	if s.failScriptSave {
+		return s.err
+	}
+	return s.SQLiteStore.SaveScript(script)
+}
+
+func (s *authoringSessionFailureStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
+	if s.failScriptSave {
+		return false, s.err
+	}
+	return s.SQLiteStore.CreateScriptIfAbsent(script)
+}
+
+const sampleEnterpriseArchiveActionC = `
+#include "web_api.h"
+
+Action()
+{
+	web_url("Homepage",
+		"URL=https://example.com/app/home",
+		"Resource=0",
+		"RecContentType=text/html",
+		LAST);
+
+	web_set_max_html_param_len("4096");
+
+	return 0;
+}
+`
+
+func TestHandleCreateAndUpdateScriptPreservesExtendedRTSSettings(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	cacheEnabled := true
+	checkNewerVersions := true
+	newUserPerIter := true
+	projectID := "project-rts"
+	folderID := "folder-rts"
+
+	script := dsl.Script{
+		Name:     "Extended RTS Browser Script",
+		Version:  "1.0.0",
+		Protocol: "browser",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source:           "enterprise_script_archive",
+			SourceScriptName: "ExtendedRTS",
+			Preserved: map[string]any{
+				"runtime_cfg": "default.cfg",
+			},
+		}},
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.com",
+			Log: dsl.LogConfig{
+				Level:           "debug",
+				OnErrorOnly:     true,
+				ExtendedOptions: []string{"parameter_substitution", "data_returned"},
+			},
+			HTTP: dsl.HTTPConfig{
+				ProxyMode: "custom",
+				Proxy: dsl.ProxyConfig{
+					URL:      "http://proxy.example.com:8080",
+					Username: "{{secret.PROXY_USERNAME}}",
+					Password: "{{secret.PROXY_PASSWORD}}",
+				},
+			},
+			Browser: dsl.BrowserConfig{
+				Engine:             "chromium",
+				Headless:           &cacheEnabled,
+				CacheEnabled:       &cacheEnabled,
+				CheckNewerVersions: &checkNewerVersions,
+				NewUserPerIter:     &newUserPerIter,
+				DownloadResources:  "all",
+				Viewport: dsl.BrowserViewport{
+					Width:  1440,
+					Height: 900,
+				},
+			},
+			WebRuntime: dsl.WebRuntimeConfig{
+				AdditionalAttributes: map[string]string{
+					"record_snapshot": "true",
+				},
+				DownloadFilters: dsl.DownloadFiltersConfig{
+					Mode:  "allow_list",
+					Hosts: []string{"cdn.example.com"},
+				},
+				ContentChecks: []dsl.ContentCheckConfig{{
+					Text:        "Access Denied",
+					Scope:       "main_document",
+					FailIfFound: &cacheEnabled,
+				}},
+				NetworkSimulation: dsl.NetworkSimulationConfig{
+					Mode:          "custom",
+					BandwidthKbps: 2048,
+					LatencyMs:     120,
+				},
+				Streaming: dsl.StreamingConfig{
+					Mode:                "fixed",
+					BufferSizeSeconds:   30,
+					FixedBitrateKbps:    1200,
+					BandwidthEstimation: "rolling",
+				},
+				DataFormatting: dsl.DataFormattingConfig{
+					AutoDetect: true,
+					Chain: []dsl.DFETransform{{
+						Type: "gzip",
+						Options: map[string]string{
+							"mode": "decode",
+						},
+					}},
+				},
+			},
+		},
+		Actions: []dsl.Action{{
+			Name:   "Open homepage",
+			Type:   "browser_navigate",
+			Target: "/",
+		}},
+	}
+
+	createBody, err := json.Marshal(map[string]any{
+		"project_id": projectID,
+		"folder_id":  folderID,
+		"script":     script,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal(create) returned error: %v", err)
+	}
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+
+	var created StoredScript
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal(create) returned error: %v", err)
+	}
+	if created.ProjectID != projectID {
+		t.Fatalf("created project_id = %q, want %q", created.ProjectID, projectID)
+	}
+	if created.FolderID == nil || *created.FolderID != folderID {
+		t.Fatalf("created folder_id = %v, want %q", created.FolderID, folderID)
+	}
+	if created.Script == nil {
+		t.Fatal("created script = nil")
+	}
+	if created.AuthoringHealth == nil || created.AuthoringHealth.Status != "needs_review" {
+		t.Fatalf("created authoring health = %#v, want needs_review", created.AuthoringHealth)
+	}
+	if !reflect.DeepEqual(created.Script.Config.WebRuntime, script.Config.WebRuntime) {
+		t.Fatalf("created web_runtime = %#v, want %#v", created.Script.Config.WebRuntime, script.Config.WebRuntime)
+	}
+	if !reflect.DeepEqual(created.Script.Config.Browser, script.Config.Browser) {
+		t.Fatalf("created browser config = %#v, want %#v", created.Script.Config.Browser, script.Config.Browser)
+	}
+	if !reflect.DeepEqual(created.Script.Metadata, script.Metadata) {
+		t.Fatalf("created metadata = %#v, want %#v", created.Script.Metadata, script.Metadata)
+	}
+
+	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+created.ID+"/validate", nil)
+	validateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(validateResp, validateReq)
+
+	if validateResp.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want %d body=%s", validateResp.Code, http.StatusOK, validateResp.Body.String())
+	}
+
+	var validatePayload struct {
+		Valid           bool            `json:"valid"`
+		Issues          []string        `json:"issues"`
+		AuthoringHealth AuthoringHealth `json:"authoring_health"`
+	}
+	if err := json.Unmarshal(validateResp.Body.Bytes(), &validatePayload); err != nil {
+		t.Fatalf("json.Unmarshal(validate) returned error: %v", err)
+	}
+	if !validatePayload.Valid || len(validatePayload.Issues) != 0 {
+		t.Fatalf("validate payload = %#v, want valid script with no issues", validatePayload)
+	}
+	if validatePayload.AuthoringHealth.Status != "needs_review" || validatePayload.AuthoringHealth.Score < 60 {
+		t.Fatalf("authoring health = %#v, want reviewable score", validatePayload.AuthoringHealth)
+	}
+
+	updatedScript := *created.Script
+	updatedScript.Config.Browser.DownloadResources = "none"
+	updatedScript.Config.WebRuntime.NetworkSimulation = dsl.NetworkSimulationConfig{
+		Mode:      "preset",
+		Preset:    "dsl",
+		LatencyMs: 50,
+	}
+	updatedScript.Config.WebRuntime.DownloadFilters = dsl.DownloadFiltersConfig{
+		Mode:  "block_list",
+		Hosts: []string{"ads.example.com", "tracker.example.com"},
+	}
+	updatedScript.Config.WebRuntime.ContentChecks = []dsl.ContentCheckConfig{{
+		Text:  "Service Unavailable",
+		Scope: "any_response",
+	}}
+
+	updateBody, err := json.Marshal(map[string]any{"script": updatedScript})
+	if err != nil {
+		t.Fatalf("json.Marshal(update) returned error: %v", err)
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/scripts/"+created.ID, bytes.NewReader(updateBody))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(updateResp, updateReq)
+
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d body=%s", updateResp.Code, http.StatusOK, updateResp.Body.String())
+	}
+
+	var updated StoredScript
+	if err := json.Unmarshal(updateResp.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("json.Unmarshal(update) returned error: %v", err)
+	}
+	if updated.Script == nil {
+		t.Fatal("updated script = nil")
+	}
+	if updated.AuthoringHealth == nil || updated.AuthoringHealth.Status != "needs_review" {
+		t.Fatalf("updated authoring health = %#v, want needs_review", updated.AuthoringHealth)
+	}
+	if updated.Script.Config.Browser.DownloadResources != "none" {
+		t.Fatalf("updated download_resources = %q, want none", updated.Script.Config.Browser.DownloadResources)
+	}
+	if !reflect.DeepEqual(updated.Script.Config.WebRuntime.DownloadFilters, updatedScript.Config.WebRuntime.DownloadFilters) {
+		t.Fatalf("updated download_filters = %#v, want %#v", updated.Script.Config.WebRuntime.DownloadFilters, updatedScript.Config.WebRuntime.DownloadFilters)
+	}
+	if !reflect.DeepEqual(updated.Script.Config.WebRuntime.NetworkSimulation, updatedScript.Config.WebRuntime.NetworkSimulation) {
+		t.Fatalf("updated network_simulation = %#v, want %#v", updated.Script.Config.WebRuntime.NetworkSimulation, updatedScript.Config.WebRuntime.NetworkSimulation)
+	}
+	if !reflect.DeepEqual(updated.Script.Config.WebRuntime.ContentChecks, updatedScript.Config.WebRuntime.ContentChecks) {
+		t.Fatalf("updated content_checks = %#v, want %#v", updated.Script.Config.WebRuntime.ContentChecks, updatedScript.Config.WebRuntime.ContentChecks)
+	}
+}
+
+func TestHandleCreateScriptRejectsMissingBaseURL(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"script": map[string]any{
+			"name":     "No Base URL",
+			"protocol": "http",
+			"actions": []map[string]any{{
+				"name":   "Ping",
+				"type":   "request",
+				"method": "GET", "target": "/ping",
+			}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "config.base_url is empty") {
+		t.Fatalf("body = %q, want base_url validation error", resp.Body.String())
+	}
+}
+
+func TestHandleCreateScriptRejectsBodyFile(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"script": map[string]any{
+			"name":     "Body File Upload",
+			"protocol": "http",
+			"config": map[string]any{
+				"base_url": "https://example.test",
+			},
+			"actions": []map[string]any{{
+				"name":      "Create",
+				"type":      "POST",
+				"target":    "/orders",
+				"body_file": "payloads/order.json",
+			}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "body_file is only supported when loading scripts from a local file") {
+		t.Fatalf("body = %q, want body_file upload-context validation error", resp.Body.String())
+	}
+}
+
+func TestHandleUpdateScriptRejectsInvalidScript(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:     "Valid Script",
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://api.example.com",
+		},
+		Actions: []dsl.Action{{
+			Name: "Ping",
+			Type: "request", Method: "GET",
+			Target: "/ping",
+		}},
+	})
+
+	payload := map[string]any{
+		"script": map[string]any{
+			"name":     "Broken Script",
+			"protocol": "http",
+			"config": map[string]any{
+				"base_url": "https://api.example.com",
+			},
+			"actions": []map[string]any{{
+				"name":   "Ping",
+				"target": "/ping",
+			}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/scripts/"+stored.ID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "missing type") {
+		t.Fatalf("body = %q, want missing type validation error", resp.Body.String())
+	}
+}
+
+func TestHandleImportSample(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name":   "Inventory Lookup",
+		"format": "rest_json",
+		"content": `{
+			"requests": [
+				{
+					"request": {
+						"method": "POST",
+						"url": "https://api.example.com/v1/session",
+						"headers": {"Content-Type": "application/json"},
+						"body": {"username": "demo", "password": "secret"}
+					},
+					"response": {
+						"status": 201,
+						"body": {"sessionId": "session-12345"}
+					}
+				},
+				{
+					"request": {
+						"method": "GET",
+						"url": "https://api.example.com/v1/session/session-12345/items"
+					},
+					"response": {
+						"status": 200,
+						"body": {"items": []}
+					}
+				}
+			]
+		}`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Scripts []json.RawMessage `json:"scripts"`
+		Script  struct {
+			Name    string `json:"name"`
+			Actions []struct {
+				Target string `json:"target"`
+			} `json:"actions"`
+			Metadata struct {
+				Import struct {
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		Warnings     []string       `json:"warnings"`
+		Assumptions  []string       `json:"assumptions"`
+		Unsupported  []string       `json:"unsupported_elements"`
+		Summary      map[string]any `json:"summary"`
+		Correlations []struct {
+			Name string `json:"name"`
+		} `json:"correlations"`
+		Stats struct {
+			ConvertedActions int `json:"converted_actions"`
+			Assertions       int `json:"assertions"`
+		} `json:"stats"`
+		SourceReview map[string]any `json:"source_review"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+
+	if result.Script.Name != "Inventory Lookup" {
+		t.Fatalf("script name = %q, want Inventory Lookup", result.Script.Name)
+	}
+	if len(result.Scripts) != 1 {
+		t.Fatalf("scripts count = %d, want 1", len(result.Scripts))
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("action count = %d, want 2", len(result.Script.Actions))
+	}
+	if result.Stats.ConvertedActions != 2 {
+		t.Fatalf("converted_actions = %d, want 2", result.Stats.ConvertedActions)
+	}
+	if result.Stats.Assertions != 2 {
+		t.Fatalf("assertions = %d, want 2", result.Stats.Assertions)
+	}
+	if len(result.Correlations) == 0 {
+		t.Fatal("expected correlations in response")
+	}
+	if len(result.Assumptions) != 0 {
+		t.Fatalf("assumptions = %v, want none", result.Assumptions)
+	}
+	if len(result.Unsupported) != 2 ||
+		!containsSubstring(result.Unsupported, "imported credential was retained") ||
+		!containsSubstring(result.Unsupported, "source exposed headers as a map") {
+		t.Fatalf("unsupported_elements = %v, want credential review and source_order_unavailable information", result.Unsupported)
+	}
+	if len(result.Summary) != 0 {
+		t.Fatalf("summary = %#v, want empty", result.Summary)
+	}
+	if result.Script.Actions[1].Target != "/v1/session/{{var.corr_sessionid}}/items" {
+		t.Fatalf("second target = %q, want correlated target", result.Script.Actions[1].Target)
+	}
+	if len(result.SourceReview) == 0 {
+		t.Fatal("expected root source_review in response")
+	}
+	if result.Script.Metadata.Import.Preserved["source_review"] == nil {
+		t.Fatalf("script metadata missing preserved source_review: %#v", result.Script.Metadata.Import.Preserved)
+	}
+}
+
+func TestHandleImportSampleReturnsReplayPreflightForMissingFileAsset(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"format":  "curl",
+		"content": "curl --data-binary @/tmp/payload.bin https://api.example.com/upload",
+		"options": map[string]any{
+			"infer_extractors": false,
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			DataSources []struct {
+				Name     string `json:"name"`
+				Type     string `json:"type"`
+				FileName string `json:"file_name"`
+			} `json:"data_sources"`
+			Metadata struct {
+				Import struct {
+					Preserved map[string]json.RawMessage `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		Preflight struct {
+			Valid           bool     `json:"valid"`
+			DataSourceCount int      `json:"data_source_count"`
+			Warnings        []string `json:"warnings"`
+			Checks          []struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+			} `json:"checks"`
+		} `json:"preflight"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Script.DataSources) != 1 || result.Script.DataSources[0].Name != "payload" || result.Script.DataSources[0].Type != "file" {
+		t.Fatalf("data_sources = %#v, want payload file asset", result.Script.DataSources)
+	}
+	if len(result.Script.Metadata.Import.Preserved["replay_preflight"]) == 0 {
+		t.Fatalf("metadata preserved = %#v, want replay_preflight evidence", result.Script.Metadata.Import.Preserved)
+	}
+	if result.Preflight.Valid {
+		t.Fatalf("preflight valid = true, want missing file asset to block replay")
+	}
+	if result.Preflight.DataSourceCount != 1 {
+		t.Fatalf("preflight data_source_count = %d, want 1", result.Preflight.DataSourceCount)
+	}
+	if !containsStringContaining(result.Preflight.Warnings, "requires an import file binding before replay") {
+		t.Fatalf("preflight warnings = %#v, want missing file binding warning", result.Preflight.Warnings)
+	}
+	dataSourceStatus := ""
+	for _, check := range result.Preflight.Checks {
+		if check.ID == "data_sources" {
+			dataSourceStatus = check.Status
+			break
+		}
+	}
+	if dataSourceStatus != "fail" {
+		t.Fatalf("preflight checks = %#v, want data_sources failure", result.Preflight.Checks)
+	}
+}
+
+func TestHandleImportSamplePreservedSourceReviewKeepsSecrets(t *testing.T) {
+	const (
+		authValue     = "Basic dXNlcjpodW50ZXIyc2VjcmV0"
+		passwordValue = "hunter2-secret"
+	)
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name":   "Login Flow",
+		"format": "har",
+		"content": `{
+			"log": {
+				"entries": [
+					{
+						"startedDateTime": "2026-01-01T00:00:00.000Z",
+						"request": {
+							"method": "POST",
+							"url": "https://api.example.com/v1/login",
+							"headers": [
+								{"name": "Content-Type", "value": "application/json"},
+								{"name": "Authorization", "value": "` + authValue + `"}
+							],
+							"postData": {
+								"mimeType": "application/json",
+								"text": "{\"username\":\"alice\",\"password\":\"` + passwordValue + `\"}"
+							}
+						},
+						"response": {
+							"status": 200,
+							"headers": [],
+							"content": {"mimeType": "application/json", "text": "{}"}
+						}
+					}
+				]
+			}
+		}`,
+		"options": map[string]any{"sanitize_sensitive": false},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script dsl.Script `json:"script"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+	}
+	if got := result.Script.Actions[0].Headers["Authorization"]; got != authValue {
+		t.Fatalf("authorization header = %q, want exact imported value", got)
+	}
+	if !strings.Contains(result.Script.Actions[0].Body, passwordValue) {
+		t.Fatalf("body lost exact imported value: %q", result.Script.Actions[0].Body)
+	}
+	if importDraftAttestationToken(&result.Script) == "" {
+		t.Fatalf("masked sample import omitted its opaque save capability: %#v", result.Script.Metadata)
+	}
+
+	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+		t.Fatalf("script metadata missing import provenance: %#v", result.Script.Metadata)
+	}
+	preservedReview, ok := result.Script.Metadata.Import.Preserved["source_review"]
+	if !ok || preservedReview == nil {
+		t.Fatalf("script metadata missing preserved source_review: %#v", result.Script.Metadata.Import.Preserved)
+	}
+	preservedReviewJSON, err := json.Marshal(preservedReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(preservedReviewJSON), "dXNlcjpodW50ZXIyc2VjcmV0") {
+		t.Fatalf("preserved source_review lost Authorization value: %s", preservedReviewJSON)
+	}
+	if !strings.Contains(string(preservedReviewJSON), passwordValue) {
+		t.Fatalf("preserved source_review lost password: %s", preservedReviewJSON)
+	}
+
+	created := createAttestedImportScript(t, server, &result.Script)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("save masked sample import status = %d body=%s", created.Code, created.Body.String())
+	}
+	if !strings.Contains(created.Body.String(), authValue) || !strings.Contains(created.Body.String(), passwordValue) {
+		t.Fatalf("saved sample response lost imported credentials: %s", created.Body.String())
+	}
+	var createdScript StoredScript
+	if err := json.Unmarshal(created.Body.Bytes(), &createdScript); err != nil {
+		t.Fatal(err)
+	}
+	stored, ok := server.runner.GetScript(createdScript.ID)
+	if !ok || stored == nil || stored.Script == nil {
+		t.Fatal("attested sample import was not persisted")
+	}
+	if got := stored.Script.Actions[0].Headers["Authorization"]; got != authValue {
+		t.Fatalf("durable Authorization = %q, want exact imported value", got)
+	}
+	if !strings.Contains(stored.Script.Actions[0].Body, passwordValue) {
+		t.Fatalf("durable body lost exact imported password: %q", stored.Script.Actions[0].Body)
+	}
+}
+
+func TestHandleImportSampleBadRequest(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", bytes.NewBufferString(`{"format":"curl","content":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+}
+
+func TestHandleImportDevWebJSON(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name": "Socket Import",
+		"content": `
+load.action("Socket Flow", async function() {
+  const ws = new load.WebSocket("wss://stream.example.test/orders");
+  ws.send("{\"type\":\"subscribe\"}");
+  ws.receive();
+  ws.close();
+});`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/devweb", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Name     string `json:"name"`
+			Protocol string `json:"protocol"`
+			Actions  []struct {
+				Type string `json:"type"`
+				Body string `json:"body"`
+			} `json:"actions"`
+		} `json:"script"`
+		Stats struct {
+			ConvertedActions int `json:"converted_actions"`
+			WebSocketActions int `json:"websocket_actions"`
+		} `json:"stats"`
+		ProtocolCompat struct {
+			SourceFormat      string `json:"source_format"`
+			CanonicalProtocol string `json:"canonical_protocol"`
+			MappedSteps       int    `json:"mapped_steps"`
+			PromotionStatus   string `json:"promotion_status"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Name != "Socket_Import" {
+		t.Fatalf("script name = %q, want Socket_Import", result.Script.Name)
+	}
+	if result.Script.Protocol != "websocket" {
+		t.Fatalf("protocol = %q, want websocket", result.Script.Protocol)
+	}
+	if result.Stats.ConvertedActions != 4 || result.Stats.WebSocketActions != 4 {
+		t.Fatalf("stats = %#v", result.Stats)
+	}
+	if result.Script.Actions[1].Body != `{"type":"subscribe"}` {
+		t.Fatalf("send body = %q", result.Script.Actions[1].Body)
+	}
+	if result.ProtocolCompat.SourceFormat != "DevWeb" || result.ProtocolCompat.CanonicalProtocol != "devweb" || result.ProtocolCompat.MappedSteps != 4 {
+		t.Fatalf("protocol_compat_report = %#v", result.ProtocolCompat)
+	}
+}
+
+func TestHandleImportHARJSON(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name": "HAR Import",
+		"content": `{
+  "log": {
+    "entries": [{
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.test/health",
+        "headers": []
+      },
+      "response": {"status": 200, "content": {"text": "{\"ok\":true}"}}
+    }]
+  }
+}`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Name     string `json:"name"`
+			Protocol string `json:"protocol"`
+			Actions  []struct {
+				Method string `json:"method"`
+				Target string `json:"target"`
+			} `json:"actions"`
+		} `json:"script"`
+		Summary map[string]any `json:"summary"`
+		Stats   struct {
+			ConvertedActions int `json:"converted_actions"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Name != "HAR Import" {
+		t.Fatalf("script name = %q, want HAR Import", result.Script.Name)
+	}
+	if result.Script.Protocol != "http" {
+		t.Fatalf("protocol = %q, want http", result.Script.Protocol)
+	}
+	if result.Stats.ConvertedActions != 1 {
+		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
+	}
+	if result.Script.Actions[0].Method != "GET" || result.Script.Actions[0].Target != "/health" {
+		t.Fatalf("action = %#v", result.Script.Actions[0])
+	}
+	if result.Summary["generation_mode"] != "deterministic_har_spine" {
+		t.Fatalf("summary generation_mode = %#v, want deterministic_har_spine", result.Summary["generation_mode"])
+	}
+	if _, ok := result.Summary["salesforce_review"]; ok {
+		t.Fatalf("summary unexpectedly includes salesforce_review: %#v", result.Summary["salesforce_review"])
+	}
+}
+
+func TestHandleImportHARAutoGeneratesSalesforceNativeDraft(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", bytes.NewReader(salesforceHARImportJSON(t)))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			GeneratedBy string `json:"generated_by"`
+			Protocol    string `json:"protocol"`
+			Actions     []struct {
+				Body       string `json:"body"`
+				Extractors []struct {
+					Name string `json:"name"`
+				} `json:"extractors"`
+			} `json:"actions"`
+			Metadata struct {
+				Import struct {
+					Source    string         `json:"source"`
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		Correlations []struct {
+			Name string `json:"name"`
+		} `json:"correlations"`
+		Summary map[string]any `json:"summary"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "http" {
+		t.Fatalf("protocol = %q, want http", result.Script.Protocol)
+	}
+	if result.Script.GeneratedBy != "apexload-salesforce-builder" {
+		t.Fatalf("generated_by = %q, want Salesforce native builder", result.Script.GeneratedBy)
+	}
+	if result.Script.Metadata.Import.Source != "salesforce" {
+		t.Fatalf("import source = %q, want salesforce", result.Script.Metadata.Import.Source)
+	}
+	if result.Summary["generation_mode"] != "salesforce_native_http" {
+		t.Fatalf("summary generation_mode = %#v, want salesforce_native_http", result.Summary["generation_mode"])
+	}
+	review, ok := result.Summary["salesforce_review"].(map[string]any)
+	if !ok || review["detected"] != true {
+		t.Fatalf("salesforce_review = %#v, want detected review", result.Summary["salesforce_review"])
+	}
+	if _, ok := result.Script.Metadata.Import.Preserved["salesforce_review"]; !ok {
+		t.Fatalf("salesforce review metadata missing: %#v", result.Script.Metadata.Import.Preserved)
+	}
+	if len(result.Correlations) == 0 {
+		t.Fatalf("correlations = %#v, want native Salesforce correlations", result.Correlations)
+	}
+	if len(result.Script.Actions) < 2 || !strings.Contains(result.Script.Actions[1].Body, "{{var.corr_access_token}}") {
+		t.Fatalf("native script actions = %#v, want correlated token in Aura request", result.Script.Actions)
+	}
+}
+
+func TestHandleImportHARForceGenericKeepsRawScriptAndSalesforceReview(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har?salesforce_native=false", bytes.NewReader(salesforceHARImportJSON(t)))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			GeneratedBy string `json:"generated_by"`
+			Protocol    string `json:"protocol"`
+			Actions     []struct {
+				Body string `json:"body"`
+			} `json:"actions"`
+			Metadata struct {
+				Import struct {
+					Source    string         `json:"source"`
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		Summary map[string]any `json:"summary"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "http" {
+		t.Fatalf("protocol = %q, want http", result.Script.Protocol)
+	}
+	if result.Script.GeneratedBy == "apexload-salesforce-builder" {
+		t.Fatalf("generated_by = %q, want raw HAR script", result.Script.GeneratedBy)
+	}
+	if result.Script.Metadata.Import.Source != "har" {
+		t.Fatalf("import source = %q, want har", result.Script.Metadata.Import.Source)
+	}
+	if result.Summary["generation_mode"] != "deterministic_har_spine" {
+		t.Fatalf("summary generation_mode = %#v, want deterministic_har_spine", result.Summary["generation_mode"])
+	}
+	review, ok := result.Summary["salesforce_review"].(map[string]any)
+	if !ok || review["detected"] != true {
+		t.Fatalf("salesforce_review = %#v, want detected review", result.Summary["salesforce_review"])
+	}
+	if _, ok := result.Script.Metadata.Import.Preserved["salesforce_review"]; !ok {
+		t.Fatalf("salesforce review metadata missing: %#v", result.Script.Metadata.Import.Preserved)
+	}
+	if len(result.Script.Actions) < 2 ||
+		strings.Contains(result.Script.Actions[1].Body, "tok%2B%2F%3D%3D") ||
+		!strings.Contains(result.Script.Actions[1].Body, "{{var.corr_access_token}}") {
+		t.Fatalf("raw HAR actions = %#v, want deterministic HAR script with correlated Aura token", result.Script.Actions)
+	}
+}
+
+func salesforceHARImportJSON(t *testing.T) []byte {
+	t.Helper()
+	payload := map[string]any{
+		"name": "Salesforce HAR",
+		"content": `{
+  "log": {
+    "entries": [
+      {
+        "request": {
+          "method": "GET",
+          "url": "https://attone--perfhyper2.sandbox.my.salesforce.com/login",
+          "headers": []
+        },
+        "response": {
+          "status": 200,
+          "headers": [],
+          "content": {"text": "{\"access_token\":\"tok+/==\"}"}
+        }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "url": "https://attone--perfhyper2.sandbox.lightning.force.com/aura",
+          "headers": [{"name":"content-type","value":"application/x-www-form-urlencoded"}],
+          "postData": {"text": "aura.token=tok%2B%2F%3D%3D&message=%7B%22actions%22%3A%5B%7B%22descriptor%22%3A%22apex%3A%2F%2FAccountController%2FACTION%24get%22%7D%5D%7D"}
+        },
+        "response": {
+          "status": 200,
+          "headers": [],
+          "content": {"text": "{\"actions\":[{\"state\":\"SUCCESS\"}]}"}
+        }
+      }
+    ]
+  }
+}`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	return body
+}
+
+func TestHandleImportSalesforceHARJSON(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name": "Salesforce HAR",
+		"content": `{
+  "log": {
+    "entries": [
+      {
+        "request": {
+          "method": "GET",
+          "url": "https://attone--perfhyper2.sandbox.my.salesforce.com/login",
+          "headers": []
+        },
+        "response": {
+          "status": 200,
+          "headers": [],
+          "content": {"text": "{\"access_token\":\"tok+/==\"}"}
+        }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "url": "https://attone--perfhyper2.sandbox.lightning.force.com/aura",
+          "headers": [{"name":"content-type","value":"application/x-www-form-urlencoded"}],
+          "postData": {"text": "aura.token=tok%2B%2F%3D%3D&message=%7B%22actions%22%3A%5B%7B%22descriptor%22%3A%22apex%3A%2F%2FAccountController%2FACTION%24get%22%7D%5D%7D"}
+        },
+        "response": {
+          "status": 200,
+          "headers": [],
+          "content": {"text": "{\"actions\":[{\"state\":\"SUCCESS\"}]}"}
+        }
+      }
+    ]
+  }
+}`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/salesforce", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			GeneratedBy string `json:"generated_by"`
+			Protocol    string `json:"protocol"`
+			Actions     []struct {
+				Target     string `json:"target"`
+				Body       string `json:"body"`
+				Extractors []struct {
+					Name    string `json:"name"`
+					Convert string `json:"convert"`
+				} `json:"extractors"`
+			} `json:"actions"`
+			Metadata struct {
+				Import struct {
+					Source    string         `json:"source"`
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		Summary map[string]any `json:"summary"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "http" {
+		t.Fatalf("protocol = %q, want http", result.Script.Protocol)
+	}
+	if result.Script.GeneratedBy != "apexload-salesforce-builder" {
+		t.Fatalf("generated_by = %q, want Salesforce native builder", result.Script.GeneratedBy)
+	}
+	if result.Script.Metadata.Import.Source != "salesforce" {
+		t.Fatalf("import source = %q, want salesforce", result.Script.Metadata.Import.Source)
+	}
+	if _, ok := result.Script.Metadata.Import.Preserved["salesforce_review"]; !ok {
+		t.Fatalf("salesforce review metadata missing: %#v", result.Script.Metadata.Import.Preserved)
+	}
+	if result.Summary["generation_mode"] != "salesforce_native_http" {
+		t.Fatalf("summary generation_mode = %#v", result.Summary["generation_mode"])
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
+	}
+	if strings.Contains(result.Script.Actions[1].Body, "tok%2B%2F%3D%3D") || !strings.Contains(result.Script.Actions[1].Body, "{{var.corr_access_token}}") {
+		t.Fatalf("aura body = %q, want correlated token variable", result.Script.Actions[1].Body)
+	}
+	if len(result.Script.Actions[0].Extractors) == 0 || result.Script.Actions[0].Extractors[0].Convert != "url_encode" {
+		t.Fatalf("login extractors = %#v, want url_encode conversion", result.Script.Actions[0].Extractors)
+	}
+}
+
+func TestHandleImportSalesforceHARAttachesMuleSoftReview(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name": "MuleSoft HAR",
+		"content": `{
+  "log": {
+    "entries": [
+      {
+        "request": {
+          "method": "GET",
+          "url": "https://accounts.us-e2.cloudhub.io/api/accounts",
+          "headers": [
+            {"name":"Authorization","value":"Basic Y2xpZW50OnNlY3JldA=="}
+          ]
+        },
+        "response": {
+          "status": 200,
+          "headers": [],
+          "content": {"text": "{\"ok\":true}"}
+        }
+      }
+    ]
+  }
+}`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/salesforce", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			Metadata struct {
+				Import struct {
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		ReviewSections []struct {
+			Key string `json:"key"`
+		} `json:"review_sections"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Metadata.Import.Preserved["mulesoft_review"] == nil {
+		t.Fatalf("preserved metadata = %#v, want mulesoft_review", result.Script.Metadata.Import.Preserved)
+	}
+	for _, section := range result.ReviewSections {
+		if section.Key == "mulesoft_review" {
+			return
+		}
+	}
+	t.Fatalf("review sections = %#v, want mulesoft_review", result.ReviewSections)
+}
+
+func TestHandleImportRAMLJSON(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name": "Mule API",
+		"content": `#%RAML 1.0
+title: Mule API
+baseUri: https://mule.example.test/api
+securitySchemes:
+  oauth_2_0:
+    type: OAuth 2.0
+    settings:
+      accessTokenUri: https://login.example.test/oauth/token
+/orders:
+  post:
+    displayName: Create Order
+    body:
+      application/json:
+        example: '{"sku":"A-1"}'
+`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/raml", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			Protocol string `json:"protocol"`
+			Init     []struct {
+				Type   string         `json:"type"`
+				Params map[string]any `json:"params"`
+			} `json:"init"`
+			Actions []struct {
+				Method  string            `json:"method"`
+				Target  string            `json:"target"`
+				Headers map[string]string `json:"headers"`
+				Body    string            `json:"body"`
+			} `json:"actions"`
+		} `json:"script"`
+		Stats        map[string]any             `json:"stats"`
+		Requirements []SecretBindingRequirement `json:"secret_binding_requirements"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "http" {
+		t.Fatalf("protocol = %q, want http", result.Script.Protocol)
+	}
+	if len(result.Script.Init) != 1 || result.Script.Init[0].Type != "http_oauth2_token" {
+		t.Fatalf("init = %#v, want OAuth token action", result.Script.Init)
+	}
+	if result.Script.Init[0].Params["token_url"] != "https://login.example.test/oauth/token" {
+		t.Fatalf("token_url = %#v", result.Script.Init[0].Params["token_url"])
+	}
+	for _, requirement := range result.Requirements {
+		if requirement.Path == "/init/0/params/token_url" {
+			t.Fatalf("OAuth endpoint was misclassified as a credential: %#v", requirement)
+		}
+	}
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Method != "POST" || result.Script.Actions[0].Target != "/orders" {
+		t.Fatalf("actions = %#v", result.Script.Actions)
+	}
+	if result.Script.Actions[0].Headers["Authorization"] != "Bearer {{var.access_token}}" {
+		t.Fatalf("authorization header = %#v", result.Script.Actions[0].Headers)
+	}
+	if result.Script.Actions[0].Body != `{"sku":"A-1"}` {
+		t.Fatalf("body = %q", result.Script.Actions[0].Body)
+	}
+}
+
+func TestHandleImportHARHonorsIncludeStaticAssetsOption(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name": "HAR Import",
+		"options": map[string]any{
+			"include_static_assets": true,
+		},
+		"content": `{
+  "log": {
+    "entries": [
+      {
+        "request": {"method": "GET", "url": "https://api.example.test/app.js", "headers": []},
+        "response": {"status": 200, "content": {"mimeType": "application/javascript", "text": "console.log(1)"}}
+      },
+      {
+        "request": {"method": "GET", "url": "https://api.example.test/health", "headers": []},
+        "response": {"status": 200, "content": {"mimeType": "application/json", "text": "{\"ok\":true}"}}
+      }
+    ]
+  }
+}`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Stats struct {
+			ConvertedActions int `json:"converted_actions"`
+			FilteredAssets   int `json:"filtered_assets"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Stats.ConvertedActions != 2 || result.Stats.FilteredAssets != 0 {
+		t.Fatalf("stats = %#v, want static asset retained", result.Stats)
+	}
+}
+
+func TestHandleImportHARPairReturnsDiffAndGovernance(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name":              "Checkout Pair",
+		"content":           apiDynamicHAR("cart-111111"),
+		"secondary_content": apiDynamicHAR("cart-222222"),
+		"options": map[string]any{
+			"retention_days": 3,
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Summary struct {
+			ArtifactMode        string `json:"artifact_mode"`
+			ArtifactSensitivity string `json:"artifact_sensitivity"`
+			RetentionDays       int    `json:"retention_days"`
+			HARDiff             struct {
+				Compared          bool `json:"compared"`
+				DynamicCandidates int  `json:"dynamic_candidates"`
+				StaticCandidates  int  `json:"static_candidates"`
+				Classifications   []struct {
+					Classification string  `json:"classification"`
+					DiffConfidence float64 `json:"diff_confidence"`
+				} `json:"classifications"`
+			} `json:"har_diff"`
+		} `json:"summary"`
+		ReviewSections []struct {
+			Key string `json:"key"`
+		} `json:"review_sections"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Summary.ArtifactMode != har.ArtifactModeDesignHARPair {
+		t.Fatalf("artifact mode = %q, want %q", result.Summary.ArtifactMode, har.ArtifactModeDesignHARPair)
+	}
+	if result.Summary.ArtifactSensitivity != "raw_contains_secrets" || result.Summary.RetentionDays != 3 {
+		t.Fatalf("summary governance = %#v, want raw 3-day retention", result.Summary)
+	}
+	if !result.Summary.HARDiff.Compared || result.Summary.HARDiff.DynamicCandidates != 1 || result.Summary.HARDiff.StaticCandidates != 0 {
+		t.Fatalf("HAR diff = %#v, want one dynamic candidate", result.Summary.HARDiff)
+	}
+	if len(result.Summary.HARDiff.Classifications) == 0 || result.Summary.HARDiff.Classifications[0].Classification != "dynamic" || result.Summary.HARDiff.Classifications[0].DiffConfidence < 0.9 {
+		t.Fatalf("classifications = %#v, want high-confidence dynamic", result.Summary.HARDiff.Classifications)
+	}
+	keys := map[string]bool{}
+	for _, section := range result.ReviewSections {
+		keys[section.Key] = true
+	}
+	if !keys["har_governance"] || !keys["har_pair_diff"] {
+		t.Fatalf("review section keys = %#v, want governance and pair diff", keys)
+	}
+}
+
+func TestHandleImportEnterpriseArchiveReturnsStandardizedEnvelope(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	var zipWriter *zip.Writer
+	addFile := func(name string, content string) {
+		entry, err := zipWriter.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	if err := writer.WriteField("migration_block_statuses", "partial,compatibility_only"); err != nil {
+		t.Fatalf("WriteField returned error: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "demo.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	zipWriter = zip.NewWriter(part)
+	addFile("Demo.usr", `[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Parameters]
+Parameter1=LoginUsers.prm
+
+[Actions]
+Action1=Action.c
+`)
+	addFile("Action.c", sampleEnterpriseArchiveActionC)
+	addFile("default.cfg", `[HTTP]
+ConnectTimeout=45
+`)
+	addFile("LoginUsers.prm", `[LoginUser]
+Type=File
+Table=Users.dat
+ColumnName=username
+SelectNextRow=Sequential
+UpdateValueOn=Each Iteration
+`)
+	addFile("Users.dat", "username\nalice\nbob\n")
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Scripts []json.RawMessage `json:"scripts"`
+		Script  struct {
+			Protocol string `json:"protocol"`
+			Name     string `json:"name"`
+			Metadata struct {
+				Import struct {
+					Preserved map[string]json.RawMessage `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		Warnings            []string `json:"warnings"`
+		UnsupportedElements []string `json:"unsupported_elements"`
+		Assumptions         []string `json:"assumptions"`
+		ReviewSections      []struct {
+			Key      string   `json:"key"`
+			Title    string   `json:"title"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+		RepairSuggestions []struct {
+			Category string `json:"category"`
+			Severity string `json:"severity"`
+			Title    string `json:"title"`
+		} `json:"repair_suggestions"`
+		Summary map[string]any `json:"summary"`
+		Stats   struct {
+			ConvertedActions int `json:"converted_actions"`
+		} `json:"stats"`
+		ProtocolCompat struct {
+			SourceFormat      string `json:"source_format"`
+			CanonicalProtocol string `json:"canonical_protocol"`
+			ImportMode        string `json:"import_mode"`
+			MappedSteps       int    `json:"mapped_steps"`
+			PromotionStatus   string `json:"promotion_status"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 {
+		t.Fatalf("scripts count = %d, want 1", len(result.Scripts))
+	}
+	if result.Script.Protocol != "http" || result.Script.Name == "" {
+		t.Fatalf("script = %#v, want http script with name", result.Script)
+	}
+	if result.Stats.ConvertedActions == 0 {
+		t.Fatalf("converted_actions = %d, want > 0", result.Stats.ConvertedActions)
+	}
+	if len(result.UnsupportedElements) != 0 {
+		t.Fatalf("unsupported_elements = %v, want none because parsed custom calls are review actions", result.UnsupportedElements)
+	}
+	if len(result.Assumptions) != 0 {
+		t.Fatalf("assumptions = %v, want none", result.Assumptions)
+	}
+	assertReviewSection(t, result.ReviewSections, "preserved_metadata", "info", "Project file: Demo.usr")
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_parity", "info", "Executed: HTTP / Timeouts, redirects, and connection reuse [default.cfg]")
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_migration_readiness", "info", "Score: 100%")
+	assertRepairSuggestion(t, result.RepairSuggestions, "runtime", "info", "Review preserved runtime settings")
+	if got := result.Summary["project_file"]; got != "Demo.usr" {
+		t.Fatalf("summary.project_file = %#v, want Demo.usr", got)
+	}
+	if got := result.Summary["mapped_runtime_file"]; got != "default.cfg" {
+		t.Fatalf("summary.mapped_runtime_file = %#v, want default.cfg", got)
+	}
+	parameterFiles, ok := result.Summary["parameter_files"].([]any)
+	if !ok || len(parameterFiles) == 0 {
+		t.Fatalf("summary.parameter_files = %#v, want non-empty slice", result.Summary["parameter_files"])
+	}
+	projectSections, ok := result.Summary["project_sections"].([]any)
+	if !ok || len(projectSections) == 0 {
+		t.Fatalf("summary.project_sections = %#v, want non-empty slice", result.Summary["project_sections"])
+	}
+	if got := result.Summary["unsupported_function_count"]; got != float64(0) {
+		t.Fatalf("summary.unsupported_function_count = %#v, want 0", got)
+	}
+	runtimeParity, ok := result.Summary["runtime_settings_parity"].([]any)
+	if !ok || len(runtimeParity) == 0 {
+		t.Fatalf("summary.runtime_settings_parity = %#v, want non-empty slice", result.Summary["runtime_settings_parity"])
+	}
+	statusCounts, ok := result.Summary["runtime_settings_status_counts"].(map[string]any)
+	if !ok || statusCounts["executed"] != float64(1) {
+		t.Fatalf("summary.runtime_settings_status_counts = %#v, want executed=1", result.Summary["runtime_settings_status_counts"])
+	}
+	readiness, ok := result.Summary["migration_readiness"].(map[string]any)
+	if !ok || readiness["score_pct"] != float64(100) || readiness["blocked"] != false {
+		t.Fatalf("summary.migration_readiness = %#v, want score=100 blocked=false", result.Summary["migration_readiness"])
+	}
+	sourceReview, ok := result.Summary["source_review"].(map[string]any)
+	if !ok {
+		t.Fatalf("summary.source_review = %#v, want object", result.Summary["source_review"])
+	}
+	sourceFiles, ok := sourceReview["source_files"].([]any)
+	if !ok || len(sourceFiles) == 0 {
+		t.Fatalf("source_review.source_files = %#v, want non-empty slice", sourceReview["source_files"])
+	}
+	mappings, ok := sourceReview["mappings"].([]any)
+	if !ok || len(mappings) == 0 {
+		t.Fatalf("source_review.mappings = %#v, want non-empty slice", sourceReview["mappings"])
+	}
+	if _, ok := result.Script.Metadata.Import.Preserved["source_review"]; !ok {
+		t.Fatalf("script metadata missing preserved source_review: %#v", result.Script.Metadata.Import.Preserved)
+	}
+	if _, ok := result.Script.Metadata.Import.Preserved["protocol_compat_report"]; !ok {
+		t.Fatalf("script metadata missing preserved protocol_compat_report: %#v", result.Script.Metadata.Import.Preserved)
+	}
+	if result.ProtocolCompat.SourceFormat != "Enterprise Script Archive" || result.ProtocolCompat.CanonicalProtocol != "web_http_html" || result.ProtocolCompat.ImportMode != "executable" || result.ProtocolCompat.MappedSteps == 0 {
+		t.Fatalf("protocol_compat_report = %#v", result.ProtocolCompat)
+	}
+}
+
+func apiDynamicHAR(cartID string) string {
+	return `{
+  "log": {
+    "entries": [
+      {
+        "startedDateTime": "2026-01-01T00:00:00Z",
+        "time": 100,
+        "request": {"method": "POST", "url": "https://shop.example.test/cart", "headers": []},
+        "response": {"status": 201, "content": {"mimeType": "application/json", "text": "{\"cartId\":\"` + cartID + `\"}"}}
+      },
+      {
+        "startedDateTime": "2026-01-01T00:00:01Z",
+        "time": 50,
+        "request": {"method": "POST", "url": "https://shop.example.test/cart/` + cartID + `/checkout", "headers": []},
+        "response": {"status": 200, "content": {"mimeType": "application/json", "text": "{\"ok\":true}"}}
+      }
+    ]
+  }
+}`
+}
+
+func TestHandleValidateEnterpriseArchiveImportReturnsSalesforceNativePreview(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("salesforce_native", "true"); err != nil {
+		t.Fatalf("WriteField returned error: %v", err)
+	}
+
+	part, err := writer.CreateFormFile("file", "salesforce.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	zipWriter := zip.NewWriter(part)
+	addZipEntry := func(name string, content string) {
+		entry, err := zipWriter.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addZipEntry("Salesforce.usr", `[General]
+Type=Web
+
+[Actions]
+Action1=Action.c
+`)
+	addZipEntry("Action.c", `
+Action()
+{
+	web_url("Login", "URL=https://attone--perfhyper2.sandbox.my.salesforce.com/login", LAST);
+	web_custom_request("Aura",
+		"URL=https://attone--perfhyper2.sandbox.lightning.force.com/aura",
+		"Method=POST",
+		"EncType=application/json",
+		"Body={\"descriptor\":\"apex://AccountController/ACTION$get\",\"token\":\"tok-abcdef123456\"}",
+		LAST);
+	return 0;
+}
+`)
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	harPart, err := writer.CreateFormFile("har_file", "salesforce.har")
+	if err != nil {
+		t.Fatalf("CreateFormFile har returned error: %v", err)
+	}
+	har := `{
+	  "log": {"entries": [
+	    {"request": {"method": "GET", "url": "https://attone--perfhyper2.sandbox.my.salesforce.com/login", "headers": []}, "response": {"headers": [], "content": {"text": "{\"access_token\":\"tok-abcdef123456\"}"}}},
+	    {"request": {"method": "POST", "url": "https://attone--perfhyper2.sandbox.lightning.force.com/aura", "headers": [], "postData": {"text": "{\"token\":\"tok-abcdef123456\"}"}}, "response": {"headers": [], "content": {"text": "{\"actions\":[{\"state\":\"SUCCESS\"}]}"}}}
+	  ]}
+	}`
+	if _, err := harPart.Write([]byte(har)); err != nil {
+		t.Fatalf("Write har returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			GeneratedBy string `json:"generated_by"`
+			Metadata    struct {
+				Import struct {
+					Source string `json:"source"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		Summary struct {
+			SalesforceReview struct {
+				Detected         bool `json:"detected"`
+				HARMatchCoverage struct {
+					MatchedRequests  int `json:"matched_requests"`
+					ImportedRequests int `json:"imported_requests"`
+				} `json:"har_match_coverage"`
+				NativePreview struct {
+					Script *dsl.Script `json:"script"`
+				} `json:"native_preview"`
+			} `json:"salesforce_review"`
+		} `json:"summary"`
+		ReviewSections []struct {
+			Key string `json:"key"`
+		} `json:"review_sections"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if !result.Summary.SalesforceReview.Detected {
+		t.Fatalf("salesforce review = %#v, want detected", result.Summary.SalesforceReview)
+	}
+	if result.Summary.SalesforceReview.HARMatchCoverage.MatchedRequests != 2 || result.Summary.SalesforceReview.HARMatchCoverage.ImportedRequests != 2 {
+		t.Fatalf("coverage = %#v, want 2/2", result.Summary.SalesforceReview.HARMatchCoverage)
+	}
+	if result.Summary.SalesforceReview.NativePreview.Script == nil {
+		t.Fatal("native preview script missing")
+	}
+	if result.Script.GeneratedBy != "apexload-salesforce-builder" {
+		t.Fatalf("generated_by = %q, want Salesforce native builder", result.Script.GeneratedBy)
+	}
+	if result.Script.Metadata.Import.Source != "salesforce" {
+		t.Fatalf("import source = %q, want salesforce", result.Script.Metadata.Import.Source)
+	}
+	if !reviewSectionsContain(result.ReviewSections, "salesforce_review") {
+		t.Fatalf("review sections = %#v, want salesforce_review", result.ReviewSections)
+	}
+}
+
+func TestHandleValidateEnterpriseArchiveImportMergesSupplementalFiles(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", "demo.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	zipWriter := zip.NewWriter(part)
+	addZipEntry := func(name string, content string) {
+		entry, createErr := zipWriter.Create(name)
+		if createErr != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, createErr)
+		}
+		if _, writeErr := entry.Write([]byte(content)); writeErr != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, writeErr)
+		}
+	}
+	addZipEntry("Demo.usr", `[General]
+Type=Java
+
+[Actions]
+vuser_init=vuser_init.java
+Action=Action.java
+vuser_end=vuser_end.java
+`)
+	addZipEntry("Action.java", `public class Action extends BasicClient {
+  public int action() { return 0; }
+}`)
+	addZipEntry("vuser_init.java", `public class vuser_init {
+  public int init() { return 0; }
+}`)
+	addZipEntry("vuser_end.java", `public class vuser_end {
+  public int end() { return 0; }
+}`)
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	supplementalPart, err := writer.CreateFormFile("supplemental_file", "BasicClient.java")
+	if err != nil {
+		t.Fatalf("CreateFormFile supplemental returned error: %v", err)
+	}
+	if _, err := supplementalPart.Write([]byte(`public class BasicClient {
+  public BasicClient() {}
+}`)); err != nil {
+		t.Fatalf("Write supplemental returned error: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		FidelityReport struct {
+			Blockers []string `json:"blockers"`
+		} `json:"fidelity_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	for _, blocker := range result.FidelityReport.Blockers {
+		if strings.Contains(strings.ToLower(blocker), "unresolved superclass") {
+			t.Fatalf("blockers still contain unresolved superclass after supplemental file merge: %#v", result.FidelityReport.Blockers)
+		}
+	}
+}
+
+func TestHandleValidateEnterpriseArchiveImportAcceptsTextRenamedJavaSupplementalFiles(t *testing.T) {
+	// Corporate mail gateways strip .java attachments, so operators send the
+	// superclass as .txt. The upload path applies no extension filter, so the
+	// archive must recognize it as Java rather than storing a file that every
+	// Java pass ignores.
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", "demo.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	zipWriter := zip.NewWriter(part)
+	addZipEntry := func(name string, content string) {
+		entry, createErr := zipWriter.Create(name)
+		if createErr != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, createErr)
+		}
+		if _, writeErr := entry.Write([]byte(content)); writeErr != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, writeErr)
+		}
+	}
+	addZipEntry("Demo.usr", `[General]
+Type=Java
+
+[Actions]
+vuser_init=vuser_init.java
+Action=Action.java
+vuser_end=vuser_end.java
+`)
+	addZipEntry("Action.java", `public class Action extends BasicClient {
+  public int action() { return 0; }
+}`)
+	addZipEntry("vuser_init.java", `public class vuser_init {
+  public int init() { return 0; }
+}`)
+	addZipEntry("vuser_end.java", `public class vuser_end {
+  public int end() { return 0; }
+}`)
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	supplementalPart, err := writer.CreateFormFile("supplemental_file", "BasicClient.java.txt")
+	if err != nil {
+		t.Fatalf("CreateFormFile supplemental returned error: %v", err)
+	}
+	if _, err := supplementalPart.Write([]byte(`public class BasicClient {
+  public BasicClient() {}
+}`)); err != nil {
+		t.Fatalf("Write supplemental returned error: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		FidelityReport struct {
+			Blockers []string `json:"blockers"`
+		} `json:"fidelity_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	for _, blocker := range result.FidelityReport.Blockers {
+		if strings.Contains(strings.ToLower(blocker), "unresolved superclass") {
+			t.Fatalf("blockers still contain unresolved superclass after .txt supplemental merge: %#v", result.FidelityReport.Blockers)
+		}
+	}
+}
+
+func TestHandleImportEnterpriseArchiveSummarizesRuntimeSettingParity(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	var zipWriter *zip.Writer
+	addFile := func(name string, content string) {
+		entry, err := zipWriter.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	if err := writer.WriteField("migration_block_statuses", "partial,compatibility_only"); err != nil {
+		t.Fatalf("WriteField returned error: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "demo.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	zipWriter = zip.NewWriter(part)
+	addFile("Demo.usr", `[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Actions]
+Action1=Action.c
+`)
+	addFile("Action.c", sampleEnterpriseArchiveActionC)
+	addFile("default.cfg", `[Run Logic]
+Iterations=5
+AutoTransactions=per_action
+
+[Logging]
+Level=extended
+OnErrorOnly=1
+
+[Streaming]
+Mode=fixed
+BufferSizeSeconds=30
+`)
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Warnings       []string `json:"warnings"`
+		ReviewSections []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Summary  string   `json:"summary"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+		Summary map[string]any `json:"summary"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want no streaming compatibility warning", result.Warnings)
+	}
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_parity", "info", "Executed: Streaming / Adaptive or fixed playback settings [default.cfg]")
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_migration_readiness", "info", "No imported runtime settings matched the selected block statuses.")
+	statusCounts, ok := result.Summary["runtime_settings_status_counts"].(map[string]any)
+	if !ok {
+		t.Fatalf("summary.runtime_settings_status_counts = %#v, want map", result.Summary["runtime_settings_status_counts"])
+	}
+	if statusCounts["executed"] != float64(4) || statusCounts["partial"] != nil || statusCounts["compatibility_only"] != nil {
+		t.Fatalf("summary.runtime_settings_status_counts = %#v, want executed=4", statusCounts)
+	}
+	runtimeParity, ok := result.Summary["runtime_settings_parity"].([]any)
+	if !ok || len(runtimeParity) != 4 {
+		t.Fatalf("summary.runtime_settings_parity = %#v, want 4 entries", result.Summary["runtime_settings_parity"])
+	}
+	readiness, ok := result.Summary["migration_readiness"].(map[string]any)
+	if !ok || readiness["score_pct"] != float64(100) || readiness["blocked"] != false {
+		t.Fatalf("summary.migration_readiness = %#v, want score=100 blocked=false", result.Summary["migration_readiness"])
+	}
+}
+
+func TestHandleImportEnterpriseArchiveGoldenFixtureRuntimeParity(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body, contentType := enterpriseArchiveFixtureMultipartBody(t, "../convert/enterprisearchive/testdata/golden_web_http_html", "golden-web.zip", map[string]string{
+		"include_assertions":       "true",
+		"preserve_transactions":    "true",
+		"migration_block_statuses": "partial,compatibility_only",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body))
+	req.Header.Set("Content-Type", contentType)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Warnings       []string        `json:"warnings"`
+		ReviewSections []reviewSection `json:"review_sections"`
+		Summary        map[string]any  `json:"summary"`
+		Script         struct {
+			Protocol string `json:"protocol"`
+			Config   struct {
+				BaseURL string `json:"base_url"`
+				Browser struct {
+					DownloadResources string `json:"download_resources"`
+					DeviceProfile     string `json:"device_profile"`
+				} `json:"browser"`
+			} `json:"config"`
+		} `json:"script"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+
+	if result.Script.Protocol != "http" || result.Script.Config.BaseURL != "https://shop.example.test" {
+		t.Fatalf("script = %#v, want converted golden HTTP script", result.Script)
+	}
+	if result.Script.Config.Browser.DownloadResources != "recorded" || result.Script.Config.Browser.DeviceProfile != "pixel_7" {
+		t.Fatalf("browser config = %#v, want recorded pixel_7 settings", result.Script.Config.Browser)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want no streaming compatibility warning", result.Warnings)
+	}
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_parity", "warning", "Executed: HTTP / Timeouts, redirects, and connection reuse [default.cfg]")
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_migration_readiness", "blocker", "Blocking setting: Additional Attributes / Arbitrary RTS name/value metadata")
+
+	statusCounts, ok := result.Summary["runtime_settings_status_counts"].(map[string]any)
+	if !ok {
+		t.Fatalf("summary.runtime_settings_status_counts = %#v, want map", result.Summary["runtime_settings_status_counts"])
+	}
+	if statusCounts["executed"] != float64(23) || statusCounts["partial"] != nil || statusCounts["compatibility_only"] != float64(4) {
+		t.Fatalf("runtime_settings_status_counts = %#v, want executed=23 compatibility_only=4", statusCounts)
+	}
+	runtimeParity, ok := result.Summary["runtime_settings_parity"].([]any)
+	if !ok || len(runtimeParity) != 27 {
+		t.Fatalf("summary.runtime_settings_parity = %#v, want 27 entries", result.Summary["runtime_settings_parity"])
+	}
+	parityStatuses := make(map[string]any, len(runtimeParity))
+	for _, value := range runtimeParity {
+		entry, ok := value.(map[string]any)
+		if !ok {
+			t.Fatalf("runtime parity entry = %#v, want object", value)
+		}
+		id, _ := entry["id"].(string)
+		parityStatuses[id] = entry["status"]
+	}
+	// HTTP retains the fixture's device settings as source evidence, but it
+	// creates no browser DOM. Its explicit custom proxy still executes.
+	if parityStatuses["browser_device_emulation"] != "compatibility_only" || parityStatuses["proxy"] != "executed" {
+		t.Fatalf("device/proxy parity = %v/%v, want compatibility_only/executed", parityStatuses["browser_device_emulation"], parityStatuses["proxy"])
+	}
+	readiness, ok := result.Summary["migration_readiness"].(map[string]any)
+	if !ok || readiness["score_pct"] != float64(89) || readiness["blocked"] != true {
+		t.Fatalf("summary.migration_readiness = %#v, want score=89 blocked=true", result.Summary["migration_readiness"])
+	}
+}
+
+func TestHandleValidateEnterpriseArchiveImport(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", "demo.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+
+	zipWriter := zip.NewWriter(part)
+	addFile := func(name string, content string) {
+		entry, err := zipWriter.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("Demo.usr", `[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Actions]
+Action1=Action.c
+`)
+	addFile("Action.c", sampleEnterpriseArchiveActionC)
+	addFile("default.cfg", `[HTTP]
+ConnectTimeout=45
+`)
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	writer.WriteField("preserve_transactions", "false")
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Scripts []json.RawMessage `json:"scripts"`
+		Script  struct {
+			Actions []struct {
+				Name string `json:"name"`
+			} `json:"actions"`
+		} `json:"script"`
+		Stats struct {
+			ConvertedActions int `json:"converted_actions"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 {
+		t.Fatalf("scripts count = %d, want 1", len(result.Scripts))
+	}
+	if len(result.Script.Actions) == 0 {
+		t.Fatal("expected at least one converted action")
+	}
+	if got := result.Script.Actions[0].Name; got != "Homepage" {
+		t.Fatalf("first action name = %q, want Homepage when preserve_transactions=false", got)
+	}
+	if result.Stats.ConvertedActions == 0 {
+		t.Fatal("expected converted actions in validation response")
+	}
+}
+
+func TestHandleValidateEnterpriseArchiveImportMatchesImportEnvelope(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	archive := buildEnterpriseArchiveImportArchive(t, true)
+
+	importReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(archive))
+	importReq.Header.Set("Content-Type", "application/zip")
+	importResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(importResp, importReq)
+	if importResp.Code != http.StatusOK {
+		t.Fatalf("import status = %d, want %d body=%s", importResp.Code, http.StatusOK, importResp.Body.String())
+	}
+
+	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", bytes.NewReader(archive))
+	validateReq.Header.Set("Content-Type", "application/zip")
+	validateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(validateResp, validateReq)
+	if validateResp.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want %d body=%s", validateResp.Code, http.StatusOK, validateResp.Body.String())
+	}
+
+	importEnvelope := decodeImportEnvelope(t, importResp.Body.Bytes())
+	validateEnvelope := decodeImportEnvelope(t, validateResp.Body.Bytes())
+	assertSharedImportEnvelopeKeys(t, importEnvelope)
+	assertSharedImportEnvelopeKeys(t, validateEnvelope)
+	if !reflect.DeepEqual(importEnvelope, validateEnvelope) {
+		t.Fatalf("expected identical enterprise archive import envelopes\nimport=%s\nvalidate=%s", importResp.Body.String(), validateResp.Body.String())
+	}
+}
+
+func TestHandleValidateEnterpriseArchiveImportIncludesDetectedProtocol(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	archive := buildEnterpriseArchiveProtocolArchive(t, "ODBC", `Action()
+{
+    lrd_stmt("select id from customers where status = ?", "ParamStatus=active", LAST);
+}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", bytes.NewReader(archive))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Protocol string `json:"protocol"`
+			Config   struct {
+				Database struct {
+					Driver string `json:"driver"`
+				} `json:"database"`
+			} `json:"config"`
+		} `json:"script"`
+		DetectedProtocol struct {
+			Canonical string `json:"canonical_source_protocol"`
+			Storm     string `json:"apexload_protocol"`
+			Mode      string `json:"import_mode"`
+		} `json:"detected_protocol"`
+		Summary struct {
+			ImportMode string `json:"import_mode"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "database" || result.Script.Config.Database.Driver != "odbc" {
+		t.Fatalf("script = %#v, want database/odbc", result.Script)
+	}
+	if result.DetectedProtocol.Canonical != "database" || result.DetectedProtocol.Storm != "database" || result.DetectedProtocol.Mode != "executable" {
+		t.Fatalf("detected_protocol = %#v, want executable database routing", result.DetectedProtocol)
+	}
+	if result.Summary.ImportMode != "executable" {
+		t.Fatalf("summary.import_mode = %q, want executable", result.Summary.ImportMode)
+	}
+}
+
+func TestHandleImportEnterpriseArchiveRoutesDevWebArchive(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("LRD/DevWeb.usr", "[General]\nType=DevWeb\n")
+	addFile("LRD/main.js", strings.Join([]string{
+		`load.action("Browse", async function() {`,
+		"  new load.WebRequest({ url: `${load.params.BASE_URL}/orders`, method: \"GET\" }).sendSync();",
+		`});`,
+	}, "\n"))
+	addFile("LRD/parameters.yml", `
+parameters:
+- name: BASE_URL
+  type: csv
+  fileName: base.csv
+  columnName: url
+`)
+	addFile("LRD/base.csv", "url\nhttps://api.example.test\n")
+	addFile("LRD/rts.yml", "httpConnection:\n  connectTimeout: 7\n")
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Protocol string `json:"protocol"`
+			Actions  []struct {
+				Target string `json:"target"`
+			} `json:"actions"`
+			Metadata struct {
+				Import struct {
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
+		DetectedProtocol struct {
+			Canonical string `json:"canonical_source_protocol"`
+			Storm     string `json:"apexload_protocol"`
+			Mode      string `json:"import_mode"`
+		} `json:"detected_protocol"`
+		ProtocolCompat struct {
+			SourceFormat      string         `json:"source_format"`
+			CanonicalProtocol string         `json:"canonical_protocol"`
+			ImportMode        string         `json:"import_mode"`
+			RuntimeParity     map[string]int `json:"runtime_parity"`
+			PromotionStatus   string         `json:"promotion_status"`
+			NextActions       []string       `json:"next_actions"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "http" || len(result.Script.Actions) != 1 || result.Script.Actions[0].Target != "{{data.base.url}}/orders" {
+		t.Fatalf("script = %#v, want routed native DevWeb HTTP script", result.Script)
+	}
+	if result.DetectedProtocol.Canonical != "devweb" || result.DetectedProtocol.Storm != "http" || result.DetectedProtocol.Mode != "executable" {
+		t.Fatalf("detected_protocol = %#v, want executable DevWeb routing", result.DetectedProtocol)
+	}
+	if result.ProtocolCompat.SourceFormat != "DevWeb" || result.ProtocolCompat.CanonicalProtocol != "devweb" || result.ProtocolCompat.ImportMode != "executable" || result.ProtocolCompat.RuntimeParity["executed"] != 1 {
+		t.Fatalf("protocol_compat_report = %#v, want DevWeb runtime parity", result.ProtocolCompat)
+	}
+	if len(result.ProtocolCompat.NextActions) == 0 || !strings.Contains(result.ProtocolCompat.NextActions[0], "DevWeb replay") {
+		t.Fatalf("next_actions = %#v, want DevWeb-specific validation action", result.ProtocolCompat.NextActions)
+	}
+	if result.Script.Metadata.Import.Preserved["source_endpoint_routed_to"] != "devweb" {
+		t.Fatalf("preserved metadata = %#v, want DevWeb route marker", result.Script.Metadata.Import.Preserved)
+	}
+}
+
+func TestHandleImportEnterpriseArchiveReturnsReviewArtifactForExternalRunnerProtocol(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	archive := buildEnterpriseArchiveProtocolArchive(t, "SAP GUI", `Action()
+{
+    sapgui_logon("Login", "ASHOST=server", LAST);
+}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(archive))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Scripts          []json.RawMessage `json:"scripts"`
+		Script           *dsl.Script       `json:"script"`
+		DetectedProtocol struct {
+			Canonical string `json:"canonical_source_protocol"`
+			Mode      string `json:"import_mode"`
+		} `json:"detected_protocol"`
+		ReviewArtifact struct {
+			ID               string   `json:"id"`
+			RequiredEvidence []string `json:"required_evidence"`
+		} `json:"review_artifact"`
+		ProtocolCompat struct {
+			CanonicalProtocol    string   `json:"canonical_protocol"`
+			ImportMode           string   `json:"import_mode"`
+			PromotionStatus      string   `json:"promotion_status"`
+			MappedSteps          int      `json:"mapped_steps"`
+			ReviewGatedSteps     int      `json:"review_gated_steps"`
+			UnsupportedFragments []string `json:"unsupported_fragments"`
+			NextActions          []string `json:"next_actions"`
+		} `json:"protocol_compat_report"`
+		ReviewSections []struct {
+			Key string `json:"key"`
+		} `json:"review_sections"`
+		RepairSuggestions []struct {
+			Category string `json:"category"`
+		} `json:"repair_suggestions"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 || result.Script == nil || result.Script.Protocol != "sap_gui" {
+		t.Fatalf("scripts/script = %d/%#v, want SAP GUI external-runner draft", len(result.Scripts), result.Script)
+	}
+	if result.Script.Config.SAPGUI.ConnectionString != "ASHOST=server" || result.Script.Config.SAPGUI.Password != "" {
+		t.Fatalf("sapgui config = %#v, want exact connection string and no invented password", result.Script.Config.SAPGUI)
+	}
+	if !strings.Contains(resp.Body.String(), "ASHOST=server") || importDraftAttestationToken(result.Script) == "" {
+		t.Fatalf("SAP GUI preview did not preserve or attest its exact source config: %s", resp.Body.String())
+	}
+	if result.DetectedProtocol.Canonical != "sap_gui" || result.DetectedProtocol.Mode != "external_runner_required" {
+		t.Fatalf("detected_protocol = %#v, want SAP GUI external runner", result.DetectedProtocol)
+	}
+	if result.ReviewArtifact.ID == "" || len(result.ReviewArtifact.RequiredEvidence) == 0 {
+		t.Fatalf("review_artifact = %#v, want stored review evidence guidance", result.ReviewArtifact)
+	}
+	if result.ProtocolCompat.CanonicalProtocol != "sap_gui" || result.ProtocolCompat.ImportMode != "external_runner_required" || result.ProtocolCompat.PromotionStatus != "external_runner_required" {
+		t.Fatalf("protocol_compat_report = %#v, want external-runner SAP GUI classification", result.ProtocolCompat)
+	}
+	if result.ProtocolCompat.MappedSteps == 0 || len(result.ProtocolCompat.NextActions) == 0 {
+		t.Fatalf("protocol_compat_report = %#v, want mapped SAP GUI draft steps and next actions", result.ProtocolCompat)
+	}
+	if result.ProtocolCompat.ReviewGatedSteps == 0 || !containsString(result.ProtocolCompat.UnsupportedFragments, "sapgui_logon") {
+		t.Fatalf("protocol_compat_report = %#v, want preserved SAP GUI function inventory", result.ProtocolCompat)
+	}
+	if !responseHasReviewSection(result.ReviewSections, "review_artifact") || !responseHasRepairCategory(result.RepairSuggestions, "protocol") {
+		t.Fatalf("review sections/suggestions = %#v/%#v, want protocol review guidance", result.ReviewSections, result.RepairSuggestions)
+	}
+
+	savePayload, err := json.Marshal(map[string]any{
+		"scripts":      []dsl.Script{*result.Script},
+		"operation_id": "sap-gui-opaque-restoration",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	save := httptest.NewRecorder()
+	saveRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/import/enterprise-script-archive/save",
+		bytes.NewReader(savePayload),
+	)
+	saveRequest.Header.Set("Content-Type", "application/json")
+	server.mux.ServeHTTP(save, saveRequest)
+	if save.Code != http.StatusCreated {
+		t.Fatalf("save SAP GUI draft status = %d body=%s", save.Code, save.Body.String())
+	}
+	if !strings.Contains(save.Body.String(), "ASHOST=server") {
+		t.Fatalf("saved SAP GUI response did not preserve its source connection string: %s", save.Body.String())
+	}
+	var saved struct {
+		Scripts []StoredScript `json:"scripts"`
+	}
+	if err := json.Unmarshal(save.Body.Bytes(), &saved); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Scripts) != 1 {
+		t.Fatalf("saved SAP GUI scripts = %#v", saved.Scripts)
+	}
+	durable, ok := server.runner.GetScript(saved.Scripts[0].ID)
+	if !ok || durable == nil || durable.Script == nil ||
+		durable.Script.Config.SAPGUI.ConnectionString != "ASHOST=server" {
+		t.Fatalf("durable SAP GUI draft lost exact source config: %#v", durable)
+	}
+}
+
+func TestHandleImportEnterpriseArchiveClassifiesRDPAliasAsExternalRunner(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	archive := buildEnterpriseArchiveProtocolArchive(t, "Remote Desktop Protocol", `Action()
+{
+    rdp_connect_server("Host=desktop.example.test", LAST);
+}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(archive))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		DetectedProtocol struct {
+			Canonical string `json:"canonical_source_protocol"`
+			Mode      string `json:"import_mode"`
+		} `json:"detected_protocol"`
+		ProtocolCompat struct {
+			CanonicalProtocol    string   `json:"canonical_protocol"`
+			ImportMode           string   `json:"import_mode"`
+			PromotionStatus      string   `json:"promotion_status"`
+			UnsupportedFragments []string `json:"unsupported_fragments"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.DetectedProtocol.Canonical != "rdp" || result.DetectedProtocol.Mode != "external_runner_required" {
+		t.Fatalf("detected_protocol = %#v, want RDP external runner", result.DetectedProtocol)
+	}
+	if result.ProtocolCompat.CanonicalProtocol != "rdp" || result.ProtocolCompat.ImportMode != "external_runner_required" || result.ProtocolCompat.PromotionStatus != "external_runner_required" {
+		t.Fatalf("protocol_compat_report = %#v, want RDP external-runner report", result.ProtocolCompat)
+	}
+	if !containsString(result.ProtocolCompat.UnsupportedFragments, "rdp_connect_server") {
+		t.Fatalf("unsupported_fragments = %#v, want preserved RDP function", result.ProtocolCompat.UnsupportedFragments)
+	}
+}
+
+func TestHandleImportEnterpriseArchiveSupportsTruClientMobileWebArchive(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("MobileWeb.usr", `[General]
+Type=TruClientMobileWeb
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForTruClientZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="top" action="TopStep">
+    <step type="block" action="Run Block" actionName="Run">
+      <step type="control" action="Call Action" arguments="{&quot;Action Name&quot;:{&quot;value&quot;:&quot;Action&quot;}}" />
+    </step>
+    <step type="block" action="action" actionName="Action">
+      <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/catalog\&quot;&quot;}}" />
+      <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;$(\&quot;input[name='q']\&quot;).val(\&quot;QAInsights\&quot;);\ndocument.querySelector('#menu').click()&quot;}}" />
+    </step>
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+TouchMode=1
+`)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Protocol string `json:"protocol"`
+			Name     string `json:"name"`
+			Actions  []struct {
+				Type     string `json:"type"`
+				Selector string `json:"selector"`
+				Target   string `json:"target"`
+				Value    string `json:"value"`
+			} `json:"actions"`
+		} `json:"script"`
+		Warnings            []string `json:"warnings"`
+		UnsupportedElements []string `json:"unsupported_elements"`
+		ReviewSections      []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+		RepairSuggestions []struct {
+			Category               string   `json:"category"`
+			Severity               string   `json:"severity"`
+			Title                  string   `json:"title"`
+			TargetAction           string   `json:"target_action"`
+			SelectorStabilityScore int      `json:"selector_stability_score"`
+			SelectorSignals        []string `json:"selector_signals"`
+		} `json:"repair_suggestions"`
+		Summary map[string]any `json:"summary"`
+		Stats   struct {
+			ConvertedActions int `json:"converted_actions"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "browser" || result.Script.Name != "MobileWeb" {
+		t.Fatalf("script = %#v, want browser script named MobileWeb", result.Script)
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[0]; action.Type != "browser_navigate" || action.Target != "https://m.example.com/catalog" {
+		t.Fatalf("action[0] = %#v, want browser_navigate to catalog", action)
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "input[name='q']" || action.Value != "QAInsights" {
+		t.Fatalf("action[1] = %#v, want browser_fill on search input", action)
+	}
+	if action := result.Script.Actions[2]; action.Type != "browser_click" || action.Selector != "#menu" {
+		t.Fatalf("action[2] = %#v, want browser_click on #menu", action)
+	}
+	if result.Stats.ConvertedActions != 3 {
+		t.Fatalf("converted_actions = %d, want 3", result.Stats.ConvertedActions)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+	if len(result.UnsupportedElements) != 0 {
+		t.Fatalf("unsupported_elements = %#v, want none", result.UnsupportedElements)
+	}
+	assertReviewSection(t, result.ReviewSections, "browser_import_assumptions", "info", "Legacy desktop browser-profile archives remain out of scope; Web and Web 2.0 source profiles require guided review.")
+	assertRepairSuggestion(t, result.RepairSuggestions, "replay", "warning", "Run browser replay before saving as production-ready")
+	assertRepairSuggestion(t, result.RepairSuggestions, "selector", "warning", "Validate selector for Evaluate JavaScript Fill 1")
+	assertRepairSuggestion(t, result.RepairSuggestions, "wait", "info", "Add readiness wait after Evaluate JavaScript Fill 1")
+	selectorScoreSeen := false
+	for _, suggestion := range result.RepairSuggestions {
+		if suggestion.Category == "selector" && suggestion.TargetAction == "Evaluate JavaScript Fill 1" {
+			selectorScoreSeen = suggestion.SelectorStabilityScore > 0 && len(suggestion.SelectorSignals) > 0
+		}
+	}
+	if !selectorScoreSeen {
+		t.Fatalf("repair_suggestions = %#v, want selector stability score and signals", result.RepairSuggestions)
+	}
+	if got := result.Summary["project_file"]; got != "MobileWeb.usr" {
+		t.Fatalf("summary.project_file = %#v, want MobileWeb.usr", got)
+	}
+	if got := result.Summary["mapped_runtime_file"]; got != "default.cfg" {
+		t.Fatalf("summary.mapped_runtime_file = %#v, want default.cfg", got)
+	}
+	if got := result.Summary["unsupported_function_count"]; got != float64(0) {
+		t.Fatalf("summary.unsupported_function_count = %#v, want 0", got)
+	}
+}
+
+func TestHandleImportEnterpriseArchiveSurfacesTruClientWeb2ReviewSections(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("Web2/Web2.usr", `[General]
+Type=TruClient 2.0 - Web
+RuntimeSettings=default.cfg
+`)
+	addFile("Web2/default.xml", encodeUTF16LEForTruClientZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" stepId="nav-1" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://shop.example.com\&quot;&quot;}}" />
+    <step type="testObject" action="Click" stepId="click-1" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#cart\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" stepId="js-1" index="3" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;window.app.checkout()&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("Web2/ObjectRepository/MainObjects.xml", "<objects><object name=\"Cart\" /></objects>")
+	addFile("Web2/parameters/users.dat", "username,password\nqa,secret\n")
+	addFile("Web2/default.cfg", "[ThinkTime]\nOptions=RECORDED\n")
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Protocol string `json:"protocol"`
+			Actions  []struct {
+				Type     string         `json:"type"`
+				Metadata map[string]any `json:"metadata"`
+			} `json:"actions"`
+		} `json:"script"`
+		Warnings       []string `json:"warnings"`
+		ReviewSections []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+		RepairSuggestions []struct {
+			Category string `json:"category"`
+			Severity string `json:"severity"`
+			Title    string `json:"title"`
+		} `json:"repair_suggestions"`
+		Summary                 map[string]any `json:"summary"`
+		TrueClient2CompatReport struct {
+			PromotionStatus      string `json:"promotion_status"`
+			PromotionAllowed     bool   `json:"promotion_allowed"`
+			JavaScriptReviewGate string `json:"javascript_review_gate"`
+			ReplayStatus         string `json:"replay_status"`
+			ConvertedActions     int    `json:"converted_actions"`
+		} `json:"trueclient2_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "browser" || len(result.Script.Actions) != 3 {
+		t.Fatalf("script = %#v, want browser draft with three converted actions", result.Script)
+	}
+	if result.Script.Actions[2].Type != "browser_evaluate_js" || result.Script.Actions[2].Metadata["review_required"] != true {
+		t.Fatalf("action[2] = %#v, want review-gated browser_evaluate_js", result.Script.Actions[2])
+	}
+	if containsString(result.Warnings, "TruClient 2.0 - Web import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.") {
+		t.Fatalf("warnings = %#v, did not expect legacy review-only warning for executable Web 2.0 import", result.Warnings)
+	}
+	assertReviewSection(t, result.ReviewSections, "web2_profile_summary", "warning", "Source script type: TruClient 2.0 - Web")
+	assertReviewSection(t, result.ReviewSections, "web2_unsupported_source_fragments", "warning", "Evaluate JavaScript #3: Review-only TruClient step requires replay or guided repair before approval.")
+	assertReviewSection(t, result.ReviewSections, "web2_object_identification", "warning", "Object repository: ObjectRepository/MainObjects.xml")
+	assertReviewSection(t, result.ReviewSections, "web2_object_identification", "warning", "Selector candidates extracted: 1")
+	assertReviewSection(t, result.ReviewSections, "web2_parameter_mapping", "info", "Parameter data: parameters/users.dat")
+	assertReviewSection(t, result.ReviewSections, "web2_replay_readiness", "warning", "Run browser replay against the target application.")
+	assertReviewSection(t, result.ReviewSections, "web2_http_conversion_eligibility", "info", "Capture network requests during replay before generating an HTTP draft.")
+	assertRepairSuggestion(t, result.RepairSuggestions, "replay", "warning", "Attach browser replay evidence")
+	assertRepairSuggestion(t, result.RepairSuggestions, "selector", "warning", "Review Web 2.0 object identification")
+	assertRepairSuggestion(t, result.RepairSuggestions, "data", "info", "Verify Web 2.0 parameter data fit")
+	assertRepairSuggestion(t, result.RepairSuggestions, "unsupported", "warning", "Resolve Web 2.0 source fragments")
+	assertRepairSuggestion(t, result.RepairSuggestions, "conversion", "info", "Gate browser-to-HTTP conversion")
+	if result.Summary["source_script_type"] != "TruClient 2.0 - Web" {
+		t.Fatalf("summary.source_script_type = %#v, want TruClient 2.0 - Web", result.Summary["source_script_type"])
+	}
+	inspection, ok := result.Summary["trueclient_archive_inspection"].(map[string]any)
+	if !ok {
+		t.Fatalf("summary.trueclient_archive_inspection = %#v, want object", result.Summary["trueclient_archive_inspection"])
+	}
+	if inspection["step_inventory"] == nil || inspection["unsupported_fragments"] == nil {
+		t.Fatalf("inspection = %#v, want step inventory and unsupported fragments", inspection)
+	}
+	readiness, ok := result.Summary["web2_migration_readiness"].(map[string]any)
+	if !ok {
+		t.Fatalf("summary.web2_migration_readiness = %#v, want readiness report", result.Summary["web2_migration_readiness"])
+	}
+	if readiness["imported_steps"] != float64(3) || readiness["converted_steps"] != float64(3) || readiness["conversion_to_http_readiness"] != "needs_replay_network" {
+		t.Fatalf("web2 readiness = %#v, want import/convert counts and HTTP conversion readiness", readiness)
+	}
+	if readiness["replay_status"] != "required" || readiness["runtime_parity_status"] != "ready" {
+		t.Fatalf("web2 readiness status = %#v, want replay required/runtime ready", readiness)
+	}
+	if result.TrueClient2CompatReport.PromotionAllowed || result.TrueClient2CompatReport.PromotionStatus != "blocked" || result.TrueClient2CompatReport.JavaScriptReviewGate != "required" || result.TrueClient2CompatReport.ReplayStatus != "required" || result.TrueClient2CompatReport.ConvertedActions != 3 {
+		t.Fatalf("trueclient2_compat_report = %#v, want blocked review-gated report", result.TrueClient2CompatReport)
+	}
+}
+
+func TestBrowserSelectorStabilityScoreRanksStableAndBrittleSelectors(t *testing.T) {
+	stableScore, stableSignals := browserSelectorStabilityScore("[data-testid='submit-order']")
+	brittleScore, brittleSignals := browserSelectorStabilityScore("body > div:nth-child(3) > button.generated-4821")
+	if stableScore < 80 {
+		t.Fatalf("stable score = %d signals=%v, want >= 80", stableScore, stableSignals)
+	}
+	if brittleScore >= stableScore || brittleScore > 40 {
+		t.Fatalf("brittle score = %d stable=%d signals=%v, want lower brittle score", brittleScore, stableScore, brittleSignals)
+	}
+	if !strings.Contains(strings.Join(brittleSignals, ","), "positional selector") {
+		t.Fatalf("brittle signals = %v, want positional selector signal", brittleSignals)
+	}
+}
+
+func TestTrueClientJavaScriptReviewPolicyRequiresReviewerEvidence(t *testing.T) {
+	inspection := &trueclient.ArchiveInspection{
+		ScriptType: "TruClient 2.0 - Web",
+		StepInventory: trueclient.StepInventory{
+			Total:     1,
+			Supported: map[string]int{"evaluate_javascript": 1},
+		},
+	}
+	result := &enterprisearchive.ConvertResult{
+		Script: &dsl.Script{
+			Protocol: "browser",
+			Actions: []dsl.Action{{
+				Name:   "Checkout JS",
+				Type:   "browser_evaluate_js",
+				Target: "window.app.checkout()",
+				Metadata: map[string]any{
+					"review_gate":                "javascript",
+					"javascript_review_approved": true,
+					"review_reason":              "TruClient JavaScript could not be decomposed into native browser actions.",
+				},
+			}},
+			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Preserved: map[string]any{
+				"browser_replay_status": "passed",
+			}}},
+		},
+		DetectedProtocol: &enterprisearchive.DetectedProtocol{ImportMode: enterprisearchive.ImportModeExecutable},
+		Stats:            enterprisearchive.ConvertStats{ConvertedActions: 1},
+	}
+	summary := enterpriseArchiveImportSummary{
+		ImportMode:           string(enterprisearchive.ImportModeExecutable),
+		TrueClientInspection: inspection,
+		SourceScriptType:     "TruClient 2.0 - Web",
+		SourceProfile:        "web2_browser_profile browser profile",
+	}
+
+	report := buildTrueClient2CompatReport(result, summary)
+	if report.JavaScriptReviewGate != "required" || report.JavaScriptReview.PendingActions != 1 || report.PromotionAllowed {
+		t.Fatalf("report = %#v, want pending JS gate without reviewer evidence", report)
+	}
+
+	result.Script.Actions[0].Metadata["javascript_review_reviewer"] = "qa-reviewer"
+	result.Script.Actions[0].Metadata["javascript_review_approved_at"] = "2026-06-09T12:00:00Z"
+	report = buildTrueClient2CompatReport(result, summary)
+	if report.JavaScriptReviewGate != "approved" || report.JavaScriptReview.ApprovedActions != 1 || !report.PromotionAllowed {
+		t.Fatalf("approved report = %#v, want approved JS gate and promotion allowed", report)
+	}
+}
+
+func TestHandleImportEnterpriseArchiveMapsTruClientQuerySelectorValueAssignment(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("MobileWeb.usr", `[General]
+Type=TruClientMobileWeb
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForTruClientZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'APEX Load QA'&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+TouchMode=1
+`)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Actions []struct {
+				Type     string `json:"type"`
+				Selector string `json:"selector"`
+				Value    string `json:"value"`
+			} `json:"actions"`
+		} `json:"script"`
+		Warnings []string `json:"warnings"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "APEX Load QA" {
+		t.Fatalf("action = %#v, want browser_fill for #displayName", action)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
+func TestHandleImportEnterpriseArchiveMapsTruClientSelectStep(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("MobileWeb.usr", `[General]
+Type=TruClientMobileWeb
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForTruClientZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
+    <step type="testObject" action="Select" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#country\&quot;&quot;},&quot;VisibleText&quot;:{&quot;value&quot;:&quot;\&quot;United States\&quot;&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+TouchMode=1
+`)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Actions []struct {
+				Type     string `json:"type"`
+				Selector string `json:"selector"`
+				Value    string `json:"value"`
+			} `json:"actions"`
+		} `json:"script"`
+		Warnings []string `json:"warnings"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_select" || action.Selector != "#country" || action.Value != "United States" {
+		t.Fatalf("action = %#v, want browser_select for #country", action)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
+func TestHandleImportEnterpriseArchivePreservesTruClientTransactionsAndWaitSteps(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("MobileWeb.usr", `[General]
+Type=TruClientMobileWeb
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForTruClientZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="util" action="Start Transaction" index="1" arguments="{&quot;Transaction Name&quot;:{&quot;value&quot;:&quot;\&quot;Login\&quot;&quot;}}" />
+    <step type="testObject" action="Navigate" index="2" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/login\&quot;&quot;}}" />
+    <step type="util" action="Wait" index="3" arguments="{&quot;Duration&quot;:{&quot;value&quot;:&quot;500&quot;}}" />
+    <step type="testObject" action="Click" index="4" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#submit\&quot;&quot;}}" />
+    <step type="util" action="End Transaction" index="5" arguments="{&quot;Transaction Name&quot;:{&quot;value&quot;:&quot;\&quot;Login\&quot;&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+TouchMode=1
+`)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Actions []struct {
+				Name    string `json:"name"`
+				Type    string `json:"type"`
+				Value   string `json:"value"`
+				WaitFor *struct {
+					Type  string `json:"type"`
+					Value string `json:"value"`
+				} `json:"wait_for"`
+			} `json:"actions"`
+		} `json:"script"`
+		Warnings []string `json:"warnings"`
+		Stats    struct {
+			ConvertedActions int `json:"converted_actions"`
+			Transactions     int `json:"transactions"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[0]; action.Name != "Login_Navigate" || action.Type != "browser_navigate" {
+		t.Fatalf("action[0] = %#v, want Login_Navigate browser_navigate", action)
+	}
+	if action := result.Script.Actions[1]; action.Name != "Login_Wait" || action.Type != "browser_wait" || action.WaitFor == nil || action.WaitFor.Type != "duration" || action.WaitFor.Value != "500" {
+		t.Fatalf("action[1] = %#v, want Login_Wait browser_wait duration 500", action)
+	}
+	if action := result.Script.Actions[2]; action.Name != "Login_Click" || action.Type != "browser_click" {
+		t.Fatalf("action[2] = %#v, want Login_Click browser_click", action)
+	}
+	if result.Stats.ConvertedActions != 3 || result.Stats.Transactions != 1 {
+		t.Fatalf("stats = %#v, want converted_actions=3 transactions=1", result.Stats)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
+func TestHandleImportEnterpriseArchiveMapsTruClientVerifyToAssertions(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("MobileWeb.usr", `[General]
+Type=TruClientMobileWeb
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForTruClientZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/login\&quot;&quot;}}" />
+    <step type="util" action="Verify" index="2" arguments="{&quot;Title&quot;:{&quot;value&quot;:&quot;\&quot;Login Page\&quot;&quot;}}" />
+    <step type="testObject" action="Click" index="3" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#submit\&quot;&quot;}}" />
+    <step type="util" action="Verify" index="4" arguments="{&quot;Text&quot;:{&quot;value&quot;:&quot;\&quot;Saved apexload\&quot;&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+TouchMode=1
+`)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Actions []struct {
+				Type       string `json:"type"`
+				Assertions []struct {
+					Type  string `json:"type"`
+					Value string `json:"value"`
+				} `json:"assertions"`
+			} `json:"actions"`
+		} `json:"script"`
+		Warnings []string `json:"warnings"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	if assertions := result.Script.Actions[0].Assertions; len(assertions) != 1 || assertions[0].Type != "page_title" || assertions[0].Value != "Login Page" {
+		t.Fatalf("action[0].assertions = %#v, want page_title Login Page", assertions)
+	}
+	if assertions := result.Script.Actions[1].Assertions; len(assertions) != 1 || assertions[0].Type != "body_contains" || assertions[0].Value != "Saved apexload" {
+		t.Fatalf("action[1].assertions = %#v, want body_contains Saved apexload", assertions)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
+func TestHandleImportEnterpriseArchiveMapsTruClientScrollToSwipe(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("MobileWeb.usr", `[General]
+Type=TruClientMobileWeb
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForTruClientZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/home\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;window.scrollTo(0, 400)&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+`)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Warnings            []string `json:"warnings"`
+		UnsupportedElements []string `json:"unsupported_elements"`
+		ReviewSections      []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+		RepairSuggestions []struct {
+			Category string `json:"category"`
+			Severity string `json:"severity"`
+			Title    string `json:"title"`
+			Action   string `json:"action"`
+		} `json:"repair_suggestions"`
+		Stats struct {
+			ConvertedActions int `json:"converted_actions"`
+			Skipped          int `json:"skipped"`
+		} `json:"stats"`
+		Scripts []dsl.Script `json:"scripts"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want converted_actions=2 skipped=0", result.Stats)
+	}
+	if len(result.UnsupportedElements) != 0 {
+		t.Fatalf("unsupported_elements = %#v, want none", result.UnsupportedElements)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+	if len(result.Scripts) != 1 || len(result.Scripts[0].Actions) != 2 {
+		t.Fatalf("scripts/actions = %#v, want one script with navigate and swipe", result.Scripts)
+	}
+	scroll := result.Scripts[0].Actions[1]
+	if scroll.Type != "browser_swipe" || scroll.Selector != "body" || scroll.Params["direction"] != "up" || scroll.Params["distance"] != float64(400) {
+		t.Fatalf("scroll action = %#v, want browser_swipe body direction=up distance=400", scroll)
+	}
+	assertReviewSection(t, result.ReviewSections, "browser_import_assumptions", "info", "Selector fidelity should be checked with browser replay before production use.")
+	assertRepairSuggestion(t, result.RepairSuggestions, "replay", "warning", "Run browser replay before saving as production-ready")
+}
+
+func TestHandleImportEnterpriseArchiveSurfacesMixedTruClientEvaluateJavaScriptUnsupportedStatements(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("MobileWeb.usr", `[General]
+Type=TruClientMobileWeb
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForTruClientZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'APEX Load QA';\nwindow.scrollTo(0, 400)&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+TouchMode=1
+`)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Warnings            []string `json:"warnings"`
+		UnsupportedElements []string `json:"unsupported_elements"`
+		ReviewSections      []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+		RepairSuggestions []struct {
+			Category string `json:"category"`
+			Severity string `json:"severity"`
+			Title    string `json:"title"`
+			Action   string `json:"action"`
+		} `json:"repair_suggestions"`
+		Stats struct {
+			ConvertedActions int `json:"converted_actions"`
+			Skipped          int `json:"skipped"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Stats.ConvertedActions != 3 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want converted_actions=3 skipped=0", result.Stats)
+	}
+	if len(result.UnsupportedElements) != 0 {
+		t.Fatalf("unsupported_elements = %#v, want none", result.UnsupportedElements)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
+func TestHandleImportJMeter(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "checkout.jmx")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	part.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan"><stringProp name="TestPlan.comments"/></TestPlan>
+    <hashTree>
+      <ThreadGroup testname="Users">
+        <stringProp name="ThreadGroup.num_threads">5</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">10</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <ConfigTestElement testname="Defaults" guiclass="HttpDefaultsGui">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+        </ConfigTestElement>
+        <hashTree/>
+        <CacheManager testname="Cache">
+          <boolProp name="clearEachIteration">true</boolProp>
+        </CacheManager>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Home">
+          <stringProp name="HTTPSampler.path">/home</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`))
+	writer.WriteField("include_assertions", "true")
+	writer.WriteField("scenario_draft", "true")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Scripts []struct {
+			Name    string `json:"name"`
+			Actions []struct {
+				Target string `json:"target"`
+			} `json:"actions"`
+			Metadata struct {
+				Import struct {
+					Preserved map[string]any `json:"preserved"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"scripts"`
+		ScenarioDraft any            `json:"scenario_draft"`
+		Correlations  []any          `json:"correlations"`
+		Assumptions   []string       `json:"assumptions"`
+		Unsupported   []string       `json:"unsupported_elements"`
+		SourceReview  map[string]any `json:"source_review"`
+		Stats         struct {
+			ConvertedActions int `json:"converted_actions"`
+		} `json:"stats"`
+		ProtocolCompat struct {
+			SourceFormat      string         `json:"source_format"`
+			CanonicalProtocol string         `json:"canonical_protocol"`
+			MappedSteps       int            `json:"mapped_steps"`
+			PromotionStatus   string         `json:"promotion_status"`
+			RuntimeParity     map[string]int `json:"runtime_parity"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 || result.Scripts[0].Actions[0].Target != "/home" {
+		t.Fatalf("unexpected converted scripts: %#v", result.Scripts)
+	}
+	if result.Stats.ConvertedActions != 1 {
+		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
+	}
+	if result.ScenarioDraft == nil {
+		t.Fatal("expected scenario draft in response")
+	}
+	if len(result.Correlations) != 0 {
+		t.Fatalf("correlations = %v, want none", result.Correlations)
+	}
+	if len(result.Assumptions) == 0 {
+		t.Fatal("expected assumptions in response")
+	}
+	if len(result.Unsupported) != 0 {
+		t.Fatalf("unsupported_elements = %v, want none", result.Unsupported)
+	}
+	if len(result.SourceReview) == 0 {
+		t.Fatal("expected root source_review in response")
+	}
+	if result.Scripts[0].Metadata.Import.Preserved["source_review"] == nil {
+		t.Fatalf("script metadata missing preserved source_review: %#v", result.Scripts[0].Metadata.Import.Preserved)
+	}
+	if result.Scripts[0].Metadata.Import.Preserved["protocol_compat_report"] == nil {
+		t.Fatalf("script metadata missing preserved protocol_compat_report: %#v", result.Scripts[0].Metadata.Import.Preserved)
+	}
+	if result.ProtocolCompat.SourceFormat != "JMeter JMX" || result.ProtocolCompat.CanonicalProtocol != "jmeter" || result.ProtocolCompat.MappedSteps != 1 {
+		t.Fatalf("protocol_compat_report = %#v", result.ProtocolCompat)
+	}
+	if result.ProtocolCompat.RuntimeParity["partial"] != 1 {
+		t.Fatalf("runtime_parity = %#v, want one partial CacheManager mapping", result.ProtocolCompat.RuntimeParity)
+	}
+}
+
+func TestHandleImportJMeterProtocolCompatCountsControllerReviewDiagnostics(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "dynamic-controller.jmx")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	_, _ = part.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan"/>
+    <hashTree>
+      <ThreadGroup testname="Users"/>
+      <hashTree>
+        <WhileController testname="While Token">
+          <stringProp name="WhileController.condition">${token}</stringProp>
+        </WhileController>
+        <hashTree>
+          <HTTPSamplerProxy testname="Poll">
+            <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+            <stringProp name="HTTPSampler.protocol">https</stringProp>
+            <stringProp name="HTTPSampler.path">/poll</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+          </HTTPSamplerProxy>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`))
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		UnsupportedElements []string `json:"unsupported_elements"`
+		ProtocolCompat      struct {
+			PromotionStatus      string   `json:"promotion_status"`
+			ReviewGatedSteps     int      `json:"review_gated_steps"`
+			UnsupportedFragments []string `json:"unsupported_fragments"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if !containsStringContaining(result.UnsupportedElements, "WhileController") {
+		t.Fatalf("unsupported_elements = %#v, want controller warning surfaced for review", result.UnsupportedElements)
+	}
+	if result.ProtocolCompat.PromotionStatus != "review_required" || result.ProtocolCompat.ReviewGatedSteps == 0 {
+		t.Fatalf("protocol_compat_report = %#v, want review-required controller diagnostic", result.ProtocolCompat)
+	}
+	if !containsStringContaining(result.ProtocolCompat.UnsupportedFragments, "WhileController") {
+		t.Fatalf("unsupported_fragments = %#v, want WhileController diagnostic", result.ProtocolCompat.UnsupportedFragments)
+	}
+}
+
+func TestHandleImportJMeterUsesCSVSidecarHeaders(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "checkout.jmx")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	if _, err := part.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan"/>
+    <hashTree>
+      <ThreadGroup testname="Users"/>
+      <hashTree>
+        <CSVDataSet testname="Customers">
+          <stringProp name="filename">data/customers.csv</stringProp>
+          <stringProp name="delimiter">,</stringProp>
+        </CSVDataSet>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Lookup">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/customers/${customer_id}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`)); err != nil {
+		t.Fatalf("Write JMX returned error: %v", err)
+	}
+	csvPart, err := writer.CreateFormFile("data_file", "customers.csv")
+	if err != nil {
+		t.Fatalf("CreateFormFile(data_file) returned error: %v", err)
+	}
+	if _, err := csvPart.Write([]byte("customer_id,zip\n42,02139\n")); err != nil {
+		t.Fatalf("Write CSV returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Scripts []struct {
+			DataSources []struct {
+				Columns        []string `json:"columns"`
+				FirstRowHeader bool     `json:"first_row_header"`
+				InlineData     string   `json:"inline_data"`
+			} `json:"data_sources"`
+		} `json:"scripts"`
+		ProtocolCompat struct {
+			DataSources int `json:"data_sources"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 || len(result.Scripts[0].DataSources) != 1 {
+		t.Fatalf("scripts = %#v, want one script with one data source", result.Scripts)
+	}
+	source := result.Scripts[0].DataSources[0]
+	if !source.FirstRowHeader || strings.Join(source.Columns, ",") != "customer_id,zip" || source.InlineData == "" {
+		t.Fatalf("data source = %#v, want sidecar-inferred header columns", source)
+	}
+	if result.ProtocolCompat.DataSources != 1 {
+		t.Fatalf("protocol_compat_report.data_sources = %d, want 1", result.ProtocolCompat.DataSources)
+	}
+}
+
+func TestHandleImportJMeterRejectsConflictingMultipartSidecars(t *testing.T) {
+	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2"><hashTree><TestPlan testname="Plan"/><hashTree>
+<ThreadGroup testname="Users"/><hashTree>
+<CSVDataSet testname="Customers"><stringProp name="filename">customers.csv</stringProp><stringProp name="delimiter">,</stringProp></CSVDataSet><hashTree/>
+<HTTPSamplerProxy testname="Lookup"><stringProp name="HTTPSampler.domain">api.example.com</stringProp><stringProp name="HTTPSampler.path">/customers/${customer_id}</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/>
+</hashTree></hashTree></hashTree></jmeterTestPlan>`
+	tests := []struct {
+		name       string
+		firstName  string
+		secondName string
+		want       string
+	}{
+		{name: "exact filename", firstName: "customers.csv", secondName: "customers.csv", want: "same filename"},
+		// Backslashes survive multipart filename basename normalization on Unix;
+		// the handler normalizes both path separators before checking basenames.
+		{name: "path-qualified basename", firstName: `a\customers.csv`, secondName: `b\customers.csv`, want: "same basename"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := NewServer(ServerConfig{})
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			primary, err := writer.CreateFormFile("file", "checkout.jmx")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := primary.Write([]byte(jmx)); err != nil {
+				t.Fatal(err)
+			}
+			first, err := writer.CreateFormFile("sidecar_a", test.firstName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := first.Write([]byte("customer_id\nfirst\n")); err != nil {
+				t.Fatal(err)
+			}
+			second, err := writer.CreateFormFile("sidecar_b", test.secondName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := second.Write([]byte("account_id\nsecond\n")); err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", &body)
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), test.want) ||
+				!strings.Contains(resp.Body.String(), "different content") {
+				t.Fatalf("status=%d body=%s, want clear %q collision", resp.Code, resp.Body.String(), test.want)
+			}
+		})
+	}
+}
+
+func TestHandleImportJMeterAllowsIdenticalDuplicateMultipartSidecars(t *testing.T) {
+	const jmx = `<?xml version="1.0"?><jmeterTestPlan><hashTree><TestPlan testname="Plan"/><hashTree><ThreadGroup testname="Users"/><hashTree>
+<CSVDataSet testname="Customers"><stringProp name="filename">customers.csv</stringProp><stringProp name="delimiter">,</stringProp></CSVDataSet><hashTree/>
+<HTTPSamplerProxy testname="Lookup"><stringProp name="HTTPSampler.domain">api.example.com</stringProp><stringProp name="HTTPSampler.path">/customers/${customer_id}</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/>
+</hashTree></hashTree></hashTree></jmeterTestPlan>`
+	const payload = "customer_id,region\n42,east\n"
+	tests := []struct {
+		name      string
+		filenames []string
+	}{
+		{name: "exact filename collapses", filenames: []string{"customers.csv", "customers.csv"}},
+		{name: "path-qualified basename remains resolvable", filenames: []string{`a\customers.csv`, `b\customers.csv`}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := NewServer(ServerConfig{})
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			primary, err := writer.CreateFormFile("file", "checkout.jmx")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := primary.Write([]byte(jmx)); err != nil {
+				t.Fatal(err)
+			}
+			for index, filename := range test.filenames {
+				part, err := writer.CreateFormFile(fmt.Sprintf("sidecar_%d", index), filename)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := part.Write([]byte(payload)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", &body)
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+			}
+			var result struct {
+				Scripts []struct {
+					DataSources []struct {
+						InlineData string   `json:"inline_data"`
+						Columns    []string `json:"columns"`
+					} `json:"data_sources"`
+				} `json:"scripts"`
+			}
+			if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Scripts) != 1 || len(result.Scripts[0].DataSources) != 1 ||
+				result.Scripts[0].DataSources[0].InlineData != payload ||
+				strings.Join(result.Scripts[0].DataSources[0].Columns, ",") != "customer_id,region" {
+				t.Fatalf("identical duplicate sidecar result = %#v", result.Scripts)
+			}
+		})
+	}
+}
+
+func TestHandleImportJMeterAuditsMultipartAndZIPSidecarCollisions(t *testing.T) {
+	const jmx = `<?xml version="1.0"?><jmeterTestPlan><hashTree><TestPlan testname="Plan"/><hashTree><ThreadGroup testname="Users"/><hashTree>
+<CSVDataSet testname="Customers"><stringProp name="filename">customers.csv</stringProp><stringProp name="delimiter">,</stringProp></CSVDataSet><hashTree/>
+<HTTPSamplerProxy testname="Lookup"><stringProp name="HTTPSampler.domain">api.example.com</stringProp><stringProp name="HTTPSampler.path">/customers/${customer_id}</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/>
+</hashTree></hashTree></hashTree></jmeterTestPlan>`
+	const archivePayload = "customer_id,region\n42,east\n"
+	tests := []struct {
+		name            string
+		uploadName      string
+		uploadPayload   string
+		wantStatus      int
+		wantErrorDetail string
+	}{
+		{name: "different exact filename", uploadName: "customers.csv", uploadPayload: "account_id\n7\n", wantStatus: http.StatusBadRequest, wantErrorDetail: "same filename"},
+		{name: "different basename", uploadName: `external\customers.csv`, uploadPayload: "account_id\n7\n", wantStatus: http.StatusBadRequest, wantErrorDetail: "same basename"},
+		{name: "identical exact filename", uploadName: "customers.csv", uploadPayload: archivePayload, wantStatus: http.StatusOK},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var archive bytes.Buffer
+			zipWriter := zip.NewWriter(&archive)
+			for name, content := range map[string]string{"checkout.jmx": jmx, "customers.csv": archivePayload} {
+				entry, err := zipWriter.Create(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := entry.Write([]byte(content)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := zipWriter.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			primary, err := writer.CreateFormFile("file", "bundle.zip")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := primary.Write(archive.Bytes()); err != nil {
+				t.Fatal(err)
+			}
+			sidecar, err := writer.CreateFormFile("sidecar", test.uploadName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := sidecar.Write([]byte(test.uploadPayload)); err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			server := NewServer(ServerConfig{})
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", &body)
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != test.wantStatus {
+				t.Fatalf("status=%d body=%s, want %d", resp.Code, resp.Body.String(), test.wantStatus)
+			}
+			if test.wantErrorDetail != "" && (!strings.Contains(resp.Body.String(), test.wantErrorDetail) ||
+				!strings.Contains(resp.Body.String(), "different content")) {
+				t.Fatalf("body=%s, want clear %q collision", resp.Body.String(), test.wantErrorDetail)
+			}
+			if test.wantStatus == http.StatusOK {
+				var result struct {
+					Scripts []struct {
+						DataSources []struct {
+							InlineData string `json:"inline_data"`
+						} `json:"data_sources"`
+					} `json:"scripts"`
+				}
+				if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+					t.Fatal(err)
+				}
+				if len(result.Scripts) != 1 || len(result.Scripts[0].DataSources) != 1 ||
+					result.Scripts[0].DataSources[0].InlineData != archivePayload {
+					t.Fatalf("identical multipart/ZIP sidecar result = %#v", result.Scripts)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleImportJMeterZipUsesJMXAndCSVSidecars(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var zipBody bytes.Buffer
+	writer := zip.NewWriter(&zipBody)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("AOS/checkout.jmx", `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan"/>
+    <hashTree>
+      <ThreadGroup testname="Users"/>
+      <hashTree>
+        <CSVDataSet testname="Customers">
+          <stringProp name="filename">customers.csv</stringProp>
+        </CSVDataSet>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Lookup">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/customers/${customer_id}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`)
+	addFile("AOS/customers.csv", "customer_id,zip\n42,02139\n")
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter?filename=aos.zip", bytes.NewReader(zipBody.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Scripts []struct {
+			Actions []struct {
+				Target string `json:"target"`
+			} `json:"actions"`
+			DataSources []struct {
+				Path           string   `json:"path"`
+				FileName       string   `json:"file_name"`
+				InlineData     string   `json:"inline_data"`
+				Columns        []string `json:"columns"`
+				FirstRowHeader bool     `json:"first_row_header"`
+			} `json:"data_sources"`
+		} `json:"scripts"`
+		Summary struct {
+			FileName string `json:"file_name"`
+		} `json:"summary"`
+		ProtocolCompat struct {
+			DataSources int `json:"data_sources"`
+		} `json:"protocol_compat_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Summary.FileName != "AOS/checkout.jmx" {
+		t.Fatalf("summary.file_name = %q, want selected inner JMX", result.Summary.FileName)
+	}
+	if len(result.Scripts) != 1 || len(result.Scripts[0].Actions) != 1 || result.Scripts[0].Actions[0].Target != "/customers/{{var.customer_id}}" {
+		t.Fatalf("scripts = %#v, want converted JMX request", result.Scripts)
+	}
+	source := result.Scripts[0].DataSources[0]
+	if source.Path != "" || source.FileName != "customers.csv" || source.InlineData != "customer_id,zip\n42,02139\n" ||
+		!source.FirstRowHeader || strings.Join(source.Columns, ",") != "customer_id,zip" {
+		t.Fatalf("data source = %#v, want portable inline CSV sidecar with inferred headers", source)
+	}
+	if result.ProtocolCompat.DataSources != 1 {
+		t.Fatalf("protocol_compat_report.data_sources = %d, want 1", result.ProtocolCompat.DataSources)
+	}
+}
+
+func TestHandleValidateJMeterImport(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "validate.jmx")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	part.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan" />
+    <hashTree>
+      <ThreadGroup testname="Users">
+        <stringProp name="ThreadGroup.num_threads">2</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <HTTPSamplerProxy testname="Ping">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/ping</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`))
+	writer.WriteField("scenario_draft", "true")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/validate", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Scripts       []StoredScript `json:"scripts"`
+		ScenarioDraft any            `json:"scenario_draft"`
+		Warnings      []string       `json:"warnings"`
+		Correlations  []any          `json:"correlations"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 {
+		t.Fatalf("scripts = %d, want 1", len(result.Scripts))
+	}
+	if result.ScenarioDraft == nil {
+		t.Fatal("expected scenario draft in validation response")
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", result.Warnings)
+	}
+	if len(result.Correlations) != 0 {
+		t.Fatalf("correlations = %v, want none", result.Correlations)
+	}
+	if got := server.runner.ListScripts(); len(got) != 0 {
+		t.Fatalf("validate should not persist scripts, got %d", len(got))
+	}
+}
+
+func TestHandleValidateJMeterImportMatchesImportEnvelope(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body, contentType := buildJMeterImportMultipartBody(t, true)
+
+	importReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", bytes.NewReader(body))
+	importReq.Header.Set("Content-Type", contentType)
+	importResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(importResp, importReq)
+	if importResp.Code != http.StatusOK {
+		t.Fatalf("import status = %d, want %d body=%s", importResp.Code, http.StatusOK, importResp.Body.String())
+	}
+
+	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/validate", bytes.NewReader(body))
+	validateReq.Header.Set("Content-Type", contentType)
+	validateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(validateResp, validateReq)
+	if validateResp.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want %d body=%s", validateResp.Code, http.StatusOK, validateResp.Body.String())
+	}
+
+	importEnvelope := decodeImportEnvelope(t, importResp.Body.Bytes())
+	validateEnvelope := decodeImportEnvelope(t, validateResp.Body.Bytes())
+	assertSharedImportEnvelopeKeys(t, importEnvelope)
+	assertSharedImportEnvelopeKeys(t, validateEnvelope)
+	normalizeImportEnvelopeTimestamps(t, importEnvelope)
+	normalizeImportEnvelopeTimestamps(t, validateEnvelope)
+	if !reflect.DeepEqual(importEnvelope, validateEnvelope) {
+		t.Fatalf("expected identical jmeter import envelopes\nimport=%s\nvalidate=%s", importResp.Body.String(), validateResp.Body.String())
+	}
+}
+
+func TestHandleEnterpriseArchiveImportJavaMixedArchiveReturnsOneCombinedDraft(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	archive := buildJavaEnterpriseArchive(t, "JavaMixed", "Java Vuser", `import lrapi.lr;
+import javax.jms.*;
+import java.sql.*;
+
+public class Actions {
+  public int action() throws Throwable {
+    web.url("Home", "URL=https://example.test/home?user_id=12345", web.LAST);
+    Queue q = session.createQueue("orders.in");
+    TextMessage msg = session.createTextMessage("{\"orderId\":\"A-100\"}");
+    producer.send(q, msg);
+    PreparedStatement ps = conn.prepareStatement("select 1");
+    ps.executeQuery();
+    return 0;
+  }
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive?project_id=proj-java-mixed&allow_java_vuser_runner=false", bytes.NewReader(archive))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Scripts []dsl.Script `json:"scripts"`
+		Script  dsl.Script   `json:"script"`
+		Stats   struct {
+			ConvertedActions int `json:"converted_actions"`
+		} `json:"stats"`
+		DetectedProtocol struct {
+			APEXLoadProtocol  string `json:"apexload_protocol"`
+			ImportMode        string `json:"import_mode"`
+			RunnerRequirement string `json:"runner_requirement"`
+		} `json:"detected_protocol"`
+		FidelityReport struct {
+			PromotionStatus string   `json:"promotion_status"`
+			Blockers        []string `json:"blockers"`
+		} `json:"fidelity_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 {
+		t.Fatalf("scripts = %#v, want one combined Java Vuser draft", result.Scripts)
+	}
+	combined := result.Scripts[0]
+	if combined.Protocol != "java_vuser" || result.Script.Protocol != "java_vuser" {
+		t.Fatalf("scripts = %#v, want java_vuser protocol", result.Scripts)
+	}
+	if !reflect.DeepEqual(result.Script, combined) {
+		t.Fatalf("script = %#v, want same item as scripts[0] %#v", result.Script, combined)
+	}
+	if combined.ProjectID != "proj-java-mixed" {
+		t.Fatalf("project_id = %q, want proj-java-mixed", combined.ProjectID)
+	}
+	if combined.Metadata == nil || combined.Metadata.Import == nil || combined.Metadata.Import.Preserved["source_review"] == nil {
+		t.Fatalf("metadata = %#v, want attached source_review", combined.Metadata)
+	}
+	if len(combined.Actions) != 1 || combined.Actions[0].Type != "java_vuser_run" {
+		t.Fatalf("actions = %#v, want one Java action lifecycle call", combined.Actions)
+	}
+	if result.DetectedProtocol.APEXLoadProtocol != "java_vuser" ||
+		result.DetectedProtocol.ImportMode != "external_runner_required" ||
+		result.DetectedProtocol.RunnerRequirement != "java_vuser_jvm_runner" {
+		t.Fatalf("detected protocol = %#v, want governed Java Vuser runner draft", result.DetectedProtocol)
+	}
+	if result.Stats.ConvertedActions < 1 {
+		t.Fatalf("stats = %#v, want converted Java lifecycle action", result.Stats)
+	}
+	if result.FidelityReport.PromotionStatus != enterprisearchive.ImportPromotionPromotable || len(result.FidelityReport.Blockers) != 0 {
+		t.Fatalf("fidelity_report = %#v, runner posture must not be reported as fidelity loss", result.FidelityReport)
+	}
+}
+
+func TestHandleJMeterSupportMatrix(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/jmeter/support-matrix", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		SupportMatrix struct {
+			Supported   []string `json:"supported"`
+			Partial     []string `json:"partial"`
+			Unsupported []string `json:"unsupported"`
+		} `json:"support_matrix"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.SupportMatrix.Supported) == 0 {
+		t.Fatal("expected supported entries in support matrix")
+	}
+	if len(result.SupportMatrix.Unsupported) == 0 {
+		t.Fatal("expected unsupported entries in support matrix")
+	}
+}
+
+func TestHandleEnterpriseArchiveSupportMatrix(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/enterprise-script-archive/support-matrix", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		SupportMatrix []struct {
+			ID      string   `json:"id"`
+			Area    string   `json:"area"`
+			Concept string   `json:"concept"`
+			Fields  []string `json:"fields"`
+			Status  string   `json:"status"`
+			Notes   string   `json:"notes"`
+		} `json:"support_matrix"`
+		Notes          []string `json:"notes"`
+		TestedExamples []struct {
+			Title    string `json:"title"`
+			Coverage string `json:"coverage"`
+			Test     string `json:"test"`
+		} `json:"tested_examples"`
+		TrueClientScriptTypes []struct {
+			CanonicalName string   `json:"CanonicalName"`
+			DisplayName   string   `json:"DisplayName"`
+			Status        string   `json:"Status"`
+			Inputs        []string `json:"SupportedInputs"`
+		} `json:"trueclient_script_types"`
+		Web2ProfileCapabilities []struct {
+			CanonicalName string `json:"CanonicalName"`
+			DisplayName   string `json:"DisplayName"`
+			Status        string `json:"Status"`
+		} `json:"web2_profile_capabilities"`
+		Web2FixtureContract []struct {
+			ID       string `json:"ID"`
+			Required bool   `json:"Required"`
+			Status   string `json:"Status"`
+		} `json:"web2_fixture_contract"`
+		JavaImportSurfaceMatrix []struct {
+			ID              string `json:"id"`
+			Area            string `json:"area"`
+			Construct       string `json:"construct"`
+			Status          string `json:"status"`
+			ExecutionStatus string `json:"execution_status"`
+		} `json:"java_import_surface_matrix"`
+		JavaHTTPIdiomMatrix []struct {
+			ID              string `json:"id"`
+			ExecutionStatus string `json:"execution_status"`
+		} `json:"java_http_idiom_matrix"`
+		JavaJMSIdiomMatrix []struct {
+			ID              string `json:"id"`
+			ExecutionStatus string `json:"execution_status"`
+		} `json:"java_jms_idiom_matrix"`
+		JavaJDBCIdiomMatrix []struct {
+			ID              string `json:"id"`
+			ExecutionStatus string `json:"execution_status"`
+		} `json:"java_jdbc_idiom_matrix"`
+		SourceProtocolMatrix []struct {
+			CanonicalSourceProtocol string `json:"canonical_source_protocol"`
+			APEXLoadProtocol        string `json:"apexload_protocol"`
+			Status                  string `json:"status"`
+			Notes                   string `json:"notes"`
+		} `json:"source_protocol_matrix"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.SupportMatrix) == 0 {
+		t.Fatal("expected enterprise archive support matrix entries")
+	}
+	if result.SupportMatrix[0].ID == "" || result.SupportMatrix[0].Area == "" || result.SupportMatrix[0].Status == "" {
+		t.Fatalf("unexpected support matrix entry: %#v", result.SupportMatrix[0])
+	}
+	for _, entry := range result.SupportMatrix {
+		if entry.Status == "partial" && entry.ID != "http_receive_buffer" && entry.ID != "runtime_replay_snapshots" && entry.ID != "runtime_snapshot_resources" {
+			t.Fatalf("unexpected partial support entry: %s", entry.ID)
+		}
+	}
+	if !containsEnterpriseArchiveSupportMatrixStatus(result.SupportMatrix, "compatibility_only") {
+		t.Fatalf("expected compatibility-only enterprise archive support matrix entries, got %#v", result.SupportMatrix)
+	}
+	if len(result.Notes) == 0 {
+		t.Fatal("expected enterprise archive support matrix notes")
+	}
+	if len(result.TestedExamples) == 0 || result.TestedExamples[0].Title == "" || result.TestedExamples[0].Test == "" {
+		t.Fatalf("tested_examples = %#v, want populated tested examples", result.TestedExamples)
+	}
+	if !containsEnterpriseArchiveSupportMatrixExample(result.TestedExamples, "Golden Web HTTP/HTML fixture") {
+		t.Fatalf("tested_examples = %#v, want golden fixture example", result.TestedExamples)
+	}
+	if !containsEnterpriseArchiveTrueClientScriptType(result.TrueClientScriptTypes, "truclient_mobile_web", "supported") {
+		t.Fatalf("trueclient_script_types = %#v, want active Mobile Web row", result.TrueClientScriptTypes)
+	}
+	if !containsEnterpriseArchiveTrueClientScriptType(result.TrueClientScriptTypes, "truclient2_web", "supported") {
+		t.Fatalf("trueclient_script_types = %#v, want supported Web 2.0 row", result.TrueClientScriptTypes)
+	}
+	if !containsEnterpriseArchiveTrueClientCapability(result.Web2ProfileCapabilities, "object_identification", "review_only") {
+		t.Fatalf("web2_profile_capabilities = %#v, want review-only object identification capability", result.Web2ProfileCapabilities)
+	}
+	if !containsEnterpriseArchiveWeb2Fixture(result.Web2FixtureContract, "web2_spa_checkout", true, "supported") {
+		t.Fatalf("web2_fixture_contract = %#v, want required SPA checkout fixture", result.Web2FixtureContract)
+	}
+	if !containsEnterpriseArchiveJavaSurface(result.JavaImportSurfaceMatrix, "java-web-http", "external_runner_required") {
+		t.Fatalf("java_import_surface_matrix = %#v, want combined-runner java-web-http row", result.JavaImportSurfaceMatrix)
+	}
+	if !containsEnterpriseArchiveJavaIdiom(result.JavaHTTPIdiomMatrix, "java-web-custom-request", "external_runner_required") {
+		t.Fatalf("java_http_idiom_matrix = %#v, want combined-runner custom request row", result.JavaHTTPIdiomMatrix)
+	}
+	if !containsEnterpriseArchiveJavaIdiom(result.JavaJMSIdiomMatrix, "java-jms-publish-consume", "external_runner_required") {
+		t.Fatalf("java_jms_idiom_matrix = %#v, want combined-runner JMS publish/consume row", result.JavaJMSIdiomMatrix)
+	}
+	if !containsEnterpriseArchiveJavaIdiom(result.JavaJDBCIdiomMatrix, "java-jdbc-query", "external_runner_required") {
+		t.Fatalf("java_jdbc_idiom_matrix = %#v, want combined-runner JDBC query row", result.JavaJDBCIdiomMatrix)
+	}
+	if len(result.SourceProtocolMatrix) != 1 || result.SourceProtocolMatrix[0].CanonicalSourceProtocol != "java_vuser" ||
+		result.SourceProtocolMatrix[0].APEXLoadProtocol != "java_vuser" || result.SourceProtocolMatrix[0].Status != "external_runner_required" ||
+		!strings.Contains(result.SourceProtocolMatrix[0].Notes, "remain together") {
+		t.Fatalf("source_protocol_matrix = %#v, want one combined Java Vuser entry", result.SourceProtocolMatrix)
+	}
+}
+
+func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/capabilities", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload AuthoringCapabilityResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload.ContractVersion != "authoring.v1" {
+		t.Fatalf("contract version = %q, want authoring.v1", payload.ContractVersion)
+	}
+	if len(payload.Sources) < 9 {
+		t.Fatalf("sources = %d, want source matrix entries", len(payload.Sources))
+	}
+	enterpriseArchive, ok := payload.SourceMap["enterprise_script_archive"]
+	if !ok {
+		t.Fatal("expected enterprise_script_archive source map entry")
+	}
+	if !enterpriseArchive.ImportReview || !enterpriseArchive.RepairSuggestions || !enterpriseArchive.SaveHandoff || !enterpriseArchive.MultiScript {
+		t.Fatalf("enterprise archive features = %#v, want shared review/repair/save lifecycle", enterpriseArchive)
+	}
+	jmeter, ok := payload.SourceMap["jmeter"]
+	if !ok {
+		t.Fatal("expected jmeter source map entry")
+	}
+	if !jmeter.MultiScript || !jmeter.ScenarioDraft {
+		t.Fatalf("jmeter features = %#v, want multi-script scenario draft support", jmeter)
+	}
+	aiGenerated, ok := payload.SourceMap["ai_generated"]
+	if !ok {
+		t.Fatal("expected ai_generated source map entry")
+	}
+	if !aiGenerated.Provenance || !aiGenerated.ApprovalGateCandidate {
+		t.Fatalf("ai generated features = %#v, want provenance and approval gate candidate", aiGenerated)
+	}
+	web2, ok := payload.SourceMap["trueclient2_web"]
+	if !ok {
+		t.Fatal("expected trueclient2_web source map entry")
+	}
+	if !web2.BrowserReplay || !web2.ApprovalGateCandidate {
+		t.Fatalf("trueclient2_web features = %#v, want browser replay gated executable profile", web2)
+	}
+	if !containsAuthoringSourceStatus(payload.Sources, "trueclient2_web", "active") {
+		t.Fatalf("sources = %#v, want trueclient2_web active source", payload.Sources)
+	}
+	web2Profile, ok := payload.SourceMap["web2_browser_profile"]
+	if !ok {
+		t.Fatal("expected web2_browser_profile source map entry")
+	}
+	if !web2Profile.BrowserReplay || !web2Profile.ScenarioDraft || !web2Profile.ApprovalGateCandidate {
+		t.Fatalf("web2_browser_profile features = %#v, want replay, scenario draft, and approval-gated profile", web2Profile)
+	}
+	if !containsAuthoringSourceStatus(payload.Sources, "web2_browser_profile", "active") {
+		t.Fatalf("sources = %#v, want web2_browser_profile active source", payload.Sources)
+	}
+	cloudTest, ok := payload.SourceMap["cloudtest"]
+	if !ok {
+		t.Fatal("expected cloudtest source map entry")
+	}
+	if cloudTest.Replay || !cloudTest.MultiScript || !cloudTest.ScenarioDraft || !cloudTest.ImportReview {
+		t.Fatalf("cloudtest features = %#v, want review-only multi-asset preview", cloudTest)
+	}
+	if !containsAuthoringSourceStatus(payload.Sources, "cloudtest", "preview") {
+		t.Fatalf("sources = %#v, want cloudtest preview source", payload.Sources)
+	}
+	visibleSurfaces := map[string]AuthoringImportSurface{}
+	for _, surface := range payload.ImportSurfaces {
+		if !surface.Visible {
+			continue
+		}
+		visibleSurfaces[surface.ID] = surface
+		if surface.Launcher == "" {
+			t.Fatalf("import surface %q has empty launcher", surface.ID)
+		}
+		if surface.Category == "" {
+			t.Fatalf("import surface %q has empty category", surface.ID)
+		}
+	}
+	if len(visibleSurfaces) != 17 {
+		t.Fatalf("visible import surfaces = %d, want 17 (%#v)", len(visibleSurfaces), visibleSurfaces)
+	}
+	if description := visibleSurfaces["enterprise_archive"].Description; !strings.Contains(description, "ZIP or USZ") || !strings.Contains(description, "several projects") {
+		t.Fatalf("archive import description = %q, want project formats and collection discovery", description)
+	}
+	expectedSurfaces := map[string]string{
+		"openapi":                 "Contracts & Collections",
+		"bruno":                   "Contracts & Collections",
+		"postman":                 "Contracts & Collections",
+		"wsdl":                    "Contracts & Collections",
+		"asyncapi":                "Contracts & Collections",
+		"raml":                    "Contracts & Collections",
+		"traffic_har":             "Traffic & Samples",
+		"recorder_export":         "Traffic & Samples",
+		"sample":                  "Traffic & Samples",
+		"enterprise_archive":      "Legacy & Tool Exports",
+		"jmeter":                  "Legacy & Tool Exports",
+		"devweb":                  "Legacy & Tool Exports",
+		"k6":                      "Legacy & Tool Exports",
+		"cloudtest":               "Legacy & Tool Exports",
+		"eventhubs_capture":       "Messaging & Cloud Artifacts",
+		"broker_config":           "Messaging & Cloud Artifacts",
+		"oracle_ebusiness_review": "Enterprise App Reviews",
+	}
+	for id, category := range expectedSurfaces {
+		surface, ok := visibleSurfaces[id]
+		if !ok {
+			t.Fatalf("missing visible import surface %q", id)
+		}
+		if surface.Category != category {
+			t.Fatalf("surface %q category = %q, want %q", id, surface.Category, category)
+		}
+		if surface.Launcher == "java-http-import" || surface.Launcher == "salesforce-import" {
+			t.Fatalf("surface %q uses obsolete launcher %q", id, surface.Launcher)
+		}
+	}
+	sampleSurface := visibleSurfaces["sample"]
+	if !containsAuthoringImportMode(sampleSurface.Modes, "standard_api", true) || !containsAuthoringImportMode(sampleSurface.Modes, "java_http", false) {
+		t.Fatalf("sample modes = %#v, want standard_api default and java_http", sampleSurface.Modes)
+	}
+	harSurface := visibleSurfaces["traffic_har"]
+	if !containsAuthoringImportMode(harSurface.Modes, "auto_detect", true) || !containsAuthoringImportMode(harSurface.Modes, "force_generic", false) {
+		t.Fatalf("traffic_har modes = %#v, want auto_detect default and force_generic", harSurface.Modes)
+	}
+}
+
+func TestAuthoringTemplatesEndpointReturnsValidProtocolStarters(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/templates?protocol=http", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload struct {
+		Templates []AuthoringTemplate `json:"templates"`
+		Count     int                 `json:"count"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload.Count < 2 {
+		t.Fatalf("payload = %#v, want HTTP templates", payload)
+	}
+	httpTemplateIDs := map[string]bool{}
+	for _, template := range payload.Templates {
+		if template.Protocol != "http" {
+			t.Fatalf("payload = %#v, want only HTTP templates", payload)
+		}
+		httpTemplateIDs[template.ID] = true
+	}
+	if !httpTemplateIDs["http-api-smoke"] || !httpTemplateIDs["agentforce-streaming-agent"] {
+		t.Fatalf("HTTP template ids = %#v, want smoke and Agentforce starters", httpTemplateIDs)
+	}
+	if payload.Templates[0].RecommendedScenario.VUsers == 0 || payload.Templates[0].RecommendedScenario.Duration == "" {
+		t.Fatalf("recommended scenario = %#v, want runnable scenario hints", payload.Templates[0].RecommendedScenario)
+	}
+	allReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/templates", nil)
+	allResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(allResp, allReq)
+	if allResp.Code != http.StatusOK {
+		t.Fatalf("all templates status = %d, want %d body=%s", allResp.Code, http.StatusOK, allResp.Body.String())
+	}
+	var allPayload struct {
+		Templates []AuthoringTemplate `json:"templates"`
+		Count     int                 `json:"count"`
+	}
+	if err := json.Unmarshal(allResp.Body.Bytes(), &allPayload); err != nil {
+		t.Fatalf("unmarshal all response: %v", err)
+	}
+	wantProtocols := map[string]bool{
+		"http": true, "browser": true, "soap": true, "java_http": true, "websocket": true,
+		"grpc": true, "jms-solace": true, "jmeter": true, "har": true, "devweb": true,
+	}
+	for _, template := range allPayload.Templates {
+		delete(wantProtocols, template.Protocol)
+	}
+	if len(wantProtocols) != 0 {
+		t.Fatalf("missing template protocols = %#v", wantProtocols)
+	}
+	for _, template := range authoringTemplateCatalog() {
+		if issues := validateScript(&template.Script); len(issues) != 0 {
+			t.Fatalf("template %s validation issues = %v", template.ID, issues)
+		}
+	}
+	web2Req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/templates?protocol=browser&use_case=migration_review", nil)
+	web2Resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(web2Resp, web2Req)
+	if web2Resp.Code != http.StatusOK {
+		t.Fatalf("web2 template status = %d, want %d body=%s", web2Resp.Code, http.StatusOK, web2Resp.Body.String())
+	}
+	var web2Payload struct {
+		Templates []AuthoringTemplate `json:"templates"`
+		Count     int                 `json:"count"`
+	}
+	if err := json.Unmarshal(web2Resp.Body.Bytes(), &web2Payload); err != nil {
+		t.Fatalf("unmarshal web2 response: %v", err)
+	}
+	if web2Payload.Count != 1 || web2Payload.Templates[0].ID != "web2-browser-review-profile" {
+		t.Fatalf("web2 payload = %#v, want Web 2.0 browser profile review", web2Payload)
+	}
+}
+
+func TestAuthoringComponentsEndpointReturnsReusableLibrary(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/components", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload struct {
+		Components []AuthoringComponent `json:"components"`
+		Count      int                  `json:"count"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload.Count != len(payload.Components) {
+		t.Fatalf("count = %d, components = %d", payload.Count, len(payload.Components))
+	}
+	wantKinds := map[string]bool{
+		"request_group":     true,
+		"auth_flow":         true,
+		"login_transaction": true,
+		"data_pool":         true,
+		"teardown":          true,
+	}
+	for _, component := range payload.Components {
+		delete(wantKinds, component.Kind)
+	}
+	if len(wantKinds) != 0 {
+		t.Fatalf("missing component kinds = %#v", wantKinds)
+	}
+
+	filterReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/components?kind=auth_flow&protocol=http", nil)
+	filterResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(filterResp, filterReq)
+	if filterResp.Code != http.StatusOK {
+		t.Fatalf("filtered status = %d, want %d body=%s", filterResp.Code, http.StatusOK, filterResp.Body.String())
+	}
+	var filtered struct {
+		Components []AuthoringComponent `json:"components"`
+		Count      int                  `json:"count"`
+	}
+	if err := json.Unmarshal(filterResp.Body.Bytes(), &filtered); err != nil {
+		t.Fatalf("unmarshal filtered response: %v", err)
+	}
+	if filtered.Count == 0 {
+		t.Fatal("expected at least one HTTP auth flow component")
+	}
+	for _, component := range filtered.Components {
+		if component.Kind != "auth_flow" || !componentSupportsProtocol(component, "http") {
+			t.Fatalf("filtered component = %#v, want HTTP auth flow only", component)
+		}
+	}
+	web2Req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/components?protocol=trueclient2_web", nil)
+	web2Resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(web2Resp, web2Req)
+	if web2Resp.Code != http.StatusOK {
+		t.Fatalf("web2 components status = %d, want %d body=%s", web2Resp.Code, http.StatusOK, web2Resp.Body.String())
+	}
+	var web2Payload struct {
+		Components []AuthoringComponent `json:"components"`
+		Count      int                  `json:"count"`
+	}
+	if err := json.Unmarshal(web2Resp.Body.Bytes(), &web2Payload); err != nil {
+		t.Fatalf("unmarshal web2 components: %v", err)
+	}
+	if web2Payload.Count == 0 || !componentSupportsProtocol(web2Payload.Components[0], "trueclient2_web") {
+		t.Fatalf("web2 components = %#v, want reusable TrueClient 2.0 Web component", web2Payload)
+	}
+	wantWeb2Components := map[string]bool{
+		"browser-login-transaction":    true,
+		"web2-search-flow":             true,
+		"web2-add-to-cart-flow":        true,
+		"web2-checkout-flow":           true,
+		"web2-iframe-flow":             true,
+		"web2-modal-flow":              true,
+		"web2-auth-callback-flow":      true,
+		"web2-browser-logout-teardown": true,
+	}
+	for _, component := range web2Payload.Components {
+		delete(wantWeb2Components, component.ID)
+		if !componentSupportsProtocol(component, "trueclient2_web") {
+			t.Fatalf("web2 component = %#v, want trueclient2_web support", component)
+		}
+	}
+	if len(wantWeb2Components) != 0 {
+		t.Fatalf("missing web2 components = %#v", wantWeb2Components)
+	}
+}
+
+func TestDraftValidationReturnsBlockedAuthoringHealth(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{"script":{"name":"","version":"1.0.0","protocol":"http","actions":[]}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(body))
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload scriptValidationResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload.Valid {
+		t.Fatal("expected invalid draft")
+	}
+	if payload.AuthoringHealth.Status != "blocked" {
+		t.Fatalf("authoring health status = %q, want blocked", payload.AuthoringHealth.Status)
+	}
+	if payload.AuthoringHealth.Score >= 60 {
+		t.Fatalf("authoring health score = %d, want below 60", payload.AuthoringHealth.Score)
+	}
+}
+
+func TestDraftValidationReturnsReplayPreflightWithSeededVariables(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{
+		"variables":{"account_id":"acct-123"},
+		"script":{
+			"name":"debug-preflight",
+			"version":"1.0.0",
+			"protocol":"http",
+			"config":{"base_url":"https://example.test"},
+			"actions":[{"name":"Account","type":"request","method":"GET","target":"/accounts/{{var.account_id}}"}]
+		}
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(body))
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload scriptValidationResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload.Preflight == nil {
+		t.Fatal("expected validation response to include replay preflight")
+	}
+	if !payload.Preflight.Valid {
+		t.Fatalf("preflight valid = false, missing variables=%v warnings=%v issues=%v", payload.Preflight.MissingVariables, payload.Preflight.Warnings, payload.Preflight.Issues)
+	}
+	if payload.Preflight.ActionCount != 1 {
+		t.Fatalf("action count = %d, want 1", payload.Preflight.ActionCount)
+	}
+}
+
+func TestDraftValidationReturnsDataSourceFitHealth(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{"script":{
+		"name":"data-fit",
+		"version":"1.0.0",
+		"protocol":"http",
+		"goal_config":{"max_vusers":2},
+		"config":{"base_url":"https://example.test","run_logic":{"iterations":3}},
+		"data_sources":[{"name":"users","type":"csv","strategy":"unique","inline_data":"username\nalice\nbob\n","first_row_header":true}],
+		"parameters":[{"name":"user","type":"file","data_source":"users","column":"username","selection":"unique","on_exhaustion":"error"},{"name":"missing","type":"file","data_source":"users","column":"password"}],
+		"actions":[{"name":"Home","type":"request","method":"GET","target":"/"}]
+	}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(body))
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload scriptValidationResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !payload.Valid {
+		t.Fatalf("valid = false, want structural validation to pass; issues=%v", payload.Issues)
+	}
+	if payload.DataSourceFit == nil || payload.DataSourceFit.Status != "blocked" {
+		t.Fatalf("data_source_fit = %#v, want blocked fit report", payload.DataSourceFit)
+	}
+	if payload.DataSourceFit.StatusCounts["blocked"] < 2 {
+		t.Fatalf("status counts = %#v, want missing column and row-count blockers", payload.DataSourceFit.StatusCounts)
+	}
+	if payload.AuthoringHealth.Status != "blocked" {
+		t.Fatalf("authoring health = %#v, want blocked from data-source fit", payload.AuthoringHealth)
+	}
+}
+
+func TestDraftValidationDataSourceFitUsesAutoDelimiter(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{"script":{
+		"name":"data-fit-auto",
+		"version":"1.0.0",
+		"protocol":"http",
+		"config":{"base_url":"https://example.test"},
+		"data_sources":[{"name":"users","type":"csv","strategy":"sequential","delimiter":"auto","inline_data":"username\tpassword\nalice\tpass1\nbob\tpass2\n","first_row_header":true}],
+		"parameters":[{"name":"password","type":"file","data_source":"users","column":"password","selection":"sequential"}],
+		"actions":[{"name":"Home","type":"request","method":"GET","target":"/"}]
+	}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(body))
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload scriptValidationResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !payload.Valid {
+		t.Fatalf("valid = false, want structural validation to pass; issues=%v", payload.Issues)
+	}
+	if payload.DataSourceFit == nil || payload.DataSourceFit.Status != "ready" {
+		t.Fatalf("data_source_fit = %#v, want ready fit report", payload.DataSourceFit)
+	}
+}
+
+func TestDraftValidationReturnsAIGuardrails(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	blockedBody := []byte(`{"script":{
+		"name":"ai draft",
+		"version":"1.0.0",
+		"protocol":"http",
+		"generated_by":"openai",
+		"generated_from":"ai_generated",
+		"config":{"base_url":"https://example.test"},
+		"actions":[{"name":"Home","type":"request","method":"GET","target":"/"}]
+	}}`)
+	blockedReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(blockedBody))
+	blockedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(blockedResp, blockedReq)
+	if blockedResp.Code != http.StatusOK {
+		t.Fatalf("blocked status = %d, want %d body=%s", blockedResp.Code, http.StatusOK, blockedResp.Body.String())
+	}
+	var blocked scriptValidationResponse
+	if err := json.Unmarshal(blockedResp.Body.Bytes(), &blocked); err != nil {
+		t.Fatalf("unmarshal blocked response: %v", err)
+	}
+	if blocked.AIGuardrails == nil || blocked.AIGuardrails.Status != "blocked" {
+		t.Fatalf("ai_guardrails = %#v, want blocked", blocked.AIGuardrails)
+	}
+	if blocked.AuthoringHealth.Status != "blocked" {
+		t.Fatalf("authoring health = %#v, want blocked from AI guardrails", blocked.AuthoringHealth)
+	}
+
+	readyBody := []byte(`{"script":{
+		"name":"ai draft",
+		"version":"1.0.0",
+		"protocol":"http",
+		"generated_by":"openai",
+		"generated_from":"ai_generated",
+		"metadata":{"import":{"source":"ai_generated","preserved":{"diff_reviewed":true,"replay_status":"passed"}}},
+		"config":{"base_url":"https://example.test"},
+		"actions":[{"name":"Home","type":"request","method":"GET","target":"/"}]
+	}}`)
+	readyReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(readyBody))
+	readyResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(readyResp, readyReq)
+	if readyResp.Code != http.StatusOK {
+		t.Fatalf("ready status = %d, want %d body=%s", readyResp.Code, http.StatusOK, readyResp.Body.String())
+	}
+	var ready scriptValidationResponse
+	if err := json.Unmarshal(readyResp.Body.Bytes(), &ready); err != nil {
+		t.Fatalf("unmarshal ready response: %v", err)
+	}
+	if ready.AIGuardrails == nil || ready.AIGuardrails.Status != "ready" {
+		t.Fatalf("ai_guardrails = %#v, want ready", ready.AIGuardrails)
+	}
+	if ready.AuthoringHealth.Status == "blocked" {
+		t.Fatalf("authoring health = %#v, want promotable AI draft", ready.AuthoringHealth)
+	}
+}
+
+func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{
+		"project_id":"project-authoring",
+		"source":"enterprise_script_archive",
+		"name":"Checkout repair",
+		"status":"reviewing",
+		"draft":{"name":"Checkout","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","method":"GET","target":"/"}]},
+		"review_state":{"active_tab":"runtime","pending_repairs":["correlation"]}
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(body))
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created session: %v", err)
+	}
+	if created.ID == "" || created.ProjectID != "project-authoring" || created.Source != "enterprise_script_archive" {
+		t.Fatalf("created session = %#v", created)
+	}
+	if created.Draft == nil || created.Draft.ProjectID != "project-authoring" {
+		t.Fatalf("created draft = %#v, want project-bound draft", created.Draft)
+	}
+	if !created.ApprovalReady || len(created.NextActions) == 0 {
+		t.Fatalf("created readiness = ready %v actions %#v, want promotable next action", created.ApprovalReady, created.NextActions)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/sessions?project_id=project-authoring", nil)
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d body=%s", listResp.Code, http.StatusOK, listResp.Body.String())
+	}
+	var listed struct {
+		Sessions []*storage.AuthoringSession `json:"sessions"`
+		Count    int                         `json:"count"`
+	}
+	if err := json.Unmarshal(listResp.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("unmarshal listed sessions: %v", err)
+	}
+	if listed.Count != 1 || listed.Sessions[0].ID != created.ID {
+		t.Fatalf("listed sessions = %#v, want created session", listed)
+	}
+	if !listed.Sessions[0].ApprovalReady || len(listed.Sessions[0].NextActions) == 0 {
+		t.Fatalf("listed readiness = ready %v actions %#v, want computed readiness", listed.Sessions[0].ApprovalReady, listed.Sessions[0].NextActions)
+	}
+
+	updateBody := []byte(`{
+		"project_id":"project-authoring",
+		"source":"enterprise_script_archive",
+		"name":"Checkout repair updated",
+		"status":"editing",
+		"draft":{"name":"Checkout Updated","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Cart","type":"request","method":"GET","target":"/cart"}]},
+		"review_state":{"active_tab":"parameters"}
+	}`)
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/scripts/authoring/sessions/"+created.ID, bytes.NewReader(updateBody))
+	updateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(updateResp, updateReq)
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d body=%s", updateResp.Code, http.StatusOK, updateResp.Body.String())
+	}
+	var updated storage.AuthoringSession
+	if err := json.Unmarshal(updateResp.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("unmarshal updated session: %v", err)
+	}
+	if updated.Status != "editing" || updated.Draft == nil || updated.Draft.Name != "Checkout Updated" || updated.ReviewState["active_tab"] != "parameters" {
+		t.Fatalf("updated session = %#v", updated)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/scripts/authoring/sessions/"+created.ID, nil)
+	deleteResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, want %d body=%s", deleteResp.Code, http.StatusOK, deleteResp.Body.String())
+	}
+}
+
+func TestApproveAuthoringSessionPromotesDraftToScriptLibrary(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{
+		"project_id":"project-authoring",
+		"source":"enterprise_script_archive",
+		"name":"Checkout approval",
+		"status":"ready",
+		"draft":{"name":"Checkout Approved","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","method":"GET","target":"/"}]},
+		"review_state":{"reviewer":"qa-lead"}
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(body))
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created session: %v", err)
+	}
+
+	approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+created.ID+"/approve", nil)
+	approveResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(approveResp, approveReq)
+	if approveResp.Code != http.StatusOK {
+		t.Fatalf("approve status = %d, want %d body=%s", approveResp.Code, http.StatusOK, approveResp.Body.String())
+	}
+	var approved authoringSessionApprovalResponse
+	if err := json.Unmarshal(approveResp.Body.Bytes(), &approved); err != nil {
+		t.Fatalf("unmarshal approval response: %v", err)
+	}
+	if approved.Script == nil || approved.Script.ID == "" || approved.Script.ProjectID != "project-authoring" {
+		t.Fatalf("approved script = %#v, want project-bound stored script", approved.Script)
+	}
+	if approved.Session == nil || approved.Session.Status != "approved" {
+		t.Fatalf("approved session = %#v, want approved status", approved.Session)
+	}
+	if approved.Session.ApprovalReady {
+		t.Fatalf("approved session readiness = %#v, want no further approval", approved.Session)
+	}
+	if approved.Session.ReviewState["approved_script_id"] != approved.Script.ID {
+		t.Fatalf("review state = %#v, want approved script id %q", approved.Session.ReviewState, approved.Script.ID)
+	}
+	if approved.AuthoringHealth.Status == "blocked" {
+		t.Fatalf("authoring health = %#v, want promotable health", approved.AuthoringHealth)
+	}
+	if _, ok := server.runner.GetScript(approved.Script.ID); !ok {
+		t.Fatalf("script %q was not stored in reusable library", approved.Script.ID)
+	}
+
+	persisted, err := store.GetAuthoringSession(created.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession returned error: %v", err)
+	}
+	if persisted.Status != "approved" || persisted.ReviewState["approved_script_id"] != approved.Script.ID {
+		t.Fatalf("persisted session = %#v, want approval state", persisted)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/scripts/authoring/sessions/"+created.ID, nil)
+	deleteResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusConflict {
+		t.Fatalf("delete approved status = %d, want %d body=%s", deleteResp.Code, http.StatusConflict, deleteResp.Body.String())
+	}
+	if !strings.Contains(deleteResp.Body.String(), "retained for approval verification") {
+		t.Fatalf("delete approved body = %s, want retained-evidence explanation", deleteResp.Body.String())
+	}
+	if _, err := store.GetAuthoringSession(created.ID); err != nil {
+		t.Fatalf("approved authoring evidence was removed: %v", err)
+	}
+}
+
+func TestApproveAuthoringSessionRejectsBlockedDraft(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body := []byte(`{
+		"project_id":"project-authoring",
+		"source":"enterprise_script_archive",
+		"name":"Broken approval",
+		"status":"ready",
+		"draft":{"name":"","version":"1.0.0","protocol":"http","actions":[]}
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(body))
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created session: %v", err)
+	}
+
+	approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+created.ID+"/approve", nil)
+	approveResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(approveResp, approveReq)
+	if approveResp.Code != http.StatusBadRequest {
+		t.Fatalf("approve status = %d, want %d body=%s", approveResp.Code, http.StatusBadRequest, approveResp.Body.String())
+	}
+	var validation scriptValidationResponse
+	if err := json.Unmarshal(approveResp.Body.Bytes(), &validation); err != nil {
+		t.Fatalf("unmarshal validation response: %v", err)
+	}
+	if validation.Valid || validation.AuthoringHealth.Status != "blocked" {
+		t.Fatalf("validation = %#v, want blocked invalid draft", validation)
+	}
+	sessions, err := server.listAuthoringSessions("project-authoring")
+	if err != nil {
+		t.Fatalf("listAuthoringSessions returned error: %v", err)
+	}
+	enrichAuthoringSessions(sessions)
+	if len(sessions) != 1 || sessions[0].Status != "ready" {
+		t.Fatalf("sessions = %#v, want original ready session without approval", sessions)
+	}
+	if sessions[0].ApprovalReady || len(sessions[0].BlockingHealthInputs) == 0 || len(sessions[0].NextActions) == 0 {
+		t.Fatalf("session readiness = ready %v blockers %#v actions %#v, want blocked approval guidance", sessions[0].ApprovalReady, sessions[0].BlockingHealthInputs, sessions[0].NextActions)
+	}
+}
+
+func TestApproveAuthoringSessionFailsClosedWhenSessionPersistenceFails(t *testing.T) {
+	baseStore, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer baseStore.Close()
+	seedAuthoringScriptProjects(t, baseStore, "project-authoring")
+	wantErr := errors.New("authoring database unavailable")
+	store := &authoringSessionFailureStore{SQLiteStore: baseStore, err: wantErr}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+
+	t.Run("blocked review state", func(t *testing.T) {
+		session := &storage.AuthoringSession{
+			ID:        "blocked-save-failure",
+			ProjectID: "project-authoring",
+			Source:    "test",
+			Name:      "Blocked",
+			Status:    "ready",
+			Draft:     &dsl.Script{Name: "", Protocol: "http"},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		if err := store.SQLiteStore.SaveAuthoringSession(session); err != nil {
+			t.Fatalf("seed session: %v", err)
+		}
+		store.authoringSaveCalls = 0
+		store.failOnCall = 1
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/approve", nil)
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, request)
+		store.failOnCall = 0
+		if response.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want %d body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
+		}
+		persisted, err := baseStore.GetAuthoringSession(session.ID)
+		if err != nil {
+			t.Fatalf("GetAuthoringSession: %v", err)
+		}
+		if _, exists := persisted.ReviewState["approval_health_status"]; exists {
+			t.Fatalf("failed review state was acknowledged durably: %#v", persisted.ReviewState)
+		}
+	})
+
+	t.Run("script promotion", func(t *testing.T) {
+		session := &storage.AuthoringSession{
+			ID:        "promotion-save-failure",
+			ProjectID: "project-authoring",
+			Source:    "test",
+			Name:      "Promotable",
+			Status:    "ready",
+			Draft: &dsl.Script{
+				Name:      "Promotable",
+				Version:   "1.0.0",
+				Protocol:  "http",
+				ProjectID: "project-authoring",
+				Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
+				Actions:   []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}},
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		if err := baseStore.SaveAuthoringSession(session); err != nil {
+			t.Fatalf("seed session: %v", err)
+		}
+		store.authoringSaveCalls = 0
+		store.failOnCall = 2
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/approve", nil)
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, request)
+		store.failOnCall = 0
+		if response.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want %d body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
+		}
+		scripts := server.runner.ListScripts()
+		if len(scripts) != 1 {
+			t.Fatalf("durable approval intent did not retain exactly one idempotent script: %#v", scripts)
+		}
+		persisted, err := baseStore.GetAuthoringSession(session.ID)
+		if err != nil {
+			t.Fatalf("GetAuthoringSession: %v", err)
+		}
+		if persisted.Status != "approving" || persisted.ReviewState["pending_script_id"] != scripts[0].ID {
+			t.Fatalf("session after interrupted finalization = %#v, want recoverable approval intent", persisted)
+		}
+
+		request = httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/approve", nil)
+		response = httptest.NewRecorder()
+		server.mux.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("retry status = %d, want %d body=%s", response.Code, http.StatusOK, response.Body.String())
+		}
+		if scripts := server.runner.ListScripts(); len(scripts) != 1 {
+			t.Fatalf("approval retry created duplicate scripts: %#v", scripts)
+		}
+		persisted, err = baseStore.GetAuthoringSession(session.ID)
+		if err != nil {
+			t.Fatalf("GetAuthoringSession after retry: %v", err)
+		}
+		if persisted.Status != "approved" {
+			t.Fatalf("session status after retry = %q, want approved", persisted.Status)
+		}
+	})
+
+	t.Run("script write rolls back intent", func(t *testing.T) {
+		session := &storage.AuthoringSession{
+			ID:        "script-save-failure",
+			ProjectID: "project-authoring",
+			Source:    "test",
+			Name:      "Promotable",
+			Status:    "ready",
+			Draft: &dsl.Script{
+				Name:      "Promotable",
+				Version:   "1.0.0",
+				Protocol:  "http",
+				ProjectID: "project-authoring",
+				Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
+				Actions:   []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}},
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		if err := baseStore.SaveAuthoringSession(session); err != nil {
+			t.Fatalf("seed session: %v", err)
+		}
+		beforeScripts := len(server.runner.ListScripts())
+		store.authoringSaveCalls = 0
+		store.failScriptSave = true
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/approve", nil)
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, request)
+		store.failScriptSave = false
+		if response.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want %d body=%s", response.Code, http.StatusInternalServerError, response.Body.String())
+		}
+		persisted, err := baseStore.GetAuthoringSession(session.ID)
+		if err != nil {
+			t.Fatalf("GetAuthoringSession: %v", err)
+		}
+		if persisted.Status != "ready" {
+			t.Fatalf("session status = %q, want rolled-back ready", persisted.Status)
+		}
+		if scripts := server.runner.ListScripts(); len(scripts) != beforeScripts {
+			t.Fatalf("failed script write changed library contents: %#v", scripts)
+		}
+	})
+}
+
+func TestStoreScriptDurableRejectsCrossProjectOverwrite(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	original := &dsl.Script{ID: "shared-script-id", Name: "Original", Protocol: "http", ProjectID: "project-a"}
+	if _, err := runner.StoreScriptDurable(original); err != nil {
+		t.Fatalf("StoreScriptDurable(original): %v", err)
+	}
+	if _, err := runner.StoreScriptDurable(&dsl.Script{ID: original.ID, Name: "Forged", Protocol: "http", ProjectID: "project-b"}); err == nil {
+		t.Fatal("expected cross-project overwrite to be rejected")
+	}
+	stored, ok := runner.GetScript(original.ID)
+	if !ok || stored.ProjectID != "project-a" || stored.Name != "Original" {
+		t.Fatalf("stored script after rejected overwrite = %#v", stored)
+	}
+}
+
+func TestConcurrentAuthoringApprovalsConvergeOnOneScript(t *testing.T) {
+	baseStore, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer baseStore.Close()
+	seedAuthoringScriptProjects(t, baseStore, "project-authoring")
+	server := NewServer(ServerConfig{Store: baseStore, MaxConcurrent: 2, Addr: ":8080"})
+	session := &storage.AuthoringSession{
+		ID:        "concurrent-approval",
+		ProjectID: "project-authoring",
+		Source:    "test",
+		Name:      "Concurrent",
+		Status:    "ready",
+		Draft: &dsl.Script{
+			Name:      "Concurrent",
+			Version:   "1.0.0",
+			Protocol:  "http",
+			ProjectID: "project-authoring",
+			Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
+			Actions:   []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}},
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := baseStore.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	const requests = 8
+	start := make(chan struct{})
+	responses := make(chan *httptest.ResponseRecorder, requests)
+	var wg sync.WaitGroup
+	for range requests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/approve", nil)
+			response := httptest.NewRecorder()
+			server.mux.ServeHTTP(response, request)
+			responses <- response
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(responses)
+	for response := range responses {
+		if response.Code != http.StatusOK {
+			t.Fatalf("concurrent approval status = %d body=%s", response.Code, response.Body.String())
+		}
+	}
+
+	scripts := server.runner.ListScripts()
+	if len(scripts) != 1 {
+		t.Fatalf("concurrent approvals created %d scripts: %#v", len(scripts), scripts)
+	}
+	wantID := authoringApprovalScriptID(session.ID)
+	if scripts[0].ID != wantID {
+		t.Fatalf("approved script ID = %q, want deterministic %q", scripts[0].ID, wantID)
+	}
+	persisted, err := baseStore.GetAuthoringSession(session.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession: %v", err)
+	}
+	if persisted.Status != "approved" || persisted.ReviewState["approved_script_id"] != wantID {
+		t.Fatalf("concurrent approval did not converge: %#v", persisted)
+	}
+}
+
+func TestAuthoringApprovalCannotOverwriteClientSelectedScriptID(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	victim := &dsl.Script{
+		ID: "existing-library-script", Name: "Existing", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
+		Config: dsl.ScriptConfig{BaseURL: "https://existing.test"}, Actions: []dsl.Action{{Name: "Existing", Type: "request", Method: "GET", Target: "/existing"}},
+	}
+	if _, err := server.runner.StoreScriptDurable(victim); err != nil {
+		t.Fatalf("StoreScriptDurable(victim): %v", err)
+	}
+	session := &storage.AuthoringSession{
+		ID: "client-selected-script-id", ProjectID: victim.ProjectID, Source: "test", Name: "Draft", Status: "ready",
+		Draft: &dsl.Script{
+			ID: victim.ID, Name: "Approved Draft", Version: "1.0.0", Protocol: "http", ProjectID: victim.ProjectID,
+			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Method: "GET", Target: "/draft"}},
+		},
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/approve", nil)
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("approve status = %d body=%s", response.Code, response.Body.String())
+	}
+	unchanged, ok := server.runner.GetScript(victim.ID)
+	if !ok || unchanged.Name != victim.Name || unchanged.Script.Config.BaseURL != victim.Config.BaseURL {
+		t.Fatalf("client-selected ID overwrote existing script: %#v", unchanged)
+	}
+	approvedID := authoringApprovalScriptID(session.ID)
+	approved, ok := server.runner.GetScript(approvedID)
+	if !ok || approved.Name != "Approved Draft" {
+		t.Fatalf("session-owned approved script = %#v", approved)
+	}
+}
+
+func TestAuthoringApprovalCreateOnlyFenceProtectsDurableScriptFromStaleReplica(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring", "another-project")
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	sessionID := "stale-replica-approval"
+	reservedID := authoringApprovalScriptID(sessionID)
+	victim := &dsl.Script{
+		ID: reservedID, Name: "Durable Existing", Version: "1.0.0", Protocol: "http", ProjectID: "another-project",
+		Config: dsl.ScriptConfig{BaseURL: "https://existing.test"}, Actions: []dsl.Action{{Name: "Existing", Type: "request", Method: "GET", Target: "/existing"}},
+	}
+	// Write after server construction so its in-memory script cache is stale,
+	// matching a second HA replica that created the ID concurrently.
+	if err := store.SaveScript(victim); err != nil {
+		t.Fatalf("SaveScript(victim): %v", err)
+	}
+	session := &storage.AuthoringSession{
+		ID: sessionID, ProjectID: "project-authoring", Source: "test", Name: "Draft", Status: "ready",
+		Draft: &dsl.Script{
+			Name: "Approved Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
+			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Method: "GET", Target: "/draft"}},
+		},
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/approve", nil)
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("approve status = %d body=%s, want create-only conflict", response.Code, response.Body.String())
+	}
+	unchanged, err := store.GetScript(reservedID)
+	if err != nil {
+		t.Fatalf("GetScript(victim): %v", err)
+	}
+	if unchanged.ProjectID != victim.ProjectID || unchanged.Name != victim.Name || unchanged.Config.BaseURL != victim.Config.BaseURL {
+		t.Fatalf("stale replica overwrote durable script: %#v", unchanged)
+	}
+}
+
+func TestCreateScriptDurableAlwaysConsultsSharedStore(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
+	runner := NewTestRunner(1, NewHub(), nil)
+	runner.scriptStore = store
+	original := &dsl.Script{
+		ID: "approval-owned-script", Name: "Approved Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
+		Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Method: "GET", Target: "/draft"}},
+	}
+	if _, err := runner.CreateScriptDurable(original); err != nil {
+		t.Fatalf("CreateScriptDurable(original): %v", err)
+	}
+
+	// Model a second replica editing the durable row while this runner retains
+	// the original equivalent value in its local cache.
+	edited := *original
+	edited.Name = "Edited Elsewhere"
+	edited.Config.BaseURL = "https://edited.test"
+	if err := store.SaveScript(&edited); err != nil {
+		t.Fatalf("SaveScript(edited): %v", err)
+	}
+	if _, err := runner.CreateScriptDurable(original); err == nil {
+		t.Fatal("stale equivalent cache bypassed the shared create-only fence")
+	}
+	persisted, err := store.GetScript(original.ID)
+	if err != nil {
+		t.Fatalf("GetScript: %v", err)
+	}
+	if persisted.Name != edited.Name || persisted.Config.BaseURL != edited.Config.BaseURL {
+		t.Fatalf("durable edit was overwritten: %#v", persisted)
+	}
+}
+
+func TestAuthoringSessionRejectsClientManagedApprovalStatuses(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	validDraft := `"draft":{"name":"Draft","version":"1.0.0","protocol":"http","project_id":"project-authoring","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","method":"GET","target":"/"}]}`
+	for _, status := range []string{"approving", "approved"} {
+		t.Run("create_"+status, func(t *testing.T) {
+			body := `{"project_id":"project-authoring","source":"test","name":"Draft","status":"` + status + `",` + validDraft + `}`
+			response := httptest.NewRecorder()
+			server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", strings.NewReader(body)))
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("create status = %d body=%s, want 400", response.Code, response.Body.String())
+			}
+		})
+	}
+
+	session := &storage.AuthoringSession{
+		ID: "status-spoof-update", ProjectID: "project-authoring", Source: "test", Name: "Original", Status: "ready",
+		Draft:     &dsl.Script{Name: "Original", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring", Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}}},
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession: %v", err)
+	}
+	for _, status := range []string{"approving", "approved"} {
+		t.Run("update_"+status, func(t *testing.T) {
+			body := `{"project_id":"project-authoring","source":"test","name":"Forged","status":"` + status + `",` + validDraft + `}`
+			response := httptest.NewRecorder()
+			server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/api/v1/scripts/authoring/sessions/"+session.ID, strings.NewReader(body)))
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("update status = %d body=%s, want 400", response.Code, response.Body.String())
+			}
+			persisted, err := store.GetAuthoringSession(session.ID)
+			if err != nil {
+				t.Fatalf("GetAuthoringSession: %v", err)
+			}
+			if persisted.Status != "ready" || persisted.Name != "Original" {
+				t.Fatalf("rejected status changed session: %#v", persisted)
+			}
+		})
+	}
+}
+
+func TestApprovedAuthoringRetryReturnsCurrentDurableScriptWithoutRevertingEdits(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	session := &storage.AuthoringSession{
+		ID: "approved-retry-current-script", ProjectID: "project-authoring", Source: "test", Name: "Draft", Status: "ready",
+		Draft:     &dsl.Script{Name: "Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring", Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}}},
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession: %v", err)
+	}
+	approvePath := "/api/v1/scripts/authoring/sessions/" + session.ID + "/approve"
+	first := httptest.NewRecorder()
+	server.mux.ServeHTTP(first, httptest.NewRequest(http.MethodPost, approvePath, nil))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first approve status = %d body=%s", first.Code, first.Body.String())
+	}
+	var approved authoringSessionApprovalResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &approved); err != nil {
+		t.Fatalf("decode first approval: %v", err)
+	}
+	edited := *approved.Script.Script
+	edited.Name = "Edited After Approval"
+	edited.Config.BaseURL = "https://edited.test"
+	if err := store.SaveScript(&edited); err != nil {
+		t.Fatalf("SaveScript(edited): %v", err)
+	}
+
+	retry := httptest.NewRecorder()
+	server.mux.ServeHTTP(retry, httptest.NewRequest(http.MethodPost, approvePath, nil))
+	if retry.Code != http.StatusOK {
+		t.Fatalf("retry approve status = %d body=%s", retry.Code, retry.Body.String())
+	}
+	var retried authoringSessionApprovalResponse
+	if err := json.Unmarshal(retry.Body.Bytes(), &retried); err != nil {
+		t.Fatalf("decode retry approval: %v", err)
+	}
+	if retried.Script == nil || retried.Script.Name != edited.Name || retried.Script.Script.Config.BaseURL != edited.Config.BaseURL {
+		t.Fatalf("retry returned stale script: %#v", retried.Script)
+	}
+	persisted, err := store.GetScript(edited.ID)
+	if err != nil {
+		t.Fatalf("GetScript: %v", err)
+	}
+	if persisted.Name != edited.Name || persisted.Config.BaseURL != edited.Config.BaseURL {
+		t.Fatalf("retry reverted post-approval edits: %#v", persisted)
+	}
+}
+
+func withAuthoringSessionRevision(t *testing.T, body string, updatedAt time.Time) []byte {
+	t.Helper()
+	payload := map[string]json.RawMessage{}
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatalf("decode authoring correlation request fixture: %v", err)
+	}
+	revision, err := json.Marshal(updatedAt)
+	if err != nil {
+		t.Fatalf("encode authoring session revision: %v", err)
+	}
+	payload["expected_updated_at"] = revision
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("encode authoring correlation request fixture: %v", err)
+	}
+	return encoded
+}
+
+func TestAuthoringCorrelationRequiresCurrentSessionRevision(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+
+	createdAt := time.Now().UTC().Add(-time.Minute)
+	session := &storage.AuthoringSession{
+		ID: "correlation-revision-fence", ProjectID: "project-authoring", Source: "test", Name: "Revision fence", Status: "reviewing",
+		Draft: &dsl.Script{
+			ID: authoringApprovalScriptID("correlation-revision-fence"), Name: "Revision fence", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
+			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"},
+			Actions: []dsl.Action{
+				{Name: "New first action", Type: "request", Method: "GET", Target: "/new-first"},
+				{Name: "Original producer moved", Type: "request", Method: "GET", Target: "/producer"},
+			},
+		},
+		CreatedAt: createdAt, UpdatedAt: createdAt, LastAccessedAt: createdAt,
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession: %v", err)
+	}
+	persistedSession, err := store.GetAuthoringSession(session.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession after save: %v", err)
+	}
+	currentRevision := persistedSession.UpdatedAt
+	staleRevision := currentRevision.Add(-time.Second)
+
+	tests := []struct {
+		name           string
+		apply          bool
+		expectedAt     *time.Time
+		expectedStatus int
+	}{
+		{name: "preview requires revision", expectedStatus: http.StatusBadRequest},
+		{name: "apply requires revision", apply: true, expectedStatus: http.StatusBadRequest},
+		{name: "preview rejects stale revision", expectedAt: &staleRevision, expectedStatus: http.StatusConflict},
+		{name: "apply rejects stale revision", apply: true, expectedAt: &staleRevision, expectedStatus: http.StatusConflict},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"name":"corr_token","expression":"$.token","found_action_index":1,"apply":%t}`, test.apply)
+			requestBody := []byte(body)
+			if test.expectedAt != nil {
+				requestBody = withAuthoringSessionRevision(t, body, *test.expectedAt)
+			}
+			response := httptest.NewRecorder()
+			server.mux.ServeHTTP(response, httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/scripts/authoring/sessions/"+session.ID+"/correlations/preview",
+				bytes.NewReader(requestBody),
+			))
+			if response.Code != test.expectedStatus {
+				t.Fatalf("status = %d body=%s, want %d", response.Code, response.Body.String(), test.expectedStatus)
+			}
+			persisted, err := store.GetAuthoringSession(session.ID)
+			if err != nil {
+				t.Fatalf("GetAuthoringSession: %v", err)
+			}
+			if !persisted.UpdatedAt.Equal(currentRevision) || persisted.Draft.Actions[0].Name != "New first action" || len(persisted.Draft.Actions[0].Extractors) != 0 {
+				t.Fatalf("revision rejection mutated current draft: %#v", persisted)
+			}
+		})
+	}
+}
+
+func TestAuthoringMutationsAreFencedWhileApprovalIsInProgress(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	session := &storage.AuthoringSession{
+		ID: "approval-in-progress", ProjectID: "project-authoring", Source: "test", Name: "Draft", Status: "approving",
+		Draft: &dsl.Script{
+			ID: authoringApprovalScriptID("approval-in-progress"), Name: "Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
+			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Method: "GET", Target: "/"}},
+		},
+		ReviewState: map[string]any{"pending_script_id": authoringApprovalScriptID("approval-in-progress")},
+		CreatedAt:   time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession: %v", err)
+	}
+
+	requests := []*http.Request{
+		httptest.NewRequest(http.MethodPut, "/api/v1/scripts/authoring/sessions/"+session.ID, strings.NewReader(`{"source":"test","draft":{"name":"Changed","protocol":"http","project_id":"project-authoring"}}`)),
+		httptest.NewRequest(http.MethodDelete, "/api/v1/scripts/authoring/sessions/"+session.ID, nil),
+		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/correlations/preview", bytes.NewReader(withAuthoringSessionRevision(t, `{"name":"token","type":"regex","expression":"(.*)","found_action_index":0,"apply":true}`, session.UpdatedAt))),
+	}
+	for _, request := range requests {
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, request)
+		if response.Code != http.StatusConflict {
+			t.Errorf("%s %s status = %d body=%s, want 409", request.Method, request.URL.Path, response.Code, response.Body.String())
+		}
+	}
+	persisted, err := store.GetAuthoringSession(session.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession: %v", err)
+	}
+	if persisted.Status != "approving" || persisted.Draft.Name != "Draft" {
+		t.Fatalf("approval intent changed through fenced mutation: %#v", persisted)
+	}
+}
+
+func TestAuthoringCorrelationApplyCannotMutateApprovalStates(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+
+	applyBodies := map[string]string{
+		"single": `{"name":"token","type":"regex","expression":"(.*)","found_action_index":0,"apply":true}`,
+		"batch":  `{"apply":true,"auto_apply_high_confidence":true,"repairs":[{"name":"token","type":"regex","expression":"(.*)","found_action_index":0,"confidence":0.99}]}`,
+	}
+	for _, status := range []string{"approving", "approved"} {
+		for kind, body := range applyBodies {
+			t.Run(status+"_"+kind, func(t *testing.T) {
+				id := "correlation-fence-" + status + "-" + kind
+				now := time.Now().UTC()
+				session := &storage.AuthoringSession{
+					ID: id, ProjectID: "project-authoring", Source: "test", Name: "Immutable Draft", Status: status,
+					Draft: &dsl.Script{
+						ID: authoringApprovalScriptID(id), Name: "Immutable Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
+						Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}},
+					},
+					CreatedAt: now, UpdatedAt: now,
+				}
+				if err := store.SaveAuthoringSession(session); err != nil {
+					t.Fatalf("SaveAuthoringSession: %v", err)
+				}
+
+				response := httptest.NewRecorder()
+				request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+id+"/correlations/preview", bytes.NewReader(withAuthoringSessionRevision(t, body, session.UpdatedAt)))
+				server.mux.ServeHTTP(response, request)
+				if response.Code != http.StatusConflict {
+					t.Fatalf("status = %d body=%s, want 409", response.Code, response.Body.String())
+				}
+				persisted, err := store.GetAuthoringSession(id)
+				if err != nil {
+					t.Fatalf("GetAuthoringSession: %v", err)
+				}
+				if persisted.Status != status || persisted.Draft == nil || persisted.Draft.Name != "Immutable Draft" || len(persisted.Draft.Actions[0].Extractors) != 0 {
+					t.Fatalf("correlation apply changed fenced session: %#v", persisted)
+				}
+			})
+		}
+	}
+}
+
+func TestPreviewAuthoringCorrelationReturnsDiffWithoutPersisting(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body := []byte(`{
+		"project_id":"project-authoring",
+		"source":"har",
+		"name":"Correlation preview",
+		"status":"reviewing",
+		"draft":{
+			"name":"Correlated Flow",
+			"version":"1.0.0",
+			"protocol":"http",
+			"config":{"base_url":"https://example.test"},
+			"actions":[
+				{"name":"Login","type":"request","method":"POST","target":"/login"},
+				{"name":"Cart","type":"request","method":"GET","target":"/cart?order_ref=abc12345","headers":{"X-Order-Ref":"abc12345"}}
+			]
+		}
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(body))
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created session: %v", err)
+	}
+
+	previewBody := withAuthoringSessionRevision(t, `{
+		"name":"corr_session",
+		"source":"body",
+		"type":"jsonpath",
+		"expression":"$.sessionId",
+		"sample_value":"abc12345",
+		"found_action_index":1
+	}`, created.UpdatedAt)
+	previewReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+created.ID+"/correlations/preview", bytes.NewReader(previewBody))
+	previewResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(previewResp, previewReq)
+	if previewResp.Code != http.StatusOK {
+		t.Fatalf("preview status = %d, want %d body=%s", previewResp.Code, http.StatusOK, previewResp.Body.String())
+	}
+	var preview authoringCorrelationPreviewResponse
+	if err := json.Unmarshal(previewResp.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("unmarshal preview response: %v", err)
+	}
+	if preview.Applied {
+		t.Fatal("preview applied = true, want false")
+	}
+	if preview.Draft.Actions[0].Extractors[0].Name != "corr_session" {
+		t.Fatalf("preview extractors = %#v, want corr_session on source action", preview.Draft.Actions[0].Extractors)
+	}
+	if preview.Draft.Actions[1].Target != "/cart?order_ref={{var.corr_session}}" || preview.Draft.Actions[1].Headers["X-Order-Ref"] != "{{var.corr_session}}" {
+		t.Fatalf("preview usage action = %#v, want variable replacements", preview.Draft.Actions[1])
+	}
+	if len(preview.Changes) != 3 {
+		t.Fatalf("changes = %#v, want extractor plus target/header diffs", preview.Changes)
+	}
+	if strings.Contains(previewResp.Body.String(), "abc12345") {
+		t.Fatalf("correlation preview disclosed sample value: %s", previewResp.Body.String())
+	}
+	for _, change := range preview.Changes {
+		if change.Before != "" || change.After != "" {
+			t.Fatalf("correlation preview disclosed diff values: %#v", preview.Changes)
+		}
+	}
+
+	loaded, ok := server.getAuthoringSession(httptest.NewRecorder(), created.ID)
+	if !ok {
+		t.Fatal("expected persisted authoring session")
+	}
+	if len(loaded.Draft.Actions[0].Extractors) != 0 || loaded.Draft.Actions[1].Target != "/cart?order_ref=abc12345" {
+		t.Fatalf("persisted draft = %#v, want unchanged after preview", loaded.Draft)
+	}
+}
+
+func TestPreviewAuthoringCorrelationHonorsExplicitEmptyConsumerSelection(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	createBody := []byte(`{
+		"project_id":"project-authoring",
+		"source":"har",
+		"name":"Empty correlation consumer selection",
+		"status":"reviewing",
+		"draft":{
+			"name":"Correlated Flow",
+			"version":"1.0.0",
+			"protocol":"http",
+			"config":{"base_url":"https://example.test"},
+			"actions":[
+				{"name":"Before producer","type":"request","method":"GET","target":"/before?order_ref=abc12345"},
+				{"name":"Producer","type":"request","method":"POST","target":"/login"},
+				{"name":"After producer","type":"request","method":"GET","target":"/after?order_ref=abc12345"}
+			]
+		}
+	}`)
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(createBody)))
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created session: %v", err)
+	}
+
+	previewBody := withAuthoringSessionRevision(t, `{
+		"name":"corr_session",
+		"expression":"$.sessionId",
+		"sample_value":"abc12345",
+		"found_action_index":2,
+		"used_action_indexes":[]
+	}`, created.UpdatedAt)
+	previewResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(previewResp, httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/authoring/sessions/"+created.ID+"/correlations/preview",
+		bytes.NewReader(previewBody),
+	))
+	if previewResp.Code != http.StatusOK {
+		t.Fatalf("preview status = %d, want %d body=%s", previewResp.Code, http.StatusOK, previewResp.Body.String())
+	}
+	var preview authoringCorrelationPreviewResponse
+	if err := json.Unmarshal(previewResp.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("unmarshal preview response: %v", err)
+	}
+	if got := preview.Draft.Actions[0].Target; got != "/before?order_ref=abc12345" {
+		t.Fatalf("earlier action target = %q, want unchanged", got)
+	}
+	if got := preview.Draft.Actions[2].Target; got != "/after?order_ref=abc12345" {
+		t.Fatalf("later unselected action target = %q, want unchanged", got)
+	}
+	if len(preview.Draft.Actions[1].Extractors) != 1 || preview.Draft.Actions[1].Extractors[0].Name != "corr_session" {
+		t.Fatalf("producer extractors = %#v, want corr_session", preview.Draft.Actions[1].Extractors)
+	}
+	if len(preview.Changes) != 1 || preview.Changes[0].Kind != "extractor_added" {
+		t.Fatalf("changes = %#v, want only extractor addition", preview.Changes)
+	}
+}
+
+func TestResolveCorrelationUsedActionIndexesOnlyReturnsLaterActions(t *testing.T) {
+	actions := make([]dsl.Action, 4)
+	requested := []int{1, 2, 3, 4, 4, 5, 0}
+	got := resolveCorrelationUsedActionIndexes(actions, 1, authoringCorrelationPreviewRequest{
+		UsedActionIndexes: &requested,
+	})
+	if !reflect.DeepEqual(got, []int{2, 3}) {
+		t.Fatalf("resolved indexes = %#v, want only zero-based later indexes [2 3]", got)
+	}
+}
+
+func TestApplyAuthoringCorrelationPersistsDraftAndReviewState(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{
+		"project_id":"project-authoring",
+		"source":"har",
+		"name":"Correlation apply",
+		"status":"reviewing",
+		"draft":{
+			"name":"Correlated Flow",
+			"version":"1.0.0",
+			"protocol":"http",
+			"config":{"base_url":"https://example.test"},
+			"actions":[
+				{"name":"Login","type":"request","method":"POST","target":"/login"},
+				{"name":"Cart","type":"request","method":"GET","target":"/cart?order_ref=abc12345"}
+			]
+		}
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(body))
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created session: %v", err)
+	}
+
+	applyBody := withAuthoringSessionRevision(t, `{
+		"name":"corr_session",
+		"expression":"$.sessionId",
+		"sample_value":"abc12345",
+		"found_action":"Login",
+		"apply":true
+	}`, created.UpdatedAt)
+	applyReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+created.ID+"/correlations/preview", bytes.NewReader(applyBody))
+	applyResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(applyResp, applyReq)
+	if applyResp.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want %d body=%s", applyResp.Code, http.StatusOK, applyResp.Body.String())
+	}
+	var applied authoringCorrelationPreviewResponse
+	if err := json.Unmarshal(applyResp.Body.Bytes(), &applied); err != nil {
+		t.Fatalf("unmarshal apply response: %v", err)
+	}
+	if !applied.Applied {
+		t.Fatal("applied = false, want true")
+	}
+
+	persisted, err := store.GetAuthoringSession(created.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession returned error: %v", err)
+	}
+	if persisted.Status != "editing" {
+		t.Fatalf("status = %q, want editing", persisted.Status)
+	}
+	if persisted.Draft.Actions[0].Extractors[0].Name != "corr_session" || persisted.Draft.Actions[1].Target != "/cart?order_ref={{var.corr_session}}" {
+		t.Fatalf("persisted draft = %#v, want applied correlation", persisted.Draft)
+	}
+	lastPreview, ok := persisted.ReviewState["last_correlation_preview"].(map[string]any)
+	if !ok || lastPreview["name"] != "corr_session" {
+		t.Fatalf("review state = %#v, want last correlation preview metadata", persisted.ReviewState)
+	}
+}
+
+func TestBatchAuthoringCorrelationAppliesHighConfidenceAndBlocksMediumRisk(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
+	server := NewServer(ServerConfig{Store: store})
+	body := []byte(`{
+		"project_id":"project-authoring",
+		"source":"enterprise_script_archive",
+		"name":"Correlation batch",
+		"status":"reviewing",
+		"draft":{
+			"name":"Correlated Flow",
+			"version":"1.0.0",
+			"protocol":"http",
+			"config":{"base_url":"https://example.test"},
+			"actions":[
+				{"name":"Login","type":"request","method":"POST","target":"/login"},
+				{"name":"Cart","type":"request","method":"GET","target":"/cart?checkout_ref=high-123456&order=medium-123456"}
+			]
+		}
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(body))
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created session: %v", err)
+	}
+
+	applyBody := withAuthoringSessionRevision(t, `{
+		"apply": true,
+		"auto_apply_high_confidence": true,
+		"repairs": [
+			{"name":"corr_checkout","expression":"$.checkout_ref","sample_value":"high-123456","found_action_index":1,"used_action_indexes":[2],"confidence":0.91,"severity":"error"},
+			{"name":"corr_order","expression":"$.order","sample_value":"medium-123456","found_action_index":1,"used_action_indexes":[2],"confidence":0.62,"severity":"error"}
+		]
+	}`, created.UpdatedAt)
+	applyReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+created.ID+"/correlations/preview", bytes.NewReader(applyBody))
+	applyResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(applyResp, applyReq)
+	if applyResp.Code != http.StatusOK {
+		t.Fatalf("batch apply status = %d, want %d body=%s", applyResp.Code, http.StatusOK, applyResp.Body.String())
+	}
+	var applied authoringCorrelationPreviewResponse
+	if err := json.Unmarshal(applyResp.Body.Bytes(), &applied); err != nil {
+		t.Fatalf("unmarshal batch apply response: %v", err)
+	}
+	if !applied.Applied || applied.AppliedCount != 1 || !applied.Blocked {
+		t.Fatalf("batch response = %#v, want one applied and blocked medium risk", applied)
+	}
+	if len(applied.ReviewRequired) != 1 || applied.ReviewRequired[0] != "corr_order" {
+		t.Fatalf("review_required = %#v, want corr_order", applied.ReviewRequired)
+	}
+	persisted, err := store.GetAuthoringSession(created.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession returned error: %v", err)
+	}
+	target := persisted.Draft.Actions[1].Target
+	if !strings.Contains(target, "{{var.corr_checkout}}") || strings.Contains(target, "{{var.corr_order}}") {
+		t.Fatalf("target = %q, want only high-confidence repair applied", target)
+	}
+	state, ok := persisted.ReviewState["last_correlation_batch_preview"].(map[string]any)
+	if !ok || state["blocked"] != true {
+		t.Fatalf("review state = %#v, want blocked batch metadata", persisted.ReviewState)
+	}
+}
+
+type reviewSection struct {
+	Key      string   `json:"key"`
+	Severity string   `json:"severity"`
+	Summary  string   `json:"summary"`
+	Items    []string `json:"items"`
+}
+
+func containsEnterpriseArchiveSupportMatrixStatus(entries []struct {
+	ID      string   `json:"id"`
+	Area    string   `json:"area"`
+	Concept string   `json:"concept"`
+	Fields  []string `json:"fields"`
+	Status  string   `json:"status"`
+	Notes   string   `json:"notes"`
+}, want string) bool {
+	for _, entry := range entries {
+		if entry.Status == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEnterpriseArchiveSupportMatrixExample(entries []struct {
+	Title    string `json:"title"`
+	Coverage string `json:"coverage"`
+	Test     string `json:"test"`
+}, want string) bool {
+	for _, entry := range entries {
+		if entry.Title == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEnterpriseArchiveTrueClientScriptType(entries []struct {
+	CanonicalName string   `json:"CanonicalName"`
+	DisplayName   string   `json:"DisplayName"`
+	Status        string   `json:"Status"`
+	Inputs        []string `json:"SupportedInputs"`
+}, name string, status string) bool {
+	for _, entry := range entries {
+		if entry.CanonicalName == name && entry.Status == status && entry.DisplayName != "" && len(entry.Inputs) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEnterpriseArchiveTrueClientCapability(entries []struct {
+	CanonicalName string `json:"CanonicalName"`
+	DisplayName   string `json:"DisplayName"`
+	Status        string `json:"Status"`
+}, name string, status string) bool {
+	for _, entry := range entries {
+		if entry.CanonicalName == name && entry.Status == status && entry.DisplayName != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEnterpriseArchiveWeb2Fixture(entries []struct {
+	ID       string `json:"ID"`
+	Required bool   `json:"Required"`
+	Status   string `json:"Status"`
+}, id string, required bool, status string) bool {
+	for _, entry := range entries {
+		if entry.ID == id && entry.Required == required && entry.Status == status {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEnterpriseArchiveJavaSurface(entries []struct {
+	ID              string `json:"id"`
+	Area            string `json:"area"`
+	Construct       string `json:"construct"`
+	Status          string `json:"status"`
+	ExecutionStatus string `json:"execution_status"`
+}, id string, executionStatus string) bool {
+	for _, entry := range entries {
+		if entry.ID == id && entry.ExecutionStatus == executionStatus && entry.Area != "" && entry.Construct != "" && entry.Status != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEnterpriseArchiveJavaIdiom(entries []struct {
+	ID              string `json:"id"`
+	ExecutionStatus string `json:"execution_status"`
+}, id string, executionStatus string) bool {
+	for _, entry := range entries {
+		if entry.ID == id && entry.ExecutionStatus == executionStatus {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAuthoringSourceStatus(sources []AuthoringSourceCapability, source string, status string) bool {
+	for _, item := range sources {
+		if item.Source == source && item.Status == status {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAuthoringImportMode(modes []AuthoringImportMode, id string, defaultMode bool) bool {
+	for _, mode := range modes {
+		if mode.ID == id && mode.Default == defaultMode {
+			return true
+		}
+	}
+	return false
+}
+
+func enterpriseArchiveFixtureMultipartBody(t *testing.T, fixtureDir string, archiveName string, fields map[string]string) ([]byte, string) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatalf("WriteField(%q) returned error: %v", key, err)
+		}
+	}
+	part, err := writer.CreateFormFile("file", archiveName)
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	zipWriter := zip.NewWriter(part)
+	entries, err := os.ReadDir(fixtureDir)
+	if err != nil {
+		t.Fatalf("ReadDir(%q) returned error: %v", fixtureDir, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		content, err := os.ReadFile(filepath.Join(fixtureDir, name))
+		if err != nil {
+			t.Fatalf("ReadFile(%q) returned error: %v", name, err)
+		}
+		fileWriter, err := zipWriter.Create(name)
+		if err != nil {
+			t.Fatalf("zip.Create(%q) returned error: %v", name, err)
+		}
+		if _, err := fileWriter.Write(content); err != nil {
+			t.Fatalf("zip.Write(%q) returned error: %v", name, err)
+		}
+	}
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart.Close returned error: %v", err)
+	}
+	return body.Bytes(), writer.FormDataContentType()
+}
+
+func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	const credential = "imported-jmeter-token"
+	jmx := `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2"><hashTree>
+  <TestPlan testname="Imported JMeter"/><hashTree>
+    <ThreadGroup testname="Users">
+      <stringProp name="ThreadGroup.num_threads">5</stringProp>
+      <stringProp name="ThreadGroup.ramp_time">10</stringProp>
+    </ThreadGroup><hashTree>
+      <HeaderManager testname="Authorization"><collectionProp name="HeaderManager.headers">
+        <elementProp name="" elementType="Header">
+          <stringProp name="Header.name">Authorization</stringProp>
+          <stringProp name="Header.value">Bearer ` + credential + `</stringProp>
+        </elementProp>
+      </collectionProp></HeaderManager><hashTree/>
+      <HTTPSamplerProxy testname="Home">
+        <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+        <stringProp name="HTTPSampler.protocol">https</stringProp>
+        <stringProp name="HTTPSampler.path">/home</stringProp>
+        <stringProp name="HTTPSampler.method">GET</stringProp>
+      </HTTPSamplerProxy><hashTree/>
+    </hashTree>
+  </hashTree>
+</hashTree></jmeterTestPlan>`
+	inspectReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/import/jmeter?filename=save-flow.jmx&scenario_draft=true",
+		strings.NewReader(jmx),
+	)
+	inspectReq.Header.Set("Content-Type", "application/xml")
+	inspect := httptest.NewRecorder()
+	server.mux.ServeHTTP(inspect, inspectReq)
+	if inspect.Code != http.StatusOK {
+		t.Fatalf("inspect status = %d body=%s", inspect.Code, inspect.Body.String())
+	}
+	if !strings.Contains(inspect.Body.String(), credential) ||
+		strings.Contains(inspect.Body.String(), maskedScriptSecret) {
+		t.Fatalf("JMeter inspect did not preserve its credential: %s", inspect.Body.String())
+	}
+	var preview struct {
+		Scripts       []dsl.Script    `json:"scripts"`
+		ScenarioDraft json.RawMessage `json:"scenario_draft"`
+	}
+	if err := json.Unmarshal(inspect.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.Scripts) != 1 || len(preview.ScenarioDraft) == 0 ||
+		importDraftAttestationToken(&preview.Scripts[0]) == "" {
+		t.Fatalf("JMeter inspect omitted its attested save draft: %#v", preview.Scripts)
+	}
+	payload := map[string]any{
+		"scripts":        preview.Scripts,
+		"scenario_draft": preview.ScenarioDraft,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/save", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusCreated, resp.Body.String())
+	}
+	var result struct {
+		Count    int             `json:"count"`
+		Scripts  []StoredScript  `json:"scripts"`
+		Scenario *StoredScenario `json:"scenario"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Count != 1 || len(result.Scripts) != 1 || result.Scripts[0].ID == "" {
+		t.Fatalf("unexpected scripts response: %#v", result)
+	}
+	if !strings.Contains(resp.Body.String(), "imported-jmeter-token") {
+		t.Fatalf("JMeter save response did not preserve imported credential: %s", resp.Body.String())
+	}
+	if result.Scenario == nil || result.Scenario.ScriptCount != 1 {
+		t.Fatalf("expected saved scenario, got %#v", result.Scenario)
+	}
+	stored, ok := server.runner.GetScript(result.Scripts[0].ID)
+	if !ok || stored == nil || stored.Script == nil {
+		t.Fatal("saved JMeter script was not available")
+	}
+	authorization := stored.Script.Config.HTTP.DefaultHeaders["Authorization"]
+	if authorization == "" {
+		authorization = stored.Script.Actions[0].Headers["Authorization"]
+	}
+	if authorization == "" {
+		for _, header := range stored.Script.Actions[0].HeaderList {
+			if strings.EqualFold(header.Name, "Authorization") {
+				authorization = header.Value
+				break
+			}
+		}
+	}
+	if authorization != "Bearer "+credential {
+		t.Fatalf("stored JMeter authorization = %q, want exact imported credential", authorization)
+	}
+}
+
+func TestHandleSaveJMeterImportValidatesAllScriptsBeforePersisting(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"scripts": []map[string]any{
+			{
+				"name": "Valid_First", "version": "1.0.0", "protocol": "http",
+				"config":  map[string]any{"base_url": "https://api.example.com"},
+				"actions": []map[string]any{{"name": "Home", "type": "request", "method": "GET", "target": "/"}},
+			},
+			{
+				"name": "Invalid_Second", "version": "1.0.0", "protocol": "http",
+				"config":  map[string]any{"base_url": "https://api.example.com"},
+				"actions": []map[string]any{},
+			},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/save", bytes.NewReader(body))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if scripts := server.runner.ListScripts(); len(scripts) != 0 {
+		t.Fatalf("partial JMeter import persisted scripts: %#v", scripts)
+	}
+}
+
+func TestHandleSaveJMeterImportRollsBackScriptsWhenScenarioFails(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"scripts": []map[string]any{{
+			"name": "Scenario_Script", "version": "1.0.0", "protocol": "http",
+			"config":  map[string]any{"base_url": "https://api.example.com"},
+			"actions": []map[string]any{{"name": "Home", "type": "request", "method": "GET", "target": "/"}},
+		}},
+		"scenario_draft": map[string]any{
+			"name": "Invalid Scenario", "duration": "not-a-duration", "scenario_mode": "vuser_driven",
+			"groups": []map[string]any{{"name": "Users", "script_name": "Scenario_Script", "vusers": 1}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/save", bytes.NewReader(body))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if scripts := server.runner.ListScripts(); len(scripts) != 0 {
+		t.Fatalf("failed scenario left imported scripts behind: %#v", scripts)
+	}
+}
+
+func TestHandleSaveJMeterImportRejectsEveryUnresolvedScenarioGroupBeforePersisting(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		groups []map[string]any
+	}{
+		{
+			name: "mixed known and unknown",
+			groups: []map[string]any{
+				{"name": "Known", "script_name": "Known_Script", "vusers": 1},
+				{"name": "Missing", "script_name": "Missing_Script", "vusers": 1},
+			},
+		},
+		{
+			name:   "all unknown",
+			groups: []map[string]any{{"name": "Missing", "script_name": "Missing_Script", "vusers": 1}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := NewServer(ServerConfig{})
+			payload := map[string]any{
+				"scripts": []map[string]any{{
+					"name": "Known_Script", "version": "1.0.0", "protocol": "http",
+					"config":  map[string]any{"base_url": "https://api.example.com"},
+					"actions": []map[string]any{{"name": "Home", "type": "request", "method": "GET", "target": "/"}},
+				}},
+				"scenario_draft": map[string]any{
+					"name": "Unresolved Scenario", "duration": "1m", "scenario_mode": "vuser_driven", "groups": tc.groups,
+				},
+			}
+			body, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatalf("json.Marshal returned error: %v", err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/save", bytes.NewReader(body))
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+			}
+			if scripts := server.runner.ListScripts(); len(scripts) != 0 {
+				t.Fatalf("unresolved scenario persisted scripts: %#v", scripts)
+			}
+		})
+	}
+}
+
+func buildEnterpriseArchiveImportArchive(t *testing.T, includeParameterFiles bool) []byte {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	userFile := `[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Actions]
+Action1=Action.c
+`
+	if includeParameterFiles {
+		userFile = `[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Parameters]
+Parameter1=LoginUsers.prm
+
+[Actions]
+Action1=Action.c
+`
+	}
+	addFile("Demo.usr", userFile)
+	addFile("Action.c", sampleEnterpriseArchiveActionC)
+	addFile("default.cfg", `[HTTP]
+ConnectTimeout=45
+`)
+	if includeParameterFiles {
+		addFile("LoginUsers.prm", `[LoginUser]
+Type=File
+Table=Users.dat
+ColumnName=username
+SelectNextRow=Sequential
+UpdateValueOn=Each Iteration
+`)
+		addFile("Users.dat", "username\nalice\nbob\n")
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+	return body.Bytes()
+}
+
+func buildEnterpriseArchiveProtocolArchive(t *testing.T, scriptType string, action string) []byte {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("Protocol.usr", "[General]\nType="+scriptType+"\n\n[Actions]\nAction1=Action.c\n")
+	addFile("Action.c", action)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+	return body.Bytes()
+}
+
+func buildJavaEnterpriseArchive(t *testing.T, name string, scriptType string, javaSource string) []byte {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(path string, content string) {
+		entry, err := writer.Create(path)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", path, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", path, err)
+		}
+	}
+	addFile(name+"/"+name+".usr", "[General]\nType="+scriptType+"\nScriptLanguage=JAVA\nRunType=Java-Interpreter\n\n[Actions]\nAction=Actions.java\n")
+	addFile(name+"/Actions.java", javaSource)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+	return body.Bytes()
+}
+
+func responseHasReviewSection(sections []struct {
+	Key string `json:"key"`
+}, key string) bool {
+	for _, section := range sections {
+		if section.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+func responseHasRepairCategory(suggestions []struct {
+	Category string `json:"category"`
+}, category string) bool {
+	for _, suggestion := range suggestions {
+		if suggestion.Category == category {
+			return true
+		}
+	}
+	return false
+}
+
+func encodeUTF16LEForTruClientZip(text string) string {
+	words := utf16.Encode([]rune(text))
+	bytes := make([]byte, 0, len(words)*2)
+	for _, word := range words {
+		bytes = append(bytes, byte(word), byte(word>>8))
+	}
+	return string(bytes)
+}
+
+func buildJMeterImportMultipartBody(t *testing.T, scenarioDraft bool) ([]byte, string) {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "checkout.jmx")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	if _, err := part.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan"><stringProp name="TestPlan.comments"/></TestPlan>
+    <hashTree>
+      <ThreadGroup testname="Users">
+        <stringProp name="ThreadGroup.num_threads">5</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">10</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <ConfigTestElement testname="Defaults" guiclass="HttpDefaultsGui">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+        </ConfigTestElement>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Home">
+          <stringProp name="HTTPSampler.path">/home</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`)); err != nil {
+		t.Fatalf("Write returned error: %v", err)
+	}
+	if err := writer.WriteField("include_assertions", "true"); err != nil {
+		t.Fatalf("WriteField(include_assertions) returned error: %v", err)
+	}
+	if scenarioDraft {
+		if err := writer.WriteField("scenario_draft", "true"); err != nil {
+			t.Fatalf("WriteField(scenario_draft) returned error: %v", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart.Close returned error: %v", err)
+	}
+	return body.Bytes(), writer.FormDataContentType()
+}
+
+func decodeImportEnvelope(t *testing.T, body []byte) map[string]any {
+	t.Helper()
+	var envelope map[string]any
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	return envelope
+}
+
+func assertSharedImportEnvelopeKeys(t *testing.T, envelope map[string]any) {
+	t.Helper()
+	for _, key := range []string{"scripts", "script", "warnings", "stats", "correlations", "assumptions", "unsupported_elements", "review_sections", "repair_suggestions", "scenario_draft", "summary", "detected_protocol", "review_artifact", "protocol_compat_report", "result"} {
+		if _, ok := envelope[key]; !ok {
+			t.Fatalf("envelope missing key %q: %#v", key, envelope)
+		}
+	}
+}
+
+func normalizeImportEnvelopeTimestamps(t *testing.T, value any) {
+	t.Helper()
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			if key == jmeterDirectImportOperationKey {
+				operationID, ok := child.(string)
+				if !ok {
+					t.Fatalf("%s = %#v, want UUID string", key, child)
+				}
+				if _, err := uuid.Parse(operationID); err != nil {
+					t.Fatalf("%s = %q, want UUID: %v", key, operationID, err)
+				}
+				typed[key] = "<jmeter-import-operation>"
+				continue
+			}
+			if key == "imported_at" {
+				importedAt, ok := child.(string)
+				if !ok {
+					t.Fatalf("imported_at = %#v, want RFC3339 string", child)
+				}
+				if _, err := time.Parse(time.RFC3339, importedAt); err != nil {
+					t.Fatalf("imported_at = %q, want RFC3339 timestamp: %v", importedAt, err)
+				}
+				typed[key] = "<imported-at>"
+				continue
+			}
+			normalizeImportEnvelopeTimestamps(t, child)
+		}
+	case []any:
+		for _, child := range typed {
+			normalizeImportEnvelopeTimestamps(t, child)
+		}
+	}
+}
+
+func assertRepairSuggestion(t *testing.T, suggestions any, wantCategory string, wantSeverity string, wantTitle string) {
+	t.Helper()
+
+	value := reflect.ValueOf(suggestions)
+	if value.Kind() != reflect.Slice {
+		t.Fatalf("repair suggestions = %#v, want slice", suggestions)
+	}
+	for i := 0; i < value.Len(); i++ {
+		suggestion := value.Index(i)
+		category := suggestion.FieldByName("Category")
+		severity := suggestion.FieldByName("Severity")
+		title := suggestion.FieldByName("Title")
+		if !category.IsValid() || !severity.IsValid() || !title.IsValid() {
+			continue
+		}
+		if category.String() == wantCategory && severity.String() == wantSeverity && title.String() == wantTitle {
+			return
+		}
+	}
+	t.Fatalf("repair_suggestions = %#v, want category=%q severity=%q title=%q", suggestions, wantCategory, wantSeverity, wantTitle)
+}
+
+func assertRepairSuggestionActionContains(t *testing.T, suggestions any, wantCategory string, wantTitle string, wantActionPart string) {
+	t.Helper()
+
+	value := reflect.ValueOf(suggestions)
+	if value.Kind() != reflect.Slice {
+		t.Fatalf("repair suggestions = %#v, want slice", suggestions)
+	}
+	for i := 0; i < value.Len(); i++ {
+		suggestion := value.Index(i)
+		category := suggestion.FieldByName("Category")
+		title := suggestion.FieldByName("Title")
+		action := suggestion.FieldByName("Action")
+		if !category.IsValid() || !title.IsValid() || !action.IsValid() {
+			continue
+		}
+		if category.String() == wantCategory && title.String() == wantTitle {
+			if strings.Contains(action.String(), wantActionPart) {
+				return
+			}
+			t.Fatalf("repair suggestion action = %q, want substring %q", action.String(), wantActionPart)
+		}
+	}
+	t.Fatalf("repair_suggestions = %#v, want category=%q title=%q with action containing %q", suggestions, wantCategory, wantTitle, wantActionPart)
+}
+
+func assertReviewSection(t *testing.T, sections any, wantKey string, wantSeverity string, wantItem string) {
+	t.Helper()
+
+	value := reflect.ValueOf(sections)
+	if value.Kind() != reflect.Slice {
+		t.Fatalf("review sections = %#v, want slice", sections)
+	}
+	for i := 0; i < value.Len(); i++ {
+		section := value.Index(i)
+		key := section.FieldByName("Key")
+		severity := section.FieldByName("Severity")
+		items := section.FieldByName("Items")
+		if !key.IsValid() || !severity.IsValid() || !items.IsValid() {
+			continue
+		}
+		if key.String() != wantKey {
+			continue
+		}
+		if severity.String() != wantSeverity {
+			t.Fatalf("review section %q severity = %q, want %q", wantKey, severity.String(), wantSeverity)
+		}
+		for itemIndex := 0; itemIndex < items.Len(); itemIndex++ {
+			if items.Index(itemIndex).String() == wantItem {
+				return
+			}
+		}
+		t.Fatalf("review section %q items = %#v, want item %q", wantKey, items.Interface(), wantItem)
+	}
+	t.Fatalf("review_sections = %#v, want section %q", sections, wantKey)
+}
+
+func reviewSectionsContain(sections any, wantKey string) bool {
+	value := reflect.ValueOf(sections)
+	if value.Kind() != reflect.Slice {
+		return false
+	}
+	for i := 0; i < value.Len(); i++ {
+		section := value.Index(i)
+		key := section.FieldByName("Key")
+		if key.IsValid() && key.String() == wantKey {
+			return true
+		}
+	}
+	return false
+}
+
+func containsStringContaining(values []string, needle string) bool {
+	for _, value := range values {
+		if strings.Contains(value, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// The merge re-inflates uploaded entries, so it must enforce the same
+// decompression-bomb bounds ConvertZip does. Without this an attached
+// supplemental file routes the upload through an unguarded path.
+func TestMergeEnterpriseArchiveZipRejectsOversizedEntry(t *testing.T) {
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	entry, err := writer.Create("Huge.java")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	// Highly compressible payload just past the per-entry cap.
+	if _, err := entry.Write(make([]byte, enterprisearchive.MaxArchiveEntryBytes+1)); err != nil {
+		t.Fatalf("Write returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	_, err = mergeEnterpriseArchiveZipWithSupplementalFiles(buf.Bytes(), []string{"Extra.java"}, [][]byte{[]byte("public class Extra {}")})
+	if err == nil {
+		t.Fatal("merge accepted an entry past the per-entry limit; the decompression-bomb guard is bypassable")
+	}
+	if !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("merge error = %v, want a size-limit error", err)
+	}
+}
+
+// A browser only ever sends a base filename, so a supplemental file must replace
+// the matching NESTED entry rather than being appended at the archive root (which
+// makes ConvertZip abort on a duplicate normalized entry).
+func TestMergeEnterpriseArchiveZipReplacesNestedEntryByBaseName(t *testing.T) {
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	for name, content := range map[string]string{
+		"MyScript/Demo.usr":    "[General]\nType=Java\n",
+		"MyScript/Action.java": "public class Action { /* stale */ }",
+	} {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	merged, err := mergeEnterpriseArchiveZipWithSupplementalFiles(
+		buf.Bytes(), []string{"Action.java"}, [][]byte{[]byte("public class Action { /* fresh */ }")})
+	if err != nil {
+		t.Fatalf("merge returned error: %v", err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(merged), int64(len(merged)))
+	if err != nil {
+		t.Fatalf("zip.NewReader returned error: %v", err)
+	}
+	names := map[string]string{}
+	for _, file := range reader.File {
+		rc, err := file.Open()
+		if err != nil {
+			t.Fatalf("Open(%q) returned error: %v", file.Name, err)
+		}
+		body, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			t.Fatalf("ReadAll(%q) returned error: %v", file.Name, err)
+		}
+		names[file.Name] = string(body)
+	}
+	if _, rooted := names["Action.java"]; rooted {
+		t.Fatalf("merged entries = %v, supplemental must not be appended at the root", names)
+	}
+	if got := names["MyScript/Action.java"]; !strings.Contains(got, "fresh") {
+		t.Fatalf("MyScript/Action.java = %q, want the supplemental content", got)
+	}
+	if len(names) != 2 {
+		t.Fatalf("merged entries = %v, want exactly the two original paths", names)
+	}
+}
+
+// The merge enforces four independent bounds. The per-entry byte cap is covered
+// by TestMergeEnterpriseArchiveZipRejectsOversizedEntry; this covers the
+// entry-count cap. (The 512 MiB total-uncompressed cap shares the same
+// accumulator but cannot be driven directly without allocating >512 MiB.)
+func TestMergeEnterpriseArchiveZipRejectsTooManyEntries(t *testing.T) {
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	for index := 0; index <= enterprisearchive.MaxArchiveEntries; index++ {
+		entry, err := writer.Create(fmt.Sprintf("file_%d.txt", index))
+		if err != nil {
+			t.Fatalf("Create returned error: %v", err)
+		}
+		if _, err := entry.Write([]byte("x")); err != nil {
+			t.Fatalf("Write returned error: %v", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	_, err := mergeEnterpriseArchiveZipWithSupplementalFiles(buf.Bytes(), []string{"Extra.java"}, [][]byte{[]byte("x")})
+	if err == nil {
+		t.Fatal("merge accepted an archive past the entry-count limit")
+	}
+	if !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("merge error = %v, want an entry-count limit error", err)
+	}
+}
+
+// Every merge bound must report a message containing "limit" so callers (and the
+// tests above) can distinguish a bound rejection from an I/O failure.
+func TestMergeEnterpriseArchiveZipBoundErrorsMentionLimit(t *testing.T) {
+	source, err := os.ReadFile("handlers_import_enterprise.go")
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	for _, bound := range []string{"MaxArchiveEntries", "MaxArchiveEntryBytes", "MaxArchiveTotalBytes"} {
+		index := strings.Index(string(source), bound+")")
+		if index < 0 {
+			t.Fatalf("bound %s is not referenced in an error message", bound)
+		}
+	}
+	if strings.Contains(string(source), `"archive exceeds %d uncompressed bytes"`) {
+		t.Fatal("total-bytes bound error must contain the word limit for consistency with the other bounds")
+	}
+}
+
+// The HTTP layer caps how many supplemental parts one import may carry.
+func TestHandleValidateEnterpriseArchiveImportRejectsTooManySupplementalFiles(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", "demo.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	zipWriter := zip.NewWriter(part)
+	entry, err := zipWriter.Create("Demo.usr")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if _, err := entry.Write([]byte("[General]\nType=Java\n")); err != nil {
+		t.Fatalf("Write returned error: %v", err)
+	}
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip Close returned error: %v", err)
+	}
+
+	for index := 0; index <= maxSupplementalArchiveFiles; index++ {
+		supplemental, err := writer.CreateFormFile("supplemental_file", fmt.Sprintf("Extra%d.java", index))
+		if err != nil {
+			t.Fatalf("CreateFormFile supplemental returned error: %v", err)
+		}
+		if _, err := supplemental.Write([]byte("public class Extra {}")); err != nil {
+			t.Fatalf("Write supplemental returned error: %v", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "supplemental_file") {
+		t.Fatalf("body = %s, want a supplemental_file limit error", resp.Body.String())
+	}
+}
+
+// The merge must round-trip entry names. ConvertZip strips the FIRST path
+// segment, so rewriting "./MyScript/Action.java" to "MyScript/Action.java" would
+// shift every nested file up one level purely because a supplemental file was
+// attached - turning imports that succeed without one into failures.
+func TestMergeEnterpriseArchiveZipPreservesOriginalEntryNames(t *testing.T) {
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	for _, name := range []string{"./MyScript/Demo.usr", "./MyScript/Action.java"} {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte("x")); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	merged, err := mergeEnterpriseArchiveZipWithSupplementalFiles(
+		buf.Bytes(), []string{"Action.java"}, [][]byte{[]byte("fresh")})
+	if err != nil {
+		t.Fatalf("merge returned error: %v", err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(merged), int64(len(merged)))
+	if err != nil {
+		t.Fatalf("zip.NewReader returned error: %v", err)
+	}
+	names := make([]string, 0, len(reader.File))
+	for _, file := range reader.File {
+		names = append(names, file.Name)
+	}
+	sort.Strings(names)
+	want := []string{"./MyScript/Action.java", "./MyScript/Demo.usr"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("merged entry names = %v, want the original names %v", names, want)
+	}
+}
+
+// Two supplemental files whose names differ only in case resolve to the same
+// archive entry. Picking a winner by map iteration order was nondeterministic,
+// so the request is rejected instead.
+func TestMergeEnterpriseArchiveZipRejectsCaseCollidingSupplementalFiles(t *testing.T) {
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	entry, err := writer.Create("MyScript/Action.java")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if _, err := entry.Write([]byte("stale")); err != nil {
+		t.Fatalf("Write returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	_, err = mergeEnterpriseArchiveZipWithSupplementalFiles(
+		buf.Bytes(),
+		[]string{"Action.java", "ACTION.JAVA"},
+		[][]byte{[]byte("first"), []byte("second")})
+	if err == nil {
+		t.Fatal("merge silently dropped one of two case-colliding supplemental files")
+	}
+	if !strings.Contains(err.Error(), "both target") {
+		t.Fatalf("merge error = %v, want a collision error", err)
+	}
+}

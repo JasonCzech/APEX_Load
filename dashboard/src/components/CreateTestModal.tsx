@@ -1,6 +1,6 @@
 import MonitorRuleEditor from './MonitorRuleEditor'
 import RunMonitorBindingSelector from './RunMonitorBindingSelector'
-import type { MonitorBinding } from '../types/appdynamics'
+import type { MonitorBinding } from '../types/runMonitoring'
 import DialogLayer from './ux/DialogLayer'
 import CaptureSelectionHelp from './CaptureSelectionHelp'
 import { captureSelectionNeedsReview, dynatraceCapabilities } from './captureConnectionModel'
@@ -649,7 +649,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 				onGroupOverrideChange={(index, value) => updateGroup(index, { transactionResponseTimeSlaMs: value })}
 			/>
 
-          <RunMonitorBindingSelector projectId={revisionContext?.projectId ?? projectId} value={monitorBindings} onChange={setMonitorBindings} />
+          <RunMonitorBindingSelector projectId={revisionContext?.projectId ?? projectId} scenarioId={revisionContext?.scenarioId} value={monitorBindings} onChange={setMonitorBindings} />
           <MonitorRuleEditor projectId={revisionContext?.projectId ?? projectId} value={goalConfig.monitor_rules || []} onChange={rules => updateGoalConfig('monitor_rules', rules)} />
           <CreateTestRuntimeOverrides
             draftScope={`${revisionContext?.projectId ?? projectId ?? ''}:${revisionContext?.scenarioId ?? 'new'}`}

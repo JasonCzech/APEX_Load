@@ -53,7 +53,7 @@ var brunoLocalKeyWarnOnce sync.Once
 //
 // Bruno is the one importer that cannot degrade by skipping protected
 // retention: it publishes the encrypted raw and sanitized source bundles during
-// inspection, and canonical execution replays that retained bundle. Every other
+// inspection, and native commits preserve those sources for later review. Every other
 // protected-import path treats retention as additive and falls back to the
 // ordinary flow (see import_source_retention.go), so before this the Bruno
 // importer alone hard-failed on an unconfigured deployment.

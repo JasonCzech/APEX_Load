@@ -21,7 +21,6 @@ import (
 //
 // Keys are "<function>/<StoreMethod>".
 var testStoreWriteCallSitesOffLock = map[string]string{
-	"validatePreparedMonitorReadiness/AppDynamicsCollectorPublicKey":                                    "read-only enrolled-key lookup; this function takes and releases tr.mu.RLock before storage access, so no caller can hold tr.mu write-locked",
 	"saveManagedTestRecordSnapshot/SaveTestWithRunMonitors":                                             "same snapshot path: callers wrap the whole projection and atomic monitor write in trackDurableWrite",
 	"saveManagedTestStartSnapshot/SaveTest":                                                             "persistManagedTestStartOutsideLockLocked releases tr.mu around this call (testexecution.go)",
 	"saveManagedTestStartSnapshot/SaveTestStartIfExecutionLeaseHeldAndNoDeploymentLease":                "same start path: tr.mu is released across the durable start transition",

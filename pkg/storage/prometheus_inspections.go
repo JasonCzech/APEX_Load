@@ -12,7 +12,7 @@ import (
 
 // PrometheusInspection shares the durable inspection journal and owner CAS with
 // AppDynamics. Provider is an immutable assignment discriminator.
-type PrometheusInspection = AppDynamicsInspection
+type PrometheusInspection = MonitorInspection
 
 type PrometheusInspectionStore interface {
 	EnsurePrometheusInspectionSchema() error
@@ -25,7 +25,7 @@ type PrometheusInspectionStore interface {
 }
 
 func (s *SQLiteStore) EnsurePrometheusInspectionSchema() error {
-	return s.EnsureAppDynamicsInspectionSchema()
+	return s.EnsureMonitorInspectionSchema()
 }
 func (s *SQLiteStore) CreatePrometheusInspection(op *PrometheusInspection) error {
 	return s.createProviderInspection(op, "prometheus")

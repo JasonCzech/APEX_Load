@@ -2,7 +2,8 @@ package storage
 
 import (
 	"encoding/json"
-	"github.com/jasonczech/apexload/pkg/appdynamics"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
+
 	"time"
 )
 
@@ -15,7 +16,7 @@ func (j RunMonitorJob) MarshalJSON() ([]byte, error) {
 		monitorJobJSON
 		Connection                *AppDynamicsConnectionSnapshot                  `json:"connection_snapshot,omitempty"`
 		PrometheusConnection      *PrometheusConnectionSnapshot                   `json:"prometheus_connection_snapshot,omitempty"`
-		QueryCoverage             map[string]appdynamics.Coverage                 `json:"query_coverage,omitempty"`
+		QueryCoverage             map[string]monitorprovider.Coverage             `json:"query_coverage,omitempty"`
 		PrometheusDiagnosticTimes map[string]PrometheusDiagnosticObservationTimes `json:"prometheus_diagnostic_times,omitempty"`
 		StableSinceAt             *time.Time                                      `json:"stable_since_at,omitempty"`
 		Dynatrace                 *DynatraceConnectionSnapshot                    `json:"dynatrace_snapshot,omitempty"`
@@ -29,7 +30,7 @@ func (j *RunMonitorJob) UnmarshalJSON(body []byte) error {
 		*monitorJobJSON
 		Connection                *AppDynamicsConnectionSnapshot                  `json:"connection_snapshot,omitempty"`
 		PrometheusConnection      *PrometheusConnectionSnapshot                   `json:"prometheus_connection_snapshot,omitempty"`
-		QueryCoverage             map[string]appdynamics.Coverage                 `json:"query_coverage,omitempty"`
+		QueryCoverage             map[string]monitorprovider.Coverage             `json:"query_coverage,omitempty"`
 		PrometheusDiagnosticTimes map[string]PrometheusDiagnosticObservationTimes `json:"prometheus_diagnostic_times,omitempty"`
 		StableSinceAt             *time.Time                                      `json:"stable_since_at,omitempty"`
 		Dynatrace                 *DynatraceConnectionSnapshot                    `json:"dynatrace_snapshot,omitempty"`

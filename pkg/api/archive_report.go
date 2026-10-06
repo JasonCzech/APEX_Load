@@ -1326,7 +1326,7 @@ func buildRunArchiveEvidenceTiersFromCounts(manifest *RunArchiveManifest, report
 		evidenceTier("elk_evidence", "ELK Evidence", manifest.ELKEvidenceCount, "Bounded, deduplicated, redacted Elasticsearch log samples captured during the run."),
 		evidenceTier("dynatrace_evidence", "Dynatrace Evidence", manifest.DynatraceEvidenceCount, "Bounded, deduplicated, redacted Dynatrace problem summaries and Grail log samples captured during the run."),
 		evidenceTier("monitor_points", "Monitoring Metrics", manifest.MonitorEvidenceCount, "Canonical run-bound metric buckets with provider identity, native units, resolution, and collection quality."),
-		evidenceTier("monitor_diagnostics", "Monitoring Diagnostics", manifest.MonitorDiagnosticsCount, "Canonical bounded AppDynamics event, violation, snapshot, and Analytics summaries."),
+		evidenceTier("monitor_diagnostics", "Monitoring Diagnostics", manifest.MonitorDiagnosticsCount, "Canonical bounded monitoring diagnostics and historical provider summaries."),
 		evidenceTier("oracle_db_metrics", "Oracle DB Metrics", oracleDBMetricSamples, "Canonical oracle.db.* target-side metrics prepared for Oracle Database correlation."),
 	}
 	for index := range tiers {

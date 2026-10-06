@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { usePrometheusConnectionsApi } from '../hooks/api/usePrometheusConnectionsApi'
 import type { PrometheusConnection, PrometheusOperation, PrometheusQuery, PrometheusSelection } from '../types/prometheus'
-import type { MonitorSource } from '../types/appdynamics'
+import type { MonitorSource } from '../types/runMonitoring'
 import { emptyPrometheusQuery, emptyPrometheusSelection, prometheusQueryValid } from './prometheusConnectionModel'
 import PrometheusQueryPresets from './PrometheusQueryPresets'
 import PrometheusQueryParameters from './PrometheusQueryParameters'

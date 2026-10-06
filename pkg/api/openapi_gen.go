@@ -814,26 +814,13 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 	return map[string]oasSchema{
 		"BrunoInspectOptions": {
 			Type:        "object",
-			Description: "Bruno inspection controls. Omitting output_mode preserves the canonical compatibility-runner import.",
+			Description: "Native OpenCollection YAML HTTP inspection controls. Omitting output_mode selects native_requests.",
 			Properties: map[string]oasSchema{
 				"output_mode": {
 					Type:        "string",
-					Enum:        []string{"canonical", "native_requests"},
-					Description: "canonical creates one compatibility-runner candidate; native_requests creates one server-owned HTTP candidate per supported request.",
+					Enum:        []string{"native_requests"},
+					Description: "Creates one server-owned native HTTP candidate per supported request.",
 				},
-				"default_environment":        {Type: "string"},
-				"default_global_environment": {Type: "string"},
-				"selection":                  {Type: "string"},
-				"paths":                      {Type: "array", Items: &oasSchema{Type: "string"}},
-				"include_tags":               {Type: "array", Items: &oasSchema{Type: "string"}},
-				"exclude_tags":               {Type: "array", Items: &oasSchema{Type: "string"}},
-				"recursive":                  {Type: "boolean"},
-				"execution":                  {Type: "string"},
-				"bail":                       {Type: "boolean"},
-				"tests_only":                 {Type: "boolean"},
-				"delay_ms":                   {Type: "integer"},
-				"stream_timeout_ms":          {Type: "integer"},
-				"persist_session":            {Type: "boolean"},
 			},
 		},
 		"BrunoInspectFile": {
@@ -858,10 +845,8 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 					Type:  "array",
 					Items: &oasSchema{Ref: "#/components/schemas/BrunoInspectFile"},
 				},
-				"sandbox":        {Type: "string"},
-				"root_path":      {Type: "string"},
-				"options":        {Ref: "#/components/schemas/BrunoInspectOptions"},
-				"sync_script_id": {Type: "string"},
+				"root_path": {Type: "string"},
+				"options":   {Ref: "#/components/schemas/BrunoInspectOptions"},
 			},
 		},
 		"BrunoArtifactSummary": {
@@ -1105,14 +1090,8 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 			},
 			Required: []string{"eligible"},
 		},
-		"BrunoCanonicalInspectResult": brunoInspectResultSchema("canonical"),
-		"BrunoNativeInspectResult":    brunoInspectResultSchema("native_requests"),
-		"BrunoInspectResult": {
-			OneOf: []oasSchema{
-				{Ref: "#/components/schemas/BrunoCanonicalInspectResult"},
-				{Ref: "#/components/schemas/BrunoNativeInspectResult"},
-			},
-		},
+		"BrunoNativeInspectResult": brunoInspectResultSchema("native_requests"),
+		"BrunoInspectResult":       {Ref: "#/components/schemas/BrunoNativeInspectResult"},
 		"BrunoImportConflict": {
 			Type: "object",
 			Properties: map[string]oasSchema{
@@ -1122,20 +1101,6 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 				"required_resolution": {Type: "string"},
 			},
 			Required: []string{"id", "field", "summary", "required_resolution"},
-		},
-		"BrunoSyncPreview": {
-			Type: "object",
-			Properties: map[string]oasSchema{
-				"target_script_id":    {Type: "string"},
-				"expected_updated_at": {Type: "string", Format: "date-time"},
-				"active_revision":     {Type: "string"},
-				"changes":             openAPIFreeformObject("Canonical synchronization change summary."),
-				"conflicts": {
-					Type:  "array",
-					Items: &oasSchema{Ref: "#/components/schemas/BrunoImportConflict"},
-				},
-			},
-			Required: []string{"target_script_id", "expected_updated_at", "changes"},
 		},
 		"BrunoInspectResponse": {
 			Type: "object",
@@ -1147,11 +1112,10 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 					Type:  "array",
 					Items: &oasSchema{Ref: "#/components/schemas/BrunoArtifactSummary"},
 				},
-				"sync_preview":        {Ref: "#/components/schemas/BrunoSyncPreview"},
 				"execution_preflight": {Ref: "#/components/schemas/BrunoExecutionPreflight"},
 				"parameterization": {
 					Type:                 "object",
-					Description:          "Canonical parameterization suggestions; null for native request inspection.",
+					Description:          "Retained response field; null for native request inspection.",
 					AdditionalProperties: boolPointer(true),
 					Nullable:             true,
 				},
@@ -1165,15 +1129,6 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 				"import_session_id", "expires_at", "result", "artifacts",
 				"execution_preflight", "parameterization",
 			},
-		},
-		"BrunoCanonicalExecutionPreflight": {
-			Type:        "object",
-			Description: "Canonical Bruno runner readiness.",
-			Properties: map[string]oasSchema{
-				"ready":    {Type: "boolean"},
-				"blockers": {Type: "array", Items: &oasSchema{Type: "string"}},
-			},
-			Required: []string{"ready", "blockers"},
 		},
 		"BrunoNativeCandidateExecutionPreflight": {
 			Type:        "object",
@@ -1198,38 +1153,7 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 			},
 			Required: []string{"ready", "blockers", "candidates"},
 		},
-		"BrunoExecutionPreflight": {
-			OneOf: []oasSchema{
-				{Ref: "#/components/schemas/BrunoCanonicalExecutionPreflight"},
-				{Ref: "#/components/schemas/BrunoNativeExecutionPreflight"},
-			},
-		},
-		"BrunoCanonicalCommitRequest": {
-			Type:                 "object",
-			AdditionalProperties: boolPointer(false),
-			Properties: map[string]oasSchema{
-				"project_id":        {Type: "string"},
-				"import_session_id": {Type: "string"},
-				"mode": {
-					Type: "string",
-					Enum: []string{"create", "sync"},
-				},
-				"script_id":                   {Type: "string"},
-				"sync_script_id":              {Type: "string"},
-				"name":                        {Type: "string"},
-				"folder_id":                   {Type: "string", Nullable: true},
-				"expected_updated_at":         {Type: "string", Format: "date-time"},
-				"expected_active_revision_id": {Type: "string"},
-				"secret_bindings":             openAPIStringMap("Secret requirement ID to governed logical secret name."),
-				"migrate_secrets":             {Type: "boolean"},
-				"parameterization_selected_ids": {
-					Type:  "array",
-					Items: &oasSchema{Type: "string"},
-				},
-				"conflict_resolutions": openAPIStringMap("Canonical synchronization conflict resolutions."),
-			},
-			Required: []string{"project_id", "import_session_id"},
-		},
+		"BrunoExecutionPreflight": {Ref: "#/components/schemas/BrunoNativeExecutionPreflight"},
 		"BrunoNativeBatchCommitRequest": {
 			Type:                 "object",
 			AdditionalProperties: boolPointer(false),
@@ -1254,12 +1178,7 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 			},
 			Required: []string{"project_id", "import_session_id", "mode", "folder_id"},
 		},
-		"BrunoCommitRequest": {
-			OneOf: []oasSchema{
-				{Ref: "#/components/schemas/BrunoCanonicalCommitRequest"},
-				{Ref: "#/components/schemas/BrunoNativeBatchCommitRequest"},
-			},
-		},
+		"BrunoCommitRequest": {Ref: "#/components/schemas/BrunoNativeBatchCommitRequest"},
 		"ImportSourceRevision": {
 			Type: "object",
 			Properties: map[string]oasSchema{
@@ -1272,10 +1191,10 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 				"source_format":           {Type: "string"},
 				"compatibility_version":   {Type: "string"},
 				"identity_map":            openAPIStringMap("Stable source-to-script identities."),
-				"import_options":          openAPIFreeformObject("Canonical Bruno import options."),
+				"import_options":          openAPIFreeformObject("Retained source import options."),
 				"dependency_snapshot_ref": {Type: "string"},
-				"security_profile":        openAPIFreeformObject("Bruno execution security profile."),
-				"change_summary":          openAPIFreeformObject("Canonical synchronization change summary."),
+				"security_profile":        openAPIFreeformObject("Retained source security metadata."),
+				"change_summary":          openAPIFreeformObject("Retained source change summary."),
 				"secret_bindings":         openAPIStringMap("Source requirement to governed logical secret."),
 				"active":                  {Type: "boolean"},
 				"created_by":              {Type: "string"},
@@ -1284,21 +1203,6 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 			Required: []string{
 				"id", "script_id", "project_id", "sanitized_artifact_id", "source_format",
 				"compatibility_version", "active", "created_at",
-			},
-		},
-		"BrunoCanonicalCommitResponse": {
-			Type: "object",
-			Properties: map[string]oasSchema{
-				"script":                   {Ref: "#/components/schemas/APEXScript"},
-				"revision":                 {Ref: "#/components/schemas/ImportSourceRevision"},
-				"created":                  {Type: "boolean"},
-				"change_summary":           openAPIFreeformObject("Canonical synchronization change summary."),
-				"secret_migrations":        {Type: "array", Items: &oasSchema{Type: "object", AdditionalProperties: boolPointer(true)}},
-				"parameterization_applied": {Type: "integer"},
-			},
-			Required: []string{
-				"script", "revision", "created", "change_summary",
-				"secret_migrations", "parameterization_applied",
 			},
 		},
 		"BrunoNativeBatchCommitResponse": {
@@ -1317,12 +1221,7 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 			},
 			Required: []string{"batch_id", "scripts", "count", "created", "idempotent_replay"},
 		},
-		"BrunoCommitResponse": {
-			OneOf: []oasSchema{
-				{Ref: "#/components/schemas/BrunoCanonicalCommitResponse"},
-				{Ref: "#/components/schemas/BrunoNativeBatchCommitResponse"},
-			},
-		},
+		"BrunoCommitResponse": {Ref: "#/components/schemas/BrunoNativeBatchCommitResponse"},
 		"BrunoCommitErrorResponse": {
 			Type:        "object",
 			Description: "Bruno commit failure, including retry and partial secret-migration recovery state when applicable.",
@@ -1402,9 +1301,6 @@ func brunoInspectResultSchema(outputMode string) oasSchema {
 			Items:       &oasSchema{Ref: "#/components/schemas/BrunoNativeScriptCandidate"},
 		}
 		required = append(required, "scripts")
-	} else {
-		properties["script"] = oasSchema{Ref: "#/components/schemas/APEXScript"}
-		required = append(required, "script")
 	}
 	return oasSchema{
 		Type:       "object",
@@ -1555,11 +1451,9 @@ func brunoInspectRequestBody() *oasRequestBody {
 		Type:        "object",
 		Description: "Multipart Bruno source upload. A directory may use repeated file parts or dynamic file:<URL-encoded-relative-path> part names.",
 		Properties: map[string]oasSchema{
-			"project_id":     {Type: "string"},
-			"name":           {Type: "string"},
-			"sandbox":        {Type: "string"},
-			"root_path":      {Type: "string"},
-			"sync_script_id": {Type: "string"},
+			"project_id": {Type: "string"},
+			"name":       {Type: "string"},
+			"root_path":  {Type: "string"},
 			"options": {
 				Type:        "string",
 				Description: "JSON-encoded Bruno inspection options, including output_mode.",

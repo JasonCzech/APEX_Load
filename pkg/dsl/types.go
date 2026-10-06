@@ -162,7 +162,7 @@ type ScriptConfig struct {
 	BaseURL          string               `json:"base_url"`
 	ThinkTime        ThinkTimeConfig      `json:"think_time,omitempty"`
 	Pacing           PacingConfig         `json:"pacing,omitempty"`
-	Bruno            BrunoConfig          `json:"bruno,omitempty"`
+	Bruno            BrunoConfig          `json:"bruno,omitempty,omitzero"`
 	HTTP             HTTPConfig           `json:"http,omitempty"`
 	WebRuntime       WebRuntimeConfig     `json:"web_runtime,omitempty"`
 	WebSocket        WebSocketConfig      `json:"websocket,omitempty"`
@@ -237,9 +237,8 @@ type MessageDetailConfig struct {
 	MaxTotalBytes    int64   `json:"max_total_bytes,omitempty" jsonschema:"minimum=0,maximum=1073741824"`
 }
 
-// BrunoConfig binds a canonical APEX script to an immutable Bruno source
-// revision. The source bundle remains the authority; the bruno_run action
-// selects which part of that bundle to execute.
+// BrunoConfig retains the retired collection-runner configuration so saved
+// scripts and retained source revisions continue to decode without data loss.
 type BrunoConfig struct {
 	BundleRef                      string             `json:"bundle_ref,omitempty"`
 	BundleSHA256                   string             `json:"bundle_sha256,omitempty"`
@@ -257,8 +256,7 @@ type BrunoConfig struct {
 	SecretBindings                 map[string]string  `json:"secret_bindings,omitempty"`
 }
 
-// BrunoRuntimeLimits are author-controlled ceilings. Operator-owned runner
-// policy may reduce these values but never raise them.
+// BrunoRuntimeLimits preserves retired runner limits in saved records.
 type BrunoRuntimeLimits struct {
 	MaxJumps               int `json:"max_jumps,omitempty" jsonschema:"minimum=0,maximum=1000000"`
 	MaxRunRequestDepth     int `json:"max_run_request_depth,omitempty" jsonschema:"minimum=0,maximum=1024"`

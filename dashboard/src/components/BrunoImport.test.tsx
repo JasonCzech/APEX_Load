@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../hooks/apiClient'
 import { type Folder } from '../types'
-import { storedZipFixture } from '../test/zipFixture'
 import BrunoImport from './BrunoImport'
 import { brunoDestinationFolderOptions } from './brunoFolderOptions'
 import { nativeReviewGuidance } from './brunoNativeReviewGuidance'
@@ -17,22 +16,15 @@ import { aggregateBrunoSecretRequirements } from './brunoSecretRequirements'
 const apiMock = {
   getBrunoSupportMatrix: vi.fn(),
   getAuthEffectiveAccess: vi.fn(),
-  listScripts: vi.fn(),
   listFolders: vi.fn(),
   createFolder: vi.fn(),
   inspectBrunoImport: vi.fn(),
   getBrunoImportSessionSource: vi.fn(),
   commitBrunoImport: vi.fn(),
-  listBrunoRevisions: vi.fn(),
-  previewBrunoProjection: vi.fn(),
-  rollbackBrunoRevision: vi.fn(),
-  commitBrunoProjection: vi.fn(),
   getProjectSecretStatuses: vi.fn(),
   createProjectSecrets: vi.fn(),
   migrateImportSecrets: vi.fn(),
   discardImportSecretSession: vi.fn(),
-  applyImportParameterization: vi.fn(),
-  getScriptSecretStatus: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -110,43 +102,14 @@ function setInput(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-function selectProjectSecret(container: HTMLElement, index = 0) {
-  const choices = Array.from(container.querySelectorAll<HTMLInputElement>(
-    '.secret-binding-review-choice input[id$="-project-secret"]',
-  ))
-  choices[index]?.click()
-}
-
-function inspectionFixture() {
+function retainedNativeSourceFixture() {
   return {
     import_session_id: 'session-1',
     expires_at: '2099-07-16T20:00:00Z',
-    parameterization: {
-      suggestions: [{
-        id: 'pz_bruno_tenant',
-        kind: 'data_param',
-        var_name: 'TENANT',
-        replacement: '{{param.TENANT}}',
-        sample_value: 'acme',
-        confidence: 0.95,
-        rule_id: 'test.bruno.tenant',
-        rationale: 'Repeated tenant selector',
-        auto_apply: true,
-        high_risk: false,
-        locations: [{ section: 'actions', action_index: 0, action_name: 'Run SOAP request', field: 'target' }],
-      }],
-      summary: {
-        total: 1,
-        by_kind: { data_param: 1 },
-        auto_apply_count: 1,
-        review_count: 0,
-        high_risk_count: 0,
-        pre_applied_count: 0,
-      },
-    },
+    parameterization: null,
     result: {
       schema_version: 'apexload.bruno-import.v1',
-      output_mode: 'canonical' as const,
+      output_mode: 'native_requests' as const,
       source_format: 'yml',
       root_path: '',
       manifest: {
@@ -202,16 +165,7 @@ function inspectionFixture() {
         dropped_items: 0,
         compatibility: '3.5.2',
       },
-      native_projection: { eligible: false, reasons: ['JavaScript tests require canonical execution'] },
       missing_variables: ['env'],
-      script: {
-        name: 'SOAP request',
-        version: '1.0',
-        protocol: 'bruno',
-        project_id: 'project-1',
-        config: { base_url: '', bruno: { sandbox: 'safe' } },
-        actions: [{ name: 'Run SOAP request', type: 'bruno_run', target: '' }],
-      },
       inspected_at: '2026-07-16T19:00:00Z',
     },
     artifacts: [
@@ -222,7 +176,7 @@ function inspectionFixture() {
 }
 
 function nativeInspectionFixture() {
-  const base = inspectionFixture()
+  const base = retainedNativeSourceFixture()
   return {
     ...base,
     parameterization: null,
@@ -233,7 +187,6 @@ function nativeInspectionFixture() {
       secret_requirements: [],
       security_findings: [],
       missing_variables: [],
-      script: undefined,
       scripts: [
         {
           candidate_id: 'candidate-1',
@@ -302,7 +255,7 @@ describe('BrunoImport', () => {
     apiMock.getBrunoSupportMatrix.mockResolvedValue({
       compatibility_version: '3.5.2',
       import_enabled: true,
-      safe_execution_enabled: true,
+      safe_execution_enabled: false,
       developer_execution_enabled: false,
       native_projection_enabled: false,
       secret_store: {
@@ -327,7 +280,6 @@ describe('BrunoImport', () => {
         }],
       }],
     })
-    apiMock.listScripts.mockResolvedValue({ scripts: [], count: 0 })
     apiMock.getBrunoImportSessionSource.mockResolvedValue('request:\n  url: https://example.test/source\n  body: <source-xml/>')
     apiMock.listFolders.mockResolvedValue({
       folders: [{
@@ -363,312 +315,17 @@ describe('BrunoImport', () => {
     })
     apiMock.createProjectSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 1 })
     apiMock.migrateImportSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 0 })
-    apiMock.applyImportParameterization.mockResolvedValue({
-      script: {
-        ...inspectionFixture().result.script,
-        actions: [{ name: 'Run SOAP request', type: 'bruno_run', target: '{{param.TENANT}}' }],
-      },
-      diffs: [{ kind: 'value_replaced', path: '/actions/0/target', suggestion_id: 'pz_bruno_tenant' }],
-      applied_count: 1,
-    })
-    apiMock.getScriptSecretStatus.mockResolvedValue({
-      script_id: 'script-1',
-      required: ['PASSWORD'],
-      configured: ['PASSWORD'],
-      missing: [],
-    })
-    apiMock.inspectBrunoImport.mockResolvedValue(inspectionFixture())
+    apiMock.inspectBrunoImport.mockResolvedValue(nativeInspectionFixture())
     apiMock.commitBrunoImport.mockResolvedValue({
-      created: true,
-      script: {
-        id: 'script-1',
-        ref_key: 'SCR-1',
-        name: 'SOAP request',
-        version: '1.0',
-        protocol: 'bruno',
-        project_id: 'project-1',
-        created_at: '2026-07-16T19:00:00Z',
-        config: { base_url: '', bruno: { source_revision: 'revision-1' } },
-        actions: [{ name: 'Run SOAP request', type: 'bruno_run', target: '' }],
-      },
-      revision: {
-        id: 'revision-1',
-        script_id: 'script-1',
-        project_id: 'project-1',
-        raw_artifact_id: 'raw-1',
-        sanitized_artifact_id: 'sanitized-1',
-        source_format: 'yml',
-        compatibility_version: '3.5.2',
-        active: true,
-        created_at: '2026-07-16T19:00:00Z',
-      },
-    })
-    apiMock.listBrunoRevisions.mockResolvedValue({
-      revisions: [{
-        id: 'revision-1',
-        script_id: 'script-1',
-        project_id: 'project-1',
-        raw_artifact_id: 'raw-1',
-        sanitized_artifact_id: 'sanitized-1',
-        source_format: 'yml',
-        compatibility_version: '3.5.2',
-        active: true,
-        created_at: '2026-07-16T19:00:00Z',
-      }],
-      count: 1,
-    })
-    apiMock.previewBrunoProjection.mockResolvedValue({
-      script_id: 'script-1',
-      source_revision_id: 'revision-1',
-      proof_status: 'not_run',
-      eligible: false,
+      batch_id: 'native-batch', created: true, idempotent_replay: false, count: 2, _http_status: 201,
+      scripts: nativeInspectionFixture().result.scripts.map(candidate => ({ ...candidate.script, id: candidate.planned_script_id })),
     })
   })
 
   afterEach(async () => {
     await act(async () => root.unmount())
     container.remove()
-    vi.clearAllMocks()
-  })
-
-  it('returns a newly inspected canonical candidate to Review', async () => {
-    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
-    await act(async () => root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />))
-    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Inspect & review')!.click())
-    await act(async () => container.querySelector<HTMLButtonElement>('[role=tab][aria-label="DSL Preview"]')!.click())
-    expect(container.querySelector('[role=tab][aria-label="DSL Preview"]')?.getAttribute('aria-selected')).toBe('true')
-    apiMock.inspectBrunoImport.mockResolvedValueOnce({ ...inspectionFixture(), import_session_id: 'session-2' })
-    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Re-inspect source')!.click())
-    expect(container.querySelector('[role=tab][aria-label="Review"]')?.getAttribute('aria-selected')).toBe('true')
-  })
-
-  it('shows the actionable Windows protected-store requirement on inspect failure', async () => {
-    const message = 'Protected imports on Windows require an artifact directory on a local fixed NTFS or ReFS volume. Network, removable, and unsupported filesystems are not accepted.'
-    apiMock.inspectBrunoImport.mockRejectedValueOnce(new ApiError(message, 503, {
-      error: message,
-      code: 'protected_import_store_unsupported_filesystem',
-      retryable: false,
-    }))
-    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
-      await Promise.resolve()
-    })
-
-    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    await act(async () => {
-      inspectButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(container.textContent).toContain('local fixed NTFS or ReFS volume')
-    expect(container.textContent).toContain('Network, removable, and unsupported filesystems are not accepted')
-    expect(container.textContent).not.toContain('Controller reported a server error')
-  })
-
-  it('uses the shell-owned destination without rendering or loading a second folder control', async () => {
-    const file = new File(['version: 1'], 'ambiguous.yml', { type: 'application/yaml' })
-    await act(async () => {
-      root.render(
-        <BrunoImport
-          initialFiles={[file]}
-          projectId="project-1"
-          folderId="folder-1"
-          onFolderChange={vi.fn()}
-          destinationFolderManagedExternally
-        />,
-      )
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    const destinationLabels = Array.from(container.querySelectorAll('label'))
-      .filter(label => label.querySelector('span')?.textContent === 'Destination folder')
-    expect(destinationLabels).toHaveLength(0)
-    expect(container.querySelector('.bruno-folder-create')).toBeNull()
-    expect(apiMock.listFolders).not.toHaveBeenCalled()
-    expect(apiMock.getAuthEffectiveAccess).not.toHaveBeenCalled()
-  })
-
-  it('expires and disables a protected Bruno commit while credential review is visible', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2030-01-01T00:00:00Z'))
-    try {
-      const inspection = inspectionFixture()
-      inspection.expires_at = '2030-01-01T00:00:01Z'
-      apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
-      const file = new File(['meta { name: Expiring credential }'], 'collection.bru', { type: 'text/plain' })
-      await act(async () => {
-        root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
-        await Promise.resolve()
-      })
-      const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Inspect & review'))
-      await act(async () => {
-        inspectButton?.click()
-        await Promise.resolve()
-        await Promise.resolve()
-      })
-
-      const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
-      expect(container.textContent).toContain('Bruno import session available until')
-      expect(commitButton?.disabled).toBe(false)
-
-      await act(async () => {
-        vi.advanceTimersByTime(1_001)
-        await Promise.resolve()
-      })
-      expect(container.textContent).toContain('This Bruno import session has expired')
-      expect(commitButton?.disabled).toBe(true)
-      expect(apiMock.commitBrunoImport).not.toHaveBeenCalled()
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('shows and enforces protected Bruno expiry even when no credentials require review', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2030-01-01T00:00:00Z'))
-    try {
-      const inspection = inspectionFixture()
-      inspection.expires_at = '2030-01-01T00:00:01Z'
-      inspection.result.secret_requirements = []
-      apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
-      const file = new File(['meta { name: Expiring import }'], 'collection.bru', { type: 'text/plain' })
-      await act(async () => {
-        root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
-        await Promise.resolve()
-      })
-      const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Inspect & review'))
-      await act(async () => {
-        inspectButton?.click()
-        await Promise.resolve()
-        await Promise.resolve()
-      })
-
-      expect(container.querySelector('.secret-binding-review')).toBeNull()
-      const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
-      expect(commitButton?.disabled).toBe(false)
-      await act(async () => {
-        vi.advanceTimersByTime(1_001)
-        await Promise.resolve()
-      })
-      expect(container.textContent).toContain('This Bruno import session has expired')
-      expect(commitButton?.disabled).toBe(true)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('commits an untouched credential review without bindings so the imported runtime value remains usable', async () => {
-    apiMock.getScriptSecretStatus.mockResolvedValueOnce({
-      script_id: 'script-1',
-      required: [],
-      configured: [],
-      missing: [],
-    })
-    const file = new File(['meta { name: Preserved password }\nget { url: https://example.test }\n'], 'collection.bru', { type: 'text/plain' })
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" folderId="folder-1" />)
-      await Promise.resolve()
-    })
-
-    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    await act(async () => {
-      inspectButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(container.querySelector('.secret-binding-review-item .script-health-token')?.textContent)
-      .toBe('Preserved in script')
-    const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
-    expect(commitButton?.textContent).not.toContain('to configure')
-    await act(async () => {
-      commitButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(apiMock.commitBrunoImport).toHaveBeenCalledWith(expect.objectContaining({
-      project_id: 'project-1',
-      import_session_id: 'session-1',
-      mode: 'create',
-      folder_id: 'folder-1',
-      migrate_secrets: false,
-      secret_bindings: {},
-    }))
-    expect(apiMock.createProjectSecrets).not.toHaveBeenCalled()
-    expect(apiMock.getScriptSecretStatus).toHaveBeenCalledWith('script-1')
-    expect(container.textContent).toContain('Canonical source active')
-    expect(container.textContent).not.toContain('project secret still needs configuration')
-  })
-
-  it('notes local key custody without blocking the import', async () => {
-    apiMock.getBrunoSupportMatrix.mockResolvedValueOnce({
-      compatibility_version: '3.5.2',
-      import_enabled: true,
-      safe_execution_enabled: true,
-      developer_execution_enabled: false,
-      native_projection_enabled: false,
-      retention: {
-        available: true,
-        key_custody: 'local_auto',
-        advisory: 'Bruno source is encrypted with a local key this controller generated for itself, stored beside the data. Set APEXLOAD_WRAPPING_MASTER_KEY or APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID for operator-managed key custody.',
-      },
-    })
-    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
-      await Promise.resolve()
-    })
-    await act(async () => { await Promise.resolve() })
-
-    expect(container.textContent).toContain('operator-managed key custody')
-    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    expect(inspectButton?.disabled).toBe(false)
-  })
-
-  it('blocks inspection with the operator action when protected source retention is unavailable', async () => {
-    // Inspection publishes encrypted source artifacts, so with no envelope key
-    // it can only fail — and the server masks that failure. Without this the
-    // whole import form stays enabled and dead-ends at "Inspect source".
-    apiMock.getBrunoSupportMatrix.mockResolvedValueOnce({
-      compatibility_version: '3.5.2',
-      import_enabled: true,
-      safe_execution_enabled: true,
-      developer_execution_enabled: false,
-      native_projection_enabled: false,
-      retention: {
-        available: false,
-        unavailable_reason: 'Bruno import requires protected source retention, which needs an envelope key. Set APEXLOAD_WRAPPING_MASTER_KEY (32 bytes, or base64-encoded 32 bytes) or configure APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID, then restart the controller.',
-      },
-    })
-    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
-      await Promise.resolve()
-    })
-    await act(async () => { await Promise.resolve() })
-
-    expect(container.textContent).toContain('Set APEXLOAD_WRAPPING_MASTER_KEY')
-    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    expect(inspectButton?.disabled).toBe(true)
-    await act(async () => {
-      inspectButton?.click()
-      await Promise.resolve()
-    })
-    expect(apiMock.inspectBrunoImport).not.toHaveBeenCalled()
+    vi.resetAllMocks()
   })
 
   it('saves a native request with its imported credential when migration and binding stay unselected', async () => {
@@ -1342,164 +999,7 @@ describe('BrunoImport', () => {
     expect(findingPagination.textContent).toContain('Showing findings 101–200 of 10000. Page 2 of 100.')
   })
 
-  it('submits a binding when the operator explicitly chooses an existing project secret', async () => {
-    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => ({
-      project_id: 'project-1',
-      capabilities: {
-        provider: 'encrypted_database',
-        writable: true,
-        create_supported: true,
-        replace_supported: true,
-        source_secret_migration_policy_enabled: true,
-      },
-      secrets: names.map(name => ({
-        name,
-        configured: name === 'EXISTING_PASSWORD',
-        provider: 'encrypted_database',
-        writable: true,
-      })),
-    }))
-    apiMock.getScriptSecretStatus.mockResolvedValueOnce({
-      script_id: 'script-1',
-      required: ['EXISTING_PASSWORD'],
-      configured: ['EXISTING_PASSWORD'],
-      missing: [],
-    })
-    const file = new File(['meta { name: Existing binding }\nget { url: https://example.test }\n'], 'collection.bru', { type: 'text/plain' })
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
-      await Promise.resolve()
-    })
-    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    await act(async () => {
-      inspectButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    const bindingName = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="text"]'))
-      .find(input => input.value === 'PASSWORD')
-    expect(bindingName).toBeDefined()
-    await act(async () => {
-      selectProjectSecret(container)
-      setInput(bindingName!, 'EXISTING_PASSWORD')
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(container.querySelector('.secret-binding-review-item .script-health-token')?.textContent)
-      .toBe('Configured')
-
-    const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
-    await act(async () => {
-      commitButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(apiMock.commitBrunoImport).toHaveBeenCalledWith(expect.objectContaining({
-      migrate_secrets: false,
-      secret_bindings: {
-        'request.yml:http.auth.password': 'EXISTING_PASSWORD',
-      },
-    }))
-    expect(apiMock.createProjectSecrets).not.toHaveBeenCalled()
-  })
-
-  it('inspects, binds, and commits a standalone Bruno YAML request without opening the HTTP editor', async () => {
-    const file = new File(['meta { name: SOAP request }\nget { url: https://example.test }\n'], 'collection.bru', { type: 'text/plain' })
-    const onImported = vi.fn()
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" onImported={onImported} />)
-    })
-    await act(async () => { await Promise.resolve() })
-
-    const inspectButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    await act(async () => {
-      inspectButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
-
-    expect(apiMock.inspectBrunoImport).toHaveBeenCalledWith([file], expect.objectContaining({
-      project_id: 'project-1',
-      sandbox: 'safe',
-      run_options: expect.objectContaining({ selection: 'collection', recursive: true }),
-    }))
-    expect(container.textContent).toContain('Execute policy check')
-    expect(container.textContent).toContain('source_credentials_sanitized')
-    expect(container.textContent).toContain('Preflight requirements')
-    expect(container.textContent).toContain('lossless')
-    expect(container.querySelector('.credentials-card')).not.toBeNull()
-    expect(container.querySelector('[role=tablist]')?.textContent).toContain('Credentials')
-    expect(container.textContent).not.toContain('Secret migration and bindings')
-
-    const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
-    expect(commitButton?.textContent).not.toContain('to configure')
-    expect(commitButton?.disabled).toBe(false)
-
-    const bindingInput = Array.from(container.querySelectorAll('input')).find(input => input.value === 'PASSWORD')
-    expect(bindingInput).toBeDefined()
-    act(() => {
-      selectProjectSecret(container)
-      setInput(bindingInput!, 'INVALID/NAME')
-    })
-    expect(bindingInput?.getAttribute('aria-invalid')).toBe('true')
-    expect(commitButton?.disabled).toBe(true)
-    await act(async () => commitButton?.click())
-    expect(apiMock.commitBrunoImport).not.toHaveBeenCalled()
-    act(() => setInput(bindingInput!, 'PASSWORD'))
-    expect(commitButton?.disabled).toBe(false)
-
-    const migrationToggle = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
-      .find(input => input.parentElement?.textContent?.includes('Import detected credential values'))
-    expect(migrationToggle?.checked).toBe(false)
-    await act(async () => migrationToggle?.click())
-    expect(migrationToggle?.checked).toBe(true)
-    expect(commitButton?.textContent).not.toContain('to configure')
-
-    const optionalValue = container.querySelector<HTMLInputElement>('input[type="password"]')
-    expect(optionalValue).not.toBeNull()
-    act(() => setInput(optionalValue!, 'manual-secret-value'))
-
-    await act(async () => {
-      commitButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(apiMock.commitBrunoImport).toHaveBeenCalledWith(expect.objectContaining({
-      project_id: 'project-1',
-      import_session_id: 'session-1',
-      mode: 'create',
-      migrate_secrets: true,
-      secret_bindings: expect.objectContaining({ 'request.yml:http.auth.password': 'PASSWORD' }),
-    }))
-    expect(apiMock.createProjectSecrets).toHaveBeenCalledWith('project-1', [{
-      name: 'PASSWORD',
-      value: 'manual-secret-value',
-    }])
-    expect(apiMock.migrateImportSecrets).not.toHaveBeenCalled()
-    expect(container.textContent).not.toContain('manual-secret-value')
-    expect(container.textContent).toContain('Canonical source active')
-    expect(container.querySelector('.credentials-card')).toBeNull()
-    expect(container.querySelector('input[type="password"]')).toBeNull()
-    expect(Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
-      .some(input => input.parentElement?.textContent?.includes('Import detected credential values'))).toBe(false)
-    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({ stayInImportReview: true }))
-
-    const openButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open imported script'))
-    await act(async () => {
-      openButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
-      scripts: [expect.objectContaining({ id: 'script-1', protocol: 'bruno' })],
-    }))
-  })
-
-  it('preselects native mode for OpenCollection YAML and saves an acknowledged per-request batch', async () => {
+  it('defaults to native conversion for OpenCollection YAML and saves an acknowledged per-request batch', async () => {
     const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
     const onImported = vi.fn()
     apiMock.inspectBrunoImport.mockResolvedValueOnce(nativeInspectionFixture())
@@ -1523,9 +1023,7 @@ describe('BrunoImport', () => {
       await Promise.resolve()
     })
 
-    const mode = Array.from(container.querySelectorAll<HTMLInputElement>('input[name="bruno-output-mode"]'))
-      .find(input => input.parentElement?.textContent?.includes('Native scripts per API'))
-    expect(mode?.checked).toBe(true)
+    expect(container.querySelector('input[name="bruno-output-mode"]')).toBeNull()
     expect(container.textContent).not.toContain('Synchronization target')
 
     const folder = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
@@ -1548,7 +1046,6 @@ describe('BrunoImport', () => {
     expect(apiMock.inspectBrunoImport).toHaveBeenCalledWith([file], expect.objectContaining({
       project_id: 'project-1',
       output_mode: 'native_requests',
-      run_options: undefined,
     }))
     const summaryTab = container.querySelector<HTMLButtonElement>('#bruno-inspection-tab-summary')
     const sourceApisTab = container.querySelector<HTMLButtonElement>('#bruno-api-selection-toggle')
@@ -1870,79 +1367,6 @@ describe('BrunoImport', () => {
     expect(secretsSection?.textContent).toContain('execution requires a configured value for that project secret')
   })
 
-  it('detects native mode from standalone OpenCollection request content', async () => {
-    const file = new File([
-      'info:\n  name: Routed request\n  type: http\nhttp:\n  method: POST\n',
-    ], 'request.yml', { type: 'application/yaml' })
-    await act(async () => {
-      root.render(
-        <BrunoImport
-          initialFiles={[file]}
-          projectId="project-1"
-        />,
-      )
-      await Promise.resolve()
-      await new Promise(resolve => setTimeout(resolve, 0))
-    })
-
-    const nativeMode = Array.from(container.querySelectorAll<HTMLInputElement>('input[name="bruno-output-mode"]'))
-      .find(input => input.parentElement?.textContent?.includes('Native scripts per API'))
-    expect(nativeMode?.checked).toBe(true)
-    expect(container.textContent).toContain('Destination folder')
-    expect(container.textContent).not.toContain('Synchronization target')
-  })
-
-  it('recommends native mode for an OpenCollection ZIP and creates the missing destination folder inline', async () => {
-    apiMock.listFolders.mockResolvedValueOnce({ folders: [], count: 0 })
-    apiMock.createFolder.mockResolvedValueOnce({
-      id: 'folder-cta',
-      project_id: 'project-1',
-      parent_id: null,
-      name: 'CTA Collection 6a',
-      category: 'scripts',
-      created_at: '2026-07-16T19:00:00Z',
-      updated_at: '2026-07-16T19:00:00Z',
-    })
-    const archive = new File([storedZipFixture([
-      'CTA_Collection 6a/CTA/request.yml',
-      'CTA_Collection 6a/opencollection.yml',
-    ])], 'CTA_Collection 6a.zip', { type: 'application/zip' })
-
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[archive]} projectId="project-1" />)
-      await Promise.resolve()
-      await new Promise(resolve => setTimeout(resolve, 0))
-    })
-
-    const nativeMode = Array.from(container.querySelectorAll<HTMLInputElement>('input[name="bruno-output-mode"]'))
-      .find(input => input.parentElement?.textContent?.includes('Native scripts per API'))
-    const destination = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
-      .find(select => select.parentElement?.textContent?.includes('Destination folder'))
-    const folderName = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
-      .find(input => input.parentElement?.textContent?.includes('New script folder name'))
-    expect(nativeMode?.checked).toBe(true)
-    expect(container.textContent).toContain('Source recommendation: Native scripts per API')
-    expect(container.textContent).toContain('No script folders exist in this project')
-    expect(destination?.disabled).toBe(true)
-    expect(folderName?.value).toBe('CTA Collection 6a')
-
-    const createButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Create and select folder'))
-    await act(async () => {
-      createButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(apiMock.createFolder).toHaveBeenCalledWith('project-1', {
-      name: 'CTA Collection 6a',
-      category: 'scripts',
-    })
-    expect(destination?.disabled).toBe(false)
-    expect(destination?.value).toBe('folder-cta')
-    expect(container.textContent).toContain('Created and selected script folder “CTA Collection 6a”.')
-  })
-
   it('lets a non-admin editor create the required script folder and save a native collection', async () => {
     const inspection = nativeInspectionFixture()
     inspection.result.scripts = [inspection.result.scripts[0]]
@@ -2081,115 +1505,6 @@ describe('BrunoImport', () => {
     expect(saveButton.disabled).toBe(false)
   })
 
-  it('does not revive an earlier folder create across an A to B to A project switch', async () => {
-    let setProject!: (projectId: string) => void
-    let resolveFirst!: (folder: Folder) => void
-    let resolveSecond!: (folder: Folder) => void
-    apiMock.createFolder
-      .mockReturnValueOnce(new Promise<Folder>(resolve => { resolveFirst = resolve }))
-      .mockReturnValueOnce(new Promise<Folder>(resolve => { resolveSecond = resolve }))
-    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
-
-    function Harness() {
-      const [projectId, updateProject] = useState('project-a')
-      const [folderId, setFolderId] = useState('folder-1')
-      setProject = updateProject
-      return (
-        <BrunoImport
-          initialFiles={[file]}
-          projectId={projectId}
-          folderId={folderId}
-          onFolderChange={setFolderId}
-        />
-      )
-    }
-
-    await act(async () => {
-      root.render(<Harness />)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    const createButton = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Create and select folder'))!
-    await act(async () => {
-      createButton().click()
-      await Promise.resolve()
-      setProject('project-b')
-      await Promise.resolve()
-      setProject('project-a')
-      await Promise.resolve()
-      createButton().click()
-      await Promise.resolve()
-    })
-
-    await act(async () => {
-      resolveFirst({
-        id: 'stale-folder', project_id: 'project-a', parent_id: null, name: 'Stale', category: 'scripts',
-        created_at: '2026-07-16T19:00:00Z', updated_at: '2026-07-16T19:00:00Z',
-      })
-      await Promise.resolve()
-    })
-    const destination = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
-      .find(select => select.parentElement?.textContent?.includes('Destination folder'))!
-    expect(destination.value).not.toBe('stale-folder')
-    expect(destination.disabled).toBe(true)
-
-    await act(async () => {
-      resolveSecond({
-        id: 'current-folder', project_id: 'project-a', parent_id: null, name: 'Current', category: 'scripts',
-        created_at: '2026-07-16T19:00:00Z', updated_at: '2026-07-16T19:00:00Z',
-      })
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(destination.value).toBe('current-folder')
-    expect(destination.disabled).toBe(false)
-  })
-
-  it('pages large collection trees and lazily mounts descendants', async () => {
-    const inspection = inspectionFixture()
-    inspection.result.collection.items = Array.from({ length: 10_000 }, (_, index) => ({
-      uid: `folder-${index}`,
-      name: `Folder ${index}`,
-      path: `folder-${index}`,
-      type: 'folder',
-      executable: false,
-      has_scripts: false,
-      has_tests: false,
-      children: index === 0 ? [{
-        uid: 'nested-secret-request',
-        name: 'Nested request',
-        path: 'folder-0/request.yml',
-        type: 'http',
-        executable: true,
-        has_scripts: false,
-        has_tests: false,
-      }] : undefined,
-    }))
-    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
-
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[new File(['version: 1'], 'opencollection.yml')]} projectId="project-1" folderId="folder-1" />)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Inspect & review'))?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(container.querySelectorAll('.bruno-tree-row')).toHaveLength(100)
-    expect(container.textContent).toContain('Items 1–100 of 10000')
-    expect(container.textContent).not.toContain('Nested request')
-    await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent === 'Expand')?.click()
-    })
-    expect(container.textContent).toContain('Nested request')
-  })
-
   it('explains that a project administrator must create the missing destination when folder management is denied', async () => {
     apiMock.listFolders.mockResolvedValueOnce({ folders: [], count: 0 })
     apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({
@@ -2238,171 +1553,6 @@ describe('BrunoImport', () => {
     expect(blockers?.textContent).toContain('Review CTA/second.yml: Translate unsupported response JavaScript.')
     expect(blockers?.textContent).toContain('1 unresolved runtime variable does not prevent saving')
     expect(apiMock.createFolder).not.toHaveBeenCalled()
-  })
-
-  it('replaces a folder-create 403 with role-specific guidance', async () => {
-    apiMock.listFolders.mockResolvedValueOnce({ folders: [], count: 0 })
-    apiMock.createFolder.mockRejectedValueOnce(new ApiError('Current session is not allowed to perform this action', 403))
-    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
-
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
-      await Promise.resolve()
-      await Promise.resolve()
-      await new Promise(resolve => setTimeout(resolve, 0))
-    })
-    const createButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Create and select folder'))
-    await act(async () => {
-      createButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(apiMock.createFolder).toHaveBeenCalledTimes(1)
-    expect(container.textContent).toContain('Your current role can import scripts but cannot create project folders')
-    expect(container.textContent).toContain('ask a Project Administrator to create one for this project')
-    expect(container.textContent).not.toContain('Current session is not allowed to perform this action')
-  })
-
-  it('blocks inspection until asynchronous content mode detection resolves', async () => {
-    let resolveText!: (value: string) => void
-    const pendingText = new Promise<string>(resolve => { resolveText = resolve })
-    const request = new File(['pending'], 'request.yml', { type: 'application/yaml' })
-    vi.spyOn(request, 'slice').mockReturnValue({ text: () => pendingText } as Blob)
-
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[request]} projectId="project-1" />)
-      await Promise.resolve()
-    })
-    const detectingButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Detecting source type'))
-    expect(detectingButton?.disabled).toBe(true)
-    await act(async () => detectingButton?.click())
-    expect(apiMock.inspectBrunoImport).not.toHaveBeenCalled()
-
-    await act(async () => {
-      resolveText('info:\n  name: Native request\n  type: http\n')
-      await pendingText
-      await Promise.resolve()
-    })
-    const nativeMode = Array.from(container.querySelectorAll<HTMLInputElement>('input[name="bruno-output-mode"]'))
-      .find(input => input.parentElement?.textContent?.includes('Native scripts per API'))
-    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Inspect & review')
-    expect(nativeMode?.checked).toBe(true)
-    expect(inspectButton?.disabled).toBe(false)
-  })
-
-  it('manual mode selection cancels pending content detection', async () => {
-    let resolveText!: (value: string) => void
-    const pendingText = new Promise<string>(resolve => { resolveText = resolve })
-    const request = new File(['pending'], 'request.yml', { type: 'application/yaml' })
-    vi.spyOn(request, 'slice').mockReturnValue({ text: () => pendingText } as Blob)
-
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[request]} projectId="project-1" />)
-      await Promise.resolve()
-    })
-    const nativeMode = Array.from(container.querySelectorAll<HTMLInputElement>('input[name="bruno-output-mode"]'))
-      .find(input => input.parentElement?.textContent?.includes('Native scripts per API'))
-    await act(async () => nativeMode?.click())
-    expect(nativeMode?.checked).toBe(true)
-
-    await act(async () => {
-      resolveText('title: Not Bruno\n')
-      await pendingText
-      await Promise.resolve()
-    })
-    expect(nativeMode?.checked).toBe(true)
-    expect(container.textContent).not.toContain('Detecting source type')
-  })
-
-  it('clicking the already-selected canonical mode cancels pending content detection', async () => {
-    let resolveText!: (value: string) => void
-    const pendingText = new Promise<string>(resolve => { resolveText = resolve })
-    const request = new File(['pending'], 'request.yml', { type: 'application/yaml' })
-    vi.spyOn(request, 'slice').mockReturnValue({ text: () => pendingText } as Blob)
-
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[request]} projectId="project-1" />)
-      await Promise.resolve()
-    })
-    const canonicalMode = Array.from(container.querySelectorAll<HTMLInputElement>('input[name="bruno-output-mode"]'))
-      .find(input => input.parentElement?.textContent?.includes('Canonical Bruno collection'))
-    expect(canonicalMode?.checked).toBe(true)
-    await act(async () => canonicalMode?.click())
-    expect(container.textContent).not.toContain('Detecting source type')
-
-    await act(async () => {
-      resolveText('info:\n  name: Native request\n  type: http\n')
-      await pendingText
-      await Promise.resolve()
-    })
-    expect(canonicalMode?.checked).toBe(true)
-    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Inspect & review')
-    expect(inspectButton?.disabled).toBe(false)
-  })
-
-  it('clearing files cancels pending content detection', async () => {
-    let resolveText!: (value: string) => void
-    const pendingText = new Promise<string>(resolve => { resolveText = resolve })
-    const request = new File(['pending'], 'request.yml', { type: 'application/yaml' })
-    vi.spyOn(request, 'slice').mockReturnValue({ text: () => pendingText } as Blob)
-
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[request]} projectId="project-1" />)
-      await Promise.resolve()
-    })
-    const clearButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Clear')
-    await act(async () => clearButton?.click())
-
-    await act(async () => {
-      resolveText('info:\n  name: Stale request\n  type: http\n')
-      await pendingText
-      await Promise.resolve()
-    })
-    expect(container.textContent).not.toContain('request.yml')
-    expect(container.textContent).not.toContain('Detecting source type')
-    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Inspect & review')
-    expect(inspectButton?.disabled).toBe(true)
-  })
-
-  it('ignores stale asynchronous file detection after a newer selection', async () => {
-    let resolveSlowText!: (value: string) => void
-    const slowText = new Promise<string>(resolve => { resolveSlowText = resolve })
-    const slowRequest = new File(['pending'], 'slow.yml', { type: 'application/yaml' })
-    vi.spyOn(slowRequest, 'slice').mockReturnValue({ text: () => slowText } as Blob)
-    const latestClassic = new File(['meta { name: Latest }'], 'latest.bru', { type: 'text/plain' })
-
-    await act(async () => {
-      root.render(<BrunoImport projectId="project-1" />)
-      await Promise.resolve()
-    })
-    const chooser = container.querySelector<HTMLInputElement>('input[type="file"][accept]')
-    expect(chooser).not.toBeNull()
-
-    await act(async () => {
-      Object.defineProperty(chooser!, 'files', { configurable: true, value: [slowRequest] })
-      chooser!.dispatchEvent(new Event('change', { bubbles: true }))
-      Object.defineProperty(chooser!, 'files', { configurable: true, value: [latestClassic] })
-      chooser!.dispatchEvent(new Event('change', { bubbles: true }))
-      await Promise.resolve()
-    })
-    await act(async () => {
-      resolveSlowText('info:\n  name: Stale\n  type: http\n')
-      await slowText
-      await Promise.resolve()
-    })
-
-    const canonicalMode = Array.from(container.querySelectorAll<HTMLInputElement>('input[name="bruno-output-mode"]'))
-      .find(input => input.parentElement?.textContent?.includes('Canonical Bruno collection'))
-    expect(canonicalMode?.checked).toBe(true)
-    expect(container.textContent).toContain('latest.bru')
-    expect(container.textContent).not.toContain('slow.yml')
   })
 
   it('renders ancestry and stable identities for duplicate destination folders', () => {
@@ -2790,36 +1940,6 @@ describe('BrunoImport', () => {
     expect(apiMock.commitBrunoImport).not.toHaveBeenCalled()
   })
 
-  it('surfaces destination-folder loading errors and retries them', async () => {
-    apiMock.listFolders.mockRejectedValueOnce(new Error('folder service unavailable'))
-    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(container.textContent).toContain('folder service unavailable')
-    const inspect = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    await act(async () => {
-      inspect?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(container.querySelector('#bruno-save-blockers')?.textContent)
-      .toContain('Destination folders could not be loaded: folder service unavailable')
-    const retry = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Retry')
-    await act(async () => {
-      retry?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(container.textContent).not.toContain('folder service unavailable')
-    expect(container.textContent).toContain('Imported APIs')
-  })
-
   it('clears and blocks a native save when a restored destination folder is stale', async () => {
     const onFolderChange = vi.fn()
     apiMock.listFolders.mockResolvedValueOnce({ folders: [], count: 0 })
@@ -2865,383 +1985,6 @@ describe('BrunoImport', () => {
       .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     expect(save?.disabled).toBe(true)
     expect(apiMock.commitBrunoImport).not.toHaveBeenCalled()
-  })
-
-  it('persists selected parameterization and an explicitly selected deferred secret binding', async () => {
-    const file = new File(['info: {name: Deferred, type: http}'], 'deferred.yml')
-    const onConfigureSecrets = vi.fn()
-    apiMock.getScriptSecretStatus.mockResolvedValueOnce({
-      script_id: 'script-1',
-      required: ['EXPLICIT_PASSWORD'],
-      configured: [],
-      missing: ['EXPLICIT_PASSWORD'],
-    })
-    await act(async () => {
-      root.render(
-        <BrunoImport
-          initialFiles={[file]}
-          projectId="project-1"
-          onConfigureSecrets={onConfigureSecrets}
-        />,
-      )
-      await Promise.resolve()
-    })
-
-    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    await act(async () => {
-      inspectButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(container.textContent).toContain('Parameterization Review (1)')
-    const applyButton = container.querySelector<HTMLButtonElement>('.paramize-review button.btn-primary')
-    await act(async () => {
-      applyButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(apiMock.applyImportParameterization).toHaveBeenCalledWith(expect.objectContaining({
-      selected_ids: ['pz_bruno_tenant'],
-    }))
-
-    const bindingName = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="text"]'))
-      .find(input => input.value === 'PASSWORD')
-    expect(bindingName).toBeDefined()
-    act(() => {
-      selectProjectSecret(container)
-      setInput(bindingName!, 'EXPLICIT_PASSWORD')
-    })
-    const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
-    expect(commitButton?.textContent).toBe('Save draft')
-    await act(async () => {
-      commitButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(apiMock.commitBrunoImport).toHaveBeenCalledWith(expect.objectContaining({
-      parameterization_selected_ids: ['pz_bruno_tenant'],
-      migrate_secrets: false,
-      secret_bindings: {
-        'request.yml:http.auth.password': 'EXPLICIT_PASSWORD',
-      },
-    }))
-    expect(container.textContent).toContain('1 project secret still needs configuration.')
-    const configureButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Configure secrets')
-    expect(configureButton).toBeDefined()
-    await act(async () => configureButton?.click())
-    expect(onConfigureSecrets).toHaveBeenCalledWith('project-1')
-  })
-
-  it('ignores an inspection response after the selected source changes', async () => {
-    const firstFile = new File(['info: {name: First, type: http}'], 'first.yml')
-    const secondFile = new File(['info: {name: Second, type: http}'], 'second.yml')
-    let resolveInspection!: (response: ReturnType<typeof inspectionFixture>) => void
-    const pendingInspection = new Promise<ReturnType<typeof inspectionFixture>>(resolve => {
-      resolveInspection = resolve
-    })
-    apiMock.inspectBrunoImport.mockImplementationOnce(() => pendingInspection)
-
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[firstFile]} projectId="project-1" />)
-    })
-    await act(async () => { await Promise.resolve() })
-    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    await act(async () => { inspectButton?.click() })
-    expect(apiMock.inspectBrunoImport).toHaveBeenCalledWith([firstFile], expect.any(Object))
-
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[secondFile]} projectId="project-1" />)
-      await Promise.resolve()
-    })
-    await act(async () => {
-      resolveInspection(inspectionFixture())
-      await pendingInspection
-    })
-    await act(async () => { await Promise.resolve() })
-
-    expect(container.textContent).toContain('second.yml')
-    expect(container.textContent).not.toContain('Execute policy check')
-    const currentInspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    expect(currentInspectButton?.disabled).toBe(false)
-  })
-
-  it('does not commit an inspected source after its credential probe is superseded', async () => {
-    const firstFile = new File(['info: {name: First, type: http}'], 'first.yml')
-    const secondFile = new File(['info: {name: Second, type: http}'], 'second.yml')
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[firstFile]} projectId="project-1" />)
-    })
-    await act(async () => { await Promise.resolve() })
-    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    await act(async () => { inspectButton?.click() })
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
-    expect(commitButton?.disabled).toBe(false)
-
-    const statusResponse = {
-      project_id: 'project-1',
-      capabilities: {
-        provider: 'encrypted_database',
-        writable: true,
-        create_supported: true,
-        replace_supported: true,
-        source_secret_migration_policy_enabled: true,
-      },
-      secrets: [],
-    }
-    let resolveStatus!: (response: typeof statusResponse) => void
-    const pendingStatus = new Promise<typeof statusResponse>(resolve => {
-      resolveStatus = resolve
-    })
-    apiMock.getProjectSecretStatuses.mockImplementation(() => pendingStatus)
-
-    await act(async () => {
-      selectProjectSecret(container)
-      await Promise.resolve()
-    })
-    await act(async () => { commitButton?.click() })
-    await act(async () => { await Promise.resolve() })
-
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[secondFile]} projectId="project-1" />)
-      await Promise.resolve()
-    })
-    await act(async () => {
-      resolveStatus(statusResponse)
-      await pendingStatus
-    })
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(apiMock.commitBrunoImport).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('second.yml')
-    const currentInspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    expect(currentInspectButton?.disabled).toBe(false)
-  })
-
-  it('surfaces safe partial-migration metadata and discards a consumed Bruno import session', async () => {
-    apiMock.commitBrunoImport.mockRejectedValueOnce(new ApiError('provider write failed', 502, {
-      partial: true,
-      import_session_consumed: true,
-      manual_configuration_required: true,
-      remaining_names: ['SECOND_TOKEN'],
-      migrated: [{ name: 'PASSWORD', provider: 'encrypted_database' }],
-    }))
-    const file = new File(['info: {name: Partial, type: http}'], 'partial.yml')
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
-    })
-    await act(async () => { await Promise.resolve() })
-    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    await act(async () => {
-      inspectButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    const migrationToggle = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
-      .find(input => input.parentElement?.textContent?.includes('Import detected credential values'))
-    await act(async () => {
-      selectProjectSecret(container)
-      await Promise.resolve()
-    })
-    await act(async () => migrationToggle?.click())
-    const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
-    await act(async () => {
-      commitButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(apiMock.commitBrunoImport).toHaveBeenCalledTimes(1)
-    expect(container.textContent).toContain('Remaining credentials: SECOND_TOKEN')
-    expect(container.textContent).toContain('Re-inspect the Bruno source')
-    expect(container.textContent).not.toContain('PASSWORD was created')
-    expect(container.querySelector('.credentials-card')).toBeNull()
-    const freshInspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    expect(freshInspectButton?.disabled).toBe(false)
-  })
-
-  it('shows a governed preflight block when developer execution is unavailable', async () => {
-    const file = new File(['info: {name: Modules, type: http}'], 'request.yml')
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
-    })
-    await act(async () => { await Promise.resolve() })
-
-    const sandbox = Array.from(container.querySelectorAll('select')).find(select => select.options[0]?.textContent?.includes('Safe'))
-    await act(async () => {
-      if (sandbox) {
-        sandbox.value = 'developer'
-        sandbox.dispatchEvent(new Event('change', { bubbles: true }))
-      }
-    })
-    expect(container.textContent).toContain('Developer execution is disabled')
-    expect(container.textContent).toContain('Import remains available')
-  })
-
-  it('disables inspection when an operator disables Bruno import', async () => {
-    apiMock.getBrunoSupportMatrix.mockResolvedValueOnce({
-      compatibility_version: '3.5.2',
-      import_enabled: false,
-      safe_execution_enabled: true,
-      developer_execution_enabled: false,
-      native_projection_enabled: false,
-      secret_store: {
-        provider: 'encrypted_database',
-        writable: true,
-        fallback: 'binding_only',
-        source_secret_migration_policy_enabled: true,
-      },
-    })
-    const file = new File(['info: {name: Disabled, type: http}'], 'disabled.yml')
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    expect(inspectButton?.disabled).toBe(true)
-    expect(container.textContent).toContain('Bruno import is disabled by an operator.')
-    await act(async () => inspectButton?.click())
-    expect(apiMock.inspectBrunoImport).not.toHaveBeenCalled()
-  })
-
-  it('clears a canonical synchronization target when the project changes', async () => {
-    const sourceScript = {
-      id: 'script-1',
-      ref_key: 'SCR-1',
-      project_id: 'project-1',
-      name: 'Existing Bruno script',
-      version: '1.0',
-      protocol: 'bruno',
-      created_at: '2026-07-16T19:00:00Z',
-    }
-    apiMock.listScripts
-      .mockResolvedValueOnce({ scripts: [sourceScript], count: 1 })
-      .mockResolvedValueOnce({ scripts: [], count: 0 })
-    const file = new File(['info: {name: Sync, type: http}'], 'sync.yml')
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    const syncTarget = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
-      .find(select => select.parentElement?.textContent?.includes('Synchronization target'))
-    expect(syncTarget).toBeDefined()
-    await act(async () => {
-      if (syncTarget) {
-        syncTarget.value = 'script-1'
-        syncTarget.dispatchEvent(new Event('change', { bubbles: true }))
-      }
-    })
-    expect(syncTarget?.value).toBe('script-1')
-
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[file]} projectId="project-2" />)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    const currentSyncTarget = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
-      .find(select => select.parentElement?.textContent?.includes('Synchronization target'))
-    expect(currentSyncTarget?.value).toBe('')
-  })
-
-  it('uses the synchronization target folder and sends null when moving it to the project root', async () => {
-    const sourceScript = {
-      id: 'script-1',
-      ref_key: 'SCR-1',
-      project_id: 'project-1',
-      folder_id: 'folder-1',
-      name: 'Existing Bruno script',
-      version: '1.0',
-      protocol: 'bruno',
-      created_at: '2026-07-16T19:00:00Z',
-    }
-    apiMock.listScripts.mockResolvedValueOnce({ scripts: [sourceScript], count: 1 })
-    const inspection = inspectionFixture()
-    ;(inspection as typeof inspection & { sync_preview: object }).sync_preview = {
-      target_script_id: 'script-1',
-      expected_updated_at: '2026-07-16T19:00:00Z',
-      active_revision: 'revision-0',
-      changes: {},
-      conflicts: [],
-    }
-    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
-    const file = new File(['info: {name: Sync, type: http}'], 'sync.yml')
-    await act(async () => {
-      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    const syncTarget = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
-      .find(select => select.parentElement?.textContent?.includes('Synchronization target'))
-    const destination = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
-      .find(select => select.parentElement?.textContent?.includes('Destination folder'))
-    await act(async () => {
-      if (syncTarget) {
-        syncTarget.value = 'script-1'
-        syncTarget.dispatchEvent(new Event('change', { bubbles: true }))
-      }
-    })
-    expect(destination?.value).toBe('folder-1')
-
-    await act(async () => {
-      if (destination) {
-        destination.value = ''
-        destination.dispatchEvent(new Event('change', { bubbles: true }))
-      }
-    })
-    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect & review'))
-    await act(async () => {
-      inspectButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Synchronize Bruno source'))
-    await act(async () => {
-      commitButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(apiMock.inspectBrunoImport).toHaveBeenCalledWith(
-      expect.any(Array),
-      expect.objectContaining({ sync_script_id: 'script-1' }),
-    )
-    expect(apiMock.commitBrunoImport).toHaveBeenCalledWith(expect.objectContaining({
-      mode: 'sync',
-      sync_script_id: 'script-1',
-      folder_id: null,
-    }))
   })
 
   it('shows a mixed select-all state for a partial native selection', async () => {

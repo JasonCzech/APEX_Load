@@ -289,6 +289,9 @@ func (tr *TestRunner) prepareTestForExecutionWithOptionsAndExpectedTerm(id strin
 		}
 	}
 	tr.mu.Unlock()
+	if err := tr.validateRetiredExecution(id, opts.PreparationID); err != nil {
+		return nil, err
+	}
 	// A completed shakeout may still be waiting for its durable outcome write
 	// after a transient storage interruption. Finish that transition before any
 	// new admission work so retrying Start never replays external actions.

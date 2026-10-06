@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/appdynamics"
+
 	"github.com/jasonczech/apexload/pkg/deeplink"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -171,7 +171,7 @@ func (s *Server) collectDirectDynatrace(parent context.Context, job storage.RunM
 	defer cancel()
 	ctx, stop := context.WithTimeout(ctx, 30*time.Second)
 	defer stop()
-	from, to := appDynamicsQueryWindow(job, time.Now().UTC())
+	from, to := providerQueryWindow(job, time.Now().UTC())
 	if !to.After(from) {
 		return
 	}
@@ -220,10 +220,10 @@ func (s *Server) collectDirectDynatrace(parent context.Context, job storage.RunM
 	defer ingestCancel()
 	// Both adapters emit the same envelope. Keep the established chunking and
 	// artifact limits so mixed-provider archives obey one storage budget.
-	common := appdynamics.Result{Points: result.Points, Evidence: result.Evidence, Coverage: result.Coverage, Topology: result.Topology, Progress: result.Progress}
+	common := providerCollectionResult{Points: result.Points, Evidence: result.Evidence, Coverage: result.Coverage, Topology: result.Topology, Progress: result.Progress}
 	sequence := job.NextSequence
 	for len(common.Points) > 0 || len(common.Evidence) > 0 {
-		batch, n, m, e := boundedDirectAppDynamicsBatch(common, job, from, to)
+		batch, n, m, e := boundedProviderMonitorBatch(common, job, from, to)
 		if e != nil {
 			return
 		}

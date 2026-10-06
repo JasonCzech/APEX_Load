@@ -43,7 +43,6 @@ const REPRESENTATIVE_SERVICES = [
   'listDashboardDefinitions',
   'listELKConnections',
   'listDynatraceConnections',
-  'listAppDynamicsConnections',
 ] as const
 
 describe('ApiProvider', () => {

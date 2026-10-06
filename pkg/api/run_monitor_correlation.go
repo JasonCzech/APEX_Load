@@ -60,9 +60,7 @@ func (tr *TestRunner) runMonitorCorrelationOrigins(id string) []string {
 			continue
 		}
 		origins := []string{}
-		if source.Pack == monitorprovider.PackAppDynamics && source.AppDynamics != nil && source.AppDynamics.RunHeader {
-			origins = source.AppDynamics.HeaderOrigins
-		}
+
 		if source.Pack == monitorprovider.PackDynatrace && source.Dynatrace != nil && source.Dynatrace.RunHeader {
 			origins = source.Dynatrace.HeaderOrigins
 		}

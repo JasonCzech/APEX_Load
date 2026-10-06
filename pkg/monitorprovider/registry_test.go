@@ -110,3 +110,27 @@ func TestByCapabilityPackMapsContractsToProviders(t *testing.T) {
 		t.Fatal("the scrape contract is not a governed provider capability")
 	}
 }
+
+func TestRetiredProviderKeepsHistoricalIdentityWithoutActiveDiscovery(t *testing.T) {
+	d, ok := Lookup(PackAppDynamics)
+	if !ok || !Canonical(PackAppDynamics) || !KnownProviderName(ProviderAppDynamics) {
+		t.Fatal("historical identity lost")
+	}
+	if byName, ok := ByProviderName(ProviderAppDynamics); !ok || byName.Pack != d.Pack {
+		t.Fatal("historical provider cannot be decoded")
+	}
+	for _, pack := range Packs() {
+		if pack == PackAppDynamics {
+			t.Fatal("retired provider advertised")
+		}
+	}
+	if _, ok := ByCapabilityPack(d.CapabilityPack); ok || IsCapabilityPack(d.CapabilityPack) {
+		t.Fatal("retired provider capability accepted")
+	}
+	for _, pack := range []string{PackDynatrace, PackPrometheusQuery, PackElasticQuery} {
+		active, _ := Lookup(pack)
+		if _, ok := ByCapabilityPack(active.CapabilityPack); !ok {
+			t.Fatalf("supported provider %s removed", pack)
+		}
+	}
+}

@@ -9,7 +9,6 @@ import (
 func TestRegistersBundledProtocols(t *testing.T) {
 	want := []string{
 		"browser",
-		"bruno",
 		"database",
 		"eventhubs",
 		"grpc",
@@ -35,5 +34,11 @@ func TestRegistersBundledProtocols(t *testing.T) {
 				t.Fatalf("protocol name = %q, want %q", p.Name(), name)
 			}
 		})
+	}
+}
+
+func TestRetiredBrunoRunnerIsNotRegistered(t *testing.T) {
+	if _, err := protocol.Get("bruno"); err == nil {
+		t.Fatal("retired Bruno Runner is registered in the standard build")
 	}
 }

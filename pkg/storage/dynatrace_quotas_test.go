@@ -20,7 +20,7 @@ func TestDynatraceQuotaAdmitsAndIsolatesProviderExecutors(t *testing.T) {
 	if ok, err := s.AllocateDynatraceQuota(key, "direct", now.Add(30*time.Second)); err != nil || !ok {
 		t.Fatalf("existing executor could not renew its lease: %v %v", ok, err)
 	}
-	if ok, err := s.AllocateAppDynamicsQuota(key, "appdynamics-direct", now); err != nil || !ok {
+	if ok, err := s.AllocateMonitorQuota(key, "appdynamics-direct", now); err != nil || !ok {
 		t.Fatalf("Dynatrace leases interfered with AppDynamics: %v %v", ok, err)
 	}
 	if ok, err := s.AllocateDynatraceQuota(key, "third", now.Add(time.Minute)); err != nil || !ok {

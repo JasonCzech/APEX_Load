@@ -29,9 +29,6 @@
         "review_policy": {},
         "viewport": {}
       },
-      "bruno": {
-        "limits": {}
-      },
       "database": {},
       "error_handling": {},
       "eventhubs": {},
@@ -119,9 +116,6 @@
           "proxy": {},
           "review_policy": {},
           "viewport": {}
-        },
-        "bruno": {
-          "limits": {}
         },
         "database": {},
         "error_handling": {},

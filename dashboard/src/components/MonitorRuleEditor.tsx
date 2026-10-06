@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { request } from '../hooks/apiClient'
-import type { MonitorRule, MonitorSource } from '../types/appdynamics'
+import type { MonitorRule, MonitorSource } from '../types/runMonitoring'
 import { monitorMetricCatalog, nativeMonitorProvider } from './monitorProviderModel'
 import { useDynatraceConnectionsApi } from '../hooks/api/useDynatraceConnectionsApi'
 import type { DynatraceOperation } from '../types/dynatrace'
@@ -58,7 +58,7 @@ export default function MonitorRuleEditor({ projectId, value, onChange, canEdit 
           {source?.dynatrace && source.connection_id && projectId && <button type="button" disabled={previewLoading} onClick={() => void previewSource(source)}>Preview exact series for criterion {index + 1}</button>}
           {previewError && <p role="alert">Series preview unavailable: {previewError}</p>}
           {preview && source && preview.source === source.id && <><p role="status">Series preview: {preview.operation.status}{preview.operation.message ? ` · ${preview.operation.message}` : ''}. Preview consumes the configured scan allowance.</p>{[...new Map((preview.operation.result?.preview?.points || []).filter(point => point.metric_name === rule.metric && point.provider?.name === 'dynatrace' && (!point.provider.query_window || wholeWindow)).map(point => [monitorSeriesIdentity(point), point])).values()].slice(0, 200).map(point => <button type="button" key={monitorSeriesIdentity(point)} onClick={() => change(index, { provider: 'dynatrace', backend: point.provider?.backend, metric_id: point.provider?.metric_id, source_statistic: point.provider?.statistic, resolution_seconds: point.provider?.query_window ? undefined : point.provider?.resolution_seconds, unit: point.unit, dimensions: point.dimensions, entity_ids: point.provider?.entity_ids })}>Use {point.metric_name} · {point.unit} · {point.provider?.statistic} / {point.provider?.query_window ? 'query window' : `${point.provider?.resolution_seconds}s`} · {Object.values(point.provider?.entity_ids || {}).join(', ')}</button>)}</>}
-          <label>Criterion {index + 1} provider<select value={rule.provider || ''} onChange={event => change(index, { provider: event.target.value ? event.target.value as MonitorRule['provider'] : undefined })}><option value="">Selected source provider</option><option value="appdynamics">AppDynamics</option><option value="dynatrace">Dynatrace</option></select></label>
+          <label>Criterion {index + 1} provider<select value={rule.provider || ''} onChange={event => change(index, { provider: event.target.value ? event.target.value as MonitorRule['provider'] : undefined })}><option value="">Selected source provider</option><option value="dynatrace">Dynatrace</option></select></label>
           <label>Criterion {index + 1} backend<input value={rule.backend || ''} onChange={event => change(index, { backend: event.target.value || undefined })} /></label>
           <label>Criterion {index + 1} provider metric ID<input value={rule.metric_id || ''} onChange={event => change(index, { metric_id: event.target.value || undefined })} /></label>
           <label>Criterion {index + 1} source statistic<input value={rule.source_statistic || ''} onChange={event => change(index, { source_statistic: event.target.value || undefined })} /></label>

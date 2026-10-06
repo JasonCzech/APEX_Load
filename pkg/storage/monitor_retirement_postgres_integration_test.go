@@ -1,0 +1,47 @@
+//go:build postgres_integration
+
+package storage
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"os"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestPostgresMonitorRetirementHistory(t *testing.T) {
+	databaseURL := strings.TrimSpace(os.Getenv("APEXLOAD_TEST_POSTGRES_URL"))
+	if databaseURL == "" {
+		t.Skip("APEXLOAD_TEST_POSTGRES_URL is not set")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	schema := fmt.Sprintf("monitor_retirement_%d", time.Now().UnixNano())
+	quoted := quotePostgresIdentifier(schema)
+	if _, err = db.ExecContext(ctx, "CREATE SCHEMA "+quoted); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
+		defer stop()
+		if _, err := db.ExecContext(cleanup, "DROP SCHEMA "+quoted+" CASCADE"); err != nil {
+			t.Error(err)
+		}
+	}()
+	store, err := NewPostgresStore(postgresIntegrationURLWithSearchPath(t, databaseURL, schema), StoreConnectionOptions{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	s, _, now := seedMonitorFixture(t, store.SQLiteStore)
+	checkMonitorRetirement(t, s, now)
+	checkMonitorQuotaLeases(t, s)
+}

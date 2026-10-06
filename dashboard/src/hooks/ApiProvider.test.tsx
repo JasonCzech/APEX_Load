@@ -26,7 +26,6 @@ it('shares one context identity across required and optional consumers and scope
     expect(observed.get('sibling')!.required).toBe(outer)
     for (const value of observed.values()) expect(value.optional).toBe(value.required)
     expect(typeof inner.listTests).toBe('function')
-    expect(typeof inner.listAppDynamicsConnections).toBe('function')
 
     await act(async () => root.render(tree(false)))
     expect(observed.get('outer')!.required).toBe(outer)

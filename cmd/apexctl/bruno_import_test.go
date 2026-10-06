@@ -18,50 +18,22 @@ import (
 	"time"
 )
 
-func TestParseBrunoImportArgs(t *testing.T) {
-	args, err := parseBrunoImportArgs([]string{
-		"--api", "https://controller.example.test/",
-		"--path", "./collection",
-		"--project", "project-1",
-		"--sync", "script-1",
-		"--sandbox", "developer",
-		"--no-migrate-secrets",
-		"--secret-binding", "requirement-1=BRUNO_PASSWORD",
-		"--conflict-resolution", "canonical_action=use_source",
-		"--format", "json",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if args.api != "https://controller.example.test" || args.path != "./collection" ||
-		args.projectID != "project-1" || args.syncScriptID != "script-1" ||
-		args.sandbox != "developer" || args.format != "json" || args.migrateSecrets {
-		t.Fatalf("parsed args = %#v", args)
-	}
-	if args.secretBindings["requirement-1"] != "BRUNO_PASSWORD" {
-		t.Fatalf("secret bindings = %#v", args.secretBindings)
-	}
-	if args.conflicts["canonical_action"] != "use_source" {
-		t.Fatalf("conflict resolutions = %#v", args.conflicts)
-	}
-}
-
 func TestParseBrunoImportArgsSupportsEqualsAndRejectsAmbiguousAssignments(t *testing.T) {
 	args, err := parseBrunoImportArgs([]string{
-		"--api=https://controller.example.test/", "--path=./collection", "--project=project-1",
+		"--api=https://controller.example.test/", "--path=./collection", "--project=project-1", "--folder=folder-1",
 		"--secret-binding=requirement-1=BRUNO_PASSWORD", "--format=json",
 	})
 	if err != nil || args.api != "https://controller.example.test" || args.secretBindings["requirement-1"] != "BRUNO_PASSWORD" || args.format != "json" {
 		t.Fatalf("equals-form Bruno args = %#v, error %v", args, err)
 	}
 	args, err = parseBrunoImportArgs([]string{
-		"--api=https://controller.example.test", "--path=./collection", "--project=project-1",
+		"--api=https://controller.example.test", "--path=./collection", "--project=project-1", "--folder=folder-1",
 		"--migrate-secrets=false", "--ack-review-required=false",
 	})
 	if err != nil || args.migrateSecrets || args.ackReview {
 		t.Fatalf("boolean equals-form Bruno args = %#v, error %v", args, err)
 	}
-	base := []string{"--api=https://controller.example.test", "--path=./collection", "--project=project-1"}
+	base := []string{"--api=https://controller.example.test", "--path=./collection", "--project=project-1", "--folder=folder-1"}
 	for _, extra := range [][]string{
 		{"--secret-binding=a=one", "--secret-binding=a=two"},
 		{"--conflict-resolution=a=one", "--conflict-resolution=a=two"},
@@ -110,10 +82,6 @@ func TestParseBrunoImportArgsNativeMode(t *testing.T) {
 			name: "missing native folder",
 			args: []string{"--output", "native"},
 		},
-		{
-			name: "canonical folder",
-			args: []string{"--folder", "folder-1"},
-		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			base := []string{
@@ -125,159 +93,6 @@ func TestParseBrunoImportArgsNativeMode(t *testing.T) {
 				t.Fatalf("expected incompatible flag error")
 			}
 		})
-	}
-}
-
-func TestRunBrunoImportStreamsFileAndCommitsBindings(t *testing.T) {
-	root := t.TempDir()
-	source := []byte("info: {name: Request, type: http}\nhttp: {url: https://example.test}\n")
-	sourcePath := filepath.Join(root, "request.yml")
-	if err := os.WriteFile(sourcePath, source, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var inspectCalled, commitCalled bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/v1/scripts/import/bruno/inspect":
-			inspectCalled = true
-			if r.URL.Query().Get("project_id") != "project-1" || r.URL.Query().Get("filename") != "request.yml" {
-				t.Fatalf("inspect query = %s", r.URL.RawQuery)
-			}
-			if got, _ := io.ReadAll(r.Body); !reflect.DeepEqual(got, source) {
-				t.Fatalf("inspect body = %q", got)
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{
-			  "import_session_id":"session-1",
-			  "result":{
-			    "collection":{"name":"Request"},
-			    "secret_requirements":[{"id":"requirement-1","suggested_name":"PASSWORD"}]
-			  }
-			}`)
-		case "/api/v1/scripts/import/bruno/commit":
-			commitCalled = true
-			var body map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatal(err)
-			}
-			bindings, _ := body["secret_bindings"].(map[string]any)
-			conflicts, _ := body["conflict_resolutions"].(map[string]any)
-			if body["project_id"] != "project-1" || body["import_session_id"] != "session-1" ||
-				body["migrate_secrets"] != true || bindings["requirement-1"] != "BRUNO_PASSWORD" ||
-				conflicts["canonical_action"] != "use_source" {
-				t.Fatalf("commit body = %#v", body)
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusCreated)
-			_, _ = io.WriteString(w, `{
-			  "created":true,
-			  "script":{"id":"script-1","name":"Request","ref_key":"SCR-1"},
-			  "revision":{"id":"revision-1"}
-			}`)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	result, err := runBrunoImport(t.Context(), brunoImportArgs{
-		path:           sourcePath,
-		projectID:      "project-1",
-		api:            server.URL,
-		sandbox:        "safe",
-		timeout:        defaultCLIImportTimeout,
-		migrateSecrets: true,
-		secretBindings: map[string]string{"PASSWORD": "BRUNO_PASSWORD"},
-		conflicts:      map[string]string{"canonical_action": "use_source"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !inspectCalled || !commitCalled || result.Script.ID != "script-1" || result.Revision.ID != "revision-1" {
-		t.Fatalf("inspect=%t commit=%t result=%#v", inspectCalled, commitCalled, result)
-	}
-}
-
-func TestCommitBrunoImportRejectsNativeShapedCanonicalReceipt(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		_, _ = io.WriteString(w, `{
-		  "batch_id":"wrong-shape",
-		  "count":1,
-		  "scripts":[{"id":"script-1"}]
-		}`)
-	}))
-	defer server.Close()
-
-	client := NewApiClient(server.URL)
-	_, err := client.CommitBrunoImport(t.Context(), map[string]any{
-		"mode":              "create",
-		"import_session_id": "session-1",
-	})
-	if err == nil || !strings.Contains(err.Error(), "missing script or revision identity") {
-		t.Fatalf("canonical malformed receipt error = %v", err)
-	}
-}
-
-func TestRunBrunoImportStreamsDirectoryInDeterministicOrder(t *testing.T) {
-	root := t.TempDir()
-	for name, content := range map[string]string{
-		"b.yml": "info: {name: B, type: http}\nhttp: {url: https://b.test}\n",
-		"a.yml": "info: {name: A, type: http}\nhttp: {url: https://a.test}\n",
-	} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	var uploaded []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/v1/scripts/import/bruno/inspect":
-			reader, err := r.MultipartReader()
-			if err != nil {
-				t.Fatal(err)
-			}
-			for {
-				part, err := reader.NextPart()
-				if err == io.EOF {
-					break
-				}
-				if err != nil {
-					t.Fatal(err)
-				}
-				if part.FileName() != "" {
-					uploaded = append(uploaded, strings.TrimPrefix(part.FormName(), "file:"))
-				}
-				_, _ = io.Copy(io.Discard, part)
-				_ = part.Close()
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{"import_session_id":"session-1","result":{"collection":{"name":"Directory"}}}`)
-		case "/api/v1/scripts/import/bruno/commit":
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusCreated)
-			_, _ = io.WriteString(w, `{"script":{"id":"script-1","name":"Directory"},"revision":{"id":"revision-1"}}`)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	_, err := runBrunoImport(t.Context(), brunoImportArgs{
-		path:           root,
-		projectID:      "project-1",
-		api:            server.URL,
-		sandbox:        "safe",
-		timeout:        defaultCLIImportTimeout,
-		migrateSecrets: true,
-		secretBindings: map[string]string{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := []string{"a.yml", "b.yml"}; !reflect.DeepEqual(uploaded, want) {
-		t.Fatalf("uploaded paths = %#v, want %#v", uploaded, want)
 	}
 }
 

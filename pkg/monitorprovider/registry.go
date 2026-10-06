@@ -67,6 +67,7 @@ type Descriptor struct {
 }
 
 var descriptors = map[string]Descriptor{
+	// Retained for decoding historical sources, points and archives only.
 	PackAppDynamics: {
 		Pack: PackAppDynamics, ProviderName: ProviderAppDynamics, Label: "AppDynamics",
 		CapabilityPack: "appdynamics.v1", ContractUnavailableReason: "collector_appdynamics_contract_unavailable",
@@ -114,7 +115,7 @@ func Canonical(pack string) bool {
 // is name, such as "dynatrace.v1".
 func ByCapabilityPack(name string) (Descriptor, bool) {
 	for _, d := range descriptors {
-		if d.CapabilityPack == name {
+		if d.Pack != PackAppDynamics && d.CapabilityPack == name {
 			return d, true
 		}
 	}
@@ -144,10 +145,13 @@ func KnownProviderName(name string) bool {
 	return ok
 }
 
-// Packs lists the governed provider packs in a stable order.
+// Packs lists the active governed provider packs in a stable order.
 func Packs() []string {
 	out := make([]string, 0, len(descriptors))
 	for pack := range descriptors {
+		if pack == PackAppDynamics {
+			continue
+		}
 		out = append(out, pack)
 	}
 	sort.Strings(out)

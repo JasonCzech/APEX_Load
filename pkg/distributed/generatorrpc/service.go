@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1511,6 +1510,9 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 		if normalized == "" {
 			continue
 		}
+		if normalized == "bruno" {
+			continue
+		}
 		if normalized == "java_vuser" && !config.JavaVuserRunnerEnabled() {
 			runtimeCapacities = append(runtimeCapacities, &pb.ProtocolRuntimeCapacity{
 				Protocol:      normalized,
@@ -1525,10 +1527,6 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 		capabilities, capabilitySupported, capabilityErr := protocol.ReadRuntimeCapabilities(instance)
 		runtimeAvailable := !capabilitySupported || capabilities.Available
 		if capabilityErr != nil {
-			runtimeAvailable = false
-		}
-		if normalized == "bruno" &&
-			(!capabilitySupported || !brunoRuntimeContained(capabilities.Features)) {
 			runtimeAvailable = false
 		}
 		if normalized == "java_vuser" &&
@@ -1606,11 +1604,6 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 	return sortedUniqueRuntimeNames(available), sortedUniqueRuntimeNames(features), runtimeCapacities
 }
 
-func brunoRuntimeContained(features []string) bool {
-	return protocol.RuntimeFeaturesSatisfy(features, "runner_owner_lease_v1") &&
-		protocol.RuntimeFeaturesSatisfy(features, "bruno_session_lease_v1")
-}
-
 func javaVuserRuntimeContained(features []string) bool {
 	return protocol.RuntimeFeaturesSatisfy(features, "java_vuser_local_process_containment_v1") ||
 		(protocol.RuntimeFeaturesSatisfy(features, "java_vuser_external_runtime_v1") &&
@@ -1654,19 +1647,6 @@ func removeProtocolName(values []string, expected string) []string {
 		}
 	}
 	return filtered
-}
-
-func configuredBrunoSessionCapacity() int64 {
-	const defaultCapacity = int64(256)
-	raw := strings.TrimSpace(os.Getenv("APEXLOAD_BRUNO_MAX_SESSIONS"))
-	if raw == "" {
-		return defaultCapacity
-	}
-	value, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || value <= 0 || value > maxGeneratorVUsers {
-		return defaultCapacity
-	}
-	return value
 }
 
 func scriptProtocol(content []byte) string {

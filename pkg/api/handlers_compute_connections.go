@@ -719,8 +719,6 @@ func sidecarProbe(target *storage.ExecutionTarget) ClusterProbe {
 		for _, protocol := range profile.Protocols {
 			var required string
 			switch strings.ToLower(strings.TrimSpace(protocol)) {
-			case "bruno":
-				required = "bruno"
 			case "java_vuser":
 				required = "java-vuser-runner"
 			}

@@ -1,0 +1,2 @@
+# Keep archival bytes and checksums unchanged, including original whitespace.
+* -text -whitespace

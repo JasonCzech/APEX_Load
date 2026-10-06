@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react'
 import { request } from '../hooks/apiClient'
-import type { AppDynamicsEvidence, RunMonitorJob } from '../types/appdynamics'
+import type { MonitorEvidence, RunMonitorJob } from '../types/runMonitoring'
 
-function diagnosticSeenTime(item: AppDynamicsEvidence, field: string): string | undefined {
+function diagnosticSeenTime(item: MonitorEvidence, field: string): string | undefined {
   const value = item.properties?.[field]
   return value && value.length <= 64 && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value) && Number.isFinite(Date.parse(value)) ? value : undefined
 }
-export function PrometheusDiagnosticTable({ evidence }: { evidence: AppDynamicsEvidence[] }) {
+export function PrometheusDiagnosticTable({ evidence }: { evidence: MonitorEvidence[] }) {
   const hasSeenTimes = evidence.some(item => diagnosticSeenTime(item, 'first_observed_utc') || diagnosticSeenTime(item, 'last_observed_utc'))
   return <table aria-label="Prometheus health evidence"><caption>States are sampled observations. No longer observed means absent from a later successful scoped snapshot; it does not establish historical resolution.</caption><thead><tr><th>Time</th><th>Kind</th><th>State</th>{hasSeenTimes && <><th>First seen</th><th>Last seen</th></>}<th>Summary</th><th>Correlation</th></tr></thead><tbody>{evidence.map((item, index) => <tr key={`${item.source_id}:${item.id || index}`}><td>{item.timestamp_utc || item.timestamp || '—'}</td><td>{item.kind || item.type || '—'}</td><td>{item.status || item.severity || '—'}</td>{hasSeenTimes && <><td>{diagnosticSeenTime(item, 'first_observed_utc') || '—'}</td><td>{diagnosticSeenTime(item, 'last_observed_utc') || '—'}</td></>}<td>{item.summary || item.message || item.title || '—'}</td><td>{item.correlation || item.correlation_strength || 'entity_time'}</td></tr>)}</tbody></table>
 }
 export default function PrometheusRunEvidence({ jobs, sourceId, testId }: { jobs: RunMonitorJob[]; sourceId?: string; testId?: string }) {
   const selected = jobs.filter(job => job.source.pack === 'prometheus-query' && (!sourceId || job.source.id === sourceId))
   const sourceKey = selected.map(job => job.source.id).join(',')
-  const [page, setPage] = useState<{ evidence: AppDynamicsEvidence[]; has_more: boolean; after_key?: string }>()
+  const [page, setPage] = useState<{ evidence: MonitorEvidence[]; has_more: boolean; after_key?: string }>()
   const [cursor, setCursor] = useState('')
   const [revision, setRevision] = useState(0)
   const [error, setError] = useState('')
@@ -25,7 +25,7 @@ export default function PrometheusRunEvidence({ jobs, sourceId, testId }: { jobs
     const controller = new AbortController()
     const query = new URLSearchParams({ limit: '100', after_key: cursor })
     if (sourceId) query.set('source_id', sourceId)
-    void request<{ evidence: AppDynamicsEvidence[]; has_more: boolean; after_key?: string }>(`/tests/${encodeURIComponent(testId)}/monitor-evidence?${query}`, { signal: controller.signal }).then(value => { if (!controller.signal.aborted) { setPage(value); setError('') } }).catch(err => { if (!controller.signal.aborted) setError(String(err)) })
+    void request<{ evidence: MonitorEvidence[]; has_more: boolean; after_key?: string }>(`/tests/${encodeURIComponent(testId)}/monitor-evidence?${query}`, { signal: controller.signal }).then(value => { if (!controller.signal.aborted) { setPage(value); setError('') } }).catch(err => { if (!controller.signal.aborted) setError(String(err)) })
     return () => controller.abort()
   }, [testId, sourceKey, sourceId, cursor, revision])
   if (!selected.length) return null

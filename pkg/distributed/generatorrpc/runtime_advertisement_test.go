@@ -137,25 +137,6 @@ func TestJavaVuserRuntimeContainmentContract(t *testing.T) {
 	}
 }
 
-func TestBrunoRuntimeContainmentContract(t *testing.T) {
-	tests := []struct {
-		name     string
-		features []string
-		want     bool
-	}{
-		{name: "owner and session leases", features: []string{"runner_owner_lease_v1", "bruno_session_lease_v1"}, want: true},
-		{name: "owner lease only", features: []string{"runner_owner_lease_v1"}},
-		{name: "session lease only", features: []string{"bruno_session_lease_v1"}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := brunoRuntimeContained(test.features); got != test.want {
-				t.Fatalf("brunoRuntimeContained(%v) = %v, want %v", test.features, got, test.want)
-			}
-		})
-	}
-}
-
 func TestProtocolRuntimeCapacitiesFromProtoClonesFeatures(t *testing.T) {
 	featureValues := []string{"persistent"}
 	values := []*pb.ProtocolRuntimeCapacity{{

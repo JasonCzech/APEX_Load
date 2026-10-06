@@ -179,17 +179,6 @@ func buildAPMIntegrationProfiles(settings SystemSettings, tracing telemetry.Stat
 			Evidence:          []string{"pkg/api/external_metrics.go", "pkg/api/archive.go"},
 			SetupActions:      []string{"Route APEX Load OpenTelemetry signals through a New Relic-enabled collector.", "Map span and transaction attributes into New Relic entities."},
 		},
-		{
-			ID:                "appdynamics",
-			Name:              "AppDynamics",
-			Status:            statusFor("appdynamics"),
-			Capabilities:      baseCapabilities,
-			SupportedSignals:  baseSignals,
-			CorrelationFields: baseFields,
-			RequiredSettings:  []string{"external metrics or OpenTelemetry collector route"},
-			Evidence:          []string{"pkg/api/external_metrics.go", "pkg/api/archive.go"},
-			SetupActions:      []string{"Route APEX Load OpenTelemetry signals through an AppDynamics-capable collector.", "Map dependency target names to AppDynamics application nodes."},
-		},
 	}
 	return profiles
 }

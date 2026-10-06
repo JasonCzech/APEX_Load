@@ -1,3 +1,6 @@
+{{- if .Values.bruno.enabled }}
+{{- fail "Bruno Runner is retired and excluded from this build; set bruno.enabled=false. Native Bruno import remains available through bruno.importEnabled." }}
+{{- end }}
 {{- if and .Values.projectSecrets.wrappingKeyVaultKeyId .Values.bruno.keyVaultKeyId (ne .Values.projectSecrets.wrappingKeyVaultKeyId .Values.bruno.keyVaultKeyId) }}
 {{- fail "projectSecrets.wrappingKeyVaultKeyId and bruno.keyVaultKeyId must match because the controller uses one wrapping key" }}
 {{- end }}
@@ -64,10 +67,6 @@ data:
   APEXLOAD_OTEL_ACTION_SAMPLE_RATIO: {{ .Values.tracing.actionSampleRatio | quote }}
   OTEL_RESOURCE_ATTRIBUTES: {{ .Values.tracing.resourceAttributes | quote }}
   APEXLOAD_BRUNO_IMPORT_ENABLED: {{ .Values.bruno.importEnabled | quote }}
-  APEXLOAD_BRUNO_SAFE_EXECUTION_ENABLED: {{ .Values.bruno.enabled | quote }}
-  APEXLOAD_BRUNO_DEVELOPER_EXECUTION_ENABLED: "false"
-  APEXLOAD_BRUNO_NATIVE_PROJECTION_ENABLED: "false"
-  APEXLOAD_BRUNO_EGRESS_BROKER_URL: {{ .Values.bruno.egressBrokerUrl | quote }}
 {{- $wrappingKeyVaultKeyId := include "apexload.wrappingKeyVaultKeyId" . }}
 {{- if $wrappingKeyVaultKeyId }}
   APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID: {{ $wrappingKeyVaultKeyId | quote }}

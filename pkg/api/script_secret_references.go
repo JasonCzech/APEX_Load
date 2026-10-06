@@ -103,7 +103,7 @@ func (s *Server) projectSecretUsage(projectID, name string) (projectSecretUsage,
 			}
 		}
 	}
-	return s.appendAppDynamicsSecretUsage(projectSecretUsageFromScripts(projectID, name, scripts))
+	return s.appendRetainedMonitorSecretUsage(projectSecretUsageFromScripts(projectID, name, scripts))
 }
 
 func projectSecretUsageFromScripts(projectID, name string, scripts []*dsl.Script) projectSecretUsage {

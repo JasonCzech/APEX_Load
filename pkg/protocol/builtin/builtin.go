@@ -4,7 +4,6 @@ package builtin
 
 import (
 	_ "github.com/jasonczech/apexload/pkg/protocol/browser"
-	_ "github.com/jasonczech/apexload/pkg/protocol/bruno"
 	_ "github.com/jasonczech/apexload/pkg/protocol/database"
 	_ "github.com/jasonczech/apexload/pkg/protocol/eventhubs"
 	_ "github.com/jasonczech/apexload/pkg/protocol/grpc"

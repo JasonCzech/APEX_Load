@@ -3,13 +3,13 @@ package bruno
 import (
 	"errors"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"sort"
 	"strconv"
 	"strings"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
-	"gopkg.in/yaml.v3"
 )
 
 const (

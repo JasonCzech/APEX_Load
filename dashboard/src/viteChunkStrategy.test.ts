@@ -58,7 +58,6 @@ describe('chunkNameForModule', () => {
     ['useSystemApi', 'api-system'],
     ['useTestApi', 'api-tests'],
     ['useDynatraceConnectionsApi', 'api-dynatrace-connections'],
-    ['useAppDynamicsConnectionsApi', 'api-appdynamics-connections'],
   ])('keeps the measured shared API facade %s independent of its siblings', (name, chunk) => {
     expect(chunkNameForModule(`/repo/dashboard/src/hooks/api/${name}.ts`)).toBe(chunk)
   })

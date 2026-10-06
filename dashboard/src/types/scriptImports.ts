@@ -1368,21 +1368,13 @@ export type BrunoCollectionItem = BrunoAPISchemas['BrunoCollectionItem']
 export type BrunoSecretRequirement = BrunoAPISchemas['BrunoSecretRequirement']
 export type BrunoSecurityFinding = BrunoAPISchemas['BrunoSecurityFinding']
 export type BrunoNativeDiagnostic = BrunoAPISchemas['BrunoNativeDiagnostic']
-export type BrunoImportConflict = BrunoAPISchemas['BrunoImportConflict']
-export type BrunoSyncPreview = BrunoAPISchemas['BrunoSyncPreview']
 // Source retention is no longer Bruno-only: any import routed through a
 // protected session can retain its upload, and these routes serve all of them.
 export type ImportSourceRevision = BrunoAPISchemas['ImportSourceRevision']
-export type BrunoExecutionPreflight = BrunoAPISchemas['BrunoExecutionPreflight']
 export type BrunoCommitErrorResponse = BrunoAPISchemas['BrunoCommitErrorResponse']
 
 export type BrunoNativeScriptCandidate =
   Omit<BrunoAPISchemas['BrunoNativeScriptCandidate'], 'script'> & {
-    script: ScriptDefinition
-  }
-
-type BrunoCanonicalInspectResult =
-  Omit<BrunoAPISchemas['BrunoCanonicalInspectResult'], 'script'> & {
     script: ScriptDefinition
   }
 
@@ -1395,18 +1387,11 @@ export type BrunoInspectResponse =
   Omit<BrunoAPISchemas['BrunoInspectResponse'], 'parameterization' | 'result' | 'shared_values'> & {
     parameterization: Parameterization | null
     shared_values?: SharedValues
-    result: BrunoCanonicalInspectResult | BrunoNativeInspectResult
+    result: BrunoNativeInspectResult
   }
 
-export type CommitBrunoCanonicalRequest = BrunoAPISchemas['BrunoCanonicalCommitRequest']
 export type CommitBrunoNativeBatchRequest = BrunoAPISchemas['BrunoNativeBatchCommitRequest']
-export type CommitBrunoImportRequest = BrunoAPISchemas['BrunoCommitRequest']
-
-export type CommitBrunoCanonicalResponse =
-  Omit<BrunoAPISchemas['BrunoCanonicalCommitResponse'], 'script'> & {
-    script: ScriptDefinition
-    readonly _http_status: 200 | 201
-  }
+export type CommitBrunoImportRequest = CommitBrunoNativeBatchRequest
 
 export type CommitBrunoNativeBatchResponse =
   Omit<BrunoAPISchemas['BrunoNativeBatchCommitResponse'], 'scripts'> & {
@@ -1415,7 +1400,7 @@ export type CommitBrunoNativeBatchResponse =
   }
 
 export type CommitBrunoImportResponse =
-  CommitBrunoCanonicalResponse | CommitBrunoNativeBatchResponse
+  CommitBrunoNativeBatchResponse
 
 export interface BrunoSupportMatrixResponse {
   schema_version: string
@@ -1444,13 +1429,4 @@ export interface BrunoSupportMatrixResponse {
     fallback: string
     source_secret_migration_policy_enabled?: boolean
   }
-}
-
-export interface BrunoProjectionPreview {
-  script_id: string
-  source_revision_id: string
-  projection?: unknown
-  proof_status: string
-  eligible: boolean
-  required_evidence?: string[]
 }

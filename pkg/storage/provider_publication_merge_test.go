@@ -2,13 +2,13 @@ package storage
 
 import (
 	"encoding/json"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/appdynamics"
 )
 
 func TestPublicationProviderPrivateStateRoundTrips(t *testing.T) {
@@ -19,7 +19,7 @@ func TestPublicationProviderPrivateStateRoundTrips(t *testing.T) {
 		QueryTime:                    &at, ProviderCursor: "private-cursor", RunTraceIDs: []string{"trace"},
 		ScanConsumedBytes: 13, ScanReservedBytes: 29,
 		FrozenMonitorRules: []analysis.MonitorRule{{QueryID: "cpu", Provider: "prometheus"}}, RulesFrozen: true,
-		QueryCoverage: map[string]appdynamics.Coverage{"cpu": {Status: "complete", ExpectedPoints: 4, Warnings: []string{"source-warning"}, ObservedAt: &at}},
+		QueryCoverage: map[string]monitorprovider.Coverage{"cpu": {Status: "complete", ExpectedPoints: 4, Warnings: []string{"source-warning"}, ObservedAt: &at}},
 	}
 	body, err := json.Marshal(job)
 	if err != nil {

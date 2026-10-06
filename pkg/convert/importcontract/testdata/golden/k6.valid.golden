@@ -34,9 +34,6 @@
         "review_policy": {},
         "viewport": {}
       },
-      "bruno": {
-        "limits": {}
-      },
       "database": {},
       "error_handling": {
         "snapshot_on_error": true

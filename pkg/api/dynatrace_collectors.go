@@ -40,7 +40,7 @@ func (s *Server) populateDynatraceGrant(ctx context.Context, grant *collectorage
 	selection.QueryOffset = job.QueryOffset
 	selection.Cursor = job.ProviderCursor
 	grant.Dynatrace = &dynatrace.JobConfig{Config: cfg, Selection: selection}
-	grant.QueryFromUTC, grant.QueryUntilUTC = appDynamicsQueryWindow(job, time.Now().UTC())
+	grant.QueryFromUTC, grant.QueryUntilUTC = providerQueryWindow(job, time.Now().UTC())
 	grant.LoadEndedAt, grant.DrainDeadline, grant.QueryWatermark = job.LoadEndedAt, job.DrainDeadline, job.QueryWatermark
 	grant.Reconciling = job.State == "reconciling"
 	grant.MaxBatches = 32

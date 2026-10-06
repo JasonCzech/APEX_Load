@@ -689,7 +689,7 @@ archive-safe cleanup.
 
 Connection tests inspect provider-observed task/app definitions for every
 runtime-profile sidecar and separately attest the Azure principal or ECS task
-role. Bruno and Java Vuser protocols must be represented by loopback sidecars
+role. Java Vuser protocols must be represented by loopback sidecars
 in the registered template.
 
 Provisioning happens before run supervision begins, so a 30–120 second cloud

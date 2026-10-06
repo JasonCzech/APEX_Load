@@ -230,7 +230,7 @@ func TestInspectNativeReportsRejectedContainersWithUnsupportedItemTypes(t *testi
 	if err == nil {
 		t.Fatal("unsupported native item type was accepted")
 	}
-	if !strings.Contains(err.Error(), "canonical mode is required for: graphql") {
+	if !strings.Contains(err.Error(), "unsupported items: graphql") {
 		t.Fatalf("error %q does not report the unsupported item type", err.Error())
 	}
 	if !strings.Contains(err.Error(), "a/b/c/legacy.json") {

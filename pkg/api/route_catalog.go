@@ -363,8 +363,6 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/bruno-imports/source", editorProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/bruno-imports/revisions", viewerProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/bruno-imports/rollback", editorProjectAccess(resolveScriptProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/bruno-projection/preview", editorProjectAccess(resolveScriptProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/bruno-projection/commit", editorProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/diagnose-replay", editorProjectAccessWithBodyLimit(resolveScriptProjectID, maxCorrelationRequestBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/tests/{id}/github/check-run", editorProjectAccess(resolveTestProjectID)),
 

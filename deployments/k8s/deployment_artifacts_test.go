@@ -1,6 +1,7 @@
 package k8s_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -469,22 +470,37 @@ func TestDockerDataPlatformOverride(t *testing.T) {
 	}
 }
 
-func TestDockerComposeIncludesBrunoRunnerAndSharedEncryptedArtifacts(t *testing.T) {
+func TestDockerComposeKeepsNativeImportArtifactsWithoutBrunoRunner(t *testing.T) {
 	compose := readTextFile(t, "../../compose.yaml")
-	for _, check := range []string{
-		"bruno-artifacts-init:",
-		`chown -R 65532:65532 /var/lib/apexload-bruno`,
-		"condition: service_completed_successfully",
-		"bruno-runner:",
-		"context: ./runners/bruno",
-		"network_mode: service:generator",
-		"APEXLOAD_BRUNO_RUNNER_URL: http://127.0.0.1:8097",
-		"APEXLOAD_BRUNO_ARTIFACT_ROOT: /var/lib/apexload-bruno",
-		"bruno-artifacts:/var/lib/apexload-bruno",
-	} {
+	for _, check := range []string{"bruno-artifacts-init:", "condition: service_completed_successfully", "APEXLOAD_BRUNO_ARTIFACT_ROOT: /var/lib/apexload-bruno", "bruno-artifacts:/var/lib/apexload-bruno"} {
 		if !strings.Contains(compose, check) {
-			t.Fatalf("compose.yaml missing Bruno runtime check %q", check)
+			t.Fatalf("native source retention missing %q", check)
 		}
+	}
+	var model struct {
+		Services map[string]struct {
+			Environment map[string]string `yaml:"environment"`
+			Volumes     []string          `yaml:"volumes"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(compose), &model); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := model.Services["bruno-runner"]; exists {
+		t.Fatal("retired runner must not be a Compose service")
+	}
+	for key := range model.Services["generator"].Environment {
+		if strings.HasPrefix(key, "APEXLOAD_BRUNO_") {
+			t.Fatalf("generator retains retired runner environment %s", key)
+		}
+	}
+	for _, volume := range model.Services["generator"].Volumes {
+		if strings.Contains(volume, "bruno-artifacts") {
+			t.Fatal("generator must not mount native import artifacts")
+		}
+	}
+	if !strings.Contains(readTextFile(t, "../../.dockerignore"), "_retired/") {
+		t.Fatal("retired snapshots must not enter Docker build contexts")
 	}
 }
 
@@ -522,7 +538,7 @@ func TestDockerComposeBrunoArtifactInitializationFailsClosed(t *testing.T) {
 			t.Fatalf("Bruno artifact initialization command missing %q: %q", required, command)
 		}
 	}
-	for _, serviceName := range []string{"controller", "generator"} {
+	for _, serviceName := range []string{"controller"} {
 		serviceNode, ok := model.Services[serviceName]
 		if !ok {
 			t.Fatalf("compose.yaml must define %s", serviceName)
@@ -540,44 +556,43 @@ func TestDockerComposeBrunoArtifactInitializationFailsClosed(t *testing.T) {
 	}
 }
 
-func TestHelmBrunoExecutionUsesLoopbackRunnerAndSharedEncryptedArtifacts(t *testing.T) {
+func TestHelmNativeBrunoImportRetainsStorageAndRejectsExecution(t *testing.T) {
 	values := readTextFile(t, "../helm/apexload/values.yaml")
 	generator := readTextFile(t, "../helm/apexload/templates/generator.yaml")
 	controller := readTextFile(t, "../helm/apexload/templates/controller.yaml")
-	for _, check := range []string{
-		"enabled: false",
-		"compatibilityVersion: \"3.5.2\"",
-		"existingClaim:",
-		"egressBrokerUrl:",
-		"maxSessions: 256",
-		"repository: apexload-bruno-runner",
-	} {
+	configmap := readTextFile(t, "../helm/apexload/templates/configmap.yaml")
+	for _, check := range []string{"importEnabled: false", "enabled: false", "artifactRoot: /var/lib/apexload-bruno", "existingClaim:", "keyVaultKeyId:", "artifactMasterKey:"} {
 		if !strings.Contains(values, check) {
-			t.Fatalf("Helm values missing Bruno runtime check %q", check)
+			t.Fatalf("native import values missing %q", check)
 		}
 	}
-	for _, check := range []string{
-		`fail "Bruno execution requires bruno.egressBrokerUrl`,
-		"APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED",
-		"APEXLOAD_BRUNO_RUNNER_URL",
-		"http://127.0.0.1:8097",
-		"name: bruno-runner",
-		"APEXLOAD_BRUNO_MAX_SESSIONS",
-		"APEXLOAD_BRUNO_MAX_JUMPS",
-		"APEXLOAD_BRUNO_MAX_RUN_REQUEST_DEPTH",
-		"APEXLOAD_BRUNO_MAX_PARALLEL_REQUESTS",
-		"APEXLOAD_BRUNO_MAX_OUTPUT_BYTES",
-		"APEXLOAD_BRUNO_MAX_STREAM_TIMEOUT_MS",
-		"readOnly: true",
-	} {
-		if !strings.Contains(generator, check) {
-			t.Fatalf("Helm generator template missing Bruno runtime check %q", check)
+	for _, forbidden := range []string{"bruno-runner", "APEXLOAD_BRUNO_", "bruno-artifacts"} {
+		if strings.Contains(generator, forbidden) {
+			t.Fatalf("generator retains retired Bruno hook %q", forbidden)
 		}
 	}
 	for _, check := range []string{"APEXLOAD_BRUNO_ARTIFACT_ROOT", "name: bruno-artifacts", "existingClaim"} {
 		if !strings.Contains(controller, check) {
-			t.Fatalf("Helm controller template missing Bruno artifact check %q", check)
+			t.Fatalf("controller source retention missing %q", check)
 		}
+	}
+	if !strings.Contains(configmap, `fail "Bruno Runner is retired`) {
+		t.Fatal("chart must reject legacy execution values even when schema validation is skipped")
+	}
+	var schema struct {
+		Properties map[string]struct {
+			Properties map[string]struct {
+				Const json.RawMessage `json:"const"`
+			} `json:"properties"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal([]byte(readTextFile(t, "../helm/apexload/values.schema.json")), &schema); err != nil {
+		t.Fatal(err)
+	}
+	enabled := schema.Properties["bruno"].Properties["enabled"].Const
+	var enabledValue bool
+	if len(enabled) == 0 || json.Unmarshal(enabled, &enabledValue) != nil || enabledValue {
+		t.Fatal("chart schema must require bruno.enabled=false")
 	}
 }
 

@@ -669,30 +669,6 @@ Waits for a WebSocket open event or frame observed in the replayed browser page.
 | `params.count` | int |  | Number of matching events required. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
-## Protocol: bruno
-
-### `bruno_run`
-
-Executes a selectable Bruno collection, folder, request, or tag set from the immutable source bundle.
-
-| Field | Kind | Required | Description |
-|-------|------|----------|-------------|
-| `params.selection` | enum: collection\|folder\|request\|tag |  | Selection kind; defaults to collection. |
-| `params.paths` | array |  | Relative collection paths selected for execution. |
-| `params.include_tags` | array |  | Only execute items carrying one of these tags. |
-| `params.exclude_tags` | array |  | Exclude items carrying one of these tags. |
-| `params.recursive` | bool |  | Recursively execute selected folders. |
-| `params.environment` | string |  | Collection environment override. |
-| `params.global_environment` | string |  | Workspace global-environment override. |
-| `params.data_source` | string |  | CSV/JSON data source or bundled relative path. |
-| `params.delay_ms` | int |  | Delay between selected requests. |
-| `params.bail` | bool |  | Stop after the first request, test, or assertion failure. |
-| `params.tests_only` | bool |  | Run only requests containing executable tests or assertions. |
-| `params.execution` | enum: sequential\|parallel |  | Data-iteration execution mode; requests remain in Bruno source order within each iteration. |
-| `params.max_parallel` | int |  | Bounded data-iteration concurrency when execution is parallel. |
-| `params.persist_session_across_iterations` | bool |  | Retain this VUser's Bruno runtime variables, cookies, and connections between APEX iterations. |
-| `params.stream_timeout_ms` | int |  | Deadline for long-lived gRPC or WebSocket work. |
-
 ## Protocol: database
 
 ### `db_begin`

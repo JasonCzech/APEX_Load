@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 714,
+    "routes": 699,
     "public": 27,
-    "protected": 687,
-    "rbac": 682,
+    "protected": 672,
+    "rbac": 667,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 714,
+    "green": 699,
     "partial": 0,
     "missing": 0
   },
@@ -6021,7 +6021,7 @@
     {
       "method": "GET",
       "path": "/api/v1/monitoring/collectors/{id}/inspections",
-      "operation_id": "handlePollAppDynamicsInspections",
+      "operation_id": "handlePollProviderInspections",
       "public": true,
       "authenticated": false,
       "state": "GREEN",
@@ -6034,7 +6034,7 @@
     {
       "method": "POST",
       "path": "/api/v1/monitoring/collectors/{id}/inspections/{operation_id}/result",
-      "operation_id": "handleAppDynamicsInspectionResult",
+      "operation_id": "handleProviderInspectionResult",
       "public": true,
       "authenticated": false,
       "state": "GREEN",
@@ -7315,309 +7315,6 @@
       },
       "denied_role": "qa_contract_unlisted",
       "service_account_scope": "write"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/projects/{id}/monitoring/appdynamics-connections",
-      "operation_id": "handleListAppDynamicsConnections",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "editor",
-          "project_admin",
-          "system_admin",
-          "viewer"
-        ],
-        "project": [
-          "editor",
-          "project_admin",
-          "viewer"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "read"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/projects/{id}/monitoring/appdynamics-connections",
-      "operation_id": "handleCreateAppDynamicsConnection",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "project_admin",
-          "system_admin"
-        ],
-        "project": [
-          "project_admin"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "write"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}",
-      "operation_id": "handleDeleteAppDynamicsConnection",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "project_admin",
-          "system_admin"
-        ],
-        "project": [
-          "project_admin"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "write"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}",
-      "operation_id": "handleGetAppDynamicsConnection",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "project_admin",
-          "system_admin"
-        ],
-        "project": [
-          "project_admin"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "read"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}",
-      "operation_id": "handleUpdateAppDynamicsConnection",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "project_admin",
-          "system_admin"
-        ],
-        "project": [
-          "project_admin"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "write"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/applications",
-      "operation_id": "handleDiscoverAppDynamicsApplications",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "project_admin",
-          "system_admin"
-        ],
-        "project": [
-          "project_admin"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "read"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/backends",
-      "operation_id": "handleDiscoverAppDynamicsBackends",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "project_admin",
-          "system_admin"
-        ],
-        "project": [
-          "project_admin"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "read"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/business-transactions",
-      "operation_id": "handleDiscoverAppDynamicsBusinessTransactions",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "project_admin",
-          "system_admin"
-        ],
-        "project": [
-          "project_admin"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "read"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/metrics",
-      "operation_id": "handleDiscoverAppDynamicsMetrics",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "project_admin",
-          "system_admin"
-        ],
-        "project": [
-          "project_admin"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "read"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/nodes",
-      "operation_id": "handleDiscoverAppDynamicsNodes",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "project_admin",
-          "system_admin"
-        ],
-        "project": [
-          "project_admin"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "read"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/operations/{operation_id}",
-      "operation_id": "handleGetAppDynamicsOperation",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "project_admin",
-          "system_admin"
-        ],
-        "project": [
-          "project_admin"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "read"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/test",
-      "operation_id": "handleTestAppDynamicsConnection",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "project_admin",
-          "system_admin"
-        ],
-        "project": [
-          "project_admin"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "write"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/projects/{id}/monitoring/appdynamics-connections/{connection_id}/tiers",
-      "operation_id": "handleDiscoverAppDynamicsTiers",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "project_admin",
-          "system_admin"
-        ],
-        "project": [
-          "project_admin"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "read"
     },
     {
       "method": "GET",
@@ -12935,56 +12632,6 @@
       },
       "denied_role": "qa_contract_unlisted",
       "service_account_scope": "read"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/scripts/{id}/bruno-projection/commit",
-      "operation_id": "handleCommitBrunoProjection",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "editor",
-          "project_admin",
-          "system_admin"
-        ],
-        "project": [
-          "editor",
-          "project_admin"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "scripts:write"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/scripts/{id}/bruno-projection/preview",
-      "operation_id": "handlePreviewBrunoProjection",
-      "public": false,
-      "authenticated": true,
-      "state": "GREEN",
-      "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write",
-      "anonymous_assertion": "HTTP 401 before handler",
-      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
-      "allowed_roles": {
-        "global": [
-          "editor",
-          "project_admin",
-          "system_admin"
-        ],
-        "project": [
-          "editor",
-          "project_admin"
-        ]
-      },
-      "denied_role": "qa_contract_unlisted",
-      "service_account_scope": "scripts:write"
     },
     {
       "method": "POST",

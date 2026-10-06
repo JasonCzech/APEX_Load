@@ -281,7 +281,7 @@ func (s *Server) handleCreateDynatraceOperation(w http.ResponseWriter, r *http.R
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 96<<10)
 	var req DynatraceOperationRequest
-	if !decodeAppDynamicsJSON(w, r, &req) {
+	if !decodeMonitorJSON(w, r, &req) {
 		return
 	}
 	admin := s.dynatraceOperationAdmin(r, c.ProjectID)

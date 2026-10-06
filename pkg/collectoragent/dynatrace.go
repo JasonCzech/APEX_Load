@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/appdynamics"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
 )
 
@@ -133,7 +132,7 @@ func (a *Agent) dynatraceTarget(job RunJob, cfg dynatrace.Config) (AdapterTarget
 	return target, nil
 }
 func (a *Agent) dispatchDynatraceJob(ctx context.Context, job RunJob, envelope SignedRunJob) {
-	a.dispatchAppDynamicsJob(ctx, job, envelope)
+	a.dispatchProviderJob(ctx, job, envelope)
 }
 func (a *Agent) collectDynatraceJob(ctx context.Context, job RunJob, envelope SignedRunJob) error {
 	return a.collectProviderJob(ctx, job, envelope, func(ctx context.Context, from, to time.Time) (providerResult, error) {
@@ -141,20 +140,20 @@ func (a *Agent) collectDynatraceJob(ctx context.Context, job RunJob, envelope Si
 		return providerResult{Points: result.Points, Evidence: result.Evidence, Coverage: result.Coverage, Topology: result.Topology, Progress: result.Progress}, err
 	})
 }
-func (a *Agent) readDynatraceJob(ctx context.Context, job RunJob, envelope SignedRunJob) (appdynamics.Result, error) {
+func (a *Agent) readDynatraceJob(ctx context.Context, job RunJob, envelope SignedRunJob) (providerResult, error) {
 	if job.Dynatrace == nil || job.Dynatrace.Validate() != nil {
-		return appdynamics.Result{}, errors.New("invalid Dynatrace job")
+		return providerResult{}, errors.New("invalid Dynatrace job")
 	}
 	if _, err := a.dynatraceTarget(job, job.Dynatrace.Config); err != nil {
-		return appdynamics.Result{}, err
+		return providerResult{}, err
 	}
 	credentials, err := OpenCredentials(job, a.cfg.CredentialPrivateKey, time.Now().UTC())
 	if err != nil || credentials.Dynatrace == nil {
-		return appdynamics.Result{}, errors.New("Dynatrace credential lease unavailable")
+		return providerResult{}, errors.New("Dynatrace credential lease unavailable")
 	}
 	client, err := a.newDynatraceClient(job.Dynatrace.Config, credentials.Dynatrace.Runtime())
 	if err != nil {
-		return appdynamics.Result{}, err
+		return providerResult{}, err
 	}
 	from, to := providerQueryWindow(job, time.Now().UTC())
 	leaseCtx, cancel := context.WithDeadline(ctx, job.LeaseExpiresAt)
@@ -175,7 +174,7 @@ func (a *Agent) readDynatraceJob(ctx context.Context, job RunJob, envelope Signe
 		a.dynatraceJobs[job.ID] = current
 	}
 	a.stateMu.Unlock()
-	return appdynamics.Result{Points: result.Points, Evidence: result.Evidence, Coverage: result.Coverage, Topology: result.Topology, Progress: result.Progress}, err
+	return providerResult{Points: result.Points, Evidence: result.Evidence, Coverage: result.Coverage, Topology: result.Topology, Progress: result.Progress}, err
 }
 func (a *Agent) newDynatraceClient(cfg dynatrace.Config, credentials dynatrace.Credentials) (*dynatrace.Client, error) {
 	if a.dynatraceClientFactory != nil {

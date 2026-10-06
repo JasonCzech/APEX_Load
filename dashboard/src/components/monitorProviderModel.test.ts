@@ -1,13 +1,13 @@
 import { expect, it } from 'vitest'
 import { monitorMetricCatalog, monitorSourceSelectionComplete, nativeMonitorProvider } from './monitorProviderModel'
-import { monitorJobState } from './appDynamicsConnectionModel'
+import { monitorJobState } from './monitorJobState'
 import { emptyDynatraceSelection } from '../types/dynatrace'
 import { emptyPrometheusQuery, emptyPrometheusSelection } from './prometheusConnectionModel'
-import type { MonitorSource } from '../types/appdynamics'
+import type { MonitorSource } from '../types/runMonitoring'
 
 const source: MonitorSource = { id: 'dt', name: 'SaaS', pack: 'dynatrace', revision: 1, enabled: true, collector_id: '', executor_mode: 'direct', connection_id: 'connection', interval_seconds: 60, dynatrace: emptyDynatraceSelection() }
-it('offers Dynatrace and AppDynamics canonical sources without changing legacy packs', () => {
-  expect(nativeMonitorProvider('dynatrace')).toBe(true); expect(nativeMonitorProvider('appdynamics')).toBe(true); expect(nativeMonitorProvider('cloudwatch')).toBe(false)
+it('offers supported canonical sources while excluding retired authoring', () => {
+  expect(nativeMonitorProvider('dynatrace')).toBe(true); expect(nativeMonitorProvider('appdynamics')).toBe(false); expect(nativeMonitorProvider('cloudwatch')).toBe(false)
   expect(monitorSourceSelectionComplete(source)).toBe(true)
   expect(monitorSourceSelectionComplete({ ...source, connection_id: undefined })).toBe(false)
   expect(monitorSourceSelectionComplete({ ...source, executor_mode: 'collector' })).toBe(false)

@@ -19,15 +19,23 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-go_test_files=$(git ls-files '*_test.go' | wc -l | tr -d ' ')
-go_src_files=$(git ls-files '*.go' | grep -vc '_test\.go$' || true)
-go_test_funcs=$(git grep -h '^func Test' -- '*_test.go' | wc -l | tr -d ' ')
+# Count the active working-tree files rather than paths pending deletion.
+tracked_files() {
+  git ls-files "$@" | while IFS= read -r file; do
+    case "$file" in _retired/*) continue ;; esac
+    if [[ -f "$file" ]]; then printf '%s\n' "$file"; fi
+  done
+}
+
+go_test_files=$(tracked_files '*_test.go' | wc -l | tr -d ' ')
+go_src_files=$(tracked_files '*.go' | grep -vc '_test\.go$' || true)
+go_test_funcs=$(tracked_files '*_test.go' | xargs grep -h '^func Test' | wc -l | tr -d ' ')
 # Note the pathspec: 'dashboard/src/' matches the whole subtree, including files
 # at its root. A '**/*.test.ts' glob does not, and undercounts by 16.
-dashboard_tests=$(git ls-files 'dashboard/src/' | grep -Ec '\.test\.tsx?$' || true)
-playwright_specs=$(git ls-files 'dashboard/e2e/*.spec.ts' | wc -l | tr -d ' ')
-golden_files=$(git ls-files '*.golden' | wc -l | tr -d ' ')
-testdata_files=$(git ls-files '*/testdata/*' | wc -l | tr -d ' ')
+dashboard_tests=$(tracked_files 'dashboard/src/' | grep -Ec '\.test\.tsx?$' || true)
+playwright_specs=$(tracked_files 'dashboard/e2e/*.spec.ts' | wc -l | tr -d ' ')
+golden_files=$(tracked_files '*.golden' | wc -l | tr -d ' ')
+testdata_files=$(tracked_files '*/testdata/*' | wc -l | tr -d ' ')
 # Counted from the workflow itself rather than quoted from a doc. This number
 # was stated as 14 for a while because a hand-built list omitted a job.
 ci_jobs=$(python3 -c "import yaml;print(len(yaml.safe_load(open('.github/workflows/ci.yml'))['jobs']))" 2>/dev/null || echo "unknown")

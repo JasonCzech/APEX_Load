@@ -5,7 +5,7 @@ import { expect, it } from 'vitest'
 import MonitorRuleResults from './MonitorRuleResults'
 import { validateGoalConfig } from './goalConfigValidation'
 import { buildGoalConfigPayload } from './scenarioPayloadUtils'
-import type { MonitorRule } from '../types/appdynamics'
+import type { MonitorRule } from '../types/runMonitoring'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const rule: MonitorRule = { source_id: 'source', metric: 'response_time', unit: 'ms', statistic: 'avg', comparator: 'lte', threshold: 100, severity: 'fail', min_coverage_pct: 95, start_offset_seconds: 0 }
 it('retains terminal monitor rules in both scenario modes without changing runtime stop policy', () => {

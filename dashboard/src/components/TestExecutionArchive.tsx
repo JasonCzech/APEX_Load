@@ -1,7 +1,7 @@
 import TelemetryPolicy from './TelemetryPolicy'
 import MonitorRuleResults from './MonitorRuleResults'
 import PrometheusArchiveEvidence from './PrometheusArchiveEvidence'
-import AppDynamicsArchiveEvidence from './AppDynamicsArchiveEvidence'
+import MonitorArchiveEvidence from './MonitorArchiveEvidence'
 import BrowserResourceEvidence from './BrowserResourceEvidence'
 import ArchiveResourceInspectorDisclosure from './ArchiveResourceInspectorDisclosure'
 import BrowserDocumentEvidencePanel from './BrowserDocumentEvidencePanel'
@@ -1140,7 +1140,7 @@ export default function TestExecutionArchive({
                     ))}
                   </div>
                   <MonitorRuleResults results={archiveReport.manifest.monitor_rule_results} />
-                  <PrometheusArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><AppDynamicsArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} />
+                  <PrometheusArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><MonitorArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} />
                   <CaptureArchiveSummary report={archiveReport} />
                   {(archiveReport.elk_samples?.length || 0) > 0 && (
                     <div className="advanced-group-table-wrap">
@@ -1329,7 +1329,7 @@ export default function TestExecutionArchive({
             </div>
           )}
 
-          {view === 'report-summary-timeline' && archiveReport && <><PrometheusArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><AppDynamicsArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /></>}
+          {view === 'report-summary-timeline' && archiveReport && <><PrometheusArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><MonitorArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /></>}
           {showReportSummaryTimelineView && (
             summaryTimelineEntriesAll.length > 0 ? (
               <div className="tx-section archive-summary-section">

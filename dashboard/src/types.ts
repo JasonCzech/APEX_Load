@@ -781,7 +781,7 @@ export interface TestSummary {
   /** Safe configured capture identities; credentials are never part of this projection. */
   elk_capture?: { connection_id: string; connection_name?: string }
   dynatrace_capture?: { connection_id: string; connection_name?: string }
-  monitor_bindings?: { revision?: number; sources: import('./types/appdynamics').MonitorBinding[] }
+  monitor_bindings?: { revision?: number; sources: import('./types/runMonitoring').MonitorBinding[] }
   activity?: import("./types/objectActivity").ObjectActivitySummary
   termination_mode?: "duration" | "iterations"
   id: string
@@ -972,9 +972,9 @@ export interface TestNote {
 }
 
 export interface RunArchiveManifest {
-  frozen_monitor_rules?: import('./types/appdynamics').MonitorRule[]
+  frozen_monitor_rules?: import('./types/runMonitoring').MonitorRule[]
   monitoring_status?: string
-  monitor_coverage?: import('./types/appdynamics').RunMonitorCoverage[]
+  monitor_coverage?: import('./types/runMonitoring').RunMonitorCoverage[]
   monitor_evidence_file?: string
   monitor_evidence_count?: number
   // phase_events_file holds the run's load-phase transitions
@@ -983,7 +983,7 @@ export interface RunArchiveManifest {
   phase_events_truncated?: boolean
   monitor_diagnostics_file?: string
   monitor_diagnostics_count?: number
-  monitor_rule_results?: import('./types/appdynamics').MonitorRuleResult[]
+  monitor_rule_results?: import('./types/runMonitoring').MonitorRuleResult[]
   source_coverage?: { mode: string; sources: Array<{ target: string; collected: boolean }> }
   csv_exports?: Array<{ id: string; group: string; file_name: string; status: string; rows: number; error?: string }>
   termination_reason?: string
@@ -1707,8 +1707,8 @@ export interface RunArchiveReport {
   browser_document_evidence?: BrowserDocumentObservation[]
   browser_document_evidence_truncated?: boolean
   messaging_progress?: MessagingProgressSnapshot
-  monitor_diagnostics?: import('./types/appdynamics').RunMonitorDiagnostic[]
-  monitor_rule_results?: import('./types/appdynamics').MonitorRuleResult[]
+  monitor_diagnostics?: import('./types/runMonitoring').RunMonitorDiagnostic[]
+  monitor_rule_results?: import('./types/runMonitoring').MonitorRuleResult[]
   outcome?: IntegrationOutcome
   by_unknown?: Record<string, RunArchiveActionStats>
   by_request?: Record<string, RunArchiveActionStats>
@@ -2069,7 +2069,7 @@ export interface ScenarioDraftRevisionContext {
   sourceStartDelayPresent?: boolean
   elkConnectionId?: string
   dynatraceConnectionId?: string
-  monitorBindings?: import('./types/appdynamics').MonitorBinding[]
+  monitorBindings?: import('./types/runMonitoring').MonitorBinding[]
   sourceTestId: string
   applicationId?: string
   releaseId?: string

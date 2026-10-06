@@ -53,6 +53,46 @@ func TestGeneratedSchemaCompiles(t *testing.T) {
 	}
 }
 
+func TestRetiredBrunoConfigurationIsNotAdvertised(t *testing.T) {
+	schema, err := GenerateSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, retired := range []string{`"BrunoConfig"`, `"BrunoRuntimeConfig"`, `"BrunoRuntimeLimits"`, `"bruno"`, `"bruno_run"`} {
+		if bytes.Contains(schema, []byte(retired)) {
+			t.Fatalf("generated schema still advertises %s", retired)
+		}
+	}
+	var legacy dsl.Script
+	if err := json.Unmarshal([]byte(`{"protocol":"bruno","config":{"bruno":{"bundle_ref":"artifact://retained","sandbox":"safe"}}}`), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Config.Bruno.BundleRef != "artifact://retained" || legacy.Config.Bruno.Sandbox != "safe" {
+		t.Fatal("retired configuration no longer decodes from saved records")
+	}
+}
+
+func TestRetiredBrunoSchemaAcceptsSerializedNativeScript(t *testing.T) {
+	schema, err := compileGeneratedSchema(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(dsl.Script{
+		Name: "Native request", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{{Name: "Health", Type: "GET", Target: "/health"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Validate(instance); err != nil {
+		t.Fatalf("retired configuration omission broke normal script serialization: %v", err)
+	}
+}
+
 func TestSAPGUIArtifactsDiscloseExternalRunnerRequirement(t *testing.T) {
 	reference := string(GenerateReference())
 	if !strings.Contains(reference, "Execution posture: `external_runner_required`") ||
@@ -133,19 +173,6 @@ func TestGeneratedSchemaPreservesOpenAliasesAndClosedRuntimeEnums(t *testing.T) 
 			action: map[string]any{
 				"name": "dialog", "type": "browser_handle_dialog",
 				"params": map[string]any{"action": "accept", "match_mode": " "},
-			},
-		},
-		{
-			name:     "blank Bruno defaults remain accepted",
-			protocol: "bruno",
-			config: map[string]any{
-				"bruno": map[string]any{
-					"bundle_ref": "asset://collection", "bundle_sha256": strings.Repeat("a", 64), "sandbox": "safe",
-				},
-			},
-			action: map[string]any{
-				"name": "run", "type": "bruno_run",
-				"params": map[string]any{"selection": " ", "execution": ""},
 			},
 		},
 		{

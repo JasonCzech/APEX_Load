@@ -137,16 +137,15 @@ func normalizeSourceIPs(ips []string) []string {
 func vuserProtoConfig(base map[string]any, vuserID int) map[string]any {
 	pool, hasPool := base["web_source_ips"].([]string)
 	profiles, hasProfiles := base["web_network_profiles"].([]dsl.NetworkProfileWeight)
-	_, isBruno := base["bruno_bundle_ref"]
 	isJavaVuser := strings.EqualFold(fmt.Sprint(base["protocol"]), "java_vuser")
-	if (!hasPool || len(pool) == 0) && (!hasProfiles || len(profiles) == 0) && !isBruno && !isJavaVuser {
+	if (!hasPool || len(pool) == 0) && (!hasProfiles || len(profiles) == 0) && !isJavaVuser {
 		return base
 	}
 	clone := make(map[string]any, len(base)+4)
 	for k, v := range base {
 		clone[k] = v
 	}
-	if isBruno || isJavaVuser {
+	if isJavaVuser {
 		clone["vuser_id"] = float64(vuserID)
 	}
 	if hasPool && len(pool) > 0 {
@@ -247,7 +246,6 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	}
 
 	appendHTTPConfig(cfg, script)
-	appendBrunoConfig(cfg, script)
 	appendWebSocketConfig(cfg, script)
 	appendGRPCConfig(cfg, script)
 	appendJavaHTTPConfig(cfg, script)

@@ -365,7 +365,7 @@ func (s *Server) handleCreateProjectSecrets(w http.ResponseWriter, r *http.Reque
 	}
 	created := make([]secretstore.Metadata, 0, len(inputs))
 	for index, input := range inputs {
-		if err := s.invalidateAppDynamicsSecretPreparations(mutationCtx, projectID, input.Name); err != nil {
+		if err := s.invalidateRetainedMonitorSecretPreparations(mutationCtx, projectID, input.Name); err != nil {
 			writeError(w, 503, "monitoring credential authorization invalidation failed")
 			return
 		}
@@ -397,7 +397,7 @@ func (s *Server) handleCreateProjectSecrets(w http.ResponseWriter, r *http.Reque
 			writeError(w, status, message)
 			return
 		}
-		if err := s.invalidateAppDynamicsSecretPreparations(mutationCtx, projectID, input.Name); err != nil {
+		if err := s.invalidateRetainedMonitorSecretPreparations(mutationCtx, projectID, input.Name); err != nil {
 			writeError(w, 503, "credential created; monitoring authorization invalidation must be retried")
 			return
 		}
@@ -463,7 +463,7 @@ func (s *Server) handleRotateProjectSecret(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusServiceUnavailable, "no writable project secret provider is configured")
 		return
 	}
-	if err := s.invalidateAppDynamicsSecretPreparations(mutationCtx, projectID, name); err != nil {
+	if err := s.invalidateRetainedMonitorSecretPreparations(mutationCtx, projectID, name); err != nil {
 		writeError(w, 503, "monitoring credential authorization invalidation failed")
 		return
 	}
@@ -494,7 +494,7 @@ func (s *Server) handleRotateProjectSecret(w http.ResponseWriter, r *http.Reques
 		writeError(w, status, message)
 		return
 	}
-	if err := s.invalidateAppDynamicsSecretPreparations(mutationCtx, projectID, name); err != nil {
+	if err := s.invalidateRetainedMonitorSecretPreparations(mutationCtx, projectID, name); err != nil {
 		writeError(w, 503, "credential rotated; monitoring authorization invalidation must be retried")
 		return
 	}

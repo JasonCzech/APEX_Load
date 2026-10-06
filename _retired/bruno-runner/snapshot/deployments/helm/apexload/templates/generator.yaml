@@ -1,0 +1,419 @@
+{{- if and .Values.bruno.enabled (not .Values.bruno.artifactPersistence.existingClaim) }}
+{{- fail "bruno.artifactPersistence.existingClaim is required when Bruno execution is enabled" }}
+{{- end }}
+{{- if and .Values.bruno.enabled (not .Values.bruno.egressBrokerUrl) (not .Values.bruno.allowDirectEgress) }}
+{{- fail "Bruno execution requires bruno.egressBrokerUrl; bruno.allowDirectEgress is only an explicit local override" }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: apexload-generator
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+    app.kubernetes.io/name: apexload-generator
+    app.kubernetes.io/component: generator
+{{ include "apexload.labels" . | indent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: false
+  selector:
+    app.kubernetes.io/name: apexload-generator
+  ports:
+    - name: grpc
+      port: 9090
+      targetPort: grpc
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: apexload-generator
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+    app.kubernetes.io/name: apexload-generator
+    app.kubernetes.io/component: generator
+{{ include "apexload.labels" . | indent 4 }}
+spec:
+  serviceName: apexload-generator
+  replicas: {{ .Values.generator.replicas }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-generator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: apexload-generator
+        app.kubernetes.io/component: generator
+{{- if .Values.workloadIdentity.enabled }}
+        azure.workload.identity/use: "true"
+{{- end }}
+{{- if and .Values.workloadIdentity.enabled .Values.javaVuser.enabled }}
+      annotations:
+        azure.workload.identity/skip-containers: "java-vuser-runner"
+{{- end }}
+    spec:
+      serviceAccountName: {{ .Values.generator.serviceAccountName }}
+      terminationGracePeriodSeconds: 120
+      automountServiceAccountToken: false
+{{- if .Values.javaVuser.enabled }}
+      enableServiceLinks: false
+{{- end }}
+{{- with .Values.generator.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+{{- end }}
+{{- with .Values.generator.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+{{- end }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: apexload-generator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: generator
+          image: {{ include "apexload.generatorImage" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: APEXLOAD_ENV
+              value: production
+            - name: APEXLOAD_GENERATOR_MAX_VUSERS
+              value: {{ .Values.generator.maxVUsers | quote }}
+            - name: APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL
+              value: {{ .Values.generator.runSupervision.ttl | quote }}
+            - name: APEXLOAD_GENERATOR_ABANDON_DRAIN
+              value: {{ .Values.generator.runSupervision.abandonDrain | quote }}
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_ENABLED
+              value: {{ .Values.javaVuser.enabled | quote }}
+{{- if .Values.javaVuser.enabled }}
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_MODE
+              value: sidecar
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_URL
+              value: http://127.0.0.1:8098
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+{{- end }}
+{{- if .Values.bruno.enabled }}
+            - name: APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED
+              value: "true"
+            - name: APEXLOAD_BRUNO_ARTIFACT_ROOT
+              value: {{ .Values.bruno.artifactRoot | quote }}
+            - name: APEXLOAD_BRUNO_RUNNER_URL
+              value: http://127.0.0.1:8097
+            - name: APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1
+              value: "true"
+            - name: APEXLOAD_BRUNO_SAFE_EXECUTION_ENABLED
+              value: "true"
+            - name: APEXLOAD_BRUNO_DEVELOPER_EXECUTION_ENABLED
+              value: "false"
+            - name: APEXLOAD_BRUNO_EGRESS_BROKER_URL
+              value: {{ .Values.bruno.egressBrokerUrl | quote }}
+            - name: APEXLOAD_BRUNO_ALLOW_DIRECT_EGRESS
+              value: {{ .Values.bruno.allowDirectEgress | quote }}
+            - name: APEXLOAD_BRUNO_MAX_JUMPS
+              value: {{ .Values.bruno.maxJumps | quote }}
+            - name: APEXLOAD_BRUNO_MAX_RUN_REQUEST_DEPTH
+              value: {{ .Values.bruno.maxRunRequestDepth | quote }}
+            - name: APEXLOAD_BRUNO_MAX_PARALLEL_REQUESTS
+              value: {{ .Values.bruno.maxParallelRequests | quote }}
+            - name: APEXLOAD_BRUNO_MAX_OUTPUT_BYTES
+              value: {{ .Values.bruno.maxOutputBytes | quote }}
+            - name: APEXLOAD_BRUNO_MAX_STREAM_TIMEOUT_MS
+              value: {{ .Values.bruno.maxStreamTimeoutMs | quote }}
+{{- $wrappingKeyVaultKeyId := include "apexload.wrappingKeyVaultKeyId" . }}
+{{- if $wrappingKeyVaultKeyId }}
+            - name: APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID
+              value: {{ $wrappingKeyVaultKeyId | quote }}
+{{- else }}
+            - name: APEXLOAD_WRAPPING_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dataPlatform.secretName }}
+                  key: APEXLOAD_WRAPPING_MASTER_KEY
+{{- end }}
+{{- end }}
+            - name: APEXLOAD_GENERATOR_STATE_DIR
+              value: /var/lib/apexload-generator
+            - name: APEXLOAD_ARCHIVE_DIR
+              value: /var/lib/apexload-generator/archives
+            - name: APEXLOAD_GRPC_TLS_CERT
+              value: /etc/apexload/grpc-tls/tls.crt
+            - name: APEXLOAD_GRPC_TLS_KEY
+              value: /etc/apexload/grpc-tls/tls.key
+            - name: APEXLOAD_GRPC_TLS_CA
+              value: /etc/apexload/grpc-tls/ca.crt
+            - name: APEXLOAD_GRPC_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dataPlatform.secretName }}
+                  key: APEXLOAD_GRPC_AUTH_TOKEN
+{{- if .Values.tracing.headersSecretName }}
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.tracing.headersSecretName | quote }}
+                  key: {{ .Values.tracing.headersSecretKey | quote }}
+{{- end }}
+            - name: APEXLOAD_AZURE_KEY_VAULT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: APEXLOAD_AZURE_KEY_VAULT_URL
+                  optional: true
+            - name: APEXLOAD_AZURE_KEY_VAULT_AUTH
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: APEXLOAD_AZURE_KEY_VAULT_AUTH
+                  optional: true
+            - name: APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS
+                  optional: true
+            - name: APEXLOAD_AZURE_MESSAGING_ALLOWED_NAMESPACES
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: APEXLOAD_AZURE_MESSAGING_ALLOWED_NAMESPACES
+                  optional: true
+            - name: APEXLOAD_OTEL_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: APEXLOAD_OTEL_ENABLED
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: OTEL_EXPORTER_OTLP_ENDPOINT
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: OTEL_EXPORTER_OTLP_PROTOCOL
+            - name: OTEL_TRACES_SAMPLER
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: OTEL_TRACES_SAMPLER
+            - name: OTEL_TRACES_SAMPLER_ARG
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: OTEL_TRACES_SAMPLER_ARG
+            - name: APEXLOAD_OTEL_ACTION_SAMPLE_RATIO
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: APEXLOAD_OTEL_ACTION_SAMPLE_RATIO
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: OTEL_RESOURCE_ATTRIBUTES
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: generator-state
+              mountPath: /var/lib/apexload-generator
+            - name: grpc-tls
+              mountPath: /etc/apexload/grpc-tls
+              readOnly: true
+{{- if .Values.bruno.enabled }}
+            - name: bruno-artifacts
+              mountPath: {{ .Values.bruno.artifactRoot | quote }}
+              readOnly: true
+{{- end }}
+          ports:
+            - name: grpc
+              containerPort: 9090
+            - name: health
+              containerPort: 9092
+          readinessProbe:
+            grpc:
+              port: 9092
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            grpc:
+              port: 9092
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+{{ toYaml .Values.generator.resources | indent 12 }}
+{{- if .Values.bruno.enabled }}
+        - name: bruno-runner
+          image: {{ include "apexload.brunoRunnerImage" . | quote }}
+          imagePullPolicy: {{ .Values.bruno.runner.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: APEXLOAD_BRUNO_RUNNER_ADDR
+              value: 127.0.0.1
+            - name: APEXLOAD_BRUNO_RUNNER_PORT
+              value: "8097"
+            - name: APEXLOAD_BRUNO_EGRESS_BROKER_URL
+              value: {{ .Values.bruno.egressBrokerUrl | quote }}
+            - name: APEXLOAD_BRUNO_ALLOW_DIRECT_EGRESS
+              value: {{ .Values.bruno.allowDirectEgress | quote }}
+            - name: APEXLOAD_BRUNO_DEVELOPER_WORKER
+              value: "false"
+            - name: APEXLOAD_BRUNO_MAX_SESSIONS
+              value: {{ .Values.bruno.maxSessions | quote }}
+            - name: APEXLOAD_BRUNO_MAX_PENDING_EVENTS
+              value: {{ .Values.bruno.maxPendingEvents | quote }}
+            - name: APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1
+              value: "true"
+            - name: APEXLOAD_BRUNO_MAX_BUNDLE_BYTES
+              value: {{ .Values.bruno.maxBundleBytes | quote }}
+            - name: APEXLOAD_BRUNO_SESSION_TTL_MS
+              value: {{ .Values.bruno.sessionTtlMs | quote }}
+            - name: APEXLOAD_BRUNO_SESSION_IDLE_TTL_MS
+              value: {{ .Values.bruno.sessionIdleTtlMs | quote }}
+          ports:
+            - name: bruno-runner
+              containerPort: 8097
+          volumeMounts:
+            - name: bruno-runner-tmp
+              mountPath: /tmp
+          startupProbe:
+            exec:
+              command: ["node", "-e", "fetch('http://127.0.0.1:8097/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: ["node", "-e", "fetch('http://127.0.0.1:8097/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["node", "-e", "fetch('http://127.0.0.1:8097/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+{{ toYaml .Values.bruno.runner.resources | indent 12 }}
+{{- end }}
+{{- if .Values.javaVuser.enabled }}
+        - name: java-vuser-runner
+          image: {{ include "apexload.javaVuserRunnerImage" . | quote }}
+          imagePullPolicy: {{ .Values.javaVuser.runner.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_ENABLED
+              value: "true"
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_ADDR
+              value: 127.0.0.1:8098
+            - name: APEXLOAD_JAVA_VUSER_HARNESS_JAR
+              value: /opt/apexload/java-vuser/java-vuser-runner.jar
+            - name: APEXLOAD_JAVA_VUSER_DEFAULT_JDK_HOME
+              value: /opt/java/openjdk
+            - name: APEXLOAD_JAVA_VUSER_MAX_PROCESSES
+              value: {{ .Values.javaVuser.runner.maxProcesses | quote }}
+            - name: APEXLOAD_JAVA_VUSER_WORK_DIR
+              value: /tmp
+          ports:
+            - name: java-vuser
+              containerPort: 8098
+          volumeMounts:
+            - name: java-vuser-runner-tmp
+              mountPath: /tmp
+{{- if .Values.javaVuser.assets.existingClaim }}
+            - name: java-vuser-assets
+              mountPath: {{ .Values.javaVuser.assets.mountPath | quote }}
+              readOnly: true
+{{- end }}
+          startupProbe:
+            exec:
+              command: ["curl", "--fail", "--silent", "http://127.0.0.1:8098/readyz"]
+            periodSeconds: 2
+            failureThreshold: 30
+            timeoutSeconds: 12
+          readinessProbe:
+            exec:
+              command: ["curl", "--fail", "--silent", "http://127.0.0.1:8098/readyz"]
+            periodSeconds: 10
+            timeoutSeconds: 12
+          livenessProbe:
+            exec:
+              command: ["curl", "--fail", "--silent", "http://127.0.0.1:8098/livez"]
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+{{ toYaml .Values.javaVuser.runner.resources | indent 12 }}
+{{- end }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.generator.scratch.tmpSizeLimit }}
+        - name: grpc-tls
+          secret:
+            secretName: {{ .Values.generator.grpcTlsSecretName }}
+{{- if .Values.bruno.enabled }}
+        - name: bruno-artifacts
+          persistentVolumeClaim:
+            claimName: {{ .Values.bruno.artifactPersistence.existingClaim | quote }}
+        - name: bruno-runner-tmp
+          emptyDir:
+            sizeLimit: {{ .Values.bruno.runner.scratch.tmpSizeLimit }}
+{{- end }}
+{{- if .Values.javaVuser.enabled }}
+        - name: java-vuser-runner-tmp
+          emptyDir:
+            sizeLimit: {{ .Values.javaVuser.runner.scratch.tmpSizeLimit }}
+{{- if .Values.javaVuser.assets.existingClaim }}
+        - name: java-vuser-assets
+          persistentVolumeClaim:
+            claimName: {{ .Values.javaVuser.assets.existingClaim | quote }}
+{{- end }}
+{{- end }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  volumeClaimTemplates:
+    - metadata:
+        name: generator-state
+      spec:
+        accessModes:
+{{ toYaml .Values.generator.statePersistence.accessModes | indent 10 }}
+{{- with .Values.generator.statePersistence.storageClassName }}
+        storageClassName: {{ . | quote }}
+{{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.generator.statePersistence.size | quote }}

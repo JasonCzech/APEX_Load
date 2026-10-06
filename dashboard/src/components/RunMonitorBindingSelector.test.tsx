@@ -3,12 +3,12 @@ import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import RunMonitorBindingSelector from './RunMonitorBindingSelector'
-import type { MonitorBinding } from '../types/appdynamics'
+import type { MonitorBinding } from '../types/runMonitoring'
 const request = vi.hoisted(() => vi.fn())
 vi.mock('../hooks/apiClient', () => ({ request }))
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 let root: Root; let container: HTMLElement
-beforeEach(() => { request.mockReset(); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); request.mockImplementation(async (path: string) => path.includes('/analysis/capabilities') ? { monitoring_enabled: true } : [{ id: 'source', name: 'AppDynamics Checkout', pack: 'appdynamics', enabled: true }]) })
+beforeEach(() => { request.mockReset(); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); request.mockImplementation(async (path: string) => path.includes('/analysis/capabilities') ? { monitoring_enabled: true } : [{ id: 'source', name: 'Dynatrace Checkout', pack: 'dynatrace', enabled: true }]) })
 afterEach(() => { act(() => root.unmount()); container.remove() })
 it('preserves distinct inherited, disabled, and selected required source contracts', async () => {
   const onChange = vi.fn()
@@ -27,7 +27,7 @@ it('preserves distinct inherited, disabled, and selected required source contrac
 it('retains missing source identities until explicitly removed', async () => {
   const onChange = vi.fn()
   await act(async () => root.render(<RunMonitorBindingSelector projectId="p" value={[{ source_id: 'deleted', required: true }]} onChange={onChange} />))
-  expect(container.textContent).toContain('Selected source deleted unavailable — review required.')
+  expect(container.textContent).toContain('Selected source deleted retired or unavailable — remove it before launch.')
   await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Remove unavailable source')!.click())
   expect(onChange).toHaveBeenCalledWith([])
 })

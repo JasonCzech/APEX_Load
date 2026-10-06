@@ -67,8 +67,8 @@ func documentedDynatraceTenant(t *testing.T, windowStart time.Time) dynatraceRou
 
 func TestDynatraceDirectCollectionCompletesSelectedCoverageOnDocumentedResponses(t *testing.T) {
 	server, db := newTimeslotServer(t)
-	if server.appDynamicsCancel != nil {
-		server.appDynamicsCancel()
+	if server.providerMonitoringCancel != nil {
+		server.providerMonitoringCancel()
 	}
 	t.Setenv("APEXLOAD_RUN_MONITOR_PROJECTS", "proj-a")
 	t.Setenv("APEXLOAD_MONITOR_SIGNING_SEED", "")

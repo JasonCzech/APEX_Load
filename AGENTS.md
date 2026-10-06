@@ -70,7 +70,7 @@ pkg/
   prometheus/    — Governed PromQL target monitoring and Azure managed Prometheus query adapter
   monitorprovider/ — Provider-neutral monitoring topology, diagnostics, coverage, cursors, and the governed provider registry (dispatch through it; never compare provider names)
   deeplink/      — Provider link templates (HTTPS on the connection's own hosts, four placeholders, identifier values percent-encoded) and the shared provider-link target check
-  appdynamics/   — Classic AppDynamics Controller and Events Service client, governed discovery and typed test monitoring
+  monitorcontract/ — Passive retained monitoring DTOs for historical data; executable retired providers are archived
   dynatrace/     — Dynatrace SaaS Classic and Grail client, governed discovery, bounded queries and typed test monitoring
   Java execution stack:
   javarunner/    — Shared policy-enforcing Java Vuser primitives (classpath, command, containment);
@@ -141,8 +141,7 @@ real franz-go network adapter opt-in via `-tags kafka_real`; Event Hubs Kafka-en
 `eventhubs_produce` + observer-probe `eventhubs_consume`; in-memory mock by default, real
 azeventhubs/AMQP adapter opt-in via `-tags eventhubs_real`), database (SQL query/exec/transactions),
 network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), and browser (replay + canary diagnostics).
-Bruno execution is also bundled through the version-pinned Node compatibility runner in
-`runners/bruno`; it is egress-governed and remains disabled unless its runner policy is configured.
+Bruno Runner is retired and excluded from builds; its source is preserved under `_retired/bruno-runner`. Native Bruno HTTP import remains available.
 `sap_gui` actions are authorable/importable via the DSL catalog but have no registered runtime
 protocol and cannot be executed.
 

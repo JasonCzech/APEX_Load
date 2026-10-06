@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"io"
 	"path"
 	"sort"
@@ -13,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/credential"
-	"gopkg.in/yaml.v3"
 )
 
 const nativeJSONRequirementKeyPrefix = "native-json:"

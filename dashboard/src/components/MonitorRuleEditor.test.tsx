@@ -3,7 +3,7 @@ import { act, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import MonitorRuleEditor from './MonitorRuleEditor'
-import type { MonitorRule } from '../types/appdynamics'
+import type { MonitorRule } from '../types/runMonitoring'
 const request = vi.hoisted(() => vi.fn())
 const api = vi.hoisted(() => ({ createDynatraceOperation: vi.fn(), getDynatraceOperation: vi.fn() }))
 vi.mock('../hooks/apiClient', () => ({ request }))

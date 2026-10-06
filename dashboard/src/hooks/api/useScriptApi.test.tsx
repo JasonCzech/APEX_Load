@@ -389,25 +389,6 @@ describe('useScriptApi import wrappers', () => {
     expect(body.get('file:CTA_Collection%2Fopencollection.yml')).toBeInstanceOf(File)
   })
 
-  it('merges canonical Bruno run settings and output mode into one inspect options object', async () => {
-    const file = new File(['meta { name: Demo }'], 'request.bru', { type: 'text/plain' })
-    await api.inspectBrunoImport([file], {
-      project_id: 'p1',
-      output_mode: 'canonical',
-      run_options: {
-        selection: 'collection',
-        recursive: true,
-      },
-    })
-
-    const [, options] = (apiFetch as Mock).mock.calls[0]
-    expect(JSON.parse(String((options.body as FormData).get('options')))).toEqual({
-      output_mode: 'canonical',
-      selection: 'collection',
-      recursive: true,
-    })
-  })
-
   it('retains the Bruno commit HTTP status as private receipt metadata', async () => {
     ;(apiFetch as Mock).mockResolvedValueOnce({
       ok: true,

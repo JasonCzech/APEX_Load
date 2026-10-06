@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"path"
 	"regexp"
 	"sort"
@@ -20,7 +21,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/scrub"
-	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -37,10 +37,12 @@ var (
 func Inspect(input Input) (*Result, error) {
 	outputMode := strings.ToLower(strings.TrimSpace(input.Options.OutputMode))
 	if outputMode == "" {
-		outputMode = OutputModeCanonical
+		outputMode = OutputModeNativeRequests
 	}
 	switch outputMode {
-	case OutputModeCanonical, OutputModeNativeRequests:
+	case OutputModeNativeRequests:
+	case OutputModeCanonical:
+		return nil, errors.New(dsl.BrunoRunnerRetiredMessage)
 	default:
 		return nil, fmt.Errorf("unsupported Bruno output_mode %q", input.Options.OutputMode)
 	}
@@ -226,42 +228,26 @@ func Inspect(input Input) (*Result, error) {
 			return nil, err
 		}
 	}
-	sandbox := strings.ToLower(strings.TrimSpace(input.Sandbox))
-	if sandbox == "" {
-		sandbox = "safe"
-	}
-	if capabilities.RequiredSandbox == "developer" && sandbox == "safe" {
-		findings = append(findings, SecurityFinding{
-			Severity: "warning",
-			Code:     "developer_runtime_required",
-			Summary:  "The collection contains dependency or local-module behavior that requires a governed developer runner.",
-		})
-	}
-	capabilities.RequiredSandbox = sandboxRequirement(capabilities, sandbox)
-	var script *dsl.Script
+	// Source capabilities remain useful for explaining conversion limits, but
+	// native scripts have no JavaScript runner or sandbox requirement.
+	capabilities.RequiredSandbox = ""
 	var nativeCandidates []NativeScriptCandidate
-	if outputMode == OutputModeCanonical {
-		script = canonicalScript(input, collection, manifest, sourceFormat, root, sandbox, missing, requirements)
-		if issues := dsl.ValidateScriptIssues(script); len(issues) > 0 {
-			return nil, fmt.Errorf("invalid Bruno execution selection: %s", strings.Join(issues, "; "))
-		}
+
+	if preparedNativeProjection {
+		nativeCandidates = preparedNativeCandidates
 	} else {
-		if preparedNativeProjection {
-			nativeCandidates = preparedNativeCandidates
-		} else {
-			nativeCandidates, requirements, missing, findings, err = nativeRequestScripts(
-				input,
-				nativeExecutionFiles,
-				root,
-				collection,
-				manifest,
-				requirements,
-				findings,
-			)
-			nativeRequestPasses++
-			if err != nil {
-				return nil, err
-			}
+		nativeCandidates, requirements, missing, findings, err = nativeRequestScripts(
+			input,
+			nativeExecutionFiles,
+			root,
+			collection,
+			manifest,
+			requirements,
+			findings,
+		)
+		nativeRequestPasses++
+		if err != nil {
+			return nil, err
 		}
 	}
 	requirements = finalizeNativeSecretRequirements(requirements)
@@ -271,7 +257,6 @@ func Inspect(input Input) (*Result, error) {
 		)
 	}
 	executable, apps := countItems(collection.Items)
-	projection := analyzeProjection(collection, capabilities)
 	result := &Result{
 		SchemaVersion:      ImporterVersion,
 		OutputMode:         outputMode,
@@ -284,21 +269,17 @@ func Inspect(input Input) (*Result, error) {
 		SecretRequirements: requirements,
 		SecurityFindings:   findings,
 		Fidelity: FidelityReport{
-			Status:          "lossless",
+			Status:          "native_conversion",
 			PreservedFiles:  len(rawFiles),
 			ExecutableItems: executable,
 			PreservedApps:   apps,
 			DroppedItems:    0,
-			Compatibility:   CompatibilityVersion,
+			Compatibility:   "native_requests",
 			IntentionalExtensions: []string{
-				"gRPC items execute in collection runs",
-				"WebSocket items execute in collection runs",
-				"bru.runRequest may target HTTP, GraphQL, gRPC, or WebSocket items",
+				"OpenCollection YAML HTTP requests import as independent native APEX scripts",
 			},
 		},
-		NativeProjection:    projection,
 		MissingVariables:    missing,
-		Script:              script,
 		Scripts:             nativeCandidates,
 		RawArchive:          rawArchive,
 		SanitizedArchive:    sanitizedArchive,
@@ -351,7 +332,7 @@ func validateNativeInspectInput(input Input) error {
 		return errors.New("Bruno native_requests does not accept a singular script name override")
 	}
 	if strings.TrimSpace(input.Sandbox) != "" {
-		return errors.New("Bruno native_requests does not accept a JavaScript sandbox selection")
+		return fmt.Errorf("%s Native imports do not accept a JavaScript sandbox selection", dsl.BrunoRunnerRetiredMessage)
 	}
 	options := input.Options
 	if strings.TrimSpace(options.DefaultEnvironment) != "" ||
@@ -367,7 +348,7 @@ func validateNativeInspectInput(input Input) error {
 		options.DelayMS != 0 ||
 		options.StreamTimeoutMS != 0 ||
 		options.PersistSession {
-		return errors.New("Bruno native_requests does not accept canonical run-selection or tests-only options")
+		return fmt.Errorf("%s Native imports do not accept canonical run-selection or tests-only options", dsl.BrunoRunnerRetiredMessage)
 	}
 	return nil
 }
@@ -492,11 +473,6 @@ func inspectCollection(files []sourceFile, root string) (Collection, []Environme
 		for candidate := range sourceFormats {
 			format = candidate
 		}
-	}
-	if capabilities.HasNPMDependencies || capabilities.HasLocalModules {
-		capabilities.RequiredSandbox = "developer"
-	} else {
-		capabilities.RequiredSandbox = "safe"
 	}
 	return collection, environments, capabilities, missing, format, nil
 }
@@ -1704,97 +1680,6 @@ func isExactBrunoTemplateValue(value string) bool {
 	return len(location) == 2 && location[0] == 0 && location[1] == len(value)
 }
 
-func canonicalScript(input Input, collection Collection, manifest Manifest, sourceFormat, root, sandbox string, missing []string, requirements []SecretRequirement) *dsl.Script {
-	options := input.Options
-	selection := strings.ToLower(strings.TrimSpace(options.Selection))
-	if selection == "" {
-		if len(options.Paths) > 0 {
-			selection = "request"
-		} else {
-			selection = "collection"
-		}
-	}
-	execution := strings.ToLower(strings.TrimSpace(options.Execution))
-	if execution == "" {
-		execution = "sequential"
-	}
-	secretBindings := make(map[string]string, len(requirements))
-	for _, requirement := range requirements {
-		secretBindings[requirement.SuggestedName] = requirement.Replacement
-	}
-	preservedManifest, _ := json.Marshal(manifest)
-	preservedCollection, _ := json.Marshal(collection)
-	return &dsl.Script{
-		Name:          collection.Name,
-		Version:       "1.0",
-		Protocol:      "bruno",
-		ProjectID:     input.ProjectID,
-		GeneratedBy:   "apexload-bruno-importer",
-		GeneratedFrom: sourceFormat,
-		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
-			Source:           "bruno",
-			SourceScriptName: collection.Name,
-			Preserved: map[string]any{
-				"schema_version":        ImporterVersion,
-				"compatibility_version": CompatibilityVersion,
-				"root_path":             root,
-				"manifest":              json.RawMessage(preservedManifest),
-				"collection":            json.RawMessage(preservedCollection),
-				"missing_variables":     missing,
-				"native_projection":     "requires_equivalence_proof",
-			},
-		}},
-		Config: dsl.ScriptConfig{
-			Bruno: dsl.BrunoConfig{
-				BundleRef:                      "artifact://sha256/" + manifest.BundleSHA256,
-				BundleSHA256:                   manifest.BundleSHA256,
-				ManifestSHA256:                 manifest.SHA256,
-				SourceFormat:                   sourceFormat,
-				CompatibilityVersion:           CompatibilityVersion,
-				DefaultEnvironment:             convertutil.FirstNonEmpty(options.DefaultEnvironment),
-				DefaultGlobalEnvironment:       convertutil.FirstNonEmpty(options.DefaultGlobalEnvironment),
-				Sandbox:                        sandbox,
-				PersistSessionAcrossIterations: options.PersistSession,
-				SecretBindings:                 secretBindings,
-				Limits: dsl.BrunoRuntimeLimits{
-					MaxJumps:               10_000,
-					MaxRunRequestDepth:     64,
-					MaxParallelRequests:    100,
-					MaxOutputBytes:         4 << 20,
-					DefaultStreamTimeoutMs: firstPositive(options.StreamTimeoutMS, 60_000),
-				},
-			},
-			RunLogic: dsl.RunLogicConfig{AutoTransactions: "none"},
-			// Unset: the scenario continue-on-error policy decides.
-			ErrorHandling: dsl.ErrorHandlingConfig{},
-		},
-		Actions: []dsl.Action{{
-			Name:   "Run " + collection.Name,
-			Type:   "bruno_run",
-			Target: root,
-			Params: map[string]any{
-				"selection":                         selection,
-				"paths":                             append([]string(nil), options.Paths...),
-				"include_tags":                      append([]string(nil), options.IncludeTags...),
-				"exclude_tags":                      append([]string(nil), options.ExcludeTags...),
-				"recursive":                         options.Recursive || selection == "collection",
-				"environment":                       options.DefaultEnvironment,
-				"global_environment":                options.DefaultGlobalEnvironment,
-				"delay_ms":                          options.DelayMS,
-				"bail":                              options.Bail,
-				"tests_only":                        options.TestsOnly,
-				"execution":                         execution,
-				"persist_session_across_iterations": options.PersistSession,
-				"stream_timeout_ms":                 firstPositive(options.StreamTimeoutMS, 60_000),
-			},
-			Metadata: map[string]any{
-				"source_profile": "bruno",
-				"source_step_id": collection.UID,
-			},
-		}},
-	}
-}
-
 func detectRoot(files []sourceFile, requested string) string {
 	requested = strings.Trim(strings.ReplaceAll(strings.TrimSpace(requested), "\\", "/"), "/")
 	if requested != "" {
@@ -1936,28 +1821,6 @@ func countItems(items []CollectionItem) (executable, apps int) {
 		apps += childApps
 	}
 	return executable, apps
-}
-
-func analyzeProjection(collection Collection, capabilities Capabilities) ProjectionReport {
-	var reasons []string
-	for _, requestType := range capabilities.RequestTypes {
-		if requestType != "http" && requestType != "graphql" {
-			reasons = append(reasons, requestType+" items require the canonical Bruno runtime")
-		}
-	}
-	if capabilities.HasJavaScript {
-		reasons = append(reasons, "JavaScript behavior requires differential equivalence proof")
-	}
-	if capabilities.HasNPMDependencies || capabilities.HasLocalModules {
-		reasons = append(reasons, "dependency or local-module behavior is dynamic")
-	}
-	if capabilities.HasFileBodies {
-		reasons = append(reasons, "file-backed behavior requires wire-level comparison")
-	}
-	if len(reasons) == 0 {
-		reasons = append(reasons, "static subset detected; differential proof has not been run")
-	}
-	return ProjectionReport{Eligible: false, Reasons: reasons}
 }
 
 func collectionIdentity(data []byte, ext string) (string, string) {
@@ -2128,16 +1991,6 @@ func normalizeItemType(value string) string {
 	default:
 		return "http"
 	}
-}
-
-func sandboxRequirement(capabilities Capabilities, requested string) string {
-	if capabilities.HasNPMDependencies || capabilities.HasLocalModules {
-		return "developer"
-	}
-	if requested == "developer" {
-		return "developer"
-	}
-	return "safe"
 }
 
 func stableItemID(relative, itemType, name string, data []byte) string {

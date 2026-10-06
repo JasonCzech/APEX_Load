@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"net/url"
 	"path"
 	"sort"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/scrub"
-	"gopkg.in/yaml.v3"
 )
 
 const nativeURLRequirementKeyPrefix = "native-url:"

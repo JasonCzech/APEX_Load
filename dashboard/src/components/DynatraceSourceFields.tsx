@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useDynatraceConnectionsApi } from '../hooks/api/useDynatraceConnectionsApi'
 import type { DynatraceConnection } from '../types/monitoring'
-import type { MonitorSource } from '../types/appdynamics'
+import type { MonitorSource } from '../types/runMonitoring'
 import { emptyDynatraceSelection, type DynatraceOperation, type DynatraceSelection } from '../types/dynatrace'
 import { settingsHref } from './settingsNavigation'
 

@@ -154,7 +154,7 @@ run_suite "live PostgreSQL migration and concurrent startup" \
   "--all and APEXLOAD_TEST_POSTGRES_URL (dedicated test database)" \
   "[[ ${run_all} == 1 && -n \"\${APEXLOAD_TEST_POSTGRES_URL:-}\" ]]" \
   go test -tags postgres_integration -count=1 \
-    -run '^Test(Postgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle|AnalysisWorkflows)|AppDynamicsDurablePostgresHeadsCursorAndOwnerFence)$' ./pkg/storage
+    -run '^Test(Postgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle|AnalysisWorkflows)|PostgresMonitorRetirementHistory)$' ./pkg/storage
 
 # These separate profiles provision their own pinned disposable broker.
 # --all is the sole opt-in; do not silently skip missing tools/required fixtures.

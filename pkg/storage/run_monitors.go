@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/appdynamics"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/monitorcontract"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 )
@@ -94,27 +94,27 @@ type RunMonitorStore interface {
 // MonitorSource contains only public collection configuration. Credentials are
 // resolved on the assigned collector; bearer tokens must never enter this row.
 type MonitorSource struct {
-	ManagementScope          *analysis.ManagementScope    `json:"management_scope,omitempty"`
-	ManagementIdentity       *analysis.ManagementIdentity `json:"management_identity,omitempty"`
-	Prometheus               *prometheus.Selection        `json:"prometheus,omitempty"`
-	ExecutorMode             string                       `json:"executor_mode,omitempty"`
-	ConnectionID             string                       `json:"connection_id,omitempty"`
-	AppDynamics              *appdynamics.Selection       `json:"appdynamics,omitempty"`
-	CredentialRef            string                       `json:"credential_ref,omitempty"`
-	CollectorPublicKey       string                       `json:"collector_public_key,omitempty"`
-	Service                  string                       `json:"service,omitempty"`
-	ID                       string                       `json:"id"`
-	ProjectID                string                       `json:"project_id"`
-	Name                     string                       `json:"name"`
-	Revision                 int64                        `json:"revision"`
-	CollectorID              string                       `json:"collector_id"`
-	Pack                     string                       `json:"pack"`
-	Destination              string                       `json:"destination,omitempty"`
-	IntervalSeconds          int                          `json:"interval_seconds"`
-	Enabled                  bool                         `json:"enabled"`
-	LegacyConnectionRevision int64                        `json:"legacy_connection_revision,omitempty"`
-	Dynatrace                *dynatrace.Selection         `json:"dynatrace,omitempty"`
-	ElasticQuery             *ElasticQuerySelection       `json:"elastic_query,omitempty"`
+	ManagementScope          *analysis.ManagementScope             `json:"management_scope,omitempty"`
+	ManagementIdentity       *analysis.ManagementIdentity          `json:"management_identity,omitempty"`
+	Prometheus               *prometheus.Selection                 `json:"prometheus,omitempty"`
+	ExecutorMode             string                                `json:"executor_mode,omitempty"`
+	ConnectionID             string                                `json:"connection_id,omitempty"`
+	AppDynamics              *monitorcontract.AppDynamicsSelection `json:"appdynamics,omitempty"`
+	CredentialRef            string                                `json:"credential_ref,omitempty"`
+	CollectorPublicKey       string                                `json:"collector_public_key,omitempty"`
+	Service                  string                                `json:"service,omitempty"`
+	ID                       string                                `json:"id"`
+	ProjectID                string                                `json:"project_id"`
+	Name                     string                                `json:"name"`
+	Revision                 int64                                 `json:"revision"`
+	CollectorID              string                                `json:"collector_id"`
+	Pack                     string                                `json:"pack"`
+	Destination              string                                `json:"destination,omitempty"`
+	IntervalSeconds          int                                   `json:"interval_seconds"`
+	Enabled                  bool                                  `json:"enabled"`
+	LegacyConnectionRevision int64                                 `json:"legacy_connection_revision,omitempty"`
+	Dynatrace                *dynatrace.Selection                  `json:"dynatrace,omitempty"`
+	ElasticQuery             *ElasticQuerySelection                `json:"elastic_query,omitempty"`
 }
 
 type MonitorBinding struct {
@@ -137,18 +137,18 @@ type RunMonitorJob struct {
 	RulesFrozen                  bool                                            `json:"rules_frozen,omitempty"`
 	QueryTime                    *time.Time                                      `json:"query_time,omitempty"`
 	PrometheusConnectionSnapshot *PrometheusConnectionSnapshot                   `json:"-"`
-	Topology                     []appdynamics.Entity                            `json:"topology,omitempty"`
+	Topology                     []monitorprovider.Entity                        `json:"topology,omitempty"`
 	ConnectionSnapshot           *AppDynamicsConnectionSnapshot                  `json:"-"`
 	LoadEndedAt                  *time.Time                                      `json:"load_ended_at,omitempty"`
 	DrainDeadline                *time.Time                                      `json:"drain_deadline,omitempty"`
 	LastSuccessAt                *time.Time                                      `json:"last_success_at,omitempty"`
-	QueryCoverage                map[string]appdynamics.Coverage                 `json:"-"`
+	QueryCoverage                map[string]monitorprovider.Coverage             `json:"-"`
 	PrometheusDiagnosticTimes    map[string]PrometheusDiagnosticObservationTimes `json:"-"`
 	QueryOffset                  int                                             `json:"query_offset,omitempty"`
 	QueryFromUTC                 time.Time                                       `json:"query_from_utc,omitempty"`
 	QueryUntilUTC                time.Time                                       `json:"query_until_utc,omitempty"`
 	QueryWatermark               time.Time                                       `json:"query_watermark,omitempty,omitzero"`
-	Coverage                     map[string]appdynamics.Coverage                 `json:"coverage,omitempty"`
+	Coverage                     map[string]monitorprovider.Coverage             `json:"coverage,omitempty"`
 	StablePasses                 int                                             `json:"stable_passes,omitempty"`
 	StableSinceAt                *time.Time                                      `json:"-"`
 	FinalDigest                  string                                          `json:"final_digest,omitempty"`
@@ -296,39 +296,13 @@ func startRunMonitorsTx(tx *storeTx, project, run, scenario string, started, exp
 		} else if err = json.Unmarshal([]byte(body), &job.Source); err != nil {
 			return nil, err
 		}
+		if job.Source.Pack == monitorprovider.PackAppDynamics || job.Source.AppDynamics != nil {
+			return nil, ErrMonitorProviderRetired
+		}
 		if job.CoverageReason == "" && !job.Source.Enabled {
 			job.CoverageReason = "source_disabled"
 		}
-		if job.CoverageReason == "" && job.Source.Pack == monitorprovider.PackAppDynamics {
-			if prepared != nil {
-				job.ConnectionSnapshot = prepared.Connections[binding.SourceID]
-				if job.ConnectionSnapshot == nil {
-					job.CoverageReason = "connection_not_ready"
-				}
-			}
-			if job.CoverageReason == "" && job.ConnectionSnapshot == nil {
-				var connBody string
-				err = tx.QueryRow(`SELECT payload_json FROM appdynamics_connections WHERE id=? AND project_id=?`, job.Source.ConnectionID, project).Scan(&connBody)
-				if errors.Is(err, sql.ErrNoRows) {
-					job.CoverageReason = "connection_deleted"
-				} else if err != nil {
-					return nil, err
-				} else {
-					conn, e := UnmarshalAppDynamicsConnectionPrivate([]byte(connBody))
-					if e != nil {
-						return nil, e
-					}
-					if conn.ConfigurationStatus() != "ready" {
-						job.CoverageReason = "connection_not_ready"
-					} else {
-						job.ConnectionSnapshot = conn.Snapshot()
-					}
-				}
-			}
-			if job.CoverageReason == "" && ValidateAppDynamicsSourceConnection(job.Source, job.ConnectionSnapshot) != nil {
-				job.CoverageReason = "connection_source_mismatch"
-			}
-		}
+
 		if job.CoverageReason == "" && job.Source.Pack == monitorprovider.PackPrometheusQuery {
 			if prepared != nil {
 				job.PrometheusConnectionSnapshot = prepared.PrometheusConnections[binding.SourceID]
@@ -667,6 +641,9 @@ func (s *SQLiteStore) StopRunMonitors(project, run string, at time.Time) error {
 }
 
 func (m MonitorSource) Validate() error {
+	if m.Pack == monitorprovider.PackAppDynamics || m.AppDynamics != nil {
+		return ErrMonitorProviderRetired
+	}
 	if m.LegacyConnectionRevision < 0 || m.LegacyConnectionRevision > 0 && m.Pack != monitorprovider.PackDynatrace {
 		return errors.New("invalid legacy connection revision")
 	}
@@ -921,6 +898,17 @@ func (s *SQLiteStore) SaveMonitorBindings(b MonitorBindings, expected int64) (*M
 			return nil, errors.New("monitor bindings must have unique source IDs")
 		}
 		seen[binding.SourceID] = true
+		var sourceJSON string
+		if err = tx.QueryRow(`SELECT payload FROM monitor_sources WHERE id=? AND project_id=?`, binding.SourceID, b.ProjectID).Scan(&sourceJSON); err != nil {
+			return nil, err
+		}
+		var source MonitorSource
+		if err = json.Unmarshal([]byte(sourceJSON), &source); err != nil {
+			return nil, err
+		}
+		if source.Pack == monitorprovider.PackAppDynamics || source.AppDynamics != nil {
+			return nil, ErrMonitorProviderRetired
+		}
 		var n int
 		if err = tx.QueryRow(`SELECT COUNT(*) FROM monitor_sources WHERE id=? AND project_id=?`, binding.SourceID, b.ProjectID).Scan(&n); err != nil {
 			return nil, err
@@ -992,7 +980,6 @@ func (m MonitorSource) CanonicalProvider() bool {
 // monitorSourceValidators holds each governed provider's own source rules;
 // interval bounds come from its registry descriptor.
 var monitorSourceValidators = map[string]func(MonitorSource, monitorprovider.Descriptor) error{
-	monitorprovider.PackAppDynamics:     validateAppDynamicsMonitorSource,
 	monitorprovider.PackPrometheusQuery: validatePrometheusMonitorSource,
 	monitorprovider.PackDynatrace:       validateDynatraceMonitorSource,
 	monitorprovider.PackElasticQuery:    validateElasticMonitorSource,
@@ -1001,7 +988,6 @@ var monitorSourceValidators = map[string]func(MonitorSource, monitorprovider.Des
 // monitorSourceTxValidators recheck each governed provider's connection
 // binding inside the save transaction.
 var monitorSourceTxValidators = map[string]func(*storeTx, *MonitorSource) error{
-	monitorprovider.PackAppDynamics:     validateAppDynamicsSourceTx,
 	monitorprovider.PackPrometheusQuery: validatePrometheusSourceTx,
 	monitorprovider.PackDynatrace:       validateDynatraceSourceTx,
 	monitorprovider.PackElasticQuery:    validateElasticSourceTx,
@@ -1009,16 +995,6 @@ var monitorSourceTxValidators = map[string]func(*storeTx, *MonitorSource) error{
 
 func intervalOutside(m MonitorSource, d monitorprovider.Descriptor) bool {
 	return m.IntervalSeconds < d.MinIntervalSeconds || m.IntervalSeconds > d.MaxIntervalSeconds
-}
-
-func validateAppDynamicsMonitorSource(m MonitorSource, d monitorprovider.Descriptor) error {
-	if m.ConnectionID == "" || m.AppDynamics == nil || m.Dynatrace != nil || m.Prometheus != nil || m.AppDynamics.ProjectID != m.ProjectID || m.AppDynamics.Validate() != nil || intervalOutside(m, d) || m.CredentialRef != "" || m.ElasticQuery != nil {
-		return errors.New("invalid AppDynamics monitor source")
-	}
-	if len(m.AppDynamics.Metrics) == 0 && len(m.AppDynamics.Analytics) == 0 && !m.AppDynamics.Events && !m.AppDynamics.Violations && !m.AppDynamics.Snapshots {
-		return errors.New("AppDynamics monitor source must select a collection capability")
-	}
-	return nil
 }
 
 func validatePrometheusMonitorSource(m MonitorSource, d monitorprovider.Descriptor) error {

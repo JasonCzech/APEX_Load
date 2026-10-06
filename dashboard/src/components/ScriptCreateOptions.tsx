@@ -122,7 +122,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
   {
     id: 'bruno',
     title: 'Bruno Collection',
-    description: 'Preserve and execute classic BRU or OpenCollection YAML with scripts, environments, dependencies, certificates, fixtures, and every Bruno request type.',
+    description: 'Convert Bruno HTTP requests into native APEX scripts, with source retention and review of unsupported behavior.',
     badge: 'BRU',
     category: 'Contracts & Collections',
     order: 15,

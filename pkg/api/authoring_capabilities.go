@@ -185,7 +185,7 @@ func authoringImportSurfaces() []AuthoringImportSurface {
 		{
 			ID:          "bruno",
 			Title:       "Bruno Collection",
-			Description: "Preserve and execute classic BRU or OpenCollection YAML with scripts, environments, dependencies, certificates, fixtures, and every Bruno request type.",
+			Description: "Convert supported OpenCollection YAML HTTP requests into native APEX scripts with retained source and credential review.",
 			Badge:       "BRU",
 			Category:    "Contracts & Collections",
 			Order:       15,

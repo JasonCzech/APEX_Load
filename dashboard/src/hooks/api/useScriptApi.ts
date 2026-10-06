@@ -31,7 +31,7 @@ import type {
 import { type AuthoringTemplate } from '../../types'
 import { type CorrelationDiagnoseResponse, type CorrelationStep, type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
 import { type CloneScriptDraftResponse, type DiscardImportSecretSessionRequest, type MigrateImportSecretsRequest, type MigrateImportSecretsResponse, type RebindScriptSecretReferenceResponse, type ScriptSecretStatus } from '../../types/secrets'
-import { type BrunoInspectResponse, type BrunoProjectionPreview, type ImportSourceRevision, type BrunoSupportMatrixResponse, type CommitBrunoImportRequest, type CommitBrunoImportResponse } from '../../types/scriptImports'
+import { type BrunoInspectResponse, type ImportSourceRevision, type BrunoSupportMatrixResponse, type CommitBrunoImportRequest, type CommitBrunoImportResponse } from '../../types/scriptImports'
 import { downloadFilenameFromDisposition } from '../../utils/fileUtils'
 import { importFileLogicalPath } from '../../importLogicalPath'
 
@@ -1332,38 +1332,13 @@ export function useScriptApi() {
       files: File[],
       options: {
         project_id: string
-        output_mode?: 'canonical' | 'native_requests'
-        name?: string
-        sandbox?: 'safe' | 'developer'
-        sync_script_id?: string
-        run_options?: {
-          default_environment?: string
-          default_global_environment?: string
-          selection?: string
-          paths?: string[]
-          include_tags?: string[]
-          exclude_tags?: string[]
-          recursive?: boolean
-          execution?: string
-          bail?: boolean
-          tests_only?: boolean
-          delay_ms?: number
-          stream_timeout_ms?: number
-          persist_session?: boolean
-        }
+        output_mode?: 'native_requests'
       },
     ): Promise<BrunoInspectResponse> => {
       if (files.length === 0) throw new Error('At least one Bruno source file is required.')
       const formData = new FormData()
       formData.append('project_id', options.project_id)
-      if (options.name) formData.append('name', options.name)
-      if (options.sandbox) formData.append('sandbox', options.sandbox)
-      if (options.sync_script_id) formData.append('sync_script_id', options.sync_script_id)
-      const inspectOptions = {
-        ...(options.run_options || {}),
-        ...(options.output_mode ? { output_mode: options.output_mode } : {}),
-      }
-      if (Object.keys(inspectOptions).length > 0) formData.append('options', JSON.stringify(inspectOptions))
+      formData.append('options', JSON.stringify({ output_mode: 'native_requests' }))
       const directoryUpload = files.length > 1 || files.some(file => Boolean(file.webkitRelativePath))
       files.forEach(file => {
         const relative = importFileLogicalPath(file)
@@ -1434,18 +1409,6 @@ export function useScriptApi() {
           expected_active_revision_id: expectedActiveRevisionId,
         }),
       }),
-    [],
-  )
-
-  const previewBrunoProjection = useCallback(
-    (scriptId: string) =>
-      request<BrunoProjectionPreview>(`/scripts/${scriptId}/bruno-projection/preview`, { method: 'POST' }),
-    [],
-  )
-
-  const commitBrunoProjection = useCallback(
-    (scriptId: string) =>
-      request<Record<string, unknown>>(`/scripts/${scriptId}/bruno-projection/commit`, { method: 'POST' }),
     [],
   )
 
@@ -1690,8 +1653,6 @@ export function useScriptApi() {
       commitBrunoImport,
       listBrunoRevisions,
       rollbackBrunoRevision,
-      previewBrunoProjection,
-      commitBrunoProjection,
       applyImportParameterization,
       applyImportSharedValues,
       applySecretBindings,
@@ -1815,8 +1776,6 @@ export function useScriptApi() {
       commitBrunoImport,
       listBrunoRevisions,
       rollbackBrunoRevision,
-      previewBrunoProjection,
-      commitBrunoProjection,
       applyImportParameterization,
       applyImportSharedValues,
       applySecretBindings,

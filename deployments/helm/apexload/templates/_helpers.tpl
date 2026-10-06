@@ -50,11 +50,7 @@ chart default while explicit false values remain false.
 {{- printf "%s/%s:%s" $registry .Values.image.generatorRepository .Values.image.tag -}}
 {{- end -}}
 
-{{- define "apexload.brunoRunnerImage" -}}
-{{- $registry := include "apexload.requiredCleanValue" (list "image.registry" .Values.image.registry) -}}
-{{- $tag := default .Values.image.tag .Values.bruno.runner.image.tag -}}
-{{- printf "%s/%s:%s" $registry .Values.bruno.runner.image.repository $tag -}}
-{{- end -}}
+
 
 {{- define "apexload.javaVuserRunnerImage" -}}
 {{- $registry := include "apexload.requiredCleanValue" (list "image.registry" .Values.image.registry) -}}

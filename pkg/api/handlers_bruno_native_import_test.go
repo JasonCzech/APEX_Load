@@ -172,8 +172,8 @@ func TestBrunoNativeSessionRequiresNativeCommitMode(t *testing.T) {
 		ProjectID:       brunoImportTestProject,
 		ImportSessionID: inspection.ImportSessionID,
 	})
-	if response.Code != http.StatusBadRequest ||
-		!strings.Contains(response.Body.String(), "bruno_native_commit_mode_required") {
+	if response.Code != http.StatusUnprocessableEntity ||
+		!strings.Contains(response.Body.String(), "bruno_runner_retired") {
 		t.Fatalf("missing native mode status = %d body=%s", response.Code, response.Body.String())
 	}
 

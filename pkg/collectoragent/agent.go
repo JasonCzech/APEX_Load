@@ -175,7 +175,7 @@ func New(cfg Config) (*Agent, error) {
 		}
 		seenPacks[pack] = true
 		switch pack {
-		case "ssh-linux", "jmx", "jdbc", "otel-metrics", monitorprovider.PackAppDynamics, monitorprovider.PackDynatrace, "cloudwatch", "azure-monitor", monitorprovider.PackPrometheusQuery:
+		case "ssh-linux", "jmx", "jdbc", "otel-metrics", monitorprovider.PackDynatrace, "cloudwatch", "azure-monitor", monitorprovider.PackPrometheusQuery:
 			if len(cfg.ControllerPublicKey) == 0 {
 				return nil, fmt.Errorf("remote adapters require signed run jobs")
 			}
@@ -358,8 +358,8 @@ func (a *Agent) tick(ctx context.Context) {
 			slog.Warn("collector heartbeat failed", "err", err)
 			return
 		}
-		if slicesContainsAppDynamics(a.cfg.Packs) || a.hasPrometheusQueryTarget() {
-			if err := a.inspectionTick(ctx); err != nil {
+		if a.hasPrometheusQueryTarget() {
+			if err := a.prometheusInspectionTick(ctx); err != nil {
 				slog.Debug("provider inspection poll unavailable")
 			}
 		}

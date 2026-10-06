@@ -190,7 +190,6 @@ type runtimeSecretRecoveryState struct {
 }
 
 type TestRunner struct {
-	appDynamicsPrepare    func(context.Context, storage.MonitorSource, *storage.AppDynamicsConnectionSnapshot) error
 	prometheusPrepare     func(context.Context, storage.MonitorSource, *storage.PrometheusConnectionSnapshot, []analysis.MonitorRule) error
 	dynatracePrepare      func(context.Context, storage.MonitorSource, *storage.DynatraceConnectionSnapshot) error
 	thresholdJournal      *thresholdJournalWriter

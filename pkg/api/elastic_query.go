@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/appdynamics"
+
 	"github.com/jasonczech/apexload/pkg/collectoragent"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -65,7 +65,7 @@ func elasticQueryWindow(job storage.RunMonitorJob, now time.Time) (time.Time, ti
 // elasticQueryResult is one poll's bucketed evidence.
 type elasticQueryResult struct {
 	Points    []analysis.MetricPoint
-	Coverage  appdynamics.Coverage
+	Coverage  monitorprovider.Coverage
 	FoundIDs  []string
 	Truncated bool
 }
@@ -162,7 +162,7 @@ func decodeElasticBuckets(data []byte, job storage.RunMonitorJob, sel storage.El
 	}
 	bucket := time.Duration(sel.BucketSeconds) * time.Second
 	overlap := time.Duration(sel.OverlapSeconds) * time.Second
-	result := elasticQueryResult{Coverage: appdynamics.Coverage{Status: "complete", From: from, To: to}}
+	result := elasticQueryResult{Coverage: monitorprovider.Coverage{Status: "complete", From: from, To: to}}
 	if response.TimedOut || response.Shards.Failed > 0 {
 		result.Coverage.Status = "partial"
 		result.Coverage.Warnings = append(result.Coverage.Warnings, "Elasticsearch reported a timeout or failed shards; the window is re-read")
@@ -349,17 +349,17 @@ func (s *Server) collectDirectElastic(parent context.Context, job storage.RunMon
 	}
 	result, err := s.queryElastic(ctx, job, from, to, nil)
 	if err != nil {
-		result.Coverage = appdynamics.Coverage{Status: "unavailable", From: from, To: to, Message: scrubTextBounded(err.Error(), 256)}
+		result.Coverage = monitorprovider.Coverage{Status: "unavailable", From: from, To: to, Message: scrubTextBounded(err.Error(), 256)}
 	}
 	if !s.runner.executionLeaseTermCurrent(term) {
 		return
 	}
 	ingestCtx, ingestCancel := s.runner.executionOperationContext(parent)
 	defer ingestCancel()
-	common := appdynamics.Result{Points: result.Points, Coverage: map[string]appdynamics.Coverage{elasticCoverageKey: result.Coverage}, Progress: monitorprovider.QueryProgress{TotalQueries: 1, NextQuery: 1, Complete: true}}
+	common := providerCollectionResult{Points: result.Points, Coverage: map[string]monitorprovider.Coverage{elasticCoverageKey: result.Coverage}, Progress: monitorprovider.QueryProgress{TotalQueries: 1, NextQuery: 1, Complete: true}}
 	sequence := job.NextSequence
 	for len(common.Points) > 0 {
-		payload, n, _, e := boundedDirectAppDynamicsBatch(common, job, from, to)
+		payload, n, _, e := boundedProviderMonitorBatch(common, job, from, to)
 		if e != nil {
 			return
 		}

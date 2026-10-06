@@ -2,7 +2,6 @@ import AccessNavigation from './AccessNavigation'
 import ELKConnectionsCard from './ELKConnectionsCard'
 import DynatraceConnectionsCard from './DynatraceConnectionsCard'
 import PrometheusConnectionsCard from './PrometheusConnectionsCard'
-import AppDynamicsConnectionsCard from './AppDynamicsConnectionsCard'
 import TabList from './ux/TabList'
 import FormField from './ux/FormField'
 import PanelToggle from "./ux/PanelToggle"
@@ -1155,7 +1154,6 @@ export default function SettingsPage({
   const integrationSubsectionSummaries = useMemo<Record<IntegrationSettingsSubsectionId, string>>(() => ({
     'elk-capture': activeProject?.name || 'Project scoped',
     'dynatrace-capture': activeProject?.name || 'Project scoped',
-    'appdynamics-capture': activeProject?.name || 'Project scoped',
     'prometheus-capture': activeProject?.name || 'Project scoped',
     library: activeProject?.name || 'Project scoped',
     github: settings.github.enabled ? 'Enabled' : 'Disabled',
@@ -6259,7 +6257,6 @@ export default function SettingsPage({
             {activeSection === 'integrations' && activeIntegrationSubsection === 'elk-capture' && <section aria-label="Elastic test capture settings"><ELKConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'dynatrace-capture' && <section aria-label="Dynatrace test capture settings"><DynatraceConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'prometheus-capture' && <section aria-label="Prometheus test monitoring settings"><PrometheusConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} canApprovePrivateNetworks={canManageSystem} /></section>}
-            {activeSection === 'integrations' && activeIntegrationSubsection === 'appdynamics-capture' && <section aria-label="AppDynamics test capture settings"><AppDynamicsConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} canApprovePrivateNetworks={canManageSystem} /></section>}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'confluence' && <section aria-label="Confluence publishing settings"><ConfluenceConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
             <fieldset className="settings-fieldset settings-integration-panels" disabled={formDisabled}>
             <section

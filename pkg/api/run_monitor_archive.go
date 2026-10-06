@@ -8,32 +8,32 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/appdynamics"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/monitorcontract"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type RunMonitorCoverage struct {
-	Dynatrace                     *dynatrace.Selection            `json:"dynatrace,omitempty"`
-	ManagementSnapshots           int64                           `json:"management_snapshots,omitempty"`
-	ManagementIncompleteSnapshots int64                           `json:"management_incomplete_snapshots,omitempty"`
-	JobID                         string                          `json:"job_id"`
-	SourceID                      string                          `json:"source_id"`
-	SourceRevision                int64                           `json:"source_revision"`
-	BindingRevision               int64                           `json:"binding_revision"`
-	ConnectionID                  string                          `json:"connection_id,omitempty"`
-	ConnectionRevision            int64                           `json:"connection_revision,omitempty"`
-	ExecutorMode                  string                          `json:"executor_mode,omitempty"`
-	PrometheusSelection           *prometheus.Selection           `json:"prometheus,omitempty"`
-	Selection                     *appdynamics.Selection          `json:"appdynamics,omitempty"`
-	Required                      bool                            `json:"required"`
-	State                         string                          `json:"state"`
-	Reason                        string                          `json:"reason,omitempty"`
-	Batches                       int64                           `json:"batches"`
-	ProviderCoverage              map[string]appdynamics.Coverage `json:"provider_coverage,omitempty"`
-	Topology                      []appdynamics.Entity            `json:"topology,omitempty"`
+	Dynatrace                     *dynatrace.Selection                  `json:"dynatrace,omitempty"`
+	ManagementSnapshots           int64                                 `json:"management_snapshots,omitempty"`
+	ManagementIncompleteSnapshots int64                                 `json:"management_incomplete_snapshots,omitempty"`
+	JobID                         string                                `json:"job_id"`
+	SourceID                      string                                `json:"source_id"`
+	SourceRevision                int64                                 `json:"source_revision"`
+	BindingRevision               int64                                 `json:"binding_revision"`
+	ConnectionID                  string                                `json:"connection_id,omitempty"`
+	ConnectionRevision            int64                                 `json:"connection_revision,omitempty"`
+	ExecutorMode                  string                                `json:"executor_mode,omitempty"`
+	PrometheusSelection           *prometheus.Selection                 `json:"prometheus,omitempty"`
+	Selection                     *monitorcontract.AppDynamicsSelection `json:"appdynamics,omitempty"`
+	Required                      bool                                  `json:"required"`
+	State                         string                                `json:"state"`
+	Reason                        string                                `json:"reason,omitempty"`
+	Batches                       int64                                 `json:"batches"`
+	ProviderCoverage              map[string]monitorprovider.Coverage   `json:"provider_coverage,omitempty"`
+	Topology                      []monitorprovider.Entity              `json:"topology,omitempty"`
 }
 
 func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, budget *archiveOutputBudget) error {
@@ -278,7 +278,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 		coverage := &manifest.MonitorCoverage[index]
 		if coverage.PrometheusSelection != nil {
 			if coverage.ProviderCoverage == nil {
-				coverage.ProviderCoverage = map[string]appdynamics.Coverage{}
+				coverage.ProviderCoverage = map[string]monitorprovider.Coverage{}
 			}
 			selection := coverage.PrometheusSelection.Defaults()
 			anchor := prometheusGridAnchor(manifestLoadStart(manifest))
@@ -312,7 +312,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 				} else if counts[1] > 0 {
 					freshness = "mixed"
 				}
-				coverage.ProviderCoverage["numeric:"+query.ID] = appdynamics.Coverage{Status: status, From: manifestLoadStart(manifest), To: until, Points: eligible, ExpectedPoints: expected, MissingPoints: max(0, expected-eligible), Freshness: freshness}
+				coverage.ProviderCoverage["numeric:"+query.ID] = monitorprovider.Coverage{Status: status, From: manifestLoadStart(manifest), To: until, Points: eligible, ExpectedPoints: expected, MissingPoints: max(0, expected-eligible), Freshness: freshness}
 			}
 		}
 		for key, value := range coverage.ProviderCoverage {
@@ -396,11 +396,11 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			continue
 		}
 		coverage.State, coverage.Reason = "incomplete", "archive_evidence_budget"
-		providerCoverage := make(map[string]appdynamics.Coverage, len(coverage.ProviderCoverage)+1)
+		providerCoverage := make(map[string]monitorprovider.Coverage, len(coverage.ProviderCoverage)+1)
 		for key, value := range coverage.ProviderCoverage {
 			providerCoverage[key] = value
 		}
-		providerCoverage["archive"] = appdynamics.Coverage{Status: "partial", From: start, To: end, Truncated: true, Message: "monitoring export reached the archive evidence budget"}
+		providerCoverage["archive"] = monitorprovider.Coverage{Status: "partial", From: start, To: end, Truncated: true, Message: "monitoring export reached the archive evidence budget"}
 		coverage.ProviderCoverage = providerCoverage
 		manifest.MonitoringStatus = "incomplete"
 	}
@@ -500,8 +500,8 @@ func encodeProviderMonitorArchiveRecord(encoder *json.Encoder, budget *archiveOu
 }
 
 type RunMonitorDiagnostic struct {
-	SourceID   string                 `json:"source_id"`
-	Diagnostic appdynamics.Diagnostic `json:"diagnostic"`
+	SourceID   string                     `json:"source_id"`
+	Diagnostic monitorprovider.Diagnostic `json:"diagnostic"`
 }
 
 func monitorRulesFromManifest(manifest *RunArchiveManifest) []analysis.MonitorRule {
@@ -541,7 +541,7 @@ func monitorPointSatisfiesCapture(point analysis.MetricPoint, start, end time.Ti
 	return point.Provider != nil && !point.Provider.Synthetic && point.Value != nil && point.Quality == analysis.QualityValid && point.Validate() == nil && point.Provider.Settled && !point.Provider.BucketStart.Before(start) && !point.Provider.BucketEnd.After(end)
 }
 
-func selectedMonitorMetricsObserved(selection appdynamics.Selection, observed map[string]bool) bool {
+func selectedMonitorMetricsObserved(selection monitorcontract.AppDynamicsSelection, observed map[string]bool) bool {
 	for _, metric := range selection.Metrics {
 		if !observed[metric.ApplicationID+":"+metric.Name] {
 			return false

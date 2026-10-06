@@ -1,0 +1,97 @@
+{
+  "script": {
+    "actions": [
+      {
+        "assertions": [
+          {
+            "expected": 200,
+            "type": "status_code"
+          }
+        ],
+        "headers": {
+          "Accept": "application/json"
+        },
+        "method": "GET",
+        "name": "GET /orders",
+        "target": "/orders",
+        "think_time": {
+          "mean_ms": 0,
+          "type": ""
+        },
+        "type": "GET"
+      }
+    ],
+    "config": {
+      "base_url": "https://api.example.test",
+      "browser": {
+        "geolocation": {},
+        "http_credentials": {},
+        "proxy": {},
+        "review_policy": {},
+        "viewport": {}
+      },
+      "bruno": {
+        "limits": {}
+      },
+      "database": {},
+      "error_handling": {},
+      "eventhubs": {},
+      "grpc": {},
+      "http": {
+        "auth": {},
+        "proxy": {},
+        "tls": {}
+      },
+      "java_http": {},
+      "java_vuser": {},
+      "jms": {},
+      "kafka": {},
+      "log": {},
+      "network": {},
+      "observability": {},
+      "pacing": {
+        "type": ""
+      },
+      "results": {},
+      "run_logic": {
+        "auto_transactions": "per_action",
+        "iterations": 1
+      },
+      "sapgui": {},
+      "soap": {
+        "fault_handling": {}
+      },
+      "think_time": {
+        "mean_ms": 0,
+        "type": ""
+      },
+      "web_runtime": {
+        "data_formatting": {},
+        "download_filters": {},
+        "network_simulation": {},
+        "streaming": {}
+      },
+      "websocket": {}
+    },
+    "created_at": "<TIMESTAMP>",
+    "id": "",
+    "name": "raml golden",
+    "protocol": "http",
+    "updated_at": "<TIMESTAMP>",
+    "version": "1.0.0"
+  },
+  "stats": {
+    "converted_actions": 1,
+    "format": "raml",
+    "request_bodies": 0,
+    "total_methods": 1,
+    "total_resources": 1
+  },
+  "summary": {
+    "base_url": "https://api.example.test",
+    "resources": [
+      "/orders"
+    ],
+    "title": "Orders"
+  }
+}

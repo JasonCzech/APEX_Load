@@ -1,4 +1,4 @@
-import type { MonitorBinding } from '../types/appdynamics'
+import type { MonitorBinding } from '../types/runMonitoring'
 import { GeneratorAssignmentSettings, GoalConfig, RuntimeJavaVuserSettings, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode, TrafficProfile } from '../types'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import { ScenarioRuntimeSettings } from './scenarioDraftUtils'

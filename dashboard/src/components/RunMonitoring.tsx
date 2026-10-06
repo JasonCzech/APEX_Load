@@ -10,16 +10,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import MonitorTimelinePlot from './MonitorTimelinePlot'
 import { monitorSeriesIdentity, providerBucketRange, monitorEntityLabel } from './monitorTimelineModel'
 import DependencyEvidence from './DependencyEvidence'
-import AppDynamicsRunEvidence from './AppDynamicsRunEvidence'
+import MonitorRunEvidence from './MonitorRunEvidence'
 import PrometheusSourceFields from './PrometheusSourceFields'
 import PrometheusRunEvidence from './PrometheusRunEvidence'
 import { emptyPrometheusSelection } from './prometheusConnectionModel'
-import AppDynamicsSourceFields from './AppDynamicsSourceFields'
 import DynatraceSourceFields from './DynatraceSourceFields'
 import { emptyDynatraceSelection } from '../types/dynatrace'
 import { monitorMetricCatalog, monitorSourceSelectionComplete, nativeMonitorProvider } from './monitorProviderModel'
-import { emptyAppDynamicsSelection } from './appDynamicsConnectionModel'
-import type { MonitorSource, RunMonitorJob } from '../types/appdynamics'
+import type { MonitorSource, RunMonitorJob } from '../types/runMonitoring'
 import { request } from '../hooks/apiClient'
 import type { JsonSuccessResponseBody } from '../types/generated/openapi'
 import type { AnalysisPoint } from '../types/analysis'
@@ -33,7 +31,7 @@ const managementSource = (source: Source): ManagementSource => ({ ...source, pro
 interface Bindings { revision: number; sources: { source_id: string; required: boolean }[] }
 type Job = Omit<RunMonitorJob, 'source'> & { source: Source }
 const emptySource = (): Source => ({ project_id: '', id: '', name: '', revision: 0, collector_id: '', pack: 'linux-hosts', interval_seconds: 15, enabled: true })
-const sourcePacks = ['linux-hosts', 'go-runtime', 'prometheus', 'ssh-linux', 'otel-metrics', 'jmx', 'jdbc', 'cloudwatch', 'azure-monitor', 'appdynamics', 'dynatrace', 'prometheus-query']
+const sourcePacks = ['linux-hosts', 'go-runtime', 'prometheus', 'ssh-linux', 'otel-metrics', 'jmx', 'jdbc', 'cloudwatch', 'azure-monitor', 'dynatrace', 'prometheus-query']
 const sourcesPath = (project: string) => `/projects/${encodeURIComponent(project)}/monitor-sources`
 
 function useMonitoringCapabilities(projectId?: string) {
@@ -96,13 +94,13 @@ export function RunMonitorSources({ projectId, canManage = false }: { projectId?
     <p>Sources are captured when a run starts. Edits apply to subsequent runs. Collection continues through pauses.</p>
     {error && <p role="alert">{error}</p>}
     {draft.id && draft.management_scope && <ManagementCollectionState key={`${projectId}:${draft.id}`} projectId={projectId} sourceId={draft.id} canManage={canManage} />}
-    <ul>{sources.map(source => <li key={source.id}>{source.name} · {source.pack} · revision {source.revision} · {source.enabled ? 'enabled' : 'disabled'} {canManage && <button type="button" disabled={busy} onClick={() => setDraft(source)}>Edit {source.name}</button>}</li>)}</ul>
+    <ul>{sources.map(source => <li key={source.id}>{source.name} · {source.pack} · revision {source.revision} · {source.enabled ? 'enabled' : 'disabled'} {canManage && <button type="button" disabled={busy || source.pack === 'appdynamics'} onClick={() => setDraft(source)}>Edit {source.name}</button>}</li>)}</ul>
     {canManage && <fieldset disabled={busy}>
       <legend>{draft.id ? 'Edit source' : 'New source'}</legend>
       <label>Name<input value={draft.name} maxLength={256} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
-      <label>Collector<select disabled={['appdynamics', 'dynatrace', 'prometheus-query'].includes(draft.pack)} value={draft.collector_id} onChange={e => setDraft({ ...draft, collector_id: e.target.value })}><option value="">Select a collector</option>{collectors.map(c => <option key={c.id} value={c.id}>{c.name} · {c.health}</option>)}</select></label>
-      <label>Pack<select value={draft.pack} onChange={e => setDraft({ ...draft, pack: e.target.value, destination: '', credential_ref: '', collector_public_key: '', connection_id: undefined, executor_mode: ['appdynamics', 'dynatrace', 'prometheus-query'].includes(e.target.value) ? 'direct' : undefined, appdynamics: e.target.value === 'appdynamics' ? emptyAppDynamicsSelection() : undefined, dynatrace: e.target.value === 'dynatrace' ? emptyDynatraceSelection() : undefined, prometheus: e.target.value === 'prometheus-query' ? emptyPrometheusSelection() : undefined, management_scope: e.target.value === 'solace-semp' ? newSolaceScope() : e.target.value === 'servicebus-runtime' ? newServiceBusScope() : e.target.value === 'kafka-offsets' ? newKafkaScope() : undefined, management_identity: e.target.value === 'solace-semp' ? newSolaceIdentity() : e.target.value === 'servicebus-runtime' ? newServiceBusIdentity() : e.target.value === 'kafka-offsets' ? newKafkaIdentity() : undefined, interval_seconds: e.target.value === 'prometheus-query' ? 30 : ['appdynamics', 'dynatrace'].includes(e.target.value) ? 60 : ['cloudwatch', 'azure-monitor'].includes(e.target.value) ? Math.max(60, draft.interval_seconds) : ['servicebus-runtime', 'solace-semp'].includes(e.target.value) ? Math.max(30, draft.interval_seconds) : e.target.value === 'kafka-offsets' ? Math.max(10, draft.interval_seconds) : draft.interval_seconds })}>{!availablePacks.includes(draft.pack) && <option value={draft.pack} disabled>{draft.pack} (configured management pack)</option>}{availablePacks.map(p => <option key={p}>{p}</option>)}</select></label>
-      {!['linux-hosts', 'go-runtime', 'appdynamics', 'dynatrace', 'prometheus-query'].includes(draft.pack) && <label>Approved destination<input type={['kafka-offsets', 'servicebus-runtime', 'solace-semp'].includes(draft.pack) ? 'text' : 'url'} value={draft.destination ?? ''} onChange={e => setDraft({ ...draft, destination: e.target.value })} /></label>}
+      <label>Collector<select disabled={['dynatrace', 'prometheus-query'].includes(draft.pack)} value={draft.collector_id} onChange={e => setDraft({ ...draft, collector_id: e.target.value })}><option value="">Select a collector</option>{collectors.map(c => <option key={c.id} value={c.id}>{c.name} · {c.health}</option>)}</select></label>
+      <label>Pack<select value={draft.pack} onChange={e => setDraft({ ...draft, pack: e.target.value, destination: '', credential_ref: '', collector_public_key: '', connection_id: undefined, executor_mode: ['dynatrace', 'prometheus-query'].includes(e.target.value) ? 'direct' : undefined, appdynamics: undefined, dynatrace: e.target.value === 'dynatrace' ? emptyDynatraceSelection() : undefined, prometheus: e.target.value === 'prometheus-query' ? emptyPrometheusSelection() : undefined, management_scope: e.target.value === 'solace-semp' ? newSolaceScope() : e.target.value === 'servicebus-runtime' ? newServiceBusScope() : e.target.value === 'kafka-offsets' ? newKafkaScope() : undefined, management_identity: e.target.value === 'solace-semp' ? newSolaceIdentity() : e.target.value === 'servicebus-runtime' ? newServiceBusIdentity() : e.target.value === 'kafka-offsets' ? newKafkaIdentity() : undefined, interval_seconds: e.target.value === 'prometheus-query' ? 30 : ['dynatrace'].includes(e.target.value) ? 60 : ['cloudwatch', 'azure-monitor'].includes(e.target.value) ? Math.max(60, draft.interval_seconds) : ['servicebus-runtime', 'solace-semp'].includes(e.target.value) ? Math.max(30, draft.interval_seconds) : e.target.value === 'kafka-offsets' ? Math.max(10, draft.interval_seconds) : draft.interval_seconds })}>{!availablePacks.includes(draft.pack) && <option value={draft.pack} disabled>{draft.pack} (configured management pack)</option>}{availablePacks.map(p => <option key={p}>{p}</option>)}</select></label>
+      {!['linux-hosts', 'go-runtime', 'dynatrace', 'prometheus-query'].includes(draft.pack) && <label>Approved destination<input type={['kafka-offsets', 'servicebus-runtime', 'solace-semp'].includes(draft.pack) ? 'text' : 'url'} value={draft.destination ?? ''} onChange={e => setDraft({ ...draft, destination: e.target.value })} /></label>}
       <label>Dependency identity<input value={draft.service ?? ''} maxLength={128} onChange={e => setDraft({ ...draft, service: e.target.value })} /><small>Exact dependency label used to link collected evidence.</small></label>
       {['ssh-linux', 'jmx', 'jdbc'].includes(draft.pack) && <>
         <label>Project credential secret name<input value={draft.credential_ref ?? ''} maxLength={128} onChange={e => setDraft({ ...draft, credential_ref: e.target.value })} /></label>
@@ -112,9 +110,8 @@ export function RunMonitorSources({ projectId, canManage = false }: { projectId?
       {draft.pack === 'servicebus-runtime' && <ServiceBusManagementSourceFields source={managementSource(draft)} savedSource={savedManagementSource} available={serviceBusManagementAvailable} onChange={changeManagementSource} />}
       {draft.pack === 'solace-semp' && <SolaceManagementSourceFields source={managementSource(draft)} savedSource={savedManagementSource} available={solaceManagementAvailable} onChange={changeManagementSource} />}
       {draft.pack === 'prometheus-query' && <PrometheusSourceFields projectId={projectId} source={draft} onChange={setDraft} />}
-      {draft.pack === 'appdynamics' && <AppDynamicsSourceFields projectId={projectId} source={draft} onChange={setDraft} />}
       {draft.pack === 'dynatrace' && <DynatraceSourceFields projectId={projectId} source={draft} onChange={setDraft} />}
-      <label>Collection interval (seconds)<input type="number" min={['appdynamics', 'dynatrace', 'cloudwatch', 'azure-monitor'].includes(draft.pack) ? 60 : ['servicebus-runtime', 'solace-semp'].includes(draft.pack) ? 30 : draft.pack === 'kafka-offsets' ? 10 : 1} max={3600} value={draft.interval_seconds} onChange={e => setDraft({ ...draft, interval_seconds: Number(e.target.value) })} /></label>
+      <label>Collection interval (seconds)<input type="number" min={['dynatrace', 'cloudwatch', 'azure-monitor'].includes(draft.pack) ? 60 : ['servicebus-runtime', 'solace-semp'].includes(draft.pack) ? 30 : draft.pack === 'kafka-offsets' ? 10 : 1} max={3600} value={draft.interval_seconds} onChange={e => setDraft({ ...draft, interval_seconds: Number(e.target.value) })} /></label>
       <label><input type="checkbox" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })} />Enabled</label>
       <button type="button" disabled={!draft.name || !monitorSourceSelectionComplete(draft) || (draft.pack === 'kafka-offsets' && (!kafkaManagementAvailable || !!kafkaSourceError(managementSource(draft)))) || (draft.pack === 'servicebus-runtime' && (!serviceBusManagementAvailable || !!serviceBusSourceError(managementSource(draft)))) || (draft.pack === 'solace-semp' && (!solaceManagementAvailable || !!solaceSourceError(managementSource(draft))))} onClick={() => void save()}>Save monitor source</button>
       {draft.id && <><button type="button" onClick={() => void save(true)}>Delete source</button><button type="button" onClick={() => setDraft(emptySource())}>New source</button></>}
@@ -140,8 +137,8 @@ export function ScenarioMonitorBindings({ projectId, scenarioId, canEdit }: { pr
     <legend>Run-bound monitors</legend><p>Save bindings separately. Required sources block Start when their collection path is unavailable. Missing required evidence makes the final result inconclusive.</p>
     {message && <p role="status">{message}</p>}
     {sources.map(source => { const binding = bindings.sources.find(b => b.source_id === source.id); return <div key={source.id}>
-      <label><input type="checkbox" checked={!!binding} onChange={e => setBindings({ ...bindings, sources: e.target.checked ? [...bindings.sources, { source_id: source.id, required: false }] : bindings.sources.filter(b => b.source_id !== source.id) })} />{source.name} ({source.pack})</label>
-      {binding && <label><input type="checkbox" checked={binding.required} onChange={e => setBindings({ ...bindings, sources: bindings.sources.map(b => b.source_id === source.id ? { ...b, required: e.target.checked } : b) })} />Require {source.name} readiness</label>}
+      <label><input type="checkbox" checked={!!binding} disabled={source.pack === 'appdynamics' && !binding} onChange={e => setBindings({ ...bindings, sources: e.target.checked ? [...bindings.sources, { source_id: source.id, required: false }] : bindings.sources.filter(b => b.source_id !== source.id) })} />{source.name} ({source.pack})</label>
+      {binding && source.pack !== 'appdynamics' && <label><input type="checkbox" checked={binding.required} onChange={e => setBindings({ ...bindings, sources: bindings.sources.map(b => b.source_id === source.id ? { ...b, required: e.target.checked } : b) })} />Require {source.name} readiness</label>}
     </div> })}
     {canEdit && <button type="button" onClick={() => { const c = new AbortController(); operation.current = c; setBusy(true); setMessage(''); void request<Bindings>(path, { method: 'PUT', signal: c.signal, body: JSON.stringify(bindings) }).then(b => { if (!c.signal.aborted) { setBindings(b); setMessage('Monitor bindings saved.') } }).catch(e => { if (!c.signal.aborted) setMessage(String(e)) }).finally(() => { if (!c.signal.aborted) setBusy(false) }) }}>Save monitor bindings</button>}
   </fieldset>
@@ -206,7 +203,7 @@ export function RunMonitorTimeline({ projectId, testId, history }: { projectId?:
     <RunManagementEvidence projectId={projectId} testId={testId} />
     <DependencyEvidence testId={testId} projectId={projectId} select={(source, metric, from, to) => { clearLoaded(); setSource(source); setMetric(metric); setDimensions('{}'); setWindow({ from, to }) }} />
     <PrometheusRunEvidence testId={testId} jobs={jobs} sourceId={source || undefined} />
-    <AppDynamicsRunEvidence testId={testId} jobs={jobs} sourceId={source || undefined} />
+    <MonitorRunEvidence testId={testId} jobs={jobs} sourceId={source || undefined} />
     <h3>Run monitor evidence</h3>{window && <p>Selected interval: {window.from} – {window.to} <button type="button" onClick={() => { clearLoaded(); setWindow(undefined) }}>Clear time window</button></p>}<p>Aligned by elapsed wall time, including pauses. Associations do not establish causation. Loaded selections refresh every 60 seconds during collection and reconciliation.</p>
     <ul>{jobs.map(j => <li key={j.id}>{j.source.name} · {j.state} · {j.next_sequence} accepted batches{j.coverage_reason ? ` · ${j.coverage_reason}` : ''}</li>)}</ul>
     {error && <p role="alert">{error}</p>}

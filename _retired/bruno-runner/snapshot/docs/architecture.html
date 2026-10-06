@@ -1,0 +1,1582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APEX Load — Technical Architecture</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #181b24;
+    --surface2: #1e222e;
+    --border: #2a2f3e;
+    --text: #e2e4e9;
+    --text-dim: #8b8f9a;
+    --accent: #6c8cff;
+    --accent-glow: rgba(108,140,255,0.25);
+    --green: #4ade80;
+    --orange: #f59e0b;
+    --red: #f87171;
+    --teal: #2dd4bf;
+    --purple: #a78bfa;
+    --pink: #f472b6;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .header h1 span { color: var(--accent); }
+  .header-meta { font-size: 0.8rem; color: var(--text-dim); }
+
+  /* Layout */
+  .layout {
+    display: flex;
+    min-height: calc(100vh - 65px);
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 320px;
+    min-width: 320px;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    overflow-y: auto;
+    transition: transform 0.3s;
+  }
+  .sidebar-section { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .sidebar-section h3 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+  .layer-list { list-style: none; }
+  .layer-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background 0.15s;
+    margin-bottom: 2px;
+  }
+  .layer-item:hover { background: var(--surface2); }
+  .layer-item.active { background: var(--accent-glow); color: var(--accent); }
+  .layer-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Detail panel in sidebar */
+  .detail-panel {
+    padding: 20px;
+    animation: fadeIn 0.2s;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .detail-panel h2 {
+    font-size: 1.1rem;
+    margin-bottom: 4px;
+  }
+  .detail-panel .detail-subtitle {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+  }
+  .detail-panel .detail-body {
+    font-size: 0.85rem;
+    line-height: 1.65;
+    color: var(--text);
+  }
+  .detail-panel .detail-body p { margin-bottom: 10px; }
+  .detail-panel .detail-body code {
+    background: var(--surface2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    color: var(--teal);
+  }
+  .detail-connections {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .detail-connections h4 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .conn-list { list-style: none; }
+  .conn-list li {
+    font-size: 0.8rem;
+    padding: 4px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .conn-arrow {
+    color: var(--accent);
+    font-size: 0.7rem;
+  }
+  .detail-files {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .detail-files h4 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .file-list { list-style: none; }
+  .file-list li {
+    font-size: 0.78rem;
+    padding: 3px 0;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    color: var(--teal);
+  }
+
+  /* Main canvas */
+  .canvas {
+    flex: 1;
+    position: relative;
+    overflow: auto;
+    padding: 40px;
+  }
+  .canvas-inner {
+    position: relative;
+    min-width: 1000px;
+    min-height: 1930px;
+    margin: 0 auto;
+  }
+
+  /* Nodes */
+  .node {
+    position: absolute;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+    z-index: 10;
+    user-select: none;
+  }
+  .node:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 20px var(--accent-glow);
+    transform: translateY(-2px);
+  }
+  .node.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 24px var(--accent-glow), inset 0 0 16px rgba(108,140,255,0.06);
+  }
+  .node-icon {
+    font-size: 1.5rem;
+    margin-bottom: 6px;
+  }
+  .node-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+  .node-sub {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .node-badge {
+    display: inline-block;
+    font-size: 0.6rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-top: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* Layer groups */
+  .layer-group {
+    position: absolute;
+    border: 1px dashed;
+    border-radius: 14px;
+    opacity: 0.35;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .layer-label {
+    position: absolute;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-weight: 600;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  /* SVG connections */
+  .connections-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .conn-line {
+    stroke: var(--border);
+    stroke-width: 1.5;
+    fill: none;
+    transition: stroke 0.3s, stroke-width 0.3s;
+  }
+  .conn-line.highlighted {
+    stroke: var(--accent);
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 4px var(--accent-glow));
+  }
+  .conn-line.grpc { stroke-dasharray: 6 4; }
+  .conn-line.ws { stroke-dasharray: 3 3; }
+
+  /* Animated data flow dots */
+  .flow-dot {
+    r: 3;
+    fill: var(--accent);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .flow-dot.active {
+    opacity: 1;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    gap: 20px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend-line {
+    width: 24px;
+    height: 2px;
+  }
+  .legend-line.solid { background: var(--text-dim); }
+  .legend-line.dashed { background: repeating-linear-gradient(90deg, var(--text-dim) 0 6px, transparent 6px 10px); }
+  .legend-line.dotted { background: repeating-linear-gradient(90deg, var(--text-dim) 0 3px, transparent 3px 6px); }
+
+  /* Performance targets callout */
+  .perf-targets {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    font-size: 0.75rem;
+    z-index: 20;
+    max-width: 260px;
+  }
+  .perf-targets h4 {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .perf-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+  }
+  .perf-label { color: var(--text-dim); }
+  .perf-value { font-weight: 600; color: var(--green); font-family: 'JetBrains Mono', monospace; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+  }
+
+  /* Tooltip */
+  .tooltip {
+    position: fixed;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 0.78rem;
+    pointer-events: none;
+    z-index: 200;
+    opacity: 0;
+    transition: opacity 0.15s;
+    max-width: 240px;
+  }
+  .tooltip.visible { opacity: 1; }
+
+  /* View toggles */
+  .view-toggles {
+    display: flex;
+    gap: 6px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .view-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 5px 14px;
+    border-radius: 5px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .view-btn:hover { border-color: var(--accent); color: var(--text); }
+  .view-btn.active { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }
+
+  /* Search */
+  .search-box {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .search-box input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-size: 0.8rem;
+    outline: none;
+  }
+  .search-box input:focus { border-color: var(--accent); }
+  .search-box input::placeholder { color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>APEX</span> Load — Technical Architecture</h1>
+  <div class="header-meta">Kubernetes-native Performance Testing Platform &middot; Go + React + gRPC</div>
+</div>
+<div style="background:#3a2f0b;color:#f5d97a;padding:8px 24px;font-size:0.8rem;border-bottom:1px solid #6b5514;">Reviewed 2026-09-24 against <a href="../ARCHITECTURE.md" style="color:#f5d97a">ARCHITECTURE.md</a> and the code (<code>cmd/</code>, <code>pkg/protocol/</code>, <code>pkg/api</code>, <code>pkg/storage</code>, <code>deployments/</code>). This is a simplified overview, not an exhaustive map: build-tag-gated real adapters (Kafka, Event Hubs, Service Bus, Solace) and the JMS IBM MQ protocol (mock only) are called out in node details.</div>
+
+<div class="layout">
+  <div class="sidebar" id="sidebar">
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Search components..." />
+    </div>
+    <div class="view-toggles">
+      <button class="view-btn active" data-view="all">All</button>
+      <button class="view-btn" data-view="data">Data Flow</button>
+      <button class="view-btn" data-view="runtime">Runtime</button>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Architecture Layers</h3>
+      <ul class="layer-list" id="layerList">
+        <li class="layer-item" data-layer="client" style="--dot-color: #6c8cff">
+          <span class="layer-dot" style="background: #6c8cff"></span> Client Layer
+        </li>
+        <li class="layer-item" data-layer="api" style="--dot-color: #4ade80">
+          <span class="layer-dot" style="background: #4ade80"></span> API / Control Plane
+        </li>
+        <li class="layer-item" data-layer="engine" style="--dot-color: #f59e0b">
+          <span class="layer-dot" style="background: #f59e0b"></span> Execution Engine
+        </li>
+        <li class="layer-item" data-layer="protocol" style="--dot-color: #a78bfa">
+          <span class="layer-dot" style="background: #a78bfa"></span> Protocol Plugins
+        </li>
+        <li class="layer-item" data-layer="storage" style="--dot-color: #2dd4bf">
+          <span class="layer-dot" style="background: #2dd4bf"></span> Storage & Telemetry
+        </li>
+        <li class="layer-item" data-layer="convert" style="--dot-color: #f472b6">
+          <span class="layer-dot" style="background: #f472b6"></span> Script Converters
+        </li>
+      </ul>
+    </div>
+
+    <div id="detailContainer" class="sidebar-section">
+      <div class="detail-panel">
+        <h2>Select a Component</h2>
+        <div class="detail-body">
+          <p>Click on any node in the diagram to see detailed information about that component, its connections, and source files.</p>
+          <p>Use the layer list above to highlight specific layers, or search to find components by name.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="canvas" id="canvas">
+    <div class="canvas-inner" id="canvasInner">
+      <svg class="connections-svg" id="connectionsSvg">
+        <defs>
+          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="var(--border)" />
+          </marker>
+          <marker id="arrowhead-hl" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="var(--accent)" />
+          </marker>
+        </defs>
+      </svg>
+
+      <!-- Layer backgrounds -->
+      <div class="layer-group" style="left:20px;top:10px;width:960px;height:312px;border-color:#6c8cff" data-layer="client"></div>
+      <div class="layer-label" style="left:30px;top:18px;color:#6c8cff">Client Layer</div>
+
+      <div class="layer-group" style="left:20px;top:344px;width:960px;height:170px;border-color:#4ade80" data-layer="api"></div>
+      <div class="layer-label" style="left:30px;top:352px;color:#4ade80">API / Control Plane</div>
+
+      <div class="layer-group" style="left:20px;top:536px;width:960px;height:326px;border-color:#f59e0b" data-layer="engine"></div>
+      <div class="layer-label" style="left:30px;top:544px;color:#f59e0b">Execution Engine &amp; Agents</div>
+
+      <div class="layer-group" style="left:20px;top:1251px;width:960px;height:320px;border-color:#a78bfa" data-layer="protocol"></div>
+      <div class="layer-label" style="left:30px;top:1259px;color:#a78bfa">Protocol Plugins</div>
+
+      <div class="layer-group" style="left:20px;top:884px;width:960px;height:345px;border-color:#2dd4bf" data-layer="storage"></div>
+      <div class="layer-label" style="left:30px;top:892px;color:#2dd4bf">Storage &amp; Telemetry</div>
+
+      <div class="layer-group" style="left:20px;top:1593px;width:960px;height:313px;border-color:#f472b6" data-layer="convert"></div>
+      <div class="layer-label" style="left:30px;top:1601px;color:#f472b6">Script Import / Conversion</div>
+
+      <!-- CLIENT LAYER -->
+      <div class="node" id="dashboard" data-layer="client" style="left:40px;top:44px;min-width:155px">
+        <div class="node-icon">&#9672;</div>
+        <div class="node-title">Dashboard</div>
+        <div class="node-sub">React 18 + TypeScript + Recharts</div>
+        <div class="node-badge" style="background:rgba(108,140,255,0.15);color:#6c8cff">SPA</div>
+      </div>
+
+      <div class="node" id="apexctl" data-layer="client" style="left:274px;top:44px;min-width:130px">
+        <div class="node-icon">&#9654;</div>
+        <div class="node-title">apexctl</div>
+        <div class="node-sub">CLI Tool</div>
+        <div class="node-badge" style="background:rgba(108,140,255,0.15);color:#6c8cff">Go Binary</div>
+      </div>
+
+      <div class="node" id="websocket" data-layer="client" style="left:422px;top:44px;min-width:155px">
+        <div class="node-icon">&#8644;</div>
+        <div class="node-title">WebSocket Client</div>
+        <div class="node-sub">Real-time metric streams</div>
+        <div class="node-badge" style="background:rgba(108,140,255,0.15);color:#6c8cff">Bidirectional</div>
+      </div>
+
+      <div class="node" id="agentic" data-layer="client" style="left:612px;top:44px;min-width:150px;max-width:190px">
+        <div class="node-icon">&#10036;</div>
+        <div class="node-title">Assisted Authoring</div>
+        <div class="node-sub">Go, deterministic-local (LLM policy-gated)</div>
+        <div class="node-badge" style="background:rgba(168,85,247,0.15);color:#c084fc">Governed AI</div>
+      </div>
+
+      <div class="node" id="mcp" data-layer="client" style="left:40px;top:189px;min-width:150px">
+        <div class="node-icon">&#9881;</div>
+        <div class="node-title">MCP Server</div>
+        <div class="node-sub">FastMCP bridge to REST API</div>
+        <div class="node-badge" style="background:rgba(108,140,255,0.15);color:#6c8cff">Python</div>
+      </div>
+
+      <!-- API / CONTROL PLANE LAYER -->
+      <div class="node" id="restapi" data-layer="api" style="left:40px;top:378px;min-width:200px">
+        <div class="node-icon">&#9881;</div>
+        <div class="node-title">REST API Server</div>
+        <div class="node-sub">:8080 &middot; net/http mux &middot; Auth/RBAC</div>
+        <div class="node-badge" style="background:rgba(74,222,128,0.15);color:#4ade80">Control Plane</div>
+      </div>
+
+      <div class="node" id="wshub" data-layer="api" style="left:274px;top:378px;min-width:170px">
+        <div class="node-icon">&#8634;</div>
+        <div class="node-title">WebSocket Hub</div>
+        <div class="node-sub">Fan-out (Redis bus in HA)</div>
+        <div class="node-badge" style="background:rgba(74,222,128,0.15);color:#4ade80">Pub/Sub</div>
+      </div>
+
+      <div class="node" id="testrunner" data-layer="api" style="left:467px;top:378px;min-width:170px">
+        <div class="node-icon">&#9654;</div>
+        <div class="node-title">Test Runner</div>
+        <div class="node-sub">Orchestrates test lifecycle</div>
+        <div class="node-badge" style="background:rgba(74,222,128,0.15);color:#4ade80">Core</div>
+      </div>
+
+      <div class="node" id="scheduler" data-layer="api" style="left:663px;top:378px;min-width:160px">
+        <div class="node-icon">&#128339;</div>
+        <div class="node-title">Scheduler</div>
+        <div class="node-sub">Cron + scenario schedules</div>
+        <div class="node-badge" style="background:rgba(74,222,128,0.15);color:#4ade80">Lease-based</div>
+      </div>
+
+      <!-- ENGINE LAYER -->
+      <div class="node" id="engine" data-layer="engine" style="left:40px;top:570px;min-width:165px">
+        <div class="node-icon">&#9889;</div>
+        <div class="node-title">VUser Engine</div>
+        <div class="node-sub">1 goroutine = 1 VUser</div>
+        <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">~2-4 KB stack</div>
+      </div>
+
+      <div class="node" id="metrics" data-layer="engine" style="left:223px;top:570px;min-width:175px">
+        <div class="node-icon">&#128200;</div>
+        <div class="node-title">Metrics Collector</div>
+        <div class="node-sub">Buffered channels (cap 10k)</div>
+        <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">Zero-Lock</div>
+      </div>
+
+      <div class="node" id="tdigest" data-layer="engine" style="left:429px;top:570px;min-width:145px">
+        <div class="node-icon">&#9733;</div>
+        <div class="node-title">T-Digest</div>
+        <div class="node-sub">Streaming percentiles</div>
+        <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">p50/p95/p99</div>
+      </div>
+
+      <div class="node" id="generator" data-layer="engine" style="left:601px;top:570px;min-width:165px;max-width:190px">
+        <div class="node-icon">&#128260;</div>
+        <div class="node-title">Generator</div>
+        <div class="node-sub">Remote worker &middot; gRPC to controller</div>
+        <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">StatefulSet</div>
+      </div>
+
+      <div class="node" id="javarunner" data-layer="engine" style="left:40px;top:719px;min-width:175px;max-width:190px">
+        <div class="node-icon">&#9749;</div>
+        <div class="node-title">Java Vuser Runner</div>
+        <div class="node-sub">JVM sidecar bridge</div>
+        <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">Opt-in</div>
+      </div>
+
+      <div class="node" id="collectoragent" data-layer="engine" style="left:233px;top:719px;min-width:145px;max-width:140px">
+        <div class="node-icon">&#128225;</div>
+        <div class="node-title">Collector Agent</div>
+        <div class="node-sub">Host-metric packs</div>
+      </div>
+
+      <div class="node" id="recordagent" data-layer="engine" style="left:396px;top:719px;min-width:165px;max-width:190px">
+        <div class="node-icon">&#9210;</div>
+        <div class="node-title">Record Agent</div>
+        <div class="node-sub">Workstation recording bridge</div>
+      </div>
+
+      <div class="node" id="devtools" data-layer="engine" style="left:604px;top:719px;min-width:175px;max-width:200px">
+        <div class="node-icon">&#128295;</div>
+        <div class="node-title">Dev Tooling</div>
+        <div class="node-sub">apexbench, dslschema, swaggergen, openapits, webcoverage</div>
+      </div>
+
+      <!-- STORAGE LAYER -->
+      <div class="node" id="sqlite" data-layer="storage" style="left:40px;top:918px;min-width:130px">
+        <div class="node-icon">&#128451;</div>
+        <div class="node-title">SQLite / PostgreSQL</div>
+        <div class="node-sub">Scripts, tests, metadata</div>
+        <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Persistence</div>
+      </div>
+
+      <div class="node" id="otel" data-layer="storage" style="left:230px;top:918px;min-width:100px;max-width:120px">
+        <div class="node-icon">&#128225;</div>
+        <div class="node-title">Telemetry Export</div>
+        <div class="node-sub">Prometheus, OTLP traces</div>
+        <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Export</div>
+      </div>
+
+      <div class="node" id="redis" data-layer="storage" style="left:368px;top:918px;min-width:130px;max-width:170px">
+        <div class="node-icon">&#9889;</div>
+        <div class="node-title">Redis / Valkey</div>
+        <div class="node-sub">Live state, fanout (HA)</div>
+        <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Optional</div>
+      </div>
+
+      <div class="node" id="archive" data-layer="storage" style="left:544px;top:918px;min-width:100px;max-width:120px">
+        <div class="node-icon">&#128193;</div>
+        <div class="node-title">Archive Store</div>
+        <div class="node-sub">FS / S3 / Blob / GCS</div>
+        <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Evidence</div>
+      </div>
+
+      <div class="node" id="integrations" data-layer="storage" style="left:682px;top:918px;min-width:130px;max-width:170px">
+        <div class="node-icon">&#128279;</div>
+        <div class="node-title">Integrations</div>
+        <div class="node-sub">Dynatrace, ELK, Grafana</div>
+        <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Monitoring</div>
+      </div>
+
+      <div class="node" id="cibi" data-layer="storage" style="left:40px;top:1067px;min-width:100px;max-width:120px">
+        <div class="node-icon">&#128736;</div>
+        <div class="node-title">CI &amp; BI</div>
+        <div class="node-sub">GitHub Actions, PowerBI</div>
+        <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Automation</div>
+      </div>
+
+      <!-- PROTOCOL LAYER -->
+      <div class="node" id="proto-http" data-layer="protocol" style="left:40px;top:1285px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#127760;</div>
+        <div class="node-title">HTTP</div>
+        <div class="node-sub">HTTP/1.1 + HTTP/2</div>
+      </div>
+
+      <div class="node" id="proto-javahttp" data-layer="protocol" style="left:178px;top:1285px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#9749;</div>
+        <div class="node-title">java_http</div>
+        <div class="node-sub">Java-over-HTTP codec</div>
+      </div>
+
+      <div class="node" id="proto-ws" data-layer="protocol" style="left:316px;top:1285px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#8644;</div>
+        <div class="node-title">WebSocket</div>
+        <div class="node-sub">WS protocol</div>
+      </div>
+
+      <div class="node" id="proto-grpc" data-layer="protocol" style="left:446px;top:1285px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#9741;</div>
+        <div class="node-title">gRPC</div>
+        <div class="node-sub">Protobuf</div>
+      </div>
+
+      <div class="node" id="proto-browser" data-layer="protocol" style="left:554px;top:1285px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#128187;</div>
+        <div class="node-title">Browser</div>
+        <div class="node-sub">Playwright</div>
+      </div>
+
+      <div class="node" id="proto-soap" data-layer="protocol" style="left:666px;top:1285px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#128230;</div>
+        <div class="node-title">SOAP</div>
+        <div class="node-sub">XML/WSDL</div>
+      </div>
+
+      <div class="node" id="proto-db" data-layer="protocol" style="left:782px;top:1285px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#128450;</div>
+        <div class="node-title">Database</div>
+        <div class="node-sub">SQL drivers</div>
+      </div>
+
+      <div class="node" id="proto-jms" data-layer="protocol" style="left:40px;top:1415px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#128233;</div>
+        <div class="node-title">JMS</div>
+        <div class="node-sub">Solace / Service Bus / IBM MQ (mock)</div>
+      </div>
+
+      <div class="node" id="proto-kafka" data-layer="protocol" style="left:178px;top:1415px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#128228;</div>
+        <div class="node-title">Kafka</div>
+        <div class="node-sub">Produce / consume</div>
+      </div>
+
+      <div class="node" id="proto-eventhubs" data-layer="protocol" style="left:316px;top:1415px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#9729;</div>
+        <div class="node-title">Event Hubs</div>
+        <div class="node-sub">Azure AMQP</div>
+      </div>
+
+      <div class="node" id="proto-bruno" data-layer="protocol" style="left:447px;top:1415px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#128054;</div>
+        <div class="node-title">Bruno</div>
+        <div class="node-sub">Node sidecar runner</div>
+      </div>
+
+      <div class="node" id="proto-javavuser" data-layer="protocol" style="left:585px;top:1415px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#9749;</div>
+        <div class="node-title">Java Vuser</div>
+        <div class="node-sub">JVM sidecar runner</div>
+      </div>
+
+      <div class="node" id="proto-net" data-layer="protocol" style="left:723px;top:1415px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#128268;</div>
+        <div class="node-title">Network</div>
+        <div class="node-sub">TCP/UDP raw</div>
+      </div>
+
+      <!-- CONVERTER LAYER -->
+      <div class="node" id="conv-lr" data-layer="convert" style="left:40px;top:1627px;min-width:120px;max-width:140px">
+        <div class="node-icon">&#128257;</div>
+        <div class="node-title">LoadRunner</div>
+        <div class="node-sub">C parser &rarr; DSL</div>
+      </div>
+
+      <div class="node" id="conv-har" data-layer="convert" style="left:180px;top:1627px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#128196;</div>
+        <div class="node-title">HAR</div>
+        <div class="node-sub">HTTP Archive</div>
+      </div>
+
+      <div class="node" id="conv-jmeter" data-layer="convert" style="left:309px;top:1627px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#9874;</div>
+        <div class="node-title">JMeter</div>
+        <div class="node-sub">JMX import</div>
+      </div>
+
+      <div class="node" id="conv-openapi" data-layer="convert" style="left:427px;top:1627px;min-width:100px;max-width:140px">
+        <div class="node-icon">&#128220;</div>
+        <div class="node-title">OpenAPI</div>
+        <div class="node-sub">Swagger spec</div>
+      </div>
+
+      <div class="node" id="conv-wsdl" data-layer="convert" style="left:558px;top:1627px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#128195;</div>
+        <div class="node-title">WSDL</div>
+        <div class="node-sub">SOAP services</div>
+      </div>
+
+      <div class="node" id="conv-sample" data-layer="convert" style="left:692px;top:1627px;min-width:100px;max-width:140px">
+        <div class="node-icon">&#128203;</div>
+        <div class="node-title">Sample Scripts</div>
+        <div class="node-sub">Templates, cURL, raw HTTP</div>
+      </div>
+
+      <div class="node" id="dslparser" data-layer="convert" style="left:40px;top:1757px;min-width:100px;max-width:120px">
+        <div class="node-icon">&#128218;</div>
+        <div class="node-title">DSL Parser</div>
+        <div class="node-sub">JSON DSL &rarr; Script</div>
+        <div class="node-badge" style="background:rgba(244,114,182,0.15);color:#f472b6">Core</div>
+      </div>
+
+      <div class="node" id="conv-bruno" data-layer="convert" style="left:178px;top:1757px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#128054;</div>
+        <div class="node-title">Bruno</div>
+        <div class="node-sub">Collections</div>
+      </div>
+
+      <div class="node" id="conv-postman" data-layer="convert" style="left:294px;top:1757px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#128235;</div>
+        <div class="node-title">Postman</div>
+        <div class="node-sub">Collections</div>
+      </div>
+
+      <div class="node" id="conv-k6" data-layer="convert" style="left:410px;top:1757px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#9201;</div>
+        <div class="node-title">k6</div>
+        <div class="node-sub">JS scripts</div>
+      </div>
+
+      <div class="node" id="conv-asyncapi" data-layer="convert" style="left:523px;top:1757px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#128232;</div>
+        <div class="node-title">AsyncAPI</div>
+        <div class="node-sub">Kafka / JMS plans</div>
+      </div>
+
+      <div class="node" id="conv-devweb" data-layer="convert" style="left:674px;top:1757px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#127760;</div>
+        <div class="node-title">DevWeb</div>
+        <div class="node-sub">Script import</div>
+      </div>
+
+      <div class="node" id="conv-other" data-layer="convert" style="left:800px;top:1757px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#128218;</div>
+        <div class="node-title">Other</div>
+        <div class="node-sub">RAML, CloudTest, MuleSoft, Salesforce</div>
+      </div>
+
+      <!-- Performance targets -->
+      <div class="perf-targets">
+        <h4>Performance Targets</h4>
+        <div class="perf-row"><span class="perf-label">Harness overhead</span><span class="perf-value">&lt; 50 &micro;s</span></div>
+        <div class="perf-row"><span class="perf-label">VUsers/pod (HTTP)</span><span class="perf-value">10,000</span></div>
+        <div class="perf-row"><span class="perf-label">Metrics latency</span><span class="perf-value">&lt; 2 sec</span></div>
+        <div class="perf-row"><span class="perf-label">Ramp-up rate</span><span class="perf-value">500 VU/s/pod</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-line solid"></div> REST / HTTP</div>
+  <div class="legend-item"><div class="legend-line dashed"></div> gRPC stream</div>
+  <div class="legend-item"><div class="legend-line dotted"></div> WebSocket</div>
+  <div class="legend-item"><span style="color:var(--accent)">&#8226;</span> Click a node for details</div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const COMPONENTS = {
+  dashboard: {
+    title: 'Dashboard',
+    subtitle: 'React 18 SPA',
+    layer: 'client',
+    body: `<p>Real-time monitoring SPA built with React 18, TypeScript, and Recharts. Communicates with the API server via REST for CRUD operations and WebSocket for live metric streaming.</p>
+    <p>Key features: test creation wizard, live execution charts with zoom, scenario editor, script library with import tools, results archive with CSV/Parquet export, recording studio.</p>
+    <p>Uses <code>useWebSocket</code> hook for auto-reconnecting WS connections with visibility-aware pausing. Metrics flow: WS message &rarr; state reducer &rarr; Recharts re-render at ~1s intervals.</p>`,
+    connections: ['REST API Server &mdash; CRUD operations', 'WebSocket Hub &mdash; live metric stream', 'Agentic Engine &mdash; AI-assisted script authoring'],
+    files: ['dashboard/src/components/', 'dashboard/src/hooks/useWebSocket.ts', 'dashboard/src/hooks/useApi.ts', 'dashboard/src/types.ts']
+  },
+  apexctl: {
+    title: 'apexctl',
+    subtitle: 'CLI Tool (Go)',
+    layer: 'client',
+    body: `<p>Command-line interface for running tests directly or against the controller API. Supports both standalone mode (direct engine execution) and remote mode (POST to controller).</p>
+    <p>Features: SLA validation, run overrides (VUsers, duration, ramp-up), JSON output for CI/CD pipelines. Exit codes reflect test pass/fail for pipeline integration.</p>`,
+    connections: ['REST API Server &mdash; remote test execution', 'VUser Engine &mdash; direct standalone mode'],
+    files: ['cmd/apexctl/main.go', 'cmd/apexctl/api_client.go', 'cmd/apexctl/sla.go', 'cmd/apexctl/run_overrides.go']
+  },
+  websocket: {
+    title: 'WebSocket Client',
+    subtitle: 'Real-time Streaming',
+    layer: 'client',
+    body: `<p>Bidirectional WebSocket connection for live test monitoring. Supports two modes:</p>
+    <p><code>/api/v1/tests/{id}/stream</code> &mdash; stream metrics for a single test.<br/>
+    <code>/api/v1/ws</code> &mdash; global stream for all test events (creation, start, complete, fail).</p>
+    <p>Message types: <code>metrics_update</code>, <code>test_created</code>, <code>test_started</code>, <code>test_complete</code>, <code>test_failed</code>, <code>test_stopping</code>. Auto-reconnects with exponential backoff.</p>`,
+    connections: ['WebSocket Hub &mdash; JSON message stream', 'Dashboard &mdash; useWebSocket hook consumer'],
+    files: ['dashboard/src/hooks/useWebSocket.ts', 'pkg/api/websocket.go']
+  },
+  agentic: {
+    title: 'Assisted Authoring',
+    subtitle: 'Go, deterministic-local provider',
+    layer: 'client',
+    body: `<p>Governed assisted-authoring service. Produces and repairs JSON DSL drafts from OpenAPI specs, HAR files, and recordings using a deterministic-local provider, and returns explanations, policy checks, a review queue, and evidence-bound root-cause summaries.</p>
+    <p>External LLM providers are policy-gated and <strong>not wired by default</strong>. Output passes through the DSL validator and AI guardrails before storage. The MCP server exposes these flows to agents.</p>`,
+    connections: ['REST API Server &mdash; authoring endpoints', 'DSL Parser &mdash; output validation', 'MCP Server &mdash; agent tool surface'],
+    files: ['pkg/api/ai_assistance.go', 'pkg/api/authoring_ai_guardrails.go', 'pkg/api/authoring_templates.go']
+  },
+  mcp: {
+    title: 'MCP Server',
+    subtitle: 'FastMCP bridge',
+    layer: 'client',
+    body: `<p>Python FastMCP bridge that lets agents and automation call the documented REST API (scripts, imports, scenarios, runs, archives, assisted authoring). Authenticates with service-account API keys.</p>`,
+    connections: ['REST API Server &mdash; documented REST contract', 'Assisted Authoring &mdash; agent tools'],
+    files: ['mcp/server.py', 'mcp/apexload_mcp/', 'mcp/README.md']
+  },
+  restapi: {
+    title: 'REST API Server',
+    subtitle: 'Control Plane',
+    layer: 'api',
+    body: `<p>Central API server serving on <code>:8080</code>. Built on the standard-library <code>net/http</code> ServeMux (method+path patterns) with middleware for CORS, logging, auth (dev, trusted-header, or OIDC modes plus service-account API keys), domain/repository/project RBAC, rate limits, idempotency keys, and audit logging.</p>
+    <p>Key endpoint groups:</p>
+    <p>&bull; <code>/api/v1/tests/*</code> &mdash; Test CRUD, start, stop, abort<br/>
+    &bull; <code>/api/v1/scripts/*</code> &mdash; Script management, import, validate<br/>
+    &bull; <code>/api/v1/scenarios/*</code> &mdash; Reusable test scenarios + scheduling<br/>
+    &bull; <code>/api/v1/projects/*</code> &mdash; Multi-project isolation<br/>
+    &bull; <code>/api/v1/system/health</code> (liveness) and <code>/api/v1/system/readiness</code> (production traffic gate: store, archive, cache, generator RPC, auth, scheduler)<br/>
+    &bull; <code>/api/v1/system/inventory</code> &mdash; controller/generator/data-platform config (no secrets)</p>
+    <p>Also serves the embedded dashboard SPA from <code>pkg/api/static/</code>.</p>`,
+    connections: ['Test Runner &mdash; delegates test lifecycle', 'WebSocket Hub &mdash; broadcasts events', 'SQLite/PostgreSQL &mdash; persistence', 'Scheduler &mdash; schedule management', 'MCP Server / apexctl / Dashboard &mdash; clients'],
+    files: ['pkg/api/handlers.go', 'pkg/api/server.go', 'pkg/api/route_catalog.go', 'pkg/api/auth_oidc.go', 'pkg/api/audit.go']
+  },
+  wshub: {
+    title: 'WebSocket Hub',
+    subtitle: 'Event Fan-out',
+    layer: 'api',
+    body: `<p>Manages all active WebSocket connections and fans out events to subscribers. Supports both global subscriptions (all events) and per-test subscriptions (filtered stream).</p>
+    <p>Design: hub goroutine reads from an internal broadcast channel. Each client connection has a dedicated write goroutine with a buffered send channel to prevent slow consumers from blocking the hub.</p>
+    <p>In HA mode (<code>APEXLOAD_CONTROLLER_HA</code>) a Redis/Valkey fanout envelope propagates events between controller replicas; each replica still filters locally by project/test.</p>
+    <p>Events originate from the Test Runner whenever test state changes or new metrics arrive (~1s interval during active tests).</p>`,
+    connections: ['Dashboard &mdash; WebSocket clients', 'Test Runner &mdash; event source', 'Metrics Collector &mdash; periodic snapshots', 'Redis / Valkey &mdash; multi-controller fanout'],
+    files: ['pkg/api/websocket.go']
+  },
+  testrunner: {
+    title: 'Test Runner',
+    subtitle: 'Test Lifecycle Orchestrator',
+    layer: 'api',
+    body: `<p>Core orchestration component managing the full test lifecycle: QUEUED &rarr; INITIALIZING &rarr; RUNNING &rarr; RAMPING_DOWN &rarr; COMPLETE (or FAILED/ABORTED).</p>
+    <p>Responsibilities:</p>
+    <p>&bull; Runs locally in-process, or through the distributed backend<br/>
+    &bull; Creates and configures engine instances per test<br/>
+    &bull; Distributes VUsers across generator pods (distributed mode)<br/>
+    &bull; Aggregates metrics from all generators via gRPC streams<br/>
+    &bull; Evaluates SLA/goal conditions for auto-stop<br/>
+    &bull; Manages runtime adjustments (VUser scaling, duration changes)<br/>
+    &bull; Persists test records and results to storage and finalizes archives</p>`,
+    connections: ['VUser Engine &mdash; local execution', 'Generator &mdash; gRPC distribution (when APEXLOAD_GENERATORS is set)', 'WebSocket Hub &mdash; event broadcast', 'SQLite/PostgreSQL &mdash; test persistence'],
+    files: ['pkg/api/runner.go', 'pkg/api/execution_backend.go', 'pkg/api/distributed_execution_backend.go', 'pkg/api/load_model_support.go']
+  },
+  scheduler: {
+    title: 'Scheduler',
+    subtitle: 'Cron-based Test Scheduling',
+    layer: 'api',
+    body: `<p>Lease-based scheduler for recurring and one-time test executions. Uses durable database leases (not Redis-only locks) to ensure only one controller instance owns the scheduler at a time.</p>
+    <p>Features: cron expression schedules, scenario-based scheduling (multiple scripts in one run), approval workflows, occurrence tracking with retry logic.</p>`,
+    connections: ['Test Runner &mdash; triggers scheduled tests', 'SQLite/PostgreSQL &mdash; schedule persistence', 'REST API &mdash; schedule management endpoints'],
+    files: ['pkg/api/scheduler.go', 'pkg/storage/sqlite_schedules.go']
+  },
+  engine: {
+    title: 'VUser Engine',
+    subtitle: 'Goroutine-based Load Generator',
+    layer: 'engine',
+    body: `<p>The core execution engine. Each virtual user (VUser) runs as a single goroutine with a ~2-4 KB stack, targeting 10,000 concurrent HTTP users per pod on 4 vCPU / 8 GB (a design target; browser VUsers are diagnostic canaries, not high-density).</p>
+    <p>Execution phases: Init (protocol setup + init actions) &rarr; Ramp-up (gradual VUser activation via pacing config) &rarr; Steady-state (actions loop until duration expires) &rarr; Teardown (cleanup actions, graceful shutdown).</p>
+    <p>Key optimizations: <code>sync.Pool</code> for request/response buffer reuse (reduces GC pressure), pacing algorithms (constant, random, percentile-based), rendezvous points for synchronized load spikes.</p>`,
+    connections: ['Metrics Collector &mdash; buffered channel results', 'Protocol Plugins &mdash; Execute() per action (registry: pkg/protocol/registry.go)', 'DSL Parser &mdash; script interpretation', 'Test Runner &mdash; lifecycle control'],
+    files: ['pkg/engine/engine.go', 'pkg/engine/vuser.go', 'pkg/engine/pacing.go', 'pkg/engine/group.go', 'pkg/engine/rendezvous.go']
+  },
+  metrics: {
+    title: 'Metrics Collector',
+    subtitle: 'Zero-lock Hot Path',
+    layer: 'engine',
+    body: `<p>Collects execution results from all VUsers via buffered channels (capacity 10,000). The zero-lock design ensures the metrics pipeline never blocks the hot execution path.</p>
+    <p>Aggregation: per-action metrics (TPS, latency, errors), per-group metrics, per-dependency-target breakdown, SOAP operation breakdown, network profile breakdown. Browser protocol adds device-level and Web Vitals metrics (LCP, CLS, INP, TTFB). Full-fidelity transaction evidence goes to archive artifacts, not SQL.</p>
+    <p>Live counters use <code>atomic.Int64</code> for lock-free increments. Periodic snapshots (1s) are pushed to the WebSocket Hub for real-time dashboard updates.</p>`,
+    connections: ['VUser Engine &mdash; result channel input', 'T-Digest &mdash; percentile computation', 'WebSocket Hub &mdash; snapshot broadcast', 'Telemetry Export &mdash; scrape endpoint'],
+    files: ['pkg/engine/metrics.go', 'pkg/engine/sys_metrics.go']
+  },
+  tdigest: {
+    title: 'T-Digest',
+    subtitle: 'Streaming Percentile Engine',
+    layer: 'engine',
+    body: `<p>Implementation of the t-digest algorithm for accurate streaming percentile computation (p50, p90, p95, p99) without storing all data points.</p>
+    <p>Critical for performance testing where millions of latency samples must be summarized in real-time. Memory usage is O(compression factor), typically ~1 KB regardless of sample count.</p>
+    <p>Used by both the Metrics Collector (per-action percentiles) and the distributed aggregation layer (merging percentiles across generator pods).</p>`,
+    connections: ['Metrics Collector &mdash; feeds latency samples', 'Distributed Aggregation &mdash; merge across pods'],
+    files: ['pkg/engine/tdigest.go']
+  },
+  sqlite: {
+    title: 'SQLite / PostgreSQL',
+    subtitle: 'Persistent Storage',
+    layer: 'storage',
+    body: `<p>Pluggable storage backend with a common <code>Store</code> interface. SQLite for single-node/dev mode; PostgreSQL 16+ (via pgx) for production and HA multi-replica deployments (<code>APEXLOAD_STORE</code>, <code>APEXLOAD_DATABASE_URL</code>). Scheduler and execution leases are durable database leases.</p>
+    <p>Stores: domains, application repositories, categories, projects, releases, folders, scripts, imports, scenarios, schedules and occurrences, test records, audit events, data pools, fleet/cluster connections, archive metadata.</p>
+    <p>Factory pattern selects backend based on config. Connection pooling and WAL mode (SQLite) for concurrent read/write performance.</p>`,
+    connections: ['REST API Server &mdash; CRUD operations', 'Test Runner &mdash; test record persistence', 'Scheduler &mdash; schedule + lease storage'],
+    files: ['pkg/storage/storage.go', 'pkg/storage/sqlite.go', 'pkg/storage/factory.go', 'pkg/storage/deployment_lease.go']
+  },
+  otel: {
+    title: 'Telemetry Export',
+    subtitle: 'Prometheus + OTLP traces',
+    layer: 'storage',
+    body: `<p>Controller telemetry surfaces:</p>
+    <p>&bull; Prometheus scrape (<code>/metrics</code>, optional dedicated metrics port) and Prometheus-compatible remote-write<br/>
+    &bull; Opt-in OTLP traces (<code>APEXLOAD_OTEL_ENABLED</code>) for controller HTTP, test lifecycle, sampled engine actions, and controller&harr;generator gRPC<br/>
+    &bull; W3C <code>traceparent</code> propagation on load traffic<br/>
+    &bull; Dynatrace event webhooks (see Integrations)</p>
+    <p>OpenTelemetry metrics/log export is not implemented. Scripts can configure <code>observability.external_metrics</code> to pull server-side metrics from Prometheus endpoints and overlay them on dashboard charts.</p>`,
+    connections: ['Metrics Collector &mdash; metric snapshots', 'Prometheus / Mimir / Thanos &mdash; scrape and remote-write', 'Integrations &mdash; Dynatrace, ELK, Grafana'],
+    files: ['pkg/api/prometheus_exposition.go', 'pkg/telemetry/tracing.go', 'pkg/api/external_metrics.go', 'deployments/k8s/monitoring/']
+  },
+  'proto-http': {
+    title: 'HTTP Protocol',
+    subtitle: 'HTTP/1.1 + HTTP/2',
+    layer: 'protocol',
+    body: `<p>Primary protocol implementation supporting HTTP/1.1 and HTTP/2 with automatic protocol negotiation. Features:</p>
+    <p>&bull; Connection pooling with configurable limits<br/>
+    &bull; TLS with custom CA cert support<br/>
+    &bull; Correlation extraction (regex, JSONPath, XPath, header, cookie, boundary)<br/>
+    &bull; Response assertions (status, body, header, duration)<br/>
+    &bull; Multipart form uploads, chunked encoding<br/>
+    &bull; Request/response body redaction for sensitive data<br/>
+    &bull; Automatic cookie jar management</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Target System &mdash; HTTP requests'],
+    files: ['pkg/protocol/http/']
+  },
+  'proto-ws': {
+    title: 'WebSocket Protocol',
+    subtitle: 'WS Load Testing',
+    layer: 'protocol',
+    body: `<p>WebSocket protocol plugin for testing WebSocket-based services. Supports connect, send message, receive message, and disconnect actions with configurable timeouts and message matching.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Target System &mdash; WS connections'],
+    files: ['pkg/protocol/websocket/']
+  },
+  'proto-grpc': {
+    title: 'gRPC Protocol',
+    subtitle: 'Protobuf-based',
+    layer: 'protocol',
+    body: `<p>gRPC protocol plugin supporting unary and server-streaming calls, with server reflection for runtime schema discovery (bounded descriptor size). Receive sizes are bounded by DSL limits.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Target System &mdash; gRPC calls'],
+    files: ['pkg/protocol/grpc/']
+  },
+  'proto-browser': {
+    title: 'Browser Protocol',
+    subtitle: 'Playwright-driven browser',
+    layer: 'protocol',
+    body: `<p>Real browser protocol driven through Playwright (<code>playwright-go</code>) for browser-based replay. Captures Web Vitals (LCP, CLS, INP, TTFB), network/HAR evidence, and device-emulation metrics; supports mobile device profiles, touch actions, and request policy controls.</p>
+    <p>Browser VUsers are diagnostic canaries, not high-density load generators.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Playwright browser &mdash; automation session'],
+    files: ['pkg/protocol/browser/']
+  },
+  'proto-soap': {
+    title: 'SOAP Protocol',
+    subtitle: 'XML/WSDL Services',
+    layer: 'protocol',
+    body: `<p>SOAP protocol plugin for testing XML-based web services. Parses WSDL definitions for operation discovery, constructs SOAP envelopes, handles WS-Security headers, and validates fault responses.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'WSDL Converter &mdash; service definition', 'Target System &mdash; SOAP requests'],
+    files: ['pkg/protocol/soap/']
+  },
+  'proto-jms': {
+    title: 'JMS Protocol',
+    subtitle: 'Solace, Service Bus, IBM MQ (mock)',
+    layer: 'protocol',
+    body: `<p>Provider-neutral messaging protocol registered as <code>jms-solace</code>, <code>jms-ibmmq</code>, and <code>jms-servicebus</code>. Supports publish, consume, request-reply, and transacted/rollback patterns.</p>
+    <p>&bull; Solace: real AMQP adapter (<code>-tags jms_solace_real</code>) or operator-configured sidecar (<code>APEXLOAD_JMS_SIDECAR_COMMAND</code>)<br/>
+    &bull; Azure Service Bus: real adapter opt-in via <code>-tags jms_servicebus_real</code><br/>
+    &bull; IBM MQ: <strong>mock/in-memory only</strong> &mdash; no real IBM MQ adapter exists in this build</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Message Broker &mdash; JMS connections (mock by default)'],
+    files: ['pkg/protocol/jms/', 'docs/PROTOCOL_SUPPORT.md']
+  },
+  'proto-db': {
+    title: 'Database Protocol',
+    subtitle: 'SQL Load Testing',
+    layer: 'protocol',
+    body: `<p>Database protocol for testing SQL query performance under load. Supports parameterized queries, prepared statements, transaction blocks, and connection pool management.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Database &mdash; SQL connections'],
+    files: ['pkg/protocol/database/']
+  },
+  'proto-net': {
+    title: 'Network Protocol',
+    subtitle: 'Raw TCP/UDP',
+    layer: 'protocol',
+    body: `<p>Low-level network protocol for raw TCP and UDP request/send actions (including Winsock-style LoadRunner aliases), custom payloads, and network-level latency measurement without application protocol overhead.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Target System &mdash; TCP/UDP sockets'],
+    files: ['pkg/protocol/network/']
+  },
+  'conv-lr': {
+    title: 'Enterprise Script Archive Importer',
+    subtitle: 'C Parser &rarr; JSON DSL',
+    layer: 'convert',
+    body: `<p>Converts enterprise script archive ZIPs (LoadRunner/VuGen) containing C-based virtual-user scripts into APEX Load JSON DSL format. Features a Go-based C AST parser that handles:</p>
+    <p>&bull; <code>web_url()</code>, <code>web_submit_data()</code>, <code>web_custom_request()</code><br/>
+    &bull; Correlation functions (<code>web_reg_save_param</code>)<br/>
+    &bull; Transaction markers (<code>lr_start/end_transaction</code>)<br/>
+    &bull; Think time and pacing directives<br/>
+    &bull; Parameter files and data sources</p>
+    <p>Preserves original runtime settings in metadata for fidelity comparison.</p>`,
+    connections: ['REST API &mdash; /scripts/import/enterprise-script-archive', 'DSL Parser &mdash; output validation'],
+    files: ['pkg/convert/enterprisearchive/']
+  },
+  'conv-har': {
+    title: 'HAR Converter',
+    subtitle: 'HTTP Archive Import',
+    layer: 'convert',
+    body: `<p>Converts HAR (HTTP Archive) files recorded from browser DevTools or the built-in recording proxy into JSON DSL scripts. Preserves request ordering, headers, cookies, and timing data.</p>`,
+    connections: ['Recording Studio &mdash; HAR capture', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/har/', 'pkg/recorder/har.go', 'pkg/recorder/converter.go']
+  },
+  'conv-jmeter': {
+    title: 'JMeter Converter',
+    subtitle: 'JMX Import',
+    layer: 'convert',
+    body: `<p>Parses JMeter .jmx test plans and converts HTTP samplers, thread groups, timers, and assertions into equivalent APEX Load JSON DSL constructs.</p>`,
+    connections: ['REST API &mdash; import endpoint', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/jmeter/']
+  },
+  'conv-openapi': {
+    title: 'OpenAPI Converter',
+    subtitle: 'Swagger/OpenAPI Spec Import',
+    layer: 'convert',
+    body: `<p>Reads OpenAPI 3.x / Swagger 2.x specifications and generates test scripts covering all defined endpoints. Auto-generates request bodies from schema definitions with realistic sample data.</p>`,
+    connections: ['REST API &mdash; import endpoint', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/openapi/']
+  },
+  'conv-wsdl': {
+    title: 'WSDL Converter',
+    subtitle: 'SOAP Service Import',
+    layer: 'convert',
+    body: `<p>Parses WSDL service definitions to generate SOAP protocol test scripts. Discovers operations, builds envelope templates, and maps complex types for request generation.</p>`,
+    connections: ['SOAP Protocol &mdash; service definition', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/wsdl/']
+  },
+  'conv-sample': {
+    title: 'Sample Scripts',
+    subtitle: 'Built-in Templates',
+    layer: 'convert',
+    body: `<p>Sample packs and request-based importers (raw HTTP, cURL, REST JSON) that build JSON DSL scripts, including HTTP, java_http, and GraphQL request bodies. Used for onboarding and quick-start scenarios.</p>`,
+    connections: ['Dashboard &mdash; script creation wizard', 'DSL Parser &mdash; template instantiation'],
+    files: ['pkg/convert/sample/', 'pkg/convert/requestimport/']
+  },
+  dslparser: {
+    title: 'DSL Parser',
+    subtitle: 'JSON DSL Core',
+    layer: 'convert',
+    body: `<p>Parses and validates JSON DSL script definitions into typed Go structs. The DSL is the lingua franca of the platform &mdash; all converters output it, and the engine consumes it.</p>
+    <p>Template variable resolution: <code>{{env.KEY}}</code>, <code>{{data.source.col}}</code>, <code>{{var.name}}</code>, <code>{{fn.uuid()}}</code>.</p>
+    <p>Sections: <code>config</code> (protocol settings), <code>data_sources</code> (CSV/JSON feeds), <code>parameters</code> (runtime params), <code>init</code> (setup actions), <code>actions</code> (main loop), <code>teardown</code> (cleanup).</p>
+    <p>Validation covers: required fields, protocol compatibility, action type validity, correlation reference integrity, data source binding checks.</p>`,
+    connections: ['All Converters &mdash; output target', 'VUser Engine &mdash; script interpretation', 'REST API &mdash; /scripts/validate endpoint'],
+    files: ['pkg/dsl/types.go', 'pkg/dsl/parser.go', 'pkg/dsl/validate.go', 'pkg/dsl/parameters.go']
+  },
+  generator: {
+    title: 'Generator',
+    subtitle: 'Remote worker (cmd/generator)',
+    layer: 'engine',
+    body: `<p>Remote worker binary deployed as StatefulSet pods. Executes assigned groups with the same engine as local mode and streams <code>MetricsBatch</code> snapshots and archive artifacts to the controller over gRPC.</p>
+    <p>Enabled by setting <code>APEXLOAD_GENERATORS</code> on the controller. Targets are static <code>host:port</code> or <code>dns://host:port</code> (re-resolved every <code>APEXLOAD_GENERATOR_DISCOVERY_INTERVAL</code>, default 15s) so KEDA/HPA-scaled pods join and leave automatically. The channel supports TLS/mTLS and shared-token auth (<code>APEXLOAD_GRPC_TLS_*</code>, <code>APEXLOAD_GRPC_AUTH_TOKEN</code>); unconfigured it is plaintext and unauthenticated.</p>
+    <p>Stop, abort, pause, resume, duration and per-group VUser scale are routed to the owning generator. Deployed via <code>deployments/k8s/</code> (local, on-prem, AKS, EKS, HA overlays), Helm, and Terraform for Azure and AWS.</p>`,
+    connections: ['Test Runner &mdash; gRPC distribution and control', 'VUser Engine &mdash; executes assigned groups', 'Archive Store &mdash; staged artifacts'],
+    files: ['cmd/generator/main.go', 'pkg/distributed/generatorrpc/', 'deployments/k8s/', 'deployments/helm/apexload/']
+  },
+  javarunner: {
+    title: 'Java Vuser Runner',
+    subtitle: 'JVM sidecar bridge',
+    layer: 'engine',
+    body: `<p>External-runner container used by the <code>java_vuser</code> protocol. It runs governed JVM Vusers outside the generator process. Disabled unless an operator sets <code>APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true</code> on the generator.</p>`,
+    connections: ['Java Vuser Protocol &mdash; runner bridge', 'Generator &mdash; sidecar host'],
+    files: ['cmd/apexload-java-vuser-runner/main.go', 'pkg/javarunner/', 'pkg/javasidecar/', 'docs/PROTOCOL_SUPPORT.md', 'deployments/k8s/components/java-vuser-runner/']
+  },
+  collectoragent: {
+    title: 'Collector Agent',
+    subtitle: 'Monitoring collector',
+    layer: 'engine',
+    body: `<p>Monitoring collector agent that sends controller heartbeats and host-metric packs from monitored hosts so server-side metrics can be correlated with load runs.</p>`,
+    connections: ['REST API Server &mdash; heartbeat and metric ingest'],
+    files: ['cmd/apexload-collector-agent/main.go', 'pkg/collectoragent/']
+  },
+  recordagent: {
+    title: 'Record Agent',
+    subtitle: 'Workstation recording bridge',
+    layer: 'engine',
+    body: `<p>Local browser-recording bridge that runs on operator workstations and relays captured traffic to the controller. Recordings convert to JSON DSL through the HAR/recorder converters.</p>`,
+    connections: ['REST API Server &mdash; recording bridge', 'HAR Converter &mdash; captured traffic'],
+    files: ['cmd/apexload-record-agent/main.go', 'pkg/recordagent/', 'docs/recording-agent.md']
+  },
+  devtools: {
+    title: 'Dev Tooling',
+    subtitle: 'Generators and harnesses',
+    layer: 'engine',
+    body: `<p>Developer/CI binaries, not part of the runtime path: <code>apexbench</code> (controlled local performance-evidence harness), <code>dslschema</code> (generates <code>docs/dsl.schema.json</code> and the action reference), <code>swaggergen</code> (generates <code>docs/swagger.yaml</code> and the endpoint catalog), <code>openapits</code> (dashboard TypeScript API contract), and <code>webcoverage</code> (LoadRunner import coverage docs).</p>`,
+    connections: ['DSL Parser &mdash; schema generation', 'REST API Server &mdash; OpenAPI generation'],
+    files: ['cmd/apexbench/', 'cmd/dslschema/', 'cmd/swaggergen/', 'cmd/openapits/', 'cmd/webcoverage/']
+  },
+  redis: {
+    title: 'Redis / Valkey',
+    subtitle: 'Optional live state and fanout',
+    layer: 'storage',
+    body: `<p>Optional cache backend (<code>APEXLOAD_CACHE_BACKEND</code>, <code>APEXLOAD_REDIS_URL</code>). Holds live run snapshots, generator inventory cache, idempotency keys, API-key rate limits, and the WebSocket fanout bus for multi-controller HA (<code>APEXLOAD_CONTROLLER_HA=true</code>).</p>
+    <p>Memory is the local default. Redis/Valkey is <strong>not</strong> authoritative durable state; PostgreSQL holds metadata and leases.</p>`,
+    connections: ['WebSocket Hub &mdash; fanout bus', 'REST API Server &mdash; idempotency and rate limits', 'Test Runner &mdash; live snapshots'],
+    files: ['pkg/api/cache_backend.go', 'pkg/config/config.go', 'deployments/k8s/ha/']
+  },
+  archive: {
+    title: 'Archive Store',
+    subtitle: 'Immutable run evidence',
+    layer: 'storage',
+    body: `<p>Completed runs write archive bundles: manifests, transaction/resource/summary datasets, browser diagnostics, JSONL/CSV/Parquet exports, and HTML/JSON/CSV reports. Backends: local filesystem (default), or S3, Azure Blob, and GCS for enterprise (<code>APEXLOAD_ARCHIVE_BACKEND</code>).</p>
+    <p>High-cardinality raw transaction evidence belongs here, not in SQL or Redis.</p>`,
+    connections: ['Test Runner &mdash; archive finalization', 'Generator &mdash; artifact staging', 'REST API Server &mdash; reports and comparisons'],
+    files: ['pkg/storage/sqlite_archives.go', 'pkg/api/execution_backend.go', 'pkg/distributed/generatorrpc/archive.go']
+  },
+  integrations: {
+    title: 'Integrations',
+    subtitle: 'Monitoring systems',
+    layer: 'storage',
+    body: `<p>External monitoring integrations configured per project/domain:</p>
+    <p>&bull; Dynatrace (SaaS monitoring, event webhooks)<br/>
+    &bull; ELK monitoring<br/>
+    &bull; Grafana dashboards and Prometheus graph data sources<br/>
+    &bull; OpenTelemetry traces (opt-in)</p>
+    <p>See <code>docs/OBSERVABILITY_INTEGRATIONS.md</code>, <code>docs/OBSERVABILITY_INTEGRATIONS.md</code>, <code>docs/OBSERVABILITY_INTEGRATIONS.md</code>.</p>`,
+    connections: ['REST API Server &mdash; connection management', 'Telemetry Export &mdash; event/metric emission'],
+    files: ['pkg/api/dynatrace_monitoring.go', 'pkg/api/elk_monitoring.go', 'pkg/api/graph_datasource_grafana.go', 'pkg/storage/sqlite_dynatrace_connections.go']
+  },
+  cibi: {
+    title: 'CI &amp; BI',
+    subtitle: 'GitHub Actions + Power BI',
+    layer: 'storage',
+    body: `<p>CI/CD: GitHub (including Enterprise Server) integration, GitHub OIDC exchange for CI runs, and <code>apexctl</code> CI commands with SLA-based exit codes and JUnit output. BI: Power BI dataset publishing of run results.</p>
+    <p>See <code>docs/CICD_INTEGRATION.md</code>, <code>docs/CICD_INTEGRATION.md</code>, <code>docs/OBSERVABILITY_INTEGRATIONS.md</code>.</p>`,
+    connections: ['REST API Server &mdash; /api/v1/ci/runs, GitHub handlers', 'apexctl &mdash; CI client'],
+    files: ['pkg/api/github_handlers.go', 'pkg/api/github_oauth.go', 'pkg/api/powerbi_publish.go', 'cmd/apexctl/ci.go']
+  },
+  'proto-javahttp': {
+    title: 'java_http Protocol',
+    subtitle: 'Java-over-HTTP codec',
+    layer: 'protocol',
+    body: `<p>Bounded Java-over-HTTP codec support layered on the HTTP protocol, used for Java serialized/encoded payloads imported from Java-based scripts. Reuses the HTTP transport.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'HTTP Protocol &mdash; underlying transport'],
+    files: ['pkg/protocol/java_http/']
+  },
+  'proto-kafka': {
+    title: 'Kafka Protocol',
+    subtitle: 'Produce / consume / request-reply',
+    layer: 'protocol',
+    body: `<p>Kafka messaging protocol with produce, consume, and request-reply actions. Uses an in-memory mock broker by default; the real franz-go adapter is opt-in via <code>-tags kafka_real</code>.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Kafka broker &mdash; real adapter only with kafka_real'],
+    files: ['pkg/protocol/kafka/', 'docs/ROADMAP.md']
+  },
+  'proto-eventhubs': {
+    title: 'Azure Event Hubs Protocol',
+    subtitle: 'eventhubs',
+    layer: 'protocol',
+    body: `<p>Producer-first Event Hubs protocol (<code>eventhubs</code>) with observer consumption and batching. The in-memory broker is the default; the real AMQP adapter is opt-in via <code>-tags eventhubs_real</code>.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Azure Event Hubs &mdash; real adapter only with eventhubs_real'],
+    files: ['pkg/protocol/eventhubs/']
+  },
+  'proto-bruno': {
+    title: 'Bruno Protocol',
+    subtitle: 'Governed Node sidecar runner',
+    layer: 'protocol',
+    body: `<p>Governed Node sidecar runner (<code>bruno</code>) that executes imported Bruno collections. Distributed execution is disabled unless <code>APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED</code> is set and a governed egress broker is configured.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Bruno Converter &mdash; collection import'],
+    files: ['pkg/protocol/bruno/', 'pkg/convert/bruno/']
+  },
+  'proto-javavuser': {
+    title: 'Java Vuser Protocol',
+    subtitle: 'Governed JVM sidecar runner',
+    layer: 'protocol',
+    body: `<p>Governed JVM sidecar runner (<code>java_vuser</code>) for Java Vuser scripts. Disabled unless an operator sets <code>APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true</code> on the generator; capacity is reserved per pod.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Java Vuser Runner &mdash; external-runner bridge'],
+    files: ['pkg/protocol/java_vuser/', 'pkg/javarunner/', 'docs/PROTOCOL_SUPPORT.md']
+  },
+  'conv-bruno': {
+    title: 'Bruno Converter',
+    subtitle: 'Bruno collections',
+    layer: 'convert',
+    body: `<p>Imports Bruno collections (native and bundle forms) into JSON DSL or the governed <code>bruno</code> runner target, preserving credential-handling policy.</p>`,
+    connections: ['REST API &mdash; Bruno import endpoints', 'Bruno Protocol &mdash; runner target', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/bruno/', 'pkg/api/handlers_bruno_import.go']
+  },
+  'conv-postman': {
+    title: 'Postman Converter',
+    subtitle: 'Postman collections',
+    layer: 'convert',
+    body: `<p>Converts Postman collections into JSON DSL scripts through the web/API import registry.</p>`,
+    connections: ['REST API &mdash; import endpoint', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/postman/', 'pkg/api/import_registry.go']
+  },
+  'conv-k6': {
+    title: 'k6 Converter',
+    subtitle: 'k6 JS scripts',
+    layer: 'convert',
+    body: `<p>Imports k6 scripts into JSON DSL.</p>`,
+    connections: ['REST API &mdash; import endpoint', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/k6/', 'pkg/api/handlers_import_devweb_k6.go']
+  },
+  'conv-asyncapi': {
+    title: 'AsyncAPI Converter',
+    subtitle: 'Messaging specs',
+    layer: 'convert',
+    body: `<p>Converts AsyncAPI specifications into Kafka/JMS/messaging test scripts.</p>`,
+    connections: ['REST API &mdash; import endpoint', 'Kafka / JMS Protocols &mdash; target actions', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/asyncapi/']
+  },
+  'conv-devweb': {
+    title: 'DevWeb Converter',
+    subtitle: 'DevWeb scripts',
+    layer: 'convert',
+    body: `<p>Imports DevWeb scripts into JSON DSL.</p>`,
+    connections: ['REST API &mdash; import endpoint', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/devweb/', 'pkg/api/handlers_import_devweb_k6.go']
+  },
+  'conv-other': {
+    title: 'Other Importers',
+    subtitle: 'RAML, CloudTest, MuleSoft, Salesforce',
+    layer: 'convert',
+    body: `<p>Additional importers under <code>pkg/convert</code>: RAML, CloudTest, MuleSoft, Salesforce/Agentforce, TrueClient, and Grafana dashboard import. Each routes executable content to native targets and creates review artifacts for anything unsupported.</p>`,
+    connections: ['REST API &mdash; import registry', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/raml/', 'pkg/convert/cloudtest/', 'pkg/convert/mulesoft/', 'pkg/convert/salesforce/', 'pkg/api/import_registry.go']
+  }
+};
+
+const CONNECTIONS = [
+  { from: 'dashboard', to: 'restapi', type: 'solid' },
+  { from: 'dashboard', to: 'wshub', type: 'ws' },
+  { from: 'apexctl', to: 'restapi', type: 'solid' },
+  { from: 'websocket', to: 'wshub', type: 'ws' },
+  { from: 'agentic', to: 'restapi', type: 'solid' },
+  { from: 'restapi', to: 'testrunner', type: 'solid' },
+  { from: 'restapi', to: 'sqlite', type: 'solid' },
+  { from: 'restapi', to: 'scheduler', type: 'solid' },
+  { from: 'wshub', to: 'testrunner', type: 'ws' },
+  { from: 'testrunner', to: 'engine', type: 'solid' },
+  { from: 'testrunner', to: 'sqlite', type: 'solid' },
+  { from: 'scheduler', to: 'testrunner', type: 'solid' },
+  { from: 'engine', to: 'metrics', type: 'solid' },
+  { from: 'metrics', to: 'tdigest', type: 'solid' },
+  { from: 'metrics', to: 'otel', type: 'solid' },
+  { from: 'metrics', to: 'wshub', type: 'ws' },
+  { from: 'engine', to: 'proto-http', type: 'solid' },
+  { from: 'engine', to: 'proto-ws', type: 'solid' },
+  { from: 'engine', to: 'proto-grpc', type: 'grpc' },
+  { from: 'engine', to: 'proto-browser', type: 'solid' },
+  { from: 'engine', to: 'proto-soap', type: 'solid' },
+  { from: 'engine', to: 'proto-jms', type: 'solid' },
+  { from: 'engine', to: 'proto-db', type: 'solid' },
+  { from: 'engine', to: 'proto-net', type: 'solid' },
+  { from: 'conv-lr', to: 'dslparser', type: 'solid' },
+  { from: 'conv-har', to: 'dslparser', type: 'solid' },
+  { from: 'conv-jmeter', to: 'dslparser', type: 'solid' },
+  { from: 'conv-openapi', to: 'dslparser', type: 'solid' },
+  { from: 'conv-wsdl', to: 'dslparser', type: 'solid' },
+  { from: 'conv-sample', to: 'dslparser', type: 'solid' },
+  { from: 'dslparser', to: 'engine', type: 'solid' },
+  { from: 'restapi', to: 'conv-lr', type: 'solid' },
+  { from: 'agentic', to: 'dslparser', type: 'solid' },
+  { from: 'mcp', to: 'restapi', type: 'solid' },
+  { from: 'testrunner', to: 'generator', type: 'grpc' },
+  { from: 'generator', to: 'engine', type: 'solid' },
+  { from: 'generator', to: 'metrics', type: 'grpc' },
+  { from: 'generator', to: 'javarunner', type: 'solid' },
+  { from: 'collectoragent', to: 'restapi', type: 'solid' },
+  { from: 'recordagent', to: 'restapi', type: 'solid' },
+  { from: 'wshub', to: 'redis', type: 'solid' },
+  { from: 'restapi', to: 'redis', type: 'solid' },
+  { from: 'testrunner', to: 'archive', type: 'solid' },
+  { from: 'otel', to: 'integrations', type: 'solid' },
+  { from: 'restapi', to: 'cibi', type: 'solid' },
+  { from: 'apexctl', to: 'cibi', type: 'solid' },
+  { from: 'engine', to: 'proto-javahttp', type: 'solid' },
+  { from: 'engine', to: 'proto-kafka', type: 'solid' },
+  { from: 'engine', to: 'proto-eventhubs', type: 'solid' },
+  { from: 'engine', to: 'proto-bruno', type: 'solid' },
+  { from: 'engine', to: 'proto-javavuser', type: 'solid' },
+  { from: 'proto-javavuser', to: 'javarunner', type: 'solid' },
+  { from: 'conv-bruno', to: 'dslparser', type: 'solid' },
+  { from: 'conv-postman', to: 'dslparser', type: 'solid' },
+  { from: 'conv-k6', to: 'dslparser', type: 'solid' },
+  { from: 'conv-asyncapi', to: 'dslparser', type: 'solid' },
+  { from: 'conv-devweb', to: 'dslparser', type: 'solid' },
+  { from: 'conv-other', to: 'dslparser', type: 'solid' },
+];
+
+let selectedNode = null;
+let highlightedLayer = null;
+
+function getNodeCenter(id) {
+  const el = document.getElementById(id);
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  const canvas = document.getElementById('canvasInner').getBoundingClientRect();
+  return {
+    x: r.left - canvas.left + r.width / 2,
+    y: r.top - canvas.top + r.height / 2
+  };
+}
+
+function drawConnections() {
+  const svg = document.getElementById('connectionsSvg');
+  svg.querySelectorAll('.conn-path-group').forEach(g => g.remove());
+
+  for (const conn of CONNECTIONS) {
+    const from = getNodeCenter(conn.from);
+    const to = getNodeCenter(conn.to);
+    if (!from || !to) continue;
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.classList.add('conn-path-group');
+    g.dataset.from = conn.from;
+    g.dataset.to = conn.to;
+
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const cx1 = from.x + dx * 0.15;
+    const cy1 = from.y + dy * 0.5;
+    const cx2 = to.x - dx * 0.15;
+    const cy2 = to.y - dy * 0.5;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const d = `M ${from.x} ${from.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${to.x} ${to.y}`;
+    path.setAttribute('d', d);
+    path.classList.add('conn-line');
+    if (conn.type === 'grpc') path.classList.add('grpc');
+    if (conn.type === 'ws') path.classList.add('ws');
+    path.setAttribute('marker-end', 'url(#arrowhead)');
+
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.classList.add('flow-dot');
+    dot.setAttribute('r', '3');
+
+    const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
+    anim.setAttribute('dur', (1.5 + Math.random() * 1.5) + 's');
+    anim.setAttribute('repeatCount', 'indefinite');
+    anim.setAttribute('path', d);
+    dot.appendChild(anim);
+
+    g.appendChild(path);
+    g.appendChild(dot);
+    svg.appendChild(g);
+  }
+}
+
+function highlightConnections(nodeId) {
+  document.querySelectorAll('.conn-path-group').forEach(g => {
+    const path = g.querySelector('.conn-line');
+    const dot = g.querySelector('.flow-dot');
+    if (g.dataset.from === nodeId || g.dataset.to === nodeId) {
+      path.classList.add('highlighted');
+      path.setAttribute('marker-end', 'url(#arrowhead-hl)');
+      dot.classList.add('active');
+    } else {
+      path.classList.remove('highlighted');
+      path.setAttribute('marker-end', 'url(#arrowhead)');
+      dot.classList.remove('active');
+    }
+  });
+}
+
+function clearHighlights() {
+  document.querySelectorAll('.conn-line').forEach(p => {
+    p.classList.remove('highlighted');
+    p.setAttribute('marker-end', 'url(#arrowhead)');
+  });
+  document.querySelectorAll('.flow-dot').forEach(d => d.classList.remove('active'));
+}
+
+function showDetail(id) {
+  const comp = COMPONENTS[id];
+  if (!comp) return;
+
+  selectedNode = id;
+  document.querySelectorAll('.node').forEach(n => n.classList.remove('selected'));
+  document.getElementById(id)?.classList.add('selected');
+
+  highlightConnections(id);
+
+  const connHTML = comp.connections.map(c => `<li><span class="conn-arrow">&#8594;</span> ${c}</li>`).join('');
+  const filesHTML = comp.files.map(f => `<li>${f}</li>`).join('');
+
+  document.getElementById('detailContainer').innerHTML = `
+    <div class="detail-panel">
+      <h2>${comp.title}</h2>
+      <div class="detail-subtitle">${comp.subtitle}</div>
+      <div class="detail-body">${comp.body}</div>
+      <div class="detail-connections">
+        <h4>Connections</h4>
+        <ul class="conn-list">${connHTML}</ul>
+      </div>
+      <div class="detail-files">
+        <h4>Source Files</h4>
+        <ul class="file-list">${filesHTML}</ul>
+      </div>
+    </div>
+  `;
+}
+
+function filterByLayer(layer) {
+  if (highlightedLayer === layer) {
+    highlightedLayer = null;
+    document.querySelectorAll('.node').forEach(n => { n.style.opacity = '1'; n.style.pointerEvents = 'auto'; });
+    document.querySelectorAll('.layer-group').forEach(g => { g.style.opacity = '0.35'; });
+    document.querySelectorAll('.layer-item').forEach(li => li.classList.remove('active'));
+    clearHighlights();
+    return;
+  }
+
+  highlightedLayer = layer;
+  document.querySelectorAll('.layer-item').forEach(li => {
+    li.classList.toggle('active', li.dataset.layer === layer);
+  });
+
+  document.querySelectorAll('.node').forEach(n => {
+    if (n.dataset.layer === layer) {
+      n.style.opacity = '1';
+      n.style.pointerEvents = 'auto';
+    } else {
+      n.style.opacity = '0.2';
+      n.style.pointerEvents = 'none';
+    }
+  });
+
+  document.querySelectorAll('.layer-group').forEach(g => {
+    g.style.opacity = g.dataset.layer === layer ? '0.6' : '0.15';
+  });
+
+  document.querySelectorAll('.conn-path-group').forEach(g => {
+    const fromNode = document.getElementById(g.dataset.from);
+    const toNode = document.getElementById(g.dataset.to);
+    const path = g.querySelector('.conn-line');
+    const dot = g.querySelector('.flow-dot');
+    if ((fromNode?.dataset.layer === layer) || (toNode?.dataset.layer === layer)) {
+      path.classList.add('highlighted');
+      path.setAttribute('marker-end', 'url(#arrowhead-hl)');
+      dot.classList.add('active');
+      g.style.opacity = '1';
+    } else {
+      path.classList.remove('highlighted');
+      path.setAttribute('marker-end', 'url(#arrowhead)');
+      dot.classList.remove('active');
+      g.style.opacity = '0.15';
+    }
+  });
+}
+
+// Event listeners
+document.querySelectorAll('.node').forEach(node => {
+  node.addEventListener('click', () => showDetail(node.id));
+});
+
+document.querySelectorAll('.layer-item').forEach(item => {
+  item.addEventListener('click', () => filterByLayer(item.dataset.layer));
+});
+
+// Search
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  document.querySelectorAll('.node').forEach(node => {
+    const comp = COMPONENTS[node.id];
+    if (!comp) return;
+    const text = (comp.title + ' ' + comp.subtitle + ' ' + comp.body).toLowerCase();
+    if (!q || text.includes(q)) {
+      node.style.opacity = '1';
+      node.style.pointerEvents = 'auto';
+    } else {
+      node.style.opacity = '0.15';
+      node.style.pointerEvents = 'none';
+    }
+  });
+});
+
+// View toggles
+document.querySelectorAll('.view-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const view = btn.dataset.view;
+
+    const dataLayers = ['storage', 'convert'];
+    const runtimeLayers = ['engine', 'protocol'];
+
+    document.querySelectorAll('.node').forEach(n => {
+      if (view === 'all') { n.style.opacity = '1'; n.style.pointerEvents = 'auto'; return; }
+      const layer = n.dataset.layer;
+      if (view === 'data' && (dataLayers.includes(layer) || layer === 'api')) {
+        n.style.opacity = '1'; n.style.pointerEvents = 'auto';
+      } else if (view === 'runtime' && (runtimeLayers.includes(layer) || layer === 'api' || layer === 'client')) {
+        n.style.opacity = '1'; n.style.pointerEvents = 'auto';
+      } else if (view !== 'all') {
+        n.style.opacity = '0.15'; n.style.pointerEvents = 'none';
+      }
+    });
+
+    document.querySelectorAll('.conn-path-group').forEach(g => {
+      if (view === 'all') { g.style.opacity = '1'; return; }
+      const fromNode = document.getElementById(g.dataset.from);
+      const toNode = document.getElementById(g.dataset.to);
+      const fLayer = fromNode?.dataset.layer;
+      const tLayer = toNode?.dataset.layer;
+      const relevant = view === 'data'
+        ? [fLayer, tLayer].some(l => dataLayers.includes(l) || l === 'api')
+        : [fLayer, tLayer].some(l => runtimeLayers.includes(l) || l === 'api' || l === 'client');
+      g.style.opacity = relevant ? '1' : '0.1';
+    });
+  });
+});
+
+// Init
+window.addEventListener('load', () => {
+  drawConnections();
+  window.addEventListener('resize', drawConnections);
+});
+</script>
+</body>
+</html>

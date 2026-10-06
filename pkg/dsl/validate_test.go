@@ -1666,7 +1666,7 @@ func TestValidateExtractorIssuesSkipsSourceTypeAllowlistForNonHTTPProtocols(t *t
 }
 
 func TestValidateExtractorIssuesRejectsUnsupportedAllModeForNonHTTPProtocols(t *testing.T) {
-	for _, protocolName := range []string{"browser", "bruno", "websocket", "grpc", "network", "database", "sap_gui", "java_vuser", "kafka", "jms", "eventhubs"} {
+	for _, protocolName := range []string{"browser", "websocket", "grpc", "network", "database", "sap_gui", "java_vuser", "kafka", "jms", "eventhubs"} {
 		action := Action{Name: "a", Extractors: []Extractor{{
 			Name: "values",
 			Mode: "all",

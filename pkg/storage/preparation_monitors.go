@@ -105,6 +105,9 @@ func preparationMonitorSnapshotTx(tx *storeTx, project, run string) (*Preparatio
 		if err = json.Unmarshal([]byte(body), &source); err != nil {
 			return nil, err
 		}
+		if source.Pack == monitorprovider.PackAppDynamics || source.AppDynamics != nil {
+			return nil, ErrMonitorProviderRetired
+		}
 		snapshot.Sources[source.ID] = source
 		if source.Pack == monitorprovider.PackPrometheusQuery {
 			var raw string
@@ -150,26 +153,6 @@ func preparationMonitorSnapshotTx(tx *storeTx, project, run string) (*Preparatio
 				}
 				snapshot.ElasticConnections[source.ID] = connection
 			}
-		}
-		if source.Pack == monitorprovider.PackAppDynamics {
-			var raw string
-			if err = tx.QueryRow(`SELECT payload_json FROM appdynamics_connections WHERE id=? AND project_id=?`, source.ConnectionID, project).Scan(&raw); err != nil {
-				if errors.Is(err, sql.ErrNoRows) {
-					continue
-				}
-				return nil, err
-			}
-			c, e := UnmarshalAppDynamicsConnectionPrivate([]byte(raw))
-			if e != nil {
-				return nil, e
-			}
-			if c.ConfigurationStatus() != "ready" {
-				continue
-			}
-			if snapshot.Connections == nil {
-				snapshot.Connections = map[string]*AppDynamicsConnectionSnapshot{}
-			}
-			snapshot.Connections[source.ID] = c.Snapshot()
 		}
 	}
 	return snapshot, nil

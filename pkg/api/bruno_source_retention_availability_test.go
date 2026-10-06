@@ -37,8 +37,8 @@ func clearConfiguredWrappingKeys(t *testing.T) {
 }
 
 // Bruno is the only importer that cannot skip protected retention — it
-// publishes the encrypted source bundle during inspection and canonical
-// execution replays it. An unconfigured controller therefore provisions its own
+// publishes the encrypted source bundle during inspection. An unconfigured
+// controller therefore provisions its own
 // local envelope key rather than dead-ending the import UI, and says so.
 func TestBrunoImportProvisionsLocalRetentionKeyByDefault(t *testing.T) {
 	clearConfiguredWrappingKeys(t)

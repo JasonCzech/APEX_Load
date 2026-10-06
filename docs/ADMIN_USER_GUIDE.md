@@ -389,7 +389,7 @@ These helpers keep application bindings separate from project bindings.
 
 The `APEXLOAD_WRAPPING_*` key settings are shared with encrypted Bruno source
 artifacts. A writable encrypted database Project Secrets store requires one of
-them even when Bruno execution is disabled.
+them for native imports and retained source artifacts after Bruno Runner retirement.
 
 The legacy read-only Key Vault resolver uses
 `APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS`. An allowlisted project binding is

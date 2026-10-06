@@ -112,6 +112,9 @@ http:
     buffer: archive,
   })
   await expect(controls.getByRole('heading', { level: 2, name: 'Import Bruno Collection' })).toBeVisible()
+  await expect(controls.getByRole('radio')).toHaveCount(0)
+  await expect(controls.getByText('Canonical Bruno execution', { exact: true })).toHaveCount(0)
+  await expect(controls.getByRole('button', { name: /sandbox|synchronize|native projection/i })).toHaveCount(0)
 
   await controls.getByRole('textbox', { name: 'New script folder name' }).fill('Cross-platform CTA')
   await controls.getByRole('button', { name: 'Create and select folder' }).click()

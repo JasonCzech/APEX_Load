@@ -149,7 +149,7 @@ func collectOptInInventory(t *testing.T) optInInventory {
 	return inventory
 }
 
-// walkRepositoryTestFiles visits every *_test.go under root, handing the callback
+// walkRepositoryTestFiles visits active *_test.go files under root, handing the callback
 // the repo-relative path, the absolute path and the file contents.
 func walkRepositoryTestFiles(root string, visit func(rel string, path string, content string)) error {
 	return filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
@@ -157,6 +157,11 @@ func walkRepositoryTestFiles(root string, visit func(rel string, path string, co
 			return nil // unreadable trees are not the guard's business
 		}
 		if entry.IsDir() {
+			// Match Go package discovery: cold archives and nested hidden checkouts
+			// are retained inputs, not active suites in this repository.
+			if path != root && (strings.HasPrefix(entry.Name(), ".") || strings.HasPrefix(entry.Name(), "_") || entry.Name() == "testdata") {
+				return filepath.SkipDir
+			}
 			switch entry.Name() {
 			case ".git", "node_modules", "vendor", "dist", "build", "coverage":
 				return filepath.SkipDir
@@ -722,4 +727,25 @@ func writeCorpusFixture(t *testing.T, scriptDirs int) string {
 		}
 	}
 	return root
+}
+
+func TestOptInInventorySkipsColdArchivesAndNestedCheckouts(t *testing.T) {
+	root := t.TempDir()
+	paths := []string{"pkg/active_test.go", "_retired/bruno-runner/pkg/retired_test.go", "_scratch/pkg/unused_test.go", ".claude/worktrees/fc-wave1/pkg/nested_test.go", ".codex/worktrees/other/pkg/nested_test.go", "pkg/.hidden/hidden_test.go", "pkg/testdata/fixture_test.go", "vendor/example/vendor_test.go"}
+	for _, rel := range paths {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("package fixture\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var visited []string
+	if err := walkRepositoryTestFiles(root, func(rel, _, _ string) { visited = append(visited, rel) }); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(visited, []string{"pkg/active_test.go"}) {
+		t.Fatalf("active suite discovery = %v", visited)
+	}
 }

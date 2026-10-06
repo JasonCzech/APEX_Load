@@ -1,6 +1,6 @@
 import type { MetricsHistoryPoint } from '../types'
 import type { AnalysisPoint } from '../types/analysis'
-import type { AppDynamicsEntity } from '../types/appdynamics'
+import type { MonitorEntity } from '../types/runMonitoring'
 
 export const monitorLoadOverlays = {
   latency: { label: 'Response time', unit: 'ms', field: 'avgMs' },
@@ -19,7 +19,7 @@ export function latestMonitorQueryAggregate(points: AnalysisPoint[]): AnalysisPo
   return points.filter(point => point.provider?.query_window).sort((a, b) => Date.parse(b.provider!.bucket_end) - Date.parse(a.provider!.bucket_end) || Date.parse(a.provider!.bucket_start) - Date.parse(b.provider!.bucket_start))[0]
 }
 
-export function monitorEntityLabel(point: AnalysisPoint, topology: AppDynamicsEntity[] = []): string {
+export function monitorEntityLabel(point: AnalysisPoint, topology: MonitorEntity[] = []): string {
   const dimensions = point.provider?.name === 'prometheus' ? point.provider.display_labels || point.dimensions || {} : point.provider?.entity_ids || point.dimensions || {}
   return Object.entries(dimensions).map(([kind, id]) => {
     const entity = topology.find(item => item.type === kind && item.id === id && (!dimensions.application || item.entity_ids?.application === dimensions.application))

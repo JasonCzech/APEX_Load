@@ -65,18 +65,6 @@ func (s *Server) handleWebAPIExecutionSupportMatrix(w http.ResponseWriter, r *ht
 func webAPIExecutionSupportMatrix() []webAPIExecutionSupportEntry {
 	return []webAPIExecutionSupportEntry{
 		{
-			ID:                  "bruno-runtime",
-			Category:            "Compatibility Runner",
-			Capability:          "Bruno collection import and governed execution",
-			Status:              "supported",
-			ExecutionStatus:     "external_runner_required",
-			Importance:          "high",
-			SupportedInputs:     []string{"Bruno collections and environments"},
-			RuntimeCoverage:     []string{"version-pinned Bruno 3.5.2 runner", "environment projection", "request execution", "egress policy enforcement"},
-			RemainingGaps:       []string{"runner and egress policy must be configured explicitly"},
-			RecommendedWorkflow: "Inspect and approve the collection, configure the pinned runner, replay, then promote.",
-		},
-		{
 			ID:                  "http-web",
 			Category:            "Native Protocol",
 			Capability:          "HTTP/Web request execution",

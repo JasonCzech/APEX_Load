@@ -18,7 +18,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/appdynamics"
+
 	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
@@ -198,9 +198,9 @@ func validateAdapterTargets(cfg Config) error {
 			seen[target.Pack+"\x00"+target.Destination] = true
 			continue
 		}
-		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "appdynamics": "https", "dynatrace": "https", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[target.Pack]
+		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "dynatrace": "https", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[target.Pack]
 		endpoint, err := url.Parse(target.Destination)
-		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && endpoint.Path != "" && !((target.Pack == monitorprovider.PackAppDynamics || target.Pack == monitorprovider.PackDynatrace) && endpoint.Path == "/") {
+		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && endpoint.Path != "" && !((target.Pack == monitorprovider.PackDynatrace) && endpoint.Path == "/") {
 			return errors.New("invalid approved monitor destination")
 		}
 		if seen[target.Pack+"\x00"+target.Destination] {
@@ -223,14 +223,6 @@ func validateAdapterTargets(cfg Config) error {
 				if err := dynatrace.ValidateOrigin(origin, suffix); err != nil {
 					return err
 				}
-			}
-		case monitorprovider.PackAppDynamics:
-			cfg := appdynamics.Config{Endpoint: target.Destination, AccountName: "validation", ApprovedCIDRs: target.ApprovedCIDRs, CAPEM: target.CAPEM, EventsEndpoint: target.EventsEndpoint}
-			if err := cfg.Validate(); err != nil {
-				return err
-			}
-			if len(target.Applications) > 32 {
-				return errors.New("application approval exceeds bound")
 			}
 		case "cloudwatch", "azure-monitor":
 			if endpoint.Port() != "" {

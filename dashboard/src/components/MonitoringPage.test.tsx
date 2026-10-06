@@ -671,7 +671,7 @@ describe('MonitoringPage', () => {
 
     await clickMonitorTab('Telemetry')
 
-    expect(visibleMonitorCardIds()).toEqual(['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections', 'appdynamics-connections'])
+    expect(visibleMonitorCardIds()).toEqual(['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections'])
     expect(container.textContent).toContain('Telemetry Diagnostics')
     expect(container.textContent).toContain('danger')
     expect(container.textContent).toContain('1 danger')
@@ -737,7 +737,7 @@ describe('MonitoringPage', () => {
         />,
       )
     })
-    expect(visibleMonitorCardIds()).toEqual(['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections', 'appdynamics-connections'])
+    expect(visibleMonitorCardIds()).toEqual(['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections'])
     expect(container.querySelector('.monitor-page-title')?.textContent).toContain('Telemetry')
   })
 
@@ -758,7 +758,7 @@ describe('MonitoringPage', () => {
     expect(pending).not.toBeNull()
     expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
     await act(async () => (pending as unknown as () => void)())
-    expect(visibleMonitorCardIds()).toEqual(['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections', 'appdynamics-connections'])
+    expect(visibleMonitorCardIds()).toEqual(['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections'])
   })
 
   it('traps focus in telemetry details, closes on Escape, and restores the trigger', async () => {

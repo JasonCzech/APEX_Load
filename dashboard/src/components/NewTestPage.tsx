@@ -1,6 +1,6 @@
 import { validateGoalConfig } from './goalConfigValidation'
 import RunMonitorBindingSelector from './RunMonitorBindingSelector'
-import type { MonitorBinding, MonitorRule } from '../types/appdynamics'
+import type { MonitorBinding, MonitorRule } from '../types/runMonitoring'
 import MonitorRuleEditor from './MonitorRuleEditor'
 import ObjectHistory from './ObjectHistory'
 import ObjectArchiveControls from './ObjectArchiveControls'
@@ -3422,7 +3422,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     </select>
                   </div>
                 )}
-                <RunMonitorBindingSelector projectId={activeProjectID} value={monitorBindings} onChange={setMonitorBindings} />
+                <RunMonitorBindingSelector projectId={activeProjectID} scenarioId={scenarioId || undefined} value={monitorBindings} onChange={setMonitorBindings} />
                 <MonitorRuleEditor projectId={activeProjectID} value={monitorRules ?? scenario?.goal_config?.monitor_rules ?? []} onChange={setMonitorRules} />
                 <div className="setting-row">
                   <div className="setting-info">

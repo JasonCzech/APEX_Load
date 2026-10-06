@@ -1,0 +1,135 @@
+{
+  "assumptions": [
+    "APEX Load imports a constrained HTTP subset and does not execute k6 JavaScript.",
+    "Dynamic JavaScript expressions, modules, browser flows, and custom control flow require review before promotion."
+  ],
+  "readiness": {
+    "draft_valid": true,
+    "promotion_ready": true,
+    "replay_ready": true,
+    "state": "ready"
+  },
+  "script": {
+    "actions": [
+      {
+        "metadata": {
+          "k6_source": "http.get"
+        },
+        "method": "GET",
+        "name": "Get_01",
+        "target": "/health",
+        "think_time": {
+          "mean_ms": 0,
+          "type": ""
+        },
+        "type": "request"
+      }
+    ],
+    "config": {
+      "base_url": "https://api.example.test",
+      "browser": {
+        "geolocation": {},
+        "http_credentials": {},
+        "proxy": {},
+        "review_policy": {},
+        "viewport": {}
+      },
+      "bruno": {
+        "limits": {}
+      },
+      "database": {},
+      "error_handling": {
+        "snapshot_on_error": true
+      },
+      "eventhubs": {},
+      "grpc": {},
+      "http": {
+        "auth": {},
+        "proxy": {},
+        "tls": {},
+        "traceparent": false
+      },
+      "java_http": {},
+      "java_vuser": {},
+      "jms": {},
+      "kafka": {},
+      "log": {
+        "level": "standard"
+      },
+      "network": {},
+      "observability": {},
+      "pacing": {
+        "type": "none"
+      },
+      "results": {},
+      "run_logic": {
+        "auto_transactions": "per_action"
+      },
+      "sapgui": {},
+      "soap": {
+        "fault_handling": {}
+      },
+      "think_time": {
+        "mean_ms": 0,
+        "type": ""
+      },
+      "web_runtime": {
+        "data_formatting": {},
+        "download_filters": {},
+        "network_simulation": {},
+        "streaming": {}
+      },
+      "websocket": {}
+    },
+    "created_at": "<TIMESTAMP>",
+    "generated_by": "apexload-k6-converter",
+    "generated_from": "k6",
+    "id": "",
+    "metadata": {
+      "import": {
+        "preserved": {
+          "import_value_policy": "preserve"
+        },
+        "source": "k6",
+        "source_script_name": "k6 golden"
+      }
+    },
+    "name": "k6_golden",
+    "protocol": "http",
+    "updated_at": "<TIMESTAMP>",
+    "version": "1.0.0"
+  },
+  "source_review": {
+    "mappings": [
+      {
+        "end_line": 1,
+        "function": "http.get",
+        "id": "k6-golden:1-1:http.get:actions[0]:converted",
+        "notes": "Converted from the constrained k6 HTTP subset.",
+        "source_file": "k6 golden",
+        "start_line": 1,
+        "status": "converted",
+        "support_mode": "executable",
+        "target_kind": "action",
+        "target_name": "Get_01",
+        "target_path": "actions[0]"
+      }
+    ],
+    "source_files": [
+      {
+        "content": "import http from 'k6/http'; export default function () { http.get('https://api.example.test/health'); }",
+        "language": "text",
+        "original_bytes": 103,
+        "path": "k6 golden"
+      }
+    ],
+    "total_source_files": 1
+  },
+  "stats": {
+    "checks": 0,
+    "converted_actions": 1,
+    "http_requests": 1,
+    "sleeps": 0,
+    "thresholds": 0
+  }
+}

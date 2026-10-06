@@ -11,7 +11,7 @@ import (
 
 type streamingProtocolStub struct{}
 
-func (*streamingProtocolStub) Name() string { return "bruno" }
+func (*streamingProtocolStub) Name() string { return "streaming_test" }
 func (*streamingProtocolStub) Init(context.Context, map[string]any) error {
 	return nil
 }
@@ -59,16 +59,16 @@ func TestVUserRunRecordsStreamingChildrenAndAggregateSeparately(t *testing.T) {
 		Variables:  map[string]string{},
 		Script: &dsl.Script{
 			Name:     "Imported Bruno",
-			Protocol: "bruno",
+			Protocol: "streaming_test",
 			Config: dsl.ScriptConfig{
 				RunLogic: dsl.RunLogicConfig{Iterations: 1},
 			},
 			Actions: []dsl.Action{{
 				Name: "Run collection",
-				Type: "bruno_run",
+				Type: "streaming_run",
 				Metadata: map[string]any{
 					"source_step_id": "collection-root",
-					"source_profile": "bruno",
+					"source_profile": "streaming_test",
 				},
 			}},
 		},
@@ -79,7 +79,7 @@ func TestVUserRunRecordsStreamingChildrenAndAggregateSeparately(t *testing.T) {
 	if len(sink.results) != 3 {
 		t.Fatalf("recorded results = %d, want two children and one aggregate", len(sink.results))
 	}
-	if child := sink.results[0]; child.SampleKind != "child" || child.ParentActionName != "Run collection" || child.SourceStepID != "request-login" || child.SourceProfile != "bruno" {
+	if child := sink.results[0]; child.SampleKind != "child" || child.ParentActionName != "Run collection" || child.SourceStepID != "request-login" || child.SourceProfile != "streaming_test" {
 		t.Fatalf("first child = %#v", child)
 	}
 	if aggregate := sink.results[2]; aggregate.SampleKind != "aggregate" || aggregate.ActionName != "Run collection" || aggregate.Attempt != 1 {

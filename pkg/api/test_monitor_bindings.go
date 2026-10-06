@@ -37,9 +37,6 @@ func (tr *TestRunner) validateTestMonitorBindings(project string, b *storage.Mon
 	if len(b.Sources) == 0 {
 		return nil
 	}
-	if !runMonitoringEnabled(project) {
-		return errors.New("run monitoring is not enabled for this project")
-	}
 	store, ok := tr.testStore.(storage.RunMonitorStore)
 	if !ok {
 		return errors.New("monitoring storage unavailable")
@@ -47,6 +44,12 @@ func (tr *TestRunner) validateTestMonitorBindings(project string, b *storage.Mon
 	sources, err := store.ListMonitorSources(project)
 	if err != nil {
 		return err
+	}
+	if err := validateRetiredMonitorBindings(b, sources); err != nil {
+		return err
+	}
+	if !runMonitoringEnabled(project) {
+		return errors.New("run monitoring is not enabled for this project")
 	}
 	available := map[string]bool{}
 	for _, s := range sources {
@@ -128,6 +131,9 @@ func (tr *TestRunner) resolvedTestMonitorBindings(record *storage.TestRecord) (*
 	return store.GetMonitorBindings(record.ProjectID, record.ScenarioID)
 }
 func (tr *TestRunner) validateMonitorStorageAndSigning(record *storage.TestRecord) error {
+	if err := tr.validateRetiredMonitoringRecord(record, ""); err != nil {
+		return err
+	}
 	b, err := tr.resolvedTestMonitorBindings(record)
 	if err != nil {
 		return err
@@ -146,7 +152,7 @@ func (tr *TestRunner) validateMonitorStorageAndSigning(record *storage.TestRecor
 	if err != nil {
 		return err
 	}
-	if err := tr.validateAppDynamicsSharedArtifacts(sources, b); err != nil {
+	if err := tr.validateProviderSharedArtifacts(sources, b); err != nil {
 		return err
 	}
 	for _, binding := range b.Sources {

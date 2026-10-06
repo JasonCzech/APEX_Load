@@ -263,50 +263,37 @@
     "bruno": {
       "type": "object",
       "properties": {
-        "importEnabled": { "type": "boolean" },
-        "enabled": { "type": "boolean" },
-        "compatibilityVersion": { "const": "3.5.2" },
-        "artifactRoot": { "type": "string", "pattern": "^/" },
+        "importEnabled": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "const": false,
+          "description": "Bruno Runner is retired; only native import remains supported."
+        },
+
+        "artifactRoot": {
+          "type": "string",
+          "pattern": "^/"
+        },
         "artifactPersistence": {
           "type": "object",
           "properties": {
-            "existingClaim": { "type": "string" }
+            "existingClaim": {
+              "type": "string"
+            }
           },
-          "required": ["existingClaim"]
+          "required": [
+            "existingClaim"
+          ]
         },
         "keyVaultKeyId": {
           "type": "string",
           "pattern": "^$|^https://[^/]+/keys/[^/]+/[^/]+$"
         },
-        "artifactMasterKey": { "type": "string" },
-        "egressBrokerUrl": {
-          "type": "string",
-          "pattern": "^$|^http://[^\\s]+$"
-        },
-        "allowDirectEgress": { "type": "boolean" },
-        "maxSessions": { "type": "integer", "minimum": 1 },
-        "maxPendingEvents": { "type": "integer", "minimum": 1 },
-        "maxBundleBytes": { "type": "integer", "minimum": 65536 },
-        "sessionTtlMs": { "type": "integer", "minimum": 1 },
-        "sessionIdleTtlMs": { "type": "integer", "minimum": 1 },
-        "maxJumps": { "type": "integer", "minimum": 1, "maximum": 1000000 },
-        "maxRunRequestDepth": { "type": "integer", "minimum": 1, "maximum": 1024 },
-        "maxParallelRequests": { "type": "integer", "minimum": 1, "maximum": 100000 },
-        "maxOutputBytes": { "type": "integer", "minimum": 65536, "maximum": 1073741824 },
-        "maxStreamTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 86400000 },
-        "runner": {
-          "type": "object",
-          "properties": {
-            "image": {
-              "type": "object",
-              "properties": {
-                "repository": { "type": "string", "minLength": 1 },
-                "tag": { "type": "string" },
-                "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
-              }
-            }
-          }
+        "artifactMasterKey": {
+          "type": "string"
         }
+
       }
     },
     "javaVuser": {
@@ -408,41 +395,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "bruno": {
-            "properties": { "enabled": { "const": true } },
-            "required": ["enabled"]
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "bruno": {
-            "properties": {
-              "artifactPersistence": {
-                "properties": {
-                  "existingClaim": { "type": "string", "minLength": 1 }
-                }
-              }
-            },
-            "anyOf": [
-              {
-                "properties": {
-                  "egressBrokerUrl": { "type": "string", "minLength": 1 }
-                }
-              },
-              {
-                "properties": {
-                  "allowDirectEgress": { "const": true }
-                }
-              }
-            ]
           }
         }
       }

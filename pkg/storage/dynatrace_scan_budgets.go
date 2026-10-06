@@ -153,9 +153,9 @@ func commitDynatraceScanProgressTx(tx *storeTx, job *RunMonitorJob, p *analysis.
 // provider namespace as well so a matching AppDynamics account key cannot
 // consume a Dynatrace executor lease.
 func (s *SQLiteStore) AllocateDynatraceQuota(resourceKey, executorID string, now time.Time) (bool, error) {
-	if !appDynamicsQuotaKey.MatchString(resourceKey) {
+	if !monitorQuotaKey.MatchString(resourceKey) {
 		return false, errors.New("invalid Dynatrace quota identity")
 	}
 	key := sha256.Sum256([]byte("dynatrace:" + resourceKey))
-	return s.AllocateAppDynamicsQuota(hex.EncodeToString(key[:]), executorID, now)
+	return s.AllocateMonitorQuota(hex.EncodeToString(key[:]), executorID, now)
 }

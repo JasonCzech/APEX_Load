@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/appdynamics"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/monitorcontract"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 )
@@ -31,7 +31,6 @@ type RunJob struct {
 	FlushOnly         bool                               `json:"flush_only,omitempty"`
 	Prometheus        *prometheus.JobConfig              `json:"prometheus,omitempty"`
 	TerminalWindows   []monitorprovider.EvaluationWindow `json:"terminal_windows,omitempty"`
-	AppDynamics       *appdynamics.JobConfig             `json:"appdynamics,omitempty"`
 	QueryFromUTC      time.Time                          `json:"query_from_utc,omitempty"`
 	QueryUntilUTC     time.Time                          `json:"query_until_utc,omitempty"`
 	LoadEndedAt       *time.Time                         `json:"load_ended_at,omitempty"`
@@ -63,25 +62,28 @@ type SignedRunJob struct {
 }
 
 type RunSampleBatch struct {
-	EvidenceVersion        uint32                                `json:"evidence_version,omitempty"`
-	MessagingManagement    *analysis.MessagingManagementSnapshot `json:"messaging_management,omitempty"`
-	ManagementGrant        *SignedManagementPoll                 `json:"management_grant,omitempty"`
-	Topology               []monitorprovider.Entity              `json:"topology,omitempty"`
-	Evidence               []monitorprovider.Diagnostic          `json:"evidence,omitempty"`
-	Coverage               map[string]monitorprovider.Coverage   `json:"coverage,omitempty"`
-	PrometheusCapabilities *prometheus.Capabilities              `json:"prometheus_capabilities,omitempty"`
-	Capabilities           appdynamics.Capabilities              `json:"capabilities,omitempty"`
-	Progress               *monitorprovider.QueryProgress        `json:"progress,omitempty"`
-	QueryFromUTC           time.Time                             `json:"query_from_utc,omitempty"`
-	QueryUntilUTC          time.Time                             `json:"query_until_utc,omitempty"`
-	QueryWindowEnd         *time.Time                            `json:"query_window_end,omitempty"`
-	Final                  bool                                  `json:"final,omitempty"`
-	Job                    SignedRunJob                          `json:"job"`
-	Sequence               int64                                 `json:"sequence"`
-	Points                 []analysis.MetricPoint                `json:"points"`
+	EvidenceVersion        uint32                                  `json:"evidence_version,omitempty"`
+	MessagingManagement    *analysis.MessagingManagementSnapshot   `json:"messaging_management,omitempty"`
+	ManagementGrant        *SignedManagementPoll                   `json:"management_grant,omitempty"`
+	Topology               []monitorprovider.Entity                `json:"topology,omitempty"`
+	Evidence               []monitorprovider.Diagnostic            `json:"evidence,omitempty"`
+	Coverage               map[string]monitorprovider.Coverage     `json:"coverage,omitempty"`
+	PrometheusCapabilities *prometheus.Capabilities                `json:"prometheus_capabilities,omitempty"`
+	Capabilities           monitorcontract.AppDynamicsCapabilities `json:"capabilities,omitempty"`
+	Progress               *monitorprovider.QueryProgress          `json:"progress,omitempty"`
+	QueryFromUTC           time.Time                               `json:"query_from_utc,omitempty"`
+	QueryUntilUTC          time.Time                               `json:"query_until_utc,omitempty"`
+	QueryWindowEnd         *time.Time                              `json:"query_window_end,omitempty"`
+	Final                  bool                                    `json:"final,omitempty"`
+	Job                    SignedRunJob                            `json:"job"`
+	Sequence               int64                                   `json:"sequence"`
+	Points                 []analysis.MetricPoint                  `json:"points"`
 }
 
 func SignRunJob(job RunJob, key ed25519.PrivateKey) (SignedRunJob, error) {
+	if job.Pack == monitorprovider.PackAppDynamics {
+		return SignedRunJob{}, errors.New("AppDynamics monitoring is retired")
+	}
 	if len(key) != ed25519.PrivateKeySize {
 		return SignedRunJob{}, errors.New("monitor signing key unavailable")
 	}
@@ -89,7 +91,7 @@ func SignRunJob(job RunJob, key ed25519.PrivateKey) (SignedRunJob, error) {
 	if err != nil {
 		return SignedRunJob{}, err
 	}
-	if len(body) > 96<<10 || job.Pack != monitorprovider.PackAppDynamics && job.Pack != monitorprovider.PackDynatrace && job.Prometheus == nil && len(body) > 32768 {
+	if len(body) > 96<<10 || job.Pack != monitorprovider.PackDynatrace && job.Prometheus == nil && len(body) > 32768 {
 		return SignedRunJob{}, errors.New("monitor job exceeds payload limit")
 	}
 	return SignedRunJob{Payload: string(body), Signature: base64.RawStdEncoding.EncodeToString(ed25519.Sign(key, body))}, nil
@@ -107,10 +109,13 @@ func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, 
 	if err = json.Unmarshal([]byte(signed.Payload), &job); err != nil {
 		return job, err
 	}
-	if job.Pack != monitorprovider.PackAppDynamics && job.Pack != monitorprovider.PackDynatrace && job.Prometheus == nil && len(signed.Payload) > 32768 {
+	if job.Pack != monitorprovider.PackDynatrace && job.Prometheus == nil && len(signed.Payload) > 32768 {
 		return RunJob{}, errors.New("monitor job exceeds payload limit")
 	}
-	if job.MaxBatches < 0 || job.MaxBatches > 32 || job.Pack != monitorprovider.PackAppDynamics && job.Pack != monitorprovider.PackDynatrace && job.Prometheus == nil && job.MaxBatches > 1 {
+	if job.Pack == monitorprovider.PackAppDynamics {
+		return RunJob{}, errors.New("AppDynamics monitoring is retired")
+	}
+	if job.MaxBatches < 0 || job.MaxBatches > 32 || job.Pack != monitorprovider.PackDynatrace && job.Prometheus == nil && job.MaxBatches > 1 {
 		return RunJob{}, errors.New("monitor grant batch budget rejected")
 	}
 	if job.CollectorID != collector || job.ID == "" || job.ProjectID == "" || job.RunID == "" || job.SourceID == "" || job.SourceRevision < 1 || job.NextSequence < 0 || job.IntervalSeconds < 1 || job.IntervalSeconds > 3600 || job.StartedAt.IsZero() || job.StartedAt.After(now.Add(30*time.Second)) || !job.ExpiresAt.After(now) || !job.LeaseExpiresAt.After(now) || job.LeaseExpiresAt.After(now.Add(2*time.Minute)) || job.LeaseExpiresAt.After(job.ExpiresAt) {
@@ -149,7 +154,7 @@ func VerifyRunJob(signed SignedRunJob, key ed25519.PublicKey, collector string, 
 	} else if isManagementPack(job.Pack) {
 		return RunJob{}, errors.New("management job requires explicit versioned approval")
 	}
-	if job.Pack == monitorprovider.PackDynatrace && (job.Dynatrace == nil || job.Dynatrace.Validate() != nil || job.Dynatrace.Selection.ProjectID != job.ProjectID || job.IntervalSeconds < 60 || job.AppDynamics != nil || job.Prometheus != nil || job.Management != nil) {
+	if job.Pack == monitorprovider.PackDynatrace && (job.Dynatrace == nil || job.Dynatrace.Validate() != nil || job.Dynatrace.Selection.ProjectID != job.ProjectID || job.IntervalSeconds < 60 || job.Prometheus != nil || job.Management != nil) {
 		return RunJob{}, errors.New("Dynatrace configuration or interval rejected")
 	}
 	return job, nil
@@ -221,7 +226,7 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 				a.jobScanManagement[job.ID] = envelope
 				return nil
 			}
-			if job.Pack == monitorprovider.PackAppDynamics || job.Pack == monitorprovider.PackDynatrace || job.Prometheus != nil {
+			if job.Pack == monitorprovider.PackDynatrace || job.Prometheus != nil {
 				if !slices.Contains(a.cfg.Packs, job.Pack) || job.UnavailableReason != "" {
 					return errors.New("provider pack is disabled or temporarily unavailable")
 				}
@@ -231,7 +236,7 @@ func (a *Agent) runJobTick(ctx context.Context) error {
 					}
 					a.dispatchDynatraceJob(ctx, job, envelope)
 				} else {
-					a.dispatchAppDynamicsJob(ctx, job, envelope)
+					a.dispatchProviderJob(ctx, job, envelope)
 				}
 				return nil
 			}
@@ -498,9 +503,7 @@ func (a *Agent) jobRequestWithHeaders(ctx context.Context, method, path string, 
 			ad.Capabilities = []string{FeatureMessagingManagementEvidenceV1}
 			ad.ManagementScopes = a.management.readiness()
 		}
-		if slices.Contains(a.cfg.Packs, "appdynamics") {
-			ad.Contracts = append(ad.Contracts, AppDynamicsBatchContract)
-		}
+
 		if a.hasPrometheusQueryTarget() {
 			ad.Contracts = append(ad.Contracts, PrometheusBatchContract)
 		}

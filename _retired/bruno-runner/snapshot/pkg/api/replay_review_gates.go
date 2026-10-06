@@ -1,0 +1,262 @@
+package api
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
+)
+
+func validateScriptForReplay(script *dsl.Script) []string {
+	return validateScriptForReplayWithImportTrust(script, false)
+}
+
+// validateScriptForReplayWithImportTrust permits credential-bearing Java VM
+// arguments only when the caller has already established that script is the
+// unchanged server-owned durable snapshot produced by an import. Client-sent
+// draft metadata is not provenance and must stay on the strict path.
+func validateScriptForReplayWithImportTrust(
+	script *dsl.Script,
+	trustedPreservedImport bool,
+) []string {
+	issues := dsl.ValidateScriptIssues(script)
+	if trustedPreservedImport {
+		issues = validateStoredExecutionScript(script)
+	}
+	return appendUniqueStrings(issues, scriptReviewGateIssues(script, "replay")...)
+}
+
+func replayReviewGateIssues(script *dsl.Script) []string {
+	return scriptReviewGateIssues(script, "replay")
+}
+
+func replayReviewGateError(script *dsl.Script) error {
+	issues := replayReviewGateIssues(script)
+	if len(issues) == 0 {
+		return nil
+	}
+	return fmt.Errorf("script replay is blocked: %s", strings.Join(issues, "; "))
+}
+
+// storedScriptReplayGateError protects immutable import gates before a
+// stored-script endpoint applies a caller-supplied draft replacement. Historical
+// browser review-policy gates remain subject to their existing per-replay
+// overrides and are revalidated after those overrides are applied, but durable
+// execution_blocker(s) and native Bruno gates may never be removed by replacing
+// the request-time draft.
+func storedScriptReplayGateError(script *dsl.Script) error {
+	if script != nil &&
+		strings.EqualFold(strings.TrimSpace(script.Protocol), "browser") {
+		issues := scriptReviewGateIssuesWithBrowserPolicy(script, "replay", false)
+		if len(issues) == 0 {
+			return nil
+		}
+		return fmt.Errorf("script replay is blocked: %s", strings.Join(issues, "; "))
+	}
+	return replayReviewGateError(script)
+}
+
+func launchReviewGateIssues(script *dsl.Script) []string {
+	return scriptReviewGateIssues(script, "launch")
+}
+
+func scriptReviewGateIssues(script *dsl.Script, operation string) []string {
+	return scriptReviewGateIssuesWithBrowserPolicy(script, operation, true)
+}
+
+func scriptReviewGateIssuesWithBrowserPolicy(
+	script *dsl.Script,
+	operation string,
+	enforceBrowserPolicy bool,
+) []string {
+	if script == nil {
+		return nil
+	}
+	browserProtocol := strings.EqualFold(strings.TrimSpace(script.Protocol), "browser")
+	policy := script.Config.Browser.ReviewPolicy
+	var issues []string
+	err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		action := reviewGateSurfaceAction(ref)
+		label := fmt.Sprintf("%s %q", ref.Path, action.Name)
+		if blockers := executionReviewBlockerCodes(action.Metadata); len(blockers) > 0 {
+			detail := strings.Join(blockers, ", ")
+			if len(blockers) == 1 && blockers[0] == "bruno_missing_variables" {
+				if names := metadataStringSlice(action.Metadata, "missing_variables"); len(names) > 0 {
+					detail = fmt.Sprintf("%s (%s)", blockers[0], strings.Join(names, ", "))
+				}
+			}
+			issues = append(issues, fmt.Sprintf(
+				"%s: execution blocker %s blocks %s until the imported behavior is resolved",
+				label,
+				detail,
+				operation,
+			))
+		}
+		if durableImportReviewGateAction(action) {
+			issues = append(issues, fmt.Sprintf("%s: review-required action blocks %s until review metadata is removed", label, operation))
+		} else if browserProtocol && enforceBrowserPolicy && reviewGatedJavaScriptAction(action) {
+			if !policy.AllowReviewedJavaScript {
+				issues = append(issues, fmt.Sprintf("%s: review-gated JavaScript requires config.browser.review_policy.allow_reviewed_javascript=true before %s", label, operation))
+			}
+		} else if browserProtocol && enforceBrowserPolicy && reviewRequiredAction(action) {
+			if !policy.AllowReviewRequired {
+				issues = append(issues, fmt.Sprintf("%s: review-required action requires config.browser.review_policy.allow_review_required=true before %s", label, operation))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		issues = append(issues, "script review-gate traversal failed: "+err.Error())
+	}
+	return issues
+}
+
+func reviewGateSurfaceAction(ref dslwalk.SurfaceRef) dsl.Action {
+	if ref.Action != nil {
+		return *ref.Action
+	}
+	action := dsl.Action{
+		Name:     ref.Name(),
+		Metadata: ref.Metadata(),
+	}
+	if ref.Request != nil {
+		action.Type, _ = ref.Request["type"].(string)
+	}
+	return action
+}
+
+func executionReviewBlockerCodes(metadata map[string]any) []string {
+	codes := metadataStringSlice(metadata, "execution_blockers")
+	if blocker := metadataString(metadata, "execution_blocker"); blocker != "" {
+		codes = append(codes, blocker)
+	}
+	codes = appendUniqueStrings(nil, codes...)
+	sort.Strings(codes)
+	return codes
+}
+
+func scriptHasNativeBrunoReviewGate(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	found := false
+	err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		if durableImportReviewGateAction(reviewGateSurfaceAction(ref)) {
+			found = true
+		}
+		return nil
+	})
+	return found || err != nil
+}
+
+func reviewGatedJavaScriptAction(action dsl.Action) bool {
+	if !strings.EqualFold(strings.TrimSpace(action.Type), "browser_evaluate_js") {
+		return false
+	}
+	if metadataString(action.Metadata, "review_gate") == "javascript" {
+		return true
+	}
+	return metadataBool(action.Metadata, "review_required") || metadataBool(action.Metadata, "promotion_blocker")
+}
+
+func reviewRequiredAction(action dsl.Action) bool {
+	return metadataBool(action.Metadata, "review_required") ||
+		metadataBool(action.Metadata, "promotion_blocker") ||
+		metadataString(action.Metadata, "review_gate") == "bruno_javascript"
+}
+
+// durableReviewGateSource declares an importer whose review gates are durable:
+// the block survives browser review policy and cannot be waived per replay.
+//
+// This is a registry rather than a hard-coded prefix so a second importer can
+// opt in by adding an entry. It is deliberately NOT "any non-empty
+// review_gate": TrueClient writes review_gate="javascript"
+// (pkg/convert/trueclient/javascript.go) and converters going through
+// importreview.ApplyToAction write the first review finding's code. Those are
+// review markers under the browser policy, which an operator can knowingly
+// override. Promoting them to permanent blocks would retroactively make
+// existing TrueClient and enterprise-archive imports unrunnable.
+type durableReviewGateSource struct {
+	// gatePrefix matches review_gate values this importer owns.
+	gatePrefix string
+	// sourceProfile additionally hardens an action carrying the ordinary
+	// review_required/promotion_blocker flags when it came from this importer.
+	sourceProfile string
+}
+
+var durableReviewGateSources = []durableReviewGateSource{
+	{gatePrefix: "bruno_", sourceProfile: "bruno_native"},
+}
+
+// durableImportReviewGateAction reports whether an action carries a gate whose
+// block is durable.
+//
+// The gate itself is the enforcement marker. Requiring its companion flags
+// would let an author bypass the blocker by deleting only review_required or
+// promotion_blocker while leaving the untranslated source behavior in place.
+func durableImportReviewGateAction(action dsl.Action) bool {
+	gate := metadataString(action.Metadata, "review_gate")
+	profile := metadataString(action.Metadata, "source_profile")
+	for _, source := range durableReviewGateSources {
+		if source.gatePrefix != "" && strings.HasPrefix(gate, source.gatePrefix) {
+			return true
+		}
+		if source.sourceProfile != "" && profile == source.sourceProfile &&
+			reviewRequiredAction(action) {
+			return true
+		}
+	}
+	return false
+}
+
+// metadataBool, metadataString and metadataStringSlice adapt the shared
+// dslwalk extractors to this package's comparison semantics: gate names are
+// lowercased because they are matched against fixed literals, and blocker lists
+// keep source order while dropping duplicates so a review message reads the way
+// the importer wrote it.
+func metadataBool(metadata map[string]any, key string) bool {
+	return dslwalk.MetadataBool(metadata, key)
+}
+
+func metadataString(metadata map[string]any, key string) string {
+	return strings.ToLower(dslwalk.MetadataString(metadata, key))
+}
+
+func metadataStringSlice(metadata map[string]any, key string) []string {
+	values := dslwalk.MetadataStrings(metadata, key)
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func appendUniqueStrings(values []string, extra ...string) []string {
+	if len(extra) == 0 {
+		return values
+	}
+	seen := make(map[string]struct{}, len(values)+len(extra))
+	out := make([]string, 0, len(values)+len(extra))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	for _, value := range extra {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
