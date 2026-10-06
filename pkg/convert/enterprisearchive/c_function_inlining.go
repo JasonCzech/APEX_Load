@@ -40,13 +40,25 @@ type sourceHelperTable struct {
 	// for translating helpers called with arguments.
 	contents map[string]string
 	sources  map[string]helperSource // located definitions, by file and name
+	// blanked memoizes each file's comment-free text for locating helpers.
+	blanked map[string]string
+	// zeroArgTranslations memoizes translated bodies of helpers called
+	// without arguments, which do not depend on the call site.
+	zeroArgTranslations map[string][]ParsedFunction
 }
 
 // buildSourceHelperTable collects every C function body from the parsed source
 // files. Lifecycle and run-action entry functions are included; a call to one
 // of them from another function is inlined like any other helper.
 func buildSourceHelperTable(sources []*ParsedAction, contents map[string]string) sourceHelperTable {
-	table := sourceHelperTable{definitions: map[string]*sourceHelperDefinition{}, ambiguous: map[string]bool{}, contents: map[string]string{}, sources: map[string]helperSource{}}
+	table := sourceHelperTable{
+		definitions:         map[string]*sourceHelperDefinition{},
+		ambiguous:           map[string]bool{},
+		contents:            map[string]string{},
+		sources:             map[string]helperSource{},
+		blanked:             map[string]string{},
+		zeroArgTranslations: map[string][]ParsedFunction{},
+	}
 	for name, content := range contents {
 		table.contents[strings.ToLower(name)] = content
 	}
@@ -54,7 +66,7 @@ func buildSourceHelperTable(sources []*ParsedAction, contents map[string]string)
 		if source == nil {
 			continue
 		}
-		for _, function := range source.Functions {
+		for _, function := range mergeEmbeddedCalls(source.Functions, source.embeddedCalls) {
 			owner := strings.TrimSpace(function.sourceFunction)
 			if owner == "" {
 				continue
@@ -71,7 +83,88 @@ func buildSourceHelperTable(sources []*ParsedAction, contents map[string]string)
 			definition.calls = append(definition.calls, function)
 		}
 	}
+	// A function is a helper when its body makes a statement call or an
+	// expression call to another helper. Expression calls to anything else
+	// (strlen, atoi) were never imported and stay out of every body.
+	defined := map[string]bool{}
+	for key, definition := range table.definitions {
+		for _, call := range definition.calls {
+			if call.embeddedCall == "" {
+				defined[key] = true
+				break
+			}
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for key, definition := range table.definitions {
+			if defined[key] {
+				continue
+			}
+			for _, call := range definition.calls {
+				if callee := strings.ToLower(strings.TrimSpace(call.Name)); defined[callee] && !table.ambiguous[callee] {
+					defined[key], changed = true, true
+					break
+				}
+			}
+		}
+	}
+	for key := range table.definitions {
+		if !defined[key] {
+			delete(table.definitions, key)
+		}
+	}
+	for _, definition := range table.definitions {
+		definition.calls = table.withoutUnresolvedEmbeddedCalls(definition.calls)
+	}
 	return table
+}
+
+// mergeEmbeddedCalls places expression calls among the statement calls by
+// source position: each goes before the first statement call that starts after
+// it, so a helper called in an if condition runs before that branch.
+func mergeEmbeddedCalls(statements, embedded []ParsedFunction) []ParsedFunction {
+	if len(embedded) == 0 {
+		return statements
+	}
+	merged := make([]ParsedFunction, 0, len(statements)+len(embedded))
+	next := 0
+	for _, statement := range statements {
+		for next < len(embedded) && sourceCallStartsBefore(embedded[next], statement) {
+			merged = append(merged, embedded[next])
+			next++
+		}
+		merged = append(merged, statement)
+	}
+	return append(merged, embedded[next:]...)
+}
+
+func sourceCallStartsBefore(a, b ParsedFunction) bool {
+	if !strings.EqualFold(a.Filename, b.Filename) {
+		return false
+	}
+	if a.sourceEndOffset > a.sourceOffset && b.sourceEndOffset > b.sourceOffset {
+		return a.sourceOffset < b.sourceOffset
+	}
+	if a.LineNumber != b.LineNumber {
+		return a.LineNumber < b.LineNumber
+	}
+	return a.sourceColumn < b.sourceColumn
+}
+
+// withoutUnresolvedEmbeddedCalls drops expression calls that name no helper,
+// as the importer always did, keeping statement calls and helper calls.
+func (table sourceHelperTable) withoutUnresolvedEmbeddedCalls(calls []ParsedFunction) []ParsedFunction {
+	kept := calls[:0:0]
+	for _, call := range calls {
+		if call.embeddedCall != "" {
+			if _, ok := table.definitionFor(call); !ok {
+				continue
+			}
+		}
+		kept = append(kept, call)
+	}
+	return kept
 }
 
 // definitionFor returns the C function the archive defines unambiguously for
@@ -88,14 +181,6 @@ func (table sourceHelperTable) definitionFor(call ParsedFunction) (*sourceHelper
 	return definition, ok
 }
 
-// helper returns the definition a call without arguments resolves to.
-func (table sourceHelperTable) helper(call ParsedFunction) (*sourceHelperDefinition, bool) {
-	if len(call.RawArgs) > 0 || len(call.CallArgs) > 0 {
-		return nil, false
-	}
-	return table.definitionFor(call)
-}
-
 // helperCalls returns the calls a helper invocation performs: the recorded body
 // for a call without arguments, or the translated body for one with arguments.
 func (table sourceHelperTable) helperCalls(call ParsedFunction, definition *sourceHelperDefinition) ([]ParsedFunction, string) {
@@ -105,7 +190,14 @@ func (table sourceHelperTable) helperCalls(call ParsedFunction, definition *sour
 		// back to the recorded body (string operations kept for review) when
 		// the body also uses something translation does not support.
 		if usesCStringOperations(definition.calls) {
+			key := strings.ToLower(definition.file) + "\x00" + strings.ToLower(definition.name)
+			if translated, ok := table.zeroArgTranslations[key]; ok {
+				return translated, ""
+			}
 			if translated, reason := table.translateHelperCall(call, definition); reason == "" {
+				if table.zeroArgTranslations != nil {
+					table.zeroArgTranslations[key] = translated
+				}
 				return translated, ""
 			}
 		}
@@ -124,6 +216,18 @@ func usesCStringOperations(calls []ParsedFunction) bool {
 	return false
 }
 
+// excludingFile returns the table without the helpers file defines.
+func (table sourceHelperTable) excludingFile(file string) sourceHelperTable {
+	out := table
+	out.definitions = make(map[string]*sourceHelperDefinition, len(table.definitions))
+	for key, definition := range table.definitions {
+		if !strings.EqualFold(definition.file, file) {
+			out.definitions[key] = definition
+		}
+	}
+	return out
+}
+
 // definesHelper reports whether name is a C function some parsed code calls,
 // so its body runs only through those calls.
 func (table sourceHelperTable) definesHelper(name string) bool {
@@ -135,14 +239,14 @@ func (table sourceHelperTable) definesHelper(name string) bool {
 // entryFunctions keeps the calls an action's entry function makes. A file that
 // also defines helpers emitted every helper body at top level; those bodies
 // now run only where they are called. Calls without an enclosing function
-// (legacy fallback parsing) are kept, and so is the whole file when no call
-// belongs to the entry function, which preserves the old behavior.
-func entryFunctions(functions []ParsedFunction, entry string) []ParsedFunction {
+// (legacy fallback parsing) are kept. When no call belongs to the entry
+// function, matched is false and the whole file is returned: its helper bodies
+// still run at top level, so callers must not also inline them.
+func entryFunctions(functions []ParsedFunction, entry string) (kept []ParsedFunction, matched bool) {
 	entry = strings.TrimSpace(entry)
 	if entry == "" {
-		return functions
+		return functions, false
 	}
-	matched := false
 	for _, function := range functions {
 		if strings.EqualFold(strings.TrimSpace(function.sourceFunction), entry) {
 			matched = true
@@ -150,12 +254,24 @@ func entryFunctions(functions []ParsedFunction, entry string) []ParsedFunction {
 		}
 	}
 	if !matched {
-		return functions
+		return functions, false
 	}
-	kept := make([]ParsedFunction, 0, len(functions))
+	kept = make([]ParsedFunction, 0, len(functions))
 	for _, function := range functions {
 		owner := strings.TrimSpace(function.sourceFunction)
 		if owner == "" || strings.EqualFold(owner, entry) {
+			kept = append(kept, function)
+		}
+	}
+	return kept, true
+}
+
+// withoutEmbeddedCalls drops every expression call; they run only through
+// helper inlining.
+func withoutEmbeddedCalls(functions []ParsedFunction) []ParsedFunction {
+	kept := functions[:0:0]
+	for _, function := range functions {
+		if function.embeddedCall == "" {
 			kept = append(kept, function)
 		}
 	}
@@ -166,48 +282,58 @@ func entryFunctions(functions []ParsedFunction, entry string) []ParsedFunction {
 // calls, recursively. An inlined call carries the caller's enclosing
 // conditions and loops, and its own condition and loop identities are
 // qualified by the call site so two calls of one helper stay distinct blocks.
-func inlineSourceHelpers(functions []ParsedFunction, table sourceHelperTable) ([]ParsedFunction, []string) {
+// files lists the source files whose helper bodies were inlined.
+func inlineSourceHelpers(functions []ParsedFunction, table sourceHelperTable) (out []ParsedFunction, warnings []string, files []string) {
 	if len(table.definitions) == 0 {
-		return functions, nil
+		return withoutEmbeddedCalls(functions), nil, nil
 	}
-	var warnings []string
 	produced := 0
 	budgetWarned := false
+	usedFiles := map[string]string{}
 	var expand func(calls []ParsedFunction, stack []string) []ParsedFunction
 	expand = func(calls []ParsedFunction, stack []string) []ParsedFunction {
 		out := make([]ParsedFunction, 0, len(calls))
 		for _, call := range calls {
 			definition, ok := table.definitionFor(call)
 			if !ok {
+				if call.embeddedCall == "" {
+					out = append(out, call)
+				}
+				continue
+			}
+			at := fmt.Sprintf("%s:%d", call.Filename, call.LineNumber)
+			if call.embeddedCall == embeddedCallReview {
+				warnings = append(warnings, fmt.Sprintf("%s: %s(...) is called in a loop condition or inside another call's arguments; its body was not inlined and the call needs review", at, definition.name))
+				out = append(out, call)
+				continue
+			}
+			key := strings.ToLower(definition.name)
+			if stackContains(stack, key) {
+				warnings = append(warnings, fmt.Sprintf("%s: %s() calls itself through %s; the recursive call was not inlined and needs review", at, definition.name, strings.Join(append(stack, key), " -> ")))
+				out = append(out, call)
+				continue
+			}
+			if len(stack) >= maxSourceHelperInlineDepth {
+				warnings = append(warnings, fmt.Sprintf("%s: %s() is nested more than %d calls deep; it was not inlined and needs review", at, definition.name, maxSourceHelperInlineDepth))
 				out = append(out, call)
 				continue
 			}
 			body, reason := table.helperCalls(call, definition)
 			if reason != "" {
-				warnings = append(warnings, fmt.Sprintf("line %d: %s(...) was not inlined because %s; the call needs review", call.LineNumber, definition.name, reason))
+				warnings = append(warnings, fmt.Sprintf("%s: %s(...) was not inlined because %s; the call needs review", at, definition.name, reason))
 				out = append(out, call)
 				continue
 			}
 			if produced+len(body) > maxInlinedSourceCalls {
 				if !budgetWarned {
 					budgetWarned = true
-					warnings = append(warnings, fmt.Sprintf("line %d: inlining %s() would exceed %d calls for one action; it and later helper calls were not inlined and need review", call.LineNumber, definition.name, maxInlinedSourceCalls))
+					warnings = append(warnings, fmt.Sprintf("%s: inlining %s() would exceed %d calls for one action; helper calls past the limit were not inlined and need review", at, definition.name, maxInlinedSourceCalls))
 				}
 				out = append(out, call)
 				continue
 			}
 			produced += len(body)
-			key := strings.ToLower(definition.name)
-			if stackContains(stack, key) {
-				warnings = append(warnings, fmt.Sprintf("line %d: %s() calls itself through %s; the recursive call was not inlined and needs review", call.LineNumber, definition.name, strings.Join(append(stack, key), " -> ")))
-				out = append(out, call)
-				continue
-			}
-			if len(stack) >= maxSourceHelperInlineDepth {
-				warnings = append(warnings, fmt.Sprintf("line %d: %s() is nested more than %d calls deep; it was not inlined and needs review", call.LineNumber, definition.name, maxSourceHelperInlineDepth))
-				out = append(out, call)
-				continue
-			}
+			usedFiles[strings.ToLower(definition.file)] = definition.file
 			site := fmt.Sprintf("inline@%s:%d:%d/", call.Filename, call.LineNumber, call.sourceColumn)
 			for _, inner := range expand(body, append(append([]string(nil), stack...), key)) {
 				inner.Phase = call.Phase
@@ -225,7 +351,11 @@ func inlineSourceHelpers(functions []ParsedFunction, table sourceHelperTable) ([
 		}
 		return out
 	}
-	return expand(functions, nil), uniqueSortedStrings(warnings)
+	out = expand(functions, nil)
+	for _, file := range usedFiles {
+		files = append(files, file)
+	}
+	return out, uniqueSortedStrings(warnings), uniqueSortedStrings(files)
 }
 
 func prefixedIDs(prefix string, ids []string) []string {

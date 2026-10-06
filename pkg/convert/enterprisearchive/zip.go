@@ -327,6 +327,12 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 	helpers := buildSourceHelperTable(helperSources, parsedContents)
+	scheduledFiles := make(map[string]bool, len(sourceDeclarations))
+	for _, declaration := range sourceDeclarations {
+		if resolved, _, ambiguous := findSourceArchiveFile(files, declaration.Name); resolved != "" && len(ambiguous) == 0 {
+			scheduledFiles[strings.ToLower(resolved)] = true
+		}
+	}
 	var inlineWarnings []string
 	for _, declaration := range sourceDeclarations {
 		actionFile := declaration.Name
@@ -353,17 +359,51 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			continue
 		}
 		cacheKey, cached, _ := parseSourceFile(resolvedActionFile)
+		source := cached.action
+		if source != nil {
+			// Expression calls run only as helper calls (see
+			// embeddedHelperCallKind); calls naming no helper stay dropped.
+			filtered := *source
+			filtered.Functions = helpers.withoutUnresolvedEmbeddedCalls(mergeEmbeddedCalls(source.Functions, source.embeddedCalls))
+			filtered.embeddedCalls = nil
+			source = &filtered
+		}
 		parsed := sourceActionForLifecycleDeclaration(
-			cached.action,
+			source,
 			declaration,
 			declarationsByResolvedFile[cacheKey],
 			helpers,
 		)
 		err := cached.err
 		if parsed != nil {
-			var warnings []string
-			parsed.Functions, warnings = inlineSourceHelpers(entryFunctions(parsed.Functions, declaredSourceActionName(declaration)), helpers)
+			entry, matched := entryFunctions(parsed.Functions, declaredSourceActionName(declaration))
+			table := helpers
+			if !matched {
+				// This file's helper bodies stay at top level, so only
+				// helpers other files define are inlined.
+				table = helpers.excludingFile(resolvedActionFile)
+			}
+			var warnings, inlinedFiles []string
+			parsed.Functions, warnings, inlinedFiles = inlineSourceHelpers(entry, table)
 			inlineWarnings = append(inlineWarnings, warnings...)
+			for _, file := range inlinedFiles {
+				// A helper from an action file the run logic skips runs here,
+				// so that file's parse failures gate this phase.
+				if scheduledFiles[strings.ToLower(file)] {
+					continue
+				}
+				helperFile, ok := parsedByResolvedFile[strings.ToLower(normalizeRuntimeArchivePath(file))]
+				if !ok || helperFile.action == nil {
+					continue
+				}
+				for _, failure := range helperFile.action.ParseFailures {
+					if strings.TrimSpace(failure.Filename) == "" {
+						failure.Filename = file
+					}
+					failure.Phase = phase
+					parsed.ParseFailures = appendUniqueCSourceParseFailures(parsed.ParseFailures, failure)
+				}
+			}
 		}
 		if parsed != nil {
 			if err == nil || len(parsed.Functions) > 0 || len(parsed.ParseFailures) > 0 {
@@ -612,7 +652,11 @@ func finalizeEnterpriseArchiveImportResult(
 	applySourceParamBraces(result, ctx.ProjectConfig)
 	result.Warnings = append(result.Warnings, ctx.InlineWarnings...)
 	if len(ctx.UnscheduledActions) > 0 {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("The run logic never runs %s, so %s not imported; LoadRunner skips them too. Add them to the run logic in VuGen and re-import if they should run.", strings.Join(ctx.UnscheduledActions, ", "), map[bool]string{true: "it was", false: "they were"}[len(ctx.UnscheduledActions) == 1]))
+		subject, object := "they were", "them"
+		if len(ctx.UnscheduledActions) == 1 {
+			subject, object = "it was", "it"
+		}
+		result.Warnings = append(result.Warnings, fmt.Sprintf("The run logic never runs %s, so %s not imported; LoadRunner skips %s too. Add %s to the run logic in VuGen and re-import if %s should run.", strings.Join(ctx.UnscheduledActions, ", "), subject, object, object, strings.Fields(subject)[0]))
 	}
 	applyBrowserEmulationRuntimeSettingsReview(result, ctx.RuntimeConfig)
 	parameterSections := make(map[string]map[string]map[string]string)

@@ -66,11 +66,18 @@ func (table sourceHelperTable) translateHelperCall(call ParsedFunction, definiti
 	for _, param := range source.params {
 		locals[param] = helperLocalName(namespace, param)
 	}
+	// The synthetic source opens with two wrapper lines; lineOf maps each
+	// later synthetic line back to the statement it came from (a statement
+	// or argument may span lines).
 	var lines []string
-	var lineOf []int
+	lineOf := map[int]int{}
+	nextLine := 3
 	emit := func(text string, line int) {
 		lines = append(lines, text)
-		lineOf = append(lineOf, line)
+		for offset := 0; offset <= strings.Count(text, "\n"); offset++ {
+			lineOf[nextLine+offset] = line
+		}
+		nextLine += 1 + strings.Count(text, "\n")
 	}
 	for index, param := range source.params {
 		value, ok := helperOperand(args[index], nil)
@@ -103,10 +110,9 @@ func (table sourceHelperTable) translateHelperCall(call ParsedFunction, definiti
 	}
 	out := make([]ParsedFunction, 0, len(parsed.Functions))
 	for _, function := range parsed.Functions {
-		// Synthetic line N+3 holds translated statement N.
-		if index := function.LineNumber - 3; index >= 0 && index < len(lineOf) {
-			function.LineNumber = lineOf[index]
-			function.EndLine = lineOf[index]
+		if line, ok := lineOf[function.LineNumber]; ok {
+			function.LineNumber = line
+			function.EndLine = line
 		}
 		function.Filename = definition.file
 		function.sourceFunction = definition.name
@@ -341,17 +347,24 @@ func (table sourceHelperTable) helperSource(content string, definition *sourceHe
 	if source, ok := table.sources[key]; ok {
 		return source
 	}
-	source := locateHelperSource(content, definition.name)
+	fileKey := strings.ToLower(definition.file)
+	code, ok := table.blanked[fileKey]
+	if !ok {
+		code = blankCComments(content)
+		if table.blanked != nil {
+			table.blanked[fileKey] = code
+		}
+	}
+	source := locateHelperSource(code, definition.name)
 	if table.sources != nil {
 		table.sources[key] = source
 	}
 	return source
 }
 
-// locateHelperSource finds a function definition in parsed source text and
-// splits its body into top-level statements.
-func locateHelperSource(content, name string) helperSource {
-	code := blankCComments(content)
+// locateHelperSource finds a function definition in comment-free source text
+// (see blankCComments) and splits its body into top-level statements.
+func locateHelperSource(code, name string) helperSource {
 	header := regexp.MustCompile(`(?m)\b` + regexp.QuoteMeta(name) + `\s*\(([^()]*)\)\s*\{`)
 	var match []int
 	for _, candidate := range header.FindAllStringSubmatchIndex(code, -1) {
@@ -380,13 +393,20 @@ func locateHelperSource(content, name string) helperSource {
 	var quote byte
 	escaped := false
 	depth := 0
+	pendingSpace := false
 	body := code[bodyStart:bodyEnd]
 	for index := 0; index < len(body); index++ {
 		ch := body[index]
 		if ch == '\n' {
 			line++
 		}
-		if strings.TrimSpace(current.String()) == "" {
+		if !inString && isASCIIWhitespace(ch) {
+			// Whitespace between tokens collapses to one space; text
+			// inside string and character literals is kept exactly.
+			pendingSpace = current.Len() > 0
+			continue
+		}
+		if current.Len() == 0 {
 			currentLine = line
 		}
 		switch {
@@ -405,13 +425,18 @@ func locateHelperSource(content, name string) helperSource {
 		case !inString && (ch == '{' || ch == '}'):
 			return helperSource{invalid: "its body uses a nested block"}
 		case !inString && ch == ';' && depth == 0:
-			source.stmts = append(source.stmts, cStatement{text: strings.Join(strings.Fields(current.String()), " "), line: currentLine})
+			source.stmts = append(source.stmts, cStatement{text: current.String(), line: currentLine})
 			current.Reset()
+			pendingSpace = false
 			continue
+		}
+		if pendingSpace {
+			current.WriteByte(' ')
+			pendingSpace = false
 		}
 		current.WriteByte(ch)
 	}
-	if strings.TrimSpace(current.String()) != "" {
+	if current.Len() > 0 {
 		return helperSource{invalid: "its body ends without a semicolon"}
 	}
 	return source

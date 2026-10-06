@@ -208,3 +208,51 @@ void joinName(char* first)
 		t.Fatalf("targets = %q, warnings = %v, want the spaces kept", recorder.targets, result.Warnings)
 	}
 }
+
+// Character locals start empty on every call, an empty or blank literal saves
+// under its name, and spaces inside literals survive translation.
+func TestHelperLocalsResetEachCallAndLiteralsKeepTheirSpaces(t *testing.T) {
+	result := importHelperArchive(t, `Action()
+{
+	build("a");
+	web_url("one", "URL=https://example.com/{R}", LAST);
+	build("b");
+	web_url("two", "URL=https://example.com/{R}", LAST);
+	lr_save_string(" ", "sep");
+	web_url("three", "URL=https://example.com/x{sep}y", LAST);
+	return 0;
+}
+
+void build(char* str)
+{
+	char out[64] = "\0";
+	strcat(out, str);
+	strcat(out, "-x");
+	lr_save_string(out, "R");
+	web_custom_request("post", "URL=https://example.com/post", "Method=POST", "Body=two  spaces", LAST);
+}
+`)
+	script := result.Script
+	script.Config.RunLogic.Iterations = 1
+	recorder := &targetRecorder{}
+	vu := &engine.VUser{ID: 1, Group: "g", Proto: recorder, Variables: map[string]string{}, Metrics: engine.NewMetricsCollector(64), Script: script}
+	vu.Run(context.Background())
+	var gets []string
+	for _, target := range recorder.targets {
+		if !strings.HasSuffix(target, "/post") {
+			gets = append(gets, target)
+		}
+	}
+	if strings.Join(gets, " ") != "/a-x /b-x /x y" {
+		t.Fatalf("targets = %q, want fresh locals per call and the blank separator saved", recorder.targets)
+	}
+	var bodies []string
+	for _, action := range script.Actions {
+		if action.Type == "POST" {
+			bodies = append(bodies, action.Body)
+		}
+	}
+	if len(bodies) != 2 || bodies[0] != "two  spaces" {
+		t.Fatalf("bodies = %q, want the literal's double space kept", bodies)
+	}
+}

@@ -364,8 +364,10 @@ func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, So
 			caseInsensitive = true
 			continue
 		}
-		mode = SourceFunctionSupportReviewOnly
-		warnings = append(warnings, fmt.Sprintf("line %d: web_reg_find Text/%s has no DSL equivalent and requires review", fn.LineNumber, strings.TrimSpace(flag)))
+		// DIG, ALNUM and BIN change what the text matches (wildcards or
+		// binary escapes); checking it literally would fail where
+		// LoadRunner passes, so no check is emitted.
+		return nil, nil, SourceFunctionSupportReviewOnly, fmt.Sprintf("line %d: web_reg_find Text/%s has no DSL equivalent; the check was not imported and requires review", fn.LineNumber, strings.TrimSpace(flag))
 	}
 	if searchScope == "all" {
 		// LoadRunner's ALL scope spans the main response body, response headers,

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/javarunner"
 )
@@ -172,7 +173,7 @@ func validateJavaVuserParamBraces(left, right string) []string {
 	}
 	var issues []string
 	for _, brace := range []struct{ field, value string }{{"param_left_brace", left}, {"param_right_brace", right}} {
-		if len(brace.value) > 8 || strings.TrimSpace(brace.value) != brace.value || strings.ContainsFunc(brace.value, unicode.IsSpace) || containsJavaVuserControlCharacter(brace.value) {
+		if utf8.RuneCountInString(brace.value) > 8 || strings.TrimSpace(brace.value) != brace.value || strings.ContainsFunc(brace.value, unicode.IsSpace) || containsJavaVuserControlCharacter(brace.value) {
 			issues = append(issues, "config.java_vuser."+brace.field+" must be 1 to 8 visible characters")
 		}
 	}

@@ -900,37 +900,54 @@ func applyRuntimeSemanticStatuses(parity []RuntimeSettingParityEntry, rc *Runtim
 	return parity
 }
 
-// runLogicRunActionNames returns the lowercased names of every action the
-// run-logic file's Run tree refers to, at any block depth. ok is false when the
-// file has no [RunLogicRunRoot] or names no action, so callers keep every
-// declared action.
-func runLogicRunActionNames(content string) (map[string]struct{}, bool) {
-	names := make(map[string]struct{})
+// runLogicRootActions returns the lowercased names of every action one
+// run-logic root (RunLogicInitRoot, RunLogicRunRoot or RunLogicEndRoot) refers
+// to, at any block depth, each with its position in the root's own
+// RunLogicActionOrder (-1 when only a nested block names it). ok is false
+// when the root section is absent.
+func runLogicRootActions(sections map[string]map[string]string, root string) (map[string]int, bool) {
+	names := make(map[string]int)
 	rootSeen := false
-	for sectionName, section := range ParseConfigSections(content) {
+	root = strings.ToLower(root)
+	add := func(name string, position int) {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" {
+			return
+		}
+		if existing, ok := names[name]; !ok || existing < 0 && position >= 0 {
+			names[name] = position
+		}
+	}
+	for sectionName, section := range sections {
 		lower := strings.ToLower(strings.TrimSpace(sectionName))
-		if lower != "runlogicrunroot" && !strings.HasPrefix(lower, "runlogicrunroot:") {
+		if lower != root && !strings.HasPrefix(lower, root+":") {
 			continue
 		}
-		rootSeen = rootSeen || lower == "runlogicrunroot"
+		isRoot := lower == root
+		rootSeen = rootSeen || isRoot
 		if order, ok := sectionValueCaseInsensitive(section, "RunLogicActionOrder"); ok {
-			for _, name := range splitSourceActionNames(order) {
-				names[strings.ToLower(name)] = struct{}{}
+			for position, name := range splitSourceActionNames(order) {
+				if !isRoot {
+					position = -1
+				}
+				add(name, position)
 			}
 		}
 		if kind, _ := sectionValueCaseInsensitive(section, "RunLogicObjectKind"); strings.EqualFold(strings.TrimSpace(kind), "Action") {
-			if name, ok := sectionValueCaseInsensitive(section, "Name"); ok && strings.TrimSpace(name) != "" {
-				names[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
+			if name, ok := sectionValueCaseInsensitive(section, "Name"); ok {
+				add(name, -1)
 			}
 		}
 	}
-	return names, rootSeen && len(names) > 0
+	return names, rootSeen
 }
 
-// withoutUnscheduledRunActions drops run-phase action files the selected run
-// logic never runs. VuGen lists every action file in the .usr [Actions] block,
-// but only actions placed in the Run tree execute; importing the rest sent
-// requests LoadRunner never sends. Their functions stay parseable for calls
+// withoutUnscheduledRunActions applies the selected run logic to the run-phase
+// action files. VuGen lists every action file in the .usr [Actions] block, but
+// an action executes only where the run logic places it: in the Run tree, or
+// in the vuser_init or vuser_end section, where it runs once with that
+// lifecycle phase. Actions placed nowhere are dropped (importing them sent
+// requests LoadRunner never sends); their functions stay parseable for calls
 // from executed actions. Without a readable run logic every action is kept.
 func withoutUnscheduledRunActions(declarations []SourceActionFile, rc *RuntimeConfig, files map[string]string) ([]SourceActionFile, []SourceActionFile) {
 	if rc == nil || strings.TrimSpace(rc.selectedRunLogicFile) == "" {
@@ -940,30 +957,74 @@ func withoutUnscheduledRunActions(declarations []SourceActionFile, rc *RuntimeCo
 	if name == "" || len(ambiguous) > 0 {
 		return declarations, nil
 	}
-	scheduled, ok := runLogicRunActionNames(content)
-	if !ok {
+	sections := ParseConfigSections(content)
+	runs, ok := runLogicRootActions(sections, "RunLogicRunRoot")
+	if !ok || len(runs) == 0 {
 		return declarations, nil
 	}
+	inits, _ := runLogicRootActions(sections, "RunLogicInitRoot")
+	ends, _ := runLogicRootActions(sections, "RunLogicEndRoot")
 	kept := make([]SourceActionFile, 0, len(declarations))
 	var skipped []SourceActionFile
+	runKept := false
 	for _, declaration := range declarations {
 		if normalizeSourcePhase(declaration.Phase) != "action" {
 			kept = append(kept, declaration)
 			continue
 		}
-		if _, runs := scheduled[strings.ToLower(declaredSourceActionName(declaration))]; runs {
+		action := strings.ToLower(declaredSourceActionName(declaration))
+		if _, runs := runs[action]; runs {
+			kept = append(kept, declaration)
+			runKept = true
+			continue
+		}
+		if _, init := inits[action]; init {
+			declaration.Phase = "init"
+			kept = append(kept, declaration)
+			continue
+		}
+		if _, end := ends[action]; end {
+			declaration.Phase = "teardown"
 			kept = append(kept, declaration)
 			continue
 		}
 		skipped = append(skipped, declaration)
 	}
-	if len(skipped) > 0 && len(kept) == countNonRunDeclarations(declarations) {
-		// A run logic naming none of the declared actions is a mismatch, not
+	if !runKept && len(skipped) > 0 {
+		// A Run tree naming none of the declared actions is a mismatch, not
 		// a schedule; keep the declared order for review instead of importing
 		// nothing.
 		return declarations, nil
 	}
-	return kept, skipped
+	return orderLifecycleDeclarations(kept, inits, ends), skipped
+}
+
+// orderLifecycleDeclarations orders the init and teardown declarations the way
+// their run-logic sections list them, when every one of them is listed there;
+// otherwise the declared order stands.
+func orderLifecycleDeclarations(declarations []SourceActionFile, inits, ends map[string]int) []SourceActionFile {
+	groups := map[string][]SourceActionFile{}
+	for _, declaration := range declarations {
+		phase := normalizeSourcePhase(declaration.Phase)
+		groups[phase] = append(groups[phase], declaration)
+	}
+	sortGroup := func(group []SourceActionFile, order map[string]int) {
+		for _, declaration := range group {
+			if position, ok := order[strings.ToLower(declaredSourceActionName(declaration))]; !ok || position < 0 {
+				return
+			}
+		}
+		sort.SliceStable(group, func(i, j int) bool {
+			return order[strings.ToLower(declaredSourceActionName(group[i]))] < order[strings.ToLower(declaredSourceActionName(group[j]))]
+		})
+	}
+	sortGroup(groups["init"], inits)
+	sortGroup(groups["teardown"], ends)
+	ordered := make([]SourceActionFile, 0, len(declarations))
+	for _, phase := range []string{"init", "action", "teardown"} {
+		ordered = append(ordered, groups[phase]...)
+	}
+	return ordered
 }
 
 // declaredSourceActionName is a declaration's VuGen action name: its .usr [Actions]
@@ -973,14 +1034,4 @@ func declaredSourceActionName(declaration SourceActionFile) string {
 		return name
 	}
 	return strings.TrimSuffix(path.Base(declaration.Name), path.Ext(declaration.Name))
-}
-
-func countNonRunDeclarations(declarations []SourceActionFile) int {
-	count := 0
-	for _, declaration := range declarations {
-		if normalizeSourcePhase(declaration.Phase) != "action" {
-			count++
-		}
-	}
-	return count
 }

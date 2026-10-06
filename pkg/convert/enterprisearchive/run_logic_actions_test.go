@@ -82,3 +82,47 @@ RunLogicObjectKind="Action"
 		t.Fatalf("warnings = %#v, want no unscheduled-action warning", warnings)
 	}
 }
+
+// VuGen can place an action in the vuser_init or vuser_end section; it runs
+// once there, in that section's order, instead of being skipped.
+func TestConvertZipKeepsActionsPlacedInInitAndEndSections(t *testing.T) {
+	result, err := ConvertZip(runLogicArchive(t, `[Profile Actions]
+Profile Actions name=vuser_init,Optional,Action,vuser_end
+[RunLogicInitRoot]
+Name="Init"
+RunLogicActionOrder="Optional,vuser_init"
+RunLogicObjectKind="Group"
+[RunLogicInitRoot:Optional]
+Name="Optional"
+RunLogicObjectKind="Action"
+[RunLogicInitRoot:vuser_init]
+Name="vuser_init"
+RunLogicObjectKind="Action"
+[RunLogicRunRoot]
+Name="Run"
+RunLogicActionOrder="Action"
+RunLogicObjectKind="Group"
+[RunLogicRunRoot:Action]
+Name="Action"
+RunLogicObjectKind="Action"
+`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip: %v", err)
+	}
+	if got := strings.Join(flatTargets(result.Script.Init), " "); got != "/optional" {
+		t.Fatalf("init targets = %q, want the action placed in vuser_init", got)
+	}
+	if got := strings.Join(flatTargets(result.Script.Actions), " "); got != "/main" {
+		t.Fatalf("action targets = %q, want only the Run tree action", got)
+	}
+	if strings.Contains(strings.Join(result.Warnings, "\n"), "never runs") {
+		t.Fatalf("warnings = %#v, want no unscheduled-action warning", result.Warnings)
+	}
+	if got := orderLifecycleDeclarations([]SourceActionFile{
+		{Name: "vuser_init.c", Phase: "init", Function: "vuser_init"},
+		{Name: "Optional.c", Phase: "init", Function: "Optional"},
+		{Name: "Action.c", Phase: "action", Function: "Action"},
+	}, map[string]int{"optional": 0, "vuser_init": 1}, nil); got[0].Function != "Optional" || got[1].Function != "vuser_init" || got[2].Function != "Action" {
+		t.Fatalf("ordered = %+v, want the init section's order", got)
+	}
+}

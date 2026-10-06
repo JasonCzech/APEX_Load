@@ -392,6 +392,11 @@ func TestConvertFindAssertionHonorsTextFlags(t *testing.T) {
 	if !strings.Contains(strings.Join(result.Warnings, "\n"), "Text/BIN has no DSL equivalent") {
 		t.Fatalf("warnings = %#v, want the unsupported-flag warning", result.Warnings)
 	}
+	// A literal check of wildcard or binary text would fail where LoadRunner
+	// passes, so the unsupported flag imports no check at all.
+	if got := actions[2].Assertions; len(got) != 0 {
+		t.Fatalf("binary assertions = %+v, want none", got)
+	}
 }
 
 // lr_force_think_time waits whatever the think-time settings say.

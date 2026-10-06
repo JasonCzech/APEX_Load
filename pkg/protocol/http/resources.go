@@ -241,23 +241,18 @@ func (f *resourceFetcher) fetchPageResources(
 
 // filterResourceRefs resolves, dedupes, scheme-checks, filter-checks, and caps
 // a wave of refs. seen (may be nil) carries URLs already fetched this page.
-// capped reports that refs remained when the limit was reached.
+// capped reports that a fetchable ref remained when the limit was reached;
+// leftover duplicates and filtered refs do not count.
 func (f *resourceFetcher) filterResourceRefs(refs []resourceRef, pageURL *neturl.URL, limit int, seen map[string]struct{}) (filtered []resourceRef, capped bool) {
 	if len(refs) == 0 {
 		return nil, false
-	}
-	if limit <= 0 {
-		return nil, true
 	}
 	if seen == nil {
 		seen = make(map[string]struct{}, len(refs))
 	}
 	page := pageURL.String()
-	filtered = make([]resourceRef, 0, min(len(refs), limit))
+	filtered = make([]resourceRef, 0, max(0, min(len(refs), limit)))
 	for _, ref := range refs {
-		if len(filtered) >= limit {
-			return filtered, true
-		}
 		if ref.url == "" || ref.url == page {
 			continue
 		}
@@ -270,6 +265,9 @@ func (f *resourceFetcher) filterResourceRefs(refs []resourceRef, pageURL *neturl
 		}
 		if f.blockedByDownloadFilters(ref.url) {
 			continue
+		}
+		if len(filtered) >= limit {
+			return filtered, true
 		}
 		seen[ref.url] = struct{}{}
 		filtered = append(filtered, ref)

@@ -49,6 +49,10 @@ type ParsedFunction struct {
 	javaJDBCConnection                  *javaJDBCConnection
 	itemDataReviewReason                string
 	itemDataURLForm                     bool
+	// embeddedCall marks a call to a script-defined C function made inside
+	// an expression rather than as its own statement (see
+	// embeddedHelperCallKind). It runs only through helper inlining.
+	embeddedCall string
 }
 
 type ParsedCookie struct {
@@ -77,6 +81,10 @@ type ParsedAction struct {
 	// SplicedCommentLines are code lines a backslash-continued // comment
 	// swallows; they are reported, not imported.
 	SplicedCommentLines []CSplicedCommentLine
+	// embeddedCalls are calls made inside expressions (see
+	// embeddedHelperCallKind), in source order. Only helper inlining reads
+	// them.
+	embeddedCalls []ParsedFunction
 }
 
 // CSourceParseFailure is value-free evidence that a C lifecycle/action file

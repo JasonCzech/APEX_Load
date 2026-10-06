@@ -176,7 +176,7 @@ public final class lr {
         String trimmed = name.trim();
         if (PARAM_LEFT_BRACE_KEY.equals(trimmed) || PARAM_RIGHT_BRACE_KEY.equals(trimmed)) {
             String brace = value == null ? "" : value.trim();
-            if (!brace.isEmpty() && brace.length() <= 8) {
+            if (!brace.isEmpty() && brace.codePointCount(0, brace.length()) <= 8) {
                 if (PARAM_LEFT_BRACE_KEY.equals(trimmed)) {
                     paramLeftBrace = brace;
                 } else {
