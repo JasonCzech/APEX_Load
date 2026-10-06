@@ -17,7 +17,7 @@ func httpActionSpecs() []ActionSpec {
 		{Name: "body", Kind: FieldKindString, Doc: "Request body; template variables are expanded."},
 		{Name: "body_file", Kind: FieldKindString, Doc: "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there."},
 		{Name: "body_encoding", Kind: FieldKindString, Doc: "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail."},
-		{Name: "params.resources", Kind: FieldKindArray, Doc: "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification."},
+		{Name: "params.resources", Kind: FieldKindArray, Doc: "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification."},
 		{Name: "params", Kind: FieldKindObject, Doc: "Protocol-specific request options."},
 		{Name: "soap", Kind: FieldKindObject, Doc: "SOAP-only: {action, operation, body_mode (raw_xml|generated)}."},
 	}

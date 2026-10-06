@@ -458,6 +458,9 @@ func TestHTTPExecuteResourceCapPerPage(t *testing.T) {
 	if hits := atomic.LoadInt32(&resourceHits); int(hits) != maxPageResources {
 		t.Fatalf("server hits = %d, want %d", hits, maxPageResources)
 	}
+	if result.ProtocolEvidence["resource_cap_reached"] != true {
+		t.Fatalf("evidence = %+v, want resource_cap_reached", result.ProtocolEvidence)
+	}
 }
 
 func TestHTTPExecuteResourcesFeedCacheAcrossPages(t *testing.T) {
