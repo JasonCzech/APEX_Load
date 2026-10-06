@@ -875,7 +875,8 @@ Exit codes are designed so a non-zero exit fails the build with no extra scripti
 | `2` | Usage or configuration error: bad flags or arguments, an unwritable `--junit` path, or (for `ci run`) a configuration error |
 | `3` | Controller or transport failure: the controller was unreachable or returned an error, `status` could not fetch results, or `wait` timed out before a terminal state |
 
-`apexctl ci run` maps its outcome the same way: passed is `0`, SLA breach is `1`,
+`apexctl ci run` maps its outcome the same way: passed is `0`, SLA breach or a run the
+project's [validity gate](CICD_INTEGRATION.md#run-validity-gate) fails (`run_invalid`) is `1`,
 configuration error is `2`, and any other outcome (execution, timeout, cancellation)
 is `3`. A controller-backed `run --api` that hits an observation error is `3`.
 

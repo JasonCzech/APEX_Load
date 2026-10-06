@@ -6947,6 +6947,12 @@ export interface operations {
             "test_id": string;
             "tps": number;
             "transactions": number;
+            "validity"?: ({
+              "enforced": boolean;
+              "gate"?: string;
+              "reasons"?: Array<string>;
+              "verdict": string;
+            }) | null;
           };
         };
       };
@@ -27805,6 +27811,12 @@ export interface operations {
             "test_id": string;
             "tps": number;
             "transactions": number;
+            "validity"?: ({
+              "enforced": boolean;
+              "gate"?: string;
+              "reasons"?: Array<string>;
+              "verdict": string;
+            }) | null;
           };
         };
       };
@@ -29827,6 +29839,7 @@ export interface operations {
                 "server_url"?: string;
                 "updated_at"?: string;
                 "updated_by"?: string;
+                "validity_gate"?: string;
               };
               "allow_direct_commit"?: boolean;
               "allow_import"?: boolean;
@@ -52871,6 +52884,12 @@ export interface operations {
             "test_id": string;
             "tps": number;
             "transactions": number;
+            "validity"?: ({
+              "enforced": boolean;
+              "gate"?: string;
+              "reasons"?: Array<string>;
+              "verdict": string;
+            }) | null;
           };
         };
       };
@@ -55098,6 +55117,7 @@ export interface operations {
               "server_url"?: string;
               "updated_at"?: string;
               "updated_by"?: string;
+              "validity_gate"?: string;
             };
             "allow_direct_commit"?: boolean;
             "allow_import"?: boolean;
@@ -134650,6 +134670,7 @@ export interface operations {
                 "server_url"?: string;
                 "updated_at"?: string;
                 "updated_by"?: string;
+                "validity_gate"?: string;
               };
               "allow_direct_commit"?: boolean;
               "allow_import"?: boolean;
@@ -134769,6 +134790,7 @@ export interface operations {
             "server_url"?: string;
             "updated_at"?: string;
             "updated_by"?: string;
+            "validity_gate"?: string;
           };
           "allow_direct_commit"?: boolean;
           "allow_import"?: boolean;

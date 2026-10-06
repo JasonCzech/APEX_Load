@@ -292,6 +292,10 @@ intervals that were not valid and any limitations.
 - **Root-cause summary.** The verdict replaces the peak generator-CPU rule:
   `suspect` is a warning resource finding, `invalid` a critical one, and every
   verdict appears as the `Run validity` signal.
+- **CI.** A CI run reports the verdict as `validity`. It stays advisory unless
+  the project's Actions policy sets `validity_gate` to `invalid` or `suspect`;
+  a run the gate fails is `run_invalid` (see
+  [Run validity gate](CICD_INTEGRATION.md#run-validity-gate)).
 
 Archived intervals are about one second long, so three consecutive intervals
 is a short window; the evaluation corpus (WP3.9) recalibrates the rules under a

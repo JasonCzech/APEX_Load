@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/rca"
 )
 
 func rootCauseSignal(t *testing.T, summary RunRootCauseSummary, name string) RootCauseSignal {

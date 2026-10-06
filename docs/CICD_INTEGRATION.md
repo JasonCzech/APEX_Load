@@ -11,7 +11,7 @@ surface the result in its native test UI.
 
 | Command | Exit 0 | Exit 1 | Exit 2+ |
 | --- | --- | --- | --- |
-| `apexctl ci run` | passed | SLA breach | configuration, execution, timeout, or cancellation (see JSON `outcome`) |
+| `apexctl ci run` | passed | SLA breach, or a run the project's validity gate fails (`run_invalid`) | configuration, execution, timeout, or cancellation (see JSON `outcome`) |
 | `apexctl run` | test ran, no SLA breach | execution error **or** SLA breach | — |
 | `apexctl status` | not breached, not failed | SLA breached, or test FAILED/ABORTED | bad args / fetch error |
 | `apexctl wait` | terminal COMPLETE, not breached | breach, FAILED/ABORTED, or timeout | bad args |
@@ -472,6 +472,37 @@ a CI run is accepted, and the resolved host must match the project allowlist.
 Keep the same project-scoped binding available to the controller and every load
 generator; the resolved value is used only for preflight/runtime enforcement
 and is not written into the stored CI metadata or returned in API responses.
+
+#### Run validity gate
+
+Every completed CI run reports the run's validity verdict (see
+[Run validity](ANALYSIS_WORKFLOWS.md#run-validity)) as `validity` in the run
+response and in `apexctl ci run`'s JSON result, and as `Run validity` in the
+Check and the job summary. It is advisory unless the project opts in with the
+Actions policy's `validity_gate`:
+
+| `validity_gate` | Fails the run when validity is |
+| --- | --- |
+| empty (default) | never; validity is advisory |
+| `invalid` | `invalid` |
+| `suspect` | `invalid` or `suspect` |
+
+A failed gate makes the outcome `run_invalid` (exit `1`, Check `failure`) even
+when the SLA was breached or required monitoring was incomplete, because an
+invalid measurement cannot judge the system under test. `validity.enforced` is
+then `true` and `error` names the verdict and its rules. An `unknown` verdict,
+such as a run with no archived intervals, never fails the gate, and a failed or
+cancelled run keeps its own outcome. If the controller cannot build the run's
+report to judge it, a gated run that would otherwise pass is an
+`execution_error` (exit `3`) rather than a pass.
+
+System administrators set the gate with the project policy update
+(`PUT /api/v1/projects/{id}/github/policy`). Changing it is a new policy
+revision: each CI run keeps the gate it was accepted under, so an idempotent
+retry is unaffected, but as with any Actions policy change, CI runs still
+queued for capacity fail at promotion. Use an `apexctl` that knows
+`run_invalid` before enabling the gate; an older one rejects the outcome as an
+invalid controller response and exits `3`.
 
 Controller-backed CI currently rejects the `browser` protocol. Browser routing
 hooks cannot enforce the target-host boundary across every Chromium redirect

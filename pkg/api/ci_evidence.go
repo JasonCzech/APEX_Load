@@ -21,6 +21,10 @@ const ciTerminalEvidenceFailureReason = "durable terminal evidence is unavailabl
 type ciValidatedArchiveEvidence struct {
 	Manifest     *RunArchiveManifest
 	FinalSummary *IntervalSummaryRecord
+	// Validity is the run's validity verdict, nil when no report could be
+	// built over the archive, which ValidityUnavailable then says.
+	Validity            *ciRunValidity
+	ValidityUnavailable bool
 }
 
 func (s *Server) validatedCIRunArchiveEvidence(ctx context.Context, test *ManagedTest) (*ciValidatedArchiveEvidence, error) {
@@ -109,7 +113,24 @@ func (s *Server) validatedCIRunArchiveEvidence(ctx context.Context, test *Manage
 	if err != nil {
 		return nil, fmt.Errorf("load durable archive terminal metrics: %w", err)
 	}
-	return &ciValidatedArchiveEvidence{Manifest: manifest, FinalSummary: finalSummary}, nil
+	validity, validityErr := cachedRunArchiveValidity(record)
+	return &ciValidatedArchiveEvidence{Manifest: manifest, FinalSummary: finalSummary, Validity: validity, ValidityUnavailable: validityErr != nil}, nil
+}
+
+// cachedRunArchiveValidity is the validity verdict of the report built over
+// an archive, whose cache key includes the manifest digest. It reads the
+// shared cached report without cloning all of it.
+func cachedRunArchiveValidity(record *storage.RunArchiveRecord) (*ciRunValidity, error) {
+	report, err := runArchiveReportCache.getOrLoad(runArchiveReportCacheKey(record), func() (*RunArchiveReport, error) {
+		return buildRunArchiveReport(record)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if report == nil || report.Validity == nil {
+		return nil, errors.New("the archive report has no validity verdict")
+	}
+	return &ciRunValidity{Verdict: report.Validity.Verdict, Reasons: append([]string{}, report.Validity.Reasons...)}, nil
 }
 
 func loadCIFinalIntervalSummary(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (*IntervalSummaryRecord, error) {
@@ -164,6 +185,12 @@ func mergeCIRunArchiveEvidence(response *ciRunResponse, evidence *ciValidatedArc
 	response.SLAEvaluated = response.SLAEvaluated || manifest.SLAEvaluated
 	response.SLABreached = response.SLABreached || manifest.SLABreached
 	response.SLADetails = compactNonEmptyStrings(append(response.SLADetails, manifest.SLADetails...)...)
+	response.validityUnavailable = evidence.ValidityUnavailable
+	if evidence.Validity != nil {
+		validity := *evidence.Validity
+		validity.Reasons = append([]string{}, validity.Reasons...)
+		response.Validity = &validity
+	}
 }
 
 func applyCITerminalEvidence(response *ciRunResponse, evidence *ciValidatedArchiveEvidence, evidenceErr error) {

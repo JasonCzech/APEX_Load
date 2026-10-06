@@ -439,6 +439,8 @@ export interface GitHubActionsPolicy {
   revision?: number
   updated_at?: string
   updated_by?: string
+  /** Fails CI runs whose validity is "invalid", or with "suspect" also suspect runs; empty is advisory. */
+  validity_gate?: '' | 'invalid' | 'suspect'
 }
 
 export interface Application {

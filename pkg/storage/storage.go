@@ -554,6 +554,12 @@ type GitHubActionsPolicy struct {
 	Revision                  int64     `json:"revision,omitempty"`
 	UpdatedAt                 time.Time `json:"updated_at,omitempty"`
 	UpdatedBy                 string    `json:"updated_by,omitempty"`
+
+	// ValidityGate fails a CI run whose run validity is "invalid", or with
+	// "suspect" also one that is suspect. Empty keeps validity advisory, as
+	// for every project that has not opted in. Changing it is a new policy
+	// revision; each CI run keeps the gate it was accepted under.
+	ValidityGate string `json:"validity_gate,omitempty"`
 }
 
 type GitHubAppInstallation struct {

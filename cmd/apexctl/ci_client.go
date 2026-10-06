@@ -125,6 +125,29 @@ type CIRunResponse struct {
 	// Metrics accepts early v1 controller builds that nested the same fields.
 	Metrics CIMetrics `json:"metrics,omitempty"`
 	Error   string    `json:"error,omitempty"`
+
+	// Validity is the run's validity verdict and the project's CI validity
+	// gate; controllers before the gate omit it.
+	Validity *CIRunValidity `json:"validity,omitempty"`
+}
+
+// CIRunValidity is a run's validity verdict ("valid", "suspect", "invalid"
+// or "unknown"), the project's CI validity gate when the run was accepted
+// (empty when advisory), and whether the gate failed the run.
+type CIRunValidity struct {
+	Verdict  string   `json:"verdict"`
+	Reasons  []string `json:"reasons,omitempty"`
+	Gate     string   `json:"gate,omitempty"`
+	Enforced bool     `json:"enforced"`
+}
+
+func (v *CIRunValidity) clone() *CIRunValidity {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	out.Reasons = append([]string(nil), v.Reasons...)
+	return &out
 }
 
 type CIAbortResponse struct {
@@ -238,14 +261,14 @@ func validateCIRunAPIResponse(response *CIRunResponse, expectedTestID string) er
 	}
 	outcome := strings.ToLower(strings.TrimSpace(response.Outcome))
 	switch outcome {
-	case "", "queued", "running", "monitoring_pending", ciOutcomeMonitoringIncomplete, ciOutcomeInconclusive, ciOutcomePassed, ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled:
+	case "", "queued", "running", "monitoring_pending", ciOutcomeMonitoringIncomplete, ciOutcomeInconclusive, ciOutcomePassed, ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled, ciOutcomeRunInvalid:
 	default:
 		return fmt.Errorf("outcome is unsupported")
 	}
 	terminal := status == "COMPLETE" || status == "FAILED" || status == "ABORTED"
 	if terminal {
 		valid := outcome == "monitoring_pending" ||
-			(status == "COMPLETE" && (outcome == ciOutcomeMonitoringIncomplete || outcome == ciOutcomeInconclusive || outcome == ciOutcomePassed || outcome == ciOutcomeSLABreached || outcome == ciOutcomeExecutionError)) ||
+			(status == "COMPLETE" && (outcome == ciOutcomeMonitoringIncomplete || outcome == ciOutcomeInconclusive || outcome == ciOutcomePassed || outcome == ciOutcomeSLABreached || outcome == ciOutcomeExecutionError || outcome == ciOutcomeRunInvalid)) ||
 			(status == "FAILED" && outcome == ciOutcomeExecutionError) ||
 			(status == "ABORTED" && (outcome == ciOutcomeCancelled || outcome == ciOutcomeTimedOut))
 		if !valid {

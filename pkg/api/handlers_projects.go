@@ -428,6 +428,11 @@ func validateGitHubActionsPolicy(policy storage.GitHubActionsPolicy) error {
 	if _, ok := checkedDuration(policy.MaxDurationMinutes, time.Minute); !ok {
 		return errProjectSettings("github.actions.max_duration_minutes is too large")
 	}
+	switch policy.ValidityGate {
+	case "", ciValidityGateInvalid, ciValidityGateSuspect:
+	default:
+		return errProjectSettings(`github.actions.validity_gate must be empty, "invalid" or "suspect"`)
+	}
 	if !policy.Enabled {
 		return nil
 	}

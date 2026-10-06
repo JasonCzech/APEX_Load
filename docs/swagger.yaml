@@ -37834,6 +37834,23 @@ paths:
                   transactions:
                     type: integer
                     format: int64
+                  validity:
+                    type: object
+                    properties:
+                      enforced:
+                        type: boolean
+                      gate:
+                        type: string
+                      reasons:
+                        type: array
+                        items:
+                          type: string
+                      verdict:
+                        type: string
+                    required:
+                      - enforced
+                      - verdict
+                    nullable: true
                 required:
                   - duration_ms
                   - errors
@@ -38056,6 +38073,23 @@ paths:
                   transactions:
                     type: integer
                     format: int64
+                  validity:
+                    type: object
+                    properties:
+                      enforced:
+                        type: boolean
+                      gate:
+                        type: string
+                      reasons:
+                        type: array
+                        items:
+                          type: string
+                      verdict:
+                        type: string
+                    required:
+                      - enforced
+                      - verdict
+                    nullable: true
                 required:
                   - duration_ms
                   - errors
@@ -38249,6 +38283,23 @@ paths:
                   transactions:
                     type: integer
                     format: int64
+                  validity:
+                    type: object
+                    properties:
+                      enforced:
+                        type: boolean
+                      gate:
+                        type: string
+                      reasons:
+                        type: array
+                        items:
+                          type: string
+                      verdict:
+                        type: string
+                    required:
+                      - enforced
+                      - verdict
+                    nullable: true
                 required:
                   - duration_ms
                   - errors
@@ -57173,6 +57224,8 @@ paths:
                               format: date-time
                             updated_by:
                               type: string
+                            validity_gate:
+                              type: string
                         allow_direct_commit:
                           type: boolean
                         allow_import:
@@ -57501,6 +57554,8 @@ paths:
                               type: string
                               format: date-time
                             updated_by:
+                              type: string
+                            validity_gate:
                               type: string
                         allow_direct_commit:
                           type: boolean
@@ -58073,6 +58128,8 @@ paths:
                         format: date-time
                       updated_by:
                         type: string
+                      validity_gate:
+                        type: string
                   allow_direct_commit:
                     type: boolean
                   allow_import:
@@ -58207,6 +58264,8 @@ paths:
                       type: string
                       format: date-time
                     updated_by:
+                      type: string
+                    validity_gate:
                       type: string
                 allow_direct_commit:
                   type: boolean

@@ -2185,6 +2185,7 @@ describe('SettingsPage', () => {
       revision: 7,
       updated_at: '2026-05-14T00:00:00Z',
       updated_by: 'security-admin',
+      validity_gate: 'suspect',
     }
     const storedGitHubPolicy: Required<GitHubProjectPolicy> = {
       enabled: true,

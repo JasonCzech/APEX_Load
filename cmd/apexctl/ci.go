@@ -47,6 +47,9 @@ const (
 	ciOutcomeCancelled            = "cancelled"
 	ciOutcomeInconclusive         = "inconclusive"
 	ciOutcomeMonitoringIncomplete = "monitoring_incomplete"
+	// ciOutcomeRunInvalid is a run whose validity the project's CI validity
+	// gate fails: the measurement cannot judge the system under test.
+	ciOutcomeRunInvalid = "run_invalid"
 )
 
 var (
@@ -432,6 +435,10 @@ type CIResult struct {
 	ReportURL          string                       `json:"report_url,omitempty"`
 	CheckURL           string                       `json:"check_url,omitempty"`
 	Message            string                       `json:"message,omitempty"`
+
+	// Validity is the controller's run validity verdict and the project's
+	// CI validity gate.
+	Validity *CIRunValidity `json:"validity,omitempty"`
 }
 
 func ciCmd() {
@@ -1607,6 +1614,7 @@ func ciResultFromResponse(response *CIRunResponse) CIResult {
 		SLAEvaluated: response.SLAEvaluated, SLABreached: response.SLABreached, SLADetails: append([]string(nil), response.SLADetails...),
 		Transactions: transactions, Errors: errorsCount, TPS: tps,
 		DurationMS: durationMS, ReportURL: response.ReportURL, CheckURL: response.CheckURL, Message: response.Error,
+		Validity: response.Validity.clone(),
 	}
 }
 
@@ -1617,7 +1625,7 @@ func isTerminalCIResponse(response *CIRunResponse) bool {
 	if response.Outcome == "monitoring_pending" {
 		return false
 	}
-	if containsCIString([]string{ciOutcomePassed, ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled, ciOutcomeInconclusive, ciOutcomeMonitoringIncomplete}, response.Outcome) {
+	if containsCIString([]string{ciOutcomePassed, ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled, ciOutcomeInconclusive, ciOutcomeMonitoringIncomplete, ciOutcomeRunInvalid}, response.Outcome) {
 		return true
 	}
 	switch strings.ToUpper(response.Status) {
@@ -1632,7 +1640,7 @@ func classifyCIResult(result *CIResult) {
 	if result == nil {
 		return
 	}
-	if containsCIString([]string{ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled, ciOutcomeInconclusive, ciOutcomeMonitoringIncomplete}, result.Outcome) {
+	if containsCIString([]string{ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled, ciOutcomeInconclusive, ciOutcomeMonitoringIncomplete, ciOutcomeRunInvalid}, result.Outcome) {
 		return
 	}
 	if result.SLABreached {
@@ -1817,6 +1825,9 @@ func writeCISummary(path string, result CIResult) error {
 	}
 	text := fmt.Sprintf("## APEX Load performance gate\n\n%s\n\n| Metric | Value |\n|---|---:|\n| Status | %s |\n| Transactions | %d |\n| Errors | %d |\n| TPS | %.2f |\n| Duration | %d ms |\n| SLA evaluated | %t |\n| SLA breached | %t |\n",
 		status, markdownCell(result.Status), result.Transactions, result.Errors, result.TPS, result.DurationMS, result.SLAEvaluated, result.SLABreached)
+	if validity := result.Validity; validity != nil {
+		text += fmt.Sprintf("| Run validity | %s |\n| Validity gate | %s |\n", markdownCell(validity.Verdict), markdownCell(firstNonEmptyCLI(validity.Gate, "advisory")))
+	}
 	if result.ReportURL != "" {
 		reportURL := strings.ReplaceAll(strings.ReplaceAll(result.ReportURL, "\r", ""), "\n", "")
 		text += "\n[Open APEX Load report](" + strings.ReplaceAll(reportURL, ")", "%29") + ")\n"
@@ -1899,7 +1910,7 @@ func ciExitCode(outcome string) int {
 	switch strings.ToLower(strings.TrimSpace(outcome)) {
 	case ciOutcomePassed:
 		return exitCodeSuccess
-	case ciOutcomeSLABreached:
+	case ciOutcomeSLABreached, ciOutcomeRunInvalid:
 		return exitCodeTestFailure
 	case ciOutcomeConfigurationError:
 		return exitCodeUsageOrConfiguration

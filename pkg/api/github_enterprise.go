@@ -232,6 +232,7 @@ func normalizeGitHubProjectPolicy(policy storage.GitHubProjectPolicy) storage.Gi
 	out.Actions.AllowedWorkflowRefs = normalizeStringSet(out.Actions.AllowedWorkflowRefs, false)
 	out.Actions.AllowedEnvironments = normalizeStringSet(out.Actions.AllowedEnvironments, false)
 	out.Actions.RequiredRunnerEnvironment = strings.ToLower(strings.TrimSpace(out.Actions.RequiredRunnerEnvironment))
+	out.Actions.ValidityGate = strings.ToLower(strings.TrimSpace(out.Actions.ValidityGate))
 	out.Actions.AllowedProtocols = normalizeStringSet(out.Actions.AllowedProtocols, true)
 	out.Actions.AllowedTargetHosts = normalizeStringSet(out.Actions.AllowedTargetHosts, true)
 	out.Actions.UpdatedBy = strings.TrimSpace(out.Actions.UpdatedBy)

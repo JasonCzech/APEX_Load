@@ -3,6 +3,9 @@ package main
 import (
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -104,5 +107,46 @@ func TestCIExitCodeContract(t *testing.T) {
 				t.Fatalf("ciResultExitCode(%#v) = %d, want %d", test.result, got, test.want)
 			}
 		})
+	}
+}
+
+func TestCIRunInvalidOutcomeFailsTheGate(t *testing.T) {
+	response := &CIRunResponse{
+		SchemaVersion: 1, TestID: "run", Status: "COMPLETE", Outcome: ciOutcomeRunInvalid, Error: "Run validity is invalid",
+		Validity: &CIRunValidity{Verdict: "invalid", Reasons: []string{"dropped_results"}, Gate: "invalid", Enforced: true},
+	}
+	if err := validateCIRunAPIResponse(response, "run"); err != nil {
+		t.Fatal(err)
+	}
+	if !isTerminalCIResponse(response) {
+		t.Fatal("run_invalid is not terminal")
+	}
+	result := ciResultFromResponse(response)
+	classifyCIResult(&result)
+	if result.Outcome != ciOutcomeRunInvalid || ciResultExitCode(result) != exitCodeTestFailure {
+		t.Fatalf("run_invalid result = %+v, exit %d", result, ciResultExitCode(result))
+	}
+	response.Validity.Reasons[0] = "mutated"
+	if result.Validity == nil || !result.Validity.Enforced || result.Validity.Reasons[0] != "dropped_results" {
+		t.Fatalf("result validity = %+v", result.Validity)
+	}
+	response.Status = "FAILED"
+	if err := validateCIRunAPIResponse(response, "run"); err == nil {
+		t.Fatal("a failed run cannot be run_invalid")
+	}
+}
+
+func TestCISummaryShowsRunValidity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "summary.md")
+	result := CIResult{Outcome: ciOutcomeRunInvalid, Status: "COMPLETE", Validity: &CIRunValidity{Verdict: "invalid", Gate: "suspect", Enforced: true}}
+	if err := writeCISummary(path, result); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := string(data); !strings.Contains(text, "| Run validity | invalid |") || !strings.Contains(text, "| Validity gate | suspect |") || !strings.Contains(text, "❌ run_invalid") {
+		t.Fatalf("summary omits validity:\n%s", text)
 	}
 }

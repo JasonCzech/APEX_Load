@@ -20,7 +20,7 @@ const maxRCANarrativeBytes = 32 << 10
 
 // Narration issue kinds.
 const (
-	narrationUnknownReference = "unknown_reference"
+	narrationUnknownReference  = "unknown_reference"
 	narrationUnsupportedNumber = "unsupported_number"
 	narrationUnsupportedTime   = "unsupported_time"
 )

@@ -22,6 +22,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -130,6 +131,10 @@ type ciRunMetadata struct {
 	PolicyRevision          int64                     `json:"policy_revision"`
 	IdempotencySHA          string                    `json:"idempotency_sha256"`
 	DeploymentLeaseTokenSHA string                    `json:"deployment_lease_token_sha256,omitempty"`
+
+	// ValidityGate is the project's CI validity gate when the run was
+	// accepted.
+	ValidityGate string `json:"validity_gate,omitempty"`
 }
 
 type ciRunResponse struct {
@@ -155,6 +160,10 @@ type ciRunResponse struct {
 
 	terminalEvidenceChecked  bool `json:"-"`
 	terminalEvidenceVerified bool `json:"-"`
+	validityUnavailable      bool `json:"-"`
+
+	// Validity is the run's validity verdict and the gate it was judged by.
+	Validity *ciRunValidity `json:"validity,omitempty"`
 }
 
 type ciAbortRequest struct {
@@ -245,7 +254,7 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 	if deploymentLeaseToken != "" {
 		deploymentLeaseTokenSHA = deploymentLeaseTokenHash(deploymentLeaseToken)
 	}
-	metadata := ciRunMetadata{MonitorBindings: req.MonitorBindings, SchemaVersion: ciRunSchemaVersion, Source: req.Source, Name: strings.TrimSpace(req.Name), ReleaseID: strings.TrimSpace(req.ReleaseID), ScriptPath: firstNonEmpty(req.ScriptPath, req.Source.ScriptPath), ScriptIdentity: scriptIdentity, Execution: req.Execution, Goals: req.Goals, RequireSLA: req.Goals.RequireSLA, RequireResults: req.Goals.RequireResults, PublishCheck: req.shouldPublishCheck(), CheckInstallationID: githubPolicy.AppInstallationID, PolicyRevision: policy.Revision, IdempotencySHA: sha256String(idempotencyKey), DeploymentLeaseTokenSHA: deploymentLeaseTokenSHA}
+	metadata := ciRunMetadata{MonitorBindings: req.MonitorBindings, SchemaVersion: ciRunSchemaVersion, Source: req.Source, Name: strings.TrimSpace(req.Name), ReleaseID: strings.TrimSpace(req.ReleaseID), ScriptPath: firstNonEmpty(req.ScriptPath, req.Source.ScriptPath), ScriptIdentity: scriptIdentity, Execution: req.Execution, Goals: req.Goals, RequireSLA: req.Goals.RequireSLA, RequireResults: req.Goals.RequireResults, PublishCheck: req.shouldPublishCheck(), CheckInstallationID: githubPolicy.AppInstallationID, PolicyRevision: policy.Revision, ValidityGate: policy.ValidityGate, IdempotencySHA: sha256String(idempotencyKey), DeploymentLeaseTokenSHA: deploymentLeaseTokenSHA}
 	existing, existingOK := s.runner.GetTest(testID)
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	runActor := testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
@@ -1948,6 +1957,7 @@ func validateExistingCIRun(test *ManagedTest, projectID string, expected ciRunMe
 	// legitimately change before an exact client retry and are not part of the
 	// caller's idempotency identity.
 	actual.PolicyRevision, expected.PolicyRevision = 0, 0
+	actual.ValidityGate, expected.ValidityGate = "", ""
 	actual.CheckInstallationID, expected.CheckInstallationID = 0, 0
 	actualJSON, actualErr := json.Marshal(actual)
 	expectedJSON, expectedErr := json.Marshal(expected)
@@ -2004,13 +2014,7 @@ func (s *Server) buildCIRunResponse(ctx context.Context, test *ManagedTest) (ciR
 	response.SLADetails = sanitizeCIExternalDetails(response.SLADetails)
 	response.ResultsPresent = response.Transactions > 0
 	if response.Outcome != "monitoring_pending" && (!strings.EqualFold(response.Status, "COMPLETE") || response.terminalEvidenceVerified) {
-		response.Outcome = ciRunOutcome(response.Status, response.SLABreached, response.SLAEvaluated, response.ResultsPresent, metadata, response.Error)
-		if strings.EqualFold(response.Status, "COMPLETE") && response.MonitoringIncomplete && !response.SLABreached {
-			response.Outcome = "monitoring_incomplete"
-			if response.Error == "" {
-				response.Error = "Required monitoring evidence or configured monitoring criteria were incomplete"
-			}
-		}
+		finalizeCIRunOutcome(&response, metadata)
 	}
 	checkURL, syncErr := s.syncCIGitHubCheck(ctx, test, metadata, response)
 	response.CheckURL = checkURL
@@ -2040,6 +2044,76 @@ func sanitizeCIExternalDetails(details []string) []string {
 		sanitized = append(sanitized, fmt.Sprintf("%d additional SLA details were truncated", len(details)-limit))
 	}
 	return sanitized
+}
+
+// ciRunValidity is a CI run's validity verdict and the gate it was judged
+// by.
+type ciRunValidity struct {
+	Verdict string   `json:"verdict"`
+	Reasons []string `json:"reasons,omitempty"`
+	// Gate is the project's validity gate when the run was accepted: empty
+	// (advisory), "invalid" or "suspect".
+	Gate string `json:"gate,omitempty"`
+	// Enforced says the verdict failed the run under the gate.
+	Enforced bool `json:"enforced"`
+}
+
+// Validity gates.
+const (
+	ciValidityGateInvalid = "invalid"
+	ciValidityGateSuspect = "suspect"
+
+	ciValidityUnavailableReason = "the run validity verdict is unavailable, so the project's CI validity gate cannot pass the run"
+)
+
+// ciValidityGateFails says whether a gate fails a verdict. An unknown verdict
+// never fails: the gate judges evidence, not its absence.
+func ciValidityGateFails(gate, verdict string) bool {
+	switch gate {
+	case ciValidityGateInvalid:
+		return verdict == rca.ValidityInvalid
+	case ciValidityGateSuspect:
+		return verdict == rca.ValidityInvalid || verdict == rca.ValiditySuspect
+	}
+	return false
+}
+
+// finalizeCIRunOutcome sets a terminal run's outcome: its status and SLA,
+// then incomplete required monitoring, then the project's validity gate. A
+// run the gate fails is run_invalid even when its SLA was breached, since an
+// invalid measurement cannot judge the system.
+func finalizeCIRunOutcome(response *ciRunResponse, metadata ciRunMetadata) {
+	response.Outcome = ciRunOutcome(response.Status, response.SLABreached, response.SLAEvaluated, response.ResultsPresent, metadata, response.Error)
+	if strings.EqualFold(response.Status, "COMPLETE") && response.MonitoringIncomplete && !response.SLABreached {
+		response.Outcome = "monitoring_incomplete"
+		if response.Error == "" {
+			response.Error = "Required monitoring evidence or configured monitoring criteria were incomplete"
+		}
+	}
+	if response.Validity == nil {
+		// A gate never passes a run it could not judge because the report
+		// failed; that is the controller's failure, not the run's.
+		if response.validityUnavailable && metadata.ValidityGate != "" && response.Outcome == "passed" {
+			response.Outcome = "execution_error"
+			response.Error = ciValidityUnavailableReason
+		}
+		return
+	}
+	response.Validity.Gate = metadata.ValidityGate
+	switch response.Outcome {
+	case "passed", "sla_breached", "monitoring_incomplete":
+	default:
+		return
+	}
+	if !ciValidityGateFails(metadata.ValidityGate, response.Validity.Verdict) {
+		return
+	}
+	response.Validity.Enforced = true
+	response.Outcome = "run_invalid"
+	response.Error = fmt.Sprintf("Run validity is %s, which the project's CI validity gate (%s) fails", response.Validity.Verdict, metadata.ValidityGate)
+	if len(response.Validity.Reasons) > 0 {
+		response.Error += ": " + strings.Join(response.Validity.Reasons, "; ")
+	}
 }
 
 func ciRunOutcome(status string, breached, slaEvaluated, resultsPresent bool, metadata ciRunMetadata, testError string) string {

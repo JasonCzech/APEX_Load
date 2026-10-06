@@ -660,13 +660,7 @@ func (s *Server) syncCIGitHubCheck(ctx context.Context, test *ManagedTest, metad
 			response.Error = ciTerminalEvidenceFailureReason
 			response.Outcome = "execution_error"
 		} else {
-			response.Outcome = ciRunOutcome(response.Status, response.SLABreached, response.SLAEvaluated, response.ResultsPresent, metadata, response.Error)
-			if strings.EqualFold(response.Status, "COMPLETE") && response.MonitoringIncomplete && !response.SLABreached {
-				response.Outcome = "monitoring_incomplete"
-				if response.Error == "" {
-					response.Error = "Required monitoring evidence or configured monitoring criteria were incomplete"
-				}
-			}
+			finalizeCIRunOutcome(&response, metadata)
 		}
 	}
 	store, ok := s.githubEnterpriseStore()
@@ -770,11 +764,16 @@ func ciGitHubCheckSummary(test *ManagedTest, response ciRunResponse, metadata ci
 		fmt.Sprintf("| Duration | %d ms |", response.DurationMs),
 		fmt.Sprintf("| SLA evaluated | %t |", response.SLAEvaluated),
 		fmt.Sprintf("| SLA breached | %t |", response.SLABreached),
-		"",
-		"Source: `" + metadata.Source.Repository + "@" + metadata.Source.SHA + "`  ",
-		"Workflow: `" + firstNonEmpty(metadata.Source.JobWorkflowRef, metadata.Source.WorkflowRef) + "`  ",
-		"GitHub run: `" + metadata.Source.RunID + "/" + metadata.Source.RunAttempt + "`",
 	}
+	if validity := response.Validity; validity != nil {
+		lines = append(lines, "| Run validity | `"+validity.Verdict+"` |", "| Validity gate | `"+firstNonEmpty(validity.Gate, "advisory")+"` |")
+	}
+	lines = append(lines,
+		"",
+		"Source: `"+metadata.Source.Repository+"@"+metadata.Source.SHA+"`  ",
+		"Workflow: `"+firstNonEmpty(metadata.Source.JobWorkflowRef, metadata.Source.WorkflowRef)+"`  ",
+		"GitHub run: `"+metadata.Source.RunID+"/"+metadata.Source.RunAttempt+"`",
+	)
 	if metadata.Source.JobWorkflowRef != "" && metadata.Source.WorkflowRef != "" && metadata.Source.JobWorkflowRef != metadata.Source.WorkflowRef {
 		lines = append(lines, "Caller workflow: `"+metadata.Source.WorkflowRef+"`")
 	}
@@ -803,8 +802,11 @@ func ciGitHubCheckSummary(test *ManagedTest, response ciRunResponse, metadata ci
 	responseError = sanitizeCIExternalText(responseError, ciExternalErrorMaxBytes)
 	if responseError != "" {
 		label := "Execution error: "
-		if response.Outcome == "monitoring_incomplete" {
+		switch response.Outcome {
+		case "monitoring_incomplete":
 			label = "Evidence explanation: "
+		case "run_invalid":
+			label = "Validity gate: "
 		}
 		lines = append(lines, "", label+responseError)
 	}
