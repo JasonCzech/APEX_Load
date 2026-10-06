@@ -40,6 +40,12 @@ var analysisAPIRouteCatalog = apiRouteCatalog{Domain: "analysis", Routes: []apiR
 	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/business-key-mappings/{id}", "handleAnalysisDefinitions", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
 	newAuthenticatedAPIRoute(http.MethodPut, "/api/v1/analysis/business-key-mappings/{id}", "handleAnalysisDefinitions", projectAdminAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
 	newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/analysis/business-key-mappings/{id}", "handleAnalysisDefinitions", projectAdminAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisDefinitions) }),
+	// Revisioned project policies; a run pins the defaults in force at Start.
+	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/policies", "handleAnalysisPolicies", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisPolicies) }),
+	newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/analysis/policies", "handleAnalysisPolicies", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisPolicies) }),
+	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/analysis/policies/{id}", "handleAnalysisPolicies", viewerProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisPolicies) }),
+	newAuthenticatedAPIRoute(http.MethodPut, "/api/v1/analysis/policies/{id}", "handleAnalysisPolicies", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisPolicies) }),
+	newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/analysis/policies/{id}", "handleAnalysisPolicies", editorProjectAccess(resolveAnalysisProject), func(s *Server) http.Handler { return http.HandlerFunc(s.handleAnalysisPolicies) }),
 }}
 
 func analysisQueryAccess(lookup projectScopedLookup) accessRequirement {

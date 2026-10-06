@@ -1794,7 +1794,9 @@ func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest
 		return true, fmt.Errorf("unsupported durable start status %q", durableStatus)
 	}
 	snapshot := newManagedTestStartPersistenceSnapshot(test)
+	var freshAdmission *RunArchiveProvenance
 	if durableStatus == "INITIALIZING" {
+		fresh := test.initialArchiveProvenance == nil
 		initial, err := tr.telemetryAdmissionProvenanceLocked(test)
 		if err != nil {
 			return true, err
@@ -1803,6 +1805,9 @@ func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest
 		// Concurrent manifest readers must never see a receipt that has not won
 		// the durable write, even while SQL waits outside the runner lock.
 		snapshot.record.InitialProvenance = initialProvenanceForStorage(initial)
+		if fresh {
+			freshAdmission = initial
+		}
 	}
 	operationToken := test.passiveOperationToken
 	executionFence := test.executionFence
@@ -1811,7 +1816,23 @@ func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest
 	test.Status = "STARTING"
 
 	tr.mu.Unlock()
-	persistErr := tr.saveManagedTestStartSnapshot(snapshot)
+	var persistErr error
+	if freshAdmission != nil {
+		// Policy pins need a store read, so they are resolved here, outside the
+		// runner lock, and frozen into the same write-once admission receipt.
+		// A resolution failure refuses Start: silently dropping a fail_ci
+		// policy would let CI pass without the telemetry gate it configured.
+		pins, pinErr := tr.resolveRunPolicyPins(freshAdmission.ProjectID)
+		if pinErr != nil {
+			persistErr = fmt.Errorf("resolve run policies: %w", pinErr)
+		} else {
+			freshAdmission.PolicyPins = pins
+			snapshot.record.InitialProvenance = initialProvenanceForStorage(freshAdmission)
+		}
+	}
+	if persistErr == nil {
+		persistErr = tr.saveManagedTestStartSnapshot(snapshot)
+	}
 	tr.mu.Lock()
 
 	if tr.tests[test.ID] != test {

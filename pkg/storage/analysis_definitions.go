@@ -34,9 +34,33 @@ const AnalysisDefinitionKindRCAMapping = "rca_mapping"
 // field of a monitor source.
 const AnalysisDefinitionKindBusinessKeyMapping = "business_key_mapping"
 
+// Policy kinds are revisioned project policies. A run pins the revisions in
+// force when it starts, so a later edit never reinterprets a finished run.
+const (
+	AnalysisDefinitionKindTelemetryPolicy           = "telemetry_policy"
+	AnalysisDefinitionKindTelemetryAcceptancePolicy = "telemetry_acceptance_policy"
+	AnalysisDefinitionKindBrowserPolicy             = "browser_policy"
+	AnalysisDefinitionKindJourneyPolicy             = "journey_policy"
+	AnalysisDefinitionKindDerivedOperation          = "derived_operation"
+)
+
+// AnalysisPolicyKinds lists the policy kinds in a stable order.
+var AnalysisPolicyKinds = []string{
+	AnalysisDefinitionKindTelemetryPolicy,
+	AnalysisDefinitionKindTelemetryAcceptancePolicy,
+	AnalysisDefinitionKindBrowserPolicy,
+	AnalysisDefinitionKindJourneyPolicy,
+	AnalysisDefinitionKindDerivedOperation,
+}
+
 // ownBudgetAnalysisKinds have a definition budget of their own, apart from
 // the mappings' and comparisons' shared budget.
-var ownBudgetAnalysisKinds = map[string]bool{AnalysisDefinitionKindRCAMapping: true, AnalysisDefinitionKindBusinessKeyMapping: true}
+var ownBudgetAnalysisKinds = map[string]bool{
+	AnalysisDefinitionKindRCAMapping: true, AnalysisDefinitionKindBusinessKeyMapping: true,
+	AnalysisDefinitionKindTelemetryPolicy: true, AnalysisDefinitionKindTelemetryAcceptancePolicy: true,
+	AnalysisDefinitionKindBrowserPolicy: true, AnalysisDefinitionKindJourneyPolicy: true,
+	AnalysisDefinitionKindDerivedOperation: true,
+}
 
 type AnalysisDefinitionStore interface {
 	SaveAnalysisDefinition(AnalysisDefinition, int64) (*AnalysisDefinition, error)
@@ -70,8 +94,8 @@ func (s *SQLiteStore) SaveAnalysisDefinition(in AnalysisDefinition, expected int
 	// decisions each have a budget of their own.
 	if expected == 0 && in.Kind != AnalysisDefinitionKindConnectionLinks {
 		var n int
-		query := `SELECT COUNT(DISTINCT id) FROM analysis_definitions WHERE project_id=? AND kind<>? AND kind<>? AND kind<>?`
-		args := []any{in.ProjectID, AnalysisDefinitionKindConnectionLinks, AnalysisDefinitionKindRCAMapping, AnalysisDefinitionKindBusinessKeyMapping}
+		query := `SELECT COUNT(DISTINCT id) FROM analysis_definitions WHERE project_id=? AND kind IN (?, ?)`
+		args := []any{in.ProjectID, "mapping", "comparison"}
 		if ownBudgetAnalysisKinds[in.Kind] {
 			query, args = `SELECT COUNT(DISTINCT id) FROM analysis_definitions WHERE project_id=? AND kind=?`, []any{in.ProjectID, in.Kind}
 		}

@@ -559,6 +559,7 @@ func maskTestGroupsRuntimeSettings(groups []TestGroup) []TestGroup {
 // so it must never retain runnable credentials.
 func maskRunArchiveProvenance(provenance RunArchiveProvenance) RunArchiveProvenance {
 	provenance.TelemetryPolicy = cloneTelemetryBudgetPolicy(provenance.TelemetryPolicy)
+	provenance.PolicyPins = cloneRunPolicyPins(provenance.PolicyPins)
 	provenance.ExecutionSettings.Thresholds = cloneThresholdSettings(provenance.ExecutionSettings.Thresholds)
 	provenance.TrafficProfile = cloneTrafficProfile(provenance.TrafficProfile)
 	provenance.RuntimeSettings = maskRuntimeSettings(provenance.RuntimeSettings)

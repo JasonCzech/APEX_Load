@@ -1,0 +1,641 @@
+package api
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"net/http"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/storage"
+)
+
+// Analysis policies are revisioned project definitions (telemetry budgets and
+// acceptance, browser scoring, journeys, derived operations). At most one
+// definition per kind and project applies by default; Start pins the exact
+// revision of each default into the run's immutable admission receipt.
+
+const analysisPolicyVersion = 1
+
+// RunPolicyPin is one policy revision a run was admitted under. SHA256 hashes
+// the stored definition bytes, so a report can prove which rules it applied.
+type RunPolicyPin struct {
+	Kind     string `json:"kind"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Revision int64  `json:"revision"`
+	SHA256   string `json:"sha256"`
+	Source   string `json:"source"`
+}
+
+func cloneRunPolicyPins(pins []RunPolicyPin) []RunPolicyPin {
+	if pins == nil {
+		return nil
+	}
+	return append([]RunPolicyPin{}, pins...)
+}
+
+// analysisPolicyEnvelope holds the fields common to every policy kind. Each
+// kind declares them directly: the strict definition decoder does not follow
+// embedded structs.
+type analysisPolicyEnvelope struct {
+	Version        int    `json:"version"`
+	ApplyByDefault bool   `json:"apply_by_default,omitempty"`
+	Description    string `json:"description,omitempty"`
+}
+
+func (e analysisPolicyEnvelope) validate() error {
+	if e.Version != analysisPolicyVersion {
+		return fmt.Errorf("policy version must be %d", analysisPolicyVersion)
+	}
+	if len(e.Description) > 2048 {
+		return errors.New("policy description exceeds 2048 bytes")
+	}
+	return nil
+}
+
+// TelemetryPolicyDefinition overrides the system telemetry budgets for runs
+// in the project. Nil keeps the system default; zero disables that budget.
+type TelemetryPolicyDefinition struct {
+	Version                int      `json:"version"`
+	ApplyByDefault         bool     `json:"apply_by_default,omitempty"`
+	Description            string   `json:"description,omitempty"`
+	SampleAgeMs            *float64 `json:"sample_age_ms,omitempty"`
+	GeneratorLagMs         *float64 `json:"generator_lag_ms,omitempty"`
+	TransportLagMs         *float64 `json:"transport_lag_ms,omitempty"`
+	ControllerFanoutMs     *float64 `json:"controller_fanout_ms,omitempty"`
+	BrowserRenderLagMs     *float64 `json:"browser_render_lag_ms,omitempty"`
+	SustainedWindowSeconds *int     `json:"sustained_window_seconds,omitempty"`
+}
+
+func (p TelemetryPolicyDefinition) validate() error {
+	if err := (analysisPolicyEnvelope{p.Version, p.ApplyByDefault, p.Description}).validate(); err != nil {
+		return err
+	}
+	set := false
+	for _, limit := range []*float64{p.SampleAgeMs, p.GeneratorLagMs, p.TransportLagMs, p.ControllerFanoutMs, p.BrowserRenderLagMs} {
+		if limit != nil {
+			set = true
+			if !finiteInRange(*limit, 0, 3_600_000) {
+				return errors.New("telemetry budgets must be between 0 and 3600000 ms")
+			}
+		}
+	}
+	if p.SustainedWindowSeconds != nil {
+		set = true
+		if *p.SustainedWindowSeconds < 1 || *p.SustainedWindowSeconds > 3600 {
+			return errors.New("sustained_window_seconds must be between 1 and 3600")
+		}
+	}
+	if !set {
+		return errors.New("telemetry policy must set at least one budget")
+	}
+	return nil
+}
+
+var telemetryStages = []string{"sample_age", "generator", "transport", "controller_fanout", "browser_render", "end_to_end"}
+
+type TelemetryLagPercentileRule struct {
+	Stage      string  `json:"stage"`
+	Percentile string  `json:"percentile"`
+	MaxMs      float64 `json:"max_ms"`
+}
+
+// TelemetryAcceptancePolicyDefinition is a telemetry verdict policy. Advisory
+// is the default; only fail_ci can change a CI outcome, and unknown required
+// evidence is inconclusive, never a pass.
+type TelemetryAcceptancePolicyDefinition struct {
+	Version                      int                          `json:"version"`
+	ApplyByDefault               bool                         `json:"apply_by_default,omitempty"`
+	Description                  string                       `json:"description,omitempty"`
+	Mode                         string                       `json:"mode"`
+	MinWallTimeCoverage          *float64                     `json:"min_wall_time_coverage,omitempty"`
+	MaxLostRecords               *int64                       `json:"max_lost_records,omitempty"`
+	MaxLossRatio                 *float64                     `json:"max_loss_ratio,omitempty"`
+	MaxBreachedKnownTimeFraction *float64                     `json:"max_breached_known_time_fraction,omitempty"`
+	StageLagPercentiles          []TelemetryLagPercentileRule `json:"stage_lag_percentiles,omitempty"`
+}
+
+func (p TelemetryAcceptancePolicyDefinition) validate() error {
+	if err := (analysisPolicyEnvelope{p.Version, p.ApplyByDefault, p.Description}).validate(); err != nil {
+		return err
+	}
+	if p.Mode != "advisory" && p.Mode != "fail_ci" {
+		return errors.New("mode must be advisory or fail_ci")
+	}
+	criteria := len(p.StageLagPercentiles)
+	for _, fraction := range []*float64{p.MinWallTimeCoverage, p.MaxLossRatio, p.MaxBreachedKnownTimeFraction} {
+		if fraction != nil {
+			criteria++
+			if !finiteInRange(*fraction, 0, 1) {
+				return errors.New("coverage, loss ratio and breach fraction must be between 0 and 1")
+			}
+		}
+	}
+	if p.MaxLostRecords != nil {
+		criteria++
+		if *p.MaxLostRecords < 0 {
+			return errors.New("max_lost_records must be non-negative")
+		}
+	}
+	if criteria == 0 {
+		return errors.New("telemetry acceptance policy must set at least one criterion")
+	}
+	if len(p.StageLagPercentiles) > 16 {
+		return errors.New("at most 16 stage lag percentile rules")
+	}
+	seen := map[string]bool{}
+	for _, rule := range p.StageLagPercentiles {
+		if !slices.Contains(telemetryStages, rule.Stage) {
+			return fmt.Errorf("unknown telemetry stage %q", rule.Stage)
+		}
+		if !slices.Contains([]string{"p50", "p95", "p99", "max"}, rule.Percentile) {
+			return errors.New("percentile must be p50, p95, p99 or max")
+		}
+		if !finiteInRange(rule.MaxMs, 0, 3_600_000) || rule.MaxMs == 0 {
+			return errors.New("stage lag max_ms must be between 0 and 3600000 and positive")
+		}
+		key := rule.Stage + "/" + rule.Percentile
+		if seen[key] {
+			return fmt.Errorf("duplicate stage lag rule %s", key)
+		}
+		seen[key] = true
+	}
+	return nil
+}
+
+var browserPolicyMetrics = []string{"fcp", "lcp", "cls", "inp"}
+
+type BrowserPolicyMetric struct {
+	Metric string  `json:"metric"`
+	Good   float64 `json:"good"`
+	Poor   float64 `json:"poor"`
+	Weight float64 `json:"weight"`
+}
+
+type BrowserPolicyApplicability struct {
+	Engines        []string `json:"engines,omitempty"`
+	DeviceProfiles []string `json:"device_profiles,omitempty"`
+}
+
+// BrowserPolicyEffectFloors are the practical-significance floors baseline
+// anomalies must clear in addition to the statistical rule.
+type BrowserPolicyEffectFloors struct {
+	TimingMs       *float64 `json:"timing_ms,omitempty"`
+	TimingRelative *float64 `json:"timing_relative,omitempty"`
+	CLS            *float64 `json:"cls,omitempty"`
+}
+
+type BrowserPolicyBaseline struct {
+	Mode  string `json:"mode"`
+	RunID string `json:"run_id,omitempty"`
+}
+
+// BrowserPolicyDefinition scores qualified document metrics. Weights are
+// non-negative and documented; a missing required metric prevents an overall
+// score rather than renormalizing the others.
+type BrowserPolicyDefinition struct {
+	Version        int                        `json:"version"`
+	ApplyByDefault bool                       `json:"apply_by_default,omitempty"`
+	Description    string                     `json:"description,omitempty"`
+	Metrics        []BrowserPolicyMetric      `json:"metrics"`
+	Applicability  BrowserPolicyApplicability `json:"applicability,omitempty"`
+	EffectFloors   BrowserPolicyEffectFloors  `json:"effect_floors,omitempty"`
+	Baseline       BrowserPolicyBaseline      `json:"baseline"`
+}
+
+func (p BrowserPolicyDefinition) validate() error {
+	if err := (analysisPolicyEnvelope{p.Version, p.ApplyByDefault, p.Description}).validate(); err != nil {
+		return err
+	}
+	if len(p.Metrics) == 0 || len(p.Metrics) > len(browserPolicyMetrics) {
+		return errors.New("browser policy must list between one and four metrics")
+	}
+	seen := map[string]bool{}
+	total := 0.0
+	for _, metric := range p.Metrics {
+		if !slices.Contains(browserPolicyMetrics, metric.Metric) || seen[metric.Metric] {
+			return fmt.Errorf("browser policy metric %q is unknown or repeated", metric.Metric)
+		}
+		seen[metric.Metric] = true
+		limit := 600_000.0
+		if metric.Metric == "cls" {
+			limit = 10
+		}
+		if !finiteInRange(metric.Good, 0, limit) || !finiteInRange(metric.Poor, 0, limit) || !(metric.Good < metric.Poor) {
+			return fmt.Errorf("browser policy %s thresholds must satisfy 0 <= good < poor", metric.Metric)
+		}
+		if !finiteInRange(metric.Weight, 0, 1000) {
+			return errors.New("browser policy weights must be between 0 and 1000")
+		}
+		total += metric.Weight
+	}
+	if total <= 0 {
+		return errors.New("browser policy weights must not all be zero")
+	}
+	for _, engine := range p.Applicability.Engines {
+		if engine != "chromium" && engine != "webkit" {
+			return fmt.Errorf("unknown browser engine %q", engine)
+		}
+	}
+	if len(p.Applicability.DeviceProfiles) > 32 {
+		return errors.New("at most 32 device profiles")
+	}
+	for _, profile := range p.Applicability.DeviceProfiles {
+		if strings.TrimSpace(profile) == "" || len(profile) > 64 {
+			return errors.New("device profiles must be non-empty and at most 64 bytes")
+		}
+	}
+	floors := p.EffectFloors
+	for _, floor := range []*float64{floors.TimingMs, floors.CLS} {
+		if floor != nil && !finiteInRange(*floor, 0, 600_000) {
+			return errors.New("effect floors must be non-negative")
+		}
+	}
+	if floors.TimingRelative != nil && !finiteInRange(*floors.TimingRelative, 0, 10) {
+		return errors.New("timing_relative must be between 0 and 10")
+	}
+	switch p.Baseline.Mode {
+	case "none", "latest_compatible":
+		if p.Baseline.RunID != "" {
+			return errors.New("baseline run_id is only valid with mode pinned_run")
+		}
+	case "pinned_run":
+		if strings.TrimSpace(p.Baseline.RunID) == "" || len(p.Baseline.RunID) > 128 {
+			return errors.New("pinned_run baseline requires run_id")
+		}
+	default:
+		return errors.New("baseline mode must be none, latest_compatible or pinned_run")
+	}
+	return nil
+}
+
+var journeyIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+
+var operationParameterPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
+
+// JourneyBoundary names an authored transaction or action.
+type JourneyBoundary struct {
+	Transaction string `json:"transaction,omitempty"`
+	Action      string `json:"action,omitempty"`
+}
+
+func (b JourneyBoundary) validate(field string) error {
+	if (b.Transaction == "") == (b.Action == "") {
+		return fmt.Errorf("journey %s must name exactly one transaction or action", field)
+	}
+	if len(b.Transaction) > 256 || len(b.Action) > 256 {
+		return fmt.Errorf("journey %s name exceeds 256 bytes", field)
+	}
+	return nil
+}
+
+type JourneyDefinition struct {
+	ID      string          `json:"id"`
+	Name    string          `json:"name"`
+	Start   JourneyBoundary `json:"start"`
+	Success JourneyBoundary `json:"success"`
+	Weight  float64         `json:"weight"`
+}
+
+// JourneyPolicyDefinition declares journeys by explicit start and success
+// boundaries. The weighted failure index counts each failed attempt once.
+type JourneyPolicyDefinition struct {
+	Version         int                 `json:"version"`
+	ApplyByDefault  bool                `json:"apply_by_default,omitempty"`
+	Description     string              `json:"description,omitempty"`
+	Journeys        []JourneyDefinition `json:"journeys"`
+	StepRiskEnabled bool                `json:"step_risk_enabled,omitempty"`
+}
+
+func (p JourneyPolicyDefinition) validate() error {
+	if err := (analysisPolicyEnvelope{p.Version, p.ApplyByDefault, p.Description}).validate(); err != nil {
+		return err
+	}
+	if len(p.Journeys) == 0 || len(p.Journeys) > 64 {
+		return errors.New("journey policy must define between 1 and 64 journeys")
+	}
+	seen := map[string]bool{}
+	for _, journey := range p.Journeys {
+		if !journeyIDPattern.MatchString(journey.ID) || seen[journey.ID] {
+			return fmt.Errorf("journey id %q must be a unique lowercase slug", journey.ID)
+		}
+		seen[journey.ID] = true
+		if strings.TrimSpace(journey.Name) == "" || len(journey.Name) > 256 {
+			return errors.New("journey name must be non-empty and at most 256 bytes")
+		}
+		if err := journey.Start.validate("start"); err != nil {
+			return err
+		}
+		if err := journey.Success.validate("success"); err != nil {
+			return err
+		}
+		if !finiteInRange(journey.Weight, 0, 1000) {
+			return errors.New("journey weights must be between 0 and 1000")
+		}
+	}
+	return nil
+}
+
+// DerivedOperationDefinition saves one catalog derivation with bounded
+// numeric parameters. It never carries an expression or SQL.
+type DerivedOperationDefinition struct {
+	Version        int                `json:"version"`
+	ApplyByDefault bool               `json:"apply_by_default,omitempty"`
+	Description    string             `json:"description,omitempty"`
+	Operation      string             `json:"operation"`
+	Metric         string             `json:"metric"`
+	Population     string             `json:"population"`
+	Parameters     map[string]float64 `json:"parameters,omitempty"`
+}
+
+func (p DerivedOperationDefinition) validate() error {
+	if err := (analysisPolicyEnvelope{p.Version, p.ApplyByDefault, p.Description}).validate(); err != nil {
+		return err
+	}
+	operation, ok := analysis.LookupOperation(p.Operation)
+	if !ok {
+		return fmt.Errorf("unknown catalog operation %q", p.Operation)
+	}
+	metric, ok := analysis.LookupMetric(p.Metric)
+	if !ok {
+		return fmt.Errorf("unknown catalog metric %q", p.Metric)
+	}
+	if !slices.Contains(metric.Populations, p.Population) {
+		return fmt.Errorf("metric %s has no population %q", p.Metric, p.Population)
+	}
+	if len(operation.Populations) > 0 && !slices.Contains(operation.Populations, p.Population) {
+		return fmt.Errorf("operation %s does not apply to population %q", p.Operation, p.Population)
+	}
+	if len(p.Parameters) > 8 {
+		return errors.New("at most 8 operation parameters")
+	}
+	for name, value := range p.Parameters {
+		if !operationParameterPattern.MatchString(name) || math.IsNaN(value) || math.IsInf(value, 0) {
+			return fmt.Errorf("invalid operation parameter %q", name)
+		}
+	}
+	return nil
+}
+
+func finiteInRange(value, low, high float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= low && value <= high
+}
+
+// decodeAnalysisPolicy strictly decodes and validates one policy payload and
+// returns its common envelope.
+func decodeAnalysisPolicy(kind string, data []byte) (analysisPolicyEnvelope, error) {
+	type policy interface{ validate() error }
+	var target policy
+	switch kind {
+	case storage.AnalysisDefinitionKindTelemetryPolicy:
+		target = &TelemetryPolicyDefinition{}
+	case storage.AnalysisDefinitionKindTelemetryAcceptancePolicy:
+		target = &TelemetryAcceptancePolicyDefinition{}
+	case storage.AnalysisDefinitionKindBrowserPolicy:
+		target = &BrowserPolicyDefinition{}
+	case storage.AnalysisDefinitionKindJourneyPolicy:
+		target = &JourneyPolicyDefinition{}
+	case storage.AnalysisDefinitionKindDerivedOperation:
+		target = &DerivedOperationDefinition{}
+	default:
+		return analysisPolicyEnvelope{}, fmt.Errorf("unknown policy kind %q", kind)
+	}
+	if err := decodeAnalysisDefinitionJSON(data, target); err != nil {
+		return analysisPolicyEnvelope{}, err
+	}
+	if err := target.validate(); err != nil {
+		return analysisPolicyEnvelope{}, err
+	}
+	var envelope analysisPolicyEnvelope
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return analysisPolicyEnvelope{}, err
+	}
+	return envelope, nil
+}
+
+// AnalysisPolicyRequest is the create/update body. Kind is required on create
+// and must match the stored kind on update; Revision is the expected current
+// revision on update.
+type AnalysisPolicyRequest struct {
+	Kind       string          `json:"kind"`
+	Name       string          `json:"name"`
+	Revision   int64           `json:"revision,omitempty"`
+	Definition json.RawMessage `json:"definition"`
+}
+
+const maxProjectPolicyDefinitions = 100
+
+func (s *Server) handleAnalysisPolicies(w http.ResponseWriter, r *http.Request) {
+	project := normalizeProjectID(r.URL.Query().Get("project_id"))
+	store, ok := s.store.(storage.AnalysisDefinitionStore)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "analysis policies unavailable")
+		return
+	}
+	id := r.PathValue("id")
+	switch r.Method {
+	case http.MethodGet:
+		if id == "" {
+			kind := r.URL.Query().Get("kind")
+			if !slices.Contains(storage.AnalysisPolicyKinds, kind) {
+				writeError(w, http.StatusBadRequest, "kind must be one of "+strings.Join(storage.AnalysisPolicyKinds, ", "))
+				return
+			}
+			limit, offset := parseLimitOffsetQuery(r, 50)
+			list, err := store.ListAnalysisDefinitions(project, kind, min(limit, 100), offset)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "cannot list analysis policies")
+				return
+			}
+			visible := make([]storage.AnalysisDefinition, 0, len(list))
+			for _, item := range list {
+				if !item.Deleted {
+					visible = append(visible, item)
+				}
+			}
+			writeJSON(w, http.StatusOK, visible)
+			return
+		}
+		revision := int64(0)
+		if raw := r.URL.Query().Get("revision"); raw != "" {
+			parsed, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil || parsed < 1 {
+				writeError(w, http.StatusBadRequest, "revision must be a positive integer")
+				return
+			}
+			revision = parsed
+		}
+		// A pinned revision stays readable after deletion; the latest of a
+		// deleted policy does not.
+		in, err := store.GetAnalysisDefinition(project, id, revision)
+		if err != nil || !slices.Contains(storage.AnalysisPolicyKinds, in.Kind) || (revision == 0 && in.Deleted) {
+			writeError(w, http.StatusNotFound, "analysis policy not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, in)
+		return
+	case http.MethodDelete:
+		revision, err := strconv.ParseInt(r.URL.Query().Get("revision"), 10, 64)
+		if err != nil || revision < 1 {
+			writeError(w, http.StatusBadRequest, "revision required")
+			return
+		}
+		current, err := store.GetAnalysisDefinition(project, id, 0)
+		if err != nil || !slices.Contains(storage.AnalysisPolicyKinds, current.Kind) || current.Deleted {
+			writeError(w, http.StatusNotFound, "analysis policy not found")
+			return
+		}
+		deleted := *current
+		deleted.Deleted = true
+		saved, err := store.SaveAnalysisDefinition(deleted, revision)
+		if errors.Is(err, storage.ErrAnalysisRevision) {
+			writeError(w, http.StatusConflict, "analysis policy revision changed")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "cannot delete analysis policy")
+			return
+		}
+		s.recordAuditEvent(r, "analysis_policy.delete", "success", "analysis_policy", id, project, map[string]any{"kind": current.Kind, "revision": saved.Revision})
+		writeJSON(w, http.StatusOK, saved)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, "analysis policy exceeds request byte limit")
+		return
+	}
+	var req AnalysisPolicyRequest
+	if err := decodeAnalysisDefinitionJSON(body, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	expected := int64(0)
+	if r.Method == http.MethodPost {
+		if id != "" || req.Revision != 0 {
+			writeError(w, http.StatusBadRequest, "new policy must omit revision")
+			return
+		}
+		id = uuid.NewString()
+	} else {
+		current, err := store.GetAnalysisDefinition(project, id, 0)
+		if err != nil || current.Deleted || !slices.Contains(storage.AnalysisPolicyKinds, current.Kind) {
+			writeError(w, http.StatusNotFound, "analysis policy not found")
+			return
+		}
+		if req.Kind != current.Kind {
+			writeError(w, http.StatusBadRequest, "policy kind cannot change")
+			return
+		}
+		if req.Revision < 1 {
+			writeError(w, http.StatusBadRequest, "revision required")
+			return
+		}
+		expected = req.Revision
+	}
+	if !slices.Contains(storage.AnalysisPolicyKinds, req.Kind) {
+		writeError(w, http.StatusBadRequest, "kind must be one of "+strings.Join(storage.AnalysisPolicyKinds, ", "))
+		return
+	}
+	envelope, err := decodeAnalysisPolicy(req.Kind, req.Definition)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if envelope.ApplyByDefault {
+		// A second default would make Start ambiguous; resolution also refuses
+		// it, but saving it is the clearer place to report the conflict.
+		if other, err := projectDefaultPolicy(store, project, req.Kind); err != nil {
+			writeError(w, http.StatusServiceUnavailable, "analysis policies unavailable")
+			return
+		} else if other != nil && other.ID != id {
+			writeError(w, http.StatusConflict, fmt.Sprintf("policy %q already applies by default for %s", other.Name, req.Kind))
+			return
+		}
+	}
+	saved, err := store.SaveAnalysisDefinition(storage.AnalysisDefinition{ID: id, ProjectID: project, Kind: req.Kind, Name: strings.TrimSpace(req.Name), Definition: req.Definition}, expected)
+	if errors.Is(err, storage.ErrAnalysisRevision) {
+		writeError(w, http.StatusConflict, "analysis policy revision changed")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.recordAuditEvent(r, "analysis_policy.save", "success", "analysis_policy", id, project, map[string]any{"kind": req.Kind, "revision": saved.Revision, "apply_by_default": envelope.ApplyByDefault})
+	status := http.StatusOK
+	if r.Method == http.MethodPost {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, saved)
+}
+
+// projectDefaultPolicy returns the live policy of kind that applies by
+// default in the project, or nil. More than one is a configuration error.
+func projectDefaultPolicy(store storage.AnalysisDefinitionStore, project, kind string) (*storage.AnalysisDefinition, error) {
+	var found *storage.AnalysisDefinition
+	for offset := 0; offset < maxProjectPolicyDefinitions*10; offset += 100 {
+		page, err := store.ListAnalysisDefinitions(project, kind, 100, offset)
+		if err != nil {
+			return nil, err
+		}
+		for index := range page {
+			item := page[index]
+			if item.Deleted {
+				continue
+			}
+			envelope, err := decodeAnalysisPolicy(kind, item.Definition)
+			if err != nil {
+				// A stored policy that no longer decodes cannot be proven not to
+				// be a default; refuse rather than run without it.
+				return nil, fmt.Errorf("stored %s policy %q is invalid: %w", kind, item.ID, err)
+			}
+			if !envelope.ApplyByDefault {
+				continue
+			}
+			if found != nil {
+				return nil, fmt.Errorf("more than one %s policy applies by default", kind)
+			}
+			copied := item
+			found = &copied
+		}
+		if len(page) < 100 {
+			break
+		}
+	}
+	return found, nil
+}
+
+// resolveRunPolicyPins returns the default policy revisions for a project, in
+// stable kind order. Stores without analysis definitions have no policies.
+func (tr *TestRunner) resolveRunPolicyPins(projectID string) ([]RunPolicyPin, error) {
+	store, ok := tr.testStore.(storage.AnalysisDefinitionStore)
+	if !ok || store == nil {
+		return nil, nil
+	}
+	projectID = normalizeProjectID(projectID)
+	pins := []RunPolicyPin{}
+	for _, kind := range storage.AnalysisPolicyKinds {
+		policy, err := projectDefaultPolicy(store, projectID, kind)
+		if err != nil {
+			return nil, fmt.Errorf("resolve %s policy: %w", kind, err)
+		}
+		if policy == nil {
+			continue
+		}
+		digest := sha256.Sum256(policy.Definition)
+		pins = append(pins, RunPolicyPin{Kind: kind, ID: policy.ID, Name: policy.Name, Revision: policy.Revision, SHA256: hex.EncodeToString(digest[:]), Source: "project_default"})
+	}
+	return pins, nil
+}

@@ -3262,6 +3262,7 @@ export interface operations {
                 "goal_config"?: (Record<string, unknown>) | null;
                 "governance"?: (Record<string, unknown>) | null;
                 "groups"?: Array<Record<string, unknown>>;
+                "policy_pins"?: Array<Record<string, unknown>>;
                 "project_id"?: string;
                 "release_id"?: string;
                 "requested_at"?: string;
@@ -3376,6 +3377,7 @@ export interface operations {
                 "goal_config"?: (Record<string, unknown>) | null;
                 "governance"?: (Record<string, unknown>) | null;
                 "groups"?: Array<Record<string, unknown>>;
+                "policy_pins"?: Array<Record<string, unknown>>;
                 "project_id"?: string;
                 "release_id"?: string;
                 "requested_at"?: string;
@@ -10720,6 +10722,352 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisPolicies": {
+    parameters: {
+      "query"?: {
+        "kind"?: string;
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisPolicies_2": {
+    parameters: {
+      "query"?: {
+        "kind"?: string;
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "definition"?: unknown;
+          "kind"?: string;
+          "name"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisPolicies_3": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "kind"?: string;
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "definition"?: unknown;
+          "kind"?: string;
+          "name"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisPolicies_4": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "kind"?: string;
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAnalysisPolicies_5": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "kind"?: string;
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "definition"?: unknown;
+          "kind"?: string;
+          "name"?: string;
+          "revision"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -63680,6 +64028,14 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
+              "policy_pins"?: Array<{
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }>;
               "project_id"?: string;
               "release_id"?: string;
               "requested_at"?: string;
@@ -64523,6 +64879,14 @@ export interface operations {
                 "target_duration"?: string;
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
+              }>;
+              "policy_pins"?: Array<{
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
               }>;
               "project_id"?: string;
               "release_id"?: string;
@@ -67361,6 +67725,14 @@ export interface operations {
                   "transaction_response_time_sla_ms"?: (number) | null;
                   "vusers": number;
                 }>;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "name": string;
+                  "revision": number;
+                  "sha256": string;
+                  "source": string;
+                }>;
                 "project_id"?: string;
                 "release_id"?: string;
                 "requested_at"?: string;
@@ -67754,6 +68126,14 @@ export interface operations {
                   "target_duration"?: string;
                   "transaction_response_time_sla_ms"?: (number) | null;
                   "vusers": number;
+                }>;
+                "policy_pins"?: Array<{
+                  "id": string;
+                  "kind": string;
+                  "name": string;
+                  "revision": number;
+                  "sha256": string;
+                  "source": string;
                 }>;
                 "project_id"?: string;
                 "release_id"?: string;
@@ -160165,6 +160545,15 @@ export interface paths {
     "get": operations["handleAnalysisDefinitions_14"];
     "put": operations["handleAnalysisDefinitions_15"];
     "delete": operations["handleAnalysisDefinitions_13"];
+  };
+  "/api/v1/analysis/policies": {
+    "get": operations["handleAnalysisPolicies"];
+    "post": operations["handleAnalysisPolicies_2"];
+  };
+  "/api/v1/analysis/policies/{id}": {
+    "get": operations["handleAnalysisPolicies_4"];
+    "put": operations["handleAnalysisPolicies_5"];
+    "delete": operations["handleAnalysisPolicies_3"];
   };
   "/api/v1/analysis/rca-mappings": {
     "get": operations["handleAnalysisDefinitions_16"];

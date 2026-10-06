@@ -364,6 +364,56 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/analysis/policies",
+      "operationId": "handleAnalysisPolicies",
+      "summary": "Analysis Policies",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/analysis/policies",
+      "operationId": "handleAnalysisPolicies_2",
+      "summary": "Analysis Policies",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/analysis/policies/{id}",
+      "operationId": "handleAnalysisPolicies_3",
+      "summary": "Analysis Policies",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/analysis/policies/{id}",
+      "operationId": "handleAnalysisPolicies_4",
+      "summary": "Analysis Policies",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/analysis/policies/{id}",
+      "operationId": "handleAnalysisPolicies_5",
+      "summary": "Analysis Policies",
+      "category": "Analysis",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/analysis/rca-mappings",
       "operationId": "handleAnalysisDefinitions_16",
       "summary": "Analysis Definitions",

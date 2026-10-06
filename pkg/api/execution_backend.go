@@ -374,6 +374,7 @@ func buildRunArchiveProvenanceFromSnapshot(snapshot *ManagedTest) RunArchiveProv
 	}
 	if snapshot.initialArchiveProvenance != nil {
 		provenance.TelemetryPolicy = cloneTelemetryBudgetPolicy(snapshot.initialArchiveProvenance.TelemetryPolicy)
+		provenance.PolicyPins = cloneRunPolicyPins(snapshot.initialArchiveProvenance.PolicyPins)
 	}
 	provenance.ApplicationID = snapshot.ApplicationID
 	provenance.ReleaseID = snapshot.ReleaseID
