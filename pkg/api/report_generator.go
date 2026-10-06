@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html/template"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -43,17 +44,22 @@ type runArchiveHTMLSOAPPayloadBucketRow struct {
 // by the section registry across the HTML, PDF, and CSV renderers. Charts are
 // populated by the HTML path only.
 type runArchiveHTMLReportData struct {
-	GeneratedAt                       time.Time
-	Report                            *RunArchiveReport
-	Profile                           RunArchiveReportProfile
-	Annotations                       *ReportAnnotations
-	CommentarySections                []reportCommentarySection
-	Charts                            reportCharts
-	LogoDataURI                       template.URL
-	Manifest                          *TestRunManifest
-	Verdict                           ReportVerdict
-	EvidenceGaps                      []string
-	Findings                          []ReportFinding
+	GeneratedAt        time.Time
+	Report             *RunArchiveReport
+	Profile            RunArchiveReportProfile
+	Annotations        *ReportAnnotations
+	CommentarySections []reportCommentarySection
+	Charts             reportCharts
+	LogoDataURI        template.URL
+	Manifest           *TestRunManifest
+	Verdict            ReportVerdict
+	EvidenceGaps       []string
+	Findings           []ReportFinding
+	// RootCause is the generated root cause, kept apart from Findings, which
+	// hold analyst-authored or derived findings. RootCauseHypotheses is the
+	// part of it the profile shows.
+	RootCause                         *ReportRootCause
+	RootCauseHypotheses               []ReportRootCauseHypothesis
 	SLARows                           []SLAComplianceRow
 	TransactionResponseTimeSLAResults []TransactionResponseTimeSLAResult
 	TransactionRuleResults            []TransactionSLARuleResult
@@ -125,6 +131,9 @@ var profileHTMLFuncMap = template.FuncMap{
 	"signedPct": func(value float64) string {
 		return fmt.Sprintf("%+.2f%%", value)
 	},
+	"rootCauseSource":  reportRootCauseSourceLabel,
+	"rootCauseOutcome": rcaHumanize,
+	"sub":              func(a, b int) int { return a - b },
 	"sevPill": func(severity string) string {
 		if strings.EqualFold(severity, "major") {
 			return "warn"
@@ -239,6 +248,13 @@ func buildRunArchiveReportRenderData(report *RunArchiveReport, profile RunArchiv
 		findings = normalizeReportFindings(findings)
 	}
 	inventoryRows, inventoryOverflow := manifestInventoryRows(manifest, 50)
+	// A report without an attached root cause renders the v1 summary, so the
+	// rca section is never blank.
+	rootCause := report.RootCauseView
+	if rootCause == nil && slices.Contains(profile.IncludedSections, "rca") {
+		v1 := reportRootCauseFromV1(buildRunRootCauseSummary(testID, report))
+		rootCause = &v1
+	}
 
 	return runArchiveHTMLReportData{
 		GeneratedAt:                       time.Now().UTC(),
@@ -251,6 +267,8 @@ func buildRunArchiveReportRenderData(report *RunArchiveReport, profile RunArchiv
 		Verdict:                           verdict,
 		EvidenceGaps:                      reportPresentationEvidenceGaps(report, profile.ID, annotations, verdict),
 		Findings:                          findings,
+		RootCause:                         rootCause,
+		RootCauseHypotheses:               reportRootCauseHypotheses(rootCause, profile),
 		SLARows:                           buildSLAComplianceRows(report),
 		TransactionResponseTimeSLAResults: append([]TransactionResponseTimeSLAResult(nil), report.TransactionResponseTimeSLAResults...),
 		TransactionRuleResults:            reportTransactionSLARuleResults(report),

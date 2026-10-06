@@ -44,6 +44,9 @@ func TestRunArchiveAnalysisBundleProvidesRowBasedProfileTables(t *testing.T) {
 				if _, err := zipPart(archive, "findings.csv"); err != nil {
 					t.Fatal(err)
 				}
+				if _, err := zipPart(archive, "root_cause_hypotheses.csv"); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if _, err := zipPart(archive, "README.txt"); err != nil {
 				t.Fatal(err)

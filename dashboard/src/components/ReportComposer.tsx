@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Logo from './Logo'
 import MarkdownRenderer from './MarkdownRenderer'
 import ReportCharts from './ReportCharts'
+import ReportRootCauseView from './rca/ReportRootCauseView'
 import { useApi } from '../hooks/useApi'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
@@ -631,6 +632,13 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
                     })}
                   </tbody>
                 </table>
+              </section>
+            )}
+
+            {has('rca', isExecutive || isEngineer) && report.root_cause_view && (
+              <section className="report-section" aria-label="Root-cause analysis (generated)">
+                <h2>Root-Cause Analysis <small>Generated</small></h2>
+                <ReportRootCauseView view={report.root_cause_view} limit={report.report_profiles?.find(entry => entry.id === profile)?.root_cause_hypothesis_limit} />
               </section>
             )}
 

@@ -757,12 +757,21 @@ A report is assembled from a registry of sections, selected by profile:
 
 | Profile | Contains | Export formats |
 | --- | --- | --- |
-| **Executive Summary** | Verdict, overview, graphs, dashboard panels, SLA rollup, release trend, risk summary, run context, recommendations, sign-off | HTML, JSON, CSV, analysis ZIP, PDF, DOCX |
-| **Detailed Technical** (default) | 21 sections including root cause, raw exports, generator manifest, completeness, schema compatibility, errors, resources, actions, browser evidence, SOAP, network phases | HTML, JSON, CSV, analysis ZIP, PDF, DOCX, JSONL, Parquet |
+| **Executive Summary** | Verdict, overview, graphs, dashboard panels, SLA rollup, release trend, risk summary, generated root cause (leading hypothesis), run context, recommendations, sign-off | HTML, JSON, CSV, analysis ZIP, PDF, DOCX |
+| **Detailed Technical** (default) | Generated root-cause analysis, findings, raw exports, generator manifest, completeness, schema compatibility, errors, resources, actions, browser evidence, SOAP, network phases and more | HTML, JSON, CSV, analysis ZIP, PDF, DOCX, JSONL, Parquet |
 | **Audit** | Official outcome, audit identity, authorization, governance, provenance, evidence tiers, completeness, change attribution, artifact integrity, report authorship | HTML, JSON, CSV, analysis ZIP, PDF, DOCX |
 
 PDF is offered only for profiles that declare it; a PDF request against a profile
 without it is refused rather than silently downgraded.
+
+The generated root cause (**Root-Cause Analysis**) and the **Findings** are
+separate sections. Findings are yours: the ones you curate in the report
+composer, or the ones derived from the run when you curate none. The
+root-cause section is generated: a project that presents root-cause v2 shows
+the latest completed analysis, ranked hypotheses with their confidence, the
+evidence that would contradict or disprove each, and its limitations;
+otherwise it shows the v1 summary. Every format renders it from the same
+model, and the analysis ZIP adds `root_cause_hypotheses.csv`.
 
 The Executive Summary and Detailed Technical HTML, PDF, and Word exports include
 the archived throughput, p95 latency, error-rate, active-VUser, and action-latency

@@ -83,6 +83,18 @@ func writeRunArchiveAnalysisBundle(report *RunArchiveReport, writer io.Writer, p
 			_ = archive.Close()
 			return err
 		}
+		// The generated root cause is its own table, apart from the findings.
+		hypothesisRows := [][]string{}
+		if rc := data.RootCause; rc != nil {
+			for _, h := range rc.Hypotheses {
+				hypothesisRows = append(hypothesisRows, []string{runID, rc.Source, rc.AnalysisID, toInt(rc.Revision), toInt(int64(h.Rank)), h.Title, h.Confidence, h.Severity,
+					strings.Join(h.Explains, "; "), strings.Join(h.Chain, "; "), strings.Join(h.Contradicting, "; "), h.Falsification})
+			}
+		}
+		if err := writeCSV("root_cause_hypotheses.csv", []string{"run_id", "source", "analysis_id", "revision", "rank", "title", "confidence", "severity", "explains", "chain", "contradicting", "falsification"}, hypothesisRows); err != nil {
+			_ = archive.Close()
+			return err
+		}
 	}
 	if profile.ID == "audit" {
 		artifactRows := [][]string{}
@@ -107,6 +119,7 @@ func writeRunArchiveAnalysisBundle(report *RunArchiveReport, writer io.Writer, p
 		"Time is UTC in RFC 3339. Latency fields ending _ms are milliseconds; _pct fields are percentages, not fractions.",
 		"Peak TPS is successful named transactions per second. Captured records include the archive population.",
 		"The legacy report CSV remains a separate section/key/metric/value export for existing integrations.",
+		"root_cause_hypotheses.csv is generated analysis (root-cause v2 where the project presents it, else v1); findings.csv holds analyst-authored or derived findings.",
 		"", "Profile: " + profile.Label, "Run ID: " + runID, "",
 	}, "\n"))
 	if err != nil {

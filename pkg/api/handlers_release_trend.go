@@ -160,6 +160,17 @@ func profileIncludesSection(profileID, section string) bool {
 	return slices.Contains(profile.IncludedSections, section)
 }
 
+// enrichArchiveReportForProfile attaches everything a profile's export
+// needs beyond the pure archive report: the release trend, identity names,
+// imported dashboard panels and the generated root cause, each only when the
+// profile renders it.
+func (s *Server) enrichArchiveReportForProfile(report *RunArchiveReport, profileID string) {
+	s.attachReleaseTrendForProfile(report, profileID)
+	s.attachIdentityNames(report)
+	s.attachDashboardPanelsForProfile(report, profileID)
+	s.attachRootCauseForProfile(report, profileID)
+}
+
 // attachIdentityNames resolves the project/release/scenario display names for the
 // report's provenance ids. Best-effort: an unresolvable id (deleted entity, no
 // store) leaves that name empty and renderers fall back to the id.

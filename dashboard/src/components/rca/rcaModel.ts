@@ -8,6 +8,7 @@ import type {
   RcaOutcome,
   RcaValidityVerdict,
   RcaValidityWindow,
+  ReportRootCause,
 } from '../../types/rca'
 
 const list = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : [])
@@ -339,16 +340,12 @@ export function rcaGraphNodeLabel(assessment: RcaAssessment, id: string): string
   return assessment.graph?.nodes.find(node => node.id === id)?.label || id
 }
 
-export function rcaSummary(assessment: RcaAssessment): string {
-  const top = assessment.hypotheses[0]
-  if (assessment.outcome !== 'supported' || !top) {
-    return assessment.outcome === 'insufficient_evidence'
-      ? 'Root-cause analysis found too little evidence to judge any hypothesis.'
-      : 'Root-cause analysis found no hypothesis the evidence supports.'
-  }
-  const symptom = assessment.anomalies.find(a => a.id === top.symptoms[0])
-  const subject = symptom ? ` for ${rcaSeriesLabel(symptom.series)}` : ''
-  return `${rcaSignatureLabel(top.signature)} is the leading hypothesis${subject} (${rcaConfidenceLabel(top.confidence).toLowerCase()}).`
+// rootCauseSourceLabel says where a report's generated root cause came from
+// (Go reportRootCauseSourceLabel).
+export function rootCauseSourceLabel(view: ReportRootCause): string {
+  return view.source === 'v2'
+    ? `Root-cause v2, analysis revision ${view.revision ?? 0} (${view.engine || 'engine not recorded'})`
+    : `Root-cause v1 summary (${view.schema_version})`
 }
 
 export function formatRcaTime(value: string | number): string {

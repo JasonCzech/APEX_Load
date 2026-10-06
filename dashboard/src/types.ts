@@ -1737,6 +1737,9 @@ export interface RunArchiveReport {
   browser_resources?: BrowserResourceTiming[]
   resource_peaks: RunArchiveResourcePeaks
   release_trend?: RunArchiveReleaseTrendSummary
+  // root_cause_view is the generated root cause every report format renders:
+  // v2 where the project presents it and an analysis completed, else v1.
+  root_cause_view?: import('./types/rca').ReportRootCause
 }
 
 export interface RunArchiveLoadLevelSummary {
@@ -1898,6 +1901,9 @@ export interface RunArchiveReportProfile {
   export_formats: string[]
   included_sections: string[]
   section_order?: string[]
+  // root_cause_hypothesis_limit caps the generated hypotheses the rca
+  // section shows; absent shows them all.
+  root_cause_hypothesis_limit?: number
 }
 
 export interface ReportProfilesResponse {

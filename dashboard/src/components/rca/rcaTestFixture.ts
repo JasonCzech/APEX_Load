@@ -1,4 +1,4 @@
-import type { RcaAnalysisResponse, RcaAssessment } from '../../types/rca'
+import type { RcaAnalysisResponse, RcaAssessment, ReportRootCause } from '../../types/rca'
 
 // A completed assessment for tests: Checkout's p95 rose at 12:03:20 after the
 // cart service's CPU rose at 12:02:30, right after a load step to 20 VUsers.
@@ -70,5 +70,24 @@ export function rcaTestResponse(overrides: Partial<RcaAnalysisResponse> = {}): R
   return {
     analysis_id: 'rca-1', revision: 2, state: 'completed', created_at: '2026-10-05T12:10:00Z', completed_at: '2026-10-05T12:10:05Z',
     presented: true, assessment: rcaTestAssessment(), ...overrides,
+  }
+}
+
+// rcaTestReportView is the report's root-cause model for the assessment
+// above, as the controller's reportRootCauseFromV2 builds it.
+export function rcaTestReportView(overrides: Partial<ReportRootCause> = {}): ReportRootCause {
+  return {
+    source: 'v2', schema_version: 'apexload.root_cause.v2', analysis_id: 'rca-1', revision: 2, engine: 'apexload.rca.engine.v2+test',
+    outcome: 'supported', summary: 'Resource pressure is the leading hypothesis for Checkout · p95 latency (medium confidence).',
+    validity: 'unknown', validity_reasons: ['no load generator statistics were archived'], acceptance: 'breached',
+    hypotheses: [
+      { id: 'hypothesis-cpu', rank: 1, title: 'Resource pressure', confidence: 'medium', explains: ['Checkout · p95 latency'],
+        chain: ['builtin:service.cpu.time · Dynatrace (+60 pts) began before Checkout · p95 latency'], competing: ['Garbage collection'],
+        falsification: 'CPU stays below saturation while latency rises' },
+      { id: 'hypothesis-gc', rank: 2, title: 'Garbage collection', confidence: 'low', explains: ['Checkout · p95 latency'],
+        contradicting: ['monitor_points.jsonl#monitor/prometheus/prom/jvm_gc_seconds_rate/0123456789ab'], falsification: 'GC pauses stay flat while latency rises' },
+    ],
+    limitations: ['Validity caps confidence: run validity is unknown, so confidence is at most medium'],
+    ...overrides,
   }
 }

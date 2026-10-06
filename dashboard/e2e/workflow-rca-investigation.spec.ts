@@ -1,6 +1,6 @@
 import { test, expect, seedScript, json, idOf, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
-import { rcaTestResponse } from '../src/components/rca/rcaTestFixture'
+import { rcaTestReportView, rcaTestResponse } from '../src/components/rca/rcaTestFixture'
 
 // The run is real and authorized; its archive and root-cause analyses are
 // served from fixtures. The engine and analysis service are exercised against
@@ -40,11 +40,14 @@ test('root-cause investigation opens from Summary, drills into a hypothesis and 
         { signature: 'login-401', sample: 'HTTP 401 from /login', count: 3, first_seen: '2026-10-05T12:03:40Z', latest_seen: '2026-10-05T12:04:10Z', actions: ['Login'] },
       ],
       completeness: { score_pct: 100 }, verdict: { status: 'fail' },
+      root_cause_view: rcaTestReportView(),
     } })
     if (path === `${base}/archive/summaries`) return route.fulfill({ json: { summaries, total: summaries.length } })
     if (path === `${base}/archive/resources`) return route.fulfill({ json: { samples: [], total: 0 } })
     if (path === `${base}/archive/transactions`) return route.fulfill({ json: { transactions: [], total: 0 } })
     if (path === `${base}/archive/analysis`) return route.fulfill({ status: 404, json: { error: 'no analysis' } })
+    // The composer's server-rendered preview; its sections are checked in Go.
+    if (path === `${base}/report`) return route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Report</title><p>Rendered report</p>' })
     if (path === `${base}/archive/files/phase_events.jsonl`) return route.fulfill({ contentType: 'application/x-ndjson', body: [
       { schema: 'apexload.phase_event.v1', kind: 'ramp_start', level: 20, target: 'checkout', at: '2026-10-05T12:01:40Z' },
       { schema: 'apexload.phase_event.v1', kind: 'level_reached', level: 20, target: 'checkout', at: '2026-10-05T12:02:00Z', deliveries: [{ sink: 'grafana', format: 'grafana', status: 'delivered' }] },
@@ -172,4 +175,16 @@ test('root-cause investigation opens from Summary, drills into a hypothesis and 
   await expect(panel.getByRole('listitem', { name: 'Hypothesis 1: Resource pressure' })).toBeVisible()
   await expect(panel).toContainText('analysis revision 3')
   expect(requested).toEqual({ enrich: false })
+
+  // The report composer previews the same generated root cause the exports
+  // render, apart from the analyst's findings.
+  await page.getByRole('button', { name: 'Export report', exact: true }).click()
+  await page.getByRole('button', { name: 'Preview / edit commentary', exact: true }).click()
+  const composer = page.getByRole('dialog', { name: 'Report composer' })
+  await composer.getByRole('button', { name: 'Edit commentary', exact: true }).click()
+  const generated = composer.getByRole('region', { name: 'Root-cause analysis (generated)' })
+  await expect(generated).toContainText('Root-cause v2, analysis revision 2')
+  await expect(generated).toContainText('Resource pressure (medium confidence)')
+  await expect(generated).toContainText('Would disprove it: CPU stays below saturation while latency rises')
+  await expect(generated).not.toContainText('F-0n')
 })

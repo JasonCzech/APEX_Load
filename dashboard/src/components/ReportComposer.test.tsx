@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ReportComposer from './ReportComposer'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
+import { rcaTestReportView } from './rca/rcaTestFixture'
 
 const apiMock = vi.hoisted(() => ({
   getTestArchiveReport: vi.fn(),
@@ -335,6 +336,39 @@ describe('ReportComposer test notes source panel', () => {
     expect(container.textContent).not.toContain('Network Phase Breakdown')
   })
 
+  it('previews the generated root cause apart from the analyst findings', async () => {
+    apiMock.getTestArchiveReport.mockResolvedValueOnce({ ...sampleReport(), root_cause_view: rcaTestReportView() })
+    await renderComposer('executive')
+    const section = container.querySelector('[aria-label="Root-cause analysis (generated)"]')!
+    expect(section.textContent).toContain('Root-cause v2, analysis revision 2')
+    expect(section.textContent).toContain('Resource pressure (medium confidence)')
+    expect(section.textContent).toContain('Would disprove it: CPU stays below saturation while latency rises')
+    // The executive report ranks only the leading hypothesis.
+    expect(section.textContent).not.toContain('Garbage collection (low confidence)')
+    expect(section.textContent).toContain('1 more ranked in the Detailed Technical report.')
+    expect(section.textContent).not.toContain('F-0n')
+  })
+
+  it('previews a v1 root cause without v2-only checks', async () => {
+    apiMock.getTestArchiveReport.mockResolvedValueOnce({ ...sampleReport(), root_cause_view: rcaTestReportView({
+      source: 'v1', schema_version: 'apexload.root_cause.v1', analysis_id: undefined, revision: undefined, outcome: 'breached', summary: 'Release SLA breached.',
+      hypotheses: [{ rank: 1, title: 'Release SLA breached', severity: 'critical', detail: 'p95 over target' }],
+    }) })
+    await renderComposer('audit')
+    expect(container.querySelector('[aria-label="Root-cause analysis (generated)"]')).toBeNull()
+    act(() => root.unmount())
+    root = createRoot(container)
+    apiMock.getTestArchiveReport.mockResolvedValueOnce({ ...sampleReport(), root_cause_view: rcaTestReportView({
+      source: 'v1', schema_version: 'apexload.root_cause.v1', analysis_id: undefined, revision: undefined, outcome: 'breached', summary: 'Release SLA breached.',
+      hypotheses: [{ rank: 1, title: 'Release SLA breached', severity: 'critical', detail: 'p95 over target' }],
+    }) })
+    await renderComposer('engineer')
+    const section = container.querySelector('[aria-label="Root-cause analysis (generated)"]')!
+    expect(section.textContent).toContain('Root-cause v1 summary (apexload.root_cause.v1)')
+    expect(section.textContent).toContain('Release SLA breached (Critical)')
+    expect(section.textContent).not.toContain('Would disprove it')
+  })
+
   it('renders the executive release trend comparison when a baseline exists', async () => {
     apiMock.getTestArchiveReport.mockResolvedValueOnce({
       ...sampleReport(),
@@ -480,12 +514,13 @@ function sampleReport() {
       {
         id: 'executive',
         label: 'Executive Summary',
-        included_sections: ['verdict', 'executive_overview', 'graphs', 'sla_rollup', 'release_trend', 'risk_summary', 'recommendations', 'signoff', 'completeness', 'change_attribution'],
+        root_cause_hypothesis_limit: 1,
+        included_sections: ['verdict', 'executive_overview', 'graphs', 'sla_rollup', 'release_trend', 'risk_summary', 'rca', 'recommendations', 'signoff', 'completeness', 'change_attribution'],
       },
       {
         id: 'engineer',
         label: 'Detailed Technical',
-        included_sections: ['verdict', 'technical_overview', 'sla_detail', 'graphs', 'root_cause', 'recommendations', 'test_setup', 'raw_exports', 'generator_manifest', 'completeness', 'schema_compatibility', 'change_attribution', 'summary_timeline', 'errors', 'resources', 'actions', 'browser', 'soap', 'network_phases', 'web2_migration'],
+        included_sections: ['verdict', 'technical_overview', 'sla_detail', 'graphs', 'rca', 'root_cause', 'recommendations', 'test_setup', 'raw_exports', 'generator_manifest', 'completeness', 'schema_compatibility', 'change_attribution', 'summary_timeline', 'errors', 'resources', 'actions', 'browser', 'soap', 'network_phases', 'web2_migration'],
       },
       {
         id: 'audit',

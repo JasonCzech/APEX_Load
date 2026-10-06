@@ -626,6 +626,27 @@ MCP tools keep returning v1.
   project. Its workload qualification against the run appears as `baseline`
   coverage. Unless it is `unqualified`, onset detection compares each load
   level with the baseline's same level.
+- **Investigation.** Where a project presents v2, the run report's
+  Diagnostics area leads with a Root cause panel, linked from Summary:
+  outcome, acceptance, validity, the ranked hypotheses with their confidence
+  reasons, evidence chain, contradicting evidence, competing hypotheses and
+  the check that would disprove each, then anomalies, coverage and
+  limitations. Editors can re-analyze; a comparison baseline open in the
+  report is sent and named. Investigating a hypothesis opens one timeline
+  (anomaly windows, onset uncertainty bands, the archived load-phase
+  events, suspect and invalid spans, throughput and p95 drawn at interval
+  starts) with the symptom's transaction population, exemplars with trace
+  links, the cause evidence and the matching error patterns. A run that
+  archived no phase events shows load steps inferred from the detection
+  levels, marked as inferred. The report URL carries `analysis`, `rev`,
+  `hypothesis` and `window`, so a shared link reopens the same view.
+- **Reports.** The report section `rca` renders the generated root cause in
+  the dashboard's report preview, HTML, PDF, Word, CSV and the analysis ZIP
+  from one model (`root_cause_view` on the report JSON): the latest
+  completed v2 assessment where the project presents v2, otherwise the v1
+  summary, with a note when v2 is presented but no analysis completed. It
+  is separate from the Findings section, which holds analyst-curated or
+  derived findings, and never carries run annotations.
 - **Clients.** `apexctl rca analyze --id RUN [--enrich] [--baseline-id RUN]`,
   `apexctl rca status --id RUN --analysis-id ID`, `apexctl rca show --id RUN`
   and `apexctl rca bundle --id RUN --analysis-id ID`, and `apexctl rca eval`

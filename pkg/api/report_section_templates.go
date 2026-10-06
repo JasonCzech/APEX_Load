@@ -389,6 +389,33 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{with index .Annotations.SectionComments "risks"}}<div class="analyst"><p>{{.}}</p></div>{{end}}
 {{end}}
 
+{{define "rca"}}
+<h2>Root-Cause Analysis <span class="pill">Generated</span></h2>
+{{with .RootCause}}
+<p class="muted">{{rootCauseSource .}}. Generated from archived evidence; analyst findings are reported separately.</p>
+<p><strong>{{rootCauseOutcome .Outcome}}.</strong> {{.Summary}}</p>
+{{if .Validity}}<p>Run validity: {{rootCauseOutcome .Validity}}{{range .ValidityReasons}} · {{.}}{{end}}</p>{{end}}
+{{range .Notes}}<p class="muted">{{.}}</p>{{end}}
+{{else}}<p class="muted">No generated root-cause analysis is available for this run.</p>{{end}}
+{{range .RootCauseHypotheses}}
+<div class="finding">
+  <div class="finding-head"><span class="fid">#{{.Rank}}</span><span class="ft">{{.Title}}</span>{{if .Confidence}}<span class="pill">{{.Confidence}} confidence</span>{{else if .Severity}}<span class="pill">{{rootCauseOutcome .Severity}}</span>{{end}}</div>
+  <div class="finding-body"><dl>
+    {{if .Explains}}<dt>Explains</dt><dd>{{join .Explains}}</dd>{{end}}
+    {{if .Detail}}<dt>Detail</dt><dd>{{.Detail}}</dd>{{end}}
+    {{range .Chain}}<dt>Evidence</dt><dd>{{.}}</dd>{{end}}
+    {{if .Reasons}}<dt>Confidence</dt><dd>{{join .Reasons}}</dd>{{end}}
+    {{if $.RootCause}}{{if eq $.RootCause.Source "v2"}}<dt>Contradicting evidence</dt><dd>{{if .Contradicting}}{{join .Contradicting}}{{else}}None found{{end}}</dd>
+    <dt>Would disprove it</dt><dd>{{if .Falsification}}{{.Falsification}}{{else}}Not provided{{end}}</dd>{{end}}{{end}}
+    {{if .Competing}}<dt>Also supported</dt><dd>{{join .Competing}}</dd>{{end}}
+    {{range .Limitations}}<dt>Limitation</dt><dd>{{.}}</dd>{{end}}
+  </dl></div>
+</div>
+{{end}}
+{{if .RootCause}}{{if gt (len .RootCause.Hypotheses) (len .RootCauseHypotheses)}}<p class="muted">{{sub (len .RootCause.Hypotheses) (len .RootCauseHypotheses)}} more ranked in the Detailed Technical report.</p>{{end}}
+{{if .RootCause.Limitations}}<details><summary>Limitations</summary><ul>{{range .RootCause.Limitations}}<li>{{.}}</li>{{end}}</ul></details>{{end}}{{end}}
+{{end}}
+
 {{define "root_cause"}}
 <h2>Findings</h2>
 {{range .Findings}}

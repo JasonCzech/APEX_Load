@@ -14,7 +14,6 @@ import {
   rcaPhaseMarkers,
   rcaSeriesLabel,
   rcaSeriesPopulation,
-  rcaSummary,
   rcaTimelineRows,
   rcaTone,
   rcaValidityConcerns,
@@ -124,12 +123,5 @@ describe('rcaModel', () => {
     ] } as unknown as RunArchiveReport
     expect(rcaErrorPatterns(report, ['Checkout'], window).map(p => p.signature)).toEqual(['inside', 'spanning'])
     expect(rcaErrorPatterns(report, ['Checkout'], null).map(p => p.signature)).toEqual(['inside', 'spanning', 'before'])
-  })
-
-  it('summarizes the leading hypothesis or the outcome', () => {
-    const a = normalizeRcaAssessment(rcaTestAssessment())
-    expect(rcaSummary(a)).toBe('Resource pressure is the leading hypothesis for Checkout · p95 latency (medium confidence).')
-    expect(rcaSummary({ ...a, outcome: 'insufficient_evidence', hypotheses: [] })).toMatch(/too little evidence/)
-    expect(rcaSummary({ ...a, outcome: 'no_supported_hypothesis', hypotheses: [] })).toMatch(/no hypothesis/)
   })
 })

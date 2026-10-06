@@ -547,6 +547,11 @@ type RunArchiveReport struct {
 	// storage-aware handler layer (attachDashboardPanels) from the run's frozen
 	// snapshot, so buildRunArchiveReport stays a pure function of one archive record.
 	DashboardPanels *RunArchiveDashboardPanels `json:"dashboard_panels,omitempty"`
+	// RootCauseView is the generated root cause every report format renders
+	// (v2 where the project presents it, else v1). It is attached at the
+	// handler layer (attachRootCause); a report without it renders the v1
+	// summary computed from the report itself.
+	RootCauseView *ReportRootCause `json:"root_cause_view,omitempty"`
 
 	// Validity says whether the run's load generators and telemetry could
 	// carry the load it reports (apexload rules validity.v1).
@@ -612,6 +617,9 @@ type RunArchiveReportProfile struct {
 	ExportFormats    []string `json:"export_formats"`
 	IncludedSections []string `json:"included_sections"`
 	SectionOrder     []string `json:"section_order,omitempty"`
+	// RootCauseHypothesisLimit caps the generated hypotheses the rca section
+	// shows; zero shows them all.
+	RootCauseHypothesisLimit int `json:"root_cause_hypothesis_limit,omitempty"`
 }
 
 type RunArchiveNetworkPhaseSummary struct {

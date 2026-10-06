@@ -31,7 +31,7 @@ import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } fr
 import RunReportCompareBar from './runReport/RunReportCompareBar'
 import RunReportDiagnostics from './runReport/RunReportDiagnostics'
 import RootCausePanel from './rca/RootCausePanel'
-import { formatRcaWindow, rcaHypothesisWindow, rcaSummary } from './rca/rcaModel'
+import { formatRcaWindow, rcaHypothesisWindow } from './rca/rcaModel'
 import { useRootCauseAnalysis } from './rca/useRootCauseAnalysis'
 import RunReportExportActions from './runReport/RunReportExportActions'
 import RunReportPowerBIPublish from './runReport/RunReportPowerBIPublish'
@@ -462,11 +462,17 @@ export default function RunReportPage({
   const navigateRootCause = (next: RootCauseRouteState) => {
     onNavigateReport({ lens: activeLens, compare: compareId || undefined, comparisonId: initialComparisonId, section: 'diagnostics', ...next })
   }
-  const rootCauseAssessment = rootCause.response?.presented ? rootCause.response.assessment : undefined
+  // Summary states the report's generated root cause (the same model the
+  // exported reports render) when it is a presented v2 analysis.
+  const rootCauseView = report?.root_cause_view?.source === 'v2' ? report.root_cause_view : undefined
   const investigateRootCause = () => {
-    const top = rootCauseAssessment?.hypotheses[0]
-    const span = top && rootCauseAssessment ? rcaHypothesisWindow(top, rootCauseAssessment.anomalies) : null
-    navigateRootCause({ analysis: rootCause.response?.analysis_id, rev: rootCause.response?.revision ? String(rootCause.response.revision) : undefined, hypothesis: top?.id, window: span ? formatRcaWindow(span) : undefined })
+    if (!rootCauseView) return
+    const top = rootCauseView.hypotheses[0]
+    // The interactive copy of the same analysis gives the hypothesis's window.
+    const assessment = rootCause.response?.analysis_id === rootCauseView.analysis_id ? rootCause.response?.assessment : undefined
+    const hypothesis = top?.id ? assessment?.hypotheses.find(h => h.id === top.id) : undefined
+    const span = hypothesis && assessment ? rcaHypothesisWindow(hypothesis, assessment.anomalies) : null
+    navigateRootCause({ analysis: rootCauseView.analysis_id, rev: rootCauseView.revision ? String(rootCauseView.revision) : undefined, hypothesis: top?.id, window: span ? formatRcaWindow(span) : undefined })
   }
   const areas = ['Summary', 'Performance', 'Comparison', 'Diagnostics', 'Evidence', 'Execution'] as const
   const facts = executionFacts(test, report, manifestModel.manifest)
@@ -536,7 +542,7 @@ export default function RunReportPage({
           {report && <RunOutcomeSummary report={report} showPopulations={false} />}
           <RunReportKpiScorecard kpis={kpis} />
           <section className="run-report-panel"><h2>Findings and next steps</h2>
-            {rootCauseAssessment && <p className="rca-summary-line"><span><strong>Root cause:</strong> {rcaSummary(rootCauseAssessment)}</span><button type="button" className="btn btn-secondary" onClick={investigateRootCause}>Investigate root cause</button></p>}
+            {rootCauseView && <p className="rca-summary-line"><span><strong>Root cause:</strong> {rootCauseView.summary}</span><button type="button" className="btn btn-secondary" onClick={investigateRootCause}>Investigate root cause</button></p>}
             {report?.error_patterns?.length ? <><p>{report.error_patterns.length} error patterns were captured across all populations.</p><button className="btn btn-secondary" onClick={() => setArea('Diagnostics')}>Investigate errors</button></> : <p>{report ? 'No recurring error patterns were captured across all populations.' : 'Findings will appear when the report loads.'}</p>}
             {report?.completeness && report.completeness.score_pct < 100 && <p>Evidence coverage is {report.completeness.score_pct}%. <button className="btn btn-ghost" onClick={() => setArea('Evidence')}>Review evidence gaps</button></p>}
           </section>

@@ -191,6 +191,115 @@ func csvFindingsRows(write reportCSVWriteFunc, section string, findings []Report
 	return nil
 }
 
+// pdfRootCauseLines writes the generated root cause as text lines.
+func pdfRootCauseLines(lines *[]string, view *ReportRootCause, hypotheses []ReportRootCauseHypothesis) {
+	if view == nil {
+		*lines = append(*lines, "No generated root-cause analysis is available for this run.")
+		return
+	}
+	*lines = append(*lines, "Source: "+reportRootCauseSourceLabel(view), "Outcome: "+rcaHumanize(view.Outcome), view.Summary)
+	if view.Validity != "" {
+		*lines = append(*lines, "Run validity: "+rcaHumanize(view.Validity)+reportJoinedSuffix(view.ValidityReasons))
+	}
+	*lines = append(*lines, view.Notes...)
+	for _, h := range hypotheses {
+		strength := h.Confidence
+		if strength != "" {
+			strength += " confidence"
+		} else {
+			strength = h.Severity
+		}
+		*lines = append(*lines, fmt.Sprintf("#%d %s (%s)", h.Rank, h.Title, strength))
+		if len(h.Explains) > 0 {
+			*lines = append(*lines, "  Explains: "+strings.Join(h.Explains, "; "))
+		}
+		if h.Detail != "" {
+			*lines = append(*lines, "  "+h.Detail)
+		}
+		for _, step := range h.Chain {
+			*lines = append(*lines, "  Evidence: "+step)
+		}
+		if view.Source == reportRootCauseV2 {
+			*lines = append(*lines, "  Contradicting evidence: "+reportListOr(h.Contradicting, "none found"))
+			*lines = append(*lines, "  Would disprove it: "+reportProvidedValue(h.Falsification))
+		}
+		for _, limitation := range h.Limitations {
+			*lines = append(*lines, "  Limitation: "+limitation)
+		}
+	}
+	if omitted := len(view.Hypotheses) - len(hypotheses); omitted > 0 {
+		*lines = append(*lines, fmt.Sprintf("%d more ranked in the Detailed Technical report.", omitted))
+	}
+	for _, limitation := range view.Limitations {
+		*lines = append(*lines, "Limitation: "+limitation)
+	}
+}
+
+// csvRootCauseRows writes the generated root cause as CSV rows; each
+// hypothesis is keyed by its rank.
+func csvRootCauseRows(write reportCSVWriteFunc, section string, view *ReportRootCause, hypotheses []ReportRootCauseHypothesis) error {
+	if view == nil {
+		return csvNote(write, section, "No generated root-cause analysis is available for this run.")
+	}
+	rows := [][3]string{
+		{"", "source", view.Source},
+		{"", "schema_version", view.SchemaVersion},
+		{"", "analysis_id", view.AnalysisID},
+		{"", "outcome", view.Outcome},
+		{"", "summary", view.Summary},
+		{"", "confidence", view.Confidence},
+		{"", "validity", view.Validity},
+		{"", "acceptance", view.Acceptance},
+	}
+	if view.Revision > 0 {
+		rows = append(rows, [3]string{"", "revision", fmt.Sprint(view.Revision)})
+	}
+	for _, note := range view.Notes {
+		rows = append(rows, [3]string{"", "note", note})
+	}
+	for _, h := range hypotheses {
+		key := fmt.Sprintf("hypothesis_%d", h.Rank)
+		rows = append(rows,
+			[3]string{key, "title", h.Title}, [3]string{key, "confidence", h.Confidence}, [3]string{key, "severity", h.Severity},
+			[3]string{key, "detail", h.Detail}, [3]string{key, "explains", strings.Join(h.Explains, "; ")},
+			[3]string{key, "chain", strings.Join(h.Chain, "; ")}, [3]string{key, "competing", strings.Join(h.Competing, "; ")},
+			[3]string{key, "falsification", h.Falsification}, [3]string{key, "limitations", strings.Join(h.Limitations, "; ")},
+			[3]string{key, "evidence", strings.Join(h.Evidence, "; ")})
+		if view.Source == reportRootCauseV2 {
+			rows = append(rows, [3]string{key, "contradicting", reportListOr(h.Contradicting, "none found")})
+		}
+	}
+	for _, c := range view.Coverage {
+		rows = append(rows, [3]string{"coverage", c.Evidence, strings.TrimSpace(c.Status + " " + c.Detail)})
+	}
+	for _, limitation := range view.Limitations {
+		rows = append(rows, [3]string{"", "limitation", limitation})
+	}
+	for _, row := range rows {
+		if strings.TrimSpace(row[2]) == "" {
+			continue
+		}
+		if err := write(section, row[0], row[1], row[2]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func reportListOr(values []string, empty string) string {
+	if len(values) == 0 {
+		return empty
+	}
+	return strings.Join(values, "; ")
+}
+
+func reportJoinedSuffix(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(values, "; ") + ")"
+}
+
 // csvSLARows writes the SLA compliance table as CSV rows.
 func csvSLARows(write reportCSVWriteFunc, section string, rows []SLAComplianceRow) error {
 	if len(rows) == 0 {
@@ -507,7 +616,19 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			return csvFindingsRows(write, "risk_summary", d.Findings)
 		}})
-	add(reportSectionRenderer{ID: "root_cause", Label: "Findings & Root Cause",
+	// Generated root cause (rca) and findings (root_cause, analyst-authored or
+	// derived) are separate sections, so analyst content never mixes with
+	// generated analysis.
+	add(reportSectionRenderer{ID: "rca", Label: "Root-Cause Analysis",
+		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
+			pdfHeading(lines, "Root-Cause Analysis (generated)")
+			pdfRootCauseLines(lines, d.RootCause, d.RootCauseHypotheses)
+			*lines = append(*lines, "")
+		},
+		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
+			return csvRootCauseRows(write, "rca", d.RootCause, d.RootCauseHypotheses)
+		}})
+	add(reportSectionRenderer{ID: "root_cause", Label: "Findings",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Findings")
 			pdfFindingsLines(lines, d.Findings)

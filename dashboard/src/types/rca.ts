@@ -196,6 +196,46 @@ export interface RcaAnalysisResponse {
   presented: boolean
 }
 
+// ReportRootCause is the generated root cause as every report format
+// presents it (Go ReportRootCause): from v2 where the project presents it,
+// else from v1. Analyst findings are never part of it.
+export interface ReportRootCause {
+  source: 'v1' | 'v2'
+  schema_version: string
+  analysis_id?: string
+  revision?: number
+  completed_at?: string
+  engine?: string
+  outcome: string
+  summary: string
+  confidence?: string
+  validity?: string
+  validity_reasons?: string[]
+  acceptance?: string
+  hypotheses: ReportRootCauseHypothesis[]
+  coverage?: RcaCoverage[]
+  limitations?: string[]
+  next_actions?: string[]
+  notes?: string[]
+}
+
+export interface ReportRootCauseHypothesis {
+  id?: string
+  rank: number
+  title: string
+  confidence?: string
+  severity?: string
+  detail?: string
+  explains?: string[]
+  reasons?: string[]
+  chain?: string[]
+  contradicting?: string[]
+  competing?: string[]
+  falsification?: string
+  limitations?: string[]
+  evidence?: string[]
+}
+
 // ArchivePhaseEvent is one archived load-phase transition
 // (apexload.phase_event.v1).
 export interface ArchivePhaseEvent {

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import type { RunArchiveReport, TestSummary } from '../types'
 import RunReportPage from './RunReportPage'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
-import { rcaTestResponse } from './rca/rcaTestFixture'
+import { rcaTestReportView, rcaTestResponse } from './rca/rcaTestFixture'
 
 vi.mock('../hooks/apiClient', () => ({ request: vi.fn().mockResolvedValue({ revision: 0, annotations: [] }) }))
 
@@ -260,7 +260,7 @@ describe('RunReportPage', () => {
 
   it('links the root-cause finding in Summary to its investigation in Diagnostics', async () => {
     mocks.polling.test = buildTest('COMPLETE')
-    mocks.archiveModel.archiveReport = { manifest: {}, overview: {} } as unknown as RunArchiveReport
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, root_cause_view: rcaTestReportView() } as unknown as RunArchiveReport
     mocks.api.getRootCauseAssessment.mockResolvedValue(rcaTestResponse())
     await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
     expect(container.textContent).toContain('Root cause: Resource pressure is the leading hypothesis for Checkout · p95 latency (medium confidence).')
@@ -273,7 +273,8 @@ describe('RunReportPage', () => {
 
   it('keeps root cause out of Summary and Diagnostics where the project does not present it', async () => {
     mocks.polling.test = buildTest('COMPLETE')
-    mocks.archiveModel.archiveReport = { manifest: {}, overview: {} } as unknown as RunArchiveReport
+    // Unpresented projects carry the v1 summary for exported reports only.
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, root_cause_view: rcaTestReportView({ source: 'v1', summary: 'Release SLA breached.', hypotheses: [] }) } as unknown as RunArchiveReport
     mocks.api.getRootCauseAssessment.mockResolvedValue(rcaTestResponse({ presented: false }))
     await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
     expect(container.textContent).not.toContain('Root cause:')

@@ -3686,6 +3686,7 @@ export interface operations {
               "id"?: string;
               "included_sections"?: Array<string>;
               "label"?: string;
+              "root_cause_hypothesis_limit"?: number;
               "section_order"?: Array<string>;
             }>;
             "resource_peaks"?: {
@@ -3709,6 +3710,40 @@ export interface operations {
               "net_sent_kbps"?: number;
               "tcp_retransmits_per_sec"?: number;
             };
+            "root_cause_view"?: ({
+              "acceptance"?: string;
+              "analysis_id"?: string;
+              "completed_at"?: (string) | null;
+              "confidence"?: string;
+              "coverage"?: Array<Record<string, unknown>>;
+              "engine"?: string;
+              "hypotheses"?: Array<{
+                "chain"?: Array<string>;
+                "competing"?: Array<string>;
+                "confidence"?: string;
+                "contradicting"?: Array<string>;
+                "detail"?: string;
+                "evidence"?: Array<string>;
+                "explains"?: Array<string>;
+                "falsification"?: string;
+                "id"?: string;
+                "limitations"?: Array<string>;
+                "rank"?: number;
+                "reasons"?: Array<string>;
+                "severity"?: string;
+                "title"?: string;
+              }>;
+              "limitations"?: Array<string>;
+              "next_actions"?: Array<string>;
+              "notes"?: Array<string>;
+              "outcome"?: string;
+              "revision"?: number;
+              "schema_version"?: string;
+              "source"?: string;
+              "summary"?: string;
+              "validity"?: string;
+              "validity_reasons"?: Array<string>;
+            }) | null;
             "schema_version"?: string;
             "sla_rollup"?: ({
               "evaluated"?: number;
@@ -57046,6 +57081,7 @@ export interface operations {
         "limit"?: number;
         "name"?: string;
         "offset"?: number;
+        "population"?: string;
       };
     };
     requestBody?: never;
@@ -62023,6 +62059,7 @@ export interface operations {
               "id": string;
               "included_sections": Array<string>;
               "label": string;
+              "root_cause_hypothesis_limit"?: number;
               "section_order"?: Array<string>;
             }>;
             "resource_peaks": {
@@ -62046,6 +62083,40 @@ export interface operations {
               "net_sent_kbps": number;
               "tcp_retransmits_per_sec"?: number;
             };
+            "root_cause_view"?: ({
+              "acceptance"?: string;
+              "analysis_id"?: string;
+              "completed_at"?: (string) | null;
+              "confidence"?: string;
+              "coverage"?: Array<Record<string, unknown>>;
+              "engine"?: string;
+              "hypotheses": Array<{
+                "chain"?: Array<string>;
+                "competing"?: Array<string>;
+                "confidence"?: string;
+                "contradicting"?: Array<string>;
+                "detail"?: string;
+                "evidence"?: Array<string>;
+                "explains"?: Array<string>;
+                "falsification"?: string;
+                "id"?: string;
+                "limitations"?: Array<string>;
+                "rank": number;
+                "reasons"?: Array<string>;
+                "severity"?: string;
+                "title": string;
+              }>;
+              "limitations"?: Array<string>;
+              "next_actions"?: Array<string>;
+              "notes"?: Array<string>;
+              "outcome": string;
+              "revision"?: number;
+              "schema_version": string;
+              "source": string;
+              "summary": string;
+              "validity"?: string;
+              "validity_reasons"?: Array<string>;
+            }) | null;
             "schema_version": string;
             "sla_rollup"?: ({
               "evaluated": number;
@@ -79177,6 +79248,7 @@ export interface operations {
               "id": string;
               "included_sections": Array<string>;
               "label": string;
+              "root_cause_hypothesis_limit"?: number;
               "section_order"?: Array<string>;
             }>;
           };

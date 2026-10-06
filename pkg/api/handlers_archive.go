@@ -511,9 +511,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusBadRequest, "unknown report profile")
 			return
 		}
-		s.attachReleaseTrendForProfile(report, profile.ID)
-		s.attachIdentityNames(report)
-		s.attachDashboardPanelsForProfile(report, profile.ID)
+		s.enrichArchiveReportForProfile(report, profile.ID)
 		testID := r.PathValue("id")
 		annotations, err := resolveReportAnnotations(s.store, report, testID, profile.ID)
 		if err != nil {
@@ -546,9 +544,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		profileID := profile.ID
-		s.attachReleaseTrendForProfile(report, profileID)
-		s.attachIdentityNames(report)
-		s.attachDashboardPanelsForProfile(report, profileID)
+		s.enrichArchiveReportForProfile(report, profileID)
 		annotations, err := resolveReportAnnotations(s.store, report, testID, profileID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
@@ -579,9 +575,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("report profile %q does not support pdf export", profile.ID))
 			return
 		}
-		s.attachReleaseTrendForProfile(report, profile.ID)
-		s.attachIdentityNames(report)
-		s.attachDashboardPanelsForProfile(report, profile.ID)
+		s.enrichArchiveReportForProfile(report, profile.ID)
 		testID := r.PathValue("id")
 		annotations, err := resolveReportAnnotations(s.store, report, testID, profile.ID)
 		if err != nil {
@@ -620,9 +614,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("report profile %q does not support docx export", profile.ID))
 			return
 		}
-		s.attachReleaseTrendForProfile(report, profile.ID)
-		s.attachIdentityNames(report)
-		s.attachDashboardPanelsForProfile(report, profile.ID)
+		s.enrichArchiveReportForProfile(report, profile.ID)
 		testID := r.PathValue("id")
 		annotations, err := resolveReportAnnotations(s.store, report, testID, profile.ID)
 		if err != nil {
@@ -655,6 +647,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		s.attachReleaseTrend(report)
 	}
 	s.attachDashboardPanels(report)
+	s.attachRootCause(report)
 	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("download")), "true") {
 		testID := sanitizeFilename(r.PathValue("id"))
 		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+".json\"")
@@ -1097,11 +1090,9 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 	if profile == "" {
 		profile = "engineer"
 	}
-	// Attach release-over-release trend before rendering — only for profiles that
-	// actually display the section (executive), so engineer/audit avoid the cost.
-	s.attachReleaseTrendForProfile(report, profile)
-	s.attachIdentityNames(report)
-	s.attachDashboardPanelsForProfile(report, profile)
+	// Attach the cross-run and storage-backed sections before rendering, each
+	// only for profiles that display it.
+	s.enrichArchiveReportForProfile(report, profile)
 	annotations, err := resolveReportAnnotations(s.store, report, r.PathValue("id"), profile)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
