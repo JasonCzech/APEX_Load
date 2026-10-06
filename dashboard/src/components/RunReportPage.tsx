@@ -10,7 +10,7 @@ import StatusBadge from './StatusBadge'
 import TestNotesDialog from './TestNotesDialog'
 import { reportComparisonQualification } from './reportComparisonQualification'
 import { OrchestrationReturn } from './OrchestrationReturn'
-import { parseAppViewFromHash, scopeAppViewToWorkspace, viewToLocationHash, workspaceScopeForAppView, type ReportSection } from '../appRouting'
+import { parseAppViewFromHash, scopeAppViewToWorkspace, viewToLocationHash, workspaceScopeForAppView, type ReportSection, type RootCauseRouteState } from '../appRouting'
 import TabList from './ux/TabList'
 import TestExecutionArchive from './TestExecutionArchive'
 import RunOutcomeSummary, { RunMetricPopulations } from './RunOutcomeSummary'
@@ -30,6 +30,9 @@ import { useExecutionTestPolling } from './useExecutionTestPolling'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import RunReportCompareBar from './runReport/RunReportCompareBar'
 import RunReportDiagnostics from './runReport/RunReportDiagnostics'
+import RootCausePanel from './rca/RootCausePanel'
+import { formatRcaWindow, rcaHypothesisWindow, rcaSummary } from './rca/rcaModel'
+import { useRootCauseAnalysis } from './rca/useRootCauseAnalysis'
 import RunReportExportActions from './runReport/RunReportExportActions'
 import RunReportPowerBIPublish from './runReport/RunReportPowerBIPublish'
 import RunReportConfluencePublish from './runReport/RunReportConfluencePublish'
@@ -60,9 +63,10 @@ interface Props {
   initialTransaction?: string
   initialPopulation?: MetricPopulation
   initialSection?: ReportSection
+  initialRootCause?: RootCauseRouteState
   statusOverride?: string
   onOpenCommandCenter: (id?: string) => void
-  onNavigateReport: (next: { lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection }) => void
+  onNavigateReport: (next: { lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection } & RootCauseRouteState) => void
 }
 
 function archiveReadyTest(test: TestSummary | null, status: string): TestSummary | null {
@@ -92,6 +96,7 @@ export default function RunReportPage({
   initialTransaction,
   initialPopulation,
   initialSection,
+  initialRootCause,
   statusOverride,
   onOpenCommandCenter,
   onNavigateReport,
@@ -117,6 +122,7 @@ export default function RunReportPage({
   const archiveModel = useExecutionArchiveModel(archivedTest, false, compareId, populationChoice)
   const { archiveSummaryHistory, archiveSummaryError, archiveSummariesLoading } = useExecutionArchiveSummaryHistory(archivedTest)
   const { archiveResourceHistory, archiveResourceError, archiveResourcesLoading } = useExecutionArchiveResourceHistory(archivedTest)
+  const rootCause = useRootCauseAnalysis(testId, initialRootCause?.analysis, Boolean(archivedTest?.archive))
 
   const [annotations, setAnnotations] = useState<ReportAnnotations | null>(null)
   const [annotationsLoading, setAnnotationsLoading] = useState(false)
@@ -451,6 +457,17 @@ export default function RunReportPage({
     // current section visible if the user cancels an unsaved-assessment prompt.
     onNavigateReport({ lens: activeLens, compare: compareId || undefined, comparisonId: initialComparisonId, section: next.toLowerCase() as ReportSection })
   }
+  // Root-cause state lives in the route, so a shared link reopens the same
+  // analysis, hypothesis and window.
+  const navigateRootCause = (next: RootCauseRouteState) => {
+    onNavigateReport({ lens: activeLens, compare: compareId || undefined, comparisonId: initialComparisonId, section: 'diagnostics', ...next })
+  }
+  const rootCauseAssessment = rootCause.response?.presented ? rootCause.response.assessment : undefined
+  const investigateRootCause = () => {
+    const top = rootCauseAssessment?.hypotheses[0]
+    const span = top && rootCauseAssessment ? rcaHypothesisWindow(top, rootCauseAssessment.anomalies) : null
+    navigateRootCause({ analysis: rootCause.response?.analysis_id, rev: rootCause.response?.revision ? String(rootCause.response.revision) : undefined, hypothesis: top?.id, window: span ? formatRcaWindow(span) : undefined })
+  }
   const areas = ['Summary', 'Performance', 'Comparison', 'Diagnostics', 'Evidence', 'Execution'] as const
   const facts = executionFacts(test, report, manifestModel.manifest)
   const failed = resolvedStatus === 'FAILED'
@@ -519,6 +536,7 @@ export default function RunReportPage({
           {report && <RunOutcomeSummary report={report} showPopulations={false} />}
           <RunReportKpiScorecard kpis={kpis} />
           <section className="run-report-panel"><h2>Findings and next steps</h2>
+            {rootCauseAssessment && <p className="rca-summary-line"><span><strong>Root cause:</strong> {rcaSummary(rootCauseAssessment)}</span><button type="button" className="btn btn-secondary" onClick={investigateRootCause}>Investigate root cause</button></p>}
             {report?.error_patterns?.length ? <><p>{report.error_patterns.length} error patterns were captured across all populations.</p><button className="btn btn-secondary" onClick={() => setArea('Diagnostics')}>Investigate errors</button></> : <p>{report ? 'No recurring error patterns were captured across all populations.' : 'Findings will appear when the report loads.'}</p>}
             {report?.completeness && report.completeness.score_pct < 100 && <p>Evidence coverage is {report.completeness.score_pct}%. <button className="btn btn-ghost" onClick={() => setArea('Evidence')}>Review evidence gaps</button></p>}
           </section>
@@ -550,6 +568,8 @@ export default function RunReportPage({
           <details><summary>Load impact</summary>{renderEvidence('load-impact')}</details>
         </>}
         {area === 'Diagnostics' && hasArchive && <>
+          <RootCausePanel testId={testId} model={rootCause} report={report} history={timelineHistory} historyLoading={archiveSummariesLoading || archiveResourcesLoading}
+            canAnalyze={canPublishConfluence} baselineTestId={effectiveCompareId || undefined} baselineName={baselineTest?.name} route={initialRootCause || {}} onRouteChange={navigateRootCause} />
           <RunReportDiagnostics report={report} loading={archiveModel.archiveAnalysisLoading} error={archiveModel.archiveAnalysisError} />
           {renderEvidence('report-error-patterns')}
           {renderEvidence('transactions')}

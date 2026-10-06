@@ -9,6 +9,12 @@ describe('appRouting', () => {
     expect(parseAppViewFromHash('#/report/run-2?population=invalid')).toEqual({page: 'report', testId: 'run-2'})
   })
 
+  it('round-trips a root-cause investigation and drops malformed state', () => {
+    const view: AppView = {page: 'report', testId: 'run-2', section: 'diagnostics', analysis: 'rca-0123abcd', rev: '3', hypothesis: 'hypothesis-89ab', window: '2026-10-05T12:00:00.000Z~2026-10-05T12:05:00.000Z'}
+    expect(parseAppViewFromHash(viewToLocationHash(view))).toEqual(view)
+    expect(parseAppViewFromHash('#/report/run-2?analysis=%3Cscript%3E&rev=x1&hypothesis=a%20b&window=yesterday')).toEqual({page: 'report', testId: 'run-2'})
+  })
+
   it('maps run workspaces to the sidebar area that owns their current flow', () => {
     for (const tab of [undefined, 'overview', 'control', 'graphs', 'diagnostics'] as const) {
       expect(navPageForAppView({ page: 'test', testId: 'run-1', ...(tab ? { tab } : {}) })).toBe('command-center')

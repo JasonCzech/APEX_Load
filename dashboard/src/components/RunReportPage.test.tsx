@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import type { RunArchiveReport, TestSummary } from '../types'
 import RunReportPage from './RunReportPage'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
+import { rcaTestResponse } from './rca/rcaTestFixture'
 
 vi.mock('../hooks/apiClient', () => ({ request: vi.fn().mockResolvedValue({ revision: 0, annotations: [] }) }))
 
@@ -24,6 +25,10 @@ const mocks = vi.hoisted(() => ({
     pinComparisonBaseline: vi.fn(),
     downloadTestReport: vi.fn(),
     downloadTestReportFormat: vi.fn(),
+    getRootCauseAssessment: vi.fn(),
+    getRootCauseAnalysis: vi.fn(),
+    requestRootCauseAnalysis: vi.fn(),
+    getTestArchiveExemplars: vi.fn(),
   },
   polling: {
     test: null as TestSummary | null,
@@ -220,6 +225,8 @@ describe('RunReportPage', () => {
       sections: [],
     })
     mocks.api.getTestManifest.mockResolvedValue({ runtime_changes: [] })
+    mocks.api.getRootCauseAssessment.mockResolvedValue({ state: 'none', presented: false })
+    mocks.api.getTestArchiveExemplars.mockResolvedValue({ exemplars: [], total: 0 })
     mocks.polling.test = null
     mocks.polling.error = ''
     mocks.archiveModel.archiveReport = null
@@ -249,6 +256,40 @@ describe('RunReportPage', () => {
     expect(population().value).toBe('transaction')
     expect(mocks.archiveModel.onSelectedArchiveActionChange).toHaveBeenCalledWith('Checkout')
     expect(mocks.archiveModel.onSelectedArchiveGroupChange).toHaveBeenCalledWith('')
+  })
+
+  it('links the root-cause finding in Summary to its investigation in Diagnostics', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {} } as unknown as RunArchiveReport
+    mocks.api.getRootCauseAssessment.mockResolvedValue(rcaTestResponse())
+    await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    expect(container.textContent).toContain('Root cause: Resource pressure is the leading hypothesis for Checkout · p95 latency (medium confidence).')
+    await act(async () => buttonByText(container, 'Investigate root cause')!.click())
+    expect(onNavigateReport).toHaveBeenLastCalledWith({
+      lens: 'executive', compare: undefined, comparisonId: undefined, section: 'diagnostics',
+      analysis: 'rca-1', rev: '2', hypothesis: 'hypothesis-cpu', window: '2026-10-05T12:01:25.000Z~2026-10-05T12:06:55.000Z',
+    })
+  })
+
+  it('keeps root cause out of Summary and Diagnostics where the project does not present it', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {} } as unknown as RunArchiveReport
+    mocks.api.getRootCauseAssessment.mockResolvedValue(rcaTestResponse({ presented: false }))
+    await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    expect(container.textContent).not.toContain('Root cause:')
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="diagnostics" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    expect(container.querySelector('[aria-label="Root cause"]')).toBeNull()
+  })
+
+  it('reopens a shared root-cause link at its analysis and hypothesis', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {} } as unknown as RunArchiveReport
+    mocks.api.getRootCauseAnalysis.mockResolvedValue(rcaTestResponse())
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="diagnostics" initialRootCause={{ analysis: 'rca-1', rev: '2', hypothesis: 'hypothesis-cpu' }}
+      onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    expect(mocks.api.getRootCauseAnalysis).toHaveBeenCalledWith('run-1', 'rca-1', expect.anything())
+    expect(mocks.api.getRootCauseAssessment).not.toHaveBeenCalled()
+    expect(container.querySelector('.rca-investigation')?.getAttribute('aria-label')).toBe('Investigation: Resource pressure')
   })
 
   it('offers recovery instead of pending findings after the archive request fails', async () => {

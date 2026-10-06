@@ -969,6 +969,10 @@ export interface RunArchiveManifest {
   monitor_coverage?: import('./types/appdynamics').RunMonitorCoverage[]
   monitor_evidence_file?: string
   monitor_evidence_count?: number
+  // phase_events_file holds the run's load-phase transitions
+  // (apexload.phase_event.v1), read through /archive/files/{name}.
+  phase_events_file?: string
+  phase_events_truncated?: boolean
   monitor_diagnostics_file?: string
   monitor_diagnostics_count?: number
   monitor_rule_results?: import('./types/appdynamics').MonitorRuleResult[]

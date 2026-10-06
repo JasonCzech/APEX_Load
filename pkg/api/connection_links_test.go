@@ -183,6 +183,37 @@ func TestExemplarAPIReturnsWorkingDeepLinks(t *testing.T) {
 	if other := readPage("group=admin&name=GET%20/cart"); other.Total != 0 || other.LinksUnavailable {
 		t.Fatalf("another group: %+v", other)
 	}
+	// Population and a time window narrow the same scan, so total still
+	// counts every match.
+	archived := archivedExemplars(t, record, manifest)
+	at := archived[len(archived)/2].Timestamp.UTC()
+	inWindow, ofPopulation := 0, 0
+	for _, exemplar := range archived {
+		if !exemplar.Timestamp.Before(at) && !exemplar.Timestamp.After(at.Add(10*time.Second)) {
+			inWindow++
+		}
+		if exemplar.Population == archived[0].Population {
+			ofPopulation++
+		}
+	}
+	windowed := readPage("from=" + url.QueryEscape(at.Format(time.RFC3339Nano)) + "&to=" + url.QueryEscape(at.Add(10*time.Second).Format(time.RFC3339Nano)))
+	if windowed.Total != inWindow || inWindow == 0 || inWindow == len(archived) {
+		t.Fatalf("window: %d of %d, want %d", windowed.Total, len(archived), inWindow)
+	}
+	for _, exemplar := range windowed.Exemplars {
+		if exemplar.Timestamp.Before(at) || exemplar.Timestamp.After(at.Add(10*time.Second)) {
+			t.Fatalf("exemplar at %s outside the window", exemplar.Timestamp)
+		}
+	}
+	if populated := readPage("population=" + url.QueryEscape(archived[0].Population)); populated.Total != ofPopulation {
+		t.Fatalf("population: %d, want %d", populated.Total, ofPopulation)
+	}
+	if none := readPage("population=no-such-population"); none.Total != 0 {
+		t.Fatalf("unknown population: %+v", none)
+	}
+	if bad := timeslotRequest(t, server, http.MethodGet, "/api/v1/tests/linked-run/archive/exemplars?from=yesterday", nil); bad.Code != http.StatusBadRequest {
+		t.Fatalf("bad from: %d %s", bad.Code, bad.Body.String())
+	}
 	// Unreadable link settings leave the exemplars readable, unlinked.
 	wrapped.fail.Store(true)
 	if degraded := readPage("limit=5"); !degraded.LinksUnavailable || len(degraded.Exemplars) != 5 || degraded.Total != page.Total || len(degraded.Exemplars[0].Links) != 0 {
@@ -193,17 +224,27 @@ func TestExemplarAPIReturnsWorkingDeepLinks(t *testing.T) {
 // archivedTraceIDs reads the archived exemplars' trace IDs in file order.
 func archivedTraceIDs(t *testing.T, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) []string {
 	t.Helper()
+	var ids []string
+	for _, exemplar := range archivedExemplars(t, record, manifest) {
+		ids = append(ids, exemplar.TraceID)
+	}
+	return ids
+}
+
+// archivedExemplars reads the archived exemplars in file order.
+func archivedExemplars(t *testing.T, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) []ArchiveExemplar {
+	t.Helper()
 	data, err := os.ReadFile(filepath.Join(record.ArchivePath, manifest.ExemplarsFile))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var ids []string
+	var out []ArchiveExemplar
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
 		var exemplar ArchiveExemplar
 		if err := json.Unmarshal([]byte(line), &exemplar); err != nil {
 			t.Fatal(err)
 		}
-		ids = append(ids, exemplar.TraceID)
+		out = append(out, exemplar)
 	}
-	return ids
+	return out
 }

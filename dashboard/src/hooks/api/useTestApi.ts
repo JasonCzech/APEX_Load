@@ -41,6 +41,7 @@ import type { GoalConfig, GoalTargetStatus, ScenarioMode } from '../../types/goa
 import type { GeneratorAssignmentSettings } from '../../types/testConfiguration'
 import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
 import type { PowerBIPublishResponse, PowerBIPublishStatusResponse } from '../../types/settings'
+import type { ExemplarPage, RcaAnalysisResponse } from '../../types/rca'
 import type {
   RunCalendarResponse,
   ScenarioSchedule,
@@ -674,6 +675,32 @@ export function useTestApi() {
     [],
   )
 
+  // Root-cause v2: the latest completed assessment, one analysis, and a
+  // request for a new one.
+  const getRootCauseAssessment = useCallback(
+    (id: string, options?: ApiCallOptions) =>
+      request<RcaAnalysisResponse>(`/tests/${encodeURIComponent(id)}/archive/root-cause/v2`, withCallOptions(undefined, options)),
+    [],
+  )
+
+  const getRootCauseAnalysis = useCallback(
+    (id: string, analysisId: string, options?: ApiCallOptions) =>
+      request<RcaAnalysisResponse>(`/tests/${encodeURIComponent(id)}/archive/root-cause/analyses/${encodeURIComponent(analysisId)}`, withCallOptions(undefined, options)),
+    [],
+  )
+
+  const requestRootCauseAnalysis = useCallback(
+    (id: string, body: { enrich?: boolean; baseline_test_id?: string } = {}, options?: ApiCallOptions) =>
+      request<RcaAnalysisResponse>(`/tests/${encodeURIComponent(id)}/archive/root-cause/analyses`, withCallOptions({ method: 'POST', body: JSON.stringify(body) }, options)),
+    [],
+  )
+
+  const getTestArchiveExemplars = useCallback(
+    (id: string, query: { name?: string; group?: string; population?: string; from?: string; to?: string; limit?: number; offset?: number } = {}, options?: ApiCallOptions) =>
+      request<ExemplarPage>(`/tests/${encodeURIComponent(id)}/archive/exemplars${buildQuery(query)}`, withCallOptions(undefined, options)),
+    [],
+  )
+
   const getTestReportAnnotations = useCallback(
     (id: string, profile: string, options?: ApiCallOptions) =>
       request<ReportAnnotationsResponse>(`/tests/${id}/report/annotations${buildQuery({ profile })}`, withCallOptions(undefined, options)),
@@ -881,6 +908,10 @@ export function useTestApi() {
       getTestArchiveReports,
       getTestReportAnnotations,
       saveTestReportAnnotations,
+      getRootCauseAssessment,
+      getRootCauseAnalysis,
+      requestRootCauseAnalysis,
+      getTestArchiveExemplars,
       listTestNotes,
       createTestNote,
       updateTestNote,
@@ -975,6 +1006,10 @@ export function useTestApi() {
       getTestArchiveReports,
       getTestReportAnnotations,
       saveTestReportAnnotations,
+      getRootCauseAssessment,
+      getRootCauseAnalysis,
+      requestRootCauseAnalysis,
+      getTestArchiveExemplars,
       listTestNotes,
       createTestNote,
       updateTestNote,

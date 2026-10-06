@@ -14,7 +14,7 @@ export type AppView = AppWorkspaceScope & (
   | { page: 'monitoring'; category?: MonitoringCategoryID }
   | { page: 'docs'; guidePage?: ApiGuideContentPageID; guideArticle?: string; guideSection?: string }
   | { page: 'command-center'; testId?: string }
-  | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection; transaction?: string; population?: 'action' | 'transaction' | 'unknown' }
+  | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection; transaction?: string; population?: 'action' | 'transaction' | 'unknown' } & RootCauseRouteState
   | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans' }
   | { page: 'new-test'; scenarioId?: string; prefillStartLocal?: string }
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
@@ -45,6 +45,32 @@ const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
 const TEST_WORKSPACE_TABS = ['overview', 'diagnostics', 'configuration', 'infrastructure', 'control', 'graphs', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
 const MONITORING_CATEGORIES = ['overview', 'telemetry', 'alerts', 'analysis'] as const
+// RootCauseRouteState is a root-cause investigation's shareable state: the
+// analysis and its revision, the hypothesis being investigated and the time
+// window in focus (two RFC 3339 times joined by "~").
+export interface RootCauseRouteState {
+  analysis?: string
+  rev?: string
+  hypothesis?: string
+  window?: string
+}
+
+const ROOT_CAUSE_ID = /^[A-Za-z0-9._:-]{1,128}$/
+const ROOT_CAUSE_WINDOW = /^[0-9T:.+Z-]{10,40}~[0-9T:.+Z-]{10,40}$/
+
+export function rootCauseRouteState(params: URLSearchParams): RootCauseRouteState {
+  const analysis = params.get('analysis') || ''
+  const rev = params.get('rev') || ''
+  const hypothesis = params.get('hypothesis') || ''
+  const window = params.get('window') || ''
+  return {
+    ...(ROOT_CAUSE_ID.test(analysis) ? { analysis } : {}),
+    ...(/^[0-9]{1,9}$/.test(rev) ? { rev } : {}),
+    ...(ROOT_CAUSE_ID.test(hypothesis) ? { hypothesis } : {}),
+    ...(ROOT_CAUSE_WINDOW.test(window) ? { window } : {}),
+  }
+}
+
 export const REPORT_SECTIONS = ['summary', 'performance', 'comparison', 'diagnostics', 'evidence', 'execution'] as const
 export type ReportSection = typeof REPORT_SECTIONS[number]
 export const REPORT_LENSES = ['executive', 'engineer', 'audit'] as const
@@ -191,6 +217,7 @@ export function parseAppViewFromHash(hash: string): AppView {
     return {
       page: 'report',
       testId: segments[1],
+      ...rootCauseRouteState(params),
       ...(isReportLens(lens) ? { lens } : {}),
       ...(section && REPORT_SECTIONS.includes(section) ? { section } : {}),
       ...(compare ? { compare } : {}),
@@ -368,6 +395,10 @@ export function viewToLocationHash(view: AppView): string {
     if (view.comparisonId) params.set('comparison_id', view.comparisonId)
     if (view.transaction) params.set('transaction', view.transaction)
     if (view.population) params.set('population', view.population)
+    if (view.analysis) params.set('analysis', view.analysis)
+    if (view.rev) params.set('rev', view.rev)
+    if (view.hypothesis) params.set('hypothesis', view.hypothesis)
+    if (view.window) params.set('window', view.window)
     appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/report/${encodeURIComponent(view.testId)}?${query}` : `#/report/${encodeURIComponent(view.testId)}`

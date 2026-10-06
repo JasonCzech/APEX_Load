@@ -343,8 +343,8 @@ func (s *Server) runTraceLinkTargets(test *ManagedTest) ([]traceLinkTarget, erro
 }
 
 // handleGetRunArchiveExemplars pages through a run's post-run exemplars,
-// optionally for one group and transaction name, each with deep links into
-// the run's trace providers.
+// optionally for one group, transaction name, population and time window,
+// each with deep links into the run's trace providers.
 func (s *Server) handleGetRunArchiveExemplars(w http.ResponseWriter, r *http.Request) {
 	test, record, lease, ok := s.requireRunArchiveTest(w, r)
 	if !ok {
@@ -378,7 +378,23 @@ func (s *Server) handleGetRunArchiveExemplars(w http.ResponseWriter, r *http.Req
 		slog.Warn("exemplar trace links unavailable", "test_id", test.ID, "error", err)
 		out.LinksUnavailable, targets = true, nil
 	}
-	name, group := strings.TrimSpace(r.URL.Query().Get("name")), strings.TrimSpace(r.URL.Query().Get("group"))
+	query := r.URL.Query()
+	name, group, population := strings.TrimSpace(query.Get("name")), strings.TrimSpace(query.Get("group")), strings.TrimSpace(query.Get("population"))
+	// from and to bound the exemplars' timestamps, inclusive.
+	var from, to time.Time
+	for _, bound := range []struct {
+		key string
+		at  *time.Time
+	}{{"from", &from}, {"to", &to}} {
+		if raw := strings.TrimSpace(query.Get(bound.key)); raw != "" {
+			parsed, err := time.Parse(time.RFC3339Nano, raw)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid "+bound.key+": want an RFC 3339 time")
+				return
+			}
+			*bound.at = parsed
+		}
+	}
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64<<10), 1<<20)
 	for scanner.Scan() {
@@ -387,7 +403,8 @@ func (s *Server) handleGetRunArchiveExemplars(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusInternalServerError, "archived exemplar is invalid")
 			return
 		}
-		if name != "" && exemplar.Name != name || group != "" && exemplar.Group != group {
+		if name != "" && exemplar.Name != name || group != "" && exemplar.Group != group || population != "" && exemplar.Population != population ||
+			!from.IsZero() && exemplar.Timestamp.Before(from) || !to.IsZero() && exemplar.Timestamp.After(to) {
 			continue
 		}
 		out.Total++

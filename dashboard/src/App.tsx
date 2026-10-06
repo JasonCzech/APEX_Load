@@ -3507,6 +3507,7 @@ function AppShell({
                   initialComparisonId={view.comparisonId}
                   initialTransaction={view.transaction}
                   initialPopulation={view.population}
+                  initialRootCause={{ analysis: view.analysis, rev: view.rev, hypothesis: view.hypothesis, window: view.window }}
                   statusOverride={testStatuses[view.testId]}
                   onOpenCommandCenter={navigateToCommandCenter}
                   onNavigateReport={(next) =>
@@ -3516,6 +3517,10 @@ function AppShell({
                       ...(view.comparisonId ? {comparisonId: view.comparisonId} : {}),
                       ...(view.transaction ? {transaction: view.transaction} : {}),
                       ...(view.population ? {population: view.population} : {}),
+                      ...(view.analysis ? {analysis: view.analysis} : {}),
+                      ...(view.rev ? {rev: view.rev} : {}),
+                      ...(view.hypothesis ? {hypothesis: view.hypothesis} : {}),
+                      ...(view.window ? {window: view.window} : {}),
                       ...(view.projectId ? { projectId: view.projectId } : {}),
                       ...(view.applicationId ? { applicationId: view.applicationId } : {}),
                       ...(view.releaseId ? { releaseId: view.releaseId } : {}),

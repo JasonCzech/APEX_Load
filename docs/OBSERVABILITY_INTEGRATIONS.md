@@ -408,7 +408,8 @@ controller replicas NTP-synchronized.
 
 Archived exemplars carry links that open their trace in the run's providers:
 `GET /api/v1/tests/{id}/archive/exemplars` (viewer; `limit` up to 1000,
-`offset`, and optional `group` and transaction `name`) returns each exemplar with
+`offset`, and optional `group`, transaction `name`, `population` and an
+inclusive RFC 3339 `from`/`to` window) returns each exemplar with
 `links`, one per trace-capable connection the run used: its legacy ELK and
 Dynatrace captures and its trace-lookup monitor sources (Dynatrace and
 Elasticsearch query). `total` counts the matching exemplars across pages;
