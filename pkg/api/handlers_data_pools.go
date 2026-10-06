@@ -746,6 +746,9 @@ func (s *Server) handleListScenarioDataPools(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleUpdateScenarioDataPools(w http.ResponseWriter, r *http.Request) {
+	if refuseUnconditionedScenarioWriter(w, r) {
+		return
+	}
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return

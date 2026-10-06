@@ -342,11 +342,6 @@ func stringPtrValue(value *string) string {
 }
 
 func validateProjectSettings(settings storage.ProjectSettings) error {
-	// The storage foundation alone cannot honor ordinary HTTP scenario conditions.
-	// Refuse enablement until the complete authoring save path is available.
-	if settings.Authoring != nil && settings.Authoring.RequireScenarioSaveIfMatch {
-		return errProjectSettings("require_scenario_save_if_match is unavailable until scenario authoring saves support If-Match")
-	}
 	if settings.MaxConcurrentTests < 0 {
 		return errProjectSettings("max_concurrent_tests must be greater than or equal to 0")
 	}

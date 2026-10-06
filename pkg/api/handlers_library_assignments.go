@@ -19,6 +19,9 @@ func (s *Server) handleScriptLibraryAssignment(w http.ResponseWriter, r *http.Re
 	s.handleLibraryAssignment(w, r, "script")
 }
 func (s *Server) handleScenarioLibraryAssignment(w http.ResponseWriter, r *http.Request) {
+	if refuseUnconditionedScenarioWriter(w, r) {
+		return
+	}
 	s.handleLibraryAssignment(w, r, "scenario")
 }
 func (s *Server) handleLibraryAssignment(w http.ResponseWriter, r *http.Request, kind string) {

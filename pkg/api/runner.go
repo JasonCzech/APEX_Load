@@ -1371,6 +1371,10 @@ type StoredScenario struct {
 	LastRunTestID      string                            `json:"last_run_test_id,omitempty"`
 	LastRunAt          *time.Time                        `json:"last_run_at,omitempty"`
 	LastRunEndedAt     *time.Time                        `json:"last_run_ended_at,omitempty"`
+	// ContentRevision and AuthoringProjection are set only on save responses
+	// whose durable snapshot was read in the write transaction.
+	ContentRevision     string                       `json:"content_revision,omitempty"`
+	AuthoringProjection *ScenarioAuthoringProjection `json:"authoring_projection,omitempty"`
 }
 
 type ScenarioScriptRef struct {

@@ -70,6 +70,9 @@ var runtimeOverrideFieldKeys = map[string]bool{
 }
 
 func (s *Server) handleApplyScenarioRuntimeToGroups(w http.ResponseWriter, r *http.Request) {
+	if refuseUnconditionedScenarioWriter(w, r) {
+		return
+	}
 	var req ApplyRuntimeToGroupsRequest
 	if !decodeJSONBody(w, r, &req) {
 		return

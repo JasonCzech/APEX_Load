@@ -62657,7 +62657,7 @@ paths:
                       properties:
                         require_scenario_save_if_match:
                           type: boolean
-                          description: Scenario conditioned HTTP saves are unavailable in this release. Omit or set false. Enabling true is rejected with 400 before project persistence; stored policy does not imply supported scenario If-Match.
+                          description: When true, ordinary scenario saves (PUT /api/v1/scenarios/{id}) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside the save transaction. Controllers without durable scenario revisions refuse saves under this policy with 503 scenario_save_strict_policy_unavailable.
                         require_script_save_if_match:
                           type: boolean
                       nullable: true
@@ -63177,7 +63177,7 @@ paths:
                       properties:
                         require_scenario_save_if_match:
                           type: boolean
-                          description: Scenario conditioned HTTP saves are unavailable in this release. Omit or set false. Enabling true is rejected with 400 before project persistence; stored policy does not imply supported scenario If-Match.
+                          description: When true, ordinary scenario saves (PUT /api/v1/scenarios/{id}) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside the save transaction. Controllers without durable scenario revisions refuse saves under this policy with 503 scenario_save_strict_policy_unavailable.
                         require_script_save_if_match:
                           type: boolean
                       nullable: true
@@ -133659,6 +133659,430 @@ paths:
                         - application_id
                         - id
                         - name
+                  authoring_projection:
+                    type: object
+                    properties:
+                      content_revision:
+                        type: string
+                      id:
+                        type: string
+                      library_placement:
+                        type: object
+                        properties:
+                          application_id:
+                            type: string
+                            nullable: true
+                          release_ids:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - application_id
+                          - release_ids
+                      monitor_selection:
+                        type: object
+                        properties:
+                          sources:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                required:
+                                  type: boolean
+                                source_id:
+                                  type: string
+                              required:
+                                - required
+                                - source_id
+                        required:
+                          - sources
+                      project_id:
+                        type: string
+                      projection_version:
+                        type: string
+                      scenario:
+                        type: object
+                        properties:
+                          assignment:
+                            type: object
+                            properties:
+                              failover_policy:
+                                type: string
+                              java_host:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              load_zone_weights:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              mode:
+                                type: string
+                              pool_id:
+                                type: string
+                              recovery_spare_vusers:
+                                type: integer
+                                format: int64
+                              region_weights:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              required_labels:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              selected_targets:
+                                type: array
+                                items:
+                                  type: string
+                              shard_strategy:
+                                type: string
+                              sharing_mode:
+                                type: string
+                              source_affinity:
+                                type: string
+                              tolerate_generator_loss:
+                                type: boolean
+                            nullable: true
+                          data_pools:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                access_mode:
+                                  type: string
+                                alias:
+                                  type: string
+                                id:
+                                  type: string
+                                pool_id:
+                                  type: string
+                                selection_strategy:
+                                  type: string
+                              required:
+                                - access_mode
+                                - alias
+                                - id
+                                - pool_id
+                                - selection_strategy
+                          duration:
+                            type: string
+                          goal_config:
+                            type: object
+                            properties:
+                              early_stop:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              max_avg_server_processing_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_avg_transfer_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_cls:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_dead_letter_rate_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_end_to_end_latency_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_error_count:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              max_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_inp_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_lcp_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_partition_skew_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_redelivery_rate_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_throttled_requests:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              max_vusers:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              min_vusers:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              monitor_rules:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
+                              p95_latency_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              sla_breach_window:
+                                type: string
+                              stop_on_max_errors:
+                                type: boolean
+                              stop_on_sla_breach:
+                                type: boolean
+                              target_average_tps:
+                                type: number
+                                format: double
+                                nullable: true
+                              transaction_response_time_sla_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              transaction_rules:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TransactionSLARule'
+                                  additionalProperties: true
+                              workload_shape_config:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
+                          groups:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                assignment:
+                                  type: object
+                                  description: 'Go type: GeneratorAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
+                                initialization:
+                                  type: string
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                name:
+                                  type: string
+                                ramp_down:
+                                  type: string
+                                ramp_up:
+                                  type: string
+                                role:
+                                  type: string
+                                runtime_settings:
+                                  type: object
+                                  description: 'Go type: RuntimeSettingsOverride'
+                                  additionalProperties: true
+                                  nullable: true
+                                script_id:
+                                  type: string
+                                stages:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
+                                start_offset:
+                                  type: string
+                                transaction_response_time_sla_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - name
+                                - script_id
+                                - vusers
+                          id:
+                            type: string
+                          name:
+                            type: string
+                          project_id:
+                            type: string
+                          ref_key:
+                            type: string
+                          resource_baseline:
+                            type: boolean
+                          runtime_settings:
+                            type: object
+                            properties:
+                              auto_transactions:
+                                type: string
+                              base_url:
+                                type: string
+                              browser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              browser_config:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              browser_emulation:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              env:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              error_handling:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              http:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              iterations:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              java_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              log:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              log_level:
+                                type: string
+                              pacing:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              redaction_rules:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
+                              results:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              run_logic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              think_time:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              web_runtime:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              websocket:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
+                          scenario_mode:
+                            type: string
+                          script_shakeout:
+                            type: boolean
+                          start_delay:
+                            type: string
+                          termination_mode:
+                            type: string
+                          traffic_profile:
+                            type: object
+                            properties:
+                              amplitude:
+                                type: object
+                                additionalProperties: true
+                              gap_policy:
+                                type: string
+                              interpolation:
+                                type: string
+                              mappings:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileMapping'
+                                  additionalProperties: true
+                              refreshed_at:
+                                type: string
+                                format: date-time
+                              runtime_target:
+                                type: string
+                              sizing:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              source:
+                                type: object
+                                additionalProperties: true
+                              source_duration:
+                                type: string
+                              target_duration:
+                                type: string
+                              value_semantics:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                              warnings:
+                                type: array
+                                items:
+                                  type: string
+                              window:
+                                type: object
+                                additionalProperties: true
+                            required:
+                              - interpolation
+                              - mappings
+                              - refreshed_at
+                              - runtime_target
+                              - source
+                              - source_duration
+                              - target_duration
+                              - value_semantics
+                              - version
+                            nullable: true
+                          workload_shape_id:
+                            type: string
+                        required:
+                          - data_pools
+                          - duration
+                          - groups
+                          - id
+                          - name
+                          - project_id
+                    required:
+                      - content_revision
+                      - id
+                      - library_placement
+                      - monitor_selection
+                      - project_id
+                      - projection_version
+                      - scenario
+                    nullable: true
+                  content_revision:
+                    type: string
                   created_at:
                     type: string
                     format: date-time
@@ -135986,6 +136410,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service unavailable. scenario_writer_if_match_unavailable refuses a presented If-Match this endpoint cannot honor; no mutation occurred. Other failures retain the generic error/ref body.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - scenario_writer_if_match_unavailable
+                  error:
+                    type: string
+                  ref:
+                    type: string
+                required:
+                  - error
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
@@ -135993,6 +136434,12 @@ paths:
         - name: id
           in: path
           required: true
+          schema:
+            type: string
+        - name: If-Match
+          in: header
+          description: Not supported on this endpoint. Any presented If-Match is refused with 503 scenario_writer_if_match_unavailable instead of being ignored. For stale-edit protection, save the whole scenario with PUT /api/v1/scenarios/{id} and a scenario-authoring-v1 validator.
+          required: false
           schema:
             type: string
       tags:
@@ -136228,6 +136675,430 @@ paths:
                             - application_id
                             - id
                             - name
+                      authoring_projection:
+                        type: object
+                        properties:
+                          content_revision:
+                            type: string
+                          id:
+                            type: string
+                          library_placement:
+                            type: object
+                            properties:
+                              application_id:
+                                type: string
+                                nullable: true
+                              release_ids:
+                                type: array
+                                items:
+                                  type: string
+                            required:
+                              - application_id
+                              - release_ids
+                          monitor_selection:
+                            type: object
+                            properties:
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  properties:
+                                    required:
+                                      type: boolean
+                                    source_id:
+                                      type: string
+                                  required:
+                                    - required
+                                    - source_id
+                            required:
+                              - sources
+                          project_id:
+                            type: string
+                          projection_version:
+                            type: string
+                          scenario:
+                            type: object
+                            properties:
+                              assignment:
+                                type: object
+                                properties:
+                                  failover_policy:
+                                    type: string
+                                  java_host:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  load_zone_weights:
+                                    type: object
+                                    additionalProperties:
+                                      type: integer
+                                      format: int64
+                                  mode:
+                                    type: string
+                                  pool_id:
+                                    type: string
+                                  recovery_spare_vusers:
+                                    type: integer
+                                    format: int64
+                                  region_weights:
+                                    type: object
+                                    additionalProperties:
+                                      type: integer
+                                      format: int64
+                                  required_labels:
+                                    type: object
+                                    additionalProperties:
+                                      type: string
+                                  selected_targets:
+                                    type: array
+                                    items:
+                                      type: string
+                                  shard_strategy:
+                                    type: string
+                                  sharing_mode:
+                                    type: string
+                                  source_affinity:
+                                    type: string
+                                  tolerate_generator_loss:
+                                    type: boolean
+                                nullable: true
+                              data_pools:
+                                type: array
+                                items:
+                                  type: object
+                                  properties:
+                                    access_mode:
+                                      type: string
+                                    alias:
+                                      type: string
+                                    id:
+                                      type: string
+                                    pool_id:
+                                      type: string
+                                    selection_strategy:
+                                      type: string
+                                  required:
+                                    - access_mode
+                                    - alias
+                                    - id
+                                    - pool_id
+                                    - selection_strategy
+                              duration:
+                                type: string
+                              goal_config:
+                                type: object
+                                properties:
+                                  early_stop:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  max_avg_server_processing_ms:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  max_avg_transfer_ms:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  max_cls:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  max_dead_letter_rate_pct:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  max_end_to_end_latency_ms:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  max_error_count:
+                                    type: integer
+                                    format: int64
+                                    nullable: true
+                                  max_error_pct:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  max_inp_ms:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  max_lcp_ms:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  max_partition_skew_pct:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  max_redelivery_rate_pct:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  max_throttled_requests:
+                                    type: integer
+                                    format: int64
+                                    nullable: true
+                                  max_vusers:
+                                    type: integer
+                                    format: int64
+                                    nullable: true
+                                  min_vusers:
+                                    type: integer
+                                    format: int64
+                                    nullable: true
+                                  monitor_rules:
+                                    type: array
+                                    items:
+                                      type: object
+                                      additionalProperties: true
+                                  p95_latency_ms:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  sla_breach_window:
+                                    type: string
+                                  stop_on_max_errors:
+                                    type: boolean
+                                  stop_on_sla_breach:
+                                    type: boolean
+                                  target_average_tps:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  transaction_response_time_sla_ms:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  transaction_rules:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: TransactionSLARule'
+                                      additionalProperties: true
+                                  workload_shape_config:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                nullable: true
+                              groups:
+                                type: array
+                                items:
+                                  type: object
+                                  properties:
+                                    assignment:
+                                      type: object
+                                      description: 'Go type: GeneratorAssignmentSettings'
+                                      additionalProperties: true
+                                      nullable: true
+                                    initialization:
+                                      type: string
+                                    iterations:
+                                      type: integer
+                                      format: int64
+                                      nullable: true
+                                    name:
+                                      type: string
+                                    ramp_down:
+                                      type: string
+                                    ramp_up:
+                                      type: string
+                                    role:
+                                      type: string
+                                    runtime_settings:
+                                      type: object
+                                      description: 'Go type: RuntimeSettingsOverride'
+                                      additionalProperties: true
+                                      nullable: true
+                                    script_id:
+                                      type: string
+                                    stages:
+                                      type: array
+                                      items:
+                                        type: object
+                                        additionalProperties: true
+                                    start_offset:
+                                      type: string
+                                    transaction_response_time_sla_ms:
+                                      type: number
+                                      format: double
+                                      nullable: true
+                                    vusers:
+                                      type: integer
+                                      format: int64
+                                  required:
+                                    - name
+                                    - script_id
+                                    - vusers
+                              id:
+                                type: string
+                              name:
+                                type: string
+                              project_id:
+                                type: string
+                              ref_key:
+                                type: string
+                              resource_baseline:
+                                type: boolean
+                              runtime_settings:
+                                type: object
+                                properties:
+                                  auto_transactions:
+                                    type: string
+                                  base_url:
+                                    type: string
+                                  browser:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  browser_config:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  browser_emulation:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  env:
+                                    type: object
+                                    additionalProperties:
+                                      type: string
+                                  error_handling:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  http:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  iterations:
+                                    type: integer
+                                    format: int64
+                                    nullable: true
+                                  java_vuser:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  log:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  log_level:
+                                    type: string
+                                  pacing:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  redaction_rules:
+                                    type: array
+                                    items:
+                                      type: object
+                                      additionalProperties: true
+                                  results:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  run_logic:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  think_time:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  web_runtime:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  websocket:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                nullable: true
+                              scenario_mode:
+                                type: string
+                              script_shakeout:
+                                type: boolean
+                              start_delay:
+                                type: string
+                              termination_mode:
+                                type: string
+                              traffic_profile:
+                                type: object
+                                properties:
+                                  amplitude:
+                                    type: object
+                                    additionalProperties: true
+                                  gap_policy:
+                                    type: string
+                                  interpolation:
+                                    type: string
+                                  mappings:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: TrafficProfileMapping'
+                                      additionalProperties: true
+                                  refreshed_at:
+                                    type: string
+                                    format: date-time
+                                  runtime_target:
+                                    type: string
+                                  sizing:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
+                                  source:
+                                    type: object
+                                    additionalProperties: true
+                                  source_duration:
+                                    type: string
+                                  target_duration:
+                                    type: string
+                                  value_semantics:
+                                    type: string
+                                  version:
+                                    type: integer
+                                    format: int64
+                                  warnings:
+                                    type: array
+                                    items:
+                                      type: string
+                                  window:
+                                    type: object
+                                    additionalProperties: true
+                                required:
+                                  - interpolation
+                                  - mappings
+                                  - refreshed_at
+                                  - runtime_target
+                                  - source
+                                  - source_duration
+                                  - target_duration
+                                  - value_semantics
+                                  - version
+                                nullable: true
+                              workload_shape_id:
+                                type: string
+                            required:
+                              - data_pools
+                              - duration
+                              - groups
+                              - id
+                              - name
+                              - project_id
+                        required:
+                          - content_revision
+                          - id
+                          - library_placement
+                          - monitor_selection
+                          - project_id
+                          - projection_version
+                          - scenario
+                        nullable: true
+                      content_revision:
+                        type: string
                       created_at:
                         type: string
                         format: date-time
@@ -141850,6 +142721,430 @@ paths:
                         - application_id
                         - id
                         - name
+                  authoring_projection:
+                    type: object
+                    properties:
+                      content_revision:
+                        type: string
+                      id:
+                        type: string
+                      library_placement:
+                        type: object
+                        properties:
+                          application_id:
+                            type: string
+                            nullable: true
+                          release_ids:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - application_id
+                          - release_ids
+                      monitor_selection:
+                        type: object
+                        properties:
+                          sources:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                required:
+                                  type: boolean
+                                source_id:
+                                  type: string
+                              required:
+                                - required
+                                - source_id
+                        required:
+                          - sources
+                      project_id:
+                        type: string
+                      projection_version:
+                        type: string
+                      scenario:
+                        type: object
+                        properties:
+                          assignment:
+                            type: object
+                            properties:
+                              failover_policy:
+                                type: string
+                              java_host:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              load_zone_weights:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              mode:
+                                type: string
+                              pool_id:
+                                type: string
+                              recovery_spare_vusers:
+                                type: integer
+                                format: int64
+                              region_weights:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              required_labels:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              selected_targets:
+                                type: array
+                                items:
+                                  type: string
+                              shard_strategy:
+                                type: string
+                              sharing_mode:
+                                type: string
+                              source_affinity:
+                                type: string
+                              tolerate_generator_loss:
+                                type: boolean
+                            nullable: true
+                          data_pools:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                access_mode:
+                                  type: string
+                                alias:
+                                  type: string
+                                id:
+                                  type: string
+                                pool_id:
+                                  type: string
+                                selection_strategy:
+                                  type: string
+                              required:
+                                - access_mode
+                                - alias
+                                - id
+                                - pool_id
+                                - selection_strategy
+                          duration:
+                            type: string
+                          goal_config:
+                            type: object
+                            properties:
+                              early_stop:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              max_avg_server_processing_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_avg_transfer_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_cls:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_dead_letter_rate_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_end_to_end_latency_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_error_count:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              max_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_inp_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_lcp_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_partition_skew_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_redelivery_rate_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_throttled_requests:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              max_vusers:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              min_vusers:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              monitor_rules:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
+                              p95_latency_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              sla_breach_window:
+                                type: string
+                              stop_on_max_errors:
+                                type: boolean
+                              stop_on_sla_breach:
+                                type: boolean
+                              target_average_tps:
+                                type: number
+                                format: double
+                                nullable: true
+                              transaction_response_time_sla_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              transaction_rules:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TransactionSLARule'
+                                  additionalProperties: true
+                              workload_shape_config:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
+                          groups:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                assignment:
+                                  type: object
+                                  description: 'Go type: GeneratorAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
+                                initialization:
+                                  type: string
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                name:
+                                  type: string
+                                ramp_down:
+                                  type: string
+                                ramp_up:
+                                  type: string
+                                role:
+                                  type: string
+                                runtime_settings:
+                                  type: object
+                                  description: 'Go type: RuntimeSettingsOverride'
+                                  additionalProperties: true
+                                  nullable: true
+                                script_id:
+                                  type: string
+                                stages:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
+                                start_offset:
+                                  type: string
+                                transaction_response_time_sla_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - name
+                                - script_id
+                                - vusers
+                          id:
+                            type: string
+                          name:
+                            type: string
+                          project_id:
+                            type: string
+                          ref_key:
+                            type: string
+                          resource_baseline:
+                            type: boolean
+                          runtime_settings:
+                            type: object
+                            properties:
+                              auto_transactions:
+                                type: string
+                              base_url:
+                                type: string
+                              browser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              browser_config:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              browser_emulation:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              env:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              error_handling:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              http:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              iterations:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              java_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              log:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              log_level:
+                                type: string
+                              pacing:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              redaction_rules:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
+                              results:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              run_logic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              think_time:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              web_runtime:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              websocket:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
+                          scenario_mode:
+                            type: string
+                          script_shakeout:
+                            type: boolean
+                          start_delay:
+                            type: string
+                          termination_mode:
+                            type: string
+                          traffic_profile:
+                            type: object
+                            properties:
+                              amplitude:
+                                type: object
+                                additionalProperties: true
+                              gap_policy:
+                                type: string
+                              interpolation:
+                                type: string
+                              mappings:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileMapping'
+                                  additionalProperties: true
+                              refreshed_at:
+                                type: string
+                                format: date-time
+                              runtime_target:
+                                type: string
+                              sizing:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              source:
+                                type: object
+                                additionalProperties: true
+                              source_duration:
+                                type: string
+                              target_duration:
+                                type: string
+                              value_semantics:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                              warnings:
+                                type: array
+                                items:
+                                  type: string
+                              window:
+                                type: object
+                                additionalProperties: true
+                            required:
+                              - interpolation
+                              - mappings
+                              - refreshed_at
+                              - runtime_target
+                              - source
+                              - source_duration
+                              - target_duration
+                              - value_semantics
+                              - version
+                            nullable: true
+                          workload_shape_id:
+                            type: string
+                        required:
+                          - data_pools
+                          - duration
+                          - groups
+                          - id
+                          - name
+                          - project_id
+                    required:
+                      - content_revision
+                      - id
+                      - library_placement
+                      - monitor_selection
+                      - project_id
+                      - projection_version
+                      - scenario
+                    nullable: true
+                  content_revision:
+                    type: string
                   created_at:
                     type: string
                     format: date-time
@@ -144103,6 +145398,18 @@ paths:
                   - scripts
                   - updated_at
                 nullable: true
+          headers:
+            ETag:
+              description: The new scenario-authoring-v1 validator when the controller has durable scenario revisions; it matches authoring_projection.content_revision in the body, which was read inside the save transaction.
+              schema:
+                type: string
+            X-APEX-Scenario-Save-Mode:
+              description: conditioned or legacy_unconditioned. A legacy save cannot protect a client draft loaded before the server read its current snapshot.
+              schema:
+                type: string
+                enum:
+                  - conditioned
+                  - legacy_unconditioned
         "400":
           description: Bad Request
           content:
@@ -144127,14 +145434,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "412":
+          description: Precondition Failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
         "413":
           description: Request Entity Too Large
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "428":
+          description: Precondition Required
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
         "503":
-          description: Service unavailable. scenario_save_if_match_unavailable refuses an explicitly requested unsupported condition; scenario_save_strict_policy_unavailable refuses an externally configured strict policy before mutation. Both have fixed safe error/code/ref guidance. Other policy or persistence failures retain the generic error/ref body. No conditioned save or successful mutation is implied.
+          description: 'Service unavailable. scenario_save_outcome_unknown and scenario_save_outcome_audit_unavailable mean the save may already have committed: reload before retrying and never retry automatically. scenario_save_if_match_unavailable and scenario_save_strict_policy_unavailable are returned only by controllers without durable scenario revisions. Other failures retain the generic error/ref body.'
           content:
             application/json:
               schema:
@@ -144143,6 +145478,8 @@ paths:
                   code:
                     type: string
                     enum:
+                      - scenario_save_outcome_unknown
+                      - scenario_save_outcome_audit_unavailable
                       - scenario_save_if_match_unavailable
                       - scenario_save_strict_policy_unavailable
                   error:
@@ -144162,7 +145499,7 @@ paths:
             type: string
         - name: If-Match
           in: header
-          description: Conditioned scenario saves are unavailable. Any presented If-Match, including empty or repeated values, is refused with 503 after resource ownership admission. Omit for the existing unconditioned compatibility save. This endpoint does not accept a strong scenario authoring validator in this release.
+          description: Exactly one quoted strong scenario-authoring-v1:<content_revision> tag obtained with GET view=authoring (or the ETag of a previous save). Weak, list, wildcard, malformed and unsupported-version tags fail with 400 after resource ownership is resolved. A stale validator returns 412. Without a validator the save is an audited legacy compatibility save, unless the project's authoring.require_scenario_save_if_match policy requires one (428).
           required: false
           schema:
             type: string
@@ -144408,6 +145745,430 @@ paths:
                         - application_id
                         - id
                         - name
+                  authoring_projection:
+                    type: object
+                    properties:
+                      content_revision:
+                        type: string
+                      id:
+                        type: string
+                      library_placement:
+                        type: object
+                        properties:
+                          application_id:
+                            type: string
+                            nullable: true
+                          release_ids:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - application_id
+                          - release_ids
+                      monitor_selection:
+                        type: object
+                        properties:
+                          sources:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                required:
+                                  type: boolean
+                                source_id:
+                                  type: string
+                              required:
+                                - required
+                                - source_id
+                        required:
+                          - sources
+                      project_id:
+                        type: string
+                      projection_version:
+                        type: string
+                      scenario:
+                        type: object
+                        properties:
+                          assignment:
+                            type: object
+                            properties:
+                              failover_policy:
+                                type: string
+                              java_host:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              load_zone_weights:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              mode:
+                                type: string
+                              pool_id:
+                                type: string
+                              recovery_spare_vusers:
+                                type: integer
+                                format: int64
+                              region_weights:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              required_labels:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              selected_targets:
+                                type: array
+                                items:
+                                  type: string
+                              shard_strategy:
+                                type: string
+                              sharing_mode:
+                                type: string
+                              source_affinity:
+                                type: string
+                              tolerate_generator_loss:
+                                type: boolean
+                            nullable: true
+                          data_pools:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                access_mode:
+                                  type: string
+                                alias:
+                                  type: string
+                                id:
+                                  type: string
+                                pool_id:
+                                  type: string
+                                selection_strategy:
+                                  type: string
+                              required:
+                                - access_mode
+                                - alias
+                                - id
+                                - pool_id
+                                - selection_strategy
+                          duration:
+                            type: string
+                          goal_config:
+                            type: object
+                            properties:
+                              early_stop:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              max_avg_server_processing_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_avg_transfer_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_cls:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_dead_letter_rate_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_end_to_end_latency_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_error_count:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              max_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_inp_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_lcp_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_partition_skew_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_redelivery_rate_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_throttled_requests:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              max_vusers:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              min_vusers:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              monitor_rules:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
+                              p95_latency_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              sla_breach_window:
+                                type: string
+                              stop_on_max_errors:
+                                type: boolean
+                              stop_on_sla_breach:
+                                type: boolean
+                              target_average_tps:
+                                type: number
+                                format: double
+                                nullable: true
+                              transaction_response_time_sla_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              transaction_rules:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TransactionSLARule'
+                                  additionalProperties: true
+                              workload_shape_config:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
+                          groups:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                assignment:
+                                  type: object
+                                  description: 'Go type: GeneratorAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
+                                initialization:
+                                  type: string
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                name:
+                                  type: string
+                                ramp_down:
+                                  type: string
+                                ramp_up:
+                                  type: string
+                                role:
+                                  type: string
+                                runtime_settings:
+                                  type: object
+                                  description: 'Go type: RuntimeSettingsOverride'
+                                  additionalProperties: true
+                                  nullable: true
+                                script_id:
+                                  type: string
+                                stages:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
+                                start_offset:
+                                  type: string
+                                transaction_response_time_sla_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - name
+                                - script_id
+                                - vusers
+                          id:
+                            type: string
+                          name:
+                            type: string
+                          project_id:
+                            type: string
+                          ref_key:
+                            type: string
+                          resource_baseline:
+                            type: boolean
+                          runtime_settings:
+                            type: object
+                            properties:
+                              auto_transactions:
+                                type: string
+                              base_url:
+                                type: string
+                              browser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              browser_config:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              browser_emulation:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              env:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              error_handling:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              http:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              iterations:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              java_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              log:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              log_level:
+                                type: string
+                              pacing:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              redaction_rules:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
+                              results:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              run_logic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              think_time:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              web_runtime:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              websocket:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
+                          scenario_mode:
+                            type: string
+                          script_shakeout:
+                            type: boolean
+                          start_delay:
+                            type: string
+                          termination_mode:
+                            type: string
+                          traffic_profile:
+                            type: object
+                            properties:
+                              amplitude:
+                                type: object
+                                additionalProperties: true
+                              gap_policy:
+                                type: string
+                              interpolation:
+                                type: string
+                              mappings:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileMapping'
+                                  additionalProperties: true
+                              refreshed_at:
+                                type: string
+                                format: date-time
+                              runtime_target:
+                                type: string
+                              sizing:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              source:
+                                type: object
+                                additionalProperties: true
+                              source_duration:
+                                type: string
+                              target_duration:
+                                type: string
+                              value_semantics:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                              warnings:
+                                type: array
+                                items:
+                                  type: string
+                              window:
+                                type: object
+                                additionalProperties: true
+                            required:
+                              - interpolation
+                              - mappings
+                              - refreshed_at
+                              - runtime_target
+                              - source
+                              - source_duration
+                              - target_duration
+                              - value_semantics
+                              - version
+                            nullable: true
+                          workload_shape_id:
+                            type: string
+                        required:
+                          - data_pools
+                          - duration
+                          - groups
+                          - id
+                          - name
+                          - project_id
+                    required:
+                      - content_revision
+                      - id
+                      - library_placement
+                      - monitor_selection
+                      - project_id
+                      - projection_version
+                      - scenario
+                    nullable: true
+                  content_revision:
+                    type: string
                   created_at:
                     type: string
                     format: date-time
@@ -147151,11 +148912,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "503":
-          description: Service Unavailable
+          description: Service unavailable. scenario_writer_if_match_unavailable refuses a presented If-Match this endpoint cannot honor; no mutation occurred. Other failures retain the generic error/ref body.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - scenario_writer_if_match_unavailable
+                  error:
+                    type: string
+                  ref:
+                    type: string
+                required:
+                  - error
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
@@ -147163,6 +148935,12 @@ paths:
         - name: id
           in: path
           required: true
+          schema:
+            type: string
+        - name: If-Match
+          in: header
+          description: Not supported on this endpoint. Any presented If-Match is refused with 503 scenario_writer_if_match_unavailable instead of being ignored. For stale-edit protection, save the whole scenario with PUT /api/v1/scenarios/{id} and a scenario-authoring-v1 validator.
+          required: false
           schema:
             type: string
       tags:
@@ -147223,11 +149001,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "503":
-          description: Service Unavailable
+          description: Service unavailable. scenario_writer_if_match_unavailable refuses a presented If-Match this endpoint cannot honor; no mutation occurred. Other failures retain the generic error/ref body.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - scenario_writer_if_match_unavailable
+                  error:
+                    type: string
+                  ref:
+                    type: string
+                required:
+                  - error
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
@@ -147235,6 +149024,12 @@ paths:
         - name: id
           in: path
           required: true
+          schema:
+            type: string
+        - name: If-Match
+          in: header
+          description: Not supported on this endpoint. Any presented If-Match is refused with 503 scenario_writer_if_match_unavailable instead of being ignored. For stale-edit protection, save the whole scenario with PUT /api/v1/scenarios/{id} and a scenario-authoring-v1 validator.
+          required: false
           schema:
             type: string
       tags:
@@ -147408,6 +149203,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service unavailable. scenario_writer_if_match_unavailable refuses a presented If-Match this endpoint cannot honor; no mutation occurred. Other failures retain the generic error/ref body.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - scenario_writer_if_match_unavailable
+                  error:
+                    type: string
+                  ref:
+                    type: string
+                required:
+                  - error
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
@@ -147415,6 +149227,12 @@ paths:
         - name: id
           in: path
           required: true
+          schema:
+            type: string
+        - name: If-Match
+          in: header
+          description: Not supported on this endpoint. Any presented If-Match is refused with 503 scenario_writer_if_match_unavailable instead of being ignored. For stale-edit protection, save the whole scenario with PUT /api/v1/scenarios/{id} and a scenario-authoring-v1 validator.
+          required: false
           schema:
             type: string
       tags:
@@ -147659,6 +149477,430 @@ paths:
                         - application_id
                         - id
                         - name
+                  authoring_projection:
+                    type: object
+                    properties:
+                      content_revision:
+                        type: string
+                      id:
+                        type: string
+                      library_placement:
+                        type: object
+                        properties:
+                          application_id:
+                            type: string
+                            nullable: true
+                          release_ids:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - application_id
+                          - release_ids
+                      monitor_selection:
+                        type: object
+                        properties:
+                          sources:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                required:
+                                  type: boolean
+                                source_id:
+                                  type: string
+                              required:
+                                - required
+                                - source_id
+                        required:
+                          - sources
+                      project_id:
+                        type: string
+                      projection_version:
+                        type: string
+                      scenario:
+                        type: object
+                        properties:
+                          assignment:
+                            type: object
+                            properties:
+                              failover_policy:
+                                type: string
+                              java_host:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              load_zone_weights:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              mode:
+                                type: string
+                              pool_id:
+                                type: string
+                              recovery_spare_vusers:
+                                type: integer
+                                format: int64
+                              region_weights:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              required_labels:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              selected_targets:
+                                type: array
+                                items:
+                                  type: string
+                              shard_strategy:
+                                type: string
+                              sharing_mode:
+                                type: string
+                              source_affinity:
+                                type: string
+                              tolerate_generator_loss:
+                                type: boolean
+                            nullable: true
+                          data_pools:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                access_mode:
+                                  type: string
+                                alias:
+                                  type: string
+                                id:
+                                  type: string
+                                pool_id:
+                                  type: string
+                                selection_strategy:
+                                  type: string
+                              required:
+                                - access_mode
+                                - alias
+                                - id
+                                - pool_id
+                                - selection_strategy
+                          duration:
+                            type: string
+                          goal_config:
+                            type: object
+                            properties:
+                              early_stop:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              max_avg_server_processing_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_avg_transfer_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_cls:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_dead_letter_rate_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_end_to_end_latency_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_error_count:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              max_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_inp_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_lcp_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_partition_skew_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_redelivery_rate_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_throttled_requests:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              max_vusers:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              min_vusers:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              monitor_rules:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
+                              p95_latency_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              sla_breach_window:
+                                type: string
+                              stop_on_max_errors:
+                                type: boolean
+                              stop_on_sla_breach:
+                                type: boolean
+                              target_average_tps:
+                                type: number
+                                format: double
+                                nullable: true
+                              transaction_response_time_sla_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              transaction_rules:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TransactionSLARule'
+                                  additionalProperties: true
+                              workload_shape_config:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
+                          groups:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                assignment:
+                                  type: object
+                                  description: 'Go type: GeneratorAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
+                                initialization:
+                                  type: string
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                name:
+                                  type: string
+                                ramp_down:
+                                  type: string
+                                ramp_up:
+                                  type: string
+                                role:
+                                  type: string
+                                runtime_settings:
+                                  type: object
+                                  description: 'Go type: RuntimeSettingsOverride'
+                                  additionalProperties: true
+                                  nullable: true
+                                script_id:
+                                  type: string
+                                stages:
+                                  type: array
+                                  items:
+                                    type: object
+                                    additionalProperties: true
+                                start_offset:
+                                  type: string
+                                transaction_response_time_sla_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - name
+                                - script_id
+                                - vusers
+                          id:
+                            type: string
+                          name:
+                            type: string
+                          project_id:
+                            type: string
+                          ref_key:
+                            type: string
+                          resource_baseline:
+                            type: boolean
+                          runtime_settings:
+                            type: object
+                            properties:
+                              auto_transactions:
+                                type: string
+                              base_url:
+                                type: string
+                              browser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              browser_config:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              browser_emulation:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              env:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              error_handling:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              http:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              iterations:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              java_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              log:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              log_level:
+                                type: string
+                              pacing:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              redaction_rules:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
+                              results:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              run_logic:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              think_time:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              web_runtime:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              websocket:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
+                          scenario_mode:
+                            type: string
+                          script_shakeout:
+                            type: boolean
+                          start_delay:
+                            type: string
+                          termination_mode:
+                            type: string
+                          traffic_profile:
+                            type: object
+                            properties:
+                              amplitude:
+                                type: object
+                                additionalProperties: true
+                              gap_policy:
+                                type: string
+                              interpolation:
+                                type: string
+                              mappings:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileMapping'
+                                  additionalProperties: true
+                              refreshed_at:
+                                type: string
+                                format: date-time
+                              runtime_target:
+                                type: string
+                              sizing:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              source:
+                                type: object
+                                additionalProperties: true
+                              source_duration:
+                                type: string
+                              target_duration:
+                                type: string
+                              value_semantics:
+                                type: string
+                              version:
+                                type: integer
+                                format: int64
+                              warnings:
+                                type: array
+                                items:
+                                  type: string
+                              window:
+                                type: object
+                                additionalProperties: true
+                            required:
+                              - interpolation
+                              - mappings
+                              - refreshed_at
+                              - runtime_target
+                              - source
+                              - source_duration
+                              - target_duration
+                              - value_semantics
+                              - version
+                            nullable: true
+                          workload_shape_id:
+                            type: string
+                        required:
+                          - data_pools
+                          - duration
+                          - groups
+                          - id
+                          - name
+                          - project_id
+                    required:
+                      - content_revision
+                      - id
+                      - library_placement
+                      - monitor_selection
+                      - project_id
+                      - projection_version
+                      - scenario
+                    nullable: true
+                  content_revision:
+                    type: string
                   created_at:
                     type: string
                     format: date-time
@@ -150351,6 +152593,111 @@ paths:
                             - application_id
                             - id
                             - name
+                      authoring_projection:
+                        type: object
+                        properties:
+                          content_revision:
+                            type: string
+                          id:
+                            type: string
+                          library_placement:
+                            type: object
+                            properties:
+                              application_id:
+                                type: string
+                                nullable: true
+                              release_ids:
+                                type: array
+                                items:
+                                  type: string
+                            required:
+                              - application_id
+                              - release_ids
+                          monitor_selection:
+                            type: object
+                            properties:
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: true
+                            required:
+                              - sources
+                          project_id:
+                            type: string
+                          projection_version:
+                            type: string
+                          scenario:
+                            type: object
+                            properties:
+                              assignment:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              data_pools:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ScenarioAuthoringDataPoolBinding'
+                                  additionalProperties: true
+                              duration:
+                                type: string
+                              goal_config:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              groups:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ScenarioAuthoringGroup'
+                                  additionalProperties: true
+                              id:
+                                type: string
+                              name:
+                                type: string
+                              project_id:
+                                type: string
+                              ref_key:
+                                type: string
+                              resource_baseline:
+                                type: boolean
+                              runtime_settings:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scenario_mode:
+                                type: string
+                              script_shakeout:
+                                type: boolean
+                              start_delay:
+                                type: string
+                              termination_mode:
+                                type: string
+                              traffic_profile:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              workload_shape_id:
+                                type: string
+                            required:
+                              - data_pools
+                              - duration
+                              - groups
+                              - id
+                              - name
+                              - project_id
+                        required:
+                          - content_revision
+                          - id
+                          - library_placement
+                          - monitor_selection
+                          - project_id
+                          - projection_version
+                          - scenario
+                        nullable: true
+                      content_revision:
+                        type: string
                       created_at:
                         type: string
                         format: date-time
@@ -151732,6 +154079,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service unavailable. scenario_writer_if_match_unavailable refuses a presented If-Match this endpoint cannot honor; no mutation occurred. Other failures retain the generic error/ref body.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - scenario_writer_if_match_unavailable
+                  error:
+                    type: string
+                  ref:
+                    type: string
+                required:
+                  - error
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
@@ -151739,6 +154103,12 @@ paths:
         - name: id
           in: path
           required: true
+          schema:
+            type: string
+        - name: If-Match
+          in: header
+          description: Not supported on this endpoint. Any presented If-Match is refused with 503 scenario_writer_if_match_unavailable instead of being ignored. For stale-edit protection, save the whole scenario with PUT /api/v1/scenarios/{id} and a scenario-authoring-v1 validator.
+          required: false
           schema:
             type: string
       tags:

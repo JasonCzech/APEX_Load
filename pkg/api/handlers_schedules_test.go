@@ -411,11 +411,16 @@ func TestHandleScenarioCRUDWritesAuditEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAuditEvents returned error: %v", err)
 	}
-	if len(events) != 3 {
-		t.Fatalf("audit event count = %d, want 3", len(events))
+	// An unconditioned scenario save is a compatibility save: it is audited as a
+	// pending operation before the attempt and completed with its outcome.
+	if len(events) != 4 {
+		t.Fatalf("audit event count = %d, want 4", len(events))
 	}
-	if events[0].Action != "scenario.delete" || events[1].Action != "scenario.update" || events[2].Action != "scenario.create" {
-		t.Fatalf("audit actions = [%s %s %s], want delete/update/create", events[0].Action, events[1].Action, events[2].Action)
+	if events[0].Action != "scenario.delete" || events[1].Action != "scenario.update" || events[2].Action != "scenario.update" || events[3].Action != "scenario.create" {
+		t.Fatalf("audit actions = [%s %s %s %s], want delete/update/update/create", events[0].Action, events[1].Action, events[2].Action, events[3].Action)
+	}
+	if events[1].Details["outcome"] != "committed" || events[2].Details["outcome"] != "pending" || events[1].Details["operation_id"] != events[2].Details["operation_id"] || events[1].Details["save_mode"] != "legacy_unconditioned" {
+		t.Fatalf("compatibility save audit pair: %#v %#v", events[1].Details, events[2].Details)
 	}
 }
 

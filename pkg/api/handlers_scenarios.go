@@ -103,8 +103,25 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "scenario not found")
 		return
 	}
-	if !s.requireScenarioSavePolicyAvailable(w, r, existing) {
+	admission, admitted := s.admitScenarioSavePrecondition(w, r, existing)
+	if !admitted {
 		return
+	}
+	expected, mode := admission.expected, admission.mode
+	if expected != nil && !existing.UpdatedAt.Equal(admission.durableUpdatedAt) {
+		// The save builder reconciles masked credentials against the cached
+		// scenario, so it must be the state the durable snapshot describes. A
+		// conditioned save proved the client saw the durable revision, so the
+		// cache is refreshed once; an unconditioned save on a stale replica
+		// view is refused, as the timestamp-gated save always refused it.
+		if mode == scenarioSaveModeConditioned {
+			s.runner.refreshScenariosForHARead(true)
+			existing, ok = s.runner.getScenarioForMutation(existing.ID)
+		}
+		if !ok || existing == nil || !existing.UpdatedAt.Equal(admission.durableUpdatedAt) {
+			writeError(w, http.StatusConflict, "scenario changed concurrently; reload before applying changes")
+			return
+		}
 	}
 	requestProjectID, err := s.scenarioRequestProjectID(req)
 	if err != nil {
@@ -128,8 +145,51 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 		writeDomainFeatureDisabled(w, domainID, featureID)
 		return
 	}
-	scenario, ok, err := s.runner.UpdateScenario(r.PathValue("id"), req)
+	details := map[string]any{"name": req.Name, "duration": req.Duration, "save_mode": mode}
+	// An unconditioned save cannot protect a draft the client loaded earlier,
+	// so a store-backed compatibility save is audited before it is attempted.
+	operationID := ""
+	if mode == scenarioSaveModeLegacy && s.store != nil {
+		operationID, err = s.beginRequiredAuditOperation(r, "scenario.update", "scenario", existing.ID, existing.ProjectID, details)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "scenario compatibility audit unavailable; no save was attempted")
+			return
+		}
+	}
+	var scenario *StoredScenario
+	var committed *storage.ScenarioAuthoringSnapshot
+	if expected != nil {
+		scenario, committed, ok, err = s.runner.UpdateScenarioAuthoringDurable(existing.ID, req, *expected, admission.durableUpdatedAt)
+	} else {
+		scenario, ok, err = s.runner.UpdateScenario(existing.ID, req)
+	}
+	unknown := errors.Is(err, storage.ErrScenarioAuthoringOutcomeUnknown)
+	if operationID != "" {
+		status, outcome := "failure", "not_committed"
+		if err == nil && ok {
+			status, outcome = "success", "committed"
+		} else if unknown {
+			outcome = "unknown"
+		}
+		if auditErr := s.completeRequiredAuditOperation(r, operationID, "scenario.update", status, outcome, "scenario", existing.ID, existing.ProjectID, details); auditErr != nil {
+			writeScenarioAuthoringSaveOutcomeUnavailable(w, false)
+			return
+		}
+	}
+	if unknown {
+		writeScenarioAuthoringSaveOutcomeUnavailable(w, true)
+		return
+	}
 	if err != nil {
+		if mode == scenarioSaveModeLegacy && errors.Is(err, storage.ErrScenarioAuthoringConflict) {
+			// The client presented no validator, so a revision race is reported as
+			// the concurrent change it always was, not as a failed precondition.
+			writeError(w, http.StatusConflict, "scenario changed concurrently; reload before applying changes")
+			return
+		}
+		if writeScenarioAuthoringMutationError(w, err) {
+			return
+		}
 		status := http.StatusBadRequest
 		if errors.Is(err, errScenarioConcurrentChange) {
 			status = http.StatusConflict
@@ -143,11 +203,26 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "scenario not found")
 		return
 	}
-	s.recordAuditEvent(r, "scenario.update", "success", "scenario", scenario.ID, scenario.ProjectID, map[string]any{"name": scenario.Name, "duration": scenario.Duration})
+	if operationID == "" {
+		s.recordAuditEvent(r, "scenario.update", "success", "scenario", scenario.ID, scenario.ProjectID, details)
+	}
 	if !s.scenarioLibraryAssignments(w, []*StoredScenario{scenario}) {
 		return
 	}
-	writeJSON(w, http.StatusOK, maskStoredScenario(scenario))
+	response := maskStoredScenario(scenario)
+	if committed != nil {
+		// The committed snapshot was read in the write transaction, so the new
+		// baseline and its tag describe exactly what this save persisted.
+		projection, projectionErr := buildScenarioAuthoringProjection(committed)
+		tag, tagErr := scenarioAuthoringETag(committed.ContentRevision)
+		if projectionErr == nil && tagErr == nil {
+			response.ContentRevision = committed.ContentRevision
+			response.AuthoringProjection = projection
+			w.Header().Set("ETag", tag)
+		}
+	}
+	w.Header().Set("X-APEX-Scenario-Save-Mode", mode)
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) scenarioRequestProjectID(req CreateScenarioRequest) (string, error) {
@@ -261,6 +336,9 @@ func goalSizingNeedsBaseline(req GoalSizingRequest) bool {
 }
 
 func (s *Server) handleDeleteScenario(w http.ResponseWriter, r *http.Request) {
+	if refuseUnconditionedScenarioWriter(w, r) {
+		return
+	}
 	id := r.PathValue("id")
 	projectID := ""
 	if scenario, ok := s.runner.GetScenario(id); ok {

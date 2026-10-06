@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -249,4 +250,63 @@ func (s *Server) writeScenarioAuthoringView(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("ETag", tag)
 	w.Header().Set("Cache-Control", "private, no-store")
 	writeJSON(w, http.StatusOK, projection)
+}
+
+// updateScenarioAuthoringAggregate performs the final conditioned write. It is
+// called from the save builder's writer callback, which runs with tr.mu
+// released, and returns the snapshot read inside the write transaction.
+func updateScenarioAuthoringAggregate(store storage.ScenarioAuthoringStore, scenario *storage.Scenario, scripts []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding, expected storage.ScenarioAuthoringPrecondition) (*storage.ScenarioAuthoringSnapshot, error) {
+	result, err := store.UpdateScenarioAuthoringIfCurrent(scenario, scripts, pools, expected)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || !result.Applied || result.Snapshot == nil {
+		return nil, storage.ErrScenarioAuthoringUnavailable
+	}
+	return result.Snapshot, nil
+}
+
+// UpdateScenarioAuthoringDurable runs the ordinary scenario save (secret
+// protection, compilation, validation, runtime credential provisioning) and
+// binds its final write to the caller's durable nonce. The save builder reads
+// prior runtime credentials from the cached scenario, so the cache must still
+// be the state that matched the durable snapshot at admission (cachedUpdatedAt);
+// otherwise another save has committed and the admitted revision is stale. The returned snapshot is read
+// inside the write transaction, so its revision is exactly what was committed.
+func (tr *TestRunner) UpdateScenarioAuthoringDurable(id string, req CreateScenarioRequest, expected storage.ScenarioAuthoringPrecondition, cachedUpdatedAt time.Time) (*StoredScenario, *storage.ScenarioAuthoringSnapshot, bool, error) {
+	if !storage.ValidScenarioContentRevision(expected.ContentRevision) {
+		return nil, nil, false, storage.ErrScenarioAuthoringInvalidRevision
+	}
+	tr.scenarioMutationMu.Lock()
+	defer tr.scenarioMutationMu.Unlock()
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	id = tr.resolveRefKeyLocked(id)
+	current, ok := tr.scenarios[id]
+	if !ok {
+		return nil, nil, false, nil
+	}
+	if !current.UpdatedAt.Equal(cachedUpdatedAt) {
+		// The cache only moves after a committed save, so the revision the
+		// caller was admitted against is no longer current.
+		return nil, nil, true, storage.ErrScenarioAuthoringConflict
+	}
+	store, supported := tr.scenarioStore.(storage.ScenarioAuthoringStore)
+	if !supported {
+		return nil, nil, true, errScenarioAuthoringUnsupported
+	}
+	var committed *storage.ScenarioAuthoringSnapshot
+	scenario, err := tr.storeScenarioLockedWithWriter(id, req, func(scenario *storage.Scenario, scripts []storage.ScenarioScript, pools []storage.ScenarioDataPoolBinding) error {
+		snapshot, writeErr := updateScenarioAuthoringAggregate(store, scenario, scripts, pools, expected)
+		if writeErr != nil {
+			return writeErr
+		}
+		// The cache is built from this scenario after the writer returns. Use
+		// the committed clocks so cached and durable updated_at stay equal;
+		// published-snapshot checks and later saves compare them exactly.
+		scenario.CreatedAt, scenario.UpdatedAt = snapshot.Scenario.CreatedAt, snapshot.Scenario.UpdatedAt
+		committed = snapshot
+		return nil
+	})
+	return cloneStoredScenarioForReadLocked(scenario), committed, true, err
 }

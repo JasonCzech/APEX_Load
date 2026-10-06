@@ -16,6 +16,10 @@ var (
 	ErrScenarioAuthoringUnavailable          = errors.New("scenario authored content revision unavailable")
 	ErrScenarioAuthoringPreconditionRequired = errors.New("scenario authored content precondition required")
 	ErrScenarioAuthoringInvalidRevision      = errors.New("invalid scenario authored content revision")
+	// ErrScenarioAuthoringOutcomeUnknown marks a failed commit acknowledgement:
+	// the mutation may or may not be durable, so callers must reload before
+	// retrying. Errors before the commit are definite rollbacks.
+	ErrScenarioAuthoringOutcomeUnknown = errors.New("scenario authored content commit outcome unknown")
 )
 
 // ScenarioAuthoringSnapshot contains saved overrides and reference identities,
@@ -484,7 +488,7 @@ func (s *SQLiteStore) createScenarioAuthoringIfAbsent(input *Scenario, groups []
 		return nil, ErrScenarioAuthoringNotFound
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrScenarioAuthoringOutcomeUnknown, err)
 	}
 	return &ScenarioAuthoringMutationResult{Snapshot: snapshot, Applied: applied}, nil
 }
@@ -602,7 +606,7 @@ func (s *SQLiteStore) updateScenarioAuthoringIfCurrent(input *Scenario, groups [
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrScenarioAuthoringOutcomeUnknown, err)
 	}
 	return &ScenarioAuthoringMutationResult{Snapshot: snapshot, Applied: true}, nil
 }

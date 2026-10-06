@@ -167,6 +167,9 @@ func (s *Server) handleMonitorBindings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, message)
 		return
 	}
+	if r.Method != http.MethodGet && refuseUnconditionedScenarioWriter(w, r) {
+		return
+	}
 	store := s.runMonitorStore(w, project)
 	if store == nil {
 		return
