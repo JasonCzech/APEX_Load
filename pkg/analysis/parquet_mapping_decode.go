@@ -62,7 +62,7 @@ func walkParquetMappingObject(d *json.Decoder, kind string) error {
 		}
 		seen[count], count = key, count+1
 		switch {
-		case kind == "mapping" && key == "version", kind == "measure" && key == "window_seconds":
+		case kind == "mapping" && key == "version", kind == "measure" && key == "window_seconds", kind == "histogram" && key == "window_seconds":
 			token, err := d.Token()
 			if _, ok := token.(json.Number); err != nil || !ok {
 				return errors.New("mapping version and summary window must be integers")
@@ -73,9 +73,15 @@ func walkParquetMappingObject(d *json.Decoder, kind string) error {
 			err = walkParquetMappingArray(d, "measure", 64)
 		case kind == "identity" && key == "dimensions":
 			err = walkParquetMappingArray(d, "dimension", maxDimensions)
-		case kind == "mapping" && key == "timestamp", kind == "identity" && (key == "source" || key == "host" || key == "service"), kind == "measure" && (key == "value" || key == "name_column" || key == "sample_count_column" || key == "sample_sum_column"), kind == "dimension" && key == "value":
+		case kind == "measure" && key == "histogram":
+			err = walkParquetMappingObject(d, "histogram")
+		case kind == "histogram" && key == "bounds":
+			err = walkParquetMappingArray(d, "bound", MaxHistogramBounds)
+		case kind == "histogram" && key == "count_columns":
+			err = walkParquetMappingArray(d, "path", MaxHistogramBounds)
+		case kind == "mapping" && key == "timestamp", kind == "identity" && (key == "source" || key == "host" || key == "service"), kind == "measure" && (key == "value" || key == "name_column" || key == "sample_count_column" || key == "sample_sum_column"), kind == "dimension" && key == "value", kind == "histogram" && key == "bound_column":
 			err = walkParquetMappingArray(d, "scalar", 16)
-		case kind == "mapping" && (key == "timestamp_encoding" || key == "timezone"), kind == "measure" && (key == "name" || key == "kind" || key == "unit" || key == "statistic"), kind == "dimension" && key == "name":
+		case kind == "mapping" && (key == "timestamp_encoding" || key == "timezone"), kind == "measure" && (key == "name" || key == "kind" || key == "unit" || key == "statistic"), kind == "dimension" && key == "name", kind == "histogram" && (key == "bucket_counts" || key == "temporality"):
 			limit := 256
 			if kind == "dimension" {
 				limit = maxDimensionBytes
@@ -108,6 +114,10 @@ func walkParquetMappingArray(d *json.Decoder, kind string, limit int) error {
 		count++
 		if kind == "scalar" {
 			err = walkParquetMappingScalar(d, 256)
+		} else if kind == "bound" {
+			err = walkParquetMappingScalar(d, 64)
+		} else if kind == "path" {
+			err = walkParquetMappingArray(d, "scalar", 16)
 		} else {
 			err = walkParquetMappingObject(d, kind)
 		}

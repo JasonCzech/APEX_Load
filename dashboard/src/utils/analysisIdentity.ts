@@ -219,6 +219,13 @@ export function analysisMappingDisclosureError(mapping: unknown): string | undef
         const measure = own(measures as object, String(index))
         if (!plain(measure)) return invalid
         path(own(measure, 'value')); path(own(measure, 'name_column')); path(own(measure, 'sample_count_column')); path(own(measure, 'sample_sum_column'))
+        const histogram = own(measure, 'histogram')
+        if (histogram !== undefined) {
+          if (!plain(histogram)) return invalid
+          path(own(histogram, 'bound_column'))
+          const counts = own(histogram, 'count_columns')
+          if (counts !== undefined) for (let column = 0, size = count(counts, 128); column < size; column++) path(own(counts as object, String(column)))
+        }
       }
     }
     const identity = own(mapping, 'identity')

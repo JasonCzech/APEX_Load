@@ -35,11 +35,17 @@ func nativePartitionStats(ctx context.Context, db *sql.DB, path string, request 
 	if request.Mapping.Version == 1 {
 		valid += " AND source=" + literal(request.DatasetID) + " AND host='' AND service='' AND dimensions_json='{}'"
 	}
+	return nativePartitionStatsScan(ctx, db, table, valid, stats)
+}
+
+// nativePartitionStatsScan fills row counts, time range and any constant
+// metric and identity from a just-written artifact. Every row must pass valid.
+func nativePartitionStatsScan(ctx context.Context, db *sql.DB, table, valid string, stats analysis.NormalizedPartitionStats) (analysis.NormalizedPartitionStats, error) {
 	query := "SELECT count(*),count(*) FILTER(WHERE quality='valid'),count(*) FILTER(WHERE quality='missing'),count(*) FILTER(WHERE NOT coalesce((" + valid + "),false)),min(timestamp_utc),max(timestamp_utc),min(metric_name),max(metric_name),min(source),max(source),min(host),max(host),min(service),max(service),min(dimensions_json),max(dimensions_json) FROM " + table
 	var invalid int64
 	var first, last sql.NullTime
 	var metricMin, metricMax, sourceMin, sourceMax, hostMin, hostMax, serviceMin, serviceMax, dimsMin, dimsMax sql.NullString
-	if err = db.QueryRowContext(ctx, query).Scan(&stats.Rows, &stats.Valid, &stats.Missing, &invalid, &first, &last, &metricMin, &metricMax, &sourceMin, &sourceMax, &hostMin, &hostMax, &serviceMin, &serviceMax, &dimsMin, &dimsMax); err != nil {
+	if err := db.QueryRowContext(ctx, query).Scan(&stats.Rows, &stats.Valid, &stats.Missing, &invalid, &first, &last, &metricMin, &metricMax, &sourceMin, &sourceMax, &hostMin, &hostMax, &serviceMin, &serviceMax, &dimsMin, &dimsMax); err != nil {
 		return stats, err
 	}
 	if invalid != 0 {

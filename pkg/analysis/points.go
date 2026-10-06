@@ -65,7 +65,8 @@ type MetricPoint struct {
 	Unit            string               `json:"unit,omitempty"`
 	Dimensions      map[string]string    `json:"dimensions,omitempty"`
 	Quality         string               `json:"quality"`
-	MissingReason   string               `json:"missing_reason,omitempty"` // Why a derived summary bucket is missing although its input existed.
+	MissingReason   string               `json:"missing_reason,omitempty"` // Why a derived summary or histogram bucket is missing although its input existed.
+	EstimateBin     *EstimateBin         `json:"estimate_bin,omitempty"`   // Histogram bin holding an interpolated percentile.
 	Provider        *ProviderMeasurement `json:"provider,omitempty"`
 	// Timing is the controller's account of the point's clock; optional and
 	// additive within metric_point.v1.
@@ -180,7 +181,7 @@ func (p MetricPoint) Validate() error {
 		return fmt.Errorf("unsupported metric kind %q", p.Kind)
 	}
 	if p.InputKind != "" {
-		if p.Kind != KindGauge || (p.InputKind != KindCounter && p.InputKind != KindGauge && p.InputKind != KindObservation && p.InputKind != KindSummary) {
+		if p.Kind != KindGauge || (p.InputKind != KindCounter && p.InputKind != KindGauge && p.InputKind != KindObservation && p.InputKind != KindSummary && p.InputKind != KindHistogram) {
 			return errors.New("invalid derived measurement semantics")
 		}
 	}
@@ -202,8 +203,11 @@ func (p MetricPoint) Validate() error {
 	default:
 		return fmt.Errorf("unsupported metric quality %q", p.Quality)
 	}
-	if p.MissingReason != "" && (p.Quality != QualityMissing || p.InputKind != KindSummary || !validMissingReason(p.MissingReason)) {
-		return errors.New("a missing reason applies only to a missing derived summary bucket")
+	if p.MissingReason != "" && (p.Quality != QualityMissing || !validPointMissingReason(p.InputKind, p.MissingReason)) {
+		return errors.New("a missing reason applies only to a missing derived summary or histogram bucket")
+	}
+	if b := p.EstimateBin; b != nil && (p.InputKind != KindHistogram || p.Value == nil || math.IsNaN(b.Lower) || math.IsInf(b.Lower, 0) || math.IsNaN(b.Upper) || math.IsInf(b.Upper, 0) || b.Lower > *p.Value || *p.Value > b.Upper) {
+		return errors.New("an estimate bin applies only to a measured histogram percentile it contains")
 	}
 	if p.Timing != nil {
 		if err := p.Timing.Validate(); err != nil {

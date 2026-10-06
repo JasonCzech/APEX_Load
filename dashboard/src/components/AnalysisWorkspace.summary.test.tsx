@@ -14,9 +14,9 @@ beforeEach(() => { container = document.createElement('div'); document.body.appe
 afterEach(() => { act(() => root.unmount()); container.remove() })
 
 const statistics = ['avg', 'min', 'max', 'sum', 'count', 'p50', 'p75', 'p90', 'p95', 'p99', 'p999']
-const caps = { native_parquet: true, enabled: true, imported_identity_version: 2, chunk_bytes: 4 * 1024 * 1024, summary_statistics: statistics }
+const caps = { native_parquet: true, enabled: true, imported_identity_version: 2, chunk_bytes: 4 * 1024 * 1024, summary_statistics: statistics, histogram_bound_limit: 128 }
 const column = (name: string) => ({ path: name, path_components: [name], physical_type: 'DOUBLE', repeated: false })
-const preview = { schema: { rows: 1, columns: [{ ...column('ts'), physical_type: 'INT64' }, column('p95'), column('n')] }, samples: [] }
+const preview = { schema: { rows: 1, columns: [{ ...column('ts'), physical_type: 'INT64' }, column('p95'), column('n'), column('b10')] }, samples: [] }
 const draft = { id: 'd', project_id: 'p', name: 'Summaries', revision: 1, state: 'uploading', files: [{ id: 'file', relative_path: 's.parquet', size: 1, uploaded: 1 }], accepted: 0, rejected: 0, mapping: { version: 1, timestamp: ['ts'], timestamp_encoding: 'unix_s', timezone: 'UTC', measures: [{ value: ['p95'], name: 'latency', kind: 'gauge', unit: 'ms' }] } }
 const button = (label: string) => [...container.querySelectorAll('button')].find(b => b.textContent === label)!
 const labelled = <T extends HTMLElement>(text: string) => [...container.querySelectorAll('label')].find(l => l.textContent?.startsWith(text))?.querySelector<T>('select, input') ?? null
@@ -87,4 +87,54 @@ it('queries a summary metric only for its declared statistics over whole windows
   const body = JSON.parse(String(call[1].body))
   // 3600s / 500 rounds to 8s, widened to one 60-second source window.
   expect(body).toMatchObject({ metric: 'latency', aggregation: 'p95', bucket_seconds: 60 })
+})
+
+it('declares a wide histogram with a count column for every bound but the last', async () => {
+  let submitted: Record<string, unknown> | undefined
+  await openDraft(caps, draft, body => { submitted = body })
+  await choose(labelled<HTMLSelectElement>('Semantics')!, 'histogram')
+  const bounds = labelled<HTMLInputElement>('Upper bounds')!
+  await choose(bounds, '10,')
+  expect(bounds.value).toBe('10,')
+  await choose(bounds, '10, 100, +Inf')
+  expect(container.textContent).toContain('choose a count column for every bound but the last')
+  expect(button('Validate and import').disabled).toBe(true)
+  await choose(labelled<HTMLSelectElement>('Count for ≤ 10')!, JSON.stringify(['b10']))
+  await choose(labelled<HTMLSelectElement>('Count for ≤ 100')!, JSON.stringify(['n']))
+  await choose(labelled<HTMLSelectElement>('Bucket counts')!, 'le_cumulative')
+  expect(button('Validate and import').disabled).toBe(false)
+  await act(async () => button('Validate and import').click())
+  const measure = (submitted?.mapping as { measures: Record<string, unknown>[] }).measures[0]
+  expect(measure).toMatchObject({ kind: 'histogram', value: ['p95'], histogram: { bounds: ['10', '100', '+Inf'], bucket_counts: 'le_cumulative', temporality: 'delta', window_seconds: 60, count_columns: [['b10'], ['n']] } })
+})
+
+it('declares a long cumulative histogram by its bound column', async () => {
+  let submitted: Record<string, unknown> | undefined
+  await openDraft(caps, draft, body => { submitted = body })
+  await choose(labelled<HTMLSelectElement>('Semantics')!, 'histogram')
+  await choose(labelled<HTMLInputElement>('Upper bounds')!, '0.1, +Inf')
+  await choose(labelled<HTMLSelectElement>('Counting')!, 'cumulative')
+  expect(labelled('Window (seconds)')).toBeNull()
+  await choose(labelled<HTMLSelectElement>('Table shape')!, 'long')
+  await choose(labelled<HTMLSelectElement>('Bound column')!, JSON.stringify(['b10']))
+  await act(async () => button('Validate and import').click())
+  const histogram = (submitted?.mapping as { measures: { histogram: Record<string, unknown> }[] }).measures[0].histogram
+  expect(histogram).toEqual({ bounds: ['0.1', '+Inf'], bucket_counts: 'per_bin', temporality: 'cumulative', bound_column: ['b10'] })
+})
+
+it('queries a histogram for counts and percentiles over whole windows', async () => {
+  const ready = { ...draft, state: 'ready', mapping: { ...draft.mapping, measures: [
+    { value: ['p95'], name: 'latency', kind: 'histogram', unit: 'ms', histogram: { bounds: ['10', '+Inf'], bucket_counts: 'per_bin', temporality: 'delta', window_seconds: 300, count_columns: [['b10']] } },
+  ] } }
+  await openDraft(caps, ready)
+  const aggregation = labelled<HTMLSelectElement>('Histogram statistic')!
+  expect([...aggregation.options].map(o => o.value)).toEqual(['count', 'p50', 'p75', 'p90', 'p95', 'p99', 'p999'])
+  await choose(aggregation, 'p99')
+  const query = [...container.querySelectorAll('fieldset')].find(f => f.querySelector('legend')?.textContent === 'Query dataset')!
+  const dates = query.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]')
+  await choose(dates[0], '2026-01-01T00:00')
+  await choose(dates[1], '2026-01-01T01:00')
+  await act(async () => button('Show series').click())
+  const body = JSON.parse(String(request.mock.calls.find(([path]) => String(path).endsWith('/series'))![1].body))
+  expect(body).toMatchObject({ metric: 'latency', aggregation: 'p99', bucket_seconds: 300 })
 })

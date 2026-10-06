@@ -7694,6 +7694,7 @@ export interface operations {
             "diagnostics_enabled": boolean;
             "enabled": boolean;
             "heavy_jobs": number;
+            "histogram_bound_limit"?: number;
             "imported_identity_version": number;
             "max_import_bytes": number;
             "memory_limit": string;
@@ -7822,6 +7823,14 @@ export interface operations {
                 "source"?: Array<string>;
               }) | null;
               "measures": Array<{
+                "histogram"?: ({
+                  "bound_column"?: Record<string, unknown>;
+                  "bounds": Array<string>;
+                  "bucket_counts": string;
+                  "count_columns"?: Array<Record<string, unknown>>;
+                  "temporality": string;
+                  "window_seconds"?: number;
+                }) | null;
                 "kind": string;
                 "name"?: string;
                 "name_column"?: Array<string>;
@@ -7862,6 +7871,7 @@ export interface operations {
                   "missing": number;
                   "rows": number;
                   "schema_version": string;
+                  "source_rows"?: number;
                   "unit": string;
                   "valid": number;
                   "version": number;
@@ -7922,6 +7932,14 @@ export interface operations {
                 "source"?: Array<string>;
               }) | null;
               "measures": Array<{
+                "histogram"?: ({
+                  "bound_column"?: Record<string, unknown>;
+                  "bounds": Array<string>;
+                  "bucket_counts": string;
+                  "count_columns"?: Array<Record<string, unknown>>;
+                  "temporality": string;
+                  "window_seconds"?: number;
+                }) | null;
                 "kind": string;
                 "name"?: string;
                 "name_column"?: Array<string>;
@@ -7962,6 +7980,7 @@ export interface operations {
                   "missing": number;
                   "rows": number;
                   "schema_version": string;
+                  "source_rows"?: number;
                   "unit": string;
                   "valid": number;
                   "version": number;
@@ -8098,6 +8117,10 @@ export interface operations {
                 "operation": string;
               }>;
               "dimensions"?: Record<string, string>;
+              "estimate_bin"?: ({
+                "lower": number;
+                "upper": number;
+              }) | null;
               "host"?: string;
               "input_kind"?: string;
               "kind": string;
@@ -8197,6 +8220,10 @@ export interface operations {
                 "operation": string;
               }>;
               "dimensions"?: Record<string, string>;
+              "estimate_bin"?: ({
+                "lower": number;
+                "upper": number;
+              }) | null;
               "host"?: string;
               "input_kind"?: string;
               "kind": string;
@@ -8350,6 +8377,10 @@ export interface operations {
                 "operation": string;
               }>;
               "dimensions"?: Record<string, string>;
+              "estimate_bin"?: ({
+                "lower": number;
+                "upper": number;
+              }) | null;
               "host"?: string;
               "input_kind"?: string;
               "kind": string;
@@ -8735,6 +8766,14 @@ export interface operations {
               "source"?: Array<string>;
             };
             "measures"?: Array<{
+              "histogram"?: {
+                "bound_column"?: Array<string>;
+                "bounds"?: Array<string>;
+                "bucket_counts"?: string;
+                "count_columns"?: Array<Array<string>>;
+                "temporality"?: string;
+                "window_seconds"?: number;
+              };
               "kind"?: string;
               "name"?: string;
               "name_column"?: Array<string>;
@@ -9005,6 +9044,14 @@ export interface operations {
               "source"?: Array<string>;
             };
             "measures"?: Array<{
+              "histogram"?: {
+                "bound_column"?: Array<string>;
+                "bounds"?: Array<string>;
+                "bucket_counts"?: string;
+                "count_columns"?: Array<Array<string>>;
+                "temporality"?: string;
+                "window_seconds"?: number;
+              };
               "kind"?: string;
               "name"?: string;
               "name_column"?: Array<string>;
@@ -10199,6 +10246,14 @@ export interface operations {
                 "source"?: Array<string>;
               }) | null;
               "measures": Array<{
+                "histogram"?: ({
+                  "bound_column"?: Record<string, unknown>;
+                  "bounds": Array<string>;
+                  "bucket_counts": string;
+                  "count_columns"?: Array<Record<string, unknown>>;
+                  "temporality": string;
+                  "window_seconds"?: number;
+                }) | null;
                 "kind": string;
                 "name"?: string;
                 "name_column"?: Array<string>;
@@ -10239,6 +10294,7 @@ export interface operations {
                   "missing": number;
                   "rows": number;
                   "schema_version": string;
+                  "source_rows"?: number;
                   "unit": string;
                   "valid": number;
                   "version": number;
@@ -10340,6 +10396,14 @@ export interface operations {
                 "source"?: Array<string>;
               }) | null;
               "measures": Array<{
+                "histogram"?: ({
+                  "bound_column"?: Record<string, unknown>;
+                  "bounds": Array<string>;
+                  "bucket_counts": string;
+                  "count_columns"?: Array<Record<string, unknown>>;
+                  "temporality": string;
+                  "window_seconds"?: number;
+                }) | null;
                 "kind": string;
                 "name"?: string;
                 "name_column"?: Array<string>;
@@ -10380,6 +10444,7 @@ export interface operations {
                   "missing": number;
                   "rows": number;
                   "schema_version": string;
+                  "source_rows"?: number;
                   "unit": string;
                   "valid": number;
                   "version": number;
@@ -10481,6 +10546,14 @@ export interface operations {
                 "source"?: Array<string>;
               }) | null;
               "measures": Array<{
+                "histogram"?: ({
+                  "bound_column"?: Record<string, unknown>;
+                  "bounds": Array<string>;
+                  "bucket_counts": string;
+                  "count_columns"?: Array<Record<string, unknown>>;
+                  "temporality": string;
+                  "window_seconds"?: number;
+                }) | null;
                 "kind": string;
                 "name"?: string;
                 "name_column"?: Array<string>;
@@ -10521,6 +10594,7 @@ export interface operations {
                   "missing": number;
                   "rows": number;
                   "schema_version": string;
+                  "source_rows"?: number;
                   "unit": string;
                   "valid": number;
                   "version": number;
@@ -10713,6 +10787,14 @@ export interface operations {
               "source"?: Array<string>;
             };
             "measures"?: Array<{
+              "histogram"?: {
+                "bound_column"?: Array<string>;
+                "bounds"?: Array<string>;
+                "bucket_counts"?: string;
+                "count_columns"?: Array<Array<string>>;
+                "temporality"?: string;
+                "window_seconds"?: number;
+              };
               "kind"?: string;
               "name"?: string;
               "name_column"?: Array<string>;
@@ -11648,6 +11730,10 @@ export interface operations {
               "operation"?: string;
             }>;
             "dimensions"?: Record<string, string>;
+            "estimate_bin"?: ({
+              "lower"?: number;
+              "upper"?: number;
+            }) | null;
             "host"?: string;
             "input_kind"?: string;
             "kind"?: string;
@@ -50148,6 +50234,10 @@ export interface operations {
               "dataset_id"?: string;
               "derivation"?: Array<Record<string, unknown>>;
               "dimensions"?: Record<string, string>;
+              "estimate_bin"?: ({
+                "lower"?: number;
+                "upper"?: number;
+              }) | null;
               "host"?: string;
               "input_kind"?: string;
               "kind"?: string;
@@ -90133,6 +90223,10 @@ export interface operations {
                     "operation": string;
                   }>;
                   "dimensions"?: Record<string, string>;
+                  "estimate_bin"?: ({
+                    "lower": number;
+                    "upper": number;
+                  }) | null;
                   "host"?: string;
                   "input_kind"?: string;
                   "kind": string;
@@ -124522,6 +124616,10 @@ export interface operations {
               "operation"?: string;
             }>;
             "dimensions"?: Record<string, string>;
+            "estimate_bin"?: ({
+              "lower"?: number;
+              "upper"?: number;
+            }) | null;
             "host"?: string;
             "input_kind"?: string;
             "kind"?: string;

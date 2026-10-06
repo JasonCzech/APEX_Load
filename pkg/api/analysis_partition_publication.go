@@ -22,7 +22,7 @@ func analysisNormalizedOutputProofs(in storage.AnalysisImport, result analytics.
 	var rows, totalBytes int64
 	for i, file := range result.Files {
 		p := result.Partitions[i]
-		if file == "" || p.File != file || p.Bytes < 12 || p.Bytes > analysisImportMaxBytes-totalBytes || !analysisDatasetArtifactDigestValid(p.SHA256) || p.Stats.Validate() != nil || p.Stats.IdentityVersion != in.Mapping.Version || p.Stats.Rows > result.Accepted-rows {
+		if file == "" || p.File != file || p.Bytes < 12 || p.Bytes > analysisImportMaxBytes-totalBytes || !analysisDatasetArtifactDigestValid(p.SHA256) || p.Stats.Validate() != nil || p.Stats.IdentityVersion != in.Mapping.Version || p.Stats.AcceptedRows() > result.Accepted-rows {
 			return nil, analysis.ErrPartitionManifest
 		}
 		if _, exists := proofs[file]; exists {
@@ -30,7 +30,7 @@ func analysisNormalizedOutputProofs(in storage.AnalysisImport, result analytics.
 		}
 		p.Stats = p.Stats.Clone()
 		proofs[file] = p
-		rows += p.Stats.Rows
+		rows += p.Stats.AcceptedRows()
 		totalBytes += p.Bytes
 	}
 	if rows != result.Accepted {

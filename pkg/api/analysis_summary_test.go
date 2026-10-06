@@ -54,20 +54,20 @@ func TestImportedSummaryQueriesExplainUnanswerableRequests(t *testing.T) {
 	query := func(metric, aggregation string, bucket int) analytics.SeriesQuery {
 		return analytics.SeriesQuery{Metric: metric, Aggregation: aggregation, BucketSeconds: bucket}
 	}
-	if err := validateImportedSummaryQuery(mapping, query("latency", "p95", 120)); err != nil {
+	if err := validateImportedMeasureQuery(mapping, query("latency", "p95", 120)); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateImportedSummaryQuery(mapping, query("cpu", "avg", 7)); err != nil {
+	if err := validateImportedMeasureQuery(mapping, query("cpu", "avg", 7)); err != nil {
 		t.Fatalf("raw metric constrained: %v", err)
 	}
-	if err := validateImportedSummaryQuery(mapping, query("latency", "avg", 60)); err == nil || !strings.Contains(err.Error(), "p50, p95") {
+	if err := validateImportedMeasureQuery(mapping, query("latency", "avg", 60)); err == nil || !strings.Contains(err.Error(), "p50, p95") {
 		t.Fatalf("undeclared statistic: %v", err)
 	}
-	if err := validateImportedSummaryQuery(mapping, query("latency", "p95", 45)); err == nil {
+	if err := validateImportedMeasureQuery(mapping, query("latency", "p95", 45)); err == nil {
 		t.Fatal("partial window bucket accepted")
 	}
 	legacy := analysis.ParquetMapping{Version: 1, Measures: []analysis.ParquetMeasure{{Value: []string{"p95"}, Name: "latency", Kind: analysis.KindSummary, Unit: "ms"}}}
-	if err := validateImportedSummaryQuery(legacy, query("latency", "p95", 60)); !errors.Is(err, analysis.ErrSummaryStatisticUnknown) {
+	if err := validateImportedMeasureQuery(legacy, query("latency", "p95", 60)); !errors.Is(err, analysis.ErrSummaryStatisticUnknown) {
 		t.Fatalf("legacy summary: %v", err)
 	}
 }

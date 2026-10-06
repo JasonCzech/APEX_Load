@@ -16,7 +16,7 @@ import (
 
 func TestAnalysisCLIHistoricalProtectedProjectionRefusesQueryAndCommitBeforeCapability(t *testing.T) {
 	for _, version := range []int{1, 2} {
-		for _, role := range []string{"timestamp", "value", "name_column", "sample_count_column", "sample_sum_column", "source", "host", "service", "dimension"} {
+		for _, role := range []string{"timestamp", "value", "name_column", "sample_count_column", "sample_sum_column", "bound_column", "count_columns", "source", "host", "service", "dimension"} {
 			for _, action := range []string{"query", "commit"} {
 				t.Run(role+"/"+action+string(rune('0'+version)), func(t *testing.T) {
 					m := map[string]any{"version": version, "timestamp": []string{"ts"}, "measures": []any{map[string]any{"value": []string{"value"}, "name": "v"}}}
@@ -27,6 +27,10 @@ func TestAnalysisCLIHistoricalProtectedProjectionRefusesQueryAndCommitBeforeCapa
 						m["measures"] = []any{map[string]any{"value": []string{"api", "key"}}}
 					case "name_column", "sample_count_column", "sample_sum_column":
 						m["measures"] = []any{map[string]any{"value": []string{"value"}, role: []string{"client_secret"}}}
+					case "bound_column":
+						m["measures"] = []any{map[string]any{"value": []string{"value"}, "histogram": map[string]any{role: []string{"client_secret"}}}}
+					case "count_columns":
+						m["measures"] = []any{map[string]any{"value": []string{"value"}, "histogram": map[string]any{role: [][]string{{"bucket"}, {"api", "key"}}}}}
 					case "source", "host", "service":
 						m["identity"] = map[string]any{role: []string{"password"}}
 					case "dimension":

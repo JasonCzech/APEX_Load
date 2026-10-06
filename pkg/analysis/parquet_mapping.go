@@ -23,6 +23,8 @@ type ParquetMeasure struct {
 	WindowSeconds     int               `json:"window_seconds,omitempty"`
 	SampleCountColumn ParquetColumnPath `json:"sample_count_column,omitempty"`
 	SampleSumColumn   ParquetColumnPath `json:"sample_sum_column,omitempty"`
+	// Histogram declares bucket bounds and count conventions. Histogram-only.
+	Histogram *ParquetHistogram `json:"histogram,omitempty"`
 }
 type ParquetMapping struct {
 	Version           int                     `json:"version"`
@@ -43,6 +45,11 @@ func (m ParquetMapping) ValidateDefinition() error {
 		return errors.New("mapping definition exceeds collection bounds")
 	}
 	schema := ParquetSchemaPreview{Columns: make([]ParquetColumn, 0, 1+4*len(m.Measures)+3+maxDimensions)}
+	for _, measure := range m.Measures {
+		if measure.Histogram != nil && (len(measure.Histogram.CountColumns) > MaxHistogramBounds || len(measure.Histogram.Bounds) > MaxHistogramBounds) {
+			return errors.New("mapping definition exceeds histogram bounds")
+		}
+	}
 	add := func(path ParquetColumnPath) error {
 		if len(path) < 1 || len(path) > 16 {
 			return errors.New("mapping definition column path exceeds bounds")
@@ -62,7 +69,7 @@ func (m ParquetMapping) ValidateDefinition() error {
 		if err := add(measure.Value); err != nil {
 			return err
 		}
-		for _, path := range []ParquetColumnPath{measure.NameColumn, measure.SampleCountColumn, measure.SampleSumColumn} {
+		for _, path := range append([]ParquetColumnPath{measure.NameColumn, measure.SampleCountColumn, measure.SampleSumColumn}, measure.Histogram.Paths()...) {
 			if len(path) != 0 {
 				if err := add(path); err != nil {
 					return err
@@ -161,11 +168,14 @@ func (m ParquetMapping) Validate(schema ParquetSchemaPreview) error {
 			seen[measure.Name] = append(seen[measure.Name], measure.Statistic)
 		}
 		switch measure.Kind {
-		case KindGauge, KindCounter, KindObservation, KindSummary:
+		case KindGauge, KindCounter, KindObservation, KindSummary, KindHistogram:
 		default:
 			return errors.New("unsupported scalar measurement semantics")
 		}
 		if err := measure.validateSummaryFields(check); err != nil {
+			return err
+		}
+		if err := measure.validateHistogram(check); err != nil {
 			return err
 		}
 		if _, _, err := NormalizeUnit(measure.Unit); err != nil {

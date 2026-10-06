@@ -214,6 +214,11 @@ func changeIdentityTestField(t *testing.T, field reflect.Value) {
 			field.SetZero()
 			return
 		}
+		if field.Type() == reflect.TypeFor[*EstimateBin]() {
+			// The bin bounds a value; like the value it is not identity.
+			field.Set(reflect.ValueOf(&EstimateBin{Lower: 1, Upper: 2}))
+			return
+		}
 		if field.Type() == reflect.TypeFor[*PointTiming]() {
 			// Clock provenance says when and against which clock a point was
 			// read, not what it measures, so identity ignores it.

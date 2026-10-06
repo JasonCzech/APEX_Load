@@ -99,7 +99,7 @@ func bindImportedNativeSeriesQuery(in *storage.AnalysisImport, query analytics.S
 		return analytics.SeriesQuery{}, err
 	}
 	if in.Mapping != nil {
-		if err := validateImportedSummaryQuery(*in.Mapping, query); err != nil {
+		if err := validateImportedMeasureQuery(*in.Mapping, query); err != nil {
 			return analytics.SeriesQuery{}, err
 		}
 	}
@@ -107,10 +107,13 @@ func bindImportedNativeSeriesQuery(in *storage.AnalysisImport, query analytics.S
 	return query, nil
 }
 
-// validateImportedSummaryQuery explains a summary request that cannot be
-// answered before any data is staged. Long-table summaries name metrics from
-// data, so the engine applies the same rules to those.
-func validateImportedSummaryQuery(mapping analysis.ParquetMapping, query analytics.SeriesQuery) error {
+// validateImportedMeasureQuery explains a summary or histogram request that
+// cannot be answered before any data is staged. Long-table measures name
+// metrics from data, so the engine applies the same rules to those.
+func validateImportedMeasureQuery(mapping analysis.ParquetMapping, query analytics.SeriesQuery) error {
+	if histogram, found := mapping.HistogramDeclarationFor(query.Metric); found {
+		return analysis.ValidateHistogramAggregation(histogram.WindowSeconds, query.BucketSeconds, query.Aggregation)
+	}
 	declared, legacy := mapping.SummaryDeclarations(query.Metric)
 	if len(declared) == 0 {
 		if legacy {

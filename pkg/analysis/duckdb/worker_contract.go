@@ -349,7 +349,7 @@ func validateWorkerMapping(m Mapping) error {
 		if appendPath(measure.Value) != nil {
 			return errWorkerProtocol
 		}
-		for _, path := range []Column{measure.NameColumn, measure.SampleCountColumn, measure.SampleSumColumn} {
+		for _, path := range append([]Column{measure.NameColumn, measure.SampleCountColumn, measure.SampleSumColumn}, measure.Histogram.Paths()...) {
 			if len(path) > 0 && appendPath(path) != nil {
 				return errWorkerProtocol
 			}

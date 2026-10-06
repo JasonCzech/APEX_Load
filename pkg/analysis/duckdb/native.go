@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -270,6 +269,12 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 	err = e.withDB(ctx, func(ctx context.Context, db *sql.DB) error {
 		for i, path := range paths {
 			for j, measure := range request.Mapping.Measures {
+				if measure.Kind == analysis.KindHistogram {
+					if err := nativeHistogramNormalize(ctx, db, request, i, j, path, dir, &result); err != nil {
+						return err
+					}
+					continue
+				}
 				unit, scale, _ := unitScale(measure.Unit)
 				name := literal(measure.Name)
 				if len(measure.NameColumn) > 0 {
@@ -285,46 +290,8 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 				}
 				valid := "timestamp_utc IS NOT NULL AND isfinite(timestamp_utc) AND timestamp_utc>=TIMESTAMPTZ '0001-01-01 00:00:00+00' AND timestamp_utc<TIMESTAMPTZ '10000-01-01 00:00:00+00' AND " + nativeRequiredIdentityText("metric_name", 256) + " AND (was_null OR (value IS NOT NULL AND isfinite(value)))"
 				valid += " AND " + identityValid + summaryValid
-				var accepted, rejected int64
-				if err := db.QueryRowContext(ctx, "SELECT count(*) FILTER(WHERE "+valid+"), count(*) FILTER(WHERE NOT coalesce(("+valid+"),false)) FROM mapped").Scan(&accepted, &rejected); err != nil {
+				if _, err := nativeAdmitMappedRows(ctx, db, request, i, j, valid, "invalid_timestamp_name_or_value", dir, &result); err != nil {
 					return err
-				}
-				result.Accepted += accepted
-				result.Rejected += rejected
-				if rejected > 0 {
-					summary := RejectionSummary{File: i, Measure: j, Count: rejected}
-					rows, err := db.QueryContext(ctx, "SELECT source_row FROM mapped WHERE NOT coalesce(("+valid+"),false) ORDER BY source_row LIMIT 100")
-					if err != nil {
-						return err
-					}
-					for rows.Next() {
-						var row int64
-						if err = rows.Scan(&row); err != nil {
-							rows.Close()
-							return err
-						}
-						summary.Rows = append(summary.Rows, row)
-					}
-					err = rows.Err()
-					rows.Close()
-					if err != nil {
-						return err
-					}
-					result.Rejections = append(result.Rejections, summary)
-					if request.AllowRejected {
-						out := filepath.Join(dir, fmt.Sprintf("reject-%04d-%02d.parquet", i, j))
-						query := "COPY (SELECT source_row, " + strconv.Itoa(i) + " AS source_file, " + strconv.Itoa(j) + " AS mapped_measure, 'invalid_timestamp_name_or_value' AS reason FROM mapped WHERE NOT coalesce((" + valid + "),false)) TO " + literal(out) + " (FORMAT PARQUET, COMPRESSION ZSTD)"
-						if _, err = db.ExecContext(ctx, query); err != nil {
-							return err
-						}
-						if err = syncNormalizedFile(out); err != nil {
-							return err
-						}
-						result.RejectionFiles = append(result.RejectionFiles, out)
-					}
-				}
-				if rejected > 0 && !request.AllowRejected {
-					return fmt.Errorf("file %d measure %d contains %d rejected rows; explicit acceptance required", i, j, rejected)
 				}
 				out := filepath.Join(dir, fmt.Sprintf("part-%04d-%02d.parquet", i, j))
 				query := "COPY (SELECT " + literal(analysis.SchemaVersion) + " AS schema_version, " + literal(request.ProjectID) + " AS project_id, " + literal(request.DatasetID) + " AS dataset_id, " + identityCanonical + ", timestamp_utc, metric_name, " + literal(measure.Kind) + " AS kind, " + literal(unit) + " AS unit, value, CASE WHEN was_null THEN 'missing' ELSE 'valid' END AS quality" + summaryCanonical + " FROM mapped WHERE " + valid + ") TO " + literal(out) + " (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 122880)"
@@ -345,6 +312,54 @@ func (e *Engine) childNativeNormalize(ctx context.Context, request NormalizeRequ
 		return nil
 	})
 	return result, err
+}
+
+// nativeAdmitMappedRows counts the rows of the temporary view mapped that pass
+// valid, records rejected source rows (and their durable set when accepted)
+// and refuses rejections unless explicitly accepted.
+func nativeAdmitMappedRows(ctx context.Context, db *sql.DB, request NormalizeRequest, i, j int, valid, reason, dir string, result *NormalizeResult) (int64, error) {
+	var accepted, rejected int64
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FILTER(WHERE "+valid+"), count(*) FILTER(WHERE NOT coalesce(("+valid+"),false)) FROM mapped").Scan(&accepted, &rejected); err != nil {
+		return 0, err
+	}
+	result.Accepted += accepted
+	result.Rejected += rejected
+	if rejected > 0 {
+		summary := RejectionSummary{File: i, Measure: j, Count: rejected}
+		rows, err := db.QueryContext(ctx, "SELECT source_row FROM mapped WHERE NOT coalesce(("+valid+"),false) ORDER BY source_row LIMIT 100")
+		if err != nil {
+			return 0, err
+		}
+		for rows.Next() {
+			var row int64
+			if err = rows.Scan(&row); err != nil {
+				rows.Close()
+				return 0, err
+			}
+			summary.Rows = append(summary.Rows, row)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return 0, err
+		}
+		result.Rejections = append(result.Rejections, summary)
+		if request.AllowRejected {
+			out := filepath.Join(dir, fmt.Sprintf("reject-%04d-%02d.parquet", i, j))
+			query := "COPY (SELECT source_row, " + strconv.Itoa(i) + " AS source_file, " + strconv.Itoa(j) + " AS mapped_measure, " + literal(reason) + " AS reason FROM mapped WHERE NOT coalesce((" + valid + "),false)) TO " + literal(out) + " (FORMAT PARQUET, COMPRESSION ZSTD)"
+			if _, err = db.ExecContext(ctx, query); err != nil {
+				return 0, err
+			}
+			if err = syncNormalizedFile(out); err != nil {
+				return 0, err
+			}
+			result.RejectionFiles = append(result.RejectionFiles, out)
+		}
+	}
+	if rejected > 0 && !request.AllowRejected {
+		return 0, fmt.Errorf("file %d measure %d contains %d rejected rows; explicit acceptance required", i, j, rejected)
+	}
+	return accepted, nil
 }
 
 func (e *Engine) childNativeSeries(ctx context.Context, files []string, q SeriesQuery) ([]analysis.MetricPoint, error) {
@@ -377,7 +392,37 @@ func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q 
 		if _, err := workerAdmitSeriesBounds(q, &bounds); err != nil {
 			return err
 		}
-		table, err := nativeIdentityTable(paths)
+		scalarPaths, distributionPaths, err := nativeClassifyArtifacts(paths)
+		if err != nil {
+			return err
+		}
+		if len(distributionPaths) > 0 {
+			histogramPoints, template, found, err := nativeHistogramSeries(ctx, db, distributionPaths, q)
+			if err != nil {
+				return err
+			}
+			if found {
+				if len(scalarPaths) > 0 {
+					table, err := nativeIdentityTable(scalarPaths)
+					if err != nil {
+						return err
+					}
+					var scalarRows int64
+					if err := db.QueryRowContext(ctx, "SELECT count(*) FROM "+table+" WHERE "+nativeSeriesFilter(q)).Scan(&scalarRows); err != nil {
+						return err
+					}
+					if scalarRows != 0 {
+						return errors.New("multiple measurement identities, kinds or units require a narrower series selection")
+					}
+				}
+				points, err = nativeFillSeriesGaps(histogramPoints, template, q, bounds)
+				return err
+			}
+		}
+		if len(scalarPaths) == 0 {
+			return nil
+		}
+		table, err := nativeIdentityTable(scalarPaths)
 		if err != nil {
 			return err
 		}
@@ -477,6 +522,7 @@ func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q 
 				unit += "/s"
 			}
 		}
+		template := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: source, Host: host, Service: service, Dimensions: dimensions, MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Derivation: lineage, Unit: unit, Quality: analysis.QualityMissing}
 		rows, err = db.QueryContext(ctx, querySQL)
 		if err != nil {
 			return err
@@ -496,7 +542,7 @@ func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q 
 			if len(points) >= analysis.MaxSeriesPoints {
 				return errors.New("analytical result exceeds point limit")
 			}
-			p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: source, Host: host, Service: service, Dimensions: maps.Clone(dimensions), TimestampUTC: at.UTC(), MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Derivation: append([]analysis.DerivationStep(nil), lineage...), Unit: unit, Quality: analysis.QualityMissing}
+			p := nativeSeriesPoint(template, at.UTC())
 			if value.Valid {
 				v := value.Float64
 				p.Value = &v
@@ -512,23 +558,29 @@ func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q 
 		if err := rows.Err(); err != nil {
 			return err
 		}
-		// Explicit empty buckets prevent charts from drawing across missing data.
-		byTime := make(map[time.Time]analysis.MetricPoint, len(points))
-		for _, p := range points {
-			byTime[p.TimestampUTC] = p
-		}
-		points = points[:0]
-		for at := bounds.From; at.Before(bounds.To); at = at.Add(time.Duration(q.BucketSeconds) * time.Second) {
-			if len(points) >= analysis.MaxSeriesPoints {
-				return errors.New("analytical result exceeds point limit")
-			}
-			p, ok := byTime[at]
-			if !ok {
-				p = analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: q.ProjectID, DatasetID: q.DatasetID, Source: source, Host: host, Service: service, Dimensions: maps.Clone(dimensions), TimestampUTC: at, MetricName: q.Metric, Kind: analysis.KindGauge, InputKind: kind, Derivation: append([]analysis.DerivationStep(nil), lineage...), Unit: unit, Quality: analysis.QualityMissing}
-			}
-			points = append(points, p)
-		}
-		return nil
+		points, err = nativeFillSeriesGaps(points, template, q, bounds)
+		return err
 	})
 	return points, bounds, err
+}
+
+// nativeFillSeriesGaps adds explicit missing buckets, so charts never draw
+// across missing data.
+func nativeFillSeriesGaps(points []analysis.MetricPoint, template analysis.MetricPoint, q SeriesQuery, bounds workerSeriesBounds) ([]analysis.MetricPoint, error) {
+	byTime := make(map[time.Time]analysis.MetricPoint, len(points))
+	for _, p := range points {
+		byTime[p.TimestampUTC] = p
+	}
+	filled := make([]analysis.MetricPoint, 0, len(points))
+	for at := bounds.From; at.Before(bounds.To); at = at.Add(time.Duration(q.BucketSeconds) * time.Second) {
+		if len(filled) >= analysis.MaxSeriesPoints {
+			return nil, errors.New("analytical result exceeds point limit")
+		}
+		p, ok := byTime[at]
+		if !ok {
+			p = nativeSeriesPoint(template, at)
+		}
+		filled = append(filled, p)
+	}
+	return filled, nil
 }

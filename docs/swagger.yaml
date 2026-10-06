@@ -20212,6 +20212,9 @@ paths:
                   heavy_jobs:
                     type: integer
                     format: int64
+                  histogram_bound_limit:
+                    type: integer
+                    format: int64
                   imported_identity_version:
                     type: integer
                     format: int64
@@ -20689,6 +20692,19 @@ paths:
                           type: object
                           additionalProperties:
                             type: string
+                        estimate_bin:
+                          type: object
+                          properties:
+                            lower:
+                              type: number
+                              format: double
+                            upper:
+                              type: number
+                              format: double
+                          required:
+                            - lower
+                            - upper
+                          nullable: true
                         host:
                           type: string
                         input_kind:
@@ -20969,6 +20985,19 @@ paths:
                           type: object
                           additionalProperties:
                             type: string
+                        estimate_bin:
+                          type: object
+                          properties:
+                            lower:
+                              type: number
+                              format: double
+                            upper:
+                              type: number
+                              format: double
+                          required:
+                            - lower
+                            - upper
+                          nullable: true
                         host:
                           type: string
                         input_kind:
@@ -22149,6 +22178,35 @@ paths:
                         items:
                           type: object
                           properties:
+                            histogram:
+                              type: object
+                              properties:
+                                bound_column:
+                                  type: object
+                                  description: 'Go type: ParquetColumnPath'
+                                  additionalProperties: true
+                                bounds:
+                                  type: array
+                                  items:
+                                    type: string
+                                bucket_counts:
+                                  type: string
+                                count_columns:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ParquetColumnPath'
+                                    additionalProperties: true
+                                temporality:
+                                  type: string
+                                window_seconds:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - bounds
+                                - bucket_counts
+                                - temporality
+                              nullable: true
                             kind:
                               type: string
                             name:
@@ -22273,6 +22331,9 @@ paths:
                                   format: int64
                                 schema_version:
                                   type: string
+                                source_rows:
+                                  type: integer
+                                  format: int64
                                 unit:
                                   type: string
                                 valid:
@@ -22692,6 +22753,19 @@ paths:
                           type: object
                           additionalProperties:
                             type: string
+                        estimate_bin:
+                          type: object
+                          properties:
+                            lower:
+                              type: number
+                              format: double
+                            upper:
+                              type: number
+                              format: double
+                          required:
+                            - lower
+                            - upper
+                          nullable: true
                         host:
                           type: string
                         input_kind:
@@ -23696,6 +23770,35 @@ paths:
                         items:
                           type: object
                           properties:
+                            histogram:
+                              type: object
+                              properties:
+                                bound_column:
+                                  type: object
+                                  description: 'Go type: ParquetColumnPath'
+                                  additionalProperties: true
+                                bounds:
+                                  type: array
+                                  items:
+                                    type: string
+                                bucket_counts:
+                                  type: string
+                                count_columns:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ParquetColumnPath'
+                                    additionalProperties: true
+                                temporality:
+                                  type: string
+                                window_seconds:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - bounds
+                                - bucket_counts
+                                - temporality
+                              nullable: true
                             kind:
                               type: string
                             name:
@@ -23820,6 +23923,9 @@ paths:
                                   format: int64
                                 schema_version:
                                   type: string
+                                source_rows:
+                                  type: integer
+                                  format: int64
                                 unit:
                                   type: string
                                 valid:
@@ -24072,6 +24178,35 @@ paths:
                         items:
                           type: object
                           properties:
+                            histogram:
+                              type: object
+                              properties:
+                                bound_column:
+                                  type: object
+                                  description: 'Go type: ParquetColumnPath'
+                                  additionalProperties: true
+                                bounds:
+                                  type: array
+                                  items:
+                                    type: string
+                                bucket_counts:
+                                  type: string
+                                count_columns:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ParquetColumnPath'
+                                    additionalProperties: true
+                                temporality:
+                                  type: string
+                                window_seconds:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - bounds
+                                - bucket_counts
+                                - temporality
+                              nullable: true
                             kind:
                               type: string
                             name:
@@ -24196,6 +24331,9 @@ paths:
                                   format: int64
                                 schema_version:
                                   type: string
+                                source_rows:
+                                  type: integer
+                                  format: int64
                                 unit:
                                   type: string
                                 valid:
@@ -24449,6 +24587,35 @@ paths:
                         items:
                           type: object
                           properties:
+                            histogram:
+                              type: object
+                              properties:
+                                bound_column:
+                                  type: object
+                                  description: 'Go type: ParquetColumnPath'
+                                  additionalProperties: true
+                                bounds:
+                                  type: array
+                                  items:
+                                    type: string
+                                bucket_counts:
+                                  type: string
+                                count_columns:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ParquetColumnPath'
+                                    additionalProperties: true
+                                temporality:
+                                  type: string
+                                window_seconds:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - bounds
+                                - bucket_counts
+                                - temporality
+                              nullable: true
                             kind:
                               type: string
                             name:
@@ -24573,6 +24740,9 @@ paths:
                                   format: int64
                                 schema_version:
                                   type: string
+                                source_rows:
+                                  type: integer
+                                  format: int64
                                 unit:
                                   type: string
                                 valid:
@@ -24776,6 +24946,35 @@ paths:
                         items:
                           type: object
                           properties:
+                            histogram:
+                              type: object
+                              properties:
+                                bound_column:
+                                  type: object
+                                  description: 'Go type: ParquetColumnPath'
+                                  additionalProperties: true
+                                bounds:
+                                  type: array
+                                  items:
+                                    type: string
+                                bucket_counts:
+                                  type: string
+                                count_columns:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ParquetColumnPath'
+                                    additionalProperties: true
+                                temporality:
+                                  type: string
+                                window_seconds:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - bounds
+                                - bucket_counts
+                                - temporality
+                              nullable: true
                             kind:
                               type: string
                             name:
@@ -24900,6 +25099,9 @@ paths:
                                   format: int64
                                 schema_version:
                                   type: string
+                                source_rows:
+                                  type: integer
+                                  format: int64
                                 unit:
                                   type: string
                                 valid:
@@ -25260,6 +25462,31 @@ paths:
                       items:
                         type: object
                         properties:
+                          histogram:
+                            type: object
+                            properties:
+                              bound_column:
+                                type: array
+                                items:
+                                  type: string
+                              bounds:
+                                type: array
+                                items:
+                                  type: string
+                              bucket_counts:
+                                type: string
+                              count_columns:
+                                type: array
+                                items:
+                                  type: array
+                                  items:
+                                    type: string
+                              temporality:
+                                type: string
+                              window_seconds:
+                                type: integer
+                                format: int64
+                            additionalProperties: false
                           kind:
                             type: string
                           name:
@@ -25528,6 +25755,31 @@ paths:
                       items:
                         type: object
                         properties:
+                          histogram:
+                            type: object
+                            properties:
+                              bound_column:
+                                type: array
+                                items:
+                                  type: string
+                              bounds:
+                                type: array
+                                items:
+                                  type: string
+                              bucket_counts:
+                                type: string
+                              count_columns:
+                                type: array
+                                items:
+                                  type: array
+                                  items:
+                                    type: string
+                              temporality:
+                                type: string
+                              window_seconds:
+                                type: integer
+                                format: int64
+                            additionalProperties: false
                           kind:
                             type: string
                           name:
@@ -26020,6 +26272,31 @@ paths:
                       items:
                         type: object
                         properties:
+                          histogram:
+                            type: object
+                            properties:
+                              bound_column:
+                                type: array
+                                items:
+                                  type: string
+                              bounds:
+                                type: array
+                                items:
+                                  type: string
+                              bucket_counts:
+                                type: string
+                              count_columns:
+                                type: array
+                                items:
+                                  type: array
+                                  items:
+                                    type: string
+                              temporality:
+                                type: string
+                              window_seconds:
+                                type: integer
+                                format: int64
+                            additionalProperties: false
                           kind:
                             type: string
                           name:
@@ -58669,6 +58946,16 @@ paths:
                             type: object
                             additionalProperties:
                               type: string
+                          estimate_bin:
+                            type: object
+                            properties:
+                              lower:
+                                type: number
+                                format: double
+                              upper:
+                                type: number
+                                format: double
+                            nullable: true
                           host:
                             type: string
                           input_kind:
@@ -59230,6 +59517,16 @@ paths:
                         type: object
                         additionalProperties:
                           type: string
+                      estimate_bin:
+                        type: object
+                        properties:
+                          lower:
+                            type: number
+                            format: double
+                          upper:
+                            type: number
+                            format: double
+                        nullable: true
                       host:
                         type: string
                       input_kind:
@@ -60092,6 +60389,16 @@ paths:
                         type: object
                         additionalProperties:
                           type: string
+                      estimate_bin:
+                        type: object
+                        properties:
+                          lower:
+                            type: number
+                            format: double
+                          upper:
+                            type: number
+                            format: double
+                        nullable: true
                       host:
                         type: string
                       input_kind:
@@ -408552,6 +408859,19 @@ paths:
                                     type: object
                                     additionalProperties:
                                       type: string
+                                  estimate_bin:
+                                    type: object
+                                    properties:
+                                      lower:
+                                        type: number
+                                        format: double
+                                      upper:
+                                        type: number
+                                        format: double
+                                    required:
+                                      - lower
+                                      - upper
+                                    nullable: true
                                   host:
                                     type: string
                                   input_kind:

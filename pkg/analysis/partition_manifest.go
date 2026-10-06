@@ -45,6 +45,7 @@ type NormalizedPartitionStats struct {
 	MaxTime         *time.Time                   `json:"max_time,omitempty"`
 	Metric          *string                      `json:"metric,omitempty"`
 	Identity        *NormalizedPartitionIdentity `json:"identity,omitempty"`
+	SourceRows      int64                        `json:"source_rows,omitempty"` // Histogram only: accepted source rows grouped into its windows.
 }
 type NormalizedPartition struct {
 	ObjectKey string                   `json:"object_key"`
@@ -84,11 +85,20 @@ func canonicalPartitionTime(t *time.Time) bool {
 	return t != nil && t.Location() == time.UTC && t.Year() >= 1 && t.Year() <= 9999 && t.Nanosecond()%1000 == 0
 }
 func (s NormalizedPartitionStats) Validate() error {
-	if s.Version != PartitionManifestVersion || s.SchemaVersion != SchemaVersion || s.IdentityVersion < 1 || s.IdentityVersion > 2 || s.Rows < 0 || s.Valid < 0 || s.Missing < 0 || s.Valid > math.MaxInt64-s.Missing || s.Valid+s.Missing != s.Rows {
+	if s.Version != PartitionManifestVersion || s.IdentityVersion < 1 || s.IdentityVersion > 2 || s.Rows < 0 || s.Valid < 0 || s.Missing < 0 || s.Valid > math.MaxInt64-s.Missing || s.Valid+s.Missing != s.Rows {
 		return ErrPartitionManifest
 	}
+	// Histogram partitions hold distribution rows; every other kind holds
+	// metric points.
 	switch s.Kind {
 	case KindGauge, KindCounter, KindObservation, KindSummary:
+		if s.SchemaVersion != SchemaVersion || s.SourceRows != 0 {
+			return ErrPartitionManifest
+		}
+	case KindHistogram:
+		if s.SchemaVersion != DistributionSchemaVersion || s.SourceRows < s.Rows {
+			return ErrPartitionManifest
+		}
 	default:
 		return ErrPartitionManifest
 	}
@@ -121,6 +131,16 @@ func (s NormalizedPartitionStats) Validate() error {
 	}
 	return nil
 }
+
+// AcceptedRows is the source rows a partition consumed, the unit of dataset
+// accepted and rejected counts.
+func (s NormalizedPartitionStats) AcceptedRows() int64 {
+	if s.Kind == KindHistogram {
+		return s.SourceRows
+	}
+	return s.Rows
+}
+
 func (s NormalizedPartitionStats) Clone() NormalizedPartitionStats {
 	if s.MinTime != nil {
 		v := *s.MinTime
@@ -218,14 +238,14 @@ func (m *NormalizedPartitionManifest) Validate() error {
 	seen := map[string]bool{}
 	var rows, bytes int64
 	for _, p := range m.Partitions {
-		if !partitionText(p.ObjectKey, 274, true) || seen[p.ObjectKey] || !partitionHash(p.SHA256) || p.Bytes < 12 || p.Bytes > 20<<30 || p.Stats.Validate() != nil || p.Stats.IdentityVersion != m.MappingVersion || p.Stats.Rows > math.MaxInt64-rows || p.Bytes > (20<<30)-bytes {
+		if !partitionText(p.ObjectKey, 274, true) || seen[p.ObjectKey] || !partitionHash(p.SHA256) || p.Bytes < 12 || p.Bytes > 20<<30 || p.Stats.Validate() != nil || p.Stats.IdentityVersion != m.MappingVersion || p.Stats.AcceptedRows() > math.MaxInt64-rows || p.Bytes > (20<<30)-bytes {
 			return ErrPartitionManifest
 		}
 		if p.Stats.IdentityVersion == 1 && p.Stats.Identity != nil && p.Stats.Identity.Source != m.DatasetID {
 			return ErrPartitionManifest
 		}
 		seen[p.ObjectKey] = true
-		rows += p.Stats.Rows
+		rows += p.Stats.AcceptedRows()
 		bytes += p.Bytes
 	}
 	digest, err := m.canonicalDigest()
@@ -249,11 +269,11 @@ func (m *NormalizedPartitionManifest) MatchesArtifacts(project, dataset, mapping
 	var rows int64
 	for _, key := range keys {
 		p, ok := byKey[key]
-		if !ok || seen[key] || p.SHA256 != hashes[key] || p.Stats.Rows > math.MaxInt64-rows {
+		if !ok || seen[key] || p.SHA256 != hashes[key] || p.Stats.AcceptedRows() > math.MaxInt64-rows {
 			return ErrPartitionManifest
 		}
 		seen[key] = true
-		rows += p.Stats.Rows
+		rows += p.Stats.AcceptedRows()
 	}
 	if rows != accepted {
 		return ErrPartitionManifest

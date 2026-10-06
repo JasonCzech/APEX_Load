@@ -141,10 +141,17 @@ func (r workerResult) validate(b workerBootstrap, request workerRequest) error {
 	return r.Normalize.validate(b, *request.Normalize)
 }
 
-// workerSeriesLineage recomputes the lineage a child must report. A summary
-// series carries its source window in its first step; the statistic must be
-// the requested aggregation.
+// workerSeriesLineage recomputes the lineage a child must report. Summary and
+// histogram series carry their source window in their first step; a summary
+// statistic must be the requested aggregation.
 func workerSeriesLineage(point analysis.MetricPoint, q SeriesQuery) ([]analysis.DerivationStep, error) {
+	if point.InputKind == analysis.KindHistogram {
+		window, ok := analysis.HistogramWindowFromDerivation(point.Derivation)
+		if !ok {
+			return nil, errWorkerProtocol
+		}
+		return analysis.HistogramBucketDerivation(window, q.BucketSeconds, q.Aggregation)
+	}
 	if point.InputKind != analysis.KindSummary {
 		if point.MissingReason != "" {
 			return nil, errWorkerProtocol
@@ -252,7 +259,7 @@ func (r workerNormalizeResult) validate(b workerBootstrap, op workerNormalizeOpe
 			if out.Partition == nil || out.Partition.Validate() != nil || out.Partition.Rows != out.Rows || out.Partition.IdentityVersion != op.Mapping.Version || out.Partition.Kind != op.Mapping.Measures[plan.Measure].Kind || unitErr != nil || out.Partition.Unit != unit || out.Partition.IdentityVersion == 1 && out.Partition.Identity != nil && out.Partition.Identity.Source != op.DatasetID {
 				return errWorkerProtocol
 			}
-			normalizedRows, err = workerAdd(normalizedRows, out.Rows)
+			normalizedRows, err = workerAdd(normalizedRows, out.Partition.AcceptedRows())
 		} else {
 			if out.Partition != nil {
 				return errWorkerProtocol
@@ -307,7 +314,7 @@ func (r workerNormalizeResult) validate(b workerBootstrap, op workerNormalizeOpe
 		if plan.Role != "normalized" {
 			continue
 		}
-		slotRows, err := workerAdd(out.Rows, summary.Count)
+		slotRows, err := workerAdd(out.Partition.AcceptedRows(), summary.Count)
 		if err != nil {
 			return errWorkerProtocol
 		}

@@ -37,6 +37,9 @@ func analysisCLIHistoricalProjectionDisclosure(object map[string]json.RawMessage
 			}
 			projected := []string{"value", "name_column", "sample_count_column", "sample_sum_column"}
 			for key := range fields {
+				if key != "histogram" && strings.EqualFold(key, "histogram") {
+					return errors.New("ambiguous historical projected measurement metadata")
+				}
 				for _, field := range projected {
 					if key != field && strings.EqualFold(key, field) {
 						return errors.New("ambiguous historical projected measurement metadata")
@@ -61,6 +64,13 @@ func analysisCLIHistoricalProjectionDisclosure(object map[string]json.RawMessage
 						measure.SampleSumColumn = path
 					}
 				}
+			}
+			if raw, ok := fields["histogram"]; ok && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+				histogram, err := analysisCLIHistoricalHistogram(raw)
+				if err != nil {
+					return err
+				}
+				measure.Histogram = histogram
 			}
 			m.Measures = append(m.Measures, measure)
 			return nil
@@ -128,6 +138,41 @@ func analysisCLIHistoricalProjectionDisclosure(object map[string]json.RawMessage
 		m.Identity = identity
 	}
 	return m.ValidateDisclosure()
+}
+
+// analysisCLIHistoricalHistogram admits only a histogram's projected source
+// paths: its bound column and count columns.
+func analysisCLIHistoricalHistogram(raw json.RawMessage) (*analysis.ParquetHistogram, error) {
+	fields, err := analysisCLIObject(raw, 128<<10, nil)
+	if err != nil {
+		return nil, err
+	}
+	for key := range fields {
+		for _, field := range []string{"bound_column", "count_columns"} {
+			if key != field && strings.EqualFold(key, field) {
+				return nil, errors.New("ambiguous historical projected histogram metadata")
+			}
+		}
+	}
+	histogram := &analysis.ParquetHistogram{}
+	if raw, ok := fields["bound_column"]; ok {
+		if histogram.BoundColumn, err = analysisCLIHistoricalColumnPath(raw); err != nil {
+			return nil, err
+		}
+	}
+	if raw, ok := fields["count_columns"]; ok && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		if err := analysisCLIHistoricalArray(raw, analysis.MaxHistogramBounds, func(item json.RawMessage) error {
+			path, err := analysisCLIHistoricalColumnPath(item)
+			if err != nil {
+				return err
+			}
+			histogram.CountColumns = append(histogram.CountColumns, path)
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+	return histogram, nil
 }
 
 func analysisCLIHistoricalColumnPath(raw json.RawMessage) (analysis.ParquetColumnPath, error) {
