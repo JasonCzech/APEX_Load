@@ -36,13 +36,20 @@ type sourceHelperDefinition struct {
 type sourceHelperTable struct {
 	definitions map[string]*sourceHelperDefinition
 	ambiguous   map[string]bool
+	// contents holds each source file's parsed text by lowercased file name,
+	// for translating helpers called with arguments.
+	contents map[string]string
+	sources  map[string]helperSource // located definitions, by file and name
 }
 
 // buildSourceHelperTable collects every C function body from the parsed source
 // files. Lifecycle and run-action entry functions are included; a call to one
 // of them from another function is inlined like any other helper.
-func buildSourceHelperTable(sources []*ParsedAction) sourceHelperTable {
-	table := sourceHelperTable{definitions: map[string]*sourceHelperDefinition{}, ambiguous: map[string]bool{}}
+func buildSourceHelperTable(sources []*ParsedAction, contents map[string]string) sourceHelperTable {
+	table := sourceHelperTable{definitions: map[string]*sourceHelperDefinition{}, ambiguous: map[string]bool{}, contents: map[string]string{}, sources: map[string]helperSource{}}
+	for name, content := range contents {
+		table.contents[strings.ToLower(name)] = content
+	}
 	for _, source := range sources {
 		if source == nil {
 			continue
@@ -67,12 +74,11 @@ func buildSourceHelperTable(sources []*ParsedAction) sourceHelperTable {
 	return table
 }
 
-// helper returns the definition a call resolves to: a direct call without
-// arguments to a C function the archive defines unambiguously. LoadRunner and
-// C library functions are never helpers.
-func (table sourceHelperTable) helper(call ParsedFunction) (*sourceHelperDefinition, bool) {
+// definitionFor returns the C function the archive defines unambiguously for
+// a call. LoadRunner and C library functions are never helpers.
+func (table sourceHelperTable) definitionFor(call ParsedFunction) (*sourceHelperDefinition, bool) {
 	key := strings.ToLower(strings.TrimSpace(call.Name))
-	if key == "" || table.ambiguous[key] || len(call.RawArgs) > 0 || len(call.CallArgs) > 0 {
+	if key == "" || table.ambiguous[key] {
 		return nil, false
 	}
 	if _, known := lookupSourceFunction(key); known {
@@ -80,6 +86,42 @@ func (table sourceHelperTable) helper(call ParsedFunction) (*sourceHelperDefinit
 	}
 	definition, ok := table.definitions[key]
 	return definition, ok
+}
+
+// helper returns the definition a call without arguments resolves to.
+func (table sourceHelperTable) helper(call ParsedFunction) (*sourceHelperDefinition, bool) {
+	if len(call.RawArgs) > 0 || len(call.CallArgs) > 0 {
+		return nil, false
+	}
+	return table.definitionFor(call)
+}
+
+// helperCalls returns the calls a helper invocation performs: the recorded body
+// for a call without arguments, or the translated body for one with arguments.
+func (table sourceHelperTable) helperCalls(call ParsedFunction, definition *sourceHelperDefinition) ([]ParsedFunction, string) {
+	if len(call.RawArgs) == 0 && len(call.CallArgs) == 0 {
+		// The recorded body keeps control flow and int locals. A body that
+		// builds strings in character locals needs translation, which falls
+		// back to the recorded body (string operations kept for review) when
+		// the body also uses something translation does not support.
+		if usesCStringOperations(definition.calls) {
+			if translated, reason := table.translateHelperCall(call, definition); reason == "" {
+				return translated, ""
+			}
+		}
+		return definition.calls, ""
+	}
+	return table.translateHelperCall(call, definition)
+}
+
+func usesCStringOperations(calls []ParsedFunction) bool {
+	for _, call := range calls {
+		switch strings.ToLower(strings.TrimSpace(call.Name)) {
+		case "strncpy", "strcpy", "strcat", "sprintf", "memset":
+			return true
+		}
+	}
+	return false
 }
 
 // definesHelper reports whether name is a C function some parsed code calls,
@@ -135,12 +177,18 @@ func inlineSourceHelpers(functions []ParsedFunction, table sourceHelperTable) ([
 	expand = func(calls []ParsedFunction, stack []string) []ParsedFunction {
 		out := make([]ParsedFunction, 0, len(calls))
 		for _, call := range calls {
-			definition, ok := table.helper(call)
+			definition, ok := table.definitionFor(call)
 			if !ok {
 				out = append(out, call)
 				continue
 			}
-			if produced+len(definition.calls) > maxInlinedSourceCalls {
+			body, reason := table.helperCalls(call, definition)
+			if reason != "" {
+				warnings = append(warnings, fmt.Sprintf("line %d: %s(...) was not inlined because %s; the call needs review", call.LineNumber, definition.name, reason))
+				out = append(out, call)
+				continue
+			}
+			if produced+len(body) > maxInlinedSourceCalls {
 				if !budgetWarned {
 					budgetWarned = true
 					warnings = append(warnings, fmt.Sprintf("line %d: inlining %s() would exceed %d calls for one action; it and later helper calls were not inlined and need review", call.LineNumber, definition.name, maxInlinedSourceCalls))
@@ -148,7 +196,7 @@ func inlineSourceHelpers(functions []ParsedFunction, table sourceHelperTable) ([
 				out = append(out, call)
 				continue
 			}
-			produced += len(definition.calls)
+			produced += len(body)
 			key := strings.ToLower(definition.name)
 			if stackContains(stack, key) {
 				warnings = append(warnings, fmt.Sprintf("line %d: %s() calls itself through %s; the recursive call was not inlined and needs review", call.LineNumber, definition.name, strings.Join(append(stack, key), " -> ")))
@@ -161,7 +209,7 @@ func inlineSourceHelpers(functions []ParsedFunction, table sourceHelperTable) ([
 				continue
 			}
 			site := fmt.Sprintf("inline@%s:%d:%d/", call.Filename, call.LineNumber, call.sourceColumn)
-			for _, inner := range expand(definition.calls, append(append([]string(nil), stack...), key)) {
+			for _, inner := range expand(body, append(append([]string(nil), stack...), key)) {
 				inner.Phase = call.Phase
 				inner.Conditions = append(append([]string(nil), call.Conditions...), inner.Conditions...)
 				inner.ConditionIDs = append(append([]string(nil), call.ConditionIDs...), prefixedIDs(site, inner.ConditionIDs)...)

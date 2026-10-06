@@ -301,6 +301,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		err    error
 	}
 	parsedByResolvedFile := make(map[string]parsedCSource)
+	parsedContents := make(map[string]string)
 	parseSourceFile := func(name string) (string, parsedCSource, bool) {
 		resolved, content, ambiguous := findSourceArchiveFile(files, name)
 		if resolved == "" || len(ambiguous) > 0 {
@@ -309,8 +310,10 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		cacheKey := strings.ToLower(normalizeRuntimeArchivePath(resolved))
 		cached, parsedAlready := parsedByResolvedFile[cacheKey]
 		if !parsedAlready {
-			cached.action, cached.err = ParseActionFile(resolved, inlineSourceStringConstants(content, sourceConstants))
+			parsedContent := inlineSourceStringConstants(content, sourceConstants)
+			cached.action, cached.err = ParseActionFile(resolved, parsedContent)
 			parsedByResolvedFile[cacheKey] = cached
+			parsedContents[resolved] = parsedContent
 		}
 		return cacheKey, cached, true
 	}
@@ -323,7 +326,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			helperSources = append(helperSources, cached.action)
 		}
 	}
-	helpers := buildSourceHelperTable(helperSources)
+	helpers := buildSourceHelperTable(helperSources, parsedContents)
 	var inlineWarnings []string
 	for _, declaration := range sourceDeclarations {
 		actionFile := declaration.Name

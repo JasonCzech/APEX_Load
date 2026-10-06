@@ -198,7 +198,7 @@ func TestInlineSourceHelpersStopsAtTheCallBudget(t *testing.T) {
 			sources = append(sources, ParsedFunction{Name: name, Filename: "Action.c", LineNumber: level*10 + i + 1, sourceFunction: owner})
 		}
 	}
-	table := buildSourceHelperTable([]*ParsedAction{{Filename: "Action.c", Functions: sources}})
+	table := buildSourceHelperTable([]*ParsedAction{{Filename: "Action.c", Functions: sources}}, nil)
 	out, warnings := inlineSourceHelpers([]ParsedFunction{{Name: "L0", Filename: "Action.c", LineNumber: 100}}, table)
 	if len(out) > maxInlinedSourceCalls+10 || len(warnings) == 0 {
 		t.Fatalf("calls = %d, warnings = %v, want the budget to stop expansion", len(out), warnings)

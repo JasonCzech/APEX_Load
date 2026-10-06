@@ -1021,7 +1021,7 @@ func (vu *VUser) handleSourceParameterAction(function string, action dsl.Action)
 		}
 	case "lr_save_var":
 		if len(args) >= 4 {
-			vu.setSourceVariable(args[3], args[0])
+			vu.setResolvedSourceVariable(args[3], sourceSaveVarValue(vu.interpolate(args[0]), action.Params["source_offset"], args[1]))
 		}
 	case "lr_param_sprintf":
 		if len(args) >= 2 {
@@ -1208,6 +1208,39 @@ func (vu *VUser) ensureVariables() {
 	if vu.Variables == nil {
 		vu.Variables = make(map[string]string)
 	}
+}
+
+// sourceSaveVarValue applies lr_save_var's byte semantics to a resolved value:
+// the source pointer may be offset into the string (lr_eval_string("{p}") + 3,
+// as a translated strncpy produces), and at most length bytes are saved.
+func sourceSaveVarValue(value string, offset any, length string) string {
+	if start, ok := sourceIntegerParam(offset); ok && start > 0 {
+		if start >= len(value) {
+			return ""
+		}
+		value = value[start:]
+	}
+	if limit, err := strconv.Atoi(strings.TrimSpace(length)); err == nil && limit >= 0 && limit < len(value) {
+		value = value[:limit]
+	}
+	return value
+}
+
+func sourceIntegerParam(value any) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		if typed == math.Trunc(typed) {
+			return int(typed), true
+		}
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		return parsed, err == nil
+	}
+	return 0, false
 }
 
 func (vu *VUser) setSourceVariable(name string, value string) {
