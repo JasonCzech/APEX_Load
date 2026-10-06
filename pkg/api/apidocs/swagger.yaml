@@ -321387,6 +321387,9 @@ paths:
                                   format: int64
                                 truncated:
                                   type: boolean
+                                unobserved_generations:
+                                  type: integer
+                                  format: int64
                               required:
                                 - epochs
                                 - loss_exact
@@ -326671,6 +326674,9 @@ paths:
                                 format: int64
                               truncated:
                                 type: boolean
+                              unobserved_generations:
+                                type: integer
+                                format: int64
                             required:
                               - epochs
                               - loss_exact
@@ -333634,6 +333640,9 @@ paths:
                                   format: int64
                                 truncated:
                                   type: boolean
+                                unobserved_generations:
+                                  type: integer
+                                  format: int64
                               required:
                                 - epochs
                                 - loss_exact
@@ -338918,6 +338927,9 @@ paths:
                                 format: int64
                               truncated:
                                 type: boolean
+                              unobserved_generations:
+                                type: integer
+                                format: int64
                             required:
                               - epochs
                               - loss_exact
@@ -371161,6 +371173,9 @@ paths:
                                   format: int64
                                 truncated:
                                   type: boolean
+                                unobserved_generations:
+                                  type: integer
+                                  format: int64
                               required:
                                 - epochs
                                 - loss_exact
@@ -376445,6 +376460,9 @@ paths:
                                 format: int64
                               truncated:
                                 type: boolean
+                              unobserved_generations:
+                                type: integer
+                                format: int64
                             required:
                               - epochs
                               - loss_exact
@@ -383352,6 +383370,9 @@ paths:
                                   format: int64
                                 truncated:
                                   type: boolean
+                                unobserved_generations:
+                                  type: integer
+                                  format: int64
                               required:
                                 - epochs
                                 - loss_exact
@@ -388636,6 +388657,9 @@ paths:
                                 format: int64
                               truncated:
                                 type: boolean
+                              unobserved_generations:
+                                type: integer
+                                format: int64
                             required:
                               - epochs
                               - loss_exact
@@ -402685,6 +402709,9 @@ paths:
                                   format: int64
                                 truncated:
                                   type: boolean
+                                unobserved_generations:
+                                  type: integer
+                                  format: int64
                               required:
                                 - epochs
                                 - loss_exact
@@ -407970,6 +407997,9 @@ paths:
                                 format: int64
                               truncated:
                                 type: boolean
+                              unobserved_generations:
+                                type: integer
+                                format: int64
                             required:
                               - epochs
                               - loss_exact

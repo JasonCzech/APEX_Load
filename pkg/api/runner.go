@@ -263,10 +263,7 @@ type TestRunner struct {
 	libraryAssignmentStore      storage.LibraryAssignmentStore
 	// continuityKeyWrapper seals the run-supervision token into HA run-continuity
 	// checkpoints (run_continuity.go). Nil disables arming.
-	continuityKeyWrapper keywrap.KeyWrapper
-	// telemetrySources holds each live run's source-epoch publication ledger
-	// (test ID -> *telemetrySourceLedger), released once archived.
-	telemetrySources      sync.Map
+	continuityKeyWrapper  keywrap.KeyWrapper
 	elkStore              storage.ELKConnectionStore
 	dynatraceStore        storage.DynatraceConnectionStore
 	dynatraceOAuthMu      sync.Mutex
@@ -532,6 +529,7 @@ type ManagedTest struct {
 	DynatraceCapture      *DynatraceCaptureConfig `json:"dynatrace_capture,omitempty"`
 	dynatraceArtifacts    *runArtifacts
 	clockObservations     *clockObservationLog                     // measured source clocks; created on first observation
+	telemetrySources      *telemetrySourceLedger                   // source-epoch publication coverage; created on first publication
 	TotalVUsers           int                                      `json:"total_vusers"`
 	GeneratorShards       []GeneratorShardSummary                  `json:"generator_shards,omitempty"`
 	Duration              time.Duration                            `json:"duration_ns"`

@@ -304,3 +304,36 @@ func TestMetricsBrokerConcurrentTerminalPublicationAndRegistration(t *testing.T)
 		t.Fatalf("concurrent retained terminal replay = %d, want 8", len(replay))
 	}
 }
+
+// Every publication and every re-anchored registration snapshot carries this
+// process's source epoch, so the controller can tell a restarted process's
+// sequences from this one's.
+func TestMetricsBrokerStampsTheProcessSourceEpoch(t *testing.T) {
+	if processSourceEpoch.id == "" || processSourceEpoch.startedUnixMs <= 0 {
+		t.Fatalf("process epoch %+v", processSourceEpoch)
+	}
+	broker := newMetricsBroker(10, 10, 0)
+	published := &pb.MetricsBatch{TestId: "run", ExecutionGeneration: 3, LifecycleState: "RUNNING"}
+	broker.publish(published, nil)
+	if published.GetSourceEpoch() != processSourceEpoch.id || published.GetSourceEpochStartedUnixMs() != processSourceEpoch.startedUnixMs || published.GetBatchSequence() != 1 {
+		t.Fatalf("published batch epoch %q/%d sequence %d", published.GetSourceEpoch(), published.GetSourceEpochStartedUnixMs(), published.GetBatchSequence())
+	}
+	// A batch relayed with its own epoch keeps it.
+	relayed := &pb.MetricsBatch{TestId: "run", ExecutionGeneration: 3, LifecycleState: "RUNNING", SourceEpoch: "other-process", SourceEpochStartedUnixMs: 1}
+	broker.publish(relayed, nil)
+	if relayed.GetSourceEpoch() != "other-process" {
+		t.Fatalf("relayed epoch overwritten: %q", relayed.GetSourceEpoch())
+	}
+	live := &pb.MetricsBatch{TestId: "run", ExecutionGeneration: 3, LifecycleState: "RUNNING", TimestampUnixMs: time.Now().UnixMilli()}
+	id, _, initial, err := registerMetricsBrokerSubscriber(t, broker, 3, "run", live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.unregister(id)
+	if len(initial) != 1 || initial[0].GetSourceEpoch() != processSourceEpoch.id || initial[0].GetBatchSequence() != 2 {
+		t.Fatalf("snapshot %#v", initial)
+	}
+	if live.GetSourceEpoch() != "" {
+		t.Fatal("registration stamped the caller's live snapshot")
+	}
+}

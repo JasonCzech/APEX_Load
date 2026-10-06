@@ -700,6 +700,14 @@ receiveLoop:
 			return
 		}
 		recordDistributedMetricsReceipt(&batch, time.Now().UnixMilli())
+		// Source coverage counts each received publication once, including
+		// duplicates and late arrivals the live view rejects, and never the
+		// controller's own retries of the same publication below.
+		tr.mu.Lock()
+		if distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fence, terminal) {
+			telemetrySourceLedgerLocked(test).observe(target, batch, time.Now())
+		}
+		tr.mu.Unlock()
 		var (
 			live        *LiveMetrics
 			finalStatus string
@@ -1244,9 +1252,6 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 	if len(fences) > 0 && !distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fences[0], isTerminalRemoteLifecycle(batch.LifecycleState)) {
 		return false
 	}
-	// Every fenced publication counts toward source coverage, including
-	// duplicates and late arrivals the live view rejects below.
-	tr.telemetrySourceLedgerFor(test.ID).observe(target, batch, time.Now())
 	if test.remoteMetricsBatchesByTarget == nil {
 		test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
 	}
@@ -1617,7 +1622,6 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 			tr.mu.Unlock()
 			return nil, "", "", false, distributedMetricsPublication{}
 		}
-		tr.telemetrySourceLedgerFor(test.ID).observe(target, batch, time.Now())
 		if test.remoteMetricsBatchesByTarget == nil {
 			test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
 		}
@@ -1761,7 +1765,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 	tr.mu.Lock()
 	live := buildLiveMetricsFromDistributedBatch(test, aggregated, fleetTPS, groupTPS)
 	if live.Telemetry != nil {
-		live.Telemetry.Sources = tr.existingTelemetrySourceLedger(test.ID).summary()
+		live.Telemetry.Sources = test.telemetrySources.summary(test.continuityFailovers...)
 	}
 	qualifyExpectedMessagingProgress(test, live, batches)
 	if live.Telemetry != nil {

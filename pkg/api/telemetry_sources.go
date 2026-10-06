@@ -28,8 +28,12 @@ const (
 // TelemetrySourceEpoch is the publication coverage of one generator process
 // (source epoch) within one execution generation. Lost publications are
 // sequence numbers missing between the first and last received. The count
-// is exact only when the epoch was observed from its first publication and
-// every received range was retained; otherwise it is a lower bound.
+// is exact only when the epoch was observed from its first publication to
+// its terminal one and every received range was retained; otherwise it is a
+// lower bound (an epoch replaced by a restarted process, or one whose stream
+// ended early, never published its terminal record here). An unobserved
+// record stands for an execution generation this controller never saw, such
+// as the generations before an HA adoption.
 type TelemetrySourceEpoch struct {
 	Schema              string     `json:"schema"`
 	Source              string     `json:"source"`
@@ -42,8 +46,10 @@ type TelemetrySourceEpoch struct {
 	Duplicates          int64      `json:"duplicates,omitempty"`
 	OutOfOrder          int64      `json:"out_of_order,omitempty"`
 	Unsequenced         int64      `json:"unsequenced,omitempty"`
+	TerminalSequence    uint64     `json:"terminal_sequence,omitempty"`
 	LostPublications    int64      `json:"lost_publications"`
 	LossExact           bool       `json:"loss_exact"`
+	Unobserved          bool       `json:"unobserved,omitempty"`
 	RangesTruncated     bool       `json:"ranges_truncated,omitempty"`
 	FirstObservedAt     time.Time  `json:"first_observed_at"`
 	LastObservedAt      time.Time  `json:"last_observed_at"`
@@ -53,12 +59,13 @@ type TelemetrySourceEpoch struct {
 
 // TelemetrySourceSummary is the live roll-up of a run's source epochs.
 type TelemetrySourceSummary struct {
-	Sources          int   `json:"sources"`
-	Epochs           int   `json:"epochs"`
-	LegacyEpochs     int   `json:"legacy_epochs,omitempty"`
-	LostPublications int64 `json:"lost_publications"`
-	LossExact        bool  `json:"loss_exact"`
-	Truncated        bool  `json:"truncated,omitempty"`
+	Sources               int   `json:"sources"`
+	Epochs                int   `json:"epochs"`
+	LegacyEpochs          int   `json:"legacy_epochs,omitempty"`
+	UnobservedGenerations int   `json:"unobserved_generations,omitempty"`
+	LostPublications      int64 `json:"lost_publications"`
+	LossExact             bool  `json:"loss_exact"`
+	Truncated             bool  `json:"truncated,omitempty"`
 }
 
 type telemetrySourceKey struct {
@@ -105,6 +112,9 @@ func (l *telemetrySourceLedger) observe(source string, batch generatorrpc.Metric
 	if sequence == 0 {
 		record.Unsequenced++
 		return
+	}
+	if isTerminalRemoteLifecycle(batch.LifecycleState) && sequence > record.TerminalSequence {
+		record.TerminalSequence = sequence
 	}
 	if record.covers(sequence) {
 		record.Duplicates++
@@ -168,19 +178,21 @@ func (r *TelemetrySourceEpoch) settle() {
 		r.LostPublications = int64(min(span-held, uint64(1<<62)))
 	}
 	// Publications before the first one received are unknown unless the
-	// first one received is the epoch's first.
-	r.LossExact = r.Epoch != "" && r.FirstSequence == 1 && !r.RangesTruncated
+	// first one received is the epoch's first, and those after the last one
+	// received are unknown unless the epoch's terminal publication arrived.
+	r.LossExact = r.Epoch != "" && r.FirstSequence == 1 && r.TerminalSequence != 0 && r.TerminalSequence == r.LastSequence && !r.RangesTruncated
 }
 
-// snapshot returns settled copies, ordered by source, generation and epoch
-// start.
-func (l *telemetrySourceLedger) snapshot() ([]TelemetrySourceEpoch, bool) {
+// snapshot returns settled copies, ordered by source, generation and first
+// observation, plus an unobserved record for every earlier execution
+// generation (from the run's failovers) that this ledger never saw.
+func (l *telemetrySourceLedger) snapshot(failovers ...RunFailover) ([]TelemetrySourceEpoch, bool) {
 	if l == nil {
-		return nil, false
+		return unobservedTelemetryGenerations(nil, failovers), false
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	out := make([]TelemetrySourceEpoch, 0, len(l.epochs))
+	out := make([]TelemetrySourceEpoch, 0, len(l.epochs)+len(failovers))
 	for _, record := range l.epochs {
 		copied := *record
 		copied.ranges = append([][2]uint64(nil), record.ranges...)
@@ -200,46 +212,63 @@ func (l *telemetrySourceLedger) snapshot() ([]TelemetrySourceEpoch, bool) {
 		}
 		return a.Epoch < b.Epoch
 	})
-	return out, l.truncated
+	return unobservedTelemetryGenerations(out, failovers), l.truncated
 }
 
-func (l *telemetrySourceLedger) summary() *TelemetrySourceSummary {
-	epochs, truncated := l.snapshot()
+// unobservedTelemetryGenerations appends a record for each prior execution
+// generation of an adopted run that no observed epoch covers: its coverage is
+// unknown, never exact.
+func unobservedTelemetryGenerations(epochs []TelemetrySourceEpoch, failovers []RunFailover) []TelemetrySourceEpoch {
+	observed := map[uint64]bool{}
+	for _, epoch := range epochs {
+		observed[epoch.ExecutionGeneration] = true
+	}
+	for _, failover := range failovers {
+		if failover.PriorGeneration == 0 || observed[failover.PriorGeneration] {
+			continue
+		}
+		observed[failover.PriorGeneration] = true
+		epochs = append(epochs, TelemetrySourceEpoch{Schema: telemetrySourceEpochSchema, Source: "*", ExecutionGeneration: failover.PriorGeneration, Unobserved: true, FirstObservedAt: failover.AdoptedAt.UTC(), LastObservedAt: failover.AdoptedAt.UTC()})
+	}
+	return epochs
+}
+
+func (l *telemetrySourceLedger) summary(failovers ...RunFailover) *TelemetrySourceSummary {
+	epochs, truncated := l.snapshot(failovers...)
 	if len(epochs) == 0 && !truncated {
 		return nil
 	}
-	summary := &TelemetrySourceSummary{Epochs: len(epochs), LossExact: !truncated, Truncated: truncated}
+	summary := &TelemetrySourceSummary{LossExact: !truncated, Truncated: truncated}
 	sources := map[string]bool{}
 	for _, epoch := range epochs {
+		summary.LossExact = summary.LossExact && epoch.LossExact
+		if epoch.Unobserved {
+			summary.UnobservedGenerations++
+			continue
+		}
+		summary.Epochs++
 		sources[epoch.Source] = true
 		if epoch.Epoch == "" {
 			summary.LegacyEpochs++
 		}
 		summary.LostPublications += epoch.LostPublications
-		summary.LossExact = summary.LossExact && epoch.LossExact
 	}
 	summary.Sources = len(sources)
 	return summary
 }
 
-// telemetrySourceLedgerFor returns the run's ledger, creating it on first use.
-func (tr *TestRunner) telemetrySourceLedgerFor(testID string) *telemetrySourceLedger {
-	if tr == nil || testID == "" {
+// telemetrySourceLedgerLocked returns the run's ledger, creating it on first
+// use. It lives as long as the run's ManagedTest, so a finalization retry
+// still finds it and a run that is never finalized here releases it with
+// the test. The caller holds tr.mu.
+func telemetrySourceLedgerLocked(test *ManagedTest) *telemetrySourceLedger {
+	if test == nil {
 		return nil
 	}
-	ledger, _ := tr.telemetrySources.LoadOrStore(testID, newTelemetrySourceLedger())
-	return ledger.(*telemetrySourceLedger)
-}
-
-func (tr *TestRunner) existingTelemetrySourceLedger(testID string) *telemetrySourceLedger {
-	if tr == nil {
-		return nil
+	if test.telemetrySources == nil {
+		test.telemetrySources = newTelemetrySourceLedger()
 	}
-	ledger, ok := tr.telemetrySources.Load(testID)
-	if !ok {
-		return nil
-	}
-	return ledger.(*telemetrySourceLedger)
+	return test.telemetrySources
 }
 
 // persistTelemetrySourceArchive writes telemetry_sources.jsonl once after
@@ -248,7 +277,10 @@ func (tr *TestRunner) persistTelemetrySourceArchive(ctx context.Context, test *M
 	if test == nil || manifest.TelemetrySourcesFile != "" {
 		return nil
 	}
-	epochs, truncated := tr.existingTelemetrySourceLedger(test.ID).snapshot()
+	tr.mu.RLock()
+	ledger, failovers := test.telemetrySources, append([]RunFailover(nil), test.continuityFailovers...)
+	tr.mu.RUnlock()
+	epochs, truncated := ledger.snapshot(failovers...)
 	if len(epochs) == 0 {
 		return nil
 	}
@@ -283,9 +315,7 @@ func (tr *TestRunner) persistTelemetrySourceArchive(ctx context.Context, test *M
 	manifest.TelemetrySourcesFile = telemetrySourcesFileName
 	manifest.TelemetrySourceEpochCount = count
 	manifest.TelemetrySourcesTruncated = truncated
-	if err := updateRunArchiveSingleArtifactIntegrity(record.ArchivePath, manifest, RunArchiveArtifact{Name: telemetrySourcesFileName, Kind: "evidence", Format: "jsonl", RecordType: telemetrySourcesRecordType, Count: count}); err != nil {
-		return err
-	}
-	tr.telemetrySources.Delete(test.ID)
-	return nil
+	// The ledger stays with the run: a later finalization step that fails
+	// is retried from a reloaded manifest and rewrites this sidecar.
+	return updateRunArchiveSingleArtifactIntegrity(record.ArchivePath, manifest, RunArchiveArtifact{Name: telemetrySourcesFileName, Kind: "evidence", Format: "jsonl", RecordType: telemetrySourcesRecordType, Count: count})
 }

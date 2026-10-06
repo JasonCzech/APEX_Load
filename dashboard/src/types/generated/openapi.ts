@@ -42064,6 +42064,7 @@ export interface operations {
                   "lost_publications": number;
                   "sources": number;
                   "truncated"?: boolean;
+                  "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
@@ -43602,6 +43603,7 @@ export interface operations {
                   "lost_publications": number;
                   "sources": number;
                   "truncated"?: boolean;
+                  "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
@@ -59047,6 +59049,7 @@ export interface operations {
                   "lost_publications": number;
                   "sources": number;
                   "truncated"?: boolean;
+                  "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
@@ -60585,6 +60588,7 @@ export interface operations {
                   "lost_publications": number;
                   "sources": number;
                   "truncated"?: boolean;
+                  "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
@@ -76746,6 +76750,7 @@ export interface operations {
                   "lost_publications": number;
                   "sources": number;
                   "truncated"?: boolean;
+                  "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
@@ -78284,6 +78289,7 @@ export interface operations {
                   "lost_publications": number;
                   "sources": number;
                   "truncated"?: boolean;
+                  "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
@@ -96722,6 +96728,7 @@ export interface operations {
                   "lost_publications": number;
                   "sources": number;
                   "truncated"?: boolean;
+                  "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
@@ -98260,6 +98267,7 @@ export interface operations {
                   "lost_publications": number;
                   "sources": number;
                   "truncated"?: boolean;
+                  "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
@@ -143224,6 +143232,7 @@ export interface operations {
                   "lost_publications": number;
                   "sources": number;
                   "truncated"?: boolean;
+                  "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;
@@ -144762,6 +144771,7 @@ export interface operations {
                   "lost_publications": number;
                   "sources": number;
                   "truncated"?: boolean;
+                  "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
                 "websocket_clients"?: number;

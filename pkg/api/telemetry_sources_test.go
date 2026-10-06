@@ -25,6 +25,13 @@ func observeSequences(ledger *telemetrySourceLedger, source, epoch string, start
 	}
 }
 
+// finishEpoch observes the epoch's terminal publication.
+func finishEpoch(ledger *telemetrySourceLedger, source, epoch string, started int64, sequence uint64) {
+	batch := sourceBatch(epoch, started, sequence)
+	batch.LifecycleState = "COMPLETE"
+	ledger.observe(source, batch, time.Unix(1_900_000_000, 0))
+}
+
 func onlyEpoch(t *testing.T, ledger *telemetrySourceLedger) TelemetrySourceEpoch {
 	t.Helper()
 	epochs, _ := ledger.snapshot()
@@ -37,19 +44,41 @@ func onlyEpoch(t *testing.T, ledger *telemetrySourceLedger) TelemetrySourceEpoch
 func TestTelemetrySourceLossIsExactWithinAnObservedEpoch(t *testing.T) {
 	contiguous := newTelemetrySourceLedger()
 	observeSequences(contiguous, "gen-a", "epoch-1", 1000, 1, 2, 3, 4)
-	if epoch := onlyEpoch(t, contiguous); epoch.LostPublications != 0 || !epoch.LossExact || epoch.Received != 4 {
+	finishEpoch(contiguous, "gen-a", "epoch-1", 1000, 5)
+	if epoch := onlyEpoch(t, contiguous); epoch.LostPublications != 0 || !epoch.LossExact || epoch.Received != 5 || epoch.TerminalSequence != 5 {
 		t.Fatalf("contiguous: %#v", epoch)
 	}
 	gapped := newTelemetrySourceLedger()
 	observeSequences(gapped, "gen-a", "epoch-1", 1000, 1, 2, 5, 6)
+	finishEpoch(gapped, "gen-a", "epoch-1", 1000, 7)
 	if epoch := onlyEpoch(t, gapped); epoch.LostPublications != 2 || !epoch.LossExact {
 		t.Fatalf("gap of two: %#v", epoch)
 	}
 	// A retried and a late publication count once; the late one fills the gap.
 	late := newTelemetrySourceLedger()
 	observeSequences(late, "gen-a", "epoch-1", 1000, 1, 2, 4, 4, 3)
-	if epoch := onlyEpoch(t, late); epoch.LostPublications != 0 || epoch.Duplicates != 1 || epoch.OutOfOrder != 1 || epoch.Received != 5 {
+	finishEpoch(late, "gen-a", "epoch-1", 1000, 5)
+	if epoch := onlyEpoch(t, late); epoch.LostPublications != 0 || epoch.Duplicates != 1 || epoch.OutOfOrder != 1 || epoch.Received != 6 || !epoch.LossExact {
 		t.Fatalf("duplicate and late: %#v", epoch)
+	}
+}
+
+// Publications after the last one received are unknown until the epoch's
+// terminal publication arrives: a stream that ended early is a lower bound.
+func TestTelemetrySourceTailLossIsNotExactWithoutTheTerminalPublication(t *testing.T) {
+	ledger := newTelemetrySourceLedger()
+	sequences := []uint64{}
+	for sequence := uint64(1); sequence <= 95; sequence++ {
+		sequences = append(sequences, sequence)
+	}
+	observeSequences(ledger, "gen-a", "epoch-1", 1000, sequences...)
+	if epoch := onlyEpoch(t, ledger); epoch.LossExact || epoch.LostPublications != 0 {
+		t.Fatalf("a stream that ended at 95 of 100 claimed exact coverage: %#v", epoch)
+	}
+	// A terminal publication with a gap before it makes the tail exact.
+	finishEpoch(ledger, "gen-a", "epoch-1", 1000, 101)
+	if epoch := onlyEpoch(t, ledger); !epoch.LossExact || epoch.LostPublications != 5 {
+		t.Fatalf("after the terminal publication: %#v", epoch)
 	}
 }
 
@@ -91,14 +120,51 @@ func TestTelemetrySourceRestartStartsANewEpoch(t *testing.T) {
 	ledger := newTelemetrySourceLedger()
 	observeSequences(ledger, "gen-a", "epoch-1", 1000, 1, 2, 3)
 	observeSequences(ledger, "gen-a", "epoch-2", 2000, 1, 2)
+	finishEpoch(ledger, "gen-a", "epoch-2", 2000, 3)
 	observeSequences(ledger, "gen-b", "epoch-9", 1000, 1, 3)
+	finishEpoch(ledger, "gen-b", "epoch-9", 1000, 4)
 	epochs, truncated := ledger.snapshot()
 	if len(epochs) != 3 || truncated {
 		t.Fatalf("epochs: %#v", epochs)
 	}
+	// The replaced epoch never published its terminal record, so its tail is
+	// unknown and the run's coverage cannot be exact.
 	summary := ledger.summary()
-	if summary.Sources != 2 || summary.Epochs != 3 || summary.LostPublications != 1 || !summary.LossExact {
+	if summary.Sources != 2 || summary.Epochs != 3 || summary.LostPublications != 1 || summary.LossExact {
 		t.Fatalf("summary: %#v", summary)
+	}
+}
+
+// An adopted run's earlier execution generations were never observed by this
+// controller; they are reported, and coverage is not exact.
+func TestTelemetrySourceUnobservedGenerationsAfterAdoption(t *testing.T) {
+	ledger := newTelemetrySourceLedger()
+	batch := sourceBatch("epoch-1", 1000, 1)
+	batch.ExecutionGeneration = 8
+	ledger.observe("gen-a", batch, time.Unix(1_800_000_000, 0))
+	batch.BatchSequence, batch.LifecycleState = 2, "COMPLETE"
+	ledger.observe("gen-a", batch, time.Unix(1_800_000_001, 0))
+	failovers := []RunFailover{{PriorGeneration: 7, Generation: 8, AdoptedAt: time.Unix(1_799_999_999, 0)}}
+	summary := ledger.summary(failovers...)
+	if summary.LossExact || summary.UnobservedGenerations != 1 || summary.Epochs != 1 {
+		t.Fatalf("adopted summary: %#v", summary)
+	}
+	epochs, _ := ledger.snapshot(failovers...)
+	unobserved := 0
+	for _, epoch := range epochs {
+		if epoch.Unobserved && epoch.ExecutionGeneration == 7 && !epoch.LossExact {
+			unobserved++
+		}
+	}
+	if unobserved != 1 {
+		t.Fatalf("snapshot: %#v", epochs)
+	}
+	if exact := ledger.summary(); !exact.LossExact {
+		t.Fatalf("without failovers the observed generation is exact: %#v", exact)
+	}
+	var none *telemetrySourceLedger
+	if summary := none.summary(failovers...); summary == nil || summary.UnobservedGenerations != 1 || summary.LossExact {
+		t.Fatalf("a run observed only before adoption: %#v", summary)
 	}
 }
 
@@ -124,10 +190,12 @@ func TestRemoteBatchFromANewerEpochSupersedesWhenSequencesRestart(t *testing.T) 
 	}
 }
 
-func TestTelemetrySourceArchiveIsWrittenOnceAndReleasesTheLedger(t *testing.T) {
+func TestTelemetrySourceArchiveSurvivesAFinalizationRetry(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
 	test := &ManagedTest{ID: "source-run"}
-	observeSequences(runner.telemetrySourceLedgerFor(test.ID), "gen-a", "epoch-1", 1000, 1, 2, 4)
+	ledger := telemetrySourceLedgerLocked(test)
+	observeSequences(ledger, "gen-a", "epoch-1", 1000, 1, 2, 4)
+	finishEpoch(ledger, "gen-a", "epoch-1", 1000, 5)
 	archive := t.TempDir()
 	record := &storage.RunArchiveRecord{TestID: test.ID, ArchivePath: archive, ManifestPath: archive + "/manifest.json"}
 	admitArchiveForTest(t, record)
@@ -146,10 +214,10 @@ func TestTelemetrySourceArchiveIsWrittenOnceAndReleasesTheLedger(t *testing.T) {
 	if err := json.Unmarshal(bytes.TrimSpace(body), &epoch); err != nil || epoch.LostPublications != 1 || !epoch.LossExact || epoch.Schema != telemetrySourceEpochSchema {
 		t.Fatalf("sidecar line %s %v", body, err)
 	}
-	if runner.existingTelemetrySourceLedger(test.ID) != nil {
-		t.Fatal("ledger retained after archiving")
-	}
-	if err := runner.persistTelemetrySourceArchive(context.Background(), test, record, manifest); err != nil || manifest.TelemetrySourceEpochCount != 1 {
-		t.Fatalf("second persist changed the archived sidecar: %v", err)
+	// A later finalization step can fail; the retry reloads a manifest
+	// without the sidecar and must find the same evidence.
+	retried := &RunArchiveManifest{}
+	if err := runner.persistTelemetrySourceArchive(context.Background(), test, record, retried); err != nil || retried.TelemetrySourcesFile != telemetrySourcesFileName || retried.TelemetrySourceEpochCount != 1 {
+		t.Fatalf("finalization retry lost the ledger: %+v %v", retried, err)
 	}
 }

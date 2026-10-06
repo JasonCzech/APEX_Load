@@ -203,6 +203,7 @@ func captureRCAEvidence(store any, project, testID string, record *storage.RunAr
 			"provider_lookups":       sidecarState(manifest.ProviderLookupsFile, manifest.ProviderLookupsTruncated),
 			"interval_distributions": sidecarState(manifest.IntervalDistributionsFile, manifest.IntervalDistributionsTruncated),
 			"clock_observations":     sidecarState(manifest.ClockObservationsFile, manifest.ClockObservationsTruncated),
+			"telemetry_sources":      sidecarState(manifest.TelemetrySourcesFile, manifest.TelemetrySourcesTruncated),
 			"phase_events":           sidecarState(manifest.PhaseEventsFile, manifest.PhaseEventsTruncated),
 		}}
 	if monitors, ok := store.(storage.RunMonitorStore); ok {

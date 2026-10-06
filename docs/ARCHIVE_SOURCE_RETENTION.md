@@ -459,8 +459,13 @@ No source data is deleted to make space.
 
 `exemplars.jsonl` has its own allowance too,
 `APEXLOAD_ARCHIVE_EXEMPLARS_MAX_BYTES` (default 64 MiB, up to 4 GiB), with
-the same truncate-and-mark behaviour, as does `clock_observations.jsonl`
-(`APEXLOAD_ARCHIVE_CLOCK_OBSERVATIONS_MAX_BYTES`, default 8 MiB).
+the same truncate-and-mark behaviour, as do `clock_observations.jsonl`
+(`APEXLOAD_ARCHIVE_CLOCK_OBSERVATIONS_MAX_BYTES`, default 8 MiB) and
+`telemetry_sources.jsonl` (`APEXLOAD_ARCHIVE_TELEMETRY_SOURCES_MAX_BYTES`,
+default 4 MiB). `telemetry_sources.jsonl` records each generator process's
+publication coverage per execution generation; loss is exact only for an
+epoch observed from its first publication to its terminal one, and an
+adopted run carries an `unobserved` record for each earlier generation.
 
 `interval_distributions.jsonl` has its own allowance,
 `APEXLOAD_ARCHIVE_INTERVAL_DISTRIBUTIONS_MAX_BYTES` (default 256 MiB, positive
