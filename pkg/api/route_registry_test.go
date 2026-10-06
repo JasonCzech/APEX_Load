@@ -197,8 +197,9 @@ func TestAllSystemAPIRoutesUseModularCatalogs(t *testing.T) {
 		}
 	}
 	// 28 system routes, the 7 cluster-registry routes, 15 normalized compute
-	// routes, and the 4 domain deployment-target routes.
-	if got, want := len(modular), 55; got != want {
+	// routes, the 4 domain deployment-target routes and the 3 feature
+	// acceptance routes.
+	if got, want := len(modular), 58; got != want {
 		t.Fatalf("modular system route count = %d, want %d", got, want)
 	}
 
