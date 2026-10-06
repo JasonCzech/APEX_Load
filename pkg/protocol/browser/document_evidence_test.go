@@ -86,7 +86,7 @@ func TestBrowserEvidenceOldContextCallbacksCannotRebindNewGeneration(t *testing.
 		t.Fatal("old binding rebound new document generation")
 	}
 	b.beginRequestEvidence(request, old)
-	if b.completeRequestEvidence(request, true, old) != nil {
+	if evidence, _ := b.completeRequestEvidence(request, true, old); evidence != nil {
 		t.Fatal("old completion accepted")
 	}
 	b.enqueueNetworkRequest(request, true, old)

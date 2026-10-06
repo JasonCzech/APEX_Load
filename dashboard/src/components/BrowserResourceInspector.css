@@ -21,3 +21,11 @@
 .browser-resource-phase-track { position: relative; display: block; height: 0.65rem; background: var(--bg-tertiary, #263447); }
 .browser-resource-phase-bar { position: absolute; top: 0; bottom: 0; background: var(--accent-primary, #58a6ff); }
 .browser-resource-phase-bar.measured-point { border-left: 1px solid var(--accent-primary, #58a6ff); }
+.browser-document-waterfall ul { padding: 0; list-style: none; }
+.browser-document-waterfall li { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 3fr); gap: 0.5rem; align-items: center; margin: 0.35rem 0; }
+.browser-document-waterfall-track { position: relative; display: block; height: 0.75rem; background: var(--bg-tertiary, #263447); }
+.browser-document-waterfall-phase { position: absolute; top: 0; bottom: 0; min-width: 1px; background: var(--accent-primary, #58a6ff); }
+.browser-document-waterfall-phase.phase-dns { background: var(--chart-2, #22c55e); }
+.browser-document-waterfall-phase.phase-connect, .browser-document-waterfall-phase.phase-tls { background: var(--chart-3, #f59e0b); }
+.browser-document-waterfall-phase.phase-response { background: var(--chart-5, #3b82f6); }
+.browser-document-waterfall-gap { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, transparent 0 3px, var(--text-muted, #8b949e) 3px 4px); opacity: 0.6; }

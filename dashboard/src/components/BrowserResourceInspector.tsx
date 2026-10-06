@@ -3,7 +3,7 @@ import type { BrowserResourcePageQuery } from '../types/browserResourcePage'
 import { DEFAULT_BROWSER_RESOURCE_QUERY } from '../types/browserResourcePage'
 import { readArchiveBrowserResourcePage } from '../hooks/api/useBrowserResourceApi'
 import { useBrowserResourcePage, type BrowserResourcePageLoader } from './useBrowserResourcePage'
-import { browserResourceRowKey } from './browserResourceEvidenceModel'
+import { browserDocumentWaterfall, browserResourceRowKey } from './browserResourceEvidenceModel'
 import BrowserNativeRequestEvidence from './BrowserNativeRequestEvidence'
 import './BrowserResourceInspector.css'
 
@@ -38,6 +38,16 @@ function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = r
     setPageNumber(1); setRefreshRevision(value => value + 1)
   }
   const first = () => { const firstQuery = { ...query }; delete firstQuery.cursor; setQuery(firstQuery); setPageNumber(1); setRefreshRevision(value => value + 1) }
+  // Document → resources: filter the archive to one document's requests.
+  const selectDocument = (document: string) => {
+    setDraft(value => ({ ...value, document_id: document }))
+    setQuery(value => { const next = { ...value, document_id: document }; delete next.cursor; return next })
+    setPageNumber(1); setRefreshRevision(value => value + 1)
+  }
+  const waterfall = query.document_id && page ? browserDocumentWaterfall(page.items.map((row, index) => ({ key: browserResourceRowKey(JSON.stringify(row.locator), row.browser_evidence), label: row.url || `Resource ${index + 1}`, evidence: row.browser_evidence })), query.document_id) : []
+  const waterfallEnd = Math.max(1, ...waterfall.map(row => row.end))
+  const waterfallOrigin = Math.min(0, ...waterfall.map(row => row.start))
+  const percent = (value: number) => `${(value - waterfallOrigin) / (waterfallEnd - waterfallOrigin) * 100}%`
   return <section className="tx-section archive-summary-section browser-resource-inspector" aria-label="Retained archive resource inspector">
     <div className="archive-section-header archive-section-header-stack"><div><h3 className="chart-title">Retained resource observations</h3>
       <p className="archive-section-copy">Filter and inspect retained network-entry observations in bounded archive pages.</p></div></div>
@@ -69,6 +79,17 @@ function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = r
           : 'The archive resource projection is unavailable.'}</p>
         <p>Source: {page.source_format} · {page.source_timestamp_precision} · {page.source_integrity === 'verified_manifest_and_artifact' ? 'Manifest and artifact integrity verified' : 'Legacy scan fingerprint; producer integrity is unverified'}.</p>
         <details><summary>Archive source identity</summary><p className="browser-resource-source-revision">{page.source_revision}</p></details>
+        {query.document_id && <section className="browser-document-waterfall" aria-label="Document request waterfall">
+          <h4>Requests of document {query.document_id} on this page</h4>
+          <p>Bars start at each request's native start relative to the document's time origin. Hatched spans are time the browser attributed to no phase.</p>
+          {waterfall.length ? <ul>{waterfall.map(row => <li key={row.key}>
+            <span className="browser-resource-url">{row.label}</span>
+            <span className="browser-document-waterfall-track" aria-label={`${row.label}: starts ${row.start.toFixed(1)} ms, ends ${row.end.toFixed(1)} ms after the document origin`}>
+              {row.gaps.map((gap, index) => <span key={`gap-${index}`} className="browser-document-waterfall-gap" style={{ left: percent(gap.start), width: `calc(${percent(gap.end)} - ${percent(gap.start)})` }} />)}
+              {row.segments.map(segment => <span key={segment.name} className={`browser-document-waterfall-phase phase-${segment.name}`} title={segment.name.replace('_', ' ')} style={{ left: percent(segment.start), width: `calc(${percent(segment.end)} - ${percent(segment.start)})` }} />)}
+            </span>
+          </li>)}</ul> : <p>No request on this page carries a document-relative start for this document.</p>}
+        </section>}
         {page.items.length ? <div role="region" aria-label="Retained archive resources table" tabIndex={0} className="browser-resource-table-scroll"><table className="tx-table"><thead><tr>
           <th scope="col">Resource</th><th scope="col">Type / status</th><th scope="col">Legacy duration / transfer</th><th scope="col">Capturing action / cohort</th><th scope="col">Inspection</th>
         </tr></thead><tbody>{page.items.map((row, index) => <tr key={browserResourceRowKey(JSON.stringify(row.locator), row.browser_evidence)}>
@@ -77,7 +98,7 @@ function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = r
           <td><details><summary>Inspect retained resource {index + 1}</summary>
             <dl className="browser-resource-details"><dt>Capture locator</dt><dd>Transaction {row.locator.transaction_ordinal}, resource {row.locator.resource_ordinal}, {row.locator.branch}</dd>
               <dt>Captured by action at (UTC)</dt><dd>{row.timestamp || 'Unavailable'} · {row.timestamp_precision}</dd><dt>Page URL</dt><dd>{row.page_url || 'Unavailable'}</dd><dt>Method</dt><dd>{row.method || 'Unavailable'}</dd></dl>
-            {row.browser_evidence ? <BrowserNativeRequestEvidence evidence={row.browser_evidence} /> : <p>Native request evidence: {row.evidence_state}. Request identity and phases remain unavailable.</p>}
+            {row.browser_evidence ? <BrowserNativeRequestEvidence evidence={row.browser_evidence} onSelectDocument={selectDocument} /> : <p>Native request evidence: {row.evidence_state}. Request identity and phases remain unavailable.</p>}
           </details></td>
         </tr>)}</tbody></table></div> : <p>{page.population.availability === 'unavailable' ? 'No resource projection was retained.' : 'No retained observations match these filters.'}</p>}
       </>}

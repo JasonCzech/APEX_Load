@@ -385,8 +385,14 @@ func TestBrowserResourceActualCompletionAcrossActions(t *testing.T) {
 				for _, entry := range b.networkEntriesSince(0) {
 					if strings.HasSuffix(entry.URL, "/hold") {
 						e := entry.BrowserEvidence
-						if e == nil || e.Clone() == nil || e.RequestID == "" || e.InitiatingActionID != initiating || e.ObservationActionID == "" || e.ObservationActionID == initiating || e.DocumentID != "" || e.IdentityUnavailableReason != "document_unavailable" || e.State != "finished" {
+						if e == nil || e.Clone() == nil || e.RequestID == "" || e.InitiatingActionID != initiating || e.ObservationActionID == "" || e.ObservationActionID == initiating || e.State != "finished" {
 							t.Fatalf("resource native identity/finality was invented or lost: %+v", e)
+						}
+						// A document is never invented: it is proven by a join
+						// and is a document this session observed, or it is
+						// unavailable with a reason.
+						if e.DocumentID == "" && (e.IdentityUnavailableReason == "" || e.DocumentAssociation != "") || e.DocumentID != "" && (e.DocumentAssociation == "" || !documentActualKnown(b, e.DocumentID)) {
+							t.Fatalf("resource document association invented: %+v", e)
 						}
 						return true
 					}
@@ -480,4 +486,15 @@ func TestBrowserDocumentActualBlockedDrainClosesOwnedContext(t *testing.T) {
 			t.Logf("actual native held drain physically closed and joined in %s", duration)
 		})
 	}
+}
+
+func documentActualKnown(b *Browser, documentID string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, d := range b.evidence.documents {
+		if d.documentID == documentID {
+			return true
+		}
+	}
+	return false
 }

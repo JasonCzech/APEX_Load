@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BrowserResourceEvidenceV2 } from '../types/browserResourceEvidence'
-import { browserResourceEvidenceView, browserResourcePhaseRows, browserResourceRowKey } from './browserResourceEvidenceModel'
+import { browserDocumentWaterfall, browserResourceEvidenceView, browserResourcePhaseRows, browserResourceRowKey } from './browserResourceEvidenceModel'
 
 const generation = '0123456789abcdef0123456789abcdef'
 function fixture(): BrowserResourceEvidenceV2 {
@@ -102,5 +102,33 @@ describe('typed retained browser request evidence', () => {
     expect(browserResourceRowKey('transaction:1/resource:0', input)).not.toBe(browserResourceRowKey('transaction:2/resource:0', input))
     expect(browserResourceRowKey('transaction:1/resource:0', input)).not.toBe(browserResourceRowKey('transaction:1/resource:0', { ...input, request_id: `${generation}-r2` }))
     expect(browserResourceRowKey('transaction:1/resource:0')).toBe(JSON.stringify(['transaction:1/resource:0', null, null]))
+  })
+
+  it('admits proven document association and bounded initiator provenance only', () => {
+    const associated = { ...fixture(), document_id: `${generation}-d1`, document_association: 'cdp_loader_join', identity_unavailable_reason: undefined,
+      initiator_type: 'parser', initiator_origin: 'https://example.test', initiator_unavailable_reason: undefined, cache: true, document_offset_ms: -0.5 }
+    expect(browserResourceEvidenceView(associated).issue).toBeNull()
+    expect(browserResourceEvidenceView({ ...fixture(), identity_unavailable_reason: 'ambiguous_cdp_join' }).issue).toBeNull()
+    for (const bad of [
+      { ...associated, document_id: undefined },
+      { ...associated, document_association: 'frame_guess' },
+      { ...associated, initiator_type: 'stack' },
+      { ...associated, initiator_origin: 'https://example.test/script.js' },
+      { ...fixture(), initiator_origin: 'https://example.test' },
+    ]) expect(browserResourceEvidenceView(bad).evidence).toBeNull()
+  })
+
+  it('places document requests at their true start and keeps unattributed time as gaps', () => {
+    const document = `${generation}-d1`
+    const evidence = (offset: number | null, phases: BrowserResourceEvidenceV2['phases'], doc = document): BrowserResourceEvidenceV2 => ({ ...fixture(), document_id: doc, document_offset_ms: offset, phases })
+    const rows = browserDocumentWaterfall([
+      { key: 'late', label: 'late.js', evidence: evidence(40, [{ name: 'request_wait', start_ms: 5, end_ms: 15 }, { name: 'response', start_ms: 15, end_ms: 20 }]) },
+      { key: 'early', label: 'app.css', evidence: evidence(2, [{ name: 'dns', start_ms: 0, end_ms: 1 }, { name: 'response', start_ms: 4, end_ms: 9 }]) },
+      { key: 'other', label: 'other document', evidence: evidence(1, [], `${generation}-d2`) },
+      { key: 'no-offset', label: 'unanchored', evidence: evidence(null, []) },
+    ], document)
+    expect(rows.map(row => row.key)).toEqual(['early', 'late'])
+    expect(rows[0]).toMatchObject({ start: 2, end: 11, segments: [{ name: 'dns', start: 2, end: 3 }, { name: 'response', start: 6, end: 11 }], gaps: [{ start: 3, end: 6 }] })
+    expect(rows[1].gaps).toEqual([{ start: 40, end: 45 }])
   })
 })

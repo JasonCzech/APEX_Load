@@ -33,6 +33,8 @@ func (b *Browser) beginRequestEvidence(request playwright.Request, expectedGener
 	if s.requests[request] != nil {
 		return
 	}
+	// Every request of the page counts toward its join ordinal, tracked or not.
+	join := b.resourceJoinLocked(request, frame)
 	s.issued++
 	s.inFlight++
 	if len(s.requests) >= browserRequestIdentityLimit {
@@ -61,24 +63,24 @@ func (b *Browser) beginRequestEvidence(request playwright.Request, expectedGener
 	if evidence.RedirectChainID == "" {
 		evidence.RedirectChainID = evidence.RequestID
 	}
-	s.requests[request] = &browserRequestIdentity{evidence: evidence}
+	s.requests[request] = &browserRequestIdentity{evidence: evidence, join: join}
 }
-func (b *Browser) completeRequestEvidence(request playwright.Request, finished bool, expectedGeneration ...string) *protocol.BrowserResourceEvidence {
+func (b *Browser) completeRequestEvidence(request playwright.Request, finished bool, expectedGeneration ...string) (*protocol.BrowserResourceEvidence, resourceJoin) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	s := &b.evidence
 	if s.generation == "" || b.closing || len(expectedGeneration) > 0 && expectedGeneration[0] != s.generation {
-		return nil
+		return nil, resourceJoin{}
 	}
 	identity := s.requests[request]
 	if identity != nil && identity.finished {
-		return nil
+		return nil, resourceJoin{}
 	}
 	if s.inFlight > 0 {
 		s.inFlight--
 	}
 	if identity == nil {
-		return nil
+		return nil, resourceJoin{}
 	}
 	identity.finished = true
 	v := identity.evidence
@@ -96,7 +98,7 @@ func (b *Browser) completeRequestEvidence(request playwright.Request, finished b
 		s.retired[0] = nil
 		s.retired = s.retired[1:]
 	}
-	return &v
+	return &v, identity.join
 }
 func browserTimingNumber(v float64) *float64 {
 	if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 86400000 {

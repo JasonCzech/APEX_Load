@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import BrowserResourceInspector from './BrowserResourceInspector'
-import { resourcePageFixture } from './browserResourcePage.testFixtures'
+import { RESOURCE_GENERATION, resourcePageFixture } from './browserResourcePage.testFixtures'
 import type { BrowserResourcePageLoader } from './useBrowserResourcePage'
 const props = { testID: 'run-one', projectID: 'project-one', sourceIdentity: 'source-one' }
 const button = (node: HTMLElement, text: string) => Array.from(node.querySelectorAll('button')).find(element => element.textContent === text)!
@@ -68,6 +68,30 @@ describe('retained browser resource inspector', () => {
       await act(async () => root.render(<BrowserResourceInspector {...props} testID="run-two" loadPage={loader} />)); expect(node.textContent).not.toContain('run-one'); expect(node.textContent).toContain('run-two')
       const malformed: BrowserResourcePageLoader = async () => ({ ...resourcePageFixture(), test_id: 'secret-foreign-run' })
       await act(async () => root.render(<BrowserResourceInspector {...props} loadPage={malformed} />)); expect(node.textContent).toContain('Unable to load'); expect(node.textContent).not.toContain('secret-foreign-run'); expect(button(node, 'Next resource page').disabled).toBe(true)
+    } finally { await act(async () => root.unmount()) }
+  })
+  it('drills from a request into its document and draws that document waterfall', async () => {
+    const node = document.createElement('div'); const root = createRoot(node)
+    const documentID = `${RESOURCE_GENERATION}-d1`
+    const associated = () => {
+      const page = resourcePageFixture()
+      page.items[0].browser_evidence = { ...page.items[0].browser_evidence!, document_id: documentID, document_association: 'cdp_loader_join', document_offset_ms: 12, initiator_type: 'parser', initiator_origin: 'https://example.test' }
+      return page
+    }
+    const loader = vi.fn(async () => associated()) as BrowserResourcePageLoader
+    try {
+      await act(async () => root.render(<BrowserResourceInspector {...props} loadPage={loader} />))
+      expect(node.textContent).toContain('Chromium loader of the issuing document')
+      expect(node.textContent).toContain('parser from https://example.test')
+      expect(node.querySelector('[aria-label="Document request waterfall"]')).toBeNull()
+      await act(async () => button(node, "Show this document's resources").click())
+      const calls = vi.mocked(loader).mock.calls
+      expect(calls[calls.length - 1][2]).toMatchObject({ document_id: documentID })
+      expect(calls[calls.length - 1][2]).not.toHaveProperty('cursor')
+      const waterfall = node.querySelector('[aria-label="Document request waterfall"]')!
+      expect(waterfall.textContent).toContain(documentID)
+      expect(waterfall.querySelectorAll('.browser-document-waterfall-phase').length).toBe(3)
+      expect(waterfall.querySelector('[aria-label*="starts 12.0 ms"]')).not.toBeNull()
     } finally { await act(async () => root.unmount()) }
   })
 })

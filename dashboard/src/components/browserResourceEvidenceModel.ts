@@ -3,14 +3,18 @@ import type { BrowserResourceEvidenceV2, BrowserResourcePhase } from '../types/b
 const fields = ['version', 'source_generation', 'request_id', 'frame_id', 'document_id', 'navigation_id', 'redirect_chain_id',
   'redirect_from_request_id', 'redirect_hop', 'initiating_action_id', 'observation_action_id', 'origin', 'identity_unavailable_reason',
   'epoch_start_ms', 'document_offset_ms', 'observed_at', 'timing_source', 'phases', 'bytes', 'service_worker',
-  'service_worker_unavailable_reason', 'cache', 'cache_unavailable_reason', 'initiator_unavailable_reason', 'state']
+  'service_worker_unavailable_reason', 'cache', 'cache_unavailable_reason', 'initiator_unavailable_reason', 'state',
+  'document_association', 'initiator_type', 'initiator_origin']
 const required = ['version', 'source_generation', 'request_id', 'redirect_hop', 'observed_at', 'timing_source', 'phases', 'bytes', 'state']
 const ids = ['frame_id', 'document_id', 'navigation_id', 'redirect_chain_id', 'redirect_from_request_id', 'initiating_action_id', 'observation_action_id']
 const byteFields = ['request_headers', 'request_body', 'response_headers', 'response_encoded_body']
 const phases = new Set(['dns', 'connect', 'tls', 'request_wait', 'response'])
 const reasons = new Set(['', 'not_exposed', 'unsupported', 'no_observation', 'no_interaction', 'hidden_before_paint', 'not_loaded',
   'frame_unavailable', 'document_unavailable', 'identity_capacity', 'source_censored', 'source_incomplete', 'measurement_capacity',
-  'malformed', 'cohort_unavailable', 'shaping_unavailable', 'new_user_policy_unavailable', 'scope_unqualified'])
+  'malformed', 'cohort_unavailable', 'shaping_unavailable', 'new_user_policy_unavailable', 'scope_unqualified',
+  'cdp_unobserved', 'ambiguous_cdp_join', 'document_not_observed', 'ambiguous_document_commit', 'resource_timing_unobserved', 'ambiguous_resource_timing'])
+const associations = new Set(['cdp_loader_join', 'page_resource_timing_join'])
+const initiators = new Set(['parser', 'script', 'preload', 'preflight', 'signed_exchange', 'other'])
 function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) }
 function owns(value: Record<string, unknown>, key: string): boolean { return Object.prototype.hasOwnProperty.call(value, key) }
 function keys(value: Record<string, unknown>, allowed: string[], mandatory: string[] = []): boolean {
@@ -58,6 +62,9 @@ export function browserResourceEvidenceView(value: unknown): BrowserResourceEvid
     for (const key of ['identity_unavailable_reason', 'service_worker_unavailable_reason', 'cache_unavailable_reason', 'initiator_unavailable_reason']) if (!reason(value[key])) return invalid
     for (const key of ['service_worker', 'cache']) if (value[key] !== undefined && value[key] !== null && typeof value[key] !== 'boolean') return invalid
     if (!optionalNumber(value.epoch_start_ms, 253402300799999) || !optionalNumber(value.document_offset_ms, 86400000, true)) return invalid
+    if (value.document_association !== undefined && (typeof value.document_association !== 'string' || !associations.has(value.document_association) || !value.document_id)) return invalid
+    if (value.initiator_type !== undefined && (typeof value.initiator_type !== 'string' || !initiators.has(value.initiator_type))) return invalid
+    if (!origin(value.initiator_origin) || value.initiator_origin && !value.initiator_type) return invalid
     if (value.phases !== null && (!Array.isArray(value.phases) || value.phases.length > 5)) return invalid
     const seen = new Set<string>()
     for (const phase of value.phases ?? []) {
@@ -89,4 +96,39 @@ export function browserResourcePhaseRows(evidence: BrowserResourceEvidenceV2): A
 }
 export function browserResourceRowKey(locator: string, evidence?: BrowserResourceEvidenceV2 | null): string {
   return JSON.stringify([locator, evidence?.source_generation ?? null, evidence?.request_id ?? null])
+}
+
+export interface BrowserDocumentWaterfallRow {
+  key: string
+  label: string
+  /** Request start relative to the document's time origin. */
+  start: number
+  segments: Array<{ name: string; start: number; end: number }>
+  /** Spans between known phases, and around them, that the browser did not attribute. */
+  gaps: Array<{ start: number; end: number }>
+  end: number
+}
+
+/** A document waterfall places each associated request at its true start
+ * (document_offset_ms) and its phases at that start plus their request-local
+ * offsets. Unknown time between phases stays a visible gap, never a phase. */
+export function browserDocumentWaterfall(rows: Array<{ key: string; label: string; evidence?: BrowserResourceEvidenceV2 | null }>, document: string): BrowserDocumentWaterfallRow[] {
+  const out: BrowserDocumentWaterfallRow[] = []
+  for (const row of rows) {
+    const evidence = row.evidence
+    if (!evidence || evidence.document_id !== document || evidence.document_offset_ms === undefined || evidence.document_offset_ms === null) continue
+    const start = evidence.document_offset_ms
+    const segments = (evidence.phases ?? [])
+      .filter(phase => phase.start_ms !== undefined && phase.start_ms !== null && phase.end_ms !== undefined && phase.end_ms !== null)
+      .map(phase => ({ name: phase.name, start: start + (phase.start_ms as number), end: start + (phase.end_ms as number) }))
+      .sort((a, b) => a.start - b.start || a.end - b.end)
+    const gaps: Array<{ start: number; end: number }> = []
+    let cursor = start
+    for (const segment of segments) {
+      if (segment.start > cursor) gaps.push({ start: cursor, end: segment.start })
+      cursor = Math.max(cursor, segment.end)
+    }
+    out.push({ key: row.key, label: row.label, start, segments, gaps, end: Math.max(start, cursor) })
+  }
+  return out.sort((a, b) => a.start - b.start || a.key.localeCompare(b.key))
 }

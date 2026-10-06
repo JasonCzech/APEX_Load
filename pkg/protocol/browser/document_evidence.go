@@ -29,10 +29,15 @@ type browserDocumentState struct {
 	restored, ended                                bool
 	cohort                                         *protocol.BrowserRuntimeCohort
 	observations                                   map[string]protocol.BrowserDocumentObservation
+	// beginSeq orders the document's begin against frame commits; resources
+	// holds its Resource Timing entries by URL hash (WebKit association).
+	beginSeq  uint64
+	resources map[string]resourceTimingEntry
 }
 type browserRequestIdentity struct {
 	evidence protocol.BrowserResourceEvidence
 	finished bool
+	join     resourceJoin
 }
 type browserEvidenceState struct {
 	lifecycleContext                                       context.Context
@@ -48,6 +53,13 @@ type browserEvidenceState struct {
 	shapedPages                                            map[playwright.Page]bool
 	issued, inFlight, droppedRequests, droppedObservations int64
 	incomplete, cancelled                                  bool
+	// Resource association state (resource_association.go).
+	cdpPages        map[playwright.Page]*cdpEvidencePage
+	pwFrameCDP      map[playwright.Frame]string
+	cdpFramePW      map[string]playwright.Frame
+	loaderDocuments map[string]loaderDocument
+	associationSeq  uint64
+	timingRequests  map[resourceTimingKey]int
 }
 type browserDocumentPayload struct {
 	Kind             string   `json:"kind"`
@@ -96,7 +108,8 @@ func (b *Browser) resetBrowserEvidence(version string) error {
 		cohort.UnavailableReason = "shaping_unavailable"
 	}
 	b.mu.Lock()
-	b.evidence = browserEvidenceState{generation: generation, binding: "__apexEvidence_" + generation, finalizer: "__apexFinalize_" + generation, frames: make(map[playwright.Frame]string), documents: make(map[string]*browserDocumentState), requests: make(map[playwright.Request]*browserRequestIdentity), cohort: cohort, shapedPages: make(map[playwright.Page]bool)}
+	b.evidence = browserEvidenceState{generation: generation, binding: "__apexEvidence_" + generation, finalizer: "__apexFinalize_" + generation, frames: make(map[playwright.Frame]string), documents: make(map[string]*browserDocumentState), requests: make(map[playwright.Request]*browserRequestIdentity), cohort: cohort, shapedPages: make(map[playwright.Page]bool),
+		cdpPages: make(map[playwright.Page]*cdpEvidencePage), pwFrameCDP: make(map[playwright.Frame]string), cdpFramePW: make(map[string]playwright.Frame), loaderDocuments: make(map[string]loaderDocument), timingRequests: make(map[resourceTimingKey]int)}
 	b.mu.Unlock()
 	return nil
 }
@@ -120,7 +133,7 @@ func (b *Browser) installDocumentEvidence(ctx playwright.BrowserContext, version
 	}); err != nil {
 		return err
 	}
-	return ctx.AddInitScript(playwright.Script{Content: playwright.String(browserDocumentBootstrap(binding, finalizer, b.documentMetricsEnabled))})
+	return ctx.AddInitScript(playwright.Script{Content: playwright.String(browserDocumentBootstrap(binding, finalizer, b.documentMetricsEnabled, b.engine == "webkit"))})
 }
 func (b *Browser) frameIdentityLocked(frame playwright.Frame) string {
 	if frame == nil {
@@ -252,7 +265,8 @@ func (b *Browser) receiveDocumentEvidence(source *playwright.BindingSource, raw 
 				docCohort.UnavailableReason = ""
 			}
 		}
-		d = &browserDocumentState{cohort: docCohort, frame: source.Frame, page: source.Page, token: p.DocumentToken, lifecycleToken: p.LifecycleToken, documentID: documentID, lifecycleID: s.nextID("l"), frameID: frameID, navigationID: s.nextID("n"), start: start, timeOrigin: p.TimeOrigin, restored: p.Restored, observations: make(map[string]protocol.BrowserDocumentObservation)}
+		s.associationSeq++
+		d = &browserDocumentState{cohort: docCohort, frame: source.Frame, page: source.Page, token: p.DocumentToken, lifecycleToken: p.LifecycleToken, documentID: documentID, lifecycleID: s.nextID("l"), frameID: frameID, navigationID: s.nextID("n"), start: start, timeOrigin: p.TimeOrigin, restored: p.Restored, observations: make(map[string]protocol.BrowserDocumentObservation), beginSeq: s.associationSeq}
 		s.documents[key] = d
 		if b.documentMetricsEnabled {
 			for _, metric := range []string{"fcp", "lcp", "cls", "inp", "ttfb"} {
@@ -268,6 +282,25 @@ func (b *Browser) receiveDocumentEvidence(source *playwright.BindingSource, raw 
 	}
 	if p.Kind == "end" {
 		d.ended = true
+		return true
+	}
+	if p.Kind == "resource" {
+		// A Resource Timing entry: its name hash and its start within the
+		// document. Repeats only count; a repeated URL never associates.
+		if !validResourceTimingHash(p.Metric) || p.Value == nil || *p.Value < 0 || *p.Value > 86400000 {
+			return false
+		}
+		if d.resources == nil {
+			d.resources = make(map[string]resourceTimingEntry)
+		}
+		entry, known := d.resources[p.Metric]
+		if !known && len(d.resources) >= resourceTimingPerDocument {
+			s.incomplete = true
+			return false
+		}
+		entry.count++
+		entry.start = *p.Value
+		d.resources[p.Metric] = entry
 		return true
 	}
 	if p.Kind != "metric" || !b.documentMetricsEnabled {

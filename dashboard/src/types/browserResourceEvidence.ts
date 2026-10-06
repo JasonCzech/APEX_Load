@@ -39,4 +39,10 @@ export interface BrowserResourceEvidenceV2 {
   cache_unavailable_reason?: string
   initiator_unavailable_reason?: string
   state: 'finished' | 'failed' | 'censored'
+  /** How document_id was proven: the issuing Chromium loader, or a unique
+   * Resource Timing entry inside one document. */
+  document_association?: 'cdp_loader_join' | 'page_resource_timing_join'
+  initiator_type?: 'parser' | 'script' | 'preload' | 'preflight' | 'signed_exchange' | 'other'
+  /** Scheme and host only; never a path, query or stack. */
+  initiator_origin?: string
 }

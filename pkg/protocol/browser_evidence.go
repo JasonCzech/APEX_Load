@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/url"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -63,7 +64,19 @@ type BrowserResourceEvidence struct {
 	CacheUnavailableReason         string                 `json:"cache_unavailable_reason,omitempty"`
 	InitiatorUnavailableReason     string                 `json:"initiator_unavailable_reason,omitempty"`
 	State                          string                 `json:"state"` // finished, failed, censored
+	// DocumentAssociation names how DocumentID was proven: cdp_loader_join
+	// (Chromium loader of the issuing document) or page_resource_timing_join
+	// (a unique Resource Timing entry inside one document).
+	DocumentAssociation string `json:"document_association,omitempty"`
+	// InitiatorType is the browser's initiator category; InitiatorOrigin is
+	// only the scheme and host of the initiating document or script. Stacks,
+	// paths and query strings are never retained.
+	InitiatorType   string `json:"initiator_type,omitempty"`
+	InitiatorOrigin string `json:"initiator_origin,omitempty"`
 }
+
+// BrowserResourceInitiatorTypes are the CDP initiator categories retained.
+var BrowserResourceInitiatorTypes = []string{"parser", "script", "preload", "preflight", "signed_exchange", "other"}
 
 // A nil cohort or an unapplied policy never qualifies an observation. Values
 // describe the actual launched context and successfully applied shaping, not
@@ -317,7 +330,8 @@ func browserEvidenceID(v, generation string, optional bool) bool {
 }
 func browserEvidenceReason(v string) bool {
 	switch v {
-	case "", "not_exposed", "unsupported", "no_observation", "no_interaction", "hidden_before_paint", "not_loaded", "frame_unavailable", "document_unavailable", "identity_capacity", "source_censored", "source_incomplete", "measurement_capacity", "malformed", "cohort_unavailable", "shaping_unavailable", "new_user_policy_unavailable", "scope_unqualified":
+	case "", "not_exposed", "unsupported", "no_observation", "no_interaction", "hidden_before_paint", "not_loaded", "frame_unavailable", "document_unavailable", "identity_capacity", "source_censored", "source_incomplete", "measurement_capacity", "malformed", "cohort_unavailable", "shaping_unavailable", "new_user_policy_unavailable", "scope_unqualified",
+		"cdp_unobserved", "ambiguous_cdp_join", "document_not_observed", "ambiguous_document_commit", "resource_timing_unobserved", "ambiguous_resource_timing":
 		return true
 	}
 	return false
@@ -484,6 +498,18 @@ func (e *BrowserResourceEvidence) Clone() *BrowserResourceEvidence {
 		}
 	}
 	if v.State != "finished" && v.State != "failed" && v.State != "censored" {
+		return nil
+	}
+	switch v.DocumentAssociation {
+	case "":
+	case "cdp_loader_join", "page_resource_timing_join":
+		if v.DocumentID == "" {
+			return nil
+		}
+	default:
+		return nil
+	}
+	if v.InitiatorType != "" && !slices.Contains(BrowserResourceInitiatorTypes, v.InitiatorType) || v.InitiatorType == "" && v.InitiatorOrigin != "" || !browserEvidenceOrigin(v.InitiatorOrigin) {
 		return nil
 	}
 	cloneNumber := func(p *float64, max float64, negative bool) *float64 {

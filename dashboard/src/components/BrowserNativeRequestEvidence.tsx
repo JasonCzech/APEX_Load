@@ -4,7 +4,12 @@ import { browserResourcePhaseRows } from './browserResourceEvidenceModel'
 const measured = (value: number | null | undefined, suffix: string) => value === undefined || value === null ? 'Unavailable' : `${value.toLocaleString('en-US', { maximumFractionDigits: 6 })}${suffix}`
 const observedBoolean = (value: boolean | null | undefined, reason?: string) => value === undefined || value === null ? `Unavailable${reason ? `: ${reason}` : ''}` : `${value} (observed)`
 
-export default function BrowserNativeRequestEvidence({ evidence }: { evidence: BrowserResourceEvidenceV2 }) {
+const associationLabels: Record<string, string> = {
+  cdp_loader_join: 'Chromium loader of the issuing document',
+  page_resource_timing_join: 'Unique Resource Timing entry in the document',
+}
+
+export default function BrowserNativeRequestEvidence({ evidence, onSelectDocument }: { evidence: BrowserResourceEvidenceV2; onSelectDocument?: (document: string) => void }) {
   const rows = browserResourcePhaseRows(evidence)
   return <div className="browser-native-request-evidence">
     <h4>Native request evidence</h4>
@@ -13,7 +18,10 @@ export default function BrowserNativeRequestEvidence({ evidence }: { evidence: B
       <dt>Source generation</dt><dd>{evidence.source_generation}</dd>
       <dt>Request identity</dt><dd>{evidence.request_id}</dd>
       <dt>Frame identity</dt><dd>{evidence.frame_id || 'Unavailable'}</dd>
-      <dt>Document identity</dt><dd>{evidence.document_id || `Unavailable${evidence.identity_unavailable_reason ? `: ${evidence.identity_unavailable_reason}` : ''}`}</dd>
+      <dt>Document identity</dt><dd>{evidence.document_id
+        ? <>{evidence.document_id}{onSelectDocument && <> <button type="button" className="btn btn-secondary btn-sm" onClick={() => onSelectDocument(evidence.document_id as string)}>Show this document's resources</button></>}</>
+        : `Unavailable${evidence.identity_unavailable_reason ? `: ${evidence.identity_unavailable_reason}` : ''}`}</dd>
+      <dt>Document association</dt><dd>{evidence.document_association ? associationLabels[evidence.document_association] : 'Unavailable'}</dd>
       <dt>Navigation identity</dt><dd>{evidence.navigation_id || 'Unavailable'}</dd>
       <dt>Redirect chain / hop</dt><dd>{evidence.redirect_chain_id || 'Unavailable'} / {evidence.redirect_hop}</dd>
       <dt>Redirected from</dt><dd>{evidence.redirect_from_request_id || 'Unavailable'}</dd>
@@ -26,7 +34,9 @@ export default function BrowserNativeRequestEvidence({ evidence }: { evidence: B
       <dt>Request state / timing source</dt><dd>{evidence.state} / {evidence.timing_source}</dd>
       <dt>Service worker</dt><dd>{observedBoolean(evidence.service_worker, evidence.service_worker_unavailable_reason)}</dd>
       <dt>Cache</dt><dd>{observedBoolean(evidence.cache, evidence.cache_unavailable_reason)}</dd>
-      <dt>Initiator provenance</dt><dd>{evidence.initiator_unavailable_reason ? `Unavailable: ${evidence.initiator_unavailable_reason}` : 'Unavailable'}</dd>
+      <dt>Initiator provenance</dt><dd>{evidence.initiator_type
+        ? `${evidence.initiator_type}${evidence.initiator_origin ? ` from ${evidence.initiator_origin}` : ''}`
+        : evidence.initiator_unavailable_reason ? `Unavailable: ${evidence.initiator_unavailable_reason}` : 'Unavailable'}</dd>
     </dl>
     <h4>Request-local phase offsets (may overlap)</h4>
     {rows.length ? <ul className="browser-resource-phases">{rows.map(phase => <li key={phase.name}>

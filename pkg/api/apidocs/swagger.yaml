@@ -4916,6 +4916,8 @@ paths:
                                 nullable: true
                               cache_unavailable_reason:
                                 type: string
+                              document_association:
+                                type: string
                               document_id:
                                 type: string
                               document_offset_ms:
@@ -4931,6 +4933,10 @@ paths:
                               identity_unavailable_reason:
                                 type: string
                               initiating_action_id:
+                                type: string
+                              initiator_origin:
+                                type: string
+                              initiator_type:
                                 type: string
                               initiator_unavailable_reason:
                                 type: string
@@ -35011,6 +35017,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -35026,6 +35034,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -36856,6 +36868,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -36871,6 +36885,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -38658,6 +38676,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -38673,6 +38693,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -40466,6 +40490,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -40481,6 +40507,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -42274,6 +42304,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -42289,6 +42321,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -117968,6 +118004,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -117983,6 +118021,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -120012,6 +120054,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -120027,6 +120071,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -122116,6 +122164,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -122131,6 +122181,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -124166,6 +124220,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -124181,6 +124237,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -126210,6 +126270,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -126225,6 +126287,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -128259,6 +128325,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -128274,6 +128342,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -130309,6 +130381,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -130324,6 +130398,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -169656,6 +169734,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -169671,6 +169751,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -171701,6 +171785,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -171716,6 +171802,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -173807,6 +173897,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -173822,6 +173914,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -175858,6 +175954,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -175873,6 +175971,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -177903,6 +178005,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -177918,6 +178022,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -179953,6 +180061,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -179968,6 +180078,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -182004,6 +182118,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -182019,6 +182135,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -203861,6 +203981,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -203876,6 +203998,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -208273,6 +208399,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -208288,6 +208416,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -215237,6 +215369,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -215252,6 +215386,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -237373,6 +237511,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -237388,6 +237528,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -238828,6 +238972,8 @@ paths:
                             nullable: true
                           cache_unavailable_reason:
                             type: string
+                          document_association:
+                            type: string
                           document_id:
                             type: string
                           document_offset_ms:
@@ -238843,6 +238989,10 @@ paths:
                           identity_unavailable_reason:
                             type: string
                           initiating_action_id:
+                            type: string
+                          initiator_origin:
+                            type: string
+                          initiator_type:
                             type: string
                           initiator_unavailable_reason:
                             type: string
@@ -247414,6 +247564,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -247429,6 +247581,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -294273,6 +294429,8 @@ paths:
                                       nullable: true
                                     cache_unavailable_reason:
                                       type: string
+                                    document_association:
+                                      type: string
                                     document_id:
                                       type: string
                                     document_offset_ms:
@@ -294288,6 +294446,10 @@ paths:
                                     identity_unavailable_reason:
                                       type: string
                                     initiating_action_id:
+                                      type: string
+                                    initiator_origin:
+                                      type: string
+                                    initiator_type:
                                       type: string
                                     initiator_unavailable_reason:
                                       type: string
@@ -341663,6 +341825,8 @@ paths:
                               nullable: true
                             cache_unavailable_reason:
                               type: string
+                            document_association:
+                              type: string
                             document_id:
                               type: string
                             document_offset_ms:
@@ -341678,6 +341842,10 @@ paths:
                             identity_unavailable_reason:
                               type: string
                             initiating_action_id:
+                              type: string
+                            initiator_origin:
+                              type: string
+                            initiator_type:
                               type: string
                             initiator_unavailable_reason:
                               type: string
@@ -350154,6 +350322,8 @@ paths:
                               nullable: true
                             cache_unavailable_reason:
                               type: string
+                            document_association:
+                              type: string
                             document_id:
                               type: string
                             document_offset_ms:
@@ -350169,6 +350339,10 @@ paths:
                             identity_unavailable_reason:
                               type: string
                             initiating_action_id:
+                              type: string
+                            initiator_origin:
+                              type: string
+                            initiator_type:
                               type: string
                             initiator_unavailable_reason:
                               type: string
@@ -414234,6 +414408,8 @@ paths:
                                   nullable: true
                                 cache_unavailable_reason:
                                   type: string
+                                document_association:
+                                  type: string
                                 document_id:
                                   type: string
                                 document_offset_ms:
@@ -414249,6 +414425,10 @@ paths:
                                 identity_unavailable_reason:
                                   type: string
                                 initiating_action_id:
+                                  type: string
+                                initiator_origin:
+                                  type: string
+                                initiator_type:
                                   type: string
                                 initiator_unavailable_reason:
                                   type: string

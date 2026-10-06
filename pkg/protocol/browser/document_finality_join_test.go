@@ -42,7 +42,7 @@ const ends=life=>payloads.filter(p=>p.kind==='end'&&(!life||p.lifecycle_token===
  console.log('bootstrap-receipt-'+mode+' PASS');
  }finally{begin.resolve(true);metric.resolve(true)}})().catch(error=>{console.error(error.message);process.exitCode=1});`
 			harness = strings.ReplaceAll(harness, "MODE", javascriptSourceQuote(mode))
-			harness = strings.ReplaceAll(harness, "SCRIPT", javascriptSourceQuote(browserDocumentBootstrap("__binding", "__finalizer", true)))
+			harness = strings.ReplaceAll(harness, "SCRIPT", javascriptSourceQuote(browserDocumentBootstrap("__binding", "__finalizer", true, false)))
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			output, err := exec.CommandContext(ctx, node, "-e", harness).CombinedOutput()

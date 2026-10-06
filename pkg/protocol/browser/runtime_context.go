@@ -46,6 +46,7 @@ type browserNetworkTask struct {
 	request    playwright.Request
 	finished   bool
 	evidence   *protocol.BrowserResourceEvidence
+	join       resourceJoin
 	receipt    *browserNetworkTaskReceipt
 }
 
@@ -310,13 +311,13 @@ func (b *Browser) startNetworkWorkers() {
 }
 
 func (b *Browser) enqueueNetworkRequest(request playwright.Request, finished bool, expectedGeneration ...string) {
-	evidence := b.completeRequestEvidence(request, finished, expectedGeneration...)
+	evidence, join := b.completeRequestEvidence(request, finished, expectedGeneration...)
 	b.mu.Lock()
 	if b.closing || len(expectedGeneration) > 0 && expectedGeneration[0] != b.evidence.generation || b.networkTasks == nil || b.networkWorkerStop == nil {
 		b.mu.Unlock()
 		return
 	}
-	b.admitNetworkTaskLocked(browserNetworkTask{request: request, finished: finished, evidence: evidence, generation: b.evidence.generation})
+	b.admitNetworkTaskLocked(browserNetworkTask{request: request, finished: finished, evidence: evidence, join: join, generation: b.evidence.generation})
 	b.mu.Unlock()
 }
 
@@ -464,6 +465,12 @@ func (b *Browser) registerPage(page playwright.Page, activate bool, expectedGene
 		b.pwPage = page
 	}
 	b.mu.Unlock()
+	// The context's page event can register a page before the context is
+	// stored; the association installs on the first registration that has it.
+	b.mu.Lock()
+	generation := b.evidence.generation
+	b.mu.Unlock()
+	b.installResourceAssociation(b.currentBrowserContext(), page, generation)
 	if !known {
 		b.observePageWebSockets(page)
 		page.OnClose(func(closed playwright.Page) { b.censorDocumentEvidence(closed, "context_closed"); b.removePage(closed) })
@@ -551,7 +558,7 @@ func (b *Browser) recordNetworkTask(task browserNetworkTask) {
 		durationMs = 0
 	}
 	entry := boundBrowserNetworkEntry(protocol.NetworkEntry{
-		BrowserEvidence:      populateResourceEvidence(task.evidence, request, nativeResponse, nativeSizes),
+		BrowserEvidence:      b.associateResourceEvidence(populateResourceEvidence(task.evidence, request, nativeResponse, nativeSizes), task.join, task.generation),
 		FailureKind:          browserNetworkFailureKind(finished, statusCode),
 		URL:                  request.URL(),
 		Method:               request.Method(),

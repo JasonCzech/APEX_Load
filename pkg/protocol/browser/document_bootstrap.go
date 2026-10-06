@@ -13,10 +13,12 @@ import (
 //go:embed third_party/web_vitals/web-vitals-5.1.0.iife.js
 var browserVitalsLibrary string
 
-func browserDocumentBootstrap(binding, finalizer string, metrics bool) string {
+// resources reports each Resource Timing entry's name hash and start, the
+// only document association WebKit exposes; it never sends the URL itself.
+func browserDocumentBootstrap(binding, finalizer string, metrics, resources bool) string {
 	return fmt.Sprintf(`(() => {
  "use strict";
- const binding=%s, finalizer=%s, enabled=%t;
+ const binding=%s, finalizer=%s, enabled=%t, resources=%t;
  const token=()=>{const a=new Uint8Array(16);crypto.getRandomValues(a);return Array.from(a,x=>x.toString(16).padStart(2,'0')).join('')};
  const documentToken=token(); let lifecycleToken=token(), restored=false, terminal=false, boundary='progress', beginReceipt=null, finishReceipt=null;
  const values=new Map(), observers=new Set(), idle=new Set(); let firstInput=false;
@@ -38,6 +40,16 @@ func browserDocumentBootstrap(binding, finalizer string, metrics bool) string {
   send('metric',metric,state);
  };
  beginReceipt=send('begin','','provisional');
+ const resourceHash=s=>{let h1=0xdeadbeef,h2=0x41c6ce57;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677)}h1=Math.imul(h1^(h1>>>16),2246822507);h1^=Math.imul(h2^(h2>>>13),3266489909);h2=Math.imul(h2^(h2>>>16),2246822507);h2^=Math.imul(h1^(h1>>>13),3266489909);return(4294967296*(2097151&h2)+(h1>>>0)).toString(16)};
+ if(resources&&globalThis.PerformanceObserver&&supported.has('resource')){
+  let sentResources=0;
+  const sendResource=entry=>{if(sentResources>=512)return;sentResources++;
+   const expectedLife=lifecycleToken, admission=beginReceipt;
+   const payload={kind:'resource',document_token:documentToken,lifecycle_token:lifecycleToken,restored,time_origin:performance.timeOrigin,offset:performance.now(),metric:resourceHash(entry.name),state:'provisional',boundary,reason:'',interaction_count:0,value:entry.startTime};
+   Promise.resolve(admission).then(accepted=>{if(accepted===true&&expectedLife===lifecycleToken){try{globalThis[binding](payload).catch(()=>false)}catch{}}});
+  };
+  new globalThis.PerformanceObserver(list=>{for(const entry of list.getEntries())sendResource(entry)}).observe({type:'resource',buffered:true});
+ }
  // Establish restored identity before the official library's synchronous
  // BFCache callbacks report the restored TTFB and other observations.
  addEventListener('pageshow',event=>{if(event.persisted){lifecycleToken=token();restored=true;terminal=false;finishReceipt=null;firstInput=false;boundary='bfcache_restore';values.clear();baseInteraction=('interactionCount' in performance?performance.interactionCount:maxInteraction?(maxInteraction-minInteraction)/7+1:0);beginReceipt=send('begin','','provisional')}},{capture:true});
@@ -96,5 +108,5 @@ func browserDocumentBootstrap(binding, finalizer string, metrics bool) string {
  addEventListener('click',event=>{if(event.isTrusted){firstInput=true;boundary='first_input'}},{capture:true});
  addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){boundary='hidden';queueMicrotask(()=>{if(!terminal&&enabled)for(const metric of ['cls','inp'])if(values.has(metric))send('metric',metric,'provisional')})}else boundary='progress'},{capture:true});
  addEventListener('pagehide',()=>{void finish('pagehide')},{capture:true});
-})()`, strconv.Quote(binding), strconv.Quote(finalizer), metrics, browserVitalsLibrary)
+})()`, strconv.Quote(binding), strconv.Quote(finalizer), metrics, resources, browserVitalsLibrary)
 }
