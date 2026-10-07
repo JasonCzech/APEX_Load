@@ -540,6 +540,12 @@ func TestOptionalEvidenceAllowanceIsRefundedOnAFailedFetch(t *testing.T) {
 	if len(staged) != 1 || len(omitted) != 0 || allowance.remaining != 40 || harBudget.remaining != 40 || harBudget.artifacts != 0 {
 		t.Fatalf("a fitting source was refused after another failed: staged %+v omitted %v remaining %d/%d artifacts %d", staged, omitted, allowance.remaining, harBudget.remaining, harBudget.artifacts)
 	}
+	// A HAR the transfer allowance refuses returns its HAR budget too.
+	spare := &remoteHARBudget{remaining: 100, artifacts: 1}
+	staged, omitted = fetchRemoteHARArtifacts(context.Background(), client, "run", "source-c", t.TempDir(), []RunArchiveEvidenceArtifact{second}, spare, &remoteArchiveTransferBudget{})
+	if len(staged) != 0 || omitted[harOmittedTransfer] != 1 || spare.remaining != 100 || spare.artifacts != 1 {
+		t.Fatalf("transfer refusal kept the HAR budget: staged %+v omitted %v budget %+v", staged, omitted, spare)
+	}
 }
 
 // All optional HAR copies of one merge share one allowance, fixed at the

@@ -402,3 +402,13 @@ func TestRCAProviderSeriesIDsAreRunIndependent(t *testing.T) {
 		t.Fatal("two Prometheus label sets merged into one series")
 	}
 }
+
+// An admission refusal's text never carries its cause, which can name server
+// paths and configuration.
+func TestAnalyticalAdmissionErrorHidesItsCause(t *testing.T) {
+	cause := errors.New("mkdir /var/lib/apexload/_analysis-cache: read-only file system")
+	err := error(&analyticalAdmissionError{cause: cause})
+	if strings.Contains(err.Error(), "/var/lib") || err.Error() != "analytical admission unavailable" || !errors.Is(err, cause) {
+		t.Fatalf("admission error %q", err)
+	}
+}

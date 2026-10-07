@@ -273,11 +273,14 @@ func TestArchiveHARsStayWhenRegistrationFails(t *testing.T) {
 	// registers runs under another archive root, where it is not found.
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	service := NewService("har-generator", 10)
-	if err := service.finalizeArchiveWriter(writer, "COMPLETE", time.Now().UTC(), ""); err == nil {
+	err = service.finalizeArchiveWriter(writer, "COMPLETE", time.Now().UTC(), "")
+	if err == nil {
 		t.Fatal("a run outside the service's archive root was registered")
 	}
-	if !writer.closed {
-		t.Fatal("finalize itself failed; the test must fail registration only")
+	// Finalize succeeded; registration failed (it could not open the
+	// finalized run under the service's root).
+	if !strings.Contains(err.Error(), "open finalized generator archive") {
+		t.Fatalf("finalize itself failed; the test must fail registration only: %v", err)
 	}
 	if _, err := os.Stat(artifact.Path); err != nil {
 		t.Fatal("an unregistered archive retired its HAR's only other copy", err)

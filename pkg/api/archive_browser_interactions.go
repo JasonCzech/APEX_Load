@@ -162,6 +162,9 @@ func mergeRemoteInteractions(workingDir string, manifest *RunArchiveManifest, bu
 			return nil
 		})
 		if err != nil {
+			// The source is already receipted: failing this staging attempt
+			// (whose retry resets accepted receipts) keeps a receipt from ever
+			// naming evidence the archive does not hold.
 			return fmt.Errorf("merge interaction evidence: %w", err)
 		}
 	}
@@ -209,8 +212,7 @@ func (w *runArchiveWriter) RecordBrowserInteractionEvidence(evidence *protocol.B
 	if w.interactionsFile == nil {
 		file, err := createArchiveArtifactExclusive(w.rootDir, browserInteractionsFileName, 0o644, false)
 		if err != nil {
-			w.manifest.BrowserInteractionsIncomplete = true
-			return err
+			return errors.Join(drop("browser interaction evidence sidecar could not be created"), err)
 		}
 		w.interactionsFile = file
 		w.manifest.BrowserInteractionsFile = browserInteractionsFileName

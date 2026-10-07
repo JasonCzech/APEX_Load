@@ -301,7 +301,7 @@ datasets:
 			if errors.As(err, &refused) {
 				// Native analysis cannot admit any read here: say so once
 				// and stop, rather than probing for every key.
-				note(limitationImportedDatasetUnavailable, "native analysis could not admit reads of associated datasets (resource limits or configuration), so the remaining imported series were not judged")
+				note(limitationImportedDatasetUnavailable, "native analysis could not admit reads of associated datasets (resource limits or configuration), so this dataset and the remaining imported series were not judged")
 				break datasets
 			}
 			if err != nil {

@@ -246,11 +246,17 @@ func TestClockPipelineStepBeforePublicationIsNotABreach(t *testing.T) {
 	live.Telemetry.CollectedAt = live.Telemetry.CollectedAt.Add(-step)
 	live.Telemetry.collectedAtBoundUnixMs -= float64(step / time.Millisecond)
 	live.Telemetry.qualifiedAt = live.Telemetry.qualifiedAt.Add(-step)
+	live.Telemetry.ControllerReceivedAt = live.Telemetry.ControllerReceivedAt.Add(-step)
 	if !runner.publishLiveMetrics(run, live, nil) {
 		t.Fatal("publication rejected")
 	}
 	health := run.TelemetryHealth
 	if health == nil || slices.Contains(health.Conditions, "stale_sample") || !slices.Contains(health.Unscored, "stale_sample:"+clockReasonStep) {
 		t.Fatalf("a step before publication scored the aggregate: health %+v telemetry %+v", health, live.Telemetry)
+	}
+	// The controller's own fan-out lag is measured on the monotonic clock
+	// from aggregation on, so the step does not inflate it either.
+	if live.Telemetry.ControllerFanoutLagMs > 1000 || slices.Contains(health.Conditions, "controller_fanout_lag") {
+		t.Fatalf("a step inflated the fan-out lag: %v ms, health %+v", live.Telemetry.ControllerFanoutLagMs, health)
 	}
 }

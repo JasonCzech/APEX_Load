@@ -508,7 +508,14 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	}
 	live.Telemetry.PublishedAt = now
 	if !live.Telemetry.ControllerReceivedAt.IsZero() {
-		live.Telemetry.ControllerFanoutLagMs = float64(now.Sub(live.Telemetry.ControllerReceivedAt).Microseconds()) / 1000.0
+		fanout := now.Sub(live.Telemetry.ControllerReceivedAt)
+		if !live.Telemetry.qualifiedAt.IsZero() {
+			// From aggregation on, the lag is measured on the monotonic
+			// clock, so a wall-clock step while the publication waited
+			// cannot inflate it.
+			fanout = live.Telemetry.qualifiedAt.Sub(live.Telemetry.ControllerReceivedAt) + (now.Sub(clockProcessStart) - live.Telemetry.qualifiedMonotonic)
+		}
+		live.Telemetry.ControllerFanoutLagMs = float64(fanout.Microseconds()) / 1000.0
 	}
 	if wallClockSteppedSince(live.Telemetry.qualifiedAt, live.Telemetry.qualifiedMonotonic, now) {
 		// The controller's clock stepped after the collection time was
