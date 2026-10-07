@@ -304,7 +304,7 @@ func TestBrowserDocumentLossUnitsPublishWithoutActions(t *testing.T) {
 				var snapshot MetricsSnapshot
 				if mode == "idle" {
 					mc.Start(5 * time.Millisecond)
-					snapshot = waitForMetricsSnapshot(t, mc, func(s MetricsSnapshot) bool { return s.BrowserDocuments != nil })
+					snapshot = waitForRetainedMetricsSnapshot(t, mc, func(s MetricsSnapshot) bool { return s.BrowserDocuments != nil })
 				} else {
 					mc.Stop()
 					var ok bool
@@ -344,7 +344,7 @@ func TestBrowserDocumentProviderCapacityPublishesUnknownCoverage(t *testing.T) {
 			var snapshot MetricsSnapshot
 			if mode == "idle" {
 				mc.Start(5 * time.Millisecond)
-				snapshot = waitForMetricsSnapshot(t, mc, func(s MetricsSnapshot) bool { return s.BrowserDocuments != nil })
+				snapshot = waitForRetainedMetricsSnapshot(t, mc, func(s MetricsSnapshot) bool { return s.BrowserDocuments != nil })
 			} else {
 				mc.Stop()
 				var ok bool
@@ -416,7 +416,7 @@ func TestBrowserDocumentUnavailableProviderPublishesCoverageOnce(t *testing.T) {
 				var snapshot MetricsSnapshot
 				if mode == "idle" {
 					mc.Start(5 * time.Millisecond)
-					snapshot = waitForMetricsSnapshot(t, mc, func(s MetricsSnapshot) bool { return s.BrowserDocuments != nil })
+					snapshot = waitForRetainedMetricsSnapshot(t, mc, func(s MetricsSnapshot) bool { return s.BrowserDocuments != nil })
 					if mc.browserDocuments.sample(false) {
 						t.Fatal("acknowledged unavailable provider repeated idle coverage")
 					}
@@ -514,7 +514,8 @@ func TestBrowserDocumentFinishedProviderPublishesAfterZeroGaugeAck(t *testing.T)
 			entry := mc.registerMessagingProgress(provider, "", nil)
 			mc.SetActiveVUsers(1)
 			mc.Start(5 * time.Millisecond)
-			initial := waitForMetricsSnapshot(t, mc, func(s MetricsSnapshot) bool {
+			// Each document window is published in exactly one snapshot.
+			initial := waitForRetainedMetricsSnapshot(t, mc, func(s MetricsSnapshot) bool {
 				return s.ActiveVUsers == 1 && s.BrowserDocuments != nil && len(s.BrowserDocuments.Metrics) == 1 && s.BrowserDocuments.Metrics[0].Provisional == 1
 			})
 			// The real VUser lifecycle decrements the gauge before slow teardown.
@@ -554,7 +555,7 @@ func TestBrowserDocumentFinishedProviderPublishesAfterZeroGaugeAck(t *testing.T)
 				t.Fatal("controlled teardown did not finish")
 			}
 			if mode == "idle" {
-				waitForMetricsSnapshot(t, mc, func(s MetricsSnapshot) bool {
+				waitForRetainedMetricsSnapshot(t, mc, func(s MetricsSnapshot) bool {
 					return s.BrowserDocuments != nil && len(s.BrowserDocuments.Metrics) == 1 && s.BrowserDocuments.Metrics[0].EligibleFinal == 1
 				})
 			}

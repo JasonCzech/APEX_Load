@@ -154,6 +154,35 @@ func waitForMetricsSnapshot(t *testing.T, mc *MetricsCollector, accept func(Metr
 	}
 }
 
+// waitForRetainedMetricsSnapshot waits until any retained snapshot satisfies
+// accept. A window published exactly once can be followed by later snapshots
+// before a poll of the latest one would see it.
+func waitForRetainedMetricsSnapshot(t *testing.T, mc *MetricsCollector, accept func(MetricsSnapshot) bool) MetricsSnapshot {
+	t.Helper()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	poll := time.NewTicker(5 * time.Millisecond)
+	defer poll.Stop()
+	for {
+		mc.snapshotsMu.RLock()
+		for _, snapshot := range mc.snapshots {
+			if accept(snapshot) {
+				snapshot.BrowserDocuments = snapshot.BrowserDocuments.Clone()
+				snapshot.MessagingProgress = snapshot.MessagingProgress.Clone()
+				mc.snapshotsMu.RUnlock()
+				return snapshot
+			}
+		}
+		mc.snapshotsMu.RUnlock()
+		select {
+		case <-poll.C:
+		case <-deadline.C:
+			t.Fatal("timed out waiting for the expected retained metrics snapshot")
+			return MetricsSnapshot{}
+		}
+	}
+}
+
 func TestMetricsCollector_AggregateProducesSnapshot(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	for i := 0; i < 10; i++ {
