@@ -4054,6 +4054,10 @@ paths:
                         type: string
                       valid:
                         type: boolean
+                      validated_content_revision:
+                        type: string
+                      validated_fingerprint:
+                        type: string
                       warnings:
                         type: array
                         items:
@@ -19352,6 +19356,10 @@ paths:
                         type: string
                       valid:
                         type: boolean
+                      validated_content_revision:
+                        type: string
+                      validated_fingerprint:
+                        type: string
                       warnings:
                         type: array
                         items:
@@ -220601,6 +220609,10 @@ paths:
                     type: string
                   valid:
                     type: boolean
+                  validated_content_revision:
+                    type: string
+                  validated_fingerprint:
+                    type: string
                   warnings:
                     type: array
                     items:
@@ -303902,6 +303914,8 @@ paths:
             schema:
               type: object
               properties:
+                fingerprint:
+                  type: string
                 folder_id:
                   type: string
                   nullable: true
@@ -306231,6 +306245,10 @@ paths:
                     type: string
                   valid:
                     type: boolean
+                  validated_content_revision:
+                    type: string
+                  validated_fingerprint:
+                    type: string
                   warnings:
                     type: array
                     items:

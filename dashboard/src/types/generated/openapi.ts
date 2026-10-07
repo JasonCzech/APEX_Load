@@ -1412,6 +1412,8 @@ export interface operations {
               "runtime_settings_status_counts"?: Record<string, number>;
               "script_id": string;
               "valid": boolean;
+              "validated_content_revision"?: string;
+              "validated_fingerprint"?: string;
               "warnings"?: Array<string>;
             };
           };
@@ -7106,6 +7108,8 @@ export interface operations {
               "runtime_settings_status_counts"?: Record<string, number>;
               "script_id": string;
               "valid": boolean;
+              "validated_content_revision"?: string;
+              "validated_fingerprint"?: string;
               "warnings"?: Array<string>;
             };
           };
@@ -158763,6 +158767,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "fingerprint"?: string;
           "folder_id"?: (string) | null;
           "project_id"?: string;
           "script"?: {
@@ -159686,6 +159691,8 @@ export interface operations {
             "runtime_settings_status_counts"?: Record<string, number>;
             "script_id": string;
             "valid": boolean;
+            "validated_content_revision"?: string;
+            "validated_fingerprint"?: string;
             "warnings"?: Array<string>;
           };
         };
@@ -160889,6 +160896,8 @@ export interface operations {
             "runtime_settings_status_counts"?: Record<string, number>;
             "script_id": string;
             "valid": boolean;
+            "validated_content_revision"?: string;
+            "validated_fingerprint"?: string;
             "warnings"?: Array<string>;
           };
         };

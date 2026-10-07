@@ -499,3 +499,54 @@ func TestScriptAuthoringAPIApprovedOriginsExposeOnlySafeRevisionHeaders(t *testi
 		}
 	}
 }
+
+// A5: draft validation echoes the client's fingerprint so a result binds to
+// exactly the document it describes; stored validation names the durable
+// revision it read.
+func TestScriptValidationEchoesItsBinding(t *testing.T) {
+	server, store := newAuditTestServer(t)
+	t.Cleanup(func() { store.Close() })
+	decode := func(response *httptest.ResponseRecorder) scriptValidationResponse {
+		t.Helper()
+		var body scriptValidationResponse
+		if response.Code != http.StatusOK {
+			t.Fatalf("validate: %d %s", response.Code, response.Body.String())
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return body
+	}
+	draft := authoringAPIScript("")
+	echoed := decode(authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/validate", map[string]any{"script": draft, "fingerprint": "sdf1-0123456789abcdef-1f"}, ""))
+	if echoed.ValidatedFingerprint != "sdf1-0123456789abcdef-1f" || echoed.ValidatedContentRevision != "" {
+		t.Fatalf("draft echo = %q/%q", echoed.ValidatedFingerprint, echoed.ValidatedContentRevision)
+	}
+	if plain := decode(authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/validate", map[string]any{"script": draft}, "")); plain.ValidatedFingerprint != "" {
+		t.Fatalf("an omitted fingerprint echoed %q", plain.ValidatedFingerprint)
+	}
+	for _, bad := range []string{strings.Repeat("a", 129), "has space", "tab\there", "nön-ascii"} {
+		if response := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/validate", map[string]any{"script": draft, "fingerprint": bad}, ""); response.Code != http.StatusBadRequest {
+			t.Fatalf("fingerprint %q: %d", bad, response.Code)
+		}
+	}
+
+	create := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scripts", map[string]any{"script": authoringAPIScript("validated-revision")}, "")
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", create.Code, create.Body.String())
+	}
+	projection, tag := requireAuthoringAPIProjection(t, server, "validated-revision")
+	stored := decode(authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/validated-revision/validate", nil, ""))
+	if stored.ValidatedContentRevision != projection.ContentRevision || stored.ValidatedFingerprint != "" {
+		t.Fatalf("stored echo = %q, want %q", stored.ValidatedContentRevision, projection.ContentRevision)
+	}
+	candidate := authoringAPIScript("validated-revision")
+	candidate.Name = "Renamed"
+	if update := authoringAPIRequest(t, server, http.MethodPut, "/api/v1/scripts/validated-revision", map[string]any{"script": candidate}, tag); update.Code != http.StatusOK {
+		t.Fatalf("save: %d %s", update.Code, update.Body.String())
+	}
+	next, _ := requireAuthoringAPIProjection(t, server, "validated-revision")
+	if again := decode(authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/validated-revision/validate", nil, "")); again.ValidatedContentRevision != next.ContentRevision || next.ContentRevision == projection.ContentRevision {
+		t.Fatalf("revalidation echo = %q, want the new revision %q", again.ValidatedContentRevision, next.ContentRevision)
+	}
+}

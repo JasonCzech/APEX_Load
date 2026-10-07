@@ -629,3 +629,21 @@ current authored baseline, inspect Diff, then Reapply selected local edits befor
 saving with the newly observed tag. Reload and Reapply do not write by themselves.
 Conditioned secret-rebind responses exclude read timestamps and library context,
 so conflict diffs reflect authored changes.
+
+#### Script editor validation binding
+
+Validate, save, replay, debug and the browser-to-HTTP preview act on one
+resolution of the current draft: unblurred data-cell edits are flushed and a
+dirty JSON pane is parsed once. A draft validation sends the editor's
+fingerprint of that exact document (`fingerprint`, at most 128 printable ASCII
+characters) and `POST /api/v1/scripts/validate` echoes it as
+`validated_fingerprint`; a stored-script validation reads the durable revision
+and names it as `validated_content_revision`. The editor shows a result only
+when it answers the latest request, the editor still holds the document it was
+issued for, and the echo names that document (or, for a stored script, the
+editor's baseline revision). A result is then bound to the document's
+fingerprint, the baseline revision and the project, folder and replay variables
+it was issued with; any edit, save, rebaseline or change to those makes it
+stale, and the evidence summary stops reporting it as passed. Secret-reference
+availability is reconciled against the live secret probe when the readiness
+card renders rather than bound into the result.

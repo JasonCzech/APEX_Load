@@ -1209,6 +1209,10 @@ export interface ScriptValidationResponse {
   data_source_fit?: DataSourceFitReport
   ai_guardrails?: AIGuardrailReport
   authoring_health?: ScriptValidationAuthoringHealth
+  // The draft fingerprint the request carried, echoed by the controller.
+  validated_fingerprint?: string
+  // The stored script revision a stored-script validation read.
+  validated_content_revision?: string
 }
 
 export interface ScriptExportResponse {

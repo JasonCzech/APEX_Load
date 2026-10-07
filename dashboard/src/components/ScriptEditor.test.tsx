@@ -87,8 +87,31 @@ const apiMock = {
   deleteAuthoringComponent: vi.fn(),
 }
 
+// A compatible controller echoes the binding it validated: the draft
+// fingerprint it was sent, or the stored revision it read (the most recent
+// authoring baseline it served, else the wrapper's fixture baseline). Tests that exercise the binding
+// itself return their own echo fields, which win.
+const compatibleApi = new Proxy(apiMock, {
+  get(target, key) {
+    if (key === 'validateDraftScript') return compatibleValidateDraftScript
+    if (key === 'validateScript') return compatibleValidateScript
+    return target[key as keyof typeof target]
+  },
+})
+async function compatibleValidateDraftScript(...args: unknown[]) {
+  const response = await (apiMock.validateDraftScript as (...values: unknown[]) => unknown)(...args) as Record<string, unknown> | undefined
+  const options = args[4] as { fingerprint?: string } | undefined
+  return response && typeof response === 'object' && !('validated_fingerprint' in response) ? { ...response, validated_fingerprint: options?.fingerprint } : response
+}
+async function compatibleValidateScript(...args: unknown[]) {
+  const response = await (apiMock.validateScript as (...values: unknown[]) => unknown)(...args) as Record<string, unknown> | undefined
+  const served = apiMock.getScriptAuthoring.mock.results.filter(result => result.type === 'return')
+  const baseline = served.length ? await (served[served.length - 1].value as Promise<{ projection?: { content_revision?: string } } | undefined>).catch(() => undefined) : undefined
+  return response && typeof response === 'object' && !('validated_content_revision' in response) ? { ...response, validated_content_revision: baseline?.projection?.content_revision ?? authoringFixture().projection.content_revision } : response
+}
+
 vi.mock('../hooks/useApi', () => ({
-  useApi: () => apiMock,
+  useApi: () => compatibleApi,
 }))
 
 vi.mock('../hooks/useWebSocket', () => ({
@@ -6655,6 +6678,8 @@ describe('ScriptEditor', () => {
       }),
       'project-1',
       undefined,
+      undefined,
+      { fingerprint: expect.stringMatching(/^sdf1-[0-9a-f]{16}-[0-9a-f]+$/) },
     )
   })
 
@@ -6713,11 +6738,48 @@ describe('ScriptEditor', () => {
     expect(apiMock.validateDraftScript).toHaveBeenCalledWith(expect.objectContaining({
       name: initialScript.name,
       protocol: initialScript.protocol,
-    }), 'project-1', undefined)
+    }), 'project-1', undefined, undefined, { fingerprint: expect.stringMatching(/^sdf1-/) })
     const readinessCard = findReadinessCard(container)
     expect(readinessCard?.textContent).toContain('Script validation passed with warnings.')
     expect(readinessCard?.textContent).toContain('Draft browser config will use Chromium defaults.')
     expect(container.querySelector('.editor-feedback-strip')?.textContent || '').not.toContain('Draft browser config')
+  })
+
+  it('validates the resolved draft with unblurred data cells and binds the result to it', async () => {
+    const pair = authoringFixture({ ...initialScript, parameters: [{ name: 'username', type: 'file', data_source: 'users', column: 'username' }], data_sources: [{ name: 'users', type: 'csv', strategy: 'sequential', first_row_header: true, inline_data: 'username\nalice' }] })
+    apiMock.validateDraftScript.mockResolvedValueOnce({ script_id: '', valid: true, issues: [], warnings: ['bound warning'] })
+    await act(async () => { root.render(<KeyboardShortcutProvider><ScriptEditor scriptId="script-1" initialScript={pair.projection.script} initialAuthoring={pair} initialFocusedDataSourceName="users" projectId="project-1" /></KeyboardShortcutProvider>) })
+    const cell = container.querySelector<HTMLInputElement>('input[aria-label="Row 1, username for users"]')!
+    await act(async () => { cell.focus(); changeInputValue(cell, 'pending-cell') })
+    await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushReact()
+    expect(apiMock.validateScript).not.toHaveBeenCalled()
+    const [sent, , , , options] = apiMock.validateDraftScript.mock.calls[0]
+    expect(sent.data_sources[0].inline_data).toContain('pending-cell')
+    expect(options.fingerprint).toMatch(/^sdf1-/)
+    expect(findReadinessCard(container)?.textContent).toContain('bound warning')
+  })
+
+  it('refuses a validation result whose echo does not name the draft it was sent', async () => {
+    apiMock.validateDraftScript.mockResolvedValueOnce({ script_id: '', valid: true, issues: [], warnings: ['unbound warning'], validated_fingerprint: 'sdf1-0000000000000000-0' })
+    await act(async () => { root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />) })
+    await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushReact()
+    const card = findReadinessCard(container)?.textContent || ''
+    expect(card).toContain('did not confirm which draft it validated')
+    expect(card).not.toContain('unbound warning')
+    expect(findButtonByTitle(container, 'Recheck script readiness')?.disabled).toBe(false)
+  })
+
+  it('refuses a stored validation that read a different revision than the editor baseline', async () => {
+    apiMock.validateScript.mockResolvedValueOnce({ script_id: 'script-1', valid: true, issues: [], warnings: ['newer revision warning'], validated_content_revision: `scr-v1-${'b'.repeat(64)}` })
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} />) })
+    await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushReact()
+    expect(apiMock.validateScript).toHaveBeenCalledWith('script-1')
+    const card = findReadinessCard(container)?.textContent || ''
+    expect(card).toContain('stored script changed since this editor loaded it')
+    expect(card).not.toContain('newer revision warning')
   })
 
   it('ignores a validation response when the editable draft changes in flight', async () => {
@@ -6773,6 +6835,18 @@ describe('ScriptEditor', () => {
 
     expect(nameInput.value).toBe('Checkout Flow Edited While Validating')
     expect(findReadinessCard(container)?.textContent || '').not.toContain('stale validation warning')
+    expect(findButtonByTitle(container, 'Recheck script readiness')?.disabled).toBe(false)
+  })
+
+  it('ignores a failed validation once the editable draft changed in flight', async () => {
+    let fail!: (reason: unknown) => void
+    apiMock.validateDraftScript.mockReturnValueOnce(new Promise((_, reject) => { fail = reject }))
+    await act(async () => { root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />) })
+    await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await act(async () => { changeInputValue(container.querySelector<HTMLInputElement>('.side-panel-script-name input')!, 'Edited while a failing validation ran') })
+    await act(async () => { fail(new Error('late validation failure')) })
+    await flushReact()
+    expect(findReadinessCard(container)?.textContent || '').not.toContain('late validation failure')
     expect(findButtonByTitle(container, 'Recheck script readiness')?.disabled).toBe(false)
   })
 

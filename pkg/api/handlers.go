@@ -1123,7 +1123,32 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate the durable revision when the store keeps one, and name it, so
+	// the result binds to the exact stored document it describes.
+	if durable, found, err := s.runner.GetScriptAuthoringDurable(id); err == nil && found && durable != nil && durable.Script != nil &&
+		durable.ID == script.ID && durable.ProjectID == script.ProjectID && durable.ContentRevision != "" {
+		response := buildScriptValidationResponse(id, durable.Script, s.runner.secretResolverForScript(durable.Script))
+		response.ValidatedContentRevision = durable.ContentRevision
+		writeJSON(w, http.StatusOK, response)
+		return
+	}
 	writeJSON(w, http.StatusOK, buildScriptValidationResponse(id, script.Script, s.runner.secretResolverForScript(script.Script)))
+}
+
+// maxValidationFingerprintBytes bounds the opaque draft fingerprint a client
+// may ask the controller to echo.
+const maxValidationFingerprintBytes = 128
+
+func validValidationFingerprint(value string) bool {
+	if len(value) > maxValidationFingerprintBytes {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		if value[i] < 0x21 || value[i] > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Request) {
@@ -1132,8 +1157,15 @@ func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Reques
 		FolderID  *string           `json:"folder_id,omitempty"`
 		Script    dsl.Script        `json:"script"`
 		Variables map[string]string `json:"variables,omitempty"`
+		// Fingerprint is an opaque client digest of the submitted draft,
+		// echoed as validated_fingerprint (at most 128 printable ASCII bytes).
+		Fingerprint string `json:"fingerprint,omitempty"`
 	}
 	if !decodeJSONBody(w, r, &wrapper) {
+		return
+	}
+	if !validValidationFingerprint(wrapper.Fingerprint) {
+		writeError(w, http.StatusBadRequest, "fingerprint must be at most 128 printable ASCII characters")
 		return
 	}
 
@@ -1145,16 +1177,14 @@ func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Reques
 		script.FolderID = wrapper.FolderID
 	}
 
-	writeJSON(
-		w,
-		http.StatusOK,
-		buildDraftScriptValidationResponseWithVariables(
-			"",
-			script,
-			wrapper.Variables,
-			s.runner.secretResolverForScript(script),
-		),
+	response := buildDraftScriptValidationResponseWithVariables(
+		"",
+		script,
+		wrapper.Variables,
+		s.runner.secretResolverForScript(script),
 	)
+	response.ValidatedFingerprint = wrapper.Fingerprint
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {
@@ -1732,6 +1762,12 @@ type scriptValidationResponse struct {
 	DataSourceFit               *DataSourceFitReport                                `json:"data_source_fit,omitempty"`
 	AIGuardrails                *AIGuardrailReport                                  `json:"ai_guardrails,omitempty"`
 	AuthoringHealth             AuthoringHealth                                     `json:"authoring_health"`
+	// ValidatedFingerprint echoes the draft fingerprint the client sent, so a
+	// result binds to exactly the document it describes.
+	ValidatedFingerprint string `json:"validated_fingerprint,omitempty"`
+	// ValidatedContentRevision is the stored script revision a stored-script
+	// validation read, when the store keeps durable revisions.
+	ValidatedContentRevision string `json:"validated_content_revision,omitempty"`
 }
 
 func buildScriptValidationResponse(scriptID string, script *dsl.Script, resolvers ...engine.SecretResolver) scriptValidationResponse {

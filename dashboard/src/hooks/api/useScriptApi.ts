@@ -485,9 +485,11 @@ export function useScriptApi() {
     [],
   )
 
+  // fingerprint is the editor's digest of the exact draft it sends; the
+  // controller echoes it so the result binds to that document.
   const validateDraftScript = useCallback(
-    (script: ScriptDefinition, projectId?: string, folderId?: string | null, variables?: Record<string, string>) =>
-      request<ScriptValidationResponse>('/scripts/validate', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId, variables }) }),
+    (script: ScriptDefinition, projectId?: string, folderId?: string | null, variables?: Record<string, string>, options?: { fingerprint?: string }) =>
+      request<ScriptValidationResponse>('/scripts/validate', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId, variables, ...(options?.fingerprint ? { fingerprint: options.fingerprint } : {}) }) }),
     [],
   )
 
