@@ -28,6 +28,31 @@ it('saves revisioned scenario bindings with required readiness', async () => {
   expect(container.textContent).toContain('Monitor bindings saved.')
 })
 
+it('presents the editor\'s scenario tag and hands a stale tag back to the editor', async () => {
+  const saved = vi.fn(); const changed = vi.fn()
+  let fail = false
+  request.mockImplementation(async (path: string, opts?: { method?: string; body?: string }) => {
+    if (path.includes('capabilities')) return { monitoring_enabled: true }
+    if (path.includes('monitor-sources')) return [{ id: 'source', name: 'Linux host', pack: 'linux-hosts' }]
+    if (opts?.method === 'PUT') {
+      if (fail) throw Object.assign(new Error('scenario authored content changed; reload before applying changes'), { status: 412 })
+      return { ...JSON.parse(opts.body!), revision: 8 }
+    }
+    return { revision: 7, sources: [] }
+  })
+  const tag = `"scenario-authoring-v1:scn-v1-${'a'.repeat(64)}"`
+  await act(async () => root.render(<ScenarioMonitorBindings projectId="p" scenarioId="scenario" canEdit scenarioTag={tag} onSaved={saved} onScenarioChanged={changed} />))
+  await act(async () => container.querySelector('button')!.click())
+  expect(request).toHaveBeenLastCalledWith('/scenarios/scenario/monitor-bindings', expect.objectContaining({ method: 'PUT', headers: { 'If-Match': tag } }))
+  expect(saved).toHaveBeenCalledOnce()
+  expect(changed).not.toHaveBeenCalled()
+  fail = true
+  await act(async () => container.querySelector('button')!.click())
+  expect(changed).toHaveBeenCalledOnce()
+  expect(saved).toHaveBeenCalledOnce()
+  expect(container.textContent).toContain('The scenario changed after this builder loaded it')
+})
+
 it('exposes credential enrollment only for remote adapters', async () => {
   request.mockImplementation(async (path: string) => path.includes('capabilities') ? { monitoring_enabled: true } : path.includes('collectors?') ? { collectors: [] } : [])
   await act(async () => root.render(<RunMonitorSources projectId="p" canManage />))

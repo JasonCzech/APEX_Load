@@ -9,7 +9,7 @@ import {
   AuthoringSession,
   TestSummary,
 } from '../../types'
-import type { LibraryAssignment, ScriptAuthoringBaseline, StoredScenario, StoredScript } from '../../types/storedContent'
+import type { LibraryAssignment, ScenarioAuthoringBaseline, ScriptAuthoringBaseline, StoredScenario, StoredScript } from '../../types/storedContent'
 import type { ScenarioGroupPayload, ScenarioUpsertPayload } from '../../components/scenarioPayloadUtils'
 import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
 import type {
@@ -52,6 +52,7 @@ import { ApiError, apiFetch, request, requestWithResponse } from '../apiClient'
 import { type ApiCallOptions, withCallOptions } from './requestOptions'
 
 import { admitScriptAuthoringBaseline, baselineFromSavedScript, ScriptSaveOutcomeUnknown, withoutScriptAuthoringReadContext } from '../../utils/scriptAuthoringRevision'
+import { admitScenarioAuthoringBaseline, baselineFromSavedScenario, ScenarioChangedSinceObserved, scenarioBaselineFromRead, ScenarioSaveOutcomeUnknown } from '../../utils/scenarioAuthoringRevision'
 
 type StoredScriptDebugStartRequestBody = JsonRequestBody<'handleStartScriptDebugScript'>
 type DraftScriptDebugStartRequestBody = JsonRequestBody<'handleStartScriptDebugDraftScript'>
@@ -354,6 +355,19 @@ function buildScenarioQuery(projectId?: string) {
   return `?${query.toString()}`
 }
 
+// scenarioPrecondition reads the scenario's current strong tag for a writer
+// whose own revision guards its sub-resource (library assignment) or whose
+// confirmation was made against a listed scenario (delete). With
+// observedUpdatedAt the read must still show the scenario the user confirmed
+// against. A controller without durable revisions serves no tag; the write
+// then goes unconditioned and the project's policy decides.
+async function scenarioPrecondition(id: string, observedUpdatedAt?: string): Promise<HeadersInit | undefined> {
+  const current = await request<StoredScenario>(`/scenarios/${encodeURIComponent(id)}`)
+  if (observedUpdatedAt !== undefined && current.updated_at !== observedUpdatedAt) throw new ScenarioChangedSinceObserved()
+  if (!current.authoring_projection) return undefined
+  return { 'If-Match': scenarioBaselineFromRead(current).etag }
+}
+
 export function useScriptApi() {
   const listScripts = useCallback(
     (projectId?: string, folderId?: string | null, options?: ScriptListOptions) =>
@@ -399,11 +413,15 @@ export function useScriptApi() {
 
   const deleteScript = useCallback((id: string) => request<DeleteScriptResponse>(`/scripts/${id}`, { method: 'DELETE' }), [])
 
+  // The assignment's expected_revision guards the placement itself; a
+  // scenario assignment also carries the scenario's current tag.
   const replaceLibraryAssignment = useCallback(
-    (kind: 'scripts' | 'scenarios', id: string, applicationId: string | null, releaseIds: string[], expectedRevision: number) =>
-      kind === 'scripts'
-        ? request<LibraryAssignment>(`/scripts/${encodeURIComponent(id)}/library-assignment`, { method: 'PUT', body: JSON.stringify({ application_id: applicationId, release_ids: releaseIds, expected_revision: expectedRevision }) })
-        : request<LibraryAssignment>(`/scenarios/${encodeURIComponent(id)}/library-assignment`, { method: 'PUT', body: JSON.stringify({ application_id: applicationId, release_ids: releaseIds, expected_revision: expectedRevision }) }), [],
+    async (kind: 'scripts' | 'scenarios', id: string, applicationId: string | null, releaseIds: string[], expectedRevision: number) => {
+      const body = JSON.stringify({ application_id: applicationId, release_ids: releaseIds, expected_revision: expectedRevision })
+      if (kind === 'scripts') return request<LibraryAssignment>(`/scripts/${encodeURIComponent(id)}/library-assignment`, { method: 'PUT', body })
+      const headers = await scenarioPrecondition(id)
+      return request<LibraryAssignment>(`/scenarios/${encodeURIComponent(id)}/library-assignment`, { method: 'PUT', body, ...(headers ? { headers } : {}) })
+    }, [],
   )
 
   const moveScript = useCallback(
@@ -1490,12 +1508,24 @@ export function useScriptApi() {
 
   const getScenario = useCallback((id: string) => request<StoredScenario>(`/scenarios/${id}`), [])
 
-  const updateScenario = useCallback(
-    (id: string, data: ScenarioUpsertRequest) => request<StoredScenario>(`/scenarios/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    [],
-  )
+  // A scenario save presents the baseline its draft was loaded from and
+  // returns the committed scenario, whose projection is the next baseline.
+  const updateScenario = useCallback(async (id: string, data: ScenarioUpsertRequest, baseline: ScenarioAuthoringBaseline): Promise<StoredScenario> => {
+    const admitted = admitScenarioAuthoringBaseline(baseline?.projection, baseline?.etag ?? null, id, data.project_id || undefined)
+    const response = await requestWithResponse<StoredScenario>(`/scenarios/${encodeURIComponent(id)}`, {
+      method: 'PUT', headers: { 'If-Match': admitted.etag }, body: JSON.stringify(data),
+    })
+    if (response.headers.get('X-APEX-Scenario-Save-Mode') !== 'conditioned' || response.body?.id !== id) throw new ScenarioSaveOutcomeUnknown()
+    baselineFromSavedScenario(response.body, admitted.projection.project_id)
+    return response.body
+  }, [])
 
-  const deleteScenario = useCallback((id: string) => request<ScenarioDeleteResponse>(`/scenarios/${id}`, { method: 'DELETE' }), [])
+  // Deleting a listed scenario re-reads it first: a scenario changed since the
+  // user confirmed is refused locally, and the delete carries the current tag.
+  const deleteScenario = useCallback(async (id: string, observedUpdatedAt?: string) => {
+    const headers = await scenarioPrecondition(id, observedUpdatedAt)
+    return request<ScenarioDeleteResponse>(`/scenarios/${encodeURIComponent(id)}`, { method: 'DELETE', ...(headers ? { headers } : {}) })
+  }, [])
 
   const listScenarioResults = useCallback(
     (id: string, params?: { application_id?: string; release_id?: string }) => {
@@ -1587,8 +1617,13 @@ export function useScriptApi() {
 
   const listScenarioDataPools = useCallback((scenarioId: string) => request<ScenarioDataPoolResponse>(`/scenarios/${scenarioId}/data-pools`), [])
 
+  // Data-pool bindings have no revision of their own, so the write presents
+  // the baseline the caller's bindings were read with.
   const updateScenarioDataPools = useCallback(
-    (scenarioId: string, dataPools: ScenarioDataPoolBinding[]) => request<ScenarioDataPoolResponse>(`/scenarios/${scenarioId}/data-pools`, { method: 'PUT', body: JSON.stringify({ data_pools: dataPools }) }),
+    (scenarioId: string, dataPools: ScenarioDataPoolBinding[], baseline: ScenarioAuthoringBaseline) => {
+      const admitted = admitScenarioAuthoringBaseline(baseline?.projection, baseline?.etag ?? null, scenarioId)
+      return request<ScenarioDataPoolResponse>(`/scenarios/${encodeURIComponent(scenarioId)}/data-pools`, { method: 'PUT', headers: { 'If-Match': admitted.etag }, body: JSON.stringify({ data_pools: dataPools }) })
+    },
     [],
   )
 

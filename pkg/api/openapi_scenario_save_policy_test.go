@@ -87,7 +87,7 @@ func TestScenarioAuthoringOpenAPIContract(t *testing.T) {
 		t.Fatal("scenario authoring view is undocumented")
 	}
 	etag, exists := get.Responses["200"].Headers["ETag"]
-	if !exists || !strings.Contains(etag.Description, "scenario-authoring-v1:") || !strings.Contains(etag.Description, "only for view=authoring") {
+	if !exists || !strings.Contains(etag.Description, "scenario-authoring-v1:") || !strings.Contains(etag.Description, "always for view=authoring") || !strings.Contains(etag.Description, "durable state") {
 		t.Fatalf("scenario authoring ETag is undocumented or ambiguous: %#v", etag)
 	}
 	if schemas := get.Responses["200"].Content["application/json"].Schema.OneOf; len(schemas) != 2 || !reflect.DeepEqual(schemas[1].Properties["projection_version"].Enum, []string{scenarioAuthoringProjectionVersion}) {

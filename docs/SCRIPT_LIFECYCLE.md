@@ -549,8 +549,10 @@ without durable receipts refuse a key with 503 `idempotency_unavailable`.
 
 `GET /api/v1/scenarios/{id}?view=authoring` returns the scenario's authoring
 projection with a strong `ETag` of the form
-`"scenario-authoring-v1:<content_revision>"`; create and save responses carry
-the tag their own transaction committed. Send it as `If-Match` on scenario PUT
+`"scenario-authoring-v1:<content_revision>"`. The plain `GET
+/api/v1/scenarios/{id}` carries the same `ETag`, `content_revision` and
+`authoring_projection` whenever its body is the durable state they describe;
+create and save responses carry the tag their own transaction committed. Send it as `If-Match` on scenario PUT
 and on every other scenario writer (DELETE, data-pools, library assignment,
 monitor bindings and runtime apply-to-groups). It is compared inside the
 write's transaction: a stale tag returns 412, and malformed, weak, wildcard or
@@ -558,9 +560,9 @@ multiple tags return 400. Without a tag the write is unconditioned; a PUT
 without one is audited as `save_mode: legacy_unconditioned`. Project administrators can set
 `settings.authoring.require_scenario_save_if_match` to require a tag on every
 scenario writer (428 without one; the policy is re-read inside each write). The
-dashboard's scenario editors do not send tags yet, so while this policy is on
-they cannot save, delete or rebind scenarios; enable it only for projects
-edited through the API until editor conflict recovery lands. A project update
+dashboard sends a tag on every scenario write it makes, so the policy is safe to
+enable for dashboard-edited projects (see [Scenario editor conflict
+recovery](#scenario-editor-conflict-recovery)). A project update
 that omits `settings.authoring` keeps the current policies; send
 `"authoring": {}` to clear them. Controllers without durable scenario revisions
 refuse a tag with 503 `scenario_save_if_match_unavailable` on PUT and
@@ -571,8 +573,40 @@ A save whose commit outcome is unknown returns 503
 `scenario_save_outcome_audit_unavailable`: the save may have committed, so
 reload before retrying.
 
-Dashboard conflict recovery for scenarios, queued revise-copy idempotency and
-the complete shared-owner/lifecycle matrix remain open in
+#### Scenario editor conflict recovery
+
+Opening a scenario in the Scenario Builder reads it first and builds the form
+from that durable body, so the tag the editor keeps describes exactly what the
+form was built from (never a possibly stale library row). Every save presents
+that tag and adopts the committed tag from the response. A stale tag (412), a
+missing one under the strict policy (428), an unverified outcome (503
+`scenario_save_outcome_unknown` or `scenario_save_outcome_audit_unavailable`)
+or a lost response keeps the draft and opens the reconciliation panel, which
+refuses another save until it is resolved:
+
+- **Load current baseline** reads the scenario again; it neither saves nor
+  replaces the draft.
+- **Diff** lists field paths only, never values: what changed in the canonical
+  authoring document since the draft's baseline, and what the draft changed.
+- **Reapply draft** carries the draft's changes onto the loaded scenario
+  (locally changed fields and group lists take precedence; untouched fields take
+  the current values) and makes the loaded tag the one the next save presents.
+- **Reload scenario and discard draft** rebuilds the form from the loaded
+  scenario.
+
+A read that carries no supported revision opens the same panel at once; a
+resumed browser draft whose scenario changed since it was checkpointed opens it
+when saved. The other dashboard
+scenario writers also send a tag: a library delete re-reads the scenario and
+refuses one changed since the list loaded; a library-assignment save presents
+the scenario's current tag alongside the assignment's own `expected_revision`;
+and the builder's monitor-binding save presents the editor's baseline (a stale
+one opens the reconciliation panel) and, when only the bindings changed,
+adopts the new revision so the next scenario save is not a self-inflicted
+conflict.
+
+Create-intent idempotency keys in the dashboard, queued revise-copy idempotency
+and the complete shared-owner/lifecycle matrix remain open in
 [AUTH-1–AUTH-3](FEATURE_COMPLETION_SPEC.md#auth-1-two-shared-owners-and-revision-safety).
 
 The generated [OpenAPI contract](swagger.yaml) describes the authoring read and

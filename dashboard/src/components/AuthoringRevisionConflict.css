@@ -1,0 +1,4 @@
+.authoring-revision-conflict { min-width: 0; padding: 1rem; margin: .75rem 0; border: 1px solid var(--border-color, #9ca3af); border-radius: .5rem; overflow-wrap: anywhere; }
+.authoring-revision-conflict h4 { margin: .5rem 0 .25rem; font-size: .9rem; }
+.authoring-revision-conflict-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.authoring-revision-conflict-actions button { max-width: 100%; white-space: normal; }

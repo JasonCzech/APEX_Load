@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { type LoadModelTemplate, type StoredScript, type StoredScenario } from '../types'
 import TestHub from './TestHub'
+import { withScenarioAuthoring } from '../test/scenarioAuthoringFixtures'
+import { ApiError } from '../hooks/apiClient'
 import { duplicateScenarioGroupNameIndexes, scenarioGroupNameAfterScriptSelection } from './scenarioGroupUtils'
 import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
 import {
@@ -31,6 +33,7 @@ const apiMock = {
   validateScenarioLoadModel: vi.fn(),
   estimateTest: vi.fn(),
   createScenario: vi.fn(),
+  getScenario: vi.fn(),
   updateScenario: vi.fn(),
   deleteScenario: vi.fn(),
   listScenarioResults: vi.fn(),
@@ -41,6 +44,9 @@ const apiMock = {
   analyzeCSVDriven: vi.fn(),
   deriveCSVDriven: vi.fn(),
 }
+
+// Every edit save presents the paired strong tag of the baseline it loaded.
+const taggedBaseline = () => expect.objectContaining({ etag: expect.stringMatching(/^"scenario-authoring-v1:scn-v1-[a-f0-9]{64}"$/) })
 
 const libraryApiMock = {
   listRemotes: vi.fn(),
@@ -879,8 +885,21 @@ describe('TestHub', () => {
         summary: 'Auto-assignment recommends 1 host for the current scenario footprint.',
       },
     })
-    apiMock.createScenario.mockResolvedValue({ id: 'scenario-1' })
-    apiMock.updateScenario.mockResolvedValue({ id: 'scenario-1' })
+    apiMock.createScenario.mockImplementation(async (payload: { name?: string; project_id?: string }) =>
+      withScenarioAuthoring({ id: 'scenario-1', name: payload?.name, project_id: payload?.project_id || projectState.activeProject?.id }, 'e'))
+    // Editing reads the durable scenario (by default the most recently listed
+    // row, paired with a revision) and each save returns the next revision.
+    let savedRevisions = 0
+    apiMock.getScenario.mockImplementation(async (id: string) => {
+      for (const result of [...apiMock.listScenarios.mock.results].reverse()) {
+        const listed = await result.value as { scenarios?: StoredScenario[] } | undefined
+        const scenario = listed?.scenarios?.find(item => item.id === id)
+        if (scenario) return withScenarioAuthoring(scenario, 'a', scenario.project_id || projectState.activeProject?.id)
+      }
+      throw new Error(`scenario ${id} not found`)
+    })
+    apiMock.updateScenario.mockImplementation(async (id: string, payload: { name?: string; project_id?: string }) =>
+      withScenarioAuthoring({ id, name: payload?.name, project_id: payload?.project_id || projectState.activeProject?.id }, '0123456789abcdef'[++savedRevisions % 16]))
     apiMock.deleteScenario.mockResolvedValue({ deleted: 'scenario-1' })
     apiMock.listScenarioResults.mockResolvedValue({ tests: [], count: 0 })
     libraryApiMock.listRemotes.mockResolvedValue({ remotes: [], count: 0 })
@@ -2156,7 +2175,7 @@ describe('TestHub', () => {
     await clickButton('Save draft')
     await flushPromises()
 
-    expect(apiMock.updateScenario).toHaveBeenCalledWith('scenario-compact-iterations', expect.any(Object))
+    expect(apiMock.updateScenario).toHaveBeenCalledWith('scenario-compact-iterations', expect.any(Object), taggedBaseline())
     const updateCall = apiMock.updateScenario.mock.calls.find(call => call[0] === 'scenario-compact-iterations')
     const groupPayload = updateCall?.[1]?.groups?.[0]
     expect(groupPayload).toBeDefined()
@@ -2929,7 +2948,7 @@ describe('TestHub', () => {
           initialization: 'at_once',
         }),
       ],
-    }))
+    }), taggedBaseline())
   })
 
   it('edits and clones the complete stored scenario aggregate without clearing hidden fields', async () => {
@@ -3060,7 +3079,7 @@ describe('TestHub', () => {
         redaction_rules: [{ name: 'token', pattern: 'secret-[0-9]+', replacement: '[MASKED]' }],
       }),
     })
-    expect(apiMock.updateScenario).toHaveBeenCalledWith('scenario-fidelity', fidelityPayload)
+    expect(apiMock.updateScenario).toHaveBeenCalledWith('scenario-fidelity', fidelityPayload, taggedBaseline())
     const firstFidelityUpdate = apiMock.updateScenario.mock.calls.find(call => call[0] === 'scenario-fidelity')?.[1]
     expect(firstFidelityUpdate?.groups?.[0]).not.toHaveProperty('iterations')
 
@@ -3105,7 +3124,7 @@ describe('TestHub', () => {
         region_weights: { east: 85, west: 30 },
         tolerate_generator_loss: true,
       },
-    }))
+    }), taggedBaseline())
 
     // Re-open once more and explicitly choose automatic placement. The hidden
     // weighted section must be removed from the serialized assignment.
@@ -3129,7 +3148,7 @@ describe('TestHub', () => {
     await flushPromises()
     expect(apiMock.updateScenario).toHaveBeenLastCalledWith('scenario-fidelity', expect.objectContaining({
       assignment: { mode: 'auto' },
-    }))
+    }), taggedBaseline())
 
     await act(async () => {
       const cancel = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Cancel')
@@ -3745,10 +3764,166 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Editing · Unsaved changes')
     await clickButton('Save draft')
     expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
-    expect(apiMock.updateScenario).toHaveBeenCalledWith('scenario-1', expect.objectContaining({ name: 'Updated draft' }))
+    expect(apiMock.updateScenario).toHaveBeenCalledWith('scenario-1', expect.objectContaining({ name: 'Updated draft' }), taggedBaseline())
     expect(container.textContent).toContain('Review And Validate')
     expect(container.querySelector('.scenario-save-notice')?.textContent).toContain('Saved Updated draft')
     expect(changeView).not.toHaveBeenCalled()
+  })
+
+  describe('scenario revision conflicts', () => {
+    const conflictScenario: StoredScenario = {
+      id: 'scenario-conflict', name: 'Checkout', duration: '5m', project_id: 'project-1',
+      scripts: [{ order: 0, script_id: 'script-1', script_name: 'Checkout Flow', protocol: 'http', vusers: 10 }],
+      created_at: '2026-05-12T00:00:00Z', updated_at: '2026-05-12T00:00:00Z', script_count: 1,
+    }
+    const tagFor = (revisionChar: string) => `"scenario-authoring-v1:scn-v1-${revisionChar.repeat(64)}"`
+    const panel = () => container.querySelector<HTMLElement>('section[aria-label="Scenario save reconciliation"]')
+    const nameInput = () => container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!
+    const panelButton = (text: string) => Array.from(panel()?.querySelectorAll('button') || []).find(button => button.textContent === text)
+    const clickPanel = async (text: string) => {
+      const button = panelButton(text)
+      expect(button, text).toBeDefined()
+      await act(async () => button!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      await flushPromises()
+    }
+    const openConflictScenario = async (listed: StoredScenario = conflictScenario) => {
+      apiMock.listScenarios.mockResolvedValue({ scenarios: [listed], count: 1 })
+      await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />))
+      await flushPromises()
+      await act(async () => {
+        Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit')?.click()
+      })
+      await flushPromises()
+    }
+
+    it('builds the edit form from the durable read, not the listed row', async () => {
+      apiMock.getScenario.mockResolvedValueOnce(withScenarioAuthoring({ ...conflictScenario, name: 'Fresh name' }))
+      await openConflictScenario({ ...conflictScenario, name: 'Stale name' })
+      expect(apiMock.getScenario).toHaveBeenCalledWith('scenario-conflict')
+      expect(nameInput().value).toBe('Fresh name')
+      expect(panel()).toBeNull()
+    })
+
+    it('keeps the draft on 412 and saves the reapplied draft only against the reviewed baseline', async () => {
+      await openConflictScenario()
+      await act(async () => setInputValue(nameInput(), 'Local name'))
+      apiMock.updateScenario.mockRejectedValueOnce(new ApiError('scenario authored content changed; reload before applying changes', 412))
+      await clickButton('Save draft')
+      await flushPromises()
+      expect(apiMock.updateScenario).toHaveBeenCalledTimes(1)
+      expect(apiMock.updateScenario.mock.calls[0][2]).toMatchObject({ etag: tagFor('a') })
+      expect(panel()?.textContent).toContain('Another change was saved to this scenario')
+      expect(nameInput().value).toBe('Local name')
+      expect(panelButton('Diff')?.disabled).toBe(true)
+      expect(panelButton('Reapply draft')?.disabled).toBe(true)
+
+      // A new conditioned save requires the reloaded baseline.
+      await clickButton('Save draft')
+      await flushPromises()
+      expect(apiMock.updateScenario).toHaveBeenCalledTimes(1)
+      expect(container.textContent).toContain('Resolve the scenario revision review')
+
+      apiMock.getScenario.mockResolvedValueOnce(withScenarioAuthoring({ ...conflictScenario, duration: '10m', updated_at: '2026-05-13T00:00:00Z' }, 'b'))
+      await clickPanel('Load current baseline')
+      await clickPanel('Diff')
+      const diff = panel()!.querySelector('[aria-label="Scenario revision field diff"]')!
+      const [serverSection, localSection] = Array.from(diff.querySelectorAll(':scope > div'))
+      expect(serverSection.textContent).toContain('scenario.duration')
+      expect(serverSection.textContent).not.toContain('scenario.name')
+      expect(localSection.textContent).toContain('name')
+      expect(localSection.textContent).not.toContain('duration')
+      expect(diff.textContent).not.toContain('Local name')
+      expect(nameInput().value).toBe('Local name')
+
+      await clickPanel('Reapply draft')
+      expect(panel()).toBeNull()
+      expect(nameInput().value).toBe('Local name')
+      await clickButton('Save draft')
+      await flushPromises()
+      expect(apiMock.updateScenario).toHaveBeenCalledTimes(2)
+      expect(apiMock.updateScenario).toHaveBeenLastCalledWith('scenario-conflict', expect.objectContaining({ name: 'Local name', duration: '10m' }), expect.objectContaining({ etag: tagFor('b') }))
+    })
+
+    it('reloads the reviewed scenario and discards the draft only on request', async () => {
+      await openConflictScenario()
+      await act(async () => setInputValue(nameInput(), 'Local name'))
+      apiMock.updateScenario.mockRejectedValueOnce(new ApiError('If-Match is required for scenario saves in this project', 428))
+      await clickButton('Save draft')
+      await flushPromises()
+      expect(panel()?.textContent).toContain('requires revision-checked scenario saves')
+      apiMock.getScenario.mockResolvedValueOnce(withScenarioAuthoring({ ...conflictScenario, name: 'Server name', updated_at: '2026-05-13T00:00:00Z' }, 'c'))
+      await clickPanel('Load current baseline')
+      expect(nameInput().value).toBe('Local name')
+      await clickPanel('Reload scenario and discard draft')
+      expect(panel()).toBeNull()
+      expect(nameInput().value).toBe('Server name')
+      expect(container.textContent).toContain('Editing · Saved')
+      await act(async () => setInputValue(nameInput(), 'Second edit'))
+      await clickButton('Save draft')
+      await flushPromises()
+      expect(apiMock.updateScenario).toHaveBeenLastCalledWith('scenario-conflict', expect.objectContaining({ name: 'Second edit' }), expect.objectContaining({ etag: tagFor('c') }))
+    })
+
+    it('treats an unverified outcome as a reconciliation and other failures as ordinary errors', async () => {
+      await openConflictScenario()
+      apiMock.updateScenario.mockRejectedValueOnce(new ApiError('invalid scenario', 400))
+      await clickButton('Save draft')
+      await flushPromises()
+      expect(panel()).toBeNull()
+      expect(container.querySelector('.page-error-banner')?.textContent).toBeTruthy()
+
+      apiMock.updateScenario.mockRejectedValueOnce(new ApiError('scenario save outcome requires verification; reload the scenario before retrying', 503, { error: 'scenario save outcome requires verification; reload the scenario before retrying', code: 'scenario_save_outcome_unknown', ref: 'ref-1' }))
+      await clickButton('Save draft')
+      await flushPromises()
+      expect(panel()).not.toBeNull()
+      expect(apiMock.updateScenario).toHaveBeenCalledTimes(2)
+    })
+
+    it('refuses to save an edit whose read carried no supported revision', async () => {
+      apiMock.getScenario.mockResolvedValueOnce({ ...conflictScenario })
+      await openConflictScenario()
+      expect(panel()?.textContent).toContain('did not return a supported scenario revision')
+      await act(async () => setInputValue(nameInput(), 'Unprotected'))
+      await clickButton('Save draft')
+      await flushPromises()
+      expect(apiMock.updateScenario).not.toHaveBeenCalled()
+      expect(apiMock.createScenario).not.toHaveBeenCalled()
+      expect(nameInput().value).toBe('Unprotected')
+    })
+
+    it('asks for a reviewed baseline when a create returned none', async () => {
+      apiMock.createScenario.mockResolvedValueOnce({ id: 'scenario-1', name: 'Created' })
+      await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+      await flushPromises()
+      await chooseLibraryScriptForGroup()
+      await act(async () => setInputValue(nameInput(), 'Created'))
+      await clickButton('Save draft')
+      await flushPromises()
+      expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
+      expect(panel()).toBeNull()
+      await act(async () => setInputValue(nameInput(), 'Edited after create'))
+      await clickButton('Save draft')
+      await flushPromises()
+      expect(panel()?.textContent).toContain('no current scenario baseline')
+      expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
+      expect(apiMock.updateScenario).not.toHaveBeenCalled()
+      expect(nameInput().value).toBe('Edited after create')
+    })
+
+    it('deletes a listed scenario against the row the user confirmed', async () => {
+      apiMock.listScenarios.mockResolvedValue({ scenarios: [conflictScenario], count: 1 })
+      await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />))
+      await flushPromises()
+      await act(async () => {
+        Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Delete')?.click()
+      })
+      await flushTimeouts()
+      await act(async () => {
+        Array.from(container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent === 'Delete Scenario')?.click()
+      })
+      await flushPromises()
+      expect(apiMock.deleteScenario).toHaveBeenCalledWith('scenario-conflict', '2026-05-12T00:00:00Z')
+    })
   })
 
   it('saves blocked composition locally, resumes it after remount, and never creates a runnable scenario', async () => {

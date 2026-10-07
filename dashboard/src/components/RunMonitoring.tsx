@@ -122,7 +122,11 @@ export function RunMonitorSources({ projectId, canManage = false }: { projectId?
   </section>
 }
 
-export function ScenarioMonitorBindings({ projectId, scenarioId, canEdit }: { projectId: string; scenarioId: string; canEdit: boolean }) {
+// The bindings' own revision guards the binding set; scenarioTag is the
+// scenario baseline the surrounding editor loaded. A stale tag (412) hands the
+// conflict to that editor, and a saved binding set lets it advance its
+// baseline.
+export function ScenarioMonitorBindings({ projectId, scenarioId, canEdit, scenarioTag, onSaved, onScenarioChanged }: { projectId: string; scenarioId: string; canEdit: boolean; scenarioTag?: string; onSaved?: () => void; onScenarioChanged?: () => void }) {
   const enabled = useMonitoringEnabled(projectId)
   const [sources, setSources] = useState<Source[]>([])
   const [bindings, setBindings] = useState<Bindings>({ revision: 0, sources: [] })
@@ -143,7 +147,7 @@ export function ScenarioMonitorBindings({ projectId, scenarioId, canEdit }: { pr
       <label><input type="checkbox" checked={!!binding} onChange={e => setBindings({ ...bindings, sources: e.target.checked ? [...bindings.sources, { source_id: source.id, required: false }] : bindings.sources.filter(b => b.source_id !== source.id) })} />{source.name} ({source.pack})</label>
       {binding && <label><input type="checkbox" checked={binding.required} onChange={e => setBindings({ ...bindings, sources: bindings.sources.map(b => b.source_id === source.id ? { ...b, required: e.target.checked } : b) })} />Require {source.name} readiness</label>}
     </div> })}
-    {canEdit && <button type="button" onClick={() => { const c = new AbortController(); operation.current = c; setBusy(true); setMessage(''); void request<Bindings>(path, { method: 'PUT', signal: c.signal, body: JSON.stringify(bindings) }).then(b => { if (!c.signal.aborted) { setBindings(b); setMessage('Monitor bindings saved.') } }).catch(e => { if (!c.signal.aborted) setMessage(String(e)) }).finally(() => { if (!c.signal.aborted) setBusy(false) }) }}>Save monitor bindings</button>}
+    {canEdit && <button type="button" onClick={() => { const c = new AbortController(); operation.current = c; setBusy(true); setMessage(''); void request<Bindings>(path, { method: 'PUT', signal: c.signal, ...(scenarioTag ? { headers: { 'If-Match': scenarioTag } } : {}), body: JSON.stringify(bindings) }).then(b => { if (!c.signal.aborted) { setBindings(b); setMessage('Monitor bindings saved.'); onSaved?.() } }).catch(e => { if (c.signal.aborted) return; if ((e as { status?: unknown } | null)?.status === 412) { setMessage('The scenario changed after this builder loaded it. Review the current scenario before saving bindings again.'); onScenarioChanged?.() } else setMessage(String(e)) }).finally(() => { if (!c.signal.aborted) setBusy(false) }) }}>Save monitor bindings</button>}
   </fieldset>
 }
 

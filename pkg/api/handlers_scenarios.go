@@ -163,7 +163,16 @@ func (s *Server) handleGetScenario(w http.ResponseWriter, r *http.Request) {
 	if !s.scenarioLibraryAssignments(w, []*StoredScenario{scenario}) {
 		return
 	}
-	writeJSON(w, http.StatusOK, maskStoredScenario(scenario))
+	response := maskStoredScenario(scenario)
+	// An editor that builds its draft from this body can save it conditioned:
+	// the validator is attached only when this replica's copy is the durable
+	// state, so the tag always describes the body.
+	if reader, supported := s.store.(storage.ScenarioAuthoringStore); s.store != nil && supported {
+		if snapshot, readErr := reader.GetScenarioAuthoringSnapshot(scenario.ID); readErr == nil {
+			attachScenarioAuthoringValidator(w, response, scenario, snapshot)
+		}
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {

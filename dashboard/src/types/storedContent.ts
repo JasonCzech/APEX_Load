@@ -43,6 +43,36 @@ export interface ScriptAuthoringBaseline {
   etag: string
 }
 
+// The canonical scenario authoring document: persisted authored fields only,
+// with groups and data-pool bindings in the update request's field names.
+export interface ScenarioAuthoringDocument {
+  id: string
+  ref_key?: string
+  name: string
+  project_id: string
+  duration: string
+  groups: Array<Record<string, unknown> & { script_id: string; vusers: number }>
+  data_pools: Array<Record<string, unknown> & { pool_id: string; alias: string }>
+  [field: string]: unknown
+}
+
+export interface ScenarioAuthoringProjection {
+  projection_version: 'apexload.scenario_authoring.v1'
+  id: string
+  project_id: string
+  content_revision: string
+  scenario: ScenarioAuthoringDocument
+  library_placement: { application_id: string | null; release_ids: string[] }
+  monitor_selection: { sources: Array<{ source_id: string; required: boolean }> }
+}
+
+// A scenario baseline pairs the immutable server document with its strong
+// ETag, exactly as for scripts.
+export interface ScenarioAuthoringBaseline {
+  projection: ScenarioAuthoringProjection
+  etag: string
+}
+
 export interface ScriptSaveOptions {
   configureSecrets?: boolean
   retainedDraft?: ScriptDefinition
@@ -74,6 +104,8 @@ export interface StoredScript {
 }
 
 export interface StoredScenario {
+  content_revision?: string
+  authoring_projection?: ScenarioAuthoringProjection
   archived_at?: string
   activity?: ObjectActivitySummary
   termination_mode?: 'duration' | 'iterations'

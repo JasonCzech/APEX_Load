@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { scenarioAuthoringFixture } from '../test/scenarioAuthoringFixtures'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
@@ -408,7 +409,7 @@ describe('request bodies the dashboard sends versus the generated handler contra
           access_mode: 'consume',
           selection_strategy: 'unique',
         },
-      ])
+      ], scenarioAuthoringFixture({}, 'scenario-1'))
     })
 
     expect(requests[0].method).toBe('PUT')

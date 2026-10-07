@@ -237,3 +237,19 @@ func TestScenarioCreateWithCredentialsAndALostCommitAckIsAdoptedOnRetry(t *testi
 		t.Fatalf("retry after a lost acknowledgement: %d %s", retry.Code, retry.Body.String())
 	}
 }
+
+// The default scenario representation carries the durable validator, so an
+// editor that builds its draft from it can save it conditioned.
+func TestScenarioGetCarriesTheDurableValidator(t *testing.T) {
+	server, _, _, scenario := newScenarioPolicyAvailabilityFixture(t)
+	response := authoringAPIRequest(t, server, http.MethodGet, "/api/v1/scenarios/"+scenario.ID, nil, "")
+	body := decodeStoredScenario(t, response.Body.Bytes())
+	_, viewTag, _ := requireScenarioAuthoringView(t, server, scenario.ID)
+	if response.Code != http.StatusOK || response.Header().Get("ETag") == "" || response.Header().Get("ETag") != viewTag || body.ContentRevision == "" || body.AuthoringProjection == nil {
+		t.Fatalf("GET %d tag %q (view %q) revision %q", response.Code, response.Header().Get("ETag"), viewTag, body.ContentRevision)
+	}
+	save := authoringAPIRequest(t, server, http.MethodPut, "/api/v1/scenarios/"+scenario.ID, scenarioSaveRequest("Saved from GET", 2), response.Header().Get("ETag"))
+	if save.Code != http.StatusOK {
+		t.Fatalf("conditioned save with the GET's tag: %d %s", save.Code, save.Body.String())
+	}
+}

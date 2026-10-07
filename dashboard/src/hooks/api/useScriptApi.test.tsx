@@ -1,4 +1,5 @@
 import { authoringFixture, savedAuthoringFixture } from '../../test/scriptAuthoringFixtures'
+import { scenarioAuthoringFixture, withScenarioAuthoring } from '../../test/scenarioAuthoringFixtures'
 // @vitest-environment jsdom
 
 import { act } from 'react'
@@ -67,10 +68,76 @@ describe('useScriptApi import wrappers', () => {
     }
     await api.createScenario(payload)
     expect(request).toHaveBeenLastCalledWith('/scenarios', expect.objectContaining({ method: 'POST', body: JSON.stringify(payload) }))
-    await api.updateScenario('scenario', payload)
-    expect(request).toHaveBeenLastCalledWith('/scenarios/scenario', expect.objectContaining({ method: 'PUT', body: JSON.stringify(payload) }))
+    const baseline = scenarioAuthoringFixture({}, 'scenario', 'project')
+    ;(requestWithResponse as Mock).mockResolvedValueOnce({ body: withScenarioAuthoring({ id: 'scenario', project_id: 'project' }, 'b'), headers: new Headers({ 'X-APEX-Scenario-Save-Mode': 'conditioned' }) })
+    await api.updateScenario('scenario', payload, baseline)
+    expect(requestWithResponse).toHaveBeenLastCalledWith('/scenarios/scenario', expect.objectContaining({ method: 'PUT', headers: { 'If-Match': baseline.etag }, body: JSON.stringify(payload) }))
     expect(payload.workload_shape_id).toBe('')
     expect(payload.groups[0].runtime_settings).toEqual({ results: {}, websocket: {} })
+  })
+
+  it('saves a scenario only against an admitted baseline and accepts only a conditioned receipt carrying the next baseline', async () => {
+    const baseline = scenarioAuthoringFixture({}, 'scenario-1', 'project-1')
+    const payload = { name: 'Edited', project_id: 'project-1', duration: '2m', groups: [] }
+    const saved = withScenarioAuthoring({ id: 'scenario-1', name: 'Edited', project_id: 'project-1' }, 'b')
+    ;(requestWithResponse as Mock).mockResolvedValueOnce({ body: saved, headers: new Headers({ 'X-APEX-Scenario-Save-Mode': 'conditioned' }) })
+    expect(await api.updateScenario('scenario-1', payload, baseline)).toEqual(saved)
+    const [url, options] = (requestWithResponse as Mock).mock.lastCall!
+    expect(url).toBe('/scenarios/scenario-1')
+    expect(options.headers).toEqual({ 'If-Match': '"scenario-authoring-v1:scn-v1-' + 'a'.repeat(64) + '"' })
+    expect(options.body).not.toContain('scn-v1-')
+
+    for (const [headers, body] of [
+      [new Headers(), saved],
+      [new Headers({ 'X-APEX-Scenario-Save-Mode': 'legacy_unconditioned' }), saved],
+      [new Headers({ 'X-APEX-Scenario-Save-Mode': 'conditioned' }), { ...saved, authoring_projection: undefined }],
+      [new Headers({ 'X-APEX-Scenario-Save-Mode': 'conditioned' }), { ...saved, id: 'other' }],
+    ] as const) {
+      ;(requestWithResponse as Mock).mockResolvedValueOnce({ body, headers })
+      await expect(api.updateScenario('scenario-1', payload, baseline)).rejects.toMatchObject({ name: 'ScenarioSaveOutcomeUnknown' })
+    }
+
+    ;(requestWithResponse as Mock).mockClear()
+    await expect(api.updateScenario('scenario-1', payload, { ...baseline, etag: '"unpaired"' })).rejects.toThrow('supported scenario revision')
+    await expect(api.updateScenario('scenario-2', payload, baseline)).rejects.toThrow('supported scenario revision')
+    await expect(api.updateScenario('scenario-1', { ...payload, project_id: 'project-2' }, baseline)).rejects.toThrow('supported scenario revision')
+    expect(requestWithResponse).not.toHaveBeenCalled()
+  })
+
+  it('deletes a listed scenario only while it is unchanged and with its current tag', async () => {
+    const current = withScenarioAuthoring({ id: 'scenario-1', project_id: 'project-1', updated_at: '2026-10-07T10:00:00Z' }, 'c')
+    ;(request as Mock).mockResolvedValueOnce(current).mockResolvedValueOnce({ deleted: 'scenario-1' })
+    await api.deleteScenario('scenario-1', '2026-10-07T10:00:00Z')
+    expect(request).toHaveBeenNthCalledWith(1, '/scenarios/scenario-1')
+    expect(request).toHaveBeenLastCalledWith('/scenarios/scenario-1', { method: 'DELETE', headers: { 'If-Match': '"scenario-authoring-v1:scn-v1-' + 'c'.repeat(64) + '"' } })
+
+    ;(request as Mock).mockReset()
+    ;(request as Mock).mockResolvedValueOnce(current)
+    await expect(api.deleteScenario('scenario-1', '2026-10-07T09:00:00Z')).rejects.toMatchObject({ name: 'ScenarioChangedSinceObserved' })
+    expect(request).toHaveBeenCalledTimes(1)
+
+    // A controller without durable revisions serves no tag; the delete goes
+    // unconditioned and the project's policy decides.
+    ;(request as Mock).mockReset()
+    ;(request as Mock).mockResolvedValueOnce({ id: 'scenario-1', updated_at: 'x' }).mockResolvedValueOnce({ deleted: 'scenario-1' })
+    await api.deleteScenario('scenario-1', 'x')
+    expect(request).toHaveBeenLastCalledWith('/scenarios/scenario-1', { method: 'DELETE' })
+  })
+
+  it('carries the scenario tag on library assignment and the observed baseline on data-pool writes', async () => {
+    const current = withScenarioAuthoring({ id: 'scenario-1', project_id: 'project-1' }, 'd')
+    ;(request as Mock).mockResolvedValueOnce(current).mockResolvedValueOnce({ revision: 2 })
+    await api.replaceLibraryAssignment('scenarios', 'scenario-1', null, [], 1)
+    expect(request).toHaveBeenLastCalledWith('/scenarios/scenario-1/library-assignment', expect.objectContaining({ method: 'PUT', headers: { 'If-Match': '"scenario-authoring-v1:scn-v1-' + 'd'.repeat(64) + '"' } }))
+    ;(request as Mock).mockClear()
+    await api.replaceLibraryAssignment('scripts', 'script-1', null, [], 1)
+    expect(request).toHaveBeenCalledTimes(1)
+    expect((request as Mock).mock.lastCall?.[1]).not.toHaveProperty('headers')
+
+    const baseline = scenarioAuthoringFixture({}, 'scenario-1')
+    await api.updateScenarioDataPools('scenario-1', [], baseline)
+    expect(request).toHaveBeenLastCalledWith('/scenarios/scenario-1/data-pools', expect.objectContaining({ method: 'PUT', headers: { 'If-Match': baseline.etag } }))
+    expect(() => api.updateScenarioDataPools('scenario-2', [], baseline)).toThrow('supported scenario revision')
   })
 
   it('loads a strict paired authoring projection through the bounded envelope', async () => {

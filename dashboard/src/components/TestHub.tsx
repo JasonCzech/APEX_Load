@@ -57,6 +57,11 @@ import ReferenceKeyBadge from './ReferenceKeyBadge'
 import SelectAllCheckbox from './SelectAllCheckbox'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { clearScenarioBuilderDraft, hasScenarioBuilderProgress } from './scenarioBuilderDraft'
+import AuthoringRevisionConflict from './AuthoringRevisionConflict'
+import { authoringChangedPaths, reapplyAuthoringDraft } from '../utils/authoringRevision'
+import { ScenarioChangedSinceObserved, scenarioBaselineFromRead, scenarioRevisionUnsupported, scenarioSaveNeedsReconciliation } from '../utils/scenarioAuthoringRevision'
+import type { ScenarioAuthoringBaseline } from '../types/storedContent'
+import { ApiError } from '../hooks/apiClient'
 import { NavigationGuardRunnerContext, useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
@@ -179,6 +184,30 @@ export type ScenarioStartChoice = ScenarioSourceMode | 'goal' | ''
 // Workload shape backing the production traffic-profile workflow. Its domain
 // feature gates the workflow's entry points and its analyze/derive endpoints.
 const PRODUCTION_REPLAY_SHAPE_ID = 'production-replay'
+
+const scenarioBaselineMissing = 'This draft has no current scenario baseline. Load the current baseline, review the differences and reapply your draft before saving.'
+
+// A scenario save that needs reconciliation keeps the draft. current holds
+// the reviewed latest scenario once the user loads it.
+interface ScenarioConflictState {
+  reason: string
+  loading: boolean
+  current: { baseline: ScenarioAuthoringBaseline; scenario: StoredScenario; form: ScenarioFormState } | null
+}
+
+function scenarioConflictReason(error: unknown): string {
+  if (error instanceof ApiError && error.status === 412) return 'Another change was saved to this scenario after your draft was loaded. Load the current baseline, review the differences and reapply your draft.'
+  if (error instanceof ApiError && error.status === 428) return 'This project requires revision-checked scenario saves. Load the current baseline before saving your draft.'
+  return getErrorMessage(error, 'The save outcome could not be verified. Your draft is retained; load the current baseline before saving again.')
+}
+
+function scenarioShapeId(scenario: StoredScenario): string {
+  return scenario.workload_shape_id || (scenario.traffic_profile ? PRODUCTION_REPLAY_SHAPE_ID : '')
+}
+
+function parseScenarioForm(serialized: string): ScenarioFormState | null {
+  try { return serialized ? JSON.parse(serialized) as ScenarioFormState : null } catch { return null }
+}
 const CSV_DRIVEN_SHAPE_ID = 'csv-driven'
 type RunSettingsTab = 'scenario' | 'runtime' | 'infrastructure'
 type ScenarioSettingsSection = 'composition' | 'stages' | 'phases' | 'advanced'
@@ -975,6 +1004,13 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   }, [initialView])
   const [planSeedScenarioId, setPlanSeedScenarioId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
+  // The durable baseline the edit form was loaded from, and a save's pending
+  // reconciliation. Every conditioned save presents this baseline's tag.
+  const [scenarioBaseline, setScenarioBaseline] = useState<ScenarioAuthoringBaseline | null>(null)
+  const [scenarioConflict, setScenarioConflict] = useState<ScenarioConflictState | null>(null)
+  const [openingScenarioId, setOpeningScenarioId] = useState('')
+  const scenarioOpenGenerationRef = useRef(0)
+  const originalShapeIdRef = useRef('')
   const wizardPanelRef = useRef<HTMLDivElement>(null)
   const [wizardStep, setWizardStep] = useState<ScenarioWizardStep>('scripts')
   const [maxVisitedWizardIndex, setMaxVisitedWizardIndex] = useState(0)
@@ -1142,6 +1178,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     // project's scenario from the new project workspace.
     setEditingId(null)
     editingBaselineFormRef.current = ''
+    setScenarioBaseline(null)
+    setScenarioConflict(null)
     setForm(emptyScenarioForm())
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId('')
@@ -1774,6 +1812,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     goalGuardrailsEditedRef.current = false
     setEditingId(null)
     editingBaselineFormRef.current = ''
+    scenarioOpenGenerationRef.current += 1
+    setOpeningScenarioId('')
+    setScenarioBaseline(null)
+    setScenarioConflict(null)
     setForm(emptyScenarioForm())
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId('')
@@ -1872,12 +1914,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 
   useTopbarContribution(scenarioTopbarContribution)
 
-  const openEdit = (scenario: StoredScenario) => {
-    if (assigningScenarioIds.has(scenario.id)) return
-    if (!canManageTests) {
-      setError('Current session can view scenarios but cannot create or edit them.')
-      return
-    }
+  // openEditFrom binds the builder to scenario as loaded with baseline, the
+  // durable revision that scenario body describes.
+  const openEditFrom = (scenario: StoredScenario, baseline: ScenarioAuthoringBaseline | null) => {
     resetBuilderToBlank()
     const fallbackScriptId = scripts[0]?.id || ''
     const nextForm = scenarioFormStateFromStoredScenario(scenario, fallbackScriptId)
@@ -1895,10 +1934,12 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       : [])
     setEditingId(scenario.id)
     editingBaselineFormRef.current = JSON.stringify(nextForm)
+    setScenarioBaseline(baseline)
     setForm(nextForm)
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
-    setSelectedShapeId(scenario.workload_shape_id || (scenario.traffic_profile ? PRODUCTION_REPLAY_SHAPE_ID : ''))
+    originalShapeIdRef.current = scenarioShapeId(scenario)
+    setSelectedShapeId(originalShapeIdRef.current)
     setSelectedCloneScenarioId(scenario.id)
     const storedSourceMode: ScenarioSourceMode = scenario.workload_shape_id === CSV_DRIVEN_SHAPE_ID ? 'csv_driven' : scenario.traffic_profile ? 'traffic_profile' : 'existing'
     setScenarioSourceMode(storedSourceMode)
@@ -1917,12 +1958,39 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     onScenarioViewChange?.('builder')
   }
 
+  // Editing reads the scenario first: the form is built from the same durable
+  // body as the baseline whose tag its save presents, never from a list row
+  // that may be stale.
+  const openEdit = async (scenario: StoredScenario) => {
+    if (assigningScenarioIds.has(scenario.id) || openingScenarioId) return
+    if (!canManageTests) {
+      setError('Current session can view scenarios but cannot create or edit them.')
+      return
+    }
+    const generation = ++scenarioOpenGenerationRef.current
+    const scopeProjectId = activeProjectId
+    setOpeningScenarioId(scenario.id)
+    try {
+      const fresh = await api.getScenario(scenario.id)
+      if (generation !== scenarioOpenGenerationRef.current || currentProjectIdRef.current !== scopeProjectId) return
+      if (!fresh?.id || fresh.id !== scenario.id) throw new Error('The controller returned an incomplete scenario. Refresh the library and try again.')
+      let baseline: ScenarioAuthoringBaseline | null = null
+      try { baseline = scenarioBaselineFromRead(fresh, scopeProjectId || undefined) } catch { baseline = null }
+      openEditFrom(fresh, baseline)
+      if (!baseline) setScenarioConflict({ reason: scenarioRevisionUnsupported, loading: false, current: null })
+    } catch (err: unknown) {
+      if (generation === scenarioOpenGenerationRef.current && currentProjectIdRef.current === scopeProjectId) setError(getErrorMessage(err, 'Unable to load the scenario for editing'))
+    } finally {
+      if (generation === scenarioOpenGenerationRef.current) setOpeningScenarioId('')
+    }
+  }
+
   const duplicateScenario = (scenario: StoredScenario) => {
     if (!canManageTests) {
       setError('Current session can view scenarios but cannot create or edit them.')
       return
     }
-    openEdit(scenario)
+    openEditFrom(scenario, null)
     setEditingId(null)
     editingBaselineFormRef.current = ''
     setForm(prev => ({
@@ -2939,22 +3007,40 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         return null
       }
     }
+    // An edit saves only against the baseline it was loaded from; a pending
+    // reconciliation must be resolved with a reloaded baseline first.
+    if (editingId && scenarioConflict) {
+      setError('Resolve the scenario revision review above before saving: load the current baseline, then reapply or reload.')
+      return null
+    }
+    const baseline = scenarioBaseline
+    if (editingId && !baseline) {
+      setScenarioConflict({ reason: scenarioBaselineMissing, loading: false, current: null })
+      return null
+    }
     const payload = buildScenarioDraftPayload()
     const submittedDraft = currentDraftRef.current
     const stillCurrent = () => currentDraftRef.current.form === submittedDraft.form && currentDraftRef.current.activeProjectId === submittedDraft.activeProjectId && currentDraftRef.current.showForm === submittedDraft.showForm
     savingRef.current = true
     setSavePending(true)
     try {
-      const saved = editingId ? await api.updateScenario(editingId, payload) : await api.createScenario(payload)
+      // An edit never falls back to a create; updateScenario refuses a missing baseline.
+      const saved = editingId ? await api.updateScenario(editingId, payload, baseline as ScenarioAuthoringBaseline) : await api.createScenario(payload)
       if (!stillCurrent()) return null
       if (!saved?.id) {
         setError('The controller returned an incomplete save response. Check the scenario library before retrying.')
         return null
       }
+      let committed: ScenarioAuthoringBaseline | null = null
+      try { committed = scenarioBaselineFromRead(saved, activeProjectId || undefined) } catch { committed = null }
+      setScenarioBaseline(committed)
+      originalShapeIdRef.current = selectedShapeId
       setSavedNotice(`Saved ${saved.name || form.name}${saved.ref_key ? ` (${saved.ref_key})` : ''}.`)
       return saved
     } catch (err: unknown) {
-      if (stillCurrent()) setError(getErrorMessage(err, 'Unable to save scenario'))
+      if (!stillCurrent()) return null
+      if (editingId && scenarioSaveNeedsReconciliation(err)) setScenarioConflict({ reason: scenarioConflictReason(err), loading: false, current: null })
+      else setError(getErrorMessage(err, 'Unable to save scenario'))
       return null
     } finally {
       savingRef.current = false
@@ -3019,6 +3105,106 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   }
   saveAuthoringRef.current = saveScenario
 
+  // A resumed edit was checkpointed against a listed scenario; it adopts the
+  // durable baseline only while that scenario is unchanged. Otherwise its save
+  // asks for a reviewed baseline first.
+  const bindResumedScenarioBaseline = async (id: string, updatedAt: string) => {
+    const generation = scenarioDraftGenerationRef.current
+    const scopeProjectId = activeProjectId
+    try {
+      const fresh = await api.getScenario(id)
+      if (generation !== scenarioDraftGenerationRef.current || currentProjectIdRef.current !== scopeProjectId) return
+      if (fresh?.id === id && fresh.updated_at === updatedAt) setScenarioBaseline(scenarioBaselineFromRead(fresh, scopeProjectId || undefined))
+    } catch { /* The next save asks for a reviewed baseline. */ }
+  }
+
+  const loadScenarioConflictBaseline = async () => {
+    const id = editingId
+    if (!id || !scenarioConflict || scenarioConflict.loading) return
+    const generation = scenarioDraftGenerationRef.current
+    const scopeProjectId = activeProjectId
+    const current = () => generation === scenarioDraftGenerationRef.current && currentProjectIdRef.current === scopeProjectId
+    setScenarioConflict(conflict => conflict && { ...conflict, loading: true })
+    try {
+      const fresh = await api.getScenario(id)
+      if (!current()) return
+      const baseline = scenarioBaselineFromRead(fresh, scopeProjectId || undefined)
+      const latestForm = scenarioFormStateFromStoredScenario(fresh, scripts[0]?.id || '')
+      setScenarioConflict(conflict => conflict && { ...conflict, loading: false, current: { baseline, scenario: fresh, form: latestForm } })
+    } catch (err: unknown) {
+      if (current()) setScenarioConflict(conflict => conflict && { ...conflict, loading: false, reason: getErrorMessage(err, 'Unable to load the current scenario baseline. Your draft is retained.') })
+    }
+  }
+
+  // Reapply carries the draft's changes (from the form it was loaded with)
+  // onto the reviewed scenario; the reviewed baseline becomes the one the
+  // next save presents.
+  const reapplyScenarioConflictDraft = () => {
+    const current = scenarioConflict?.current
+    if (!current) return
+    const original = parseScenarioForm(editingBaselineFormRef.current) || current.form
+    let merged: ScenarioFormState
+    try {
+      merged = reapplyAuthoringDraft(original, form, current.form)
+    } catch (err: unknown) {
+      setScenarioConflict(conflict => conflict && { ...conflict, reason: getErrorMessage(err, 'Unable to reapply the draft.') })
+      return
+    }
+    const latestShapeId = scenarioShapeId(current.scenario)
+    if (selectedShapeId === originalShapeIdRef.current) setSelectedShapeId(latestShapeId)
+    originalShapeIdRef.current = latestShapeId
+    editingBaselineFormRef.current = JSON.stringify(current.form)
+    setForm(merged)
+    setScenarioBaseline(current.baseline)
+    setScenarioConflict(null)
+    setError('')
+    setSavedNotice('Draft reapplied onto the current scenario. Locally changed fields and group lists took precedence; review them, then save.')
+  }
+
+  const reloadScenarioFromConflict = () => {
+    const current = scenarioConflict?.current
+    if (!current) return
+    const step = wizardStep
+    const visited = maxVisitedWizardIndex
+    openEditFrom(current.scenario, current.baseline)
+    setWizardStep(step)
+    setMaxVisitedWizardIndex(visited)
+    setSavedNotice('Reloaded the current scenario. Your draft was discarded.')
+  }
+
+  // Diff lists what changed on the server since the draft's baseline (over
+  // the canonical authoring document) and what the draft changed locally.
+  const scenarioConflictDiff = () => {
+    const current = scenarioConflict?.current
+    if (!current) return []
+    const original = parseScenarioForm(editingBaselineFormRef.current) || current.form
+    const canonical = (baseline: ScenarioAuthoringBaseline) => ({ scenario: baseline.projection.scenario, library_placement: baseline.projection.library_placement, monitor_selection: baseline.projection.monitor_selection })
+    const serverPaths = scenarioBaseline
+      ? authoringChangedPaths(canonical(scenarioBaseline), canonical(current.baseline), 'Scenario')
+      : authoringChangedPaths(buildScenarioDraftPayload(original), buildScenarioDraftPayload(current.form), 'Scenario')
+    return [
+      { label: 'Changed in the current scenario since your draft was loaded', paths: serverPaths, empty: 'No authored-field differences.' },
+      { label: 'Changed in your draft', paths: authoringChangedPaths(buildScenarioDraftPayload(original), buildScenarioDraftPayload(form), 'Scenario'), empty: 'No local changes.' },
+    ]
+  }
+
+  // Saving monitor bindings advances the scenario revision. When nothing else
+  // changed, the editor adopts the new baseline so its next save is not a
+  // self-inflicted conflict.
+  const adoptBaselineAfterBindingsSave = async () => {
+    const id = editingId
+    const previous = scenarioBaseline
+    if (!id || !previous) return
+    const generation = scenarioDraftGenerationRef.current
+    try {
+      const fresh = await api.getScenario(id)
+      if (generation !== scenarioDraftGenerationRef.current) return
+      const next = scenarioBaselineFromRead(fresh, activeProjectId || undefined)
+      const authored = (baseline: ScenarioAuthoringBaseline) => JSON.stringify([baseline.projection.scenario, baseline.projection.library_placement])
+      if (authored(next) === authored(previous)) setScenarioBaseline(current => current === previous ? next : current)
+    } catch { /* The next save reconciles. */ }
+  }
+
   const resumeAuthoringDraft = () => {
     if (!authoringDraft || authoringDraft.projectId !== activeProjectId || !canManageTests) return
     const draft = authoringDraft
@@ -3034,6 +3220,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     const canResumeEdit = existing && existing.updated_at === draft.editingUpdatedAt
     setEditingId(canResumeEdit ? draft.editingId : null)
     editingBaselineFormRef.current = canResumeEdit ? JSON.stringify(scenarioFormStateFromStoredScenario(existing, '', false)) : ''
+    originalShapeIdRef.current = canResumeEdit ? scenarioShapeId(existing) : ''
+    if (canResumeEdit && draft.editingId) void bindResumedScenarioBaseline(draft.editingId, draft.editingUpdatedAt)
     setScenarioSourceMode(draft.source); setScenarioStartChoice(draft.startChoice); setModelFamilyChoice('')
     setScenarioStartPath(draft.source === 'existing' && draft.cloneId && !draft.editingId ? 'copy' : 'new')
     setSelectedShapeId(draft.shapeId); setSelectedLoadModelTemplateId(draft.templateId); setSelectedCloneScenarioId(draft.cloneId)
@@ -3063,7 +3251,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     const scopeProjectId = activeProjectId
     setDeletingScenarioIds(current => new Set(current).add(id))
     try {
-      await api.deleteScenario(id)
+      await api.deleteScenario(id, scenarios.find(scenario => scenario.id === id)?.updated_at)
       if (currentProjectIdRef.current !== scopeProjectId) return
       setScenarios(current => current.filter(scenario => scenario.id !== id))
       setSelectedScenarioIds(current => {
@@ -3073,7 +3261,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       })
       await refresh()
     } catch (err: unknown) {
-      if (currentProjectIdRef.current === scopeProjectId) setError(getErrorMessage(err, 'Unable to delete scenario'))
+      if (currentProjectIdRef.current === scopeProjectId) {
+        setError(getErrorMessage(err, 'Unable to delete scenario'))
+        if (err instanceof ScenarioChangedSinceObserved) void refresh()
+      }
     } finally {
       if (currentProjectIdRef.current === scopeProjectId) {
         setDeletingScenarioIds(current => {
@@ -3108,7 +3299,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     const scopeProjectId = activeProjectId
     setDeletingScenarioIds(current => new Set([...current, ...ids]))
     setError('')
-    const outcomes = await boundedAllSettled(ids, id => api.deleteScenario(id))
+    const observed = new Map(scenarios.map(scenario => [scenario.id, scenario.updated_at]))
+    const outcomes = await boundedAllSettled(ids, id => api.deleteScenario(id, observed.get(id)))
     if (currentProjectIdRef.current !== scopeProjectId) return
     const deletedIds = ids.filter((_, index) => outcomes[index]?.status === 'fulfilled')
     const failed = outcomes.flatMap((outcome, index) => outcome.status === 'rejected'
@@ -4512,7 +4704,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             }}>{poolCreating ? 'Creating…' : createdPoolId ? 'Retry adding first row' : 'Create and attach data pool'}</button>
           </details>
 
-          {editingId && activeProjectId && <ScenarioMonitorBindings key={editingId} projectId={activeProjectId} scenarioId={editingId} canEdit={canManageTests} />}
+          {editingId && activeProjectId && <ScenarioMonitorBindings key={editingId} projectId={activeProjectId} scenarioId={editingId} canEdit={canManageTests} scenarioTag={scenarioBaseline?.etag} onSaved={() => void adoptBaselineAfterBindingsSave()} onScenarioChanged={() => setScenarioConflict(conflict => conflict || { reason: scenarioConflictReason(new ApiError('scenario changed', 412)), loading: false, current: null })} />}
           <MonitorRuleEditor projectId={activeProjectId} value={form.goal_config?.monitor_rules || []} canEdit={canManageTests} onChange={rules => setForm(previous => scenarioFormWithGoalField(previous, 'monitor_rules', rules))} />
           <ScenarioDataBindings bindings={scenarioBindings} pools={dataPools} scripts={scripts.filter(script => form.groups.some(group => group.script_id === script.id))} canManage={canManageScripts} onChange={updateDataBindings} />
         </section>
@@ -4771,6 +4963,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             ...[assignmentValidationError, scenarioGroupNameError].map(message => ({ message: message || '', onResolve: openScriptComposition })),
           ]} />
 
+          {editingId && scenarioConflict && <AuthoringRevisionConflict kind="scenario" reason={scenarioConflict.reason} hasCurrent={Boolean(scenarioConflict.current)} loading={scenarioConflict.loading}
+            diff={scenarioConflictDiff}
+            reapplyNote="Reapply carries your draft's changes onto this reviewed scenario. Locally changed fields and group lists take precedence over the current values; review them before saving."
+            onLoad={() => void loadScenarioConflictBaseline()} onReload={reloadScenarioFromConflict} onReapply={reapplyScenarioConflictDraft} />}
+
           <div className="scenario-builder-actions" aria-busy={savePending}><span className="ux-draft-help">Incomplete or blocked drafts are saved in this browser. Configured scenarios are saved to the project; neither launches a run.</span>
             <button className="btn btn-secondary" onClick={guardedOpenScenarioLibrary}>Cancel</button>
             {builderHasProgress && (
@@ -4971,7 +5168,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                       <ObjectArchiveControls resourceType="scenario" resourceId={scenario.id} archivedAt={scenario.archived_at} updatedAt={scenario.updated_at} canManage={canManageTests} onChanged={refresh} />
                       {canManageTests ? (
                         <>
-                          <button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at} onClick={(event) => { event.stopPropagation(); if (!assigningScenarioIds.has(scenario.id)) openEdit(scenario) }}>Edit</button>
+                          <button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at || openingScenarioId === scenario.id} onClick={(event) => { event.stopPropagation(); if (!assigningScenarioIds.has(scenario.id)) void openEdit(scenario) }}>{openingScenarioId === scenario.id ? 'Opening…' : 'Edit'}</button>
                           <RowActions className="scenario-more-actions"><button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at || deletingScenarioIds.has(scenario.id) || assigningScenarioIds.has(scenario.id)} onClick={() => setAssignmentScenarios([scenario])}>Change application/releases…</button><button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
                           <button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at} onClick={(event) => { event.stopPropagation(); addScenarioToPlan(scenario.id) }} title="Seed a new execution plan with this scenario">Add to plan</button>
                           <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} disabled={deletingScenarioIds.has(scenario.id) || assigningScenarioIds.has(scenario.id)} onClick={(event) => { event.stopPropagation(); setConfirmDeleteScenarioId(scenario.id) }}>{deletingScenarioIds.has(scenario.id) ? 'Deleting…' : 'Delete'}</button>

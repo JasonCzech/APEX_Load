@@ -882,7 +882,7 @@ export default function ApplicationRepositoryPage({
         await scriptApi.deleteScript(row.id)
         break
       case 'scenario':
-        await scriptApi.deleteScenario(row.id)
+        await scriptApi.deleteScenario(row.id, row.updatedAt)
         break
       case 'test':
         await testApi.deleteTest(row.id)

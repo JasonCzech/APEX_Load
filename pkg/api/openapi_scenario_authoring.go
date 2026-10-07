@@ -23,11 +23,11 @@ func applyScenarioAuthoringContract(route discoveredRoute, contract *inferredRou
 		contract.Responses = map[string]oasResponse{}
 	}
 	response := contract.Responses["200"]
-	response.Content = map[string]oasMediaType{"application/json": {Schema: oasSchema{OneOf: []oasSchema{legacy, authoring}, Description: "Default: enriched StoredScenario. view=authoring: one coherent versioned authored scenario with its groups, data-pool bindings, library placement, monitor selection and durable nonce. Only the authoring representation carries a strong ETag."}}}
+	response.Content = map[string]oasMediaType{"application/json": {Schema: oasSchema{OneOf: []oasSchema{legacy, authoring}, Description: "Default: enriched StoredScenario. view=authoring: one coherent versioned authored scenario with its groups, data-pool bindings, library placement, monitor selection and durable nonce. The authoring representation always carries a strong ETag; the default one carries it, with content_revision and authoring_projection, when the body is the durable state."}}}
 	if response.Headers == nil {
 		response.Headers = map[string]oasHeader{}
 	}
-	response.Headers["ETag"] = oasHeader{Description: "Present only for view=authoring: one quoted scenario-authoring-v1:<content_revision> strong validator. This is not an ETag for the enriched StoredScenario response.", Schema: oasParamSchema{Type: "string"}}
+	response.Headers["ETag"] = oasHeader{Description: "One quoted scenario-authoring-v1:<content_revision> strong validator: always for view=authoring, and for the default representation when the body is the durable state (its content_revision), so an editor that builds its draft from the body can present the tag as If-Match.", Schema: oasParamSchema{Type: "string"}}
 	contract.Responses["200"] = response
 	found := false
 	for i := range contract.QueryParameters {

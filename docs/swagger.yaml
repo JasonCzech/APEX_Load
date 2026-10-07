@@ -64245,7 +64245,7 @@ paths:
                       properties:
                         require_scenario_save_if_match:
                           type: boolean
-                          description: 'When true, every scenario-authored write (PUT /api/v1/scenarios/{id}, DELETE, data-pools, library-assignment, monitor-bindings and runtime/apply-to-groups) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside each write''s transaction. Controllers without durable scenario revisions refuse those writes under this policy with 503 scenario_save_strict_policy_unavailable. The dashboard''s scenario editors do not send If-Match yet, so while this policy is on they cannot save, delete or rebind scenarios; enable it only for API-driven projects. On PUT an omitted authoring object keeps the current policies; send authoring: {} to clear them.'
+                          description: 'When true, every scenario-authored write (PUT /api/v1/scenarios/{id}, DELETE, data-pools, library-assignment, monitor-bindings and runtime/apply-to-groups) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside each write''s transaction. Controllers without durable scenario revisions refuse those writes under this policy with 503 scenario_save_strict_policy_unavailable. The dashboard sends a tag on every scenario write it makes: editor saves present the baseline their draft was loaded from, library deletes re-read the scenario and refuse one changed since the list loaded, and library-assignment and monitor-binding saves present a current tag alongside their own revision. On PUT an omitted authoring object keeps the current policies; send authoring: {} to clear them.'
                         require_script_save_if_match:
                           type: boolean
                       nullable: true
@@ -64765,7 +64765,7 @@ paths:
                       properties:
                         require_scenario_save_if_match:
                           type: boolean
-                          description: 'When true, every scenario-authored write (PUT /api/v1/scenarios/{id}, DELETE, data-pools, library-assignment, monitor-bindings and runtime/apply-to-groups) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside each write''s transaction. Controllers without durable scenario revisions refuse those writes under this policy with 503 scenario_save_strict_policy_unavailable. The dashboard''s scenario editors do not send If-Match yet, so while this policy is on they cannot save, delete or rebind scenarios; enable it only for API-driven projects. On PUT an omitted authoring object keeps the current policies; send authoring: {} to clear them.'
+                          description: 'When true, every scenario-authored write (PUT /api/v1/scenarios/{id}, DELETE, data-pools, library-assignment, monitor-bindings and runtime/apply-to-groups) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside each write''s transaction. Controllers without durable scenario revisions refuse those writes under this policy with 503 scenario_save_strict_policy_unavailable. The dashboard sends a tag on every scenario write it makes: editor saves present the baseline their draft was loaded from, library deletes re-read the scenario and refuse one changed since the list loaded, and library-assignment and monitor-binding saves present a current tag alongside their own revision. On PUT an omitted authoring object keeps the current policies; send authoring: {} to clear them.'
                         require_script_save_if_match:
                           type: boolean
                       nullable: true
@@ -138524,7 +138524,7 @@ paths:
           content:
             application/json:
               schema:
-                description: 'Default: enriched StoredScenario. view=authoring: one coherent versioned authored scenario with its groups, data-pool bindings, library placement, monitor selection and durable nonce. Only the authoring representation carries a strong ETag.'
+                description: 'Default: enriched StoredScenario. view=authoring: one coherent versioned authored scenario with its groups, data-pool bindings, library placement, monitor selection and durable nonce. The authoring representation always carries a strong ETag; the default one carries it, with content_revision and authoring_projection, when the body is the durable state.'
                 oneOf:
                   - type: object
                     properties:
@@ -142620,7 +142620,7 @@ paths:
                       - scenario
           headers:
             ETag:
-              description: 'Present only for view=authoring: one quoted scenario-authoring-v1:<content_revision> strong validator. This is not an ETag for the enriched StoredScenario response.'
+              description: 'One quoted scenario-authoring-v1:<content_revision> strong validator: always for view=authoring, and for the default representation when the body is the durable state (its content_revision), so an editor that builds its draft from the body can present the tag as If-Match.'
               schema:
                 type: string
         "400":

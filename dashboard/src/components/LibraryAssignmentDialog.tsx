@@ -77,7 +77,7 @@ export default function LibraryAssignmentDialog({ projectId, kind, items, onClos
     const errors: typeof failures = []
     outcomes.forEach((result, index) => {
       if (result.status === 'fulfilled') successful.set(changed[index].id, result.value)
-      else errors.push({ id: changed[index].id, error: getErrorMessage(result.reason, 'Assignment failed'), conflict: result.reason?.status === 409 })
+      else errors.push({ id: changed[index].id, error: getErrorMessage(result.reason, 'Assignment failed'), conflict: result.reason?.status === 409 || result.reason?.status === 412 })
     })
     const message = `Updated ${successful.size}; unchanged ${unchanged}; failed ${errors.length}.`
     setFailures(errors); setNotice(message); setRemaining(changed.filter(item => !successful.has(item.id)))

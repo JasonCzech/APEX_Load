@@ -67,6 +67,13 @@ describe('library assignments', () => {
   expect(button('Retry failed assignments')).toBeUndefined()
   expect(button('Apply assignment').disabled).toBe(true)
  })
+ it('treats a stale scenario tag like a stale assignment revision',async()=>{
+  await render(); await choose('a')
+  api.replaceLibraryAssignment.mockRejectedValueOnce(Object.assign(new Error('scenario authored content changed; reload before applying changes'),{status:412}))
+  await act(async()=>button('Apply assignment').click())
+  expect(button('Retry failed assignments').disabled).toBe(true)
+  expect(button('Reload conflicting assignments')).toBeDefined()
+ })
  it('offers loading recovery and ignores responses after project switches',async()=>{
   api.listApplications.mockRejectedValueOnce(new Error('Unavailable'))
   await render(); expect(document.body.textContent).toContain('Unavailable')
