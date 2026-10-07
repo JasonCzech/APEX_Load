@@ -48,6 +48,7 @@ var retainedAfterProjectDeletionTables = stringSet(
 	"object_activity_events",    // Safe activity history follows audit retention independently of project deletion.
 	"analysis_cleanup_jobs",     // Physical analytics cleanup must outlive project metadata.
 	"pod_capacity_reservations", // Only generator-confirmed drainage or incarnation fencing releases capacity.
+	"run_evidence_receipts",     // Tombstoned receipts outlive the run so a late evidence upload is refused.
 	"archive_cleanup_jobs", "archive_version_cleanup_jobs", "audit_events", "capacity_instance_intents", "replay_session_leases",
 )
 
@@ -64,6 +65,7 @@ var manuallyHandledTestTables = stringSet(
 
 var retainedAfterTestDeletionTables = stringSet(
 	"pod_capacity_reservations", // Reconciler also drains claims whose test record has been deleted.
+	"run_evidence_receipts",     // Tombstoned in deleteTestGraphTx; they outlive the run so a late upload is refused.
 	"archive_cleanup_jobs", "archive_version_cleanup_jobs", "capacity_instance_intents",
 )
 

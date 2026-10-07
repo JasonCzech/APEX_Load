@@ -3213,6 +3213,18 @@ export interface operations {
               "browser_documents_parquet_file"?: string;
               "browser_documents_parquet_sha256"?: string;
               "browser_documents_sha256"?: string;
+              "browser_har_artifacts"?: Array<{
+                "bytes"?: number;
+                "fidelity"?: string;
+                "kind"?: string;
+                "name"?: string;
+                "sequence"?: number;
+                "sha256"?: string;
+                "source_generation"?: string;
+                "source_identity"?: string;
+              }>;
+              "browser_har_incomplete"?: boolean;
+              "browser_har_omitted"?: Record<string, number>;
               "business_key_digests_unavailable"?: boolean;
               "clock_observation_count"?: number;
               "clock_observations_file"?: string;
@@ -64214,6 +64226,18 @@ export interface operations {
             "browser_documents_parquet_file"?: string;
             "browser_documents_parquet_sha256"?: string;
             "browser_documents_sha256"?: string;
+            "browser_har_artifacts"?: Array<{
+              "bytes": number;
+              "fidelity": string;
+              "kind": string;
+              "name": string;
+              "sequence": number;
+              "sha256": string;
+              "source_generation": string;
+              "source_identity"?: string;
+            }>;
+            "browser_har_incomplete"?: boolean;
+            "browser_har_omitted"?: Record<string, number>;
             "business_key_digests_unavailable"?: boolean;
             "clock_observation_count"?: number;
             "clock_observations_file"?: string;
@@ -68165,6 +68189,18 @@ export interface operations {
               "browser_documents_parquet_file"?: string;
               "browser_documents_parquet_sha256"?: string;
               "browser_documents_sha256"?: string;
+              "browser_har_artifacts"?: Array<{
+                "bytes": number;
+                "fidelity": string;
+                "kind": string;
+                "name": string;
+                "sequence": number;
+                "sha256": string;
+                "source_generation": string;
+                "source_identity"?: string;
+              }>;
+              "browser_har_incomplete"?: boolean;
+              "browser_har_omitted"?: Record<string, number>;
               "business_key_digests_unavailable"?: boolean;
               "clock_observation_count"?: number;
               "clock_observations_file"?: string;

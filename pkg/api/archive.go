@@ -78,11 +78,16 @@ type RunArchiveManifest struct {
 	BusinessKeyDigestsUnavailable bool `json:"business_key_digests_unavailable,omitempty"`
 	// Continuity records the HA controller failovers the run survived
 	// (docs/HA_RUN_CONTINUITY_PLAN.md); absent when the run never failed over.
-	Continuity                        *RunContinuityStatus               `json:"continuity,omitempty"`
-	BrowserDocumentCoverageIncomplete bool                               `json:"browser_document_coverage_incomplete,omitempty"`
-	BrowserDocumentCaptureRequested   bool                               `json:"browser_document_capture_requested,omitempty"`
-	BrowserDocumentsFile              string                             `json:"browser_documents_file,omitempty"`
-	BrowserDocumentsParquetFile       string                             `json:"browser_documents_parquet_file,omitempty"`
+	Continuity                        *RunContinuityStatus `json:"continuity,omitempty"`
+	BrowserDocumentCoverageIncomplete bool                 `json:"browser_document_coverage_incomplete,omitempty"`
+	BrowserDocumentCaptureRequested   bool                 `json:"browser_document_capture_requested,omitempty"`
+	BrowserDocumentsFile              string               `json:"browser_documents_file,omitempty"`
+	BrowserDocumentsParquetFile       string               `json:"browser_documents_parquet_file,omitempty"`
+	// BrowserHARArtifacts are the run's native HARs; BrowserHAROmitted
+	// counts, by reason, the ones the archive could not retain.
+	BrowserHARArtifacts               []RunArchiveHARArtifact            `json:"browser_har_artifacts,omitempty"`
+	BrowserHARIncomplete              bool                               `json:"browser_har_incomplete,omitempty"`
+	BrowserHAROmitted                 map[string]int64                   `json:"browser_har_omitted,omitempty"`
 	BrowserDocumentRecordCount        int64                              `json:"browser_document_record_count,omitempty"`
 	BrowserDocumentsSHA256            string                             `json:"browser_documents_sha256,omitempty"`
 	BrowserDocumentsParquetSHA256     string                             `json:"browser_documents_parquet_sha256,omitempty"`
@@ -1058,6 +1063,9 @@ type runArchiveWriter struct {
 	lookupFile    *os.File
 	lookupBuf     *bufio.Writer
 	lookupEncoder *json.Encoder
+	// harMu serializes HAR moves with Finalize; it is taken before mu.
+	harMu    sync.Mutex
+	harBytes int64
 }
 
 func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {

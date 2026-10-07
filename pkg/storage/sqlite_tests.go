@@ -1786,6 +1786,11 @@ func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
 	if _, err := tx.Exec(`DELETE FROM runtime_secret_provisioning_attempts WHERE test_id = ?`, id); err != nil {
 		return err
 	}
+	// Evidence receipts outlive the run as tombstones, so a late upload of
+	// its evidence is refused.
+	if _, err := tx.Exec(`UPDATE run_evidence_receipts SET state = ?, updated_at = ? WHERE test_id = ?`, EvidenceReceiptTombstoned, time.Now().UTC(), id); err != nil {
+		return err
+	}
 	annotationPrefix := "report:annotations:" + id + ":"
 	if _, err := tx.Exec(`DELETE FROM app_settings
 		WHERE SUBSTR(key, 1, LENGTH(?)) = ?`, annotationPrefix, annotationPrefix); err != nil {

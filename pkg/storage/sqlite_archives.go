@@ -219,6 +219,10 @@ func (s *SQLiteStore) DeleteRunArchive(testID string) error {
 	if _, err := tx.Exec(`DELETE FROM run_archives WHERE test_id = ?`, testID); err != nil {
 		return err
 	}
+	// Evidence the archive held is gone; a late copy is tombstoned.
+	if _, err := tx.Exec(`UPDATE run_evidence_receipts SET state = ?, updated_at = ? WHERE test_id = ?`, EvidenceReceiptTombstoned, time.Now().UTC(), testID); err != nil {
+		return err
+	}
 	// Root-cause analyses read the archive; they go with it.
 	if err := deleteRCAForTestTx(tx, testID); err != nil {
 		return err

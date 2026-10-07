@@ -1012,3 +1012,14 @@ func (sink combinedResultSink) RecordBrowserDocumentEvidence(evidence *protocol.
 	}
 	return nil
 }
+
+// RecordBrowserHARArtifact hands a HAR to the first sink that retains HARs;
+// the artifact moves, so only one sink may take it.
+func (sink combinedResultSink) RecordBrowserHARArtifact(artifact protocol.BrowserHARArtifact) error {
+	for _, candidate := range sink {
+		if harSink, ok := candidate.(engine.BrowserHARArtifactSink); ok {
+			return harSink.RecordBrowserHARArtifact(artifact)
+		}
+	}
+	return fmt.Errorf("browser HAR archive sink is unavailable")
+}

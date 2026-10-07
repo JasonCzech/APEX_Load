@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"github.com/mxschmitt/playwright-go"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func (b *Browser) close() error { return b.closeWithContext(context.Background()) }
@@ -101,6 +103,11 @@ func (b *Browser) closeWithContext(ctx context.Context) error {
 		// policy. In particular, do not delete an earlier failing iteration when
 		// new_user_per_iteration tears down a later browser session.
 		b.lastHARArtifactPath = artifactPath
+		b.mu.Lock()
+		if len(b.publishedHARArtifacts) < protocol.MaxBrowserHARArtifactsPerRun {
+			b.publishedHARArtifacts = append(b.publishedHARArtifacts, protocol.BrowserHARArtifact{Path: artifactPath, Generation: owner.generation})
+		}
+		b.mu.Unlock()
 	}
 	b.mu.Lock()
 	b.runtimeTextRedactor = nil

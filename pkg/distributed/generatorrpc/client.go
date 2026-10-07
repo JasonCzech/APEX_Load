@@ -383,6 +383,26 @@ type ArchiveArtifactRequest struct {
 	SourceIdentity string
 }
 
+// EvidenceAcknowledgement names a run archive's evidence artifacts the
+// controller durably holds, each with its SHA-256.
+type EvidenceAcknowledgement struct {
+	TestID         string
+	SourceIdentity string
+	Artifacts      []AcknowledgedEvidence
+}
+
+type AcknowledgedEvidence struct {
+	Name   string
+	SHA256 string
+}
+
+// EvidenceAckResult lists the acknowledged artifacts the generator deleted
+// and those it retained.
+type EvidenceAckResult struct {
+	Deleted  []string
+	Retained []string
+}
+
 type Script struct {
 	ID                  string
 	ExecutionGeneration uint64
@@ -2220,4 +2240,18 @@ func metricsTelemetryFromProto(in *pb.MetricsBatchTelemetry) *MetricsTelemetry {
 		telemetry.TestDroppedSubscriberBatches, telemetry.TestDroppedSubscriberBatchesReported = in.GetTestDroppedSubscriberBatches(), true
 	}
 	return telemetry
+}
+
+// AcknowledgeEvidence tells the generator the controller durably holds the
+// named evidence artifacts, so it deletes its copies.
+func (c *Client) AcknowledgeEvidence(ctx context.Context, request EvidenceAcknowledgement) (EvidenceAckResult, error) {
+	message := &pb.EvidenceAcknowledgement{TestId: request.TestID, SourceIdentity: request.SourceIdentity}
+	for _, artifact := range request.Artifacts {
+		message.Artifacts = append(message.Artifacts, &pb.AcknowledgedEvidence{Name: artifact.Name, Sha256: artifact.SHA256})
+	}
+	ack, err := c.rpc.AcknowledgeEvidence(ctx, message)
+	if err != nil {
+		return EvidenceAckResult{}, err
+	}
+	return EvidenceAckResult{Deleted: ack.GetDeleted(), Retained: ack.GetRetained()}, nil
 }

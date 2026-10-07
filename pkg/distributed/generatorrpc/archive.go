@@ -34,33 +34,38 @@ import (
 const archiveSchemaVersion = "apexload.archive.v4"
 
 type archiveManifest struct {
-	BrowserDocumentCaptureRequested bool                         `json:"browser_document_capture_requested,omitempty"`
-	BrowserDocumentsFile            string                       `json:"browser_documents_file,omitempty"`
-	BrowserDocumentsParquetFile     string                       `json:"browser_documents_parquet_file,omitempty"`
-	BrowserDocumentRecordCount      int64                        `json:"browser_document_record_count,omitempty"`
-	BrowserDocumentsSHA256          string                       `json:"browser_documents_sha256,omitempty"`
-	BrowserDocumentsParquetSHA256   string                       `json:"browser_documents_parquet_sha256,omitempty"`
-	SourceIdentity                  string                       `json:"source_identity,omitempty"`
-	SchemaVersion                   string                       `json:"schema_version"`
-	TestID                          string                       `json:"test_id"`
-	TestName                        string                       `json:"test_name"`
-	CreatedAt                       time.Time                    `json:"created_at"`
-	CompletedAt                     time.Time                    `json:"completed_at,omitempty"`
-	Status                          string                       `json:"status,omitempty"`
-	Error                           string                       `json:"error,omitempty"`
-	ExecutionGeneration             uint64                       `json:"execution_generation,omitempty"`
-	ExecutionGroups                 []string                     `json:"execution_groups,omitempty"`
-	TransactionsFile                string                       `json:"transactions_file"`
-	TransactionsParquetFile         string                       `json:"transactions_parquet_file,omitempty"`
-	ResourceSamplesFile             string                       `json:"resource_samples_file"`
-	ResourceSamplesParquetFile      string                       `json:"resource_samples_parquet_file,omitempty"`
-	IntervalSummariesFile           string                       `json:"interval_summaries_file"`
-	IntervalSummariesParquetFile    string                       `json:"interval_summaries_parquet_file,omitempty"`
-	TransactionCount                int64                        `json:"transaction_count"`
-	ResourceSampleCount             int64                        `json:"resource_sample_count"`
-	IntervalSummaryCount            int64                        `json:"interval_summary_count"`
-	TerminalMetrics                 json.RawMessage              `json:"terminal_metrics,omitempty"`
-	MessageDetailCapture            *archiveMessageDetailCapture `json:"message_detail_capture,omitempty"`
+	BrowserDocumentCaptureRequested bool   `json:"browser_document_capture_requested,omitempty"`
+	BrowserDocumentsFile            string `json:"browser_documents_file,omitempty"`
+	BrowserDocumentsParquetFile     string `json:"browser_documents_parquet_file,omitempty"`
+	BrowserDocumentRecordCount      int64  `json:"browser_document_record_count,omitempty"`
+	BrowserDocumentsSHA256          string `json:"browser_documents_sha256,omitempty"`
+	BrowserDocumentsParquetSHA256   string `json:"browser_documents_parquet_sha256,omitempty"`
+	// BrowserHARArtifacts are native HARs moved into the run archive;
+	// BrowserHAROmitted counts, by reason, the ones that could not be.
+	BrowserHARArtifacts          []archiveHARArtifact         `json:"browser_har_artifacts,omitempty"`
+	BrowserHARIncomplete         bool                         `json:"browser_har_incomplete,omitempty"`
+	BrowserHAROmitted            map[string]int64             `json:"browser_har_omitted,omitempty"`
+	SourceIdentity               string                       `json:"source_identity,omitempty"`
+	SchemaVersion                string                       `json:"schema_version"`
+	TestID                       string                       `json:"test_id"`
+	TestName                     string                       `json:"test_name"`
+	CreatedAt                    time.Time                    `json:"created_at"`
+	CompletedAt                  time.Time                    `json:"completed_at,omitempty"`
+	Status                       string                       `json:"status,omitempty"`
+	Error                        string                       `json:"error,omitempty"`
+	ExecutionGeneration          uint64                       `json:"execution_generation,omitempty"`
+	ExecutionGroups              []string                     `json:"execution_groups,omitempty"`
+	TransactionsFile             string                       `json:"transactions_file"`
+	TransactionsParquetFile      string                       `json:"transactions_parquet_file,omitempty"`
+	ResourceSamplesFile          string                       `json:"resource_samples_file"`
+	ResourceSamplesParquetFile   string                       `json:"resource_samples_parquet_file,omitempty"`
+	IntervalSummariesFile        string                       `json:"interval_summaries_file"`
+	IntervalSummariesParquetFile string                       `json:"interval_summaries_parquet_file,omitempty"`
+	TransactionCount             int64                        `json:"transaction_count"`
+	ResourceSampleCount          int64                        `json:"resource_sample_count"`
+	IntervalSummaryCount         int64                        `json:"interval_summary_count"`
+	TerminalMetrics              json.RawMessage              `json:"terminal_metrics,omitempty"`
+	MessageDetailCapture         *archiveMessageDetailCapture `json:"message_detail_capture,omitempty"`
 }
 
 type archiveMessageDetailCapture struct {
@@ -367,6 +372,10 @@ type archiveTelemetryHealth struct {
 }
 
 type archiveRecorder struct {
+	// harMu serializes HAR moves with Finalize and Discard; it is taken
+	// before mu.
+	harMu                   sync.Mutex
+	harBytes                int64
 	browserDocumentsFile    *os.File
 	browserDocumentsEncoder *json.Encoder
 	mu                      sync.Mutex
@@ -933,6 +942,8 @@ func (w *archiveRecorder) Discard() error {
 	if w == nil {
 		return nil
 	}
+	w.harMu.Lock()
+	defer w.harMu.Unlock()
 	w.mu.Lock()
 	if w.closed {
 		w.mu.Unlock()
@@ -1347,6 +1358,8 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 	if w == nil {
 		return nil, fmt.Errorf("generator archive recorder is unavailable")
 	}
+	w.harMu.Lock()
+	defer w.harMu.Unlock()
 	w.mu.Lock()
 	if w.closed {
 		w.mu.Unlock()
@@ -1491,6 +1504,9 @@ func archiveArtifactNames(manifest *archiveManifest) []string {
 		if name != "" {
 			names = append(names, name)
 		}
+	}
+	for _, har := range manifest.BrowserHARArtifacts {
+		names = append(names, har.Name)
 	}
 	return names
 }

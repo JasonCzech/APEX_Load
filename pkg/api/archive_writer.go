@@ -739,6 +739,8 @@ func loadLevelDurationDigests(groups map[string]*GroupLiveMetrics) map[string]*e
 
 func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr string, slaEvaluated bool, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error) {
 	w.stopFlushLoop()
+	w.harMu.Lock()
+	defer w.harMu.Unlock()
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	defer w.captureBudget.close()
@@ -1070,6 +1072,9 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		{Name: manifest.TelemetrySourcesFile, Kind: "evidence", Format: "jsonl", RecordType: telemetrySourcesRecordType, Count: manifest.TelemetrySourceEpochCount},
 		{Name: manifest.PhaseEventsFile, Kind: "evidence", Format: "jsonl", RecordType: phaseEventRecordType, Count: manifest.PhaseEventCount},
 	}
+	for _, har := range manifest.BrowserHARArtifacts {
+		descriptors = append(descriptors, RunArchiveArtifact{Name: har.Name, Kind: "evidence", Format: "har", RecordType: runArchiveHARRecordType})
+	}
 	for _, export := range manifest.CSVExports {
 		if export.Status == "complete" {
 			descriptors = append(descriptors, RunArchiveArtifact{Name: export.FileName, Kind: "csv_export", Format: "csv", RecordType: "action_results", Count: export.Rows})
@@ -1099,6 +1104,9 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 			return closeErr
 		}
 		artifact.SHA256 = sum
+		if artifact.RecordType == runArchiveHARRecordType && !runArchiveHARMatches(manifest, artifact) {
+			return fmt.Errorf("archive HAR %s differs from its receipt", artifact.Name)
+		}
 		if artifact.Name == manifest.BrowserDocumentsFile {
 			manifest.BrowserDocumentsSHA256 = sum
 		}

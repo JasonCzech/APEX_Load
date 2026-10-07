@@ -63,6 +63,30 @@ service GeneratorControl {
   // first chunk declares total_size and every chunk carries its absolute offset
   // so the controller can reject truncated, duplicated, or reordered streams.
   rpc StreamArchiveArtifact(ArchiveArtifactRequest) returns (stream ArchiveArtifactChunk);
+
+  // AcknowledgeEvidence tells the generator that the controller durably
+  // holds the named optional evidence artifacts of a run archive (native
+  // HARs), each identified by its SHA-256, so the generator deletes its
+  // copies. Unknown or changed artifacts are retained and reported.
+  rpc AcknowledgeEvidence(EvidenceAcknowledgement) returns (EvidenceAck);
+}
+
+message EvidenceAcknowledgement {
+  string test_id = 1;
+  string source_identity = 2;
+  repeated AcknowledgedEvidence artifacts = 3;
+}
+
+message AcknowledgedEvidence {
+  string name = 1;
+  string sha256 = 2;
+}
+
+message EvidenceAck {
+  // deleted lists the acknowledged artifacts this generator no longer holds;
+  // retained lists the ones it kept because they were unknown or changed.
+  repeated string deleted = 1;
+  repeated string retained = 2;
 }
 
 message PreparationCheckRequest {

@@ -113,8 +113,55 @@ the default directory (the system temporary directory) once at start. A
 generator restarted inside the same container reclaims its killed
 generations. A replacement container has a new PID namespace, so it
 preserves them; they stay until a later boot of the same identified machine
-or manual removal. Run and project deletion fencing of late writers arrives
-with managed generator transfer receipts.
+or manual removal.
+
+## Run archive transfer and receipts
+
+A completed, scrubbed HAR moves into the run archive when its session
+closes: the session hands it to the archive sink, which copies it under the
+HAR namespace lease and only then retires the published file from the HAR
+directory. A distributed generator copies it into its own run archive as
+`browser_har_<generation>.har` and lists it in the archive manifest
+(`browser_har_artifacts`: kind `har_native`, fidelity `native`, source
+generation, sequence, SHA-256 and bytes). A controller running the test
+itself copies it straight into the run archive. A HAR that cannot be
+retained stays in its HAR directory under its retention, is counted in
+`browser_har_omitted` by reason (`artifact_limit`, `artifact_too_large`,
+`run_byte_limit`, `archive_quota`, `transfer_failed`, `invalid_artifact`,
+`duplicate`, `source_unavailable`, `receipt_refused`) and marks the archive
+`browser_har_incomplete`. HAR is optional evidence and never fails a run. A
+run keeps at most 128 HARs and 1 GiB of them, each at most 100 MiB; on a
+generator a HAR is refused when it would leave less than a quarter of the
+run archive byte limit for required evidence.
+
+At finalization the controller fetches each declared HAR from the live
+generator, never from the collection cache, so a source served only from
+the cache (its generator gone) has its HARs `source_unavailable`. It checks
+size and SHA-256, writes the HAR into the run archive, lists it in the
+manifest with its source identity and records an accepted receipt in
+`run_evidence_receipts` (schema release 49): run, execution generation,
+source identity and generation, sequence, kind, SHA-256, bytes and state.
+All of this happens before the manifest is written, so nothing is in
+flight when it is. Receipts are idempotent by source artifact: refetching
+the same HAR after a controller restart keeps one receipt, and different
+content for the same artifact is refused. A HAR received after the run's
+archive was published, after the run was deleted, or under an older
+execution generation than one already recorded is tombstoned and its copy
+removed. When the archive publication commits, the run's receipts are
+published and each generator is acknowledged (`AcknowledgeEvidence`, by
+name and SHA-256); only then does it delete its copy. A changed or unknown
+artifact is retained, a repeated acknowledgement is harmless, and a failed
+acknowledgement leaves the copy to the generator's archive retention.
+Deleting a run archive or its project tombstones its receipts.
+
+The archive manifest's artifact inventory lists each HAR (format `har`,
+record type `browser_har_native`) with its SHA-256, so object-store
+publication and materialization carry it, and the inventory refuses a HAR
+whose bytes differ from its manifest entry. Safe archive exports omit HARs
+until HARs have their own download and export contract. The transfer is
+pulled by the controller, as the run's other archive artifacts are, rather
+than pushed by the generator: generators host the gRPC server in both
+connectivity modes.
 
 ## Bounds and compatibility
 
@@ -146,8 +193,8 @@ separately in the QA bundle. The same ownership and crash-reclamation tests
 also pass as a static Linux binary in a container without browsers, so the
 real-driver crash test has not run on Linux. Windows acceptance must not be
 inferred from either. The filesystems and peer processes must honor the
-existing descriptor-lock contract. The implementation neither coordinates
-remote object-store writers nor transfers raw files into managed archives.
+existing descriptor-lock contract. Only scrubbed, completed HARs leave a
+generator; raw working files never do.
 
 Legacy transaction/resource formats and HAR import behavior are unchanged.
 The deterministic frame-finalizer correction also prevents one stale native

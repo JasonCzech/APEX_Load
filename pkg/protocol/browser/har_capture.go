@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -400,4 +401,48 @@ func browserActionRequestsHARCapture(action *protocol.Action) bool {
 		}
 	}
 	return false
+}
+
+// TakeBrowserHARArtifacts hands over the HAR artifacts this session published
+// since the last call. The engine transfers them into the run archive.
+func (b *Browser) TakeBrowserHARArtifacts() []protocol.BrowserHARArtifact {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := b.publishedHARArtifacts
+	b.publishedHARArtifacts = nil
+	return out
+}
+
+// TakeRuntimeHARArtifact streams a published scrubbed HAR artifact to
+// consume and, once consume succeeds, retires it from its HAR directory
+// under the namespace lease. The artifact must still be the same published
+// file; nothing else in the directory is touched.
+func TakeRuntimeHARArtifact(ctx context.Context, path string, consume func(r io.Reader, size int64) error) error {
+	name := filepath.Base(path)
+	if consume == nil || !isRetainedRuntimeHARArtifact(name) || name != filepath.Base(filepath.Clean(path)) {
+		return errHAROwnershipUnproven
+	}
+	return WithRuntimeHARArtifactNamespace(ctx, filepath.Dir(path), func(root *os.Root) error {
+		info, err := root.Lstat(name)
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return errHAROwnershipUnproven
+		}
+		file, err := root.Open(name)
+		if err != nil {
+			return err
+		}
+		opened, statErr := file.Stat()
+		if statErr != nil || !os.SameFile(info, opened) {
+			_ = file.Close()
+			return errors.Join(statErr, errHAROwnershipUnproven)
+		}
+		consumeErr := consume(file, info.Size())
+		if err := errors.Join(consumeErr, file.Close()); err != nil {
+			return err
+		}
+		return RemoveRuntimeHARArtifactAt(root, name, info)
+	})
 }

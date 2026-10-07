@@ -66,8 +66,16 @@ func prepareSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArch
 	maskedManifest.TransactionCount = stats.Count
 	maskedManifest.Artifacts = make([]RunArchiveArtifact, 0, len(manifest.Artifacts))
 	foundTransactions := false
+	// Native HARs are not part of safe exports until their own download and
+	// export contract exists; the masked manifest does not list them.
+	var harNames []string
+	maskedManifest.BrowserHARArtifacts = nil
 	for _, artifact := range manifest.Artifacts {
 		if artifact.Name == strings.TrimSpace(manifest.TransactionsParquetFile) && artifact.Name != "" {
+			continue
+		}
+		if artifact.RecordType == runArchiveHARRecordType {
+			harNames = append(harNames, artifact.Name)
 			continue
 		}
 		if artifact.Name == strings.TrimSpace(manifest.TransactionsFile) {
@@ -96,8 +104,11 @@ func prepareSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArch
 		replacements:     make(map[string][]byte, 2),
 		stream:           nil,
 		sizes:            map[string]int64{transactionName: stats.SizeBytes},
-		omit:             make(map[string]struct{}, 1),
+		omit:             make(map[string]struct{}, 1+len(harNames)),
 		transactionStats: stats,
+	}
+	for _, name := range harNames {
+		plan.omit[name] = struct{}{}
 	}
 	if parquetName := strings.TrimSpace(manifest.TransactionsParquetFile); parquetName != "" {
 		// Legacy parquet embeds extractions/snapshots and cannot be safely patched

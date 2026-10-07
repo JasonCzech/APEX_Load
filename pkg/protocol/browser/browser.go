@@ -78,6 +78,9 @@ type Browser struct {
 	harManualSeen         bool
 	harSLABreachThreshold time.Duration
 	lastHARArtifactPath   string
+	// publishedHARArtifacts are the artifacts published since the engine last
+	// took them (see TakeBrowserHARArtifacts).
+	publishedHARArtifacts []protocol.BrowserHARArtifact
 	harMonitorStop        chan struct{}
 	harMonitorWG          sync.WaitGroup
 	harLimitExceeded      chan struct{}

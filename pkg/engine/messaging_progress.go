@@ -23,7 +23,11 @@ type engineMessagingProgress struct {
 }
 
 type messagingProgressRegistration struct {
-	browser  *browserDocumentRegistration
+	browser *browserDocumentRegistration
+	// har hands a browser session's published HAR artifacts to the sink
+	// publishBrowser named, after the final teardown.
+	har      protocol.Protocol
+	harSink  ResultSink
 	mu       sync.Mutex
 	id       uint64
 	provider protocol.Protocol
@@ -41,8 +45,13 @@ func (mc *MetricsCollector) registerMessagingProgressWithRedaction(p protocol.Pr
 		return nil
 	}
 	browser := mc.registerBrowserDocuments(p, group, redaction)
-	if browser != nil {
-		return &messagingProgressRegistration{browser: browser}
+	_, harProvider := p.(protocol.BrowserHARArtifactProvider)
+	if browser != nil || harProvider {
+		entry := &messagingProgressRegistration{browser: browser}
+		if harProvider {
+			entry.har = p
+		}
+		return entry
 	}
 	// Processor configuration alone does not imply consumption. Producer-only
 	// scripts must not retain otherwise unused per-VUser processor trackers.
@@ -202,6 +211,12 @@ func (entry *messagingProgressRegistration) finish() { entry.capture(true) }
 
 func runProtocolTeardownWithMessagingProgress(p protocol.Protocol, entry *messagingProgressRegistration, providers ...func() *RedactionConfig) error {
 	err := runProtocolTeardown(p, providers...)
+	if entry != nil && entry.har != nil {
+		entry.mu.Lock()
+		sink := entry.harSink
+		entry.mu.Unlock()
+		handOffBrowserHARArtifacts(entry.har, sink)
+	}
 	if entry != nil && entry.browser != nil {
 		var redaction *RedactionConfig
 		if len(providers) > 0 && providers[0] != nil {
@@ -292,6 +307,11 @@ func (state *engineMessagingProgress) snapshot() *protocol.MessagingProgressSnap
 }
 
 func (entry *messagingProgressRegistration) publishBrowser(sink ResultSink, region string, redaction func() *RedactionConfig) {
+	if entry != nil && entry.har != nil {
+		entry.mu.Lock()
+		entry.harSink = sink
+		entry.mu.Unlock()
+	}
 	if entry != nil && entry.browser != nil {
 		entry.browser.publish(sink, redaction, region)
 	}

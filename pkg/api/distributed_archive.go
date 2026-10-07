@@ -168,6 +168,15 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 	if err := writeMergedRemoteArchiveFilesWithBudget(workingDir, &manifest, bundles, targetHistory, mergeOutput, test); err != nil {
 		return nil, err
 	}
+	harTargets := map[string]string{}
+	for _, bundle := range bundles {
+		for _, har := range bundle.hars {
+			harTargets[har.entry.SourceIdentity] = bundle.target
+		}
+	}
+	if err := mergeRemoteHARArtifacts(workingDir, &manifest, bundles, tr.acceptRemoteHARReceipt(test, harTargets)); err != nil {
+		return nil, err
+	}
 	if err := writeDistributedELKEvidence(workingDir, &manifest, tr, test, completedAt, mergeOutput); err != nil {
 		return nil, err
 	}
@@ -409,8 +418,12 @@ type remoteArchiveBundle struct {
 	resourcesPath             string
 	browserDocumentsPath      string
 	summariesPath             string
-	transferStageRoot         string
-	transferLease             *archiveTransferLease
+	// hars are the source's fetched, verified HARs; harOmitted counts the
+	// ones it declared that could not be fetched.
+	hars              []stagedRemoteHAR
+	harOmitted        map[string]int64
+	transferStageRoot string
+	transferLease     *archiveTransferLease
 }
 
 func cleanupRemoteArchiveBundles(bundles []remoteArchiveBundle) {
@@ -588,6 +601,7 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCache(ctx con
 	results := make(chan remoteArchiveFetchResult, len(targets))
 	semaphore := make(chan struct{}, remoteArchiveFetchConcurrency)
 	budget := &remoteArchiveTransferBudget{remaining: limit, lease: lease}
+	harBudget := newRemoteHARBudget()
 	var workers sync.WaitGroup
 	for index, target := range targets {
 		workers.Add(1)
@@ -617,6 +631,14 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCache(ctx con
 			bundle, missing, err := b.fetchRemoteArchiveBundleTargetForSource(ctx, client, test.ID, target, sourceIdentities[target], index, transferStageRoot, requireAll, budget)
 			if cache != nil && cached == nil && err == nil && !missing {
 				err = cache.save(ctx, bundle)
+			}
+			if err == nil && !missing && len(bundle.manifest.BrowserHARArtifacts) > 0 {
+				// HARs come from the live generator, never the cache.
+				var live archiveArtifactClient
+				if clients[target] != nil {
+					live = clients[target]
+				}
+				bundle.hars, bundle.harOmitted = fetchRemoteHARArtifacts(ctx, live, test.ID, sourceIdentities[target], filepath.Join(transferStageRoot, fmt.Sprintf("target-%03d", index)), bundle.manifest.BrowserHARArtifacts, harBudget)
 			}
 			results <- remoteArchiveFetchResult{index: index, bundle: bundle, missing: missing, err: err}
 		}(index, target)

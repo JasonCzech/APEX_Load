@@ -9037,6 +9037,36 @@ paths:
                           type: string
                         browser_documents_sha256:
                           type: string
+                        browser_har_artifacts:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              bytes:
+                                type: integer
+                                format: int64
+                              fidelity:
+                                type: string
+                              kind:
+                                type: string
+                              name:
+                                type: string
+                              sequence:
+                                type: integer
+                                format: int64
+                              sha256:
+                                type: string
+                              source_generation:
+                                type: string
+                              source_identity:
+                                type: string
+                        browser_har_incomplete:
+                          type: boolean
+                        browser_har_omitted:
+                          type: object
+                          additionalProperties:
+                            type: integer
+                            format: int64
                         business_key_digests_unavailable:
                           type: boolean
                         clock_observation_count:
@@ -343839,6 +343869,44 @@ paths:
                     type: string
                   browser_documents_sha256:
                     type: string
+                  browser_har_artifacts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        bytes:
+                          type: integer
+                          format: int64
+                        fidelity:
+                          type: string
+                        kind:
+                          type: string
+                        name:
+                          type: string
+                        sequence:
+                          type: integer
+                          format: int64
+                        sha256:
+                          type: string
+                        source_generation:
+                          type: string
+                        source_identity:
+                          type: string
+                      required:
+                        - bytes
+                        - fidelity
+                        - kind
+                        - name
+                        - sequence
+                        - sha256
+                        - source_generation
+                  browser_har_incomplete:
+                    type: boolean
+                  browser_har_omitted:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                      format: int64
                   business_key_digests_unavailable:
                     type: boolean
                   clock_observation_count:
@@ -357097,6 +357165,44 @@ paths:
                         type: string
                       browser_documents_sha256:
                         type: string
+                      browser_har_artifacts:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            bytes:
+                              type: integer
+                              format: int64
+                            fidelity:
+                              type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            sequence:
+                              type: integer
+                              format: int64
+                            sha256:
+                              type: string
+                            source_generation:
+                              type: string
+                            source_identity:
+                              type: string
+                          required:
+                            - bytes
+                            - fidelity
+                            - kind
+                            - name
+                            - sequence
+                            - sha256
+                            - source_generation
+                      browser_har_incomplete:
+                        type: boolean
+                      browser_har_omitted:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
                       business_key_digests_unavailable:
                         type: boolean
                       clock_observation_count:

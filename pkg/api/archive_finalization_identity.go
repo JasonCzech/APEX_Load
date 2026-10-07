@@ -155,5 +155,8 @@ func (tr *TestRunner) commitArchiveFinalization(job *storage.ArchiveFinalization
 		}
 	}
 	tr.recordBackgroundActivity(&storage.ObjectActivityEvent{ID: "archive:" + job.TestID + ":" + job.IntentToken, Action: "archive", ActorType: "system", ActorSubject: "archive-finalizer", ActorDisplayName: "Automatic result archiving", InitiatedBy: initiatedBy, ProjectID: job.ProjectID, ResourceType: "test", ResourceID: job.TestID, ResourceName: name, Status: "success", CreatedAt: time.Now().UTC()})
+	// The archive now durably holds the run's evidence: publish its receipts
+	// and let the generators delete their copies.
+	tr.publishRunEvidence(job.TestID)
 	return true, nil
 }

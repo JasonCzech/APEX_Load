@@ -1853,6 +1853,27 @@ func schemaCreateTableStatements() []string {
 			recorded_at DATETIME NOT NULL,
 			recorded_by TEXT NOT NULL
 		)`,
+		// Durable receipts of optional evidence artifacts a generator produced
+		// (native HARs): accepted once the controller durably holds one,
+		// published with the run's archive, tombstoned when received after
+		// publication or deletion. No foreign key: tombstones outlive the run.
+		// The store validates kind, so a new evidence kind needs no DDL.
+		`CREATE TABLE IF NOT EXISTS run_evidence_receipts (
+			test_id TEXT NOT NULL,
+			execution_generation BIGINT NOT NULL DEFAULT 0,
+			source_identity TEXT NOT NULL,
+			target TEXT NOT NULL DEFAULT '',
+			source_generation TEXT NOT NULL,
+			sequence BIGINT NOT NULL DEFAULT 0,
+			kind TEXT NOT NULL,
+			name TEXT NOT NULL,
+			sha256 TEXT NOT NULL,
+			bytes BIGINT NOT NULL,
+			state TEXT NOT NULL CHECK(state IN ('accepted', 'published', 'tombstoned')),
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY (test_id, source_identity, source_generation)
+		)`,
 	}
 }
 
