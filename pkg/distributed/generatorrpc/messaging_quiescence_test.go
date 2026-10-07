@@ -11,6 +11,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	gproto "google.golang.org/protobuf/proto"
 )
@@ -202,6 +203,8 @@ type strictPauseServerStream struct {
 	signal   *pb.ControlSignal
 	received bool
 }
+
+func (*strictPauseServerStream) SendHeader(metadata.MD) error { return nil }
 
 func (s *strictPauseServerStream) Context() context.Context  { return s.ctx }
 func (*strictPauseServerStream) Send(*pb.MetricsBatch) error { return nil }

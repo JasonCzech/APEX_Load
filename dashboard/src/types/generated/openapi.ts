@@ -1485,6 +1485,7 @@ export interface operations {
                 "baseline_final"?: number;
                 "baseline_id"?: string;
                 "baseline_p75"?: (number) | null;
+                "cohort"?: string;
                 "comparable"?: boolean;
                 "current_final"?: number;
                 "current_p75"?: (number) | null;
@@ -3881,6 +3882,7 @@ export interface operations {
                 "samples"?: number;
                 "status"?: string;
                 "sustained_breach_intervals"?: number;
+                "unscored_intervals"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
@@ -8413,6 +8415,7 @@ export interface operations {
         "application/json": {
           "aggregation"?: string;
           "bucket_seconds"?: number;
+          "counter_readings"?: boolean;
           "dataset_id"?: string;
           "derivation"?: {
             "minimum_coverage"?: number;
@@ -29242,6 +29245,7 @@ export interface operations {
               "baseline_final": number;
               "baseline_id"?: string;
               "baseline_p75"?: (number) | null;
+              "cohort"?: string;
               "comparable": boolean;
               "current_final": number;
               "current_p75"?: (number) | null;
@@ -29551,6 +29555,7 @@ export interface operations {
                 "samples": number;
                 "status": string;
                 "sustained_breach_intervals"?: number;
+                "unscored_intervals"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
@@ -34481,6 +34486,7 @@ export interface operations {
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
+                  "unscored"?: Array<string>;
                 }) | null;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -34967,6 +34973,7 @@ export interface operations {
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
+                  "unscored"?: Array<string>;
                 }) | null;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -35305,6 +35312,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
@@ -42135,6 +42143,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
@@ -43693,6 +43702,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
@@ -44295,6 +44305,7 @@ export interface operations {
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
+              "unscored"?: Array<string>;
             }) | null;
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
@@ -55159,6 +55170,7 @@ export interface operations {
               "baseline_final": number;
               "baseline_id"?: string;
               "baseline_p75"?: (number) | null;
+              "cohort"?: string;
               "comparable": boolean;
               "current_final": number;
               "current_p75"?: (number) | null;
@@ -55468,6 +55480,7 @@ export interface operations {
                 "samples": number;
                 "status": string;
                 "sustained_breach_intervals"?: number;
+                "unscored_intervals"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
@@ -59059,6 +59072,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
@@ -60617,6 +60631,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
@@ -62745,6 +62760,7 @@ export interface operations {
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
+                  "unscored"?: Array<string>;
                 }) | null;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -63231,6 +63247,7 @@ export interface operations {
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
+                  "unscored"?: Array<string>;
                 }) | null;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -63569,6 +63586,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
@@ -65987,6 +66005,7 @@ export interface operations {
                 "legacy"?: boolean;
                 "policy_hash"?: string;
                 "start": string;
+                "unavailable"?: string;
               }>;
               "unknown_ms": number;
             }) | null;
@@ -66103,6 +66122,7 @@ export interface operations {
                 "baseline_final": number;
                 "baseline_id"?: string;
                 "baseline_p75"?: (number) | null;
+                "cohort"?: string;
                 "comparable": boolean;
                 "current_final": number;
                 "current_p75"?: (number) | null;
@@ -66390,6 +66410,7 @@ export interface operations {
                   "samples": number;
                   "status": string;
                   "sustained_breach_intervals"?: number;
+                  "unscored_intervals"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
                 }) | null;
@@ -69083,6 +69104,7 @@ export interface operations {
                   "legacy"?: boolean;
                   "policy_hash"?: string;
                   "start": string;
+                  "unavailable"?: string;
                 }>;
                 "unknown_ms": number;
               }) | null;
@@ -69528,6 +69550,7 @@ export interface operations {
                 "samples": number;
                 "status": string;
                 "sustained_breach_intervals"?: number;
+                "unscored_intervals"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               }) | null;
@@ -76943,6 +76966,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
@@ -78501,6 +78525,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
@@ -79103,6 +79128,7 @@ export interface operations {
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
+              "unscored"?: Array<string>;
             }) | null;
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
@@ -97171,6 +97197,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
@@ -98729,6 +98756,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
@@ -99331,6 +99359,7 @@ export interface operations {
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
+              "unscored"?: Array<string>;
             }) | null;
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
@@ -111936,6 +111965,7 @@ export interface operations {
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
+                  "unscored"?: Array<string>;
                 }) | null;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -112422,6 +112452,7 @@ export interface operations {
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
+                  "unscored"?: Array<string>;
                 }) | null;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -112760,6 +112791,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
@@ -113671,6 +113703,7 @@ export interface operations {
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
+                  "unscored"?: Array<string>;
                 }) | null;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -114157,6 +114190,7 @@ export interface operations {
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
+                  "unscored"?: Array<string>;
                 }) | null;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -114495,6 +114529,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
@@ -115406,6 +115441,7 @@ export interface operations {
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
+                  "unscored"?: Array<string>;
                 }) | null;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -115892,6 +115928,7 @@ export interface operations {
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
+                  "unscored"?: Array<string>;
                 }) | null;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -116230,6 +116267,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
@@ -117141,6 +117179,7 @@ export interface operations {
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
+                  "unscored"?: Array<string>;
                 }) | null;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -117627,6 +117666,7 @@ export interface operations {
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
+                  "unscored"?: Array<string>;
                 }) | null;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -117965,6 +118005,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
@@ -118876,6 +118917,7 @@ export interface operations {
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
+                  "unscored"?: Array<string>;
                 }) | null;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -119362,6 +119404,7 @@ export interface operations {
                   "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
+                  "unscored"?: Array<string>;
                 }) | null;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -119700,6 +119743,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
@@ -143792,6 +143836,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
@@ -145350,6 +145395,7 @@ export interface operations {
                 "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
+                "unscored"?: Array<string>;
               }) | null;
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
@@ -145952,6 +145998,7 @@ export interface operations {
               "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
+              "unscored"?: Array<string>;
             }) | null;
             "termination_mode"?: string;
             "timeslot_id"?: (string) | null;

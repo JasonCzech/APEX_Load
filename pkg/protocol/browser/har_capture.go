@@ -413,6 +413,54 @@ func (b *Browser) TakeBrowserHARArtifacts() []protocol.BrowserHARArtifact {
 	return out
 }
 
+// ReadRuntimeHARArtifact streams a published scrubbed HAR artifact to
+// consume under the namespace lease and returns the file's identity, so a
+// caller that copies it can retire it later (RetireRuntimeHARArtifact) once
+// the copy is final. Nothing in the directory is changed.
+func ReadRuntimeHARArtifact(ctx context.Context, path string, consume func(r io.Reader, size int64) error) (os.FileInfo, error) {
+	name := filepath.Base(path)
+	if consume == nil || !isRetainedRuntimeHARArtifact(name) || name != filepath.Base(filepath.Clean(path)) {
+		return nil, errHAROwnershipUnproven
+	}
+	var identity os.FileInfo
+	err := WithRuntimeHARArtifactNamespace(ctx, filepath.Dir(path), func(root *os.Root) error {
+		info, err := root.Lstat(name)
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return errHAROwnershipUnproven
+		}
+		file, err := root.Open(name)
+		if err != nil {
+			return err
+		}
+		opened, statErr := file.Stat()
+		if statErr != nil || !os.SameFile(info, opened) {
+			_ = file.Close()
+			return errors.Join(statErr, errHAROwnershipUnproven)
+		}
+		if err := errors.Join(consume(file, info.Size()), file.Close()); err != nil {
+			return err
+		}
+		identity = info
+		return nil
+	})
+	return identity, err
+}
+
+// RetireRuntimeHARArtifact retires a published HAR artifact read earlier,
+// under the namespace lease, only while it is still that same file.
+func RetireRuntimeHARArtifact(ctx context.Context, path string, identity os.FileInfo) error {
+	name := filepath.Base(path)
+	if identity == nil || !isRetainedRuntimeHARArtifact(name) || name != filepath.Base(filepath.Clean(path)) {
+		return errHAROwnershipUnproven
+	}
+	return WithRuntimeHARArtifactNamespace(ctx, filepath.Dir(path), func(root *os.Root) error {
+		return RemoveRuntimeHARArtifactAt(root, name, identity)
+	})
+}
+
 // TakeRuntimeHARArtifact streams a published scrubbed HAR artifact to
 // consume and, once consume succeeds, retires it from its HAR directory
 // under the namespace lease. The artifact must still be the same published

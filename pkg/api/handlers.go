@@ -1125,7 +1125,14 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 
 	// Validate the durable revision when the store keeps one, and name it, so
 	// the result binds to the exact stored document it describes.
-	if durable, found, err := s.runner.GetScriptAuthoringDurable(id); err == nil && found && durable != nil && durable.Script != nil &&
+	// Without one (no revision store, a failed read, a moved script) the
+	// response names no revision and the editor validates its baseline as a
+	// draft instead.
+	durable, found, err := s.runner.GetScriptAuthoringDurable(id)
+	if err != nil {
+		slog.Warn("durable script read for validation failed", "script_id", id, "error", err)
+	}
+	if err == nil && found && durable != nil && durable.Script != nil &&
 		durable.ID == script.ID && durable.ProjectID == script.ProjectID && durable.ContentRevision != "" {
 		response := buildScriptValidationResponse(id, durable.Script, s.runner.secretResolverForScript(durable.Script))
 		response.ValidatedContentRevision = durable.ContentRevision
@@ -1158,14 +1165,15 @@ func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Reques
 		Script    dsl.Script        `json:"script"`
 		Variables map[string]string `json:"variables,omitempty"`
 		// Fingerprint is an opaque client digest of the submitted draft,
-		// echoed as validated_fingerprint (at most 128 printable ASCII bytes).
+		// echoed as validated_fingerprint (at most 128 visible ASCII
+		// characters, 0x21-0x7E: no spaces).
 		Fingerprint string `json:"fingerprint,omitempty"`
 	}
 	if !decodeJSONBody(w, r, &wrapper) {
 		return
 	}
 	if !validValidationFingerprint(wrapper.Fingerprint) {
-		writeError(w, http.StatusBadRequest, "fingerprint must be at most 128 printable ASCII characters")
+		writeError(w, http.StatusBadRequest, "fingerprint must be at most 128 visible ASCII characters (0x21-0x7E, no spaces)")
 		return
 	}
 

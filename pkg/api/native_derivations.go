@@ -71,7 +71,9 @@ func applyNativeEvidenceDerivation(project string, q storage.AnalyticsQuery, out
 			series.Points[j].Value, series.Points[j].Reason = derived.Buckets[j].Value, derived.Buckets[j].Reason
 		}
 	}
+	// Responses name the catalog operation, never the alias asked for.
 	derivation := *q.Derivation
+	derivation.Operation = analysis.CanonicalDerivation(derivation.Operation)
 	out.Derivation = &derivation
 	return nil
 }
@@ -109,6 +111,7 @@ func applyNativeArchiveDerivation(project string, q storage.AnalyticsQuery, resp
 		response.Current.Buckets[i].Value, response.Current.Buckets[i].Reason = value, reason
 	}
 	derivation := *q.Derivation
+	derivation.Operation = analysis.CanonicalDerivation(derivation.Operation)
 	response.Derivation = &derivation
 	return nil
 }

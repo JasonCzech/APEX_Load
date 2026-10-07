@@ -110,8 +110,10 @@ export function rcaTone(value: string): 'success' | 'warning' | 'danger' | 'info
 export const rcaConfidenceLabel = (confidence: RcaConfidence | string) => `${humanize(confidence)} confidence`
 
 // RcaSeriesRef is a parsed series ID: transaction/<name>/<metric>,
-// action/<name>/<metric>, dependency/<label>/<phase> or
-// monitor/<provider>/<source>/<metric>/<digest>.
+// action/<name>/<metric>, dependency/<label>/<phase>,
+// monitor/<provider>/<source>/<metric>/<digest>,
+// imported/<dataset>/<metric>/<digest> or
+// action_dimensions/<JSON tuple>/<metric>.
 export interface RcaSeriesRef {
   dimension: string
   name: string
@@ -123,6 +125,9 @@ export function parseRcaSeries(id: string): RcaSeriesRef {
   const parts = id.split('/')
   if (parts[0] === 'monitor' && parts.length >= 5) {
     return { dimension: 'monitor', provider: parts[1], name: parts.slice(3, -1).join('/'), metric: parts.slice(3, -1).join('/') }
+  }
+  if (parts[0] === 'imported' && parts.length >= 4) {
+    return { dimension: 'imported', provider: parts[1], name: parts.slice(2, -1).join('/'), metric: parts.slice(2, -1).join('/') }
   }
   if (parts.length >= 3) return { dimension: parts[0], name: parts.slice(1, -1).join('/'), metric: parts[parts.length - 1] }
   return { dimension: '', name: id, metric: '' }
@@ -146,10 +151,22 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 export const rcaProviderLabel = (provider: string) => PROVIDER_LABELS[provider] || provider
 
+// jointTupleLabel reads an action-dimension tuple ([action, network
+// profile, hierarchy, phase]) as its non-empty parts.
+function jointTupleLabel(name: string): string {
+  try {
+    const tuple: unknown = JSON.parse(name)
+    if (Array.isArray(tuple)) return tuple.filter(part => typeof part === 'string' && part).join(' · ') || name
+  } catch { /* Not a tuple: shown as recorded. */ }
+  return name
+}
+
 export function rcaSeriesLabel(id: string): string {
   const s = parseRcaSeries(id)
   if (s.dimension === 'monitor') return `${s.name} · ${rcaProviderLabel(s.provider || '')}`
+  if (s.dimension === 'imported') return `${s.name} · imported dataset ${(s.provider || '').slice(0, 8)}`
   if (!s.metric) return id
+  if (s.dimension === 'action_dimensions') return `${jointTupleLabel(s.name)} · ${METRIC_LABELS[s.metric] || s.metric.replace(/_/g, ' ')}`
   return `${s.name} · ${METRIC_LABELS[s.metric] || s.metric.replace(/_/g, ' ')}`
 }
 

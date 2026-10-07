@@ -17,6 +17,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -320,5 +321,75 @@ func TestRCABrowserDocumentSeriesUseFinalDistributionsPerTuple(t *testing.T) {
 	limited, limitations, _ := rcaBrowserDocumentSeries(context.Background(), record, manifest, summaries, 1, 0)
 	if len(limited) != 1 || len(limitations) != 1 {
 		t.Fatalf("series budget: %d %+v", len(limited), limitations)
+	}
+}
+
+// Baseline-mode RCA reads the baseline run's browser document tuples too, so
+// a document series is judged against the same tuple of the baseline run
+// rather than only within its own run.
+func TestRCABaselineEvidenceCarriesBrowserDocumentSeries(t *testing.T) {
+	server, store := baselineTestServer(t)
+	current := comparisonArchiveFixture(t, server, store, "current", 200, 150)
+	baseline := comparisonArchiveFixture(t, server, store, "baseline", 200, 150)
+	for _, run := range []*ManagedTest{current, baseline} {
+		record := server.runner.archives[run.ID]
+		start := *run.StartedAt
+		var documents []d2Document
+		for i := 0; i < 6; i++ {
+			documents = append(documents, d2Document{id: i + 1, metric: "lcp", cohort: d2Cohort("141.0"), at: start.Add(time.Duration(31+i) * time.Second), value: float64(100 * (i + 1)), progress: 10, final: true})
+		}
+		attachD2Documents(t, record, documents...)
+	}
+	manifest, err := loadRunArchiveManifestFromRecord(server.runner.archives[current.ID])
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := rcaArchiveDigest(server.runner.archives[baseline.ID])
+	if err != nil {
+		t.Fatal(err)
+	}
+	coverage, evidence := server.rcaBaselineEvidence(context.Background(), manifest, baseline.ID, digest, rca.NewBudgeter(rca.DefaultBudget, nil, nil), rca.DefaultBudget)
+	if evidence == nil {
+		t.Fatalf("no baseline evidence: %+v", coverage)
+	}
+	found := false
+	for _, s := range evidence.Series {
+		found = found || strings.HasPrefix(s.ID, "browser_document/lcp/")
+	}
+	if !found {
+		t.Fatal("the baseline's browser document series were not read")
+	}
+}
+
+// Document tuples pair through the comparison policy's group mappings, as
+// transactions do, and each row names its runtime cohort.
+func TestBaselineComparisonMapsDocumentGroups(t *testing.T) {
+	server, store := baselineTestServer(t)
+	current := comparisonArchiveFixture(t, server, store, "current", 200, 150)
+	baseline := comparisonArchiveFixture(t, server, store, "baseline", 100, 100)
+	start := *current.StartedAt
+	cohort := d2Cohort("141.0")
+	var currentDocs, baselineDocs []d2Document
+	for i := 0; i < 4; i++ {
+		at := start.Add(time.Duration(40+i) * time.Second)
+		currentDocs = append(currentDocs, d2Document{id: i + 1, metric: "lcp", cohort: cohort, at: at, value: 800, progress: 10, final: true, group: "Checkout"})
+		baselineDocs = append(baselineDocs, d2Document{id: i + 1, metric: "lcp", cohort: cohort, at: at, value: 400, progress: 10, final: true, group: "Checkout v1"})
+	}
+	attachD2Documents(t, server.runner.archives[current.ID], currentDocs...)
+	attachD2Documents(t, server.runner.archives[baseline.ID], baselineDocs...)
+	request := BaselineComparisonRequest{BaselineIDs: []string{baseline.ID}, Population: "transaction"}
+	p := defaultBaselineComparisonPolicy()
+	p.GroupMappings = map[string]string{baseline.ID + "/Checkout v1": "Checkout"}
+	a, err := server.readBaselineComparisonRun(context.Background(), current, request, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := server.readBaselineComparisonRun(context.Background(), baseline, request, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := compareBaselineRuns(a, []*baselineComparisonRun{b}, request, p)
+	if snapshot == nil || len(snapshot.BrowserDocuments) != 1 || !snapshot.BrowserDocuments[0].Comparable || snapshot.BrowserDocuments[0].Group != "Checkout" || snapshot.BrowserDocuments[0].Cohort != protocol.BrowserRuntimeCohortDigest(cohort) {
+		t.Fatalf("mapped group not compared: %+v", snapshot)
 	}
 }

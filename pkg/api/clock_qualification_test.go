@@ -14,30 +14,70 @@ import (
 func TestClockCalibrationExpiryJumpAndStep(t *testing.T) {
 	start := time.Unix(1_800_000_000, 0).UTC()
 	c := newClockCalibrations(30 * time.Second)
-	if _, q := c.quality("gen-a", start); q.Qualified || q.Reason != clockReasonUncalibrated {
+	if _, q := c.qualityAt("gen-a", start, 0); q.Qualified || q.Reason != clockReasonUncalibrated {
 		t.Fatalf("uncalibrated: %+v", q)
 	}
 	c.observeAt("gen-a", 500*time.Millisecond, 2*time.Millisecond, start, 0)
-	if offset, q := c.quality("gen-a", start.Add(time.Minute)); !q.Qualified || offset != 500 || q.UncertaintyMs != 2 {
+	if offset, q := c.qualityAt("gen-a", start.Add(time.Minute), time.Minute); !q.Qualified || offset != 500 || q.UncertaintyMs != 2 {
 		t.Fatalf("calibrated: %v %+v", offset, q)
 	}
-	if _, q := c.quality("gen-a", start.Add(91*time.Second)); q.Qualified || q.Reason != clockReasonExpired {
+	if _, q := c.qualityAt("gen-a", start.Add(91*time.Second), 91*time.Second); q.Qualified || q.Reason != clockReasonExpired {
 		t.Fatalf("three missed probes: %+v", q)
 	}
 	// A jump of 100 ms against a 2 ms uncertainty is not trusted until
 	// confirmed.
 	c.observeAt("gen-a", 600*time.Millisecond, 2*time.Millisecond, start.Add(30*time.Second), 30*time.Second)
-	if _, q := c.quality("gen-a", start.Add(31*time.Second)); q.Qualified || q.Reason != clockReasonJump {
+	if _, q := c.qualityAt("gen-a", start.Add(31*time.Second), 31*time.Second); q.Qualified || q.Reason != clockReasonJump {
 		t.Fatalf("jump: %+v", q)
 	}
 	c.observeAt("gen-a", 601*time.Millisecond, 2*time.Millisecond, start.Add(60*time.Second), 60*time.Second)
-	if offset, q := c.quality("gen-a", start.Add(61*time.Second)); !q.Qualified || offset != 601 {
+	if offset, q := c.qualityAt("gen-a", start.Add(61*time.Second), 61*time.Second); !q.Qualified || offset != 601 {
 		t.Fatalf("confirmed after a jump: %v %+v", offset, q)
 	}
 	// The controller's wall clock stepped 10 s while 30 s passed.
 	c.observeAt("gen-a", 601*time.Millisecond, 2*time.Millisecond, start.Add(100*time.Second), 90*time.Second)
-	if _, q := c.quality("gen-a", start.Add(100*time.Second)); q.Qualified || q.Reason != clockReasonStep {
+	if _, q := c.qualityAt("gen-a", start.Add(100*time.Second), 90*time.Second); q.Qualified || q.Reason != clockReasonStep {
 		t.Fatalf("wall-clock step: %+v", q)
+	}
+}
+
+// A step in the controller's wall clock after the last probe disqualifies
+// the calibration at once, forward or backward, instead of letting every
+// wall-clock receipt time and sample age be corrected by a stale mapping
+// until the next probe; expiry runs on the monotonic clock.
+func TestClockCalibrationStepBetweenProbes(t *testing.T) {
+	start := time.Unix(1_800_000_000, 0).UTC()
+	c := newClockCalibrations(30 * time.Second)
+	c.observeAt("gen-a", 0, time.Millisecond, start, 0)
+	if _, q := c.qualityAt("gen-a", start.Add(10*time.Second), 10*time.Second); !q.Qualified {
+		t.Fatalf("steady clocks: %+v", q)
+	}
+	if _, q := c.qualityAt("gen-a", start.Add(13*time.Second), 10*time.Second); q.Qualified || q.Reason != clockReasonStep {
+		t.Fatalf("forward step: %+v", q)
+	}
+	if _, q := c.qualityAt("gen-a", start.Add(5*time.Second), 10*time.Second); q.Qualified || q.Reason != clockReasonStep {
+		t.Fatalf("backward step: %+v", q)
+	}
+	// Expiry counts monotonic time.
+	if _, q := c.qualityAt("gen-a", start.Add(91*time.Second), 91*time.Second); q.Qualified || q.Reason != clockReasonExpired {
+		t.Fatalf("monotonic expiry: %+v", q)
+	}
+	// The live entry point reads the monotonic clock itself.
+	live := newClockCalibrations(30 * time.Second)
+	live.observe("gen-a", 0, time.Millisecond, time.Now())
+	if _, q := live.quality("gen-a", time.Now()); !q.Qualified {
+		t.Fatalf("live reading: %+v", q)
+	}
+}
+
+// The probe cadence is configurable but never faster than one exchange per
+// 30 seconds per source.
+func TestClockProbeIntervalFloor(t *testing.T) {
+	for raw, want := range map[string]time.Duration{"": 30 * time.Second, "1ms": 30 * time.Second, "2m": 2 * time.Minute, "nonsense": 30 * time.Second, "-5s": 30 * time.Second} {
+		t.Setenv(envClockProbeInterval, raw)
+		if got := clockProbeInterval(); got != want {
+			t.Fatalf("%q: %v, want %v", raw, got, want)
+		}
 	}
 }
 
@@ -61,17 +101,27 @@ func TestCrossHostTelemetryCorrection(t *testing.T) {
 	if uncalibrated.TransportLagMs != 900 || uncalibrated.TransportLagQuality.Qualified || uncalibrated.TransportLagQuality.Reason != clockReasonUncalibrated {
 		t.Fatalf("uncalibrated %+v", uncalibrated)
 	}
-	if age, q := sampleAgeQualified(3000, -2900, &qualified); age != 100 || !q.Qualified {
+	if age, q := sampleAgeQualified(3000, -2900, &qualified, 0); age != 100 || !q.Qualified {
 		t.Fatalf("corrected age %v %+v", age, q)
 	}
-	if age, q := sampleAgeQualified(100, -500, &qualified); age != 0 || q.Reason != clockReasonImplausible {
+	if age, q := sampleAgeQualified(100, -500, &qualified, 0); age != 0 || q.Reason != clockReasonImplausible {
 		t.Fatalf("implausible age %v %+v", age, q)
 	}
-	combined := combineClockQuality(combineClockQuality(nil, &qualified), &generatorrpc.ClockQuality{Qualified: true, UncertaintyMs: 9})
+	// An unqualified negative age or transport lag is unavailable, not a
+	// figure.
+	if age, q := sampleAgeQualified(-2800, 0, &generatorrpc.ClockQuality{Reason: clockReasonUncalibrated}, 0); age != 0 || q.Reason != clockReasonUncalibrated {
+		t.Fatalf("unqualified negative age %v %+v", age, q)
+	}
+	negative := &generatorrpc.MetricsTelemetry{PublishedAtUnixMs: 1, ControllerReceivedAtUnixMs: 2, TransportLagMs: -2800}
+	qualifyCrossHostTelemetry(negative, 0, generatorrpc.ClockQuality{Reason: clockReasonUncalibrated})
+	if negative.TransportLagMs != 0 || negative.TransportLagQuality.Reason != clockReasonUncalibrated {
+		t.Fatalf("unqualified negative lag %+v", negative)
+	}
+	combined := combineClockQuality(combineClockQuality(nil, &qualified, 0), &generatorrpc.ClockQuality{Qualified: true, UncertaintyMs: 9}, 0)
 	if !combined.Qualified || combined.UncertaintyMs != 9 {
 		t.Fatalf("combined %+v", combined)
 	}
-	if combined = combineClockQuality(combined, &generatorrpc.ClockQuality{Reason: clockReasonExpired}); combined.Qualified || combined.Reason != clockReasonExpired {
+	if combined = combineClockQuality(combined, &generatorrpc.ClockQuality{Reason: clockReasonExpired}, 0); combined.Qualified || combined.Reason != clockReasonExpired {
 		t.Fatalf("combined with an expired source %+v", combined)
 	}
 }

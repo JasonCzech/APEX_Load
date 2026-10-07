@@ -318,6 +318,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	}
 	b.applyActionTraceparent(actionCtx, result)
 
+	interactionStart := b.beginBrowserInteraction(actionCtx, action)
 	actionErr, terminal := b.dispatchAction(actionCtx, action, result)
 	if terminal {
 		result.Duration = time.Since(result.StartTime)
@@ -327,8 +328,10 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		return result, nil
 	}
 
+	var interactionSync browserInteractionSync
 	if actionErr == nil {
 		actionErr = b.runPostActionSync(actionCtx, action)
+		interactionSync = browserInteractionSync{reached: true, err: actionErr}
 	}
 	if actionErr == nil && dialogGuardsThisAction {
 		actionErr = b.waitForPendingDialog(actionCtx, dialogWait)
@@ -340,7 +343,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		actionErr = b.afterActionDelay(actionCtx)
 	}
 	b.finalizeActionResult(actionCtx, action, result, actionErr, consoleStart, networkStart, networkOwner, processBefore, actionDuration)
-	b.captureBrowserInteraction(actionCtx, action, result, actionErr)
+	b.captureBrowserInteraction(actionCtx, action, result, actionErr, interactionStart, interactionSync)
 	if b.harSLABreachThreshold > 0 && result.Duration > b.harSLABreachThreshold {
 		b.noteHARSLABreach()
 	}

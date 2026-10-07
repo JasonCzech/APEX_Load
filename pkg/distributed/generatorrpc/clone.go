@@ -98,11 +98,6 @@ func mergeMetricsTelemetry(values map[string]MetricsTelemetry) *MetricsTelemetry
 		if value.DroppedSubscriberBatches > combined.DroppedSubscriberBatches {
 			combined.DroppedSubscriberBatches = value.DroppedSubscriberBatches
 		}
-		// Every group of a test reads the same per-test count.
-		if value.TestDroppedSubscriberBatchesReported {
-			combined.TestDroppedSubscriberBatchesReported = true
-			combined.TestDroppedSubscriberBatches = max(combined.TestDroppedSubscriberBatches, value.TestDroppedSubscriberBatches)
-		}
 		// Groups on one pod publish on the same cadence, so the max per-group
 		// window is the representative batch window.
 		if value.WindowMs > combined.WindowMs {

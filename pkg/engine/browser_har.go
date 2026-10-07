@@ -58,6 +58,9 @@ func handOffBrowserInteractions(p protocol.Protocol, sink ResultSink) {
 	evidence := takeBrowserInteractions(provider)
 	interactionSink, ok := sink.(BrowserInteractionEvidenceSink)
 	if !ok {
+		if len(evidence) > 0 {
+			slog.Warn("browser interaction evidence has no run archive to go to and was dropped", "records", len(evidence))
+		}
 		return
 	}
 	for _, record := range evidence {

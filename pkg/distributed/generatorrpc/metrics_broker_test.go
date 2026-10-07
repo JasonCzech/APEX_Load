@@ -1,6 +1,7 @@
 package generatorrpc
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -400,5 +401,82 @@ func TestTestDroppedSubscriberBatchesPresenceSurvivesTheWire(t *testing.T) {
 	}
 	if metricsTelemetryFromProto(nil) != nil {
 		t.Fatal("absent telemetry read as present")
+	}
+}
+
+// A subscriber registering after only state-only publications (staging,
+// activation) learns that nothing before its snapshot carried a metric
+// window; after the first window it does not.
+func TestMetricsBrokerMarksAStateOnlySequencePrefix(t *testing.T) {
+	broker := newMetricsBroker(10, 10, 0)
+	broker.publish(&pb.MetricsBatch{TestId: "run", ExecutionGeneration: 7, LifecycleState: "STAGED"}, nil)
+	broker.publish(&pb.MetricsBatch{TestId: "run", ExecutionGeneration: 7, LifecycleState: "RUNNING"}, nil)
+	live := &pb.MetricsBatch{TestId: "run", ExecutionGeneration: 7, LifecycleState: "RUNNING", TimestampUnixMs: time.Now().UnixMilli()}
+	id, _, initial, err := registerMetricsBrokerSubscriber(t, broker, 7, "run", live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broker.unregister(id)
+	if len(initial) != 1 || initial[0].GetBatchSequence() != 2 || !initial[0].GetSequencePrefixStateOnly() {
+		t.Fatalf("snapshot after state-only publications: %#v", initial)
+	}
+	broker.publish(&pb.MetricsBatch{TestId: "run", ExecutionGeneration: 7, LifecycleState: "RUNNING", WindowMs: 1000}, nil)
+	id, _, initial, err = registerMetricsBrokerSubscriber(t, broker, 7, "run", live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broker.unregister(id)
+	if len(initial) != 1 || initial[0].GetBatchSequence() != 3 || initial[0].GetSequencePrefixStateOnly() {
+		t.Fatalf("snapshot after a metric window: %#v", initial)
+	}
+}
+
+// Opening a metrics stream returns only once the generator has installed the
+// subscription, so the controller activates a run only after it is
+// subscribed and cannot miss its first metric window.
+func TestMetricsStreamOpensAfterTheSubscriptionIsInstalled(t *testing.T) {
+	service := NewService("subscribed-generator", 10)
+	client := harTestClient(t, service)
+	for _, open := range []func() (*MetricsStream, error){
+		func() (*MetricsStream, error) {
+			return client.OpenMetricsStreamForTestGeneration(context.Background(), "run", 0)
+		},
+		func() (*MetricsStream, error) {
+			return client.OpenMetricsStreamWithSetupTimeoutForTestGeneration(context.Background(), 5*time.Second, "run", 0)
+		},
+	} {
+		started := time.Now()
+		stream, err := open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Confirmed by the generator's header, not by the fallback wait.
+		if elapsed := time.Since(started); elapsed >= metricsSubscriptionWait/2 {
+			t.Fatalf("stream open waited %v for an unconfirmed subscription", elapsed)
+		}
+		if got := service.metricsBroker.subscriberCount(); got != 1 {
+			t.Fatalf("stream opened with %d installed subscribers", got)
+		}
+		_ = stream.CloseSend()
+		deadline := time.Now().Add(5 * time.Second)
+		for service.metricsBroker.subscriberCount() != 0 && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+}
+
+type recvOnlyMetricsStream struct {
+	pb.GeneratorControl_StreamMetricsClient
+	batch *pb.MetricsBatch
+}
+
+func (s recvOnlyMetricsStream) Recv() (*pb.MetricsBatch, error) { return s.batch, nil }
+
+// The controller sees the state-only prefix marker.
+func TestMetricsStreamCarriesTheStateOnlyPrefix(t *testing.T) {
+	stream := &MetricsStream{stream: recvOnlyMetricsStream{batch: &pb.MetricsBatch{TestId: "run", BatchSequence: 2, SequencePrefixStateOnly: true}}}
+	batch, err := stream.Receive()
+	if err != nil || !batch.SequencePrefixStateOnly || batch.BatchSequence != 2 {
+		t.Fatalf("received %+v %v", batch, err)
 	}
 }

@@ -20,9 +20,14 @@ func readHARHost() (harHost, error) {
 		return harHost{}, err
 	}
 	host := harHost{boot: strings.TrimSpace(string(boot)), namespace: namespace}
+	// A machine-id alone is not host-unique: container images and cloned VMs
+	// share one. Paired with the host name (distinct per pod and per cloned
+	// VM), an earlier boot proves a process gone only on the same host; a
+	// renamed host simply proves nothing.
+	hostname, _ := os.Hostname()
 	for _, path := range []string{"/etc/machine-id", "/var/lib/dbus/machine-id"} {
-		if machine, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(machine)) != "" {
-			host.machine = strings.TrimSpace(string(machine))
+		if machine, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(machine)) != "" && strings.TrimSpace(hostname) != "" {
+			host.machine = strings.TrimSpace(string(machine)) + "@" + strings.TrimSpace(hostname)
 			break
 		}
 	}

@@ -2,8 +2,10 @@ package storage
 
 import (
 	"errors"
-	"github.com/jasonczech/apexload/pkg/engine"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 // NativeIntervalEvidence retains original collection-interval summaries. Version 3
@@ -76,6 +78,11 @@ func ValidateNativeEvidenceQuery(q AnalyticsQuery) error {
 	if len(q.Dimensions) > 1 || q.MaxSeries < 1 || q.MaxSeries > 20 {
 		return errors.New("choose at most one grouping and 1–20 series")
 	}
+	// The evidence executors read action and transaction observations only;
+	// message and browser document populations belong to archive panels.
+	if q.Population != "action" && q.Population != "transaction" {
+		return errors.New("evidence queries select the action or transaction population")
+	}
 	group := ""
 	if len(q.Dimensions) > 0 {
 		group = q.Dimensions[0]
@@ -102,6 +109,13 @@ func ValidateNativeEvidenceQuery(q AnalyticsQuery) error {
 	}
 	if q.LiveBucketMode != "" && (q.EvidenceMode != "live" || q.LiveBucketMode != "source" && q.LiveBucketMode != "merged") {
 		return errors.New("invalid live bucket mode")
+	}
+	// Per-source live intervals are not one bucket grid, so a trailing
+	// window of buckets has no meaning there.
+	if q.Derivation != nil && q.EvidenceMode == "live" && q.LiveBucketMode != "merged" {
+		if name := analysis.CanonicalDerivation(q.Derivation.Operation); name == "moving_mean" || name == "moving_stddev" {
+			return errors.New("moving derivations need merged live buckets or archive evidence")
+		}
 	}
 	if q.EvidenceMode == "live" {
 		jointDimensions := NativeActionDimensionsRequired(q)

@@ -411,14 +411,29 @@ offset and its oldest sample's collection time mapped to the controller's
 clock before the sample age is taken; `telemetry.transport_lag_quality` and
 `telemetry.sample_age_quality` then say `qualified` with the uncertainty.
 Without a current calibration the stages stay as measured and say why:
-`uncalibrated`, `calibration_expired` (three probes missed), `clock_jump` (an
-offset that moved more than twice its uncertainty, until a consistent probe
-confirms it) or `clock_step` (the controller's wall clock stepped); a
-corrected duration below zero by more than its uncertainty is
-`implausible` and unavailable. A budget decision on such a stage, or on a
-qualified one whose uncertainty straddles the budget, is listed under the
-diagnostic's `unscored` and is never a breach. The dashboard's own clock is
-not exchanged yet, so browser-side age is not qualified.
+`uncalibrated`, `calibration_expired` (three probe intervals passed on the
+controller's monotonic clock), `clock_jump` (an offset that moved more than
+twice its uncertainty, until a consistent probe confirms it) or `clock_step`
+(the controller's wall clock stepped, detected between probes and at every
+receipt since the last probe); an unqualified negative duration, or a
+corrected one below zero by more than its uncertainty (`implausible`), is
+unavailable. Probes run every 30 seconds; `APEXLOAD_CLOCK_PROBE_INTERVAL` can
+only lengthen that.
+
+Fleet figures take the worst quality of the contributing generators. The
+oldest sample is the earliest on the controller's clock (each qualified
+generator's collection time corrected by its own offset), and
+`lower_bound_ms` on a quality is the largest value the qualified generators
+prove (corrected value minus uncertainty), so a definite breach on one
+generator is still scored when another is unqualified or less certain. A
+budget decision on an unqualified stage with no such proof, or on a qualified
+one whose uncertainty straddles the budget, is listed under the diagnostic's
+`unscored` and is never a breach: with no breach the run health status is
+`unscored` (its `unscored` list says which stages and why), coverage counts
+the interval as unknown and the archive telemetry summary counts it under
+`unscored_intervals` and reports `unscored` rather than `healthy`. The
+dashboard's own clock is not exchanged yet, so browser-side age is not
+qualified.
 
 ### Deep links
 

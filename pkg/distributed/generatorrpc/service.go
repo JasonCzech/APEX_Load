@@ -30,6 +30,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
@@ -1185,6 +1186,11 @@ func (s *Service) StreamMetrics(stream pb.GeneratorControl_StreamMetricsServer) 
 		return err
 	}
 	defer s.unregisterSubscriber(subscriberID)
+	// Tell the controller the subscription is installed: every publication
+	// from here on is delivered or shows as a sequence gap.
+	if err := stream.SendHeader(metadata.Pairs(metricsSubscribedHeader, "1")); err != nil {
+		return err
+	}
 
 	recvErr := make(chan error, 1)
 	go func() {

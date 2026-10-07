@@ -31,10 +31,6 @@ func (w *archiveRecorder) RecordBrowserInteractionEvidence(evidence *protocol.Br
 		return fmt.Errorf("browser interaction evidence is malformed")
 	}
 	data, err := json.Marshal(evidence)
-	if err != nil || len(data) > protocol.MaxBrowserInteractionEvidenceBytes {
-		return fmt.Errorf("browser interaction evidence exceeds its record bounds")
-	}
-	record := append(data, '\n')
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed || w.runRoot == nil {
@@ -42,15 +38,20 @@ func (w *archiveRecorder) RecordBrowserInteractionEvidence(evidence *protocol.Br
 	}
 	drop := func() error {
 		w.manifest.BrowserInteractionsIncomplete = true
-		w.manifest.BrowserInteractionsDropped += int64(len(evidence.Interactions))
-		return fmt.Errorf("browser interaction evidence exceeds the run's sidecar budget")
+		w.manifest.BrowserInteractionsDropped += int64(len(evidence.Interactions)) + max(evidence.Dropped, 0)
+		return fmt.Errorf("browser interaction evidence was not retained in the run's sidecar")
 	}
-	if int64(len(record)) > maxArchiveInteractionsRunBytes-w.interactionBytes || !w.byteBudget.admitOptional(int64(len(record))) {
+	if err != nil || len(data) > protocol.MaxBrowserInteractionEvidenceBytes {
+		return drop()
+	}
+	record := append(data, '\n')
+	if w.interactionsBroken || int64(len(record)) > maxArchiveInteractionsRunBytes-w.interactionBytes || !w.byteBudget.admitOptional(int64(len(record))) {
 		return drop()
 	}
 	if w.interactionsFile == nil {
 		file, err := replaceGeneratorArchiveFile(w.runRoot, archiveInteractionsName, 0o644)
 		if err != nil {
+			w.byteBudget.releaseOptional(int64(len(record)))
 			return drop()
 		}
 		w.interactionsFile = file
@@ -59,12 +60,22 @@ func (w *archiveRecorder) RecordBrowserInteractionEvidence(evidence *protocol.Br
 	if err == nil && written != len(record) {
 		err = io.ErrShortWrite
 	}
-	if err != nil {
-		// A partial line would corrupt the sidecar: stop recording into it.
+	switch {
+	case err != nil && written == 0:
+		// Refused before any byte was written (free space, backlog): only
+		// this record is lost.
+		w.byteBudget.releaseOptional(int64(len(record)))
+		return drop()
+	case err != nil:
+		// A partial line corrupts the sidecar, which is then not
+		// transferred: every record in it is lost, and nothing more is
+		// written into it.
 		w.manifest.BrowserInteractionsIncomplete = true
+		w.manifest.BrowserInteractionsDropped += w.interactionCount
 		w.interactionsBroken = true
 		return drop()
 	}
+	w.interactionCount += int64(len(evidence.Interactions))
 	w.interactionBytes += int64(len(record))
 	w.manifest.BrowserInteractionRecordCount++
 	w.manifest.BrowserInteractionsDropped += evidence.Dropped

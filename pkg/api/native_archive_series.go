@@ -228,7 +228,7 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 	for i, v := range values {
 		result.Buckets[i].Count = len(v)
 		result.Buckets[i].subset = int64(failures[i])
-		result.Buckets[i].complete = missingProperty == 0 && unknownPopulation == 0 && !result.Buckets[i].To.After(manifest.CompletedAt)
+		result.Buckets[i].complete = missingProperty == 0 && unknownPopulation == 0 && !archiveCollectionIncomplete(manifest) && !result.Buckets[i].To.After(manifest.CompletedAt)
 		if len(v) == 0 {
 			continue
 		}
@@ -342,7 +342,7 @@ func buildNativeMessageSeries(ctx context.Context, record *storage.RunArchiveRec
 	any := false
 	for i := range result.Buckets {
 		b := &result.Buckets[i]
-		b.complete = evidenced[i] && !incomplete[i] && (counter == "" || counted[i]) && !b.To.After(manifest.CompletedAt)
+		b.complete = evidenced[i] && !incomplete[i] && (counter == "" || counted[i]) && !archiveCollectionIncomplete(manifest) && !b.To.After(manifest.CompletedAt)
 		if !evidenced[i] {
 			continue
 		}

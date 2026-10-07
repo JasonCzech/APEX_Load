@@ -396,7 +396,7 @@ func buildNativeGroupedArchive(ctx context.Context, record *storage.RunArchiveRe
 				to = out.To
 			}
 			p := NativeEvidencePoint{From: from, To: to, OffsetSeconds: from.Sub(out.Start).Seconds(), Count: int64(len(b.values)), failures: int64(b.errors),
-				complete: !missing && !to.After(manifest.CompletedAt)}
+				complete: !missing && !archiveCollectionIncomplete(manifest) && !to.After(manifest.CompletedAt)}
 			if len(b.values) > 0 {
 				sort.Float64s(b.values)
 				value := 0.0

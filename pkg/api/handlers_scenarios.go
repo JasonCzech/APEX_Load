@@ -157,20 +157,42 @@ func (s *Server) handleGetScenario(w http.ResponseWriter, r *http.Request) {
 	}
 	scenario, ok := s.runner.GetScenario(r.PathValue("id"))
 	if !ok {
+		// A copy this replica holds that another controller has since saved
+		// fails read revalidation; refresh once rather than report it
+		// missing. Unknown ids never trigger a refresh.
+		if cached, known := s.runner.getScenarioForMutation(r.PathValue("id")); known && cached != nil {
+			s.runner.refreshScenariosAfterDurableMismatch()
+			if refreshed, found := s.runner.GetScenario(cached.ID); found && normalizeProjectID(refreshed.ProjectID) == normalizeProjectID(cached.ProjectID) {
+				scenario, ok = refreshed, true
+			}
+		}
+	}
+	if !ok {
 		writeError(w, http.StatusNotFound, "scenario not found")
 		return
+	}
+	// An editor that builds its draft from this body can save it conditioned:
+	// the validator is attached only when this replica's copy is the durable
+	// state, so the tag always describes the body. A stale copy (another
+	// controller saved it) is refreshed once, as a conditioned save would.
+	var snapshot *storage.ScenarioAuthoringSnapshot
+	if reader, supported := s.store.(storage.ScenarioAuthoringStore); s.store != nil && supported {
+		if read, readErr := reader.GetScenarioAuthoringSnapshot(scenario.ID); readErr == nil {
+			snapshot = read
+			if read.Scenario != nil && !read.Scenario.UpdatedAt.Equal(scenario.UpdatedAt) {
+				s.runner.refreshScenariosAfterDurableMismatch()
+				if refreshed, found := s.runner.GetScenario(scenario.ID); found && normalizeProjectID(refreshed.ProjectID) == normalizeProjectID(scenario.ProjectID) {
+					scenario = refreshed
+				}
+			}
+		}
 	}
 	if !s.scenarioLibraryAssignments(w, []*StoredScenario{scenario}) {
 		return
 	}
 	response := maskStoredScenario(scenario)
-	// An editor that builds its draft from this body can save it conditioned:
-	// the validator is attached only when this replica's copy is the durable
-	// state, so the tag always describes the body.
-	if reader, supported := s.store.(storage.ScenarioAuthoringStore); s.store != nil && supported {
-		if snapshot, readErr := reader.GetScenarioAuthoringSnapshot(scenario.ID); readErr == nil {
-			attachScenarioAuthoringValidator(w, response, scenario, snapshot)
-		}
+	if snapshot != nil {
+		attachScenarioAuthoringValidator(w, response, scenario, snapshot)
 	}
 	writeJSON(w, http.StatusOK, response)
 }

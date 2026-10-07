@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -35,7 +36,24 @@ const (
 	// associations, rcaImportListPage rows at a time.
 	rcaImportListPages = 20
 	rcaImportListPage  = 100
+	// rcaImportedReadShare: imported reads may use at most this fraction
+	// (1/n) of the analysis's wall-time budget, so the run's own evidence is
+	// always judged; rcaMaxImportedQueries bounds their native queries.
+	rcaImportedReadShare  = 4
+	rcaMaxImportedQueries = 128
+	// rcaImportedAdmissionRetry is the first wait before retrying a read the
+	// single native-analysis slot refused; it doubles up to the read budget.
+	rcaImportedAdmissionRetry = 250 * time.Millisecond
 )
+
+// rcaQueryImportedDataset runs one native series query (tests replace it).
+var rcaQueryImportedDataset = queryAnalysisDataset
+
+// errRCAImportedEvidenceBusy fails an analysis whose associated datasets the
+// native-analysis slot stayed too busy to read: the same inputs must not
+// complete with less evidence because of timing, and a failed analysis is
+// retried by an identical request.
+var errRCAImportedEvidenceBusy = errors.New("native analysis stayed busy while reading the run's associated datasets; retry the analysis")
 
 // Limitations of imported evidence.
 const (
@@ -62,24 +80,30 @@ func loadRCADatasets(store any, project, testID string) ([]rcaEvidenceDataset, b
 		return nil, false, nil
 	}
 	var found []rcaEvidenceDataset
+	seen := map[string]bool{}
+	listed := false
 	for page := 0; page < rcaImportListPages; page++ {
 		rows, err := imports.ListAnalysisImports(project, rcaImportListPage, page*rcaImportListPage)
 		if err != nil {
 			return nil, false, err
 		}
 		for _, in := range rows {
-			if in.ProjectID != project || in.RunID != testID || in.State != "ready" || in.PartitionManifest == nil {
+			// Offset paging can repeat a row a concurrent change shifted.
+			if seen[in.ID] || in.ProjectID != project || in.RunID != testID || in.State != "ready" || in.PartitionManifest == nil {
 				continue
 			}
+			seen[in.ID] = true
 			found = append(found, rcaEvidenceDataset{DatasetID: in.ID, Revision: in.Revision, MappingSHA256: in.PartitionManifest.MappingSHA256, PartitionDigest: in.PartitionManifest.Digest})
 		}
 		if len(rows) < rcaImportListPage {
+			listed = true
 			break
 		}
 	}
 	sort.Slice(found, func(i, j int) bool { return found[i].DatasetID < found[j].DatasetID })
-	truncated := len(found) > rcaMaxImportedDatasets
-	if truncated {
+	// A listing the page bound stopped may have missed an association.
+	truncated := len(found) > rcaMaxImportedDatasets || !listed
+	if len(found) > rcaMaxImportedDatasets {
 		found = found[:rcaMaxImportedDatasets]
 	}
 	return found, truncated, nil
@@ -107,7 +131,9 @@ func importedSeriesKeys(manifest *analysis.NormalizedPartitionManifest, from, to
 	seen := map[string]rcaImportedSeriesKey{}
 	mixed := 0
 	for _, p := range manifest.Partitions {
-		if p.Stats.MinTime != nil && !p.Stats.MinTime.Before(to) || p.Stats.MaxTime != nil && p.Stats.MaxTime.Before(from) {
+		// An empty partition (every row rejected) records no metric or
+		// identity and holds nothing to judge.
+		if p.Stats.Rows == 0 || p.Stats.MinTime != nil && !p.Stats.MinTime.Before(to) || p.Stats.MaxTime != nil && p.Stats.MaxTime.Before(from) {
 			continue
 		}
 		if p.Stats.Metric == nil || p.Stats.Identity == nil {
@@ -148,7 +174,8 @@ func rcaImportedWindow(summaries []IntervalSummaryRecord) (time.Time, time.Time,
 	}
 	bucket := max(step.Round(time.Second), time.Second)
 	from, to := first.Add(-bucket).Truncate(bucket), last.Add(bucket)
-	for to.Sub(from)/bucket > analysis.MaxSeriesPoints {
+	// The native query counts a partial last bucket, so this does too.
+	for (to.Sub(from)+bucket-1)/bucket > analysis.MaxSeriesPoints {
 		bucket *= 2
 	}
 	return from.UTC(), to.UTC(), bucket, true
@@ -156,9 +183,12 @@ func rcaImportedWindow(summaries []IntervalSummaryRecord) (time.Time, time.Time,
 
 // rcaImportedSeries reads the frozen associated datasets' series over the
 // run's window: at most limit series of at most maxPoints buckets (limit <
-// 0 means unbounded), each one bounded native query. What cannot be read is
-// a limitation; only cancellation fails the read.
-func (s *Server) rcaImportedSeries(ctx context.Context, project, testID string, frozen []rcaEvidenceDataset, summaries []IntervalSummaryRecord, limit int, budgeter *rca.Budgeter) ([]rca.Series, []rca.Limitation, error) {
+// 0 means unbounded), each one bounded native query, within readBudget of
+// wall time (0 means the analysis budget alone) and rcaMaxImportedQueries
+// queries. A dataset that changed while it was read is dropped. What cannot
+// be read is a limitation; only cancellation, or a native-analysis slot that
+// stays busy past the read budget, fails the read.
+func (s *Server) rcaImportedSeries(ctx context.Context, project, testID string, frozen []rcaEvidenceDataset, summaries []IntervalSummaryRecord, limit int, budgeter *rca.Budgeter, readBudget time.Duration) ([]rca.Series, []rca.Limitation, error) {
 	if len(frozen) == 0 {
 		return nil, nil, nil
 	}
@@ -176,15 +206,29 @@ func (s *Server) rcaImportedSeries(ctx context.Context, project, testID string, 
 		note(limitationImportedDatasetUnavailable, fmt.Sprintf("native analysis is unavailable, so %d associated datasets were not judged", len(frozen)))
 		return nil, limitations, nil
 	}
+	var deadline time.Time
+	if readBudget > 0 {
+		deadline = time.Now().Add(readBudget)
+	}
+	outOfBudget := func() bool {
+		return budgeter.Exhausted() || !deadline.IsZero() && !time.Now().Before(deadline)
+	}
+	unchanged := func(want rcaEvidenceDataset) (*storage.AnalysisImport, bool) {
+		in, err := store.GetAnalysisImport(want.DatasetID)
+		if err != nil || in == nil || in.ProjectID != project || in.RunID != testID || in.State != "ready" || in.PartitionManifest == nil ||
+			in.Revision != want.Revision || in.PartitionManifest.Digest != want.PartitionDigest || in.PartitionManifest.MappingSHA256 != want.MappingSHA256 {
+			return nil, false
+		}
+		return in, true
+	}
 	var series []rca.Series
-	dropped, longest := 0, 0
+	dropped, longest, queries, unread := 0, 0, 0, 0
 	for _, want := range frozen {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
 		}
-		in, err := store.GetAnalysisImport(want.DatasetID)
-		if err != nil || in == nil || in.ProjectID != project || in.RunID != testID || in.State != "ready" || in.PartitionManifest == nil ||
-			in.Revision != want.Revision || in.PartitionManifest.Digest != want.PartitionDigest || in.PartitionManifest.MappingSHA256 != want.MappingSHA256 {
+		in, current := unchanged(want)
+		if !current {
 			note(limitationImportedDatasetChanged, "associated dataset "+want.DatasetID+" changed or was removed after the evidence was captured and was not judged")
 			continue
 		}
@@ -197,16 +241,23 @@ func (s *Server) rcaImportedSeries(ctx context.Context, project, testID string, 
 		if mixed > 0 {
 			note(limitationImportedSeriesUnenumerated, fmt.Sprintf("%d partitions of dataset %s mix metrics or identities and were not judged", mixed, want.DatasetID))
 		}
+		var datasetSeries []rca.Series
 		for _, key := range keys {
-			if limit >= 0 && len(series) >= limit {
+			if key.kind == analysis.KindHistogram || key.kind == analysis.KindSummary {
+				unread++
+				continue
+			}
+			if limit >= 0 && len(series)+len(datasetSeries) >= limit || queries >= rcaMaxImportedQueries || outOfBudget() {
 				dropped++
 				continue
 			}
-			if budgeter.Exhausted() {
-				dropped++
-				continue
+			built, attempts, err := rcaReadWithAdmission(ctx, deadline, rcaImportedAdmissionRetry, func() (*rca.Series, error) {
+				return s.readImportedSeries(ctx, snapshot, key, from, to, bucket)
+			})
+			queries += attempts
+			if errors.Is(err, errRCAImportedEvidenceBusy) {
+				return nil, nil, err
 			}
-			built, err := s.readImportedSeries(ctx, snapshot, key, from, to, bucket)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, nil, ctxErr
 			}
@@ -215,16 +266,50 @@ func (s *Server) rcaImportedSeries(ctx context.Context, project, testID string, 
 				continue
 			}
 			if built != nil {
-				series = append(series, *built)
-				longest = max(longest, len(built.Points))
+				datasetSeries = append(datasetSeries, *built)
 			}
 		}
+		// The dataset must still be the one the evidence froze after its
+		// reads, or what was read describes something else.
+		if _, current := unchanged(want); !current {
+			note(limitationImportedDatasetChanged, "associated dataset "+want.DatasetID+" changed or lost its association while it was read and was not judged")
+			continue
+		}
+		for _, built := range datasetSeries {
+			longest = max(longest, len(built.Points))
+		}
+		series = append(series, datasetSeries...)
 	}
 	budgeter.SeriesPoints(longest)
+	if unread > 0 {
+		note(limitationImportedSeriesUnenumerated, fmt.Sprintf("%d histogram or summary measures of associated datasets are not read as series", unread))
+	}
 	if dropped > 0 {
-		note(limitationDetectionEvidenceCut, fmt.Sprintf("the series budget or analysis budget left out %d imported series", dropped))
+		note(limitationDetectionEvidenceCut, fmt.Sprintf("the series budget, the analysis budget or the imported read budget left out %d imported series", dropped))
 	}
 	return series, limitations, nil
+}
+
+// rcaReadWithAdmission runs read, retrying while the single native-analysis
+// slot is held by another job, waiting from wait and doubling, until
+// deadline (zero: until ctx ends). It returns the attempts made; a slot still
+// busy at the deadline is errRCAImportedEvidenceBusy.
+func rcaReadWithAdmission(ctx context.Context, deadline time.Time, wait time.Duration, read func() (*rca.Series, error)) (*rca.Series, int, error) {
+	for attempt := 1; ; attempt++ {
+		built, err := read()
+		if !errors.Is(err, errAnalyticalAdmissionUnavailable) {
+			return built, attempt, err
+		}
+		pause := wait << min(attempt-1, 5)
+		if !deadline.IsZero() && time.Now().Add(pause).After(deadline) {
+			return nil, attempt, errRCAImportedEvidenceBusy
+		}
+		select {
+		case <-ctx.Done():
+			return nil, attempt, ctx.Err()
+		case <-time.After(pause):
+		}
+	}
 }
 
 // readImportedSeries runs one bounded native query for a dataset series. A
@@ -239,7 +324,7 @@ func (s *Server) readImportedSeries(ctx context.Context, in *storage.AnalysisImp
 	}
 	query := analytics.SeriesQuery{ProjectID: in.ProjectID, DatasetID: in.ID, Metric: key.metric, SourceID: key.identity.Source, Host: key.identity.Host, Service: key.identity.Service,
 		Dimensions: maps.Clone(key.identity.Dimensions), From: from, To: to, BucketSeconds: int(bucket / time.Second), Aggregation: aggregation}
-	points, err := queryAnalysisDataset(ctx, in, query)
+	points, err := rcaQueryImportedDataset(ctx, in, query)
 	if err != nil {
 		return nil, err
 	}

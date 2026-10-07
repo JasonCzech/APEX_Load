@@ -47,7 +47,10 @@ export interface ValidationRequest {
   sent: ValidationBinding
   // issuedAgainst is the binding rendered when the request was issued.
   // Resolving the draft may flush pending cells, so until the flushed document
-  // renders, the editor still shows this binding; nothing has changed since.
+  // renders, the editor still shows this binding. It is admitted for the
+  // request's whole life, not only until that render: an editor returned to
+  // exactly this document would also admit it. Recheck blurs (commits) cells
+  // first, so sent and issuedAgainst coincide on that path today.
   issuedAgainst: ValidationBinding | null
   // stored is true when the controller validates the stored script rather
   // than the submitted draft.

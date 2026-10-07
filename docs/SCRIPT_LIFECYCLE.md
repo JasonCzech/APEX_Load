@@ -594,11 +594,16 @@ refuses another save until it is resolved:
 - **Reload scenario and discard draft** rebuilds the form from the loaded
   scenario.
 
-A read that carries no supported revision opens the same panel at once; a
-resumed browser draft whose scenario changed since it was checkpointed opens it
-when saved. The other dashboard
+A read that carries no supported revision opens the same panel at once. A
+browser checkpoint of an edit records the revision, form and workload shape it
+was loaded from: resuming it adopts the durable baseline only for that same
+revision and otherwise opens the panel against the draft's own original (a
+checkpoint from before this was recorded resumes as an edit only while the
+listed scenario is unchanged, else as a new scenario). A plain read on a
+replica whose cached copy another controller has since saved refreshes once,
+so Load current baseline recovers there too. The other dashboard
 scenario writers also send a tag: a library delete re-reads the scenario and
-refuses one changed since the list loaded; a library-assignment save presents
+refuses one whose authored fields changed (its update time) since the list loaded — a placement or monitor-binding change alone does not count; a library-assignment save presents
 the scenario's current tag alongside the assignment's own `expected_revision`;
 and the builder's monitor-binding save presents the editor's baseline (a stale
 one opens the reconciliation panel) and, when only the bindings changed,
@@ -635,15 +640,22 @@ so conflict diffs reflect authored changes.
 Validate, save, replay, debug and the browser-to-HTTP preview act on one
 resolution of the current draft: unblurred data-cell edits are flushed and a
 dirty JSON pane is parsed once. A draft validation sends the editor's
-fingerprint of that exact document (`fingerprint`, at most 128 printable ASCII
-characters) and `POST /api/v1/scripts/validate` echoes it as
-`validated_fingerprint`; a stored-script validation reads the durable revision
-and names it as `validated_content_revision`. The editor shows a result only
+fingerprint of that exact document (`fingerprint`, at most 128 visible ASCII
+characters, 0x21–0x7E with no spaces) and `POST /api/v1/scripts/validate`
+echoes it as `validated_fingerprint`; a stored-script validation reads the
+durable revision and names it as `validated_content_revision`. A controller
+that attests no stored revision (an older peer, a failed durable read, a
+moved script) names none; the clean editor then validates its baseline as a
+draft, bound by its fingerprint, instead of reporting the stored script
+changed. The editor shows a result only
 when it answers the latest request, the editor still holds the document it was
 issued for, and the echo names that document (or, for a stored script, the
 editor's baseline revision). A result is then bound to the document's
 fingerprint, the baseline revision and the project, folder and replay variables
 it was issued with; any edit, save, rebaseline or change to those makes it
-stale, and the evidence summary stops reporting it as passed. Secret-reference
-availability is reconciled against the live secret probe when the readiness
-card renders rather than bound into the result.
+stale, and the evidence summary stops reporting it as passed. Debug evidence is
+bound the same way to the fingerprint of the document the replay ran, so a
+configuration, parameter or data-source edit makes it stale too, not only an
+action edit. Secret-reference availability is reconciled against the live
+secret probe when the readiness card renders rather than bound into the
+result.

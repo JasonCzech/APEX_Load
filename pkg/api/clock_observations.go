@@ -26,7 +26,7 @@ const (
 
 // defaultClockObservationSpacing keeps at most one observation per source per
 // 30 seconds, the live clock-probe cadence (see clockProbeInterval).
-const defaultClockObservationSpacing = maxClockProbeInterval
+const defaultClockObservationSpacing = minClockProbeInterval
 
 // ClockObservation is one measurement of a source's clock against the
 // controller's (apexload.clock_observation.v1). The offset is the source's
@@ -197,7 +197,7 @@ func (b *distributedExecutionBackend) observeGeneratorClocks(ctx context.Context
 			observation := newClockObservation(target, generatorID, analysis.ClockSourceGenerator, estimate, sample.ObservedAt)
 			observation.Controller = term.ownerID
 			tr.recordClockObservation(test.ID, observation)
-			tr.recordClockCalibration(test, target, sample.Offset, sample.Uncertainty, time.Now())
+			tr.recordClockCalibration(test, target, sample.Offset, sample.Uncertainty, interval, time.Now())
 		}
 		select {
 		case <-ctx.Done():

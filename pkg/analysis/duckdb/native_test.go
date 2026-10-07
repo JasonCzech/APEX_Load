@@ -377,3 +377,29 @@ func TestNativeRegisteredStagingAndActualWorkerSnapshotShareApprovedDiskGeometry
 		t.Fatal("actual child output/reap did not join", err)
 	}
 }
+
+// A counter read for a controller-side counter derivation is each bucket's
+// highest reading; without the flag a counter still needs rate conversion.
+func TestNativeCounterReadingsForDerivations(t *testing.T) {
+	e, path := nativeFixture(t, "SELECT 1700000000000 AS ts, 10::DOUBLE AS value UNION ALL SELECT 1700000000500, 40::DOUBLE UNION ALL SELECT 1700000001000, 100::DOUBLE UNION ALL SELECT 1700000002000, 105::DOUBLE")
+	mapping := Mapping{Version: 1, Timestamp: Column{"ts"}, TimestampEncoding: "unix_ms", Timezone: "UTC", Measures: []Measure{{Value: Column{"value"}, Name: "requests", Kind: analysis.KindCounter, Unit: "count"}}}
+	normalized, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping})
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized = retainNativeFixtureOutputs(t, e, normalized)
+	q := SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: "requests", From: time.UnixMilli(1700000000000), To: time.UnixMilli(1700000003000), BucketSeconds: 1, Aggregation: "max"}
+	if _, err := e.Series(context.Background(), normalized.Files, q); err == nil {
+		t.Fatal("a display query read a counter's raw readings")
+	}
+	q.CounterReadings = true
+	points, err := e.Series(context.Background(), normalized.Files, q)
+	if err != nil || len(points) != 3 || points[0].Value == nil || *points[0].Value != 40 || points[2].Value == nil || *points[2].Value != 105 {
+		t.Fatalf("counter readings=%+v error=%v", points, err)
+	}
+	for _, point := range points {
+		if point.Kind != analysis.KindGauge || point.InputKind != analysis.KindCounter || point.Unit != "count" || point.Derivation[len(point.Derivation)-1].Algorithm != "counter_bucket_reading.v1" {
+			t.Fatalf("counter reading point %+v", point)
+		}
+	}
+}

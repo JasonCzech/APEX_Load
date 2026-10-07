@@ -532,10 +532,15 @@ func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q 
 			if statistic != "" || windowSeconds != 0 {
 				return errors.New("summary declaration on a non-summary measurement")
 			}
-			if err := analysis.ValidateScalarAggregation(kind, q.Aggregation); err != nil {
+			if err := validateNativeScalarAggregation(kind, q); err != nil {
 				return err
 			}
-			if lineage, err = analysis.ScalarBucketDerivation(analysis.MetricPoint{Kind: kind}, q.BucketSeconds, q.Aggregation); err != nil {
+			if q.CounterReadings {
+				lineage, err = analysis.CounterReadingBucketDerivation(analysis.MetricPoint{Kind: kind}, q.BucketSeconds)
+			} else {
+				lineage, err = analysis.ScalarBucketDerivation(analysis.MetricPoint{Kind: kind}, q.BucketSeconds, q.Aggregation)
+			}
+			if err != nil {
 				return err
 			}
 			if querySQL, err = nativeSeriesAggregationSQL(table, q, kind); err != nil {

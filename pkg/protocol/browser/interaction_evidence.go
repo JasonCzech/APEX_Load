@@ -11,23 +11,38 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	playwright "github.com/mxschmitt/playwright-go"
 )
 
 // Interaction evidence (E3). With browser_capture_interactions an init
-// script observes trusted pointer events in every document; after each
-// gesture's own wait one page evaluation drains them with the viewport,
-// scroll, device scale, sanitized route, a structural layout fingerprint and,
-// for keyboard input, the focused target's role and sanitized label (hashed
-// here, never stored). Nothing is dispatched to the page and no request is
-// made. Interactions inside child frames are recorded without points.
+// script observes trusted pointer events in every document. Before a gesture
+// one page evaluation discards events earlier actions left (a download's
+// click) and notes the document; after the gesture's own wait another drains
+// its events with the viewport, scroll, device scale, sanitized route and a
+// structural layout fingerprint. A keyboard gesture's target is the element
+// its own selector resolves to (or, without one, the element focused before
+// it), described by role and the SHA-256 of its sanitized label, never a
+// value. Nothing is dispatched to the page and no request is made. Gestures
+// inside child frames, gestures the runtime dispatches as synthetic events
+// (touch emulation) and gestures that navigate are recorded without points,
+// with the reason.
 
 // browserInteractionState is a session's interactions not yet handed over.
 type browserInteractionState struct {
-	pending    []protocol.BrowserInteraction
+	pending []protocol.BrowserInteraction
+	// sizes are the pending interactions' encoded sizes, for splitting a
+	// handoff into records within the evidence bound.
+	sizes      []int
 	documents  map[string]*browserInteractionDocument
+	order      []string
 	dropped    int64
 	incomplete bool
 }
+
+// maxBrowserInteractionDocuments bounds the documents a session tracks
+// bounds for; past it the least recently used one is forgotten (a persistent
+// context outlives any fixed number of documents).
+const maxBrowserInteractionDocuments = 1024
 
 type browserInteractionDocument struct {
 	count int
@@ -168,8 +183,63 @@ type browserInteractionPage struct {
 	} `json:"focus"`
 }
 
+// browserInteractionStart is the page as a gesture began: its document and
+// the element then focused.
+type browserInteractionStart struct {
+	page browserInteractionPage
+	read bool
+}
+
+// browserInteractionSync is the outcome of a gesture's declared post-action
+// wait.
+type browserInteractionSync struct {
+	reached bool
+	err     error
+}
+
+// interactionReadTimeout bounds each page evaluation of interaction capture.
+const interactionReadTimeout = 2 * time.Second
+
+// beginBrowserInteraction discards events earlier actions left and notes
+// the document a gesture starts in.
+func (b *Browser) beginBrowserInteraction(ctx context.Context, action *protocol.Action) *browserInteractionStart {
+	if _, gesture := b.browserInteractionKind(action); !gesture || !b.interactionsEnabled || ctx.Err() != nil {
+		return nil
+	}
+	b.mu.Lock()
+	generation := b.evidence.generation
+	b.mu.Unlock()
+	if generation == "" {
+		return nil
+	}
+	start := &browserInteractionStart{}
+	start.read = b.drainBrowserInteractionPage(ctx, generation, &start.page) == nil && start.page.Doc != ""
+	return start
+}
+
+// drainBrowserInteractionPage drains the observer within the read timeout:
+// a page whose main thread stays busy never stalls the VUser past it.
+func (b *Browser) drainBrowserInteractionPage(ctx context.Context, generation string, page *browserInteractionPage) error {
+	readCtx, cancel := context.WithTimeout(ctx, interactionReadTimeout)
+	defer cancel()
+	done := make(chan error, 1)
+	var read browserInteractionPage
+	go func() {
+		done <- b.evaluatePageExpression(readCtx, fmt.Sprintf(`(() => { const o = globalThis[%q]; return o ? o.drain() : null })()`, browserInteractionGlobal(generation)), &read)
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			*page = read
+		}
+		return err
+	case <-readCtx.Done():
+		return readCtx.Err()
+	}
+}
+
 // captureBrowserInteraction records one gesture after its action finished.
-func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protocol.Action, result *protocol.Result, actionErr error) {
+func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protocol.Action, result *protocol.Result, actionErr error, start *browserInteractionStart, sync browserInteractionSync) {
 	kind, gesture := b.browserInteractionKind(action)
 	if !gesture || !b.interactionsEnabled || ctx.Err() != nil {
 		return
@@ -182,53 +252,143 @@ func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protoco
 	}
 	interaction := protocol.BrowserInteraction{Version: protocol.BrowserInteractionVersion, SourceGeneration: generation, ActionID: actionID, ActionName: boundedInteractionText(action.Name, 256), FrameScope: "main_frame", Kind: kind,
 		Provenance: browserInteractionProvenance(action), Success: actionErr == nil && result != nil && result.Success, CapturedAt: time.Now().UTC(), Outcome: protocol.BrowserInteractionOutcome{Observed: protocol.InteractionOutcomeNotDeclared}}
-	if action.WaitFor != nil && strings.TrimSpace(action.WaitFor.Type) != "" {
-		interaction.Outcome = protocol.BrowserInteractionOutcome{Declared: boundedInteractionText(strings.ToLower(strings.TrimSpace(action.WaitFor.Type)), 64), DeadlineMS: action.WaitFor.TimeoutMs, Observed: protocol.InteractionOutcomeMissed}
-		if interaction.Outcome.DeadlineMS <= 0 {
-			interaction.Outcome.DeadlineMS = int(b.waitTimeout(0) / time.Millisecond)
+	// The declared outcome is the gesture's post-action wait (sync), the one
+	// the runtime actually evaluates after it.
+	if policy := browserSyncPolicy(action); policy != nil {
+		declared := strings.ToLower(strings.TrimSpace(policy.Type))
+		if declared == "" {
+			declared = "network_idle"
 		}
-		if interaction.Success {
-			interaction.Outcome.Observed = protocol.InteractionOutcomeMet
+		interaction.Outcome = protocol.BrowserInteractionOutcome{Declared: boundedInteractionText(declared, 64), DeadlineMS: int(b.waitTimeout(policy.TimeoutMs) / time.Millisecond), Observed: protocol.InteractionOutcomeNotReached}
+		if sync.reached {
+			interaction.Outcome.Observed = protocol.InteractionOutcomeMissed
+			if sync.err == nil {
+				interaction.Outcome.Observed = protocol.InteractionOutcomeMet
+			}
 		}
 	}
 	framed := len(b.actionFrameSelectors(action)) > 0
 	if framed {
 		interaction.FrameScope = "child_frame"
 	}
-	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
 	var page browserInteractionPage
-	err := b.evaluatePageExpression(readCtx, fmt.Sprintf(`(() => { const o = globalThis[%q]; return o ? o.drain() : null })()`, browserInteractionGlobal(generation)), &page)
-	switch {
-	case err != nil || page.Doc == "":
-		interaction.UnavailableReason = "page_state_unavailable"
-	default:
-		if protocol.BrowserEvidenceGeneration(page.Doc) {
-			interaction.DocumentID = generation + "-idoc-" + page.Doc
-		}
-		interaction.ViewportWidth, interaction.ViewportHeight, interaction.ScrollX, interaction.ScrollY, interaction.DeviceScaleFactor = page.VW, page.VH, page.SX, page.SY, page.DPR
-		if len(page.Layout) == 16 {
-			interaction.LayoutRevision = page.Layout
-		}
-		interaction.Route = sanitizeBrowserRoute(page.Path)
-		if protocol.BrowserInteractionPointerKind(kind) {
-			if framed {
-				interaction.UnavailableReason = "child_frame_unobserved"
-			} else {
-				interaction.Points, interaction.PointerType = browserInteractionPoints(kind, page)
+	if err := b.drainBrowserInteractionPage(ctx, generation, &page); err != nil || page.Doc == "" {
+		interaction.UnavailableReason = protocol.InteractionUnavailablePageState
+		b.recordBrowserInteraction(interaction)
+		return
+	}
+	// A gesture that navigated left its events in the document it started
+	// in: the record describes that document, without points.
+	navigated := start != nil && start.read && start.page.Doc != page.Doc
+	state := page
+	if navigated {
+		state = start.page
+	}
+	if protocol.BrowserEvidenceGeneration(state.Doc) {
+		interaction.DocumentID = generation + "-idoc-" + state.Doc
+	}
+	interaction.ViewportWidth, interaction.ViewportHeight, interaction.ScrollX, interaction.ScrollY, interaction.DeviceScaleFactor = state.VW, state.VH, state.SX, state.SY, state.DPR
+	if len(state.Layout) == 16 {
+		interaction.LayoutRevision = state.Layout
+	}
+	interaction.Route = sanitizeBrowserRoute(state.Path)
+	if protocol.BrowserInteractionPointerKind(kind) {
+		switch {
+		case framed:
+			interaction.UnavailableReason = protocol.InteractionUnavailableChildFrame
+		case navigated:
+			interaction.UnavailableReason = protocol.InteractionUnavailableDocumentChanged
+		default:
+			interaction.Points, interaction.PointerType = browserInteractionPoints(kind, page)
+			if len(interaction.Points) == 0 && b.syntheticGesture(kind) {
+				interaction.UnavailableReason = protocol.InteractionUnavailableSyntheticDispatch
 			}
 		}
-		if !protocol.BrowserInteractionPointerKind(kind) || kind == "check" {
-			if page.Focus != nil && page.Focus.Role != "" {
-				interaction.Target = &protocol.BrowserInteractionTarget{Role: page.Focus.Role}
-				if page.Focus.Label != "" {
-					sum := sha256.Sum256([]byte(page.Focus.Label))
-					interaction.Target.LabelSHA256 = hex.EncodeToString(sum[:])
-				}
+	}
+	if !protocol.BrowserInteractionPointerKind(kind) || kind == "check" {
+		switch {
+		case framed:
+			interaction.UnavailableReason = protocol.InteractionUnavailableChildFrame
+		default:
+			target, reason := b.browserInteractionTarget(ctx, action, start)
+			interaction.Target = target
+			if interaction.UnavailableReason == "" {
+				interaction.UnavailableReason = reason
 			}
 		}
 	}
 	b.recordBrowserInteraction(interaction)
+}
+
+// syntheticGesture reports whether the runtime dispatches kind as synthetic
+// (untrusted) events, which the observer ignores: every touch gesture.
+func (b *Browser) syntheticGesture(kind string) bool {
+	switch kind {
+	case "tap", "long_press", "swipe":
+		return true
+	}
+	return b.touchMode
+}
+
+// browserInteractionTargetScript describes an element by role and sanitized
+// label, as the observer describes focus.
+const browserInteractionTargetScript = `el => {
+ const tag = el.localName, type = (el.getAttribute('type') || 'text').toLowerCase();
+ const implicit = tag === 'input' ? (({checkbox: 'checkbox', radio: 'radio', button: 'button', submit: 'button', reset: 'button', range: 'slider', file: 'button', search: 'searchbox'})[type] || 'textbox') : (({textarea: 'textbox', select: 'combobox', button: 'button', a: 'link', option: 'option'})[tag] || 'generic');
+ const explicit = (el.getAttribute('role') || '').toLowerCase();
+ let label = el.getAttribute('aria-label') || '';
+ if (!label && el.labels && el.labels.length) label = el.labels[0].textContent || '';
+ if (!label) label = el.getAttribute('placeholder') || el.getAttribute('name') || el.getAttribute('title') || '';
+ return {role: /^[a-z]{1,24}$/.test(explicit) ? explicit : implicit, label: label.toLowerCase().replace(/[0-9]/g, '#').replace(/\s+/g, ' ').trim().slice(0, 64)};
+}`
+
+// browserInteractionTarget is the element a keyboard gesture acted on: the
+// one its selector resolves to, or without a selector the element focused
+// when it began. An element that cannot be resolved is unavailable.
+func (b *Browser) browserInteractionTarget(ctx context.Context, action *protocol.Action, start *browserInteractionStart) (*protocol.BrowserInteractionTarget, string) {
+	describe := func(role, label string) *protocol.BrowserInteractionTarget {
+		target := &protocol.BrowserInteractionTarget{Role: role}
+		if label != "" {
+			sum := sha256.Sum256([]byte(label))
+			target.LabelSHA256 = hex.EncodeToString(sum[:])
+		}
+		return target
+	}
+	selector := b.actionSelector(action)
+	if selector == "" {
+		if start != nil && start.read && start.page.Focus != nil && start.page.Focus.Role != "" {
+			return describe(start.page.Focus.Role, start.page.Focus.Label), ""
+		}
+		return nil, protocol.InteractionUnavailableTarget
+	}
+	page := b.currentPage()
+	if page == nil || ctx.Err() != nil {
+		return nil, protocol.InteractionUnavailableTarget
+	}
+	readCtx, cancel := context.WithTimeout(ctx, interactionReadTimeout)
+	defer cancel()
+	type described struct {
+		value any
+		err   error
+	}
+	done := make(chan described, 1)
+	go func() {
+		value, err := page.Locator(selector).First().Evaluate(browserInteractionTargetScript, nil, playwright.LocatorEvaluateOptions{Timeout: playwright.Float(float64(interactionReadTimeout / time.Millisecond))})
+		done <- described{value, err}
+	}()
+	var out described
+	select {
+	case out = <-done:
+	case <-readCtx.Done():
+		return nil, protocol.InteractionUnavailableTarget
+	}
+	fields, ok := out.value.(map[string]any)
+	role, _ := fields["role"].(string)
+	label, _ := fields["label"].(string)
+	if out.err != nil || !ok || role == "" {
+		return nil, protocol.InteractionUnavailableTarget
+	}
+	return describe(role, label), ""
 }
 
 // browserInteractionPoints chooses the dispatched points a gesture's kind
@@ -308,14 +468,22 @@ func (b *Browser) recordBrowserInteraction(interaction protocol.BrowserInteracti
 	}
 	document := s.documents[interaction.DocumentID]
 	if document == nil {
-		if len(s.documents) >= 1024 {
-			s.dropped++
-			s.incomplete = true
-			return
+		if len(s.order) >= maxBrowserInteractionDocuments {
+			delete(s.documents, s.order[0])
+			s.order = s.order[1:]
 		}
 		document = &browserInteractionDocument{}
 		s.documents[interaction.DocumentID] = document
+	} else {
+		// Most recently used last.
+		for k, id := range s.order {
+			if id == interaction.DocumentID {
+				s.order = append(s.order[:k], s.order[k+1:]...)
+				break
+			}
+		}
 	}
+	s.order = append(s.order, interaction.DocumentID)
 	if document.count >= protocol.MaxBrowserInteractionsPerDocument || document.bytes+len(encoded) > protocol.MaxBrowserInteractionBytesPerDocument || len(s.pending) >= protocol.MaxBrowserInteractionsPerEvidence {
 		s.dropped++
 		s.incomplete = true
@@ -324,6 +492,7 @@ func (b *Browser) recordBrowserInteraction(interaction protocol.BrowserInteracti
 	document.count++
 	document.bytes += len(encoded)
 	s.pending = append(s.pending, interaction)
+	s.sizes = append(s.sizes, len(encoded))
 }
 
 // TakeBrowserInteractionEvidence hands over the interactions recorded since
@@ -334,12 +503,19 @@ func (b *Browser) TakeBrowserInteractionEvidence() []*protocol.BrowserInteractio
 	defer b.mu.Unlock()
 	s := &b.interactions
 	var out []*protocol.BrowserInteractionEvidence
-	for _, interaction := range s.pending {
-		if len(out) == 0 || out[len(out)-1].SourceGeneration != interaction.SourceGeneration {
+	// One record per source generation, split so each stays within the
+	// evidence byte bound (with room for its envelope).
+	const envelope = 1024
+	size := 0
+	for k, interaction := range s.pending {
+		encoded := s.sizes[k] + 1
+		if len(out) == 0 || out[len(out)-1].SourceGeneration != interaction.SourceGeneration || size+encoded > protocol.MaxBrowserInteractionEvidenceBytes-envelope {
 			out = append(out, &protocol.BrowserInteractionEvidence{Version: protocol.BrowserInteractionVersion, SourceGeneration: interaction.SourceGeneration})
+			size = 0
 		}
 		last := out[len(out)-1]
 		last.Interactions = append(last.Interactions, interaction)
+		size += encoded
 	}
 	if s.dropped > 0 || s.incomplete {
 		if len(out) == 0 && b.evidence.generation != "" {
@@ -349,7 +525,7 @@ func (b *Browser) TakeBrowserInteractionEvidence() []*protocol.BrowserInteractio
 			out[len(out)-1].Dropped, out[len(out)-1].Incomplete = s.dropped, true
 		}
 	}
-	s.pending, s.dropped, s.incomplete = nil, 0, false
+	s.pending, s.sizes, s.dropped, s.incomplete = nil, nil, 0, false
 	for i, evidence := range out {
 		out[i] = evidence.Clone()
 	}

@@ -808,6 +808,9 @@ func (s *Server) handleAnalysisDatasetSeries(w http.ResponseWriter, r *http.Requ
 	query.ProjectID, query.DatasetID = in.ProjectID, in.ID
 	derivation := query.Derivation
 	query.Derivation = nil
+	// Only a counter derivation reads a counter's bucket readings; the
+	// controller decides, never the request.
+	query.CounterReadings = derivation != nil && slices.Contains([]string{"delta", "rate"}, analysis.CanonicalDerivation(derivation.Operation)) && query.Aggregation == "max"
 	query, err := bindImportedNativeSeriesQuery(in, query)
 	if err != nil {
 		writeError(w, 422, err.Error())
@@ -843,24 +846,40 @@ func (s *Server) handleAnalysisDatasetSeries(w http.ResponseWriter, r *http.Requ
 // identity), or moving statistics of a scalar series. Missing buckets stay
 // missing.
 func importedDerivation(in *storage.AnalysisImport, query analytics.SeriesQuery, points []analysis.MetricPoint, derivation analysis.QueryDerivation) (analysis.DerivedSeries, error) {
+	step := time.Duration(query.BucketSeconds) * time.Second
+	// The worker's points carry the measured kind as their input kind (a
+	// bucketed series is a gauge of it).
 	kind, unit := analysis.KindGauge, ""
 	if len(points) > 0 {
 		kind, unit = points[0].Kind, points[0].Unit
+		if points[0].InputKind != "" {
+			kind = points[0].InputKind
+		}
+	} else if query.CounterReadings {
+		kind = analysis.KindCounter
 	}
 	if err := analysis.ValidateQueryDerivation(query.Metric, points0Population(points), kind, derivation, false); err != nil {
 		return analysis.DerivedSeries{}, err
 	}
-	if kind == analysis.KindCounter && query.Aggregation != "max" {
+	if kind == analysis.KindCounter && !query.CounterReadings {
 		return analysis.DerivedSeries{}, errors.New("counter derivations read each bucket's highest reading; query with aggregation max")
 	}
-	step := time.Duration(query.BucketSeconds) * time.Second
+	if len(points) == 0 {
+		// Nothing in the window: every bucket is unscored, as missing.
+		out := analysis.DerivedSeries{Operation: analysis.CanonicalDerivation(derivation.Operation), Unit: unit}
+		for at := query.From.UTC(); at.Before(query.To); at = at.Add(step) {
+			out.Buckets = append(out.Buckets, analysis.DerivedBucket{From: at, To: at.Add(step), Reason: "evidence_unavailable"})
+		}
+		return out, nil
+	}
 	series := analysis.DerivationSeries{ProjectID: in.ProjectID, Source: "dataset:" + in.ID, MetricName: query.Metric, Population: points0Population(points), Kind: kind, Unit: unit,
 		CounterEpoch: fmt.Sprintf("dataset:%s@%d", in.ID, in.Revision)}
 	byStart := map[time.Time]analysis.MetricPoint{}
 	for _, p := range points {
 		byStart[p.TimestampUTC.UTC()] = p
 	}
-	for at := query.From.UTC().Truncate(step); at.Before(query.To); at = at.Add(step) {
+	// The worker's buckets start at the query's own From.
+	for at := query.From.UTC(); at.Before(query.To); at = at.Add(step) {
 		bucket := analysis.DerivationBucket{From: at, To: at.Add(step)}
 		if p, ok := byStart[at]; ok && p.Value != nil && p.Quality == analysis.QualityValid {
 			value := *p.Value

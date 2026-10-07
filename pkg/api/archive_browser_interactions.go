@@ -38,7 +38,7 @@ func validDeclaredInteractions(a *RunArchiveEvidenceArtifact) bool {
 
 // fetchRemoteInteractions fetches and verifies a source's declared
 // interactions sidecar from its live generator client.
-func fetchRemoteInteractions(ctx context.Context, client archiveArtifactClient, testID, sourceIdentity, dir string, declared *RunArchiveEvidenceArtifact, records int64) (*stagedRemoteHAR, string) {
+func fetchRemoteInteractions(ctx context.Context, client archiveArtifactClient, testID, sourceIdentity, dir string, declared *RunArchiveEvidenceArtifact, records int64, transfer *remoteArchiveTransferBudget) (*stagedRemoteHAR, string) {
 	if declared == nil {
 		return nil, ""
 	}
@@ -49,7 +49,7 @@ func fetchRemoteInteractions(ctx context.Context, client archiveArtifactClient, 
 		return nil, interactionsUnavailableSource
 	}
 	path := filepath.Join(dir, declared.Name)
-	copied, err := fetchRemoteArchiveArtifactFileForSource(ctx, client, testID, declared.Name, sourceIdentity, path, declared.Bytes, nil)
+	copied, err := fetchRemoteArchiveArtifactFileForSource(ctx, client, testID, declared.Name, sourceIdentity, path, declared.Bytes, transfer)
 	if err == nil && copied != declared.Bytes {
 		err = io.ErrUnexpectedEOF
 	}
@@ -171,19 +171,22 @@ func (w *runArchiveWriter) RecordBrowserInteractionEvidence(evidence *protocol.B
 		return errors.New("browser interaction evidence is malformed")
 	}
 	data, err := json.Marshal(evidence)
-	if err != nil || len(data) > protocol.MaxBrowserInteractionEvidenceBytes {
-		return errors.New("browser interaction evidence exceeds its record bounds")
-	}
-	record := append(data, '\n')
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.txFile == nil {
 		return errors.New("run archive is closed")
 	}
-	if int64(len(record)) > maxRunArchiveInteractionsBytes-w.interactionBytes || w.manifest.BrowserInteractionRecordCount >= maxRunArchiveInteractionsRecords {
+	drop := func(reason string) error {
 		w.manifest.BrowserInteractionsIncomplete = true
-		w.manifest.BrowserInteractionsDropped += int64(len(evidence.Interactions))
-		return errors.New("browser interaction evidence exceeds the run's sidecar budget")
+		w.manifest.BrowserInteractionsDropped += int64(len(evidence.Interactions)) + max(evidence.Dropped, 0)
+		return errors.New(reason)
+	}
+	if err != nil || len(data) > protocol.MaxBrowserInteractionEvidenceBytes {
+		return drop("browser interaction evidence exceeds its record bounds")
+	}
+	record := append(data, '\n')
+	if w.interactionsBroken || int64(len(record)) > maxRunArchiveInteractionsBytes-w.interactionBytes || w.manifest.BrowserInteractionRecordCount >= maxRunArchiveInteractionsRecords {
+		return drop("browser interaction evidence exceeds the run's sidecar budget")
 	}
 	if w.interactionsFile == nil {
 		file, err := createArchiveArtifactExclusive(w.rootDir, browserInteractionsFileName, 0o644, false)
@@ -199,13 +202,20 @@ func (w *runArchiveWriter) RecordBrowserInteractionEvidence(evidence *protocol.B
 		destination = archiveCaptureFileWriter{file: w.interactionsFile, budget: w.captureBudget}
 	}
 	if written, err := destination.Write(record); err != nil || written != len(record) {
-		// A torn record would corrupt the sidecar: stop recording into it.
-		w.manifest.BrowserInteractionsIncomplete = true
+		if written == 0 {
+			// Refused before any byte (capture quota, free space): only
+			// this record is lost.
+			return errors.Join(drop("browser interaction evidence was not written"), err)
+		}
+		// A torn record corrupts the sidecar, which is then removed: every
+		// record in it is lost, and nothing more is written into it.
+		w.manifest.BrowserInteractionsDropped += w.interactionCount
 		_ = w.interactionsFile.Close()
 		w.interactionsFile = nil
 		w.interactionsBroken = true
-		return errors.Join(err, io.ErrShortWrite)
+		return errors.Join(drop("browser interaction evidence sidecar was torn"), err, io.ErrShortWrite)
 	}
+	w.interactionCount += int64(len(evidence.Interactions))
 	w.interactionBytes += int64(len(record))
 	w.manifest.BrowserInteractionRecordCount++
 	w.manifest.BrowserInteractionsDropped += evidence.Dropped

@@ -282,8 +282,12 @@ type telemetrySourceLedger struct {
 	mu        sync.Mutex
 	epochs    map[telemetrySourceKey]*TelemetrySourceEpoch
 	truncated bool
-	// coverage is each source's observed wall time (see telemetry_coverage.go).
-	coverage map[string]*coverageSpans
+	// coverage is each source's observed wall time, requirements when each
+	// had to be observed and cursors its last sequenced publication (see
+	// telemetry_coverage.go).
+	coverage     map[string]*coverageSpans
+	requirements map[string]*telemetrySourceRequirement
+	cursors      map[string]*coverageCursor
 }
 
 func newTelemetrySourceLedger() *telemetrySourceLedger {
@@ -298,7 +302,7 @@ func (l *telemetrySourceLedger) observe(source string, batch generatorrpc.Metric
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.observeCoverage(source, batch.WindowMs, at)
+	l.observeCoverage(source, batch, at)
 	key := telemetrySourceKey{source: source, generation: batch.ExecutionGeneration, epoch: batch.SourceEpoch}
 	record := l.epochs[key]
 	if record == nil {
@@ -332,6 +336,12 @@ func (l *telemetrySourceLedger) observe(source string, batch generatorrpc.Metric
 	if record.LastSequence != 0 && sequence < record.LastSequence {
 		record.OutOfOrder++
 	}
+	if batch.SequencePrefixStateOnly && sequence > 1 {
+		// A registration snapshot after only state-only publications
+		// (staging, activation): nothing before it was lost, so the epoch's
+		// origin is observed.
+		record.addRange(1, sequence-1)
+	}
 	record.add(sequence)
 	record.observeCounters(batch)
 }
@@ -346,13 +356,18 @@ func (r *TelemetrySourceEpoch) covers(sequence uint64) bool {
 }
 
 func (r *TelemetrySourceEpoch) add(sequence uint64) {
-	if r.FirstSequence == 0 || sequence < r.FirstSequence {
-		r.FirstSequence = sequence
+	r.addRange(sequence, sequence)
+}
+
+// addRange records sequences from..to as held.
+func (r *TelemetrySourceEpoch) addRange(from, to uint64) {
+	if r.FirstSequence == 0 || from < r.FirstSequence {
+		r.FirstSequence = from
 	}
-	if sequence > r.LastSequence {
-		r.LastSequence = sequence
+	if to > r.LastSequence {
+		r.LastSequence = to
 	}
-	r.ranges = append(r.ranges, [2]uint64{sequence, sequence})
+	r.ranges = append(r.ranges, [2]uint64{from, to})
 	sort.Slice(r.ranges, func(i, j int) bool { return r.ranges[i][0] < r.ranges[j][0] })
 	merged := r.ranges[:1]
 	for _, span := range r.ranges[1:] {
@@ -463,6 +478,16 @@ func unobservedTelemetryGenerations(epochs []TelemetrySourceEpoch, failovers []R
 
 func (l *telemetrySourceLedger) summary(failovers ...RunFailover) *TelemetrySourceSummary {
 	epochs, truncated := l.snapshot(failovers...)
+	return telemetrySourceSummaryOf(epochs, truncated)
+}
+
+// rollup is the live summary and loss totals from one settled snapshot.
+func (l *telemetrySourceLedger) rollup(failovers ...RunFailover) (*TelemetrySourceSummary, map[string]TelemetryCounterTotal) {
+	epochs, truncated := l.snapshot(failovers...)
+	return telemetrySourceSummaryOf(epochs, truncated), telemetryLossTotalsOf(epochs, truncated)
+}
+
+func telemetrySourceSummaryOf(epochs []TelemetrySourceEpoch, truncated bool) *TelemetrySourceSummary {
 	if len(epochs) == 0 && !truncated {
 		return nil
 	}
@@ -479,7 +504,7 @@ func (l *telemetrySourceLedger) summary(failovers ...RunFailover) *TelemetrySour
 		if epoch.Epoch == "" {
 			summary.LegacyEpochs++
 		}
-		summary.LostPublications += epoch.LostPublications
+		summary.LostPublications = min(summary.LostPublications, math.MaxInt64-epoch.LostPublications) + epoch.LostPublications
 	}
 	summary.Sources = len(sources)
 	return summary
@@ -493,6 +518,10 @@ func (l *telemetrySourceLedger) summary(failovers ...RunFailover) *TelemetrySour
 // ledger kept every epoch.
 func (l *telemetrySourceLedger) lossTotals(failovers ...RunFailover) map[string]TelemetryCounterTotal {
 	epochs, truncated := l.snapshot(failovers...)
+	return telemetryLossTotalsOf(epochs, truncated)
+}
+
+func telemetryLossTotalsOf(epochs []TelemetrySourceEpoch, truncated bool) map[string]TelemetryCounterTotal {
 	if len(epochs) == 0 && !truncated {
 		return nil
 	}
@@ -527,7 +556,9 @@ func (l *telemetrySourceLedger) lossTotals(failovers ...RunFailover) map[string]
 				}
 				processes[key], latest[key] = count, epoch.ExecutionGeneration
 			case count.Value > previous.Value:
-				// An earlier generation reported more than a later one.
+				// An earlier generation reported more than a later one. The
+				// snapshot orders generations ascending, so this only guards
+				// the totals against a different order.
 				processes[key] = TelemetryCounterTotal{State: TelemetryCounterLowerBound, Value: count.Value, Reason: "counter_regressed"}
 			}
 		}
@@ -548,13 +579,19 @@ func (l *telemetrySourceLedger) lossTotals(failovers ...RunFailover) map[string]
 		totals[name] = sumTelemetryCounterTotals(counts, truncated, unobserved)
 	}
 	lost := TelemetryCounterTotal{State: TelemetryCounterExact}
-	legacy := false
+	legacy, overflowed := false, false
 	for _, epoch := range epochs {
 		if epoch.Unobserved {
 			continue
 		}
 		legacy = legacy || epoch.Epoch == ""
-		lost.Value = min(lost.Value+epoch.LostPublications, 1<<62)
+		const lostCap = int64(1 << 62)
+		if epoch.LostPublications > lostCap-lost.Value {
+			// Clamp before adding: the sum cannot wrap.
+			lost.Value, overflowed = lostCap, true
+		} else {
+			lost.Value += epoch.LostPublications
+		}
 		if !epoch.LossExact && lost.Reason == "" {
 			lost.Reason = "epoch_not_fully_observed"
 		}
@@ -566,6 +603,8 @@ func (l *telemetrySourceLedger) lossTotals(failovers ...RunFailover) map[string]
 		lost.Reason = "generation_unobserved"
 	case legacy:
 		lost.Reason = "legacy_source"
+	case overflowed:
+		lost.Reason = "overflow"
 	}
 	if lost.Reason != "" {
 		lost.State = TelemetryCounterLowerBound
@@ -661,9 +700,11 @@ func telemetrySourceSummaryLocked(test *ManagedTest) *TelemetrySourceSummary {
 	return test.telemetrySources.summary(test.continuityFailovers...)
 }
 
-// telemetryLossTotalsLocked is the run's live loss accounting.
-func telemetryLossTotalsLocked(test *ManagedTest) *TelemetryLossAccounting {
-	return telemetryLossAccounting(test.telemetrySources.lossTotals(test.continuityFailovers...))
+// telemetrySourceRollupLocked is the run's live source summary and loss
+// accounting, settled once.
+func telemetrySourceRollupLocked(test *ManagedTest) (*TelemetrySourceSummary, *TelemetryLossAccounting) {
+	summary, totals := test.telemetrySources.rollup(test.continuityFailovers...)
+	return summary, telemetryLossAccounting(totals)
 }
 
 // persistTelemetrySourceArchive writes telemetry_sources.jsonl after

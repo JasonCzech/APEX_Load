@@ -479,10 +479,21 @@ test at its last publication, each with a `state` of `exact`, `lower_bound`
 or `unavailable`, its `value`, and the `reason` it is not exact. A count is
 exact only for an epoch observed from its first publication to its terminal
 one with no publication lost, whose count never decreased and was never
-negative; otherwise it is the largest count seen (`legacy_source`,
-`counter_regressed`, `invalid_value`, `unsequenced_publication`,
-`origin_unobserved`, `terminal_unobserved`, `epoch_not_fully_observed`,
-`publications_lost`) or unavailable (`not_reported`, `generation_unobserved`).
+negative. A generator marks the snapshot a new subscription starts from
+(`MetricsBatch.sequence_prefix_state_only`, field 33) when every earlier
+sequence was a state-only staging or activation publication, so an epoch
+observed from that snapshot counts its origin as observed; the generator also
+confirms each subscription with a header before the controller activates the
+run, so no metric window precedes it.
+
+Reasons, per level:
+
+| Level | `lower_bound` (largest count seen) | `unavailable` |
+| --- | --- | --- |
+| Epoch counter | `legacy_source`, `counter_regressed`, `invalid_value`, `unsequenced_publication`, `origin_unobserved`, `terminal_unobserved`, `epoch_not_fully_observed`, `publications_lost` | `not_reported`, `invalid_value` (every reading negative), `process_wide_only`, `generation_unobserved` |
+| Run total | the first non-exact epoch's reason, `source_` plus an unavailable process's reason (`source_not_reported`, `source_invalid_value`, `source_process_wide_only`, `source_generation_unobserved`), `ledger_truncated`, `generation_unobserved`, `overflow`, `legacy_source`, `counter_regressed` (an earlier generation reported more) | `not_reported` or the first process's unavailable reason; `controller_wide` (WebSocket drops) |
+| Run `lost_publications` | `epoch_not_fully_observed`, `ledger_truncated`, `generation_unobserved`, `legacy_source`, `overflow` | — |
+
 Subscriber drops are attributed to the test only by generators that send
 `test_dropped_subscriber_batches` (`MetricsBatchTelemetry` field 9); older ones
 report only their process-wide count, which reads as unavailable
@@ -499,14 +510,29 @@ run executed in the controller's own process reports its dropped results and
 shed arrivals as exact.
 
 The manifest's `telemetry_coverage` is the run's wall-time telemetry account
-(`telemetry_coverage.v1`): the run window, each generator's observed time
+(`telemetry_coverage.v2`): the run window, each generator's observed time
 (from its publications' windows on the controller's receipt clock, overlaps
-counted once), the time every required generator was observed, and healthy,
-degraded, breached and unknown time with `classified_ms` as the denominator
-of `breached_known_fraction`, beside retained and classified interval counts
-and the run's telemetry policy segment. Time no observation covers, an
-unclassified interval, and time before an HA adoption (which the adopting
-controller did not observe) are unknown, never healthy.
+counted once; a publication whose sequence directly follows the previous one
+in the same epoch also covers the receipt jitter since it, so a continuous
+stream stays one span), the observed time, and healthy, degraded, breached
+and unknown time with `classified_ms` as the denominator of
+`breached_known_fraction`, beside retained and classified interval counts and
+the run's telemetry policy segment (`unavailable: immutable-policy-invalid`
+when the captured policy fails validation). A moment is observed only when
+some generator was required then and every generator required then was
+observed: each is required from its assignment (or first publication) until
+its retirement — an evacuation, its terminal publication, or completion
+before an HA adoption — and a placed generator this controller has no record
+of for the whole window. Time no observation covers, time no generator was
+required for, an unclassified or `unscored` interval, and time before an HA
+adoption are unknown, never healthy. A run is distributed when it has a
+source ledger, clients or a durable generator placement, so one finalized
+after a restart or adoption without this controller's ledger is unknown
+throughout, never observed throughout. Past 1,024 disjoint spans per
+generator the shortest is dropped to admit a longer one (`truncated`, a lower
+bound). Coverage is read from the interval rows' timestamps, windows and
+statuses only, and the run's cumulative coverage is not copied into archived
+rows.
 
 `interval_distributions.jsonl` has its own allowance,
 `APEXLOAD_ARCHIVE_INTERVAL_DISTRIBUTIONS_MAX_BYTES` (default 256 MiB, positive

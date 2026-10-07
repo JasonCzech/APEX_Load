@@ -1013,6 +1013,18 @@ func (sink combinedResultSink) RecordBrowserDocumentEvidence(evidence *protocol.
 	return nil
 }
 
+// RecordBrowserInteractionEvidence hands interaction evidence to the first
+// sink that retains it (the run archive writer of a run this controller
+// executes itself).
+func (sink combinedResultSink) RecordBrowserInteractionEvidence(evidence *protocol.BrowserInteractionEvidence) error {
+	for _, candidate := range sink {
+		if interactionSink, ok := candidate.(engine.BrowserInteractionEvidenceSink); ok {
+			return interactionSink.RecordBrowserInteractionEvidence(evidence)
+		}
+	}
+	return errors.New("no run archive retains browser interaction evidence")
+}
+
 // RecordBrowserHARArtifact hands a HAR to the first sink that retains HARs;
 // the artifact moves, so only one sink may take it.
 func (sink combinedResultSink) RecordBrowserHARArtifact(artifact protocol.BrowserHARArtifact) error {

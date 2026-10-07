@@ -8,6 +8,15 @@ export interface ScenarioAuthoringDraft {
   savedAt: string
   editingId: string | null
   editingUpdatedAt: string
+  /**
+   * The revision tag, form and workload shape the edit was loaded from. A
+   * resumed edit adopts a durable baseline only when its tag still matches;
+   * otherwise the save reconciles from this original. Older checkpoints
+   * without a tag fall back to the listed update time.
+   */
+  baselineTag?: string
+  baselineForm?: ScenarioFormState
+  baselineShapeId?: string
   form: ScenarioFormState
   source: ScenarioSourceMode
   startChoice: ScenarioStartChoice
@@ -125,6 +134,12 @@ export function readScenarioAuthoringDraft(project: string): ScenarioAuthoringDr
     if (f.data_pools !== undefined && (!Array.isArray(f.data_pools) || !f.data_pools.every(binding => record(binding) && typeof binding.pool_id === 'string' && typeof binding.alias === 'string' && ['sequential', 'random', 'unique'].includes(String(binding.selection_strategy))))) return null
     if (['runtime_settings', 'goal_config', 'traffic_profile', 'assignment'].some(name => f[name] !== undefined && !record(f[name]))) return null
     assertDraftHasNoInlineCredentials(f)
+    // A recorded baseline that does not look like one is dropped: the draft
+    // then resumes like an older checkpoint.
+    const b = d.baselineForm
+    if (d.baselineTag !== undefined && (typeof d.baselineTag !== 'string' || !d.baselineTag || !record(b) || typeof b.name !== 'string' || !Array.isArray(b.groups) || typeof d.baselineShapeId !== 'string')) {
+      delete d.baselineTag; delete d.baselineForm; delete d.baselineShapeId
+    }
     return d as unknown as ScenarioAuthoringDraft
   } catch { return null }
 }

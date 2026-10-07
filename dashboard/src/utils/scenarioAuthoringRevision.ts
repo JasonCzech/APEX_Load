@@ -74,3 +74,12 @@ export class ScenarioChangedSinceObserved extends Error {
     this.name = 'ScenarioChangedSinceObserved'
   }
 }
+
+// adoptableAfterBindingsSave is the baseline an editor may adopt after its own
+// monitor-binding save advanced the scenario revision: only when the authored
+// scenario and its library placement are unchanged (the binding save is the
+// only change), otherwise the next save reconciles.
+export function adoptableAfterBindingsSave(previous: ScenarioAuthoringBaseline, next: ScenarioAuthoringBaseline): ScenarioAuthoringBaseline | null {
+  const authored = (baseline: ScenarioAuthoringBaseline) => JSON.stringify([baseline.projection.scenario, baseline.projection.library_placement])
+  return authored(next) === authored(previous) ? next : null
+}

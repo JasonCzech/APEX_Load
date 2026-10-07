@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ApiError } from '../hooks/apiClient'
 import { scenarioAuthoringFixture, withScenarioAuthoring } from '../test/scenarioAuthoringFixtures'
 import { authoringChangedPaths, reapplyAuthoringDraft } from './authoringRevision'
-import { admitScenarioAuthoringBaseline, baselineFromSavedScenario, scenarioAuthoringTag, scenarioBaselineFromRead, scenarioSaveNeedsReconciliation, ScenarioSaveOutcomeUnknown } from './scenarioAuthoringRevision'
+import { adoptableAfterBindingsSave, admitScenarioAuthoringBaseline, baselineFromSavedScenario, scenarioAuthoringTag, scenarioBaselineFromRead, scenarioSaveNeedsReconciliation, ScenarioSaveOutcomeUnknown } from './scenarioAuthoringRevision'
 
 const revision = `scn-v1-${'a'.repeat(64)}`
 
@@ -82,5 +82,19 @@ describe('shared authoring reapply and diff', () => {
     expect(authoringChangedPaths({ scenario: { name: 'a', groups: [{ vusers: 1 }] } }, { scenario: { name: 'b', groups: [{ vusers: 2 }] } }, 'Scenario'))
       .toEqual(['scenario.groups[0].vusers', 'scenario.name'])
     expect(authoringChangedPaths(1, 2, 'Scenario')).toEqual(['Scenario'])
+  })
+})
+
+describe('adoptableAfterBindingsSave', () => {
+  it('adopts the next baseline only when the binding save was the only change', () => {
+    const previous = scenarioAuthoringFixture({ name: 'Checkout' }, 'scenario-1', 'project-1', 'a')
+    const bindingsOnly = { ...scenarioAuthoringFixture({ name: 'Checkout' }, 'scenario-1', 'project-1', 'b') }
+    bindingsOnly.projection = { ...bindingsOnly.projection, monitor_selection: { sources: [{ source_id: 'prom-1' }] } as never }
+    expect(adoptableAfterBindingsSave(previous, bindingsOnly)).toBe(bindingsOnly)
+    const renamed = scenarioAuthoringFixture({ name: 'Renamed elsewhere' }, 'scenario-1', 'project-1', 'b')
+    expect(adoptableAfterBindingsSave(previous, renamed)).toBeNull()
+    const placed = scenarioAuthoringFixture({ name: 'Checkout' }, 'scenario-1', 'project-1', 'b')
+    placed.projection = { ...placed.projection, library_placement: { application_id: 'app-1', release_ids: [] } }
+    expect(adoptableAfterBindingsSave(previous, placed)).toBeNull()
   })
 })

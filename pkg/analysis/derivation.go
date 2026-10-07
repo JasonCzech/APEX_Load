@@ -37,6 +37,23 @@ func validateDerivation(steps []DerivationStep, qualified bool) error {
 	return nil
 }
 
+// CounterReadingBucketDerivation is the lineage of a counter read as each
+// bucket's highest reading (its closing reading when no reset happened inside
+// the bucket), for a controller-side reset-aware delta or rate. Only a
+// counter derivation reads a counter this way; display queries still convert
+// counters to rates.
+func CounterReadingBucketDerivation(point MetricPoint, bucketSeconds int) ([]DerivationStep, error) {
+	if point.Kind != KindCounter {
+		return nil, errors.New("counter readings require a counter")
+	}
+	if bucketSeconds < 1 || bucketSeconds > 86400 {
+		return nil, errors.New("invalid scalar bucket size")
+	}
+	steps := slices.Clone(point.Derivation)
+	steps = append(steps, DerivationStep{Operation: "max", Algorithm: "counter_bucket_reading.v1", BucketSeconds: bucketSeconds})
+	return steps, validateDerivation(steps, false)
+}
+
 // ScalarBucketDerivation returns independent lineage for the existing scalar
 // aggregation algorithms. Reaggregated legacy buckets retain an unknown-parent
 // marker and stay unqualified for comparisons instead of becoming new raw data.

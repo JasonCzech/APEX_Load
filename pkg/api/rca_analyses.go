@@ -738,12 +738,15 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 	}
 	// Associated analysis datasets join as imported series, at the revisions
 	// the evidence froze, within what the series budget leaves.
+	// Joint action-dimension slices rank last (no hypothesis uses them): the
+	// series kinds read below may take the room they hold, and they give way
+	// at the end.
 	if frozen && len(evidence.Datasets) > 0 {
 		limit := -1
 		if budget.MaxSeries > 0 {
-			limit = max(0, budget.MaxSeries-len(input.Detection.Series))
+			limit = max(0, budget.MaxSeries-rcaNonJointSeries(input.Detection.Series))
 		}
-		imported, limitations, err := s.rcaImportedSeries(ctx, normalizeProjectID(analysis.ProjectID), analysis.TestID, evidence.Datasets, summaries, limit, budgeter)
+		imported, limitations, err := s.rcaImportedSeries(ctx, normalizeProjectID(analysis.ProjectID), analysis.TestID, evidence.Datasets, summaries, limit, budgeter, budget.MaxWallTime/rcaImportedReadShare)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -754,7 +757,7 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 	// document p75 series, within what the series budget leaves.
 	documentLimit := -1
 	if budget.MaxSeries > 0 {
-		documentLimit = max(0, budget.MaxSeries-len(input.Detection.Series))
+		documentLimit = max(0, budget.MaxSeries-rcaNonJointSeries(input.Detection.Series))
 	}
 	documents, limitations, err := rcaBrowserDocumentSeries(ctx, record, manifest, summaries, documentLimit, budget.MaxSeriesPoints)
 	if err != nil {
@@ -762,6 +765,12 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 	}
 	input.Detection.Series = append(input.Detection.Series, documents...)
 	input.Detection.Limitations = append(input.Detection.Limitations, limitations...)
+	if budget.MaxSeries > 0 {
+		var gaveWay int
+		if input.Detection.Series, gaveWay = trimRCAJointSeries(input.Detection.Series, budget.MaxSeries); gaveWay > 0 {
+			input.Detection.Limitations = append(input.Detection.Limitations, rca.Limitation{Code: limitationDetectionEvidenceCut, Detail: fmt.Sprintf("%d joint action-dimension series gave way to imported and document series within the series budget", gaveWay)})
+		}
+	}
 	if frozen && evidence.DatasetsTruncated {
 		input.Detection.Limitations = append(input.Detection.Limitations, rca.Limitation{Code: limitationImportedDatasetsCut, Detail: fmt.Sprintf("more than %d analysis datasets are associated with the run; the first %d by ID were judged", rcaMaxImportedDatasets, rcaMaxImportedDatasets)})
 	}
@@ -948,6 +957,18 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveMa
 			} else {
 				evidence.Limitations = append(evidence.Limitations, rca.Limitation{Code: limitationPhaseEvidence, Detail: "the baseline's rows could not be read: " + scanErr.Error()})
 			}
+			// The baseline's browser document tuples, so a document series
+			// is judged against the same tuple of the baseline run.
+			documentLimit := -1
+			if budget.MaxSeries > 0 {
+				documentLimit = max(0, budget.MaxSeries-len(evidence.Series))
+			}
+			if documents, limitations, docErr := rcaBrowserDocumentSeries(ctx, record, baselineManifest, summaries, documentLimit, budget.MaxSeriesPoints); docErr == nil {
+				evidence.Series = append(evidence.Series, documents...)
+				evidence.Limitations = append(evidence.Limitations, limitations...)
+			} else if ctx.Err() == nil {
+				evidence.Limitations = append(evidence.Limitations, rca.Limitation{Code: limitationDetectionEvidenceCut, Detail: "the baseline's browser document evidence could not be read: " + docErr.Error()})
+			}
 			// What limited the baseline's own evidence limits every
 			// comparison with it.
 			if len(evidence.Limitations) > 0 {
@@ -963,4 +984,36 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveMa
 	}
 	coverage.Status, coverage.Detail = rca.CoveragePartial, detail+"; its series could not be read"
 	return coverage, nil
+}
+
+// rcaNonJointSeries counts the series that are not joint action-dimension
+// slices.
+func rcaNonJointSeries(series []rca.Series) int {
+	count := 0
+	for _, s := range series {
+		if !strings.HasPrefix(s.ID, rca.SeriesJointPrefix) {
+			count++
+		}
+	}
+	return count
+}
+
+// trimRCAJointSeries drops joint action-dimension slices, the last first,
+// until at most limit series remain. It returns how many it dropped.
+func trimRCAJointSeries(series []rca.Series, limit int) ([]rca.Series, int) {
+	excess := len(series) - limit
+	if excess <= 0 {
+		return series, 0
+	}
+	out := make([]rca.Series, 0, len(series))
+	dropped := 0
+	for i := len(series) - 1; i >= 0; i-- {
+		if dropped < excess && strings.HasPrefix(series[i].ID, rca.SeriesJointPrefix) {
+			dropped++
+			continue
+		}
+		out = append(out, series[i])
+	}
+	slices.Reverse(out)
+	return out, dropped
 }

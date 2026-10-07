@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -152,5 +153,25 @@ func exerciseScenarioRuntimeCommitFingerprint(t *testing.T, server *Server, stor
 	}
 	if recorder.committed == "" || scenarioRuntimeCommitFingerprint(stored, scripts) != recorder.committed {
 		t.Fatalf("recovered fingerprint %s, committed %s (stored SLA %v)", scenarioRuntimeCommitFingerprint(stored, scripts), recorder.committed, *scripts[0].TransactionResponseTimeSLAMs)
+	}
+}
+
+// A plain read on a replica whose cached copy is stale (another controller
+// saved it, without HA leadership) refreshes once and returns the durable
+// body with its validator, so the editor's "Load current baseline" recovers.
+func TestScenarioReadRefreshesAStaleCacheWithoutHA(t *testing.T) {
+	server, store, _, scenario := newScenarioPolicyAvailabilityFixture(t)
+	external, children, err := store.GetScenario(scenario.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	external.Name = "Saved by another replica"
+	external.UpdatedAt = external.UpdatedAt.Add(time.Second)
+	if err := store.SaveScenario(external, children); err != nil {
+		t.Fatal(err)
+	}
+	response := authoringAPIRequest(t, server, http.MethodGet, "/api/v1/scenarios/"+scenario.ID, nil, "")
+	if response.Code != http.StatusOK || response.Header().Get("ETag") == "" || !strings.Contains(response.Body.String(), "Saved by another replica") {
+		t.Fatalf("stale replica read: %d etag=%q %s", response.Code, response.Header().Get("ETag"), response.Body.String())
 	}
 }

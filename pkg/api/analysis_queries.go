@@ -458,6 +458,10 @@ func (w *analysisStagingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// errAnalyticalAdmissionUnavailable: the single native-analysis slot is held
+// by another job; the read may be retried.
+var errAnalyticalAdmissionUnavailable = errors.New("analytical admission unavailable")
+
 func queryAnalysisDataset(ctx context.Context, in *storage.AnalysisImport, query analytics.SeriesQuery) ([]analysis.MetricPoint, error) {
 	if !analysisQueryContextLive(ctx) {
 		return nil, errors.New("analysis deadline or cancellation reached")
@@ -501,7 +505,7 @@ func queryAnalysisDataset(ctx context.Context, in *storage.AnalysisImport, query
 		}
 		ctx, pipeline, dir, err = beginNativeAnalysisPipeline(ctx, 12, 12)
 		if err != nil {
-			return nil, errors.New("analytical admission unavailable")
+			return nil, errAnalyticalAdmissionUnavailable
 		}
 		defer closeNativeAnalysisPipeline(pipeline, dir)
 		selected, total, err = selectAnalysisDatasetParts(ctx, in, query)

@@ -11,7 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -106,7 +108,7 @@ func harCrashChild(t *testing.T, dir, stage string, writerPID int) {
 		t.Fatal(err)
 	}
 	ready := func(stage string) {
-		_ = os.WriteFile(filepath.Join(dir, "ready"), []byte(o.generation+" "+stage), 0o600)
+		writeReadyToken(dir, o.generation+" "+stage)
 		select {} // Wait here for SIGKILL.
 	}
 	if err := o.beginWriter(); err != nil {
@@ -286,6 +288,16 @@ func TestHAROwnershipPreservesForeignAndUnprovenGenerations(t *testing.T) {
 	control := generation(g, w, false)
 	g, _ = foreign(func(*harProcessIdentity) {})
 	unentered := generation(g, nil, false)
+	// A writer record a crash left half-written was never completed, so no
+	// writer received the path: like no record at all.
+	g, _ = foreign(func(*harProcessIdentity) {})
+	torn := generation(g, nil, true)
+	if err := writeHARPrivateDurable(torn.root, "writer-entered.json", []byte(`{"version":1,"generat`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := torn.closeDescriptors(); err != nil {
+		t.Fatal(err)
+	}
 	plans := PlanRuntimeHARWorkingCleanup(dir, 128)
 	planned := map[string]RuntimeHARWorkingPruneCandidate{}
 	for _, plan := range plans {
@@ -294,8 +306,8 @@ func TestHAROwnershipPreservesForeignAndUnprovenGenerations(t *testing.T) {
 		}
 		planned[filepath.Base(plan.Path)] = plan
 	}
-	if len(plans) != 2 || planned[control.generation].Path == "" || planned[unentered.generation].Path == "" {
-		t.Fatalf("planned %d generations, want the two controls", len(plans))
+	if len(plans) != 3 || planned[control.generation].Path == "" || planned[unentered.generation].Path == "" || planned[torn.generation].Path == "" {
+		t.Fatalf("planned %d generations, want the three controls", len(plans))
 	}
 	for name, o := range preserved {
 		if _, ok := planned[o.generation]; ok {
@@ -324,7 +336,7 @@ func TestHAROwnershipPreservesForeignAndUnprovenGenerations(t *testing.T) {
 		t.Fatal("live writer's generation removed", err)
 	}
 	// A fresh sweep retires only what is now proven.
-	if reclaimed, err := ReclaimRuntimeHARWorking(context.Background(), dir, 128); err != nil || reclaimed != 1 {
+	if reclaimed, err := ReclaimRuntimeHARWorking(context.Background(), dir, 128); err != nil || reclaimed != 2 {
 		t.Fatalf("sweep reclaimed %d: %v", reclaimed, err)
 	}
 	if _, err := os.Stat(filepath.Dir(unentered.path)); !os.IsNotExist(err) {
@@ -358,7 +370,7 @@ func TestHAROwnershipReclaimsKilledNativeRecording(t *testing.T) {
 		if owner == nil {
 			t.Fatal("no HAR owner")
 		}
-		_ = os.WriteFile(filepath.Join(dir, "ready"), []byte(fmt.Sprintf("%s %d", owner.generation, playwrightDriverPID())), 0o600)
+		writeReadyToken(dir, fmt.Sprintf("%s %d", owner.generation, playwrightDriverPID()))
 		select {} // Wait here for SIGKILL.
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -429,5 +441,60 @@ func TestHAROwnershipReclaimsKilledNativeRecording(t *testing.T) {
 	}
 	if _, err := os.Stat(generationDir); !os.IsNotExist(err) {
 		t.Fatal("killed recording survived", err)
+	}
+}
+
+// A writer record that cannot be written leaves no writer entered and no
+// record behind, so the owner can still close and its generation can be
+// reclaimed once the generator has gone.
+func TestHARBeginWriterFailureEntersNoWriter(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permissions do not bind root")
+	}
+	o := fixtureHAROwner(t, t.TempDir())
+	generationDir := filepath.Dir(o.path)
+	if err := os.Chmod(generationDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(generationDir, 0o700) })
+	if err := o.beginWriter(); err == nil {
+		t.Fatal("writer record written into a read-only generation")
+	}
+	o.mu.Lock()
+	entered := o.writerEntered
+	o.mu.Unlock()
+	if entered {
+		t.Fatal("a writer counted as entered without its record")
+	}
+	if _, err := os.Stat(filepath.Join(generationDir, "writer-entered.json")); !os.IsNotExist(err) {
+		t.Fatalf("writer record left behind: %v", err)
+	}
+}
+
+// macOS records no machine identity (kern.uuid names the kernel build), so
+// an earlier boot never proves a process gone there.
+func TestHARHostMachineIdentityIsHostScoped(t *testing.T) {
+	host, err := currentHARHost()
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		if host.machine != "" {
+			t.Fatalf("darwin machine identity %q", host.machine)
+		}
+	case "linux":
+		if host.machine != "" && !strings.Contains(host.machine, "@") {
+			t.Fatalf("linux machine identity %q is not paired with the host name", host.machine)
+		}
+	}
+}
+
+// writeReadyToken publishes a child's handshake atomically (write, then
+// rename), so the parent never reads a created-but-empty token.
+func writeReadyToken(dir, token string) {
+	staged := filepath.Join(dir, "ready.tmp")
+	if os.WriteFile(staged, []byte(token), 0o600) == nil {
+		_ = os.Rename(staged, filepath.Join(dir, "ready"))
 	}
 }

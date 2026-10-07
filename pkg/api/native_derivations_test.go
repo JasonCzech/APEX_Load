@@ -11,6 +11,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 	analytics "github.com/jasonczech/apexload/pkg/analysis/duckdb"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -77,6 +78,26 @@ func TestNativeArchiveDerivationsOnTheBucketGrid(t *testing.T) {
 	if outcomes != "30 " || unchanged.Derivation != nil || unchanged.Current.Unit != "" || unchanged.Current.Buckets[1].Reason != "" {
 		t.Fatalf("plain archive panel changed: %q %+v", outcomes, unchanged)
 	}
+	// An alias is echoed as its catalog operation.
+	aliased := moving
+	aliased.Derivation = &analysis.QueryDerivation{Operation: "rolling_mean", WindowBuckets: 2, MinimumCoverage: 1}
+	if response, _ := derive(aliased, nil, false); response.Derivation == nil || response.Derivation.Operation != "moving_mean" {
+		t.Fatalf("alias echoed %+v", response.Derivation)
+	}
+	// A generator the archive could not collect leaves every derived bucket
+	// incomplete rather than a measured value from the rest.
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.SourceCoverage = &RunArchiveSourceCoverage{Mode: "distributed", Sources: []RunArchiveSource{{Target: "gen-a", Collected: true}, {Target: "gen-b", Collected: false}}}
+	body, _ := json.Marshal(manifest)
+	if err := os.WriteFile(filepath.Join(record.ArchivePath, "manifest.json"), body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, outcomes := derive(ratio, nil, false); outcomes != "incomplete_evidence incomplete_evidence incomplete_evidence" {
+		t.Fatalf("ratio over an uncollected source %q", outcomes)
+	}
 }
 
 func TestNativeGroupedEvidenceDerivation(t *testing.T) {
@@ -125,6 +146,50 @@ func TestNativeLiveEvidenceDerivation(t *testing.T) {
 	points := out.Series[0].Points
 	if len(points) != 3 || *points[0].Value != .25 || points[1].Reason != "zero_denominator" || *points[2].Value != 1 {
 		t.Fatalf("%+v", points)
+	}
+}
+
+// Merged live buckets score a ratio from publications that do not line up
+// with bucket edges (receipt-timed, jittered): every expected source
+// published into the bucket with valid evidence, so the bucket is complete.
+func TestMergedLiveDerivationScoresUnalignedPublications(t *testing.T) {
+	start := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	digest := func(count int64) *engine.TDigestSnapshot {
+		d := engine.NewTDigest(200)
+		for i := int64(0); i < count; i++ {
+			d.Add(float64(10 * time.Millisecond))
+		}
+		snapshot := d.Snapshot()
+		return &snapshot
+	}
+	interval := func(at time.Duration, count, errors int64) *LiveMetrics {
+		return &LiveMetrics{Timestamp: start.Add(at), NativeEvidence: &storage.NativeIntervalEvidence{Version: 2, WindowSeconds: 1,
+			Dimensions: map[string]map[string]storage.NativeIntervalMetric{"action": {"Checkout": {Count: count, Errors: errors, Avg: 10, DurationDigest: digest(count)}}}}}
+	}
+	history := []*LiveMetrics{interval(1003*time.Millisecond, 4, 1), interval(2011*time.Millisecond, 4, 3), interval(3017*time.Millisecond, 2, 0)}
+	q := storage.AnalyticsQuery{EvidenceMode: "live", LiveBucketMode: "merged", Population: "action", Metric: "error_rate", Aggregation: "avg", BucketSeconds: 2, EndSeconds: 4, MaxSeries: 1,
+		Filters: map[string]string{"action": "Checkout"}, Derivation: &analysis.QueryDerivation{Operation: "error_ratio"}}
+	if err := storage.ValidateNativeEvidenceQuery(q); err != nil {
+		t.Fatal(err)
+	}
+	out, err := buildMergedNativeLiveEvidence(context.Background(), start, history, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyNativeEvidenceDerivation("p", q, &out); err != nil {
+		t.Fatal(err)
+	}
+	points := out.Series[0].Points
+	if len(points) != 2 || points[0].Value == nil || *points[0].Value != .25 || points[1].Value == nil || *points[1].Value != 0.5 {
+		t.Fatalf("merged live ratio %+v", points)
+	}
+	// A moving derivation needs one bucket grid, which per-source intervals
+	// are not.
+	source := q
+	source.LiveBucketMode = "source"
+	source.Derivation = &analysis.QueryDerivation{Operation: "moving_mean", WindowBuckets: 2, MinimumCoverage: 1}
+	if err := storage.ValidateNativeEvidenceQuery(source); err == nil {
+		t.Fatal("a moving derivation over per-source live intervals was accepted")
 	}
 }
 
@@ -202,13 +267,16 @@ func buildNativeMessageSeriesForTest(t *testing.T, record *storage.RunArchiveRec
 }
 
 func TestImportedCounterDerivationsAreResetAware(t *testing.T) {
-	start := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	// Worker-shaped points: a bucketed series is a gauge whose input kind is
+	// the measured counter, and the grid starts at the query's own From
+	// (here not on a bucket boundary).
+	start := time.Date(2026, 10, 1, 0, 0, 5, 0, time.UTC)
 	point := func(seconds int, value float64) analysis.MetricPoint {
 		return analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: "p", Source: "src", MetricName: "requests_total", Population: analysis.PopulationSample, MetricVersion: "v1",
-			Kind: analysis.KindCounter, Unit: "count", TimestampUTC: start.Add(time.Duration(seconds) * time.Second), Quality: analysis.QualityValid, Value: &value}
+			Kind: analysis.KindGauge, InputKind: analysis.KindCounter, Unit: "count", TimestampUTC: start.Add(time.Duration(seconds) * time.Second), Quality: analysis.QualityValid, Value: &value}
 	}
 	in := &storage.AnalysisImport{ID: "ds", ProjectID: "p", Revision: 3}
-	query := analytics.SeriesQuery{Metric: "requests_total", From: start, To: start.Add(50 * time.Second), BucketSeconds: 10, Aggregation: "max"}
+	query := analytics.SeriesQuery{Metric: "requests_total", From: start, To: start.Add(50 * time.Second), BucketSeconds: 10, Aggregation: "max", CounterReadings: true}
 	points := []analysis.MetricPoint{point(0, 100), point(10, 160), point(20, 40), point(40, 90)}
 	rate, err := importedDerivation(in, query, points, analysis.QueryDerivation{Operation: "rate"})
 	if err != nil || rate.Unit != "count/s" {
@@ -225,9 +293,15 @@ func TestImportedCounterDerivationsAreResetAware(t *testing.T) {
 	if strings.Join(outcomes, " ") != "no_prior_sample 6 counter_reset missing_counter_sample missing_counter_sample" {
 		t.Fatalf("rate %q", strings.Join(outcomes, " "))
 	}
-	query.Aggregation = "avg"
+	query.Aggregation, query.CounterReadings = "avg", false
 	if _, err := importedDerivation(in, query, points, analysis.QueryDerivation{Operation: "delta"}); err == nil {
 		t.Fatal("a counter derivation over bucket means was accepted")
+	}
+	// A window with no data is every bucket unscored, not a 422.
+	gauge := analytics.SeriesQuery{Metric: "cpu", From: start, To: start.Add(30 * time.Second), BucketSeconds: 10, Aggregation: "avg"}
+	empty, err := importedDerivation(in, gauge, nil, analysis.QueryDerivation{Operation: "moving_mean", WindowBuckets: 2, MinimumCoverage: 1})
+	if err != nil || len(empty.Buckets) != 3 || empty.Buckets[0].Reason != "evidence_unavailable" || empty.Buckets[0].Value != nil {
+		t.Fatalf("empty window %+v %v", empty, err)
 	}
 }
 

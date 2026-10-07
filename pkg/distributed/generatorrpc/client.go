@@ -174,8 +174,11 @@ type MetricsBatch struct {
 	BatchSequence            uint64
 	// SourceEpoch identifies the generator process that numbered
 	// BatchSequence; sequences restart with each epoch. Empty for older peers.
-	SourceEpoch                string
-	SourceEpochStartedUnixMs   int64
+	SourceEpoch              string
+	SourceEpochStartedUnixMs int64
+	// SequencePrefixStateOnly marks a registration snapshot whose earlier
+	// sequences were all state-only: nothing before it was lost.
+	SequencePrefixStateOnly    bool
 	GeneratorID                string
 	TimestampUnixMs            int64
 	WindowMs                   int64
@@ -237,6 +240,11 @@ type MetricsTelemetry struct {
 	TransportLagQuality *ClockQuality `json:"transport_lag_quality,omitempty"`
 	CollectedAtQuality  *ClockQuality `json:"collected_at_quality,omitempty"`
 	CollectedAtOffsetMs float64       `json:"collected_at_offset_ms,omitempty"`
+	// CollectedAtBoundUnixMs, on a fleet aggregate, is the earliest
+	// controller-clock instant by which every qualified generator's oldest
+	// sample was certainly collected (corrected time plus uncertainty); the
+	// fleet's sample age is at least now minus it. Controller-internal.
+	CollectedAtBoundUnixMs float64 `json:"-"`
 	// MissingMetricWindows is controller-computed from gaps in BatchSequence.
 	// It is cumulative for the target stream and remains zero for older
 	// generators that do not publish a sequence.
@@ -636,6 +644,11 @@ type ClockQuality struct {
 	Qualified     bool    `json:"qualified"`
 	UncertaintyMs float64 `json:"uncertainty_ms,omitempty"`
 	Reason        string  `json:"reason,omitempty"`
+	// LowerBoundMs, on a figure drawn from several generators, is the
+	// largest value the qualified ones prove (corrected value minus its
+	// uncertainty): a definite breach stays visible when another generator
+	// is unqualified or less certain.
+	LowerBoundMs *float64 `json:"lower_bound_ms,omitempty"`
 }
 
 // ClockProbeGeneratorID names the controller's clock-probe heartbeats.
@@ -1130,8 +1143,35 @@ func (c *Client) openMetricsStreamForTestGeneration(ctx context.Context, testID 
 		cancel()
 		return nil, err
 	}
-
+	awaitMetricsSubscription(ctx, stream, metricsSubscriptionWait)
 	return &MetricsStream{stream: stream, cancel: cancel}, nil
+}
+
+// metricsSubscribedHeader is the header a generator sends once a metrics
+// stream's subscription is installed.
+const metricsSubscribedHeader = "apexload-metrics-subscribed"
+
+// metricsSubscriptionWait bounds the wait for that header; an older
+// generator sends none until its first publication.
+const metricsSubscriptionWait = 5 * time.Second
+
+// awaitMetricsSubscription returns once the generator confirms the stream's
+// subscription (or its first publication's headers arrive), so the run is
+// activated only after the controller is subscribed and no metric window can
+// be published before it. Past wait it returns anyway.
+func awaitMetricsSubscription(ctx context.Context, stream pb.GeneratorControl_StreamMetricsClient, wait time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		_, _ = stream.Header()
+		close(done)
+	}()
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+	case <-ctx.Done():
+	}
 }
 
 // OpenMetricsStreamWithSetupTimeout bounds creation of the gRPC stream without
@@ -1174,6 +1214,7 @@ func (c *Client) openMetricsStreamWithSetupTimeoutForTestGeneration(parent conte
 		resultCh <- openResult{stream: stream, err: err}
 	}()
 
+	start := time.Now()
 	timer := time.NewTimer(setupTimeout)
 	defer timer.Stop()
 	select {
@@ -1187,6 +1228,9 @@ func (c *Client) openMetricsStreamWithSetupTimeoutForTestGeneration(parent conte
 		if result.err != nil {
 			cancel()
 			return nil, result.err
+		}
+		if remaining := time.Until(start.Add(setupTimeout)); remaining > 0 {
+			awaitMetricsSubscription(parent, result.stream, min(remaining, metricsSubscriptionWait))
 		}
 		return &MetricsStream{stream: result.stream, cancel: cancel}, nil
 	}
@@ -1638,6 +1682,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		BatchSequence:              batch.GetBatchSequence(),
 		SourceEpoch:                batch.GetSourceEpoch(),
 		SourceEpochStartedUnixMs:   batch.GetSourceEpochStartedUnixMs(),
+		SequencePrefixStateOnly:    batch.GetSequencePrefixStateOnly(),
 		GeneratorID:                batch.GetGeneratorId(),
 		TimestampUnixMs:            batch.GetTimestampUnixMs(),
 		WindowMs:                   batch.GetWindowMs(),

@@ -82,7 +82,7 @@ func TestBrowserActualInteractionsMatchDispatchedGroundTruth(t *testing.T) {
 			if err := b.evaluatePageExpression(ctx, `document.querySelector('#go').dispatchEvent(new PointerEvent('pointerdown', {clientX: 5, clientY: 5, bubbles: true}))`, &dispatched); err != nil {
 				t.Fatal(err)
 			}
-			run(&protocol.Action{Name: "go", Type: "browser_click", Selector: "#go", WaitFor: &protocol.WaitCondition{Type: "selector", Value: "section", TimeoutMs: 2000}})
+			run(&protocol.Action{Name: "go", Type: "browser_click", Selector: "#go", Sync: &protocol.BrowserSyncPolicy{Type: "element_visible", Value: "section", TimeoutMs: 2000}})
 			run(&protocol.Action{Name: "go twice", Type: "browser_dblclick", Selector: "#go"})
 			run(&protocol.Action{Name: "email", Type: "browser_fill", Selector: "#email", Value: "user@example.com"})
 			taken := b.TakeBrowserInteractionEvidence()
@@ -104,7 +104,7 @@ func TestBrowserActualInteractionsMatchDispatchedGroundTruth(t *testing.T) {
 			if click.Route != "/orders/:id/items" || click.ViewportWidth != 1000 || click.ViewportHeight != 700 || click.DeviceScaleFactor <= 0 || click.Provenance != protocol.InteractionProvenanceScripted {
 				t.Fatalf("click context %+v", click)
 			}
-			if click.Outcome.Declared != "selector" || click.Outcome.DeadlineMS != 2000 || click.Outcome.Observed != protocol.InteractionOutcomeMet {
+			if click.Outcome.Declared != "element_visible" || click.Outcome.DeadlineMS != 2000 || click.Outcome.Observed != protocol.InteractionOutcomeMet {
 				t.Fatalf("click outcome %+v", click.Outcome)
 			}
 			dbl := byKind["dblclick"]
@@ -137,6 +137,93 @@ func TestBrowserActualInteractionsMatchDispatchedGroundTruth(t *testing.T) {
 				t.Fatalf("requests %v", got)
 			}
 		})
+	}
+}
+
+// A declared post-action wait that times out is missed; a gesture that
+// fails before it is not reached; a keyboard gesture's target is the element
+// its own selector names, not whatever holds focus after it; a click that
+// navigates says its points went with the old document.
+func TestBrowserActualInteractionOutcomesTargetsAndNavigation(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		if r.URL.Path == "/next" {
+			_, _ = fmt.Fprint(w, `<!doctype html><title>next</title><p id="done">done</p>`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `<!doctype html><title>start</title><style>a,select,input{display:block;margin:20px}</style>
+<input id="first" aria-label="First field"><select id="size" aria-label="Size"><option>s</option><option>m</option></select>
+<button id="nothing">Nothing</button><a id="next" href="/next">Next</a>`)
+	}))
+	t.Cleanup(server.Close)
+	b, ctx := interactionFixtureBrowser(t, "chromium", server.URL, true)
+	if _, err := b.Execute(ctx, &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := b.Execute(ctx, &protocol.Action{Name: "first", Type: "browser_fill", Selector: "#first", Value: "x"}); err != nil || !result.Success {
+		t.Fatalf("fill %v %+v", err, result)
+	}
+	// Selecting does not move focus off #first: the target is still #size.
+	if result, err := b.Execute(ctx, &protocol.Action{Name: "size", Type: "browser_select", Selector: "#size", Value: "m"}); err != nil || !result.Success {
+		t.Fatalf("select %v %+v", err, result)
+	}
+	_, _ = b.Execute(ctx, &protocol.Action{Name: "waits for nothing", Type: "browser_click", Selector: "#nothing", Sync: &protocol.BrowserSyncPolicy{Type: "element_visible", Value: "#never", TimeoutMs: 300}})
+	_, _ = b.Execute(ctx, &protocol.Action{Name: "missing", Type: "browser_click", Selector: "#absent", TimeoutMs: 300, Sync: &protocol.BrowserSyncPolicy{Type: "load"}})
+	if result, err := b.Execute(ctx, &protocol.Action{Name: "next", Type: "browser_click", Selector: "#next", Sync: &protocol.BrowserSyncPolicy{Type: "load", TimeoutMs: 5000}}); err != nil || !result.Success {
+		t.Fatalf("navigating click %v %+v", err, result)
+	}
+	taken := b.TakeBrowserInteractionEvidence()
+	if len(taken) != 1 || len(taken[0].Interactions) != 5 {
+		t.Fatalf("interactions %+v", taken)
+	}
+	byName := map[string]protocol.BrowserInteraction{}
+	for _, interaction := range taken[0].Interactions {
+		if !interaction.Valid() {
+			t.Fatalf("invalid interaction %+v", interaction)
+		}
+		byName[interaction.ActionName] = interaction
+	}
+	size := sha256.Sum256([]byte("size"))
+	if target := byName["size"].Target; target == nil || target.Role != "combobox" || target.LabelSHA256 != hex.EncodeToString(size[:]) {
+		t.Fatalf("select target %+v", target)
+	}
+	if outcome := byName["waits for nothing"].Outcome; outcome.Declared != "element_visible" || outcome.Observed != protocol.InteractionOutcomeMissed {
+		t.Fatalf("missed outcome %+v", outcome)
+	}
+	if outcome := byName["missing"].Outcome; outcome.Declared != "load" || outcome.Observed != protocol.InteractionOutcomeNotReached {
+		t.Fatalf("not reached outcome %+v", outcome)
+	}
+	next := byName["next"]
+	if len(next.Points) != 0 || next.UnavailableReason != protocol.InteractionUnavailableDocumentChanged || next.Route != "/" || next.DocumentID != byName["size"].DocumentID {
+		t.Fatalf("navigating click %+v", next)
+	}
+}
+
+// A touch session's gestures are dispatched as synthetic events, which the
+// observer ignores: they are recorded without points, saying so.
+func TestBrowserActualTouchGesturesSaySyntheticDispatch(t *testing.T) {
+	server, _ := interactionFixtureServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	b := &Browser{}
+	if err := b.Init(ctx, map[string]any{"base_url": server.URL, "browser_engine": "chromium", "browser_headless": true, "browser_capture_interactions": true, "browser_touch_mode": true}); err != nil {
+		requireBrowserRuntime(t, "chromium", err)
+	}
+	t.Cleanup(func() { _ = b.Teardown(context.Background()) })
+	if _, err := b.Execute(ctx, &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := b.Execute(ctx, &protocol.Action{Name: "tap", Type: "browser_click", Selector: "#go"}); err != nil || !result.Success {
+		t.Fatalf("tap %v %+v", err, result)
+	}
+	taken := b.TakeBrowserInteractionEvidence()
+	if len(taken) != 1 || len(taken[0].Interactions) != 1 {
+		t.Fatalf("interactions %+v", taken)
+	}
+	tap := taken[0].Interactions[0]
+	if tap.Kind != "tap" || len(tap.Points) != 0 || tap.UnavailableReason != protocol.InteractionUnavailableSyntheticDispatch || !tap.Valid() {
+		t.Fatalf("tap %+v", tap)
 	}
 }
 

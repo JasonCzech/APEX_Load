@@ -117,9 +117,16 @@ func TestDistributedArchiveTransfersHARsWithReceipts(t *testing.T) {
 	}
 
 	// The controller restarts before publishing: the staged archive never
-	// became the published one. A fresh collection fetches the same HARs
-	// again; their receipts stay single and accepted.
+	// became the published one. A fresh collection fetches the HARs again;
+	// one now fails verification, so the archive omits it and its earlier
+	// receipt claim is forgotten rather than published and acknowledged.
 	if err := os.RemoveAll(record.ArchivePath); err != nil {
+		t.Fatal(err)
+	}
+	a.mu.Lock()
+	secondPath := a.artifacts["browser_har_"+second+".har"]
+	a.mu.Unlock()
+	if err := os.WriteFile(secondPath, []byte(`{"log":{"entries":["changed"]}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	row, err := store.GetTest(run.ID)
@@ -136,28 +143,38 @@ func TestDistributedArchiveTransfersHARsWithReceipts(t *testing.T) {
 		t.Fatalf("restaged: %v", err)
 	}
 	receipts, _ = store.ListRunEvidenceReceipts(run.ID)
-	if len(receipts) != 2 || receipts[1].State != storage.EvidenceReceiptAccepted {
-		t.Fatalf("restarted transfer duplicated receipts: %+v", receipts)
+	if len(receipts) != 1 || receipts[0].State != storage.EvidenceReceiptAccepted || receipts[0].SourceGeneration != first {
+		t.Fatalf("restarted transfer kept a stale receipt: %+v", receipts)
 	}
 	if len(a.acks) != 0 {
 		t.Fatal("acknowledged before publication")
 	}
 
-	// Publication commits through the durable finalizer: receipts are
-	// published and the generator told.
+	// Publication commits through the durable finalizer in the real order:
+	// the run's generator clients are already closed, so the controller
+	// dials the generator to tell it.
 	if _, err := store.UpdateTestStatusIfActive(run.ID, "COMPLETE", &ended, ""); err != nil {
 		t.Fatal(err)
 	}
+	restored.remoteClientsByTarget, restored.remoteArchiveClientsByTarget = nil, nil
+	backend.dial = func(_ context.Context, target string) (generatorClient, error) {
+		if target == "a" {
+			return a, nil
+		}
+		return b, nil
+	}
+	restarted.setExecutionBackend(backend)
 	if err := restarted.finalizeRunArchiveDurably(context.Background(), restored, record, true); err != nil {
 		t.Fatal(err)
 	}
+	restarted.waitEvidenceAcknowledgements()
 	receipts, _ = store.ListRunEvidenceReceipts(run.ID)
 	for _, receipt := range receipts {
 		if receipt.State != storage.EvidenceReceiptPublished {
 			t.Fatalf("receipt not published: %+v", receipt)
 		}
 	}
-	if len(a.acks) != 1 || a.acks[0].SourceIdentity != identity || len(a.acks[0].Artifacts) != 2 {
+	if len(a.acks) != 1 || a.acks[0].SourceIdentity != identity || len(a.acks[0].Artifacts) != 1 || a.acks[0].Artifacts[0].Name != "browser_har_"+first+".har" {
 		t.Fatalf("acknowledgements %+v", a.acks)
 	}
 
@@ -182,7 +199,7 @@ func TestDistributedArchiveTransfersHARsWithReceipts(t *testing.T) {
 		t.Fatal("tombstoned HAR left in the archive", err)
 	}
 	receipts, _ = store.ListRunEvidenceReceipts(run.ID)
-	if len(receipts) != 3 || receipts[2].State != storage.EvidenceReceiptTombstoned {
+	if len(receipts) != 2 || receipts[1].State != storage.EvidenceReceiptTombstoned {
 		t.Fatalf("late receipt %+v", receipts)
 	}
 }
@@ -383,6 +400,7 @@ func TestDistributedArchiveMergesInteractionEvidenceWithReceipts(t *testing.T) {
 	if err := tr.finalizeRunArchiveDurably(context.Background(), run, record, true); err != nil {
 		t.Fatal(err)
 	}
+	tr.waitEvidenceAcknowledgements()
 	if len(a.acks) != 1 || len(a.acks[0].Artifacts) != 1 || a.acks[0].Artifacts[0].Name != browserInteractionsFileName {
 		t.Fatalf("acknowledgements %+v", a.acks)
 	}
@@ -416,8 +434,11 @@ func TestLocalRunArchiveWritesInteractionEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	gen := strings.Repeat("9", 32)
+	// The engine hands evidence to the run's combined sink, which must pass
+	// it to the archive writer.
+	sink := combinedResultSink{liveErrorEvidenceSink{}, writer}
 	for i := 0; i < 2; i++ {
-		if err := writer.RecordBrowserInteractionEvidence(fakeInteractionEvidence(gen, 3)); err != nil {
+		if err := sink.RecordBrowserInteractionEvidence(fakeInteractionEvidence(gen, 3)); err != nil {
 			t.Fatal(err)
 		}
 	}

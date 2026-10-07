@@ -190,18 +190,21 @@ type runtimeSecretRecoveryState struct {
 }
 
 type TestRunner struct {
-	appDynamicsPrepare    func(context.Context, storage.MonitorSource, *storage.AppDynamicsConnectionSnapshot) error
-	prometheusPrepare     func(context.Context, storage.MonitorSource, *storage.PrometheusConnectionSnapshot, []analysis.MonitorRule) error
-	dynatracePrepare      func(context.Context, storage.MonitorSource, *storage.DynatraceConnectionSnapshot) error
-	thresholdJournal      *thresholdJournalWriter
-	tests                 map[string]*ManagedTest
-	scripts               map[string]*StoredScript
-	privateCISnapshots    map[string]int
-	scenarios             map[string]*StoredScenario
-	archives              map[string]*storage.RunArchiveRecord
-	deletingProjects      map[string]struct{}
-	projectDeletionGates  projectMutationCoordinator
-	projectDeletionUnlock map[string]func()
+	// evidenceAcknowledgements tracks background acknowledgements of
+	// published run evidence to generators.
+	evidenceAcknowledgements sync.WaitGroup
+	appDynamicsPrepare       func(context.Context, storage.MonitorSource, *storage.AppDynamicsConnectionSnapshot) error
+	prometheusPrepare        func(context.Context, storage.MonitorSource, *storage.PrometheusConnectionSnapshot, []analysis.MonitorRule) error
+	dynatracePrepare         func(context.Context, storage.MonitorSource, *storage.DynatraceConnectionSnapshot) error
+	thresholdJournal         *thresholdJournalWriter
+	tests                    map[string]*ManagedTest
+	scripts                  map[string]*StoredScript
+	privateCISnapshots       map[string]int
+	scenarios                map[string]*StoredScenario
+	archives                 map[string]*storage.RunArchiveRecord
+	deletingProjects         map[string]struct{}
+	projectDeletionGates     projectMutationCoordinator
+	projectDeletionUnlock    map[string]func()
 	// secretReferenceMutations is shared with Server so every durable script
 	// mutation path fences the usage snapshots used by secret create/rotation.
 	secretReferenceMutations *projectMutationCoordinator
@@ -1086,14 +1089,20 @@ type TelemetryHealth struct {
 	// collection time to the controller's clock when the age is computed.
 	collectedAtQuality  *generatorrpc.ClockQuality
 	collectedAtOffsetMs float64
+	// collectedAtBoundUnixMs is the controller-clock instant the qualified
+	// generators' oldest samples were certainly collected by (0 = none).
+	collectedAtBoundUnixMs float64
 }
 
 type TelemetryRunHealth struct {
-	Status            string     `json:"status"`
-	Severity          string     `json:"severity"`
-	Summary           string     `json:"summary,omitempty"`
-	CurrentSignature  string     `json:"current_signature,omitempty"`
-	Conditions        []string   `json:"conditions,omitempty"`
+	Status           string   `json:"status"`
+	Severity         string   `json:"severity"`
+	Summary          string   `json:"summary,omitempty"`
+	CurrentSignature string   `json:"current_signature,omitempty"`
+	Conditions       []string `json:"conditions,omitempty"`
+	// Unscored lists the budget decisions on cross-host durations that could
+	// not be scored (stage:reason); with no breach the status is "unscored".
+	Unscored          []string   `json:"unscored,omitempty"`
 	BreachActive      bool       `json:"breach_active,omitempty"`
 	SustainedBreach   bool       `json:"sustained_breach,omitempty"`
 	BreachDurationSec int        `json:"breach_duration_sec,omitempty"`

@@ -252,7 +252,10 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 				}
 			}
 			p := NativeEvidencePoint{From: from, To: to, OffsetSeconds: from.Sub(start).Seconds(), Coverage: &coverage, failures: b.errors,
-				complete: coverage >= 1 && !invalid[i] && !b.invalid && !rateUnsafe[i]}
+				// Every expected source published into the bucket with valid
+				// evidence. Only a rate also needs the bucket's whole window
+				// covered by publications that do not straddle its edges.
+				complete: !invalid[i] && !b.invalid && (!storage.IsNativeObservationRate(q.Metric) || coverage >= 1 && !rateUnsafe[i])}
 			if b.count > 0 && !invalid[i] && !b.invalid && (!storage.IsNativeObservationRate(q.Metric) || coverage >= 1 && !rateUnsafe[i]) {
 				value := b.sum / float64(b.count)
 				switch q.Metric {

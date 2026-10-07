@@ -302,3 +302,26 @@ func TestDetectReportsAnUnmatchedBaseline(t *testing.T) {
 		t.Fatalf("%+v", limitations)
 	}
 }
+
+// Under the anomaly cap, anomalies of series that can be a symptom or a
+// cause are kept before joint action-dimension slices, however large the
+// slices' scores.
+func TestAnomalyCapKeepsCausesBeforeJointSlices(t *testing.T) {
+	anomalies := []Anomaly{
+		{ID: "j1", Series: SeriesJointPrefix + "a", PeakZ: 40},
+		{ID: "j2", Series: SeriesJointPrefix + "b", PeakZ: 39},
+		{ID: "cpu", Series: "monitor/prometheus/cpu", PeakZ: 15},
+		{ID: "tx", Series: "transaction/checkout", PeakZ: 20},
+	}
+	kept, cut := keepAnomalies(anomalies, 3)
+	ids := map[string]bool{}
+	for _, anomaly := range kept {
+		ids[anomaly.ID] = true
+	}
+	if cut != 1 || len(kept) != 3 || !ids["cpu"] || !ids["tx"] || !ids["j1"] || ids["j2"] {
+		t.Fatalf("kept %+v cut %d", kept, cut)
+	}
+	if kept, cut := keepAnomalies(anomalies, 10); cut != 0 || len(kept) != 4 {
+		t.Fatal("cut within the cap")
+	}
+}

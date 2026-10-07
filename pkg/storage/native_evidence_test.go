@@ -132,3 +132,17 @@ func TestNativeEvidenceUpgradesPriorSchemaWithoutLosingHistory(t *testing.T) {
 		t.Fatalf("upgraded evidence: %+v", got)
 	}
 }
+
+// Evidence queries execute over action and transaction observations only:
+// message and browser document populations belong to archive panels, where
+// the evidence executors would answer them with an empty series.
+func TestNativeEvidenceQueryRefusesPopulationsItCannotRead(t *testing.T) {
+	for _, q := range []AnalyticsQuery{
+		{EvidenceMode: "archive", Population: "message", Metric: "message_count", Aggregation: "count", BucketSeconds: 10, EndSeconds: 60, MaxSeries: 1},
+		{EvidenceMode: "archive", Population: "browser_document", Metric: "document_lcp", Aggregation: "p75", BucketSeconds: 10, EndSeconds: 60, MaxSeries: 1, Dimensions: []string{"action"}},
+	} {
+		if err := ValidateNativeEvidenceQuery(q); err == nil {
+			t.Fatalf("evidence query over %s accepted", q.Population)
+		}
+	}
+}

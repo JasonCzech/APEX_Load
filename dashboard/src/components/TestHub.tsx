@@ -17,7 +17,7 @@ import { confirmAction } from './ux/confirmAction'
 import { handleTabKey } from './tabKeyboard'
 import DialogLayer from './ux/DialogLayer'
 import ScriptsPage from './ScriptsPage'
-import { clearScenarioAuthoringDraft, readScenarioAuthoringDraft, saveScenarioAuthoringDraft, type ScenarioAuthoringDraft } from './scenarioAuthoringDraft'
+import { assertDraftHasNoInlineCredentials, clearScenarioAuthoringDraft, readScenarioAuthoringDraft, saveScenarioAuthoringDraft, type ScenarioAuthoringDraft } from './scenarioAuthoringDraft'
 import { scenarioScriptReadiness } from './scenarioScriptReadiness'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
@@ -59,7 +59,7 @@ import { useHasTopbarContributionProvider, useTopbarContribution } from '../hook
 import { clearScenarioBuilderDraft, hasScenarioBuilderProgress } from './scenarioBuilderDraft'
 import AuthoringRevisionConflict from './AuthoringRevisionConflict'
 import { authoringChangedPaths, reapplyAuthoringDraft } from '../utils/authoringRevision'
-import { ScenarioChangedSinceObserved, scenarioBaselineFromRead, scenarioRevisionUnsupported, scenarioSaveNeedsReconciliation } from '../utils/scenarioAuthoringRevision'
+import { adoptableAfterBindingsSave, ScenarioChangedSinceObserved, scenarioBaselineFromRead, scenarioRevisionUnsupported, scenarioSaveNeedsReconciliation } from '../utils/scenarioAuthoringRevision'
 import type { ScenarioAuthoringBaseline } from '../types/storedContent'
 import { ApiError } from '../hooks/apiClient'
 import { NavigationGuardRunnerContext, useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
@@ -1465,13 +1465,13 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const scenarioBindings: ScenarioDataPoolBinding[] = (form.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' }))
   const bindingErrors = dataBindingErrors(scenarioBindings)
   const updateDataBindings = (bindings: ScenarioDataPoolBinding[]) => setForm(current => ({ ...current, data_pools: bindings.map(binding => ({...binding})) }))
-  const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form) => {
+  const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form, shapeId: string = selectedShapeId) => {
     const dataPoolsPayload = (draftForm.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' as const }))
 
     return buildScenarioUpsertPayload({
       name: draftForm.name || 'Draft scenario',
       projectId: activeProjectId,
-      workloadShapeId: selectedShapeId,
+      workloadShapeId: shapeId,
       duration: draftForm.termination_mode === 'iterations' ? '' : draftForm.duration || '1m',
       termination_mode: draftForm.termination_mode,
       startDelay: draftForm.start_delay,
@@ -3056,12 +3056,22 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   }
 
   const checkpointFingerprint = JSON.stringify([form, scenarioSourceMode, scenarioStartChoice, selectedShapeId, selectedLoadModelTemplateId, selectedCloneScenarioId])
+  // The baseline an edit checkpoint records, unless its original holds values
+  // a browser checkpoint must not keep (the checkpoint then falls back to the
+  // listed update time).
+  const recordedScenarioBaseline = (): Pick<ScenarioAuthoringDraft, 'baselineTag' | 'baselineForm' | 'baselineShapeId'> => {
+    const baselineForm = parseScenarioForm(editingBaselineFormRef.current)
+    if (!editingId || !scenarioBaseline || !baselineForm) return {}
+    try { assertDraftHasNoInlineCredentials(baselineForm) } catch { return {} }
+    return { baselineTag: scenarioBaseline.etag, baselineForm, baselineShapeId: originalShapeIdRef.current }
+  }
   const saveBrowserProgress = () => {
     if (!canManageTests) return false
     try {
       const draft: ScenarioAuthoringDraft = {
         version: 2, projectId: activeProjectId || '', savedAt: new Date().toISOString(),
         editingId, editingUpdatedAt: scenarios.find(item => item.id === editingId)?.updated_at || '',
+        ...recordedScenarioBaseline(),
         form, source: scenarioSourceMode, startChoice: scenarioStartChoice,
         shapeId: selectedShapeId, templateId: selectedLoadModelTemplateId, cloneId: selectedCloneScenarioId,
         step: wizardStep, visited: maxVisitedWizardIndex,
@@ -3105,16 +3115,20 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   }
   saveAuthoringRef.current = saveScenario
 
-  // A resumed edit was checkpointed against a listed scenario; it adopts the
-  // durable baseline only while that scenario is unchanged. Otherwise its save
-  // asks for a reviewed baseline first.
-  const bindResumedScenarioBaseline = async (id: string, updatedAt: string) => {
+  // A resumed edit adopts the durable baseline only when it is the revision
+  // the draft was loaded from (its tag; older checkpoints: the listed update
+  // time). Otherwise the editor opens reconciliation against the draft's own
+  // original, so a stale draft can never present a newer tag.
+  const bindResumedScenarioBaseline = async (id: string, draft: ScenarioAuthoringDraft) => {
     const generation = scenarioDraftGenerationRef.current
     const scopeProjectId = activeProjectId
     try {
       const fresh = await api.getScenario(id)
       if (generation !== scenarioDraftGenerationRef.current || currentProjectIdRef.current !== scopeProjectId) return
-      if (fresh?.id === id && fresh.updated_at === updatedAt) setScenarioBaseline(scenarioBaselineFromRead(fresh, scopeProjectId || undefined))
+      const baseline = fresh?.id === id ? scenarioBaselineFromRead(fresh, scopeProjectId || undefined) : null
+      const unchanged = baseline && (draft.baselineTag ? baseline.etag === draft.baselineTag : fresh.updated_at === draft.editingUpdatedAt)
+      if (baseline && unchanged) setScenarioBaseline(baseline)
+      else if (draft.baselineTag) setScenarioConflict(conflict => conflict || { reason: 'The scenario changed after this draft was saved. Load the current baseline, review the differences, then reapply your draft.', loading: false, current: null })
     } catch { /* The next save asks for a reviewed baseline. */ }
   }
 
@@ -3179,12 +3193,13 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     if (!current) return []
     const original = parseScenarioForm(editingBaselineFormRef.current) || current.form
     const canonical = (baseline: ScenarioAuthoringBaseline) => ({ scenario: baseline.projection.scenario, library_placement: baseline.projection.library_placement, monitor_selection: baseline.projection.monitor_selection })
+    const originalShape = originalShapeIdRef.current
     const serverPaths = scenarioBaseline
       ? authoringChangedPaths(canonical(scenarioBaseline), canonical(current.baseline), 'Scenario')
-      : authoringChangedPaths(buildScenarioDraftPayload(original), buildScenarioDraftPayload(current.form), 'Scenario')
+      : authoringChangedPaths(buildScenarioDraftPayload(original, originalShape), buildScenarioDraftPayload(current.form, scenarioShapeId(current.scenario)), 'Scenario')
     return [
       { label: 'Changed in the current scenario since your draft was loaded', paths: serverPaths, empty: 'No authored-field differences.' },
-      { label: 'Changed in your draft', paths: authoringChangedPaths(buildScenarioDraftPayload(original), buildScenarioDraftPayload(form), 'Scenario'), empty: 'No local changes.' },
+      { label: 'Changed in your draft', paths: authoringChangedPaths(buildScenarioDraftPayload(original, originalShape), buildScenarioDraftPayload(form, selectedShapeId), 'Scenario'), empty: 'No local changes.' },
     ]
   }
 
@@ -3199,9 +3214,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     try {
       const fresh = await api.getScenario(id)
       if (generation !== scenarioDraftGenerationRef.current) return
-      const next = scenarioBaselineFromRead(fresh, activeProjectId || undefined)
-      const authored = (baseline: ScenarioAuthoringBaseline) => JSON.stringify([baseline.projection.scenario, baseline.projection.library_placement])
-      if (authored(next) === authored(previous)) setScenarioBaseline(current => current === previous ? next : current)
+      const next = adoptableAfterBindingsSave(previous, scenarioBaselineFromRead(fresh, activeProjectId || undefined))
+      if (next) setScenarioBaseline(current => current === previous ? next : current)
     } catch { /* The next save reconciles. */ }
   }
 
@@ -3217,11 +3231,15 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     const storedClosed = draft.form.goal_config?.workload_shape_config?.closed_vuser
     closedRampDownEnabledOnceRef.current = new Set(storedClosed ? storedClosed.scope === 'group' ? Object.keys(storedClosed.groups || {}) : ['scenario'] : [])
     const existing = scenarios.find(item => item.id === draft.editingId)
-    const canResumeEdit = existing && existing.updated_at === draft.editingUpdatedAt
+    // A draft that recorded its baseline stays an edit of that scenario and
+    // reconciles against its own original; an older checkpoint resumes as an
+    // edit only while the listed scenario is unchanged.
+    const recorded = Boolean(existing && draft.baselineTag && draft.baselineForm)
+    const canResumeEdit = recorded || (existing && existing.updated_at === draft.editingUpdatedAt)
     setEditingId(canResumeEdit ? draft.editingId : null)
-    editingBaselineFormRef.current = canResumeEdit ? JSON.stringify(scenarioFormStateFromStoredScenario(existing, '', false)) : ''
-    originalShapeIdRef.current = canResumeEdit ? scenarioShapeId(existing) : ''
-    if (canResumeEdit && draft.editingId) void bindResumedScenarioBaseline(draft.editingId, draft.editingUpdatedAt)
+    editingBaselineFormRef.current = !canResumeEdit || !existing ? '' : JSON.stringify(recorded ? draft.baselineForm : scenarioFormStateFromStoredScenario(existing, '', false))
+    originalShapeIdRef.current = !canResumeEdit || !existing ? '' : recorded ? draft.baselineShapeId || '' : scenarioShapeId(existing)
+    if (canResumeEdit && draft.editingId) void bindResumedScenarioBaseline(draft.editingId, draft)
     setScenarioSourceMode(draft.source); setScenarioStartChoice(draft.startChoice); setModelFamilyChoice('')
     setScenarioStartPath(draft.source === 'existing' && draft.cloneId && !draft.editingId ? 'copy' : 'new')
     setSelectedShapeId(draft.shapeId); setSelectedLoadModelTemplateId(draft.templateId); setSelectedCloneScenarioId(draft.cloneId)

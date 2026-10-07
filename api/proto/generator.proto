@@ -554,6 +554,11 @@ message MetricsBatch {
   // publication. Empty means an older generator without epochs.
   string source_epoch = 31;
   int64 source_epoch_started_unix_ms = 32;
+  // sequence_prefix_state_only, on a subscriber's registration snapshot,
+  // says every earlier sequence of this epoch was a state-only lifecycle
+  // publication (no metric window), so a subscriber starting here has lost
+  // nothing before it and has observed the epoch's origin.
+  bool sequence_prefix_state_only = 33;
 }
 
 message MetricsBatchTelemetry {

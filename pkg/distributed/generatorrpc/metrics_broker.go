@@ -158,6 +158,9 @@ type metricsBroker struct {
 
 	terminalBatches map[terminalBatchKey]terminalMetricsTombstone
 	batchSequences  map[terminalBatchKey]uint64
+	// windowPublished marks a test generation that has published a
+	// sequenced metric window; before it, every sequence was state-only.
+	windowPublished map[terminalBatchKey]bool
 	terminalMax     int
 	terminalTTL     time.Duration
 
@@ -182,6 +185,7 @@ func newMetricsBroker(maxSubscribers, terminalMax int, terminalTTL time.Duration
 		maxSubscribers:        maxSubscribers,
 		terminalBatches:       make(map[terminalBatchKey]terminalMetricsTombstone),
 		batchSequences:        make(map[terminalBatchKey]uint64),
+		windowPublished:       make(map[terminalBatchKey]bool),
 		terminalMax:           terminalMax,
 		terminalTTL:           terminalTTL,
 	}
@@ -279,6 +283,9 @@ func (broker *metricsBroker) registerLocked(executionGeneration uint64, testID s
 			// latest published window so a reconnect cannot reset the controller's
 			// gap-detection baseline to zero.
 			clone.BatchSequence = current
+			// Sequences numbered before any metric window (staging and
+			// activation) carried nothing a late subscriber could lose.
+			clone.SequencePrefixStateOnly = !broker.windowPublished[key]
 		}
 		if clone.GetSourceEpoch() == "" {
 			clone.SourceEpoch, clone.SourceEpochStartedUnixMs = processSourceEpoch.id, processSourceEpoch.startedUnixMs
@@ -419,8 +426,12 @@ func (broker *metricsBroker) assignBatchSequenceLocked(batch *pb.MetricsBatch) {
 	batch.BatchSequence = next
 	if isGeneratorTerminalLifecycle(batch.GetLifecycleState()) {
 		delete(broker.batchSequences, key)
+		delete(broker.windowPublished, key)
 	} else {
 		broker.batchSequences[key] = next
+		if batch.GetWindowMs() > 0 || len(batch.GetTransactions()) > 0 {
+			broker.windowPublished[key] = true
+		}
 	}
 }
 

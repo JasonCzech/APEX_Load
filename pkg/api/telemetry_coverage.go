@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -14,10 +15,10 @@ import (
 
 const (
 	// maxTelemetryCoverageSpans bounds one source's disjoint observed spans.
-	// Past it, new disjoint spans are dropped, so coverage is understated
-	// (a lower bound), never overstated.
+	// Past it the shortest span is dropped to admit a longer one, so
+	// coverage is understated (a lower bound), never overstated.
 	maxTelemetryCoverageSpans  = 1024
-	telemetryCoverageAlgorithm = "telemetry_coverage.v1"
+	telemetryCoverageAlgorithm = "telemetry_coverage.v2"
 )
 
 // coverageSpans is a bounded union of half-open [start, end) intervals in
@@ -41,7 +42,19 @@ func (c *coverageSpans) add(start, end int64) {
 	if i == j {
 		if len(c.spans) >= maxTelemetryCoverageSpans {
 			c.truncated = true
-			return
+			shortest := 0
+			for k, span := range c.spans {
+				if span[1]-span[0] < c.spans[shortest][1]-c.spans[shortest][0] {
+					shortest = k
+				}
+			}
+			if end-start <= c.spans[shortest][1]-c.spans[shortest][0] {
+				return
+			}
+			c.spans = append(c.spans[:shortest], c.spans[shortest+1:]...)
+			if shortest < i {
+				i--
+			}
 		}
 		c.spans = append(c.spans, [2]int64{})
 		copy(c.spans[i+1:], c.spans[i:])
@@ -77,28 +90,66 @@ func (c *coverageSpans) clone() *coverageSpans {
 	return &coverageSpans{spans: append([][2]int64(nil), c.spans...), truncated: c.truncated}
 }
 
-// intersectCoverage is the time inside [from, to) that every set covers.
-func intersectCoverage(sets []*coverageSpans, from, to int64) *coverageSpans {
-	out := &coverageSpans{spans: [][2]int64{{from, to}}}
-	if to <= from {
-		return &coverageSpans{}
+// unionSpans merges any intervals into a sorted, disjoint, unbounded list.
+func unionSpans(intervals [][2]int64) [][2]int64 {
+	sorted := make([][2]int64, 0, len(intervals))
+	for _, interval := range intervals {
+		if interval[1] > interval[0] {
+			sorted = append(sorted, interval)
+		}
 	}
-	for _, set := range sets {
-		next := &coverageSpans{truncated: out.truncated}
-		if set == nil {
-			return next
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i][0] < sorted[j][0] })
+	out := sorted[:0]
+	for _, interval := range sorted {
+		if n := len(out); n > 0 && interval[0] <= out[n-1][1] {
+			out[n-1][1] = max(out[n-1][1], interval[1])
+			continue
 		}
-		next.truncated = next.truncated || set.truncated
-		for _, a := range out.spans {
-			for _, b := range set.spans {
-				if start, end := max(a[0], b[0]), min(a[1], b[1]); start < end {
-					next.spans = append(next.spans, [2]int64{start, end})
-				}
-			}
-		}
-		out = next
+		out = append(out, interval)
 	}
 	return out
+}
+
+// subtractSpans is a minus b, both sorted and disjoint, in one linear sweep.
+func subtractSpans(a, b [][2]int64) [][2]int64 {
+	out := make([][2]int64, 0, len(a))
+	j := 0
+	for _, interval := range a {
+		start, end := interval[0], interval[1]
+		for j < len(b) && b[j][1] <= start {
+			j++
+		}
+		for k := j; k < len(b) && b[k][0] < end; k++ {
+			if b[k][0] > start {
+				out = append(out, [2]int64{start, b[k][0]})
+			}
+			start = max(start, b[k][1])
+			if start >= end {
+				break
+			}
+		}
+		if start < end {
+			out = append(out, [2]int64{start, end})
+		}
+	}
+	return out
+}
+
+// telemetrySourceRequirement is when a source had to be observed: from its
+// assignment (or first observation) until its retirement — an evacuation, a
+// terminal publication or completion before an adoption — else the end of
+// the window. Zero means not recorded.
+type telemetrySourceRequirement struct {
+	assignedAtMs int64
+	retiredAtMs  int64
+}
+
+// coverageCursor is the last sequenced publication seen from one source, so
+// a contiguous next publication bridges receipt-time jitter.
+type coverageCursor struct {
+	key      telemetrySourceKey
+	sequence uint64
+	endMs    int64
 }
 
 // TelemetrySourceCoverage is the time one source was observed in the run's
@@ -132,6 +183,8 @@ type TelemetryPolicySegment struct {
 	Start      time.Time `json:"start"`
 	End        time.Time `json:"end"`
 	PolicyHash string    `json:"policy_hash,omitempty"`
+	// Unavailable says why a captured policy names no hash.
+	Unavailable string `json:"unavailable,omitempty"`
 	// Legacy marks a run admitted before policies were captured; its
 	// thresholds are the controller settings in force at admission.
 	Legacy bool `json:"legacy,omitempty"`
@@ -158,87 +211,199 @@ type TelemetryCoverageRecord struct {
 
 // observeCoverage records one publication's observation window, timed by
 // the controller's receipt clock so it lines up with the run's window.
-// Retried and overlapping publications count once.
-func (l *telemetrySourceLedger) observeCoverage(source string, windowMs int64, at time.Time) {
-	if windowMs <= 0 {
-		return
-	}
-	if l.coverage == nil {
-		l.coverage = map[string]*coverageSpans{}
-	}
-	spans := l.coverage[source]
-	if spans == nil {
-		spans = &coverageSpans{}
-		l.coverage[source] = spans
-	}
+// Retried and overlapping publications count once. A publication whose
+// sequence directly follows the source's previous one in the same epoch
+// covers the receipt jitter since that one (up to its own window), so jitter
+// does not fragment a continuous stream. A terminal publication retires the
+// source. The caller holds l.mu.
+func (l *telemetrySourceLedger) observeCoverage(source string, batch generatorrpc.MetricsBatch, at time.Time) {
 	end := at.UnixMilli()
-	spans.add(end-windowMs, end)
+	key := telemetrySourceKey{source: source, generation: batch.ExecutionGeneration, epoch: batch.SourceEpoch}
+	if l.cursors == nil {
+		l.cursors = map[string]*coverageCursor{}
+	}
+	cursor := l.cursors[source]
+	contiguous := cursor != nil && cursor.key == key && batch.BatchSequence > 0 && batch.BatchSequence == cursor.sequence+1
+	if cursor == nil || cursor.key != key {
+		cursor = &coverageCursor{key: key}
+		l.cursors[source] = cursor
+	}
+	if batch.BatchSequence > 0 {
+		cursor.sequence = batch.BatchSequence
+	}
+	if windowMs := batch.WindowMs; windowMs > 0 {
+		start := end - windowMs
+		if contiguous && cursor.endMs > 0 && cursor.endMs < start && start-cursor.endMs <= windowMs {
+			start = cursor.endMs
+		}
+		if l.coverage == nil {
+			l.coverage = map[string]*coverageSpans{}
+		}
+		spans := l.coverage[source]
+		if spans == nil {
+			spans = &coverageSpans{}
+			l.coverage[source] = spans
+		}
+		spans.add(start, end)
+		cursor.endMs = end
+	}
+	if isTerminalRemoteLifecycle(batch.LifecycleState) {
+		l.retireLocked(source, at)
+	}
 }
 
-// coverageSnapshot copies each source's observed spans.
-func (l *telemetrySourceLedger) coverageSnapshot() map[string]*coverageSpans {
-	if l == nil {
-		return nil
+// assign records that source is required from at (the first assignment
+// wins).
+func (l *telemetrySourceLedger) assign(source string, at time.Time) {
+	if l == nil || source == "" {
+		return
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	out := make(map[string]*coverageSpans, len(l.coverage))
-	for source, spans := range l.coverage {
-		out[source] = spans.clone()
+	requirement := l.requirementLocked(source)
+	if requirement.assignedAtMs == 0 {
+		requirement.assignedAtMs = at.UnixMilli()
 	}
-	return out
 }
 
-// telemetryCoverageOver measures coverage in [from, to) for the required
-// sources. It returns the coverage and the time every required source was
-// observed. A run executed in this process (inProcess) is observed for its
-// whole window; a distributed run without a known source for none of it.
-func telemetryCoverageOver(observed map[string]*coverageSpans, required []string, inProcess bool, from, to time.Time) (TelemetryCoverage, *coverageSpans) {
+// retire records that source is no longer required after at.
+func (l *telemetrySourceLedger) retire(source string, at time.Time) {
+	if l == nil || source == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.retireLocked(source, at)
+}
+
+func (l *telemetrySourceLedger) retireLocked(source string, at time.Time) {
+	requirement := l.requirementLocked(source)
+	if requirement.retiredAtMs == 0 || at.UnixMilli() > requirement.retiredAtMs {
+		requirement.retiredAtMs = at.UnixMilli()
+	}
+}
+
+func (l *telemetrySourceLedger) requirementLocked(source string) *telemetrySourceRequirement {
+	if l.requirements == nil {
+		l.requirements = map[string]*telemetrySourceRequirement{}
+	}
+	requirement := l.requirements[source]
+	if requirement == nil {
+		requirement = &telemetrySourceRequirement{}
+		l.requirements[source] = requirement
+	}
+	return requirement
+}
+
+// coverageSnapshot copies each source's observed spans and requirement.
+func (l *telemetrySourceLedger) coverageSnapshot() (map[string]*coverageSpans, map[string]telemetrySourceRequirement) {
+	if l == nil {
+		return nil, nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	observed := make(map[string]*coverageSpans, len(l.coverage))
+	for source, spans := range l.coverage {
+		observed[source] = spans.clone()
+	}
+	requirements := make(map[string]telemetrySourceRequirement, len(l.requirements))
+	for source, requirement := range l.requirements {
+		requirements[source] = *requirement
+	}
+	return observed, requirements
+}
+
+// telemetryCoverageInterval is when one source had to be observed, clipped
+// to the run's window.
+type telemetryCoverageInterval struct {
+	startMs, endMs int64
+}
+
+// telemetryCoverageOver measures coverage in [from, to): a moment is
+// observed when at least one source was required then and every source
+// required then was observed. It returns the coverage and the observed time.
+// A run executed in this process (inProcess) is observed for its whole
+// window; a distributed run without a known source for none of it.
+func telemetryCoverageOver(observed map[string]*coverageSpans, required map[string]telemetryCoverageInterval, inProcess bool, from, to time.Time) (TelemetryCoverage, *coverageSpans) {
 	start, end := from.UnixMilli(), to.UnixMilli()
 	coverage := TelemetryCoverage{WindowStart: from.UTC(), WindowEnd: to.UTC(), Sources: []TelemetrySourceCoverage{}}
 	if end <= start {
 		return coverage, &coverageSpans{}
 	}
 	coverage.WindowMs = end - start
-	all := &coverageSpans{spans: [][2]int64{{start, end}}}
+	window := [][2]int64{{start, end}}
+	known := window
 	if !inProcess {
-		all = &coverageSpans{}
-	}
-	if !inProcess && len(required) > 0 {
-		sets := make([]*coverageSpans, 0, len(required))
-		for _, source := range required {
+		sources := make([]string, 0, len(required))
+		for source := range required {
+			sources = append(sources, source)
+		}
+		sort.Strings(sources)
+		requiredSpans := make([][2]int64, 0, len(sources))
+		var missing [][2]int64
+		for _, source := range sources {
+			interval := required[source]
 			spans := observed[source]
-			sets = append(sets, spans)
 			entry := TelemetrySourceCoverage{Source: source, ObservedMs: spans.within(start, end)}
 			if spans != nil && spans.truncated {
 				entry.Truncated, coverage.Truncated = true, true
 			}
 			coverage.Sources = append(coverage.Sources, entry)
+			span := [2]int64{max(interval.startMs, start), min(interval.endMs, end)}
+			if span[1] <= span[0] {
+				continue
+			}
+			requiredSpans = append(requiredSpans, span)
+			var seen [][2]int64
+			if spans != nil {
+				seen = spans.spans
+			}
+			missing = append(missing, subtractSpans([][2]int64{span}, seen)...)
 		}
-		all = intersectCoverage(sets, start, end)
+		// Time no source was required for is unknown too.
+		unknown := unionSpans(append(subtractSpans(window, unionSpans(requiredSpans)), missing...))
+		known = subtractSpans(window, unknown)
 	}
+	all := &coverageSpans{spans: known}
 	coverage.ObservedMs = all.within(start, end)
 	coverage.UnknownMs = coverage.WindowMs - coverage.ObservedMs
 	return coverage, all
 }
 
-// requiredTelemetrySources is every source the run published from or was
-// assigned, sorted.
-func requiredTelemetrySources(observed map[string]*coverageSpans, assigned []string) []string {
-	set := map[string]bool{}
+// requiredTelemetrySources is when each source the run published from or
+// was assigned had to be observed within [from, to): from its recorded
+// assignment, else its first observation, else the window start; until its
+// retirement, else the window end. An assigned source this controller has no
+// record of is required for the whole window.
+func requiredTelemetrySources(observed map[string]*coverageSpans, requirements map[string]telemetrySourceRequirement, assigned []string, from, to time.Time) map[string]telemetryCoverageInterval {
+	start, end := from.UnixMilli(), to.UnixMilli()
+	out := map[string]telemetryCoverageInterval{}
+	sources := map[string]bool{}
 	for source := range observed {
-		set[source] = true
+		sources[source] = true
+	}
+	for source := range requirements {
+		sources[source] = true
 	}
 	for _, source := range assigned {
 		if source != "" {
-			set[source] = true
+			sources[source] = true
 		}
 	}
-	out := make([]string, 0, len(set))
-	for source := range set {
-		out = append(out, source)
+	for source := range sources {
+		interval := telemetryCoverageInterval{startMs: start, endMs: end}
+		requirement := requirements[source]
+		switch {
+		case requirement.assignedAtMs > 0:
+			interval.startMs = requirement.assignedAtMs
+		case observed[source] != nil && len(observed[source].spans) > 0:
+			interval.startMs = observed[source].spans[0][0]
+		}
+		if requirement.retiredAtMs > 0 {
+			interval.endMs = requirement.retiredAtMs
+		}
+		out[source] = interval
 	}
-	sort.Strings(out)
 	return out
 }
 
@@ -291,13 +456,17 @@ func telemetryCoverageRecord(coverage TelemetryCoverage, allObserved *coverageSp
 }
 
 // telemetryPolicySegments is the run's one policy segment: the budget policy
-// captured at admission (or the legacy settings) for the whole window.
+// captured at admission (or the legacy settings) for the whole window. A
+// captured policy that fails validation names no hash.
 func telemetryPolicySegments(test *ManagedTest, from, to time.Time) []TelemetryPolicySegment {
 	segment := TelemetryPolicySegment{Start: from.UTC(), End: to.UTC()}
-	if test != nil && test.initialArchiveProvenance != nil && test.initialArchiveProvenance.TelemetryPolicy != nil {
-		segment.PolicyHash = telemetryBudgetPolicyHash(test.initialArchiveProvenance.TelemetryPolicy)
-	} else {
+	switch {
+	case test == nil || test.initialArchiveProvenance == nil || test.initialArchiveProvenance.TelemetryPolicy == nil:
 		segment.Legacy = true
+	case validTelemetryBudgetPolicy(test.initialArchiveProvenance.TelemetryPolicy):
+		segment.PolicyHash = test.initialArchiveProvenance.TelemetryPolicy.Hash
+	default:
+		segment.Unavailable = "immutable-policy-invalid"
 	}
 	return []TelemetryPolicySegment{segment}
 }
@@ -315,12 +484,16 @@ func telemetryRunWindowLocked(test *ManagedTest, now time.Time) (time.Time, time
 	return *test.StartedAt, end, end.After(*test.StartedAt)
 }
 
-// assignedTelemetrySourcesLocked lists the generators assigned to the run.
-// The caller holds tr.mu.
+// assignedTelemetrySourcesLocked lists the generators assigned to the run:
+// its live clients and its durable shard placement, which outlives them. The
+// caller holds tr.mu.
 func assignedTelemetrySourcesLocked(test *ManagedTest) []string {
-	out := make([]string, 0, len(test.remoteClientsByTarget))
+	out := make([]string, 0, len(test.remoteClientsByTarget)+len(test.GeneratorShards))
 	for target := range test.remoteClientsByTarget {
 		out = append(out, target)
+	}
+	for _, shard := range test.GeneratorShards {
+		out = append(out, shard.Target)
 	}
 	return out
 }
@@ -332,38 +505,66 @@ func telemetryLiveCoverageLocked(test *ManagedTest, now time.Time) *TelemetryCov
 	if !ok || test.telemetrySources == nil {
 		return nil
 	}
-	observed := test.telemetrySources.coverageSnapshot()
-	coverage, _ := telemetryCoverageOver(observed, requiredTelemetrySources(observed, assignedTelemetrySourcesLocked(test)), false, from, to)
+	observed, requirements := test.telemetrySources.coverageSnapshot()
+	coverage, _ := telemetryCoverageOver(observed, requiredTelemetrySources(observed, requirements, assignedTelemetrySourcesLocked(test), from, to), false, from, to)
 	return &coverage
+}
+
+// coverageIntervalRow is the part of an archived interval summary coverage
+// classification reads.
+type coverageIntervalRow struct {
+	Timestamp           time.Time `json:"timestamp"`
+	SampleWindowSeconds float64   `json:"sample_window_seconds"`
+	TelemetryStatus     *struct {
+		Status string `json:"status"`
+	} `json:"telemetry_status"`
 }
 
 // persistTelemetryCoverage records the run's wall-time telemetry account in
 // the manifest after finalize, from its retained interval summaries. A run
-// executed in this process counts its whole window as observed; a
-// distributed run only the time every required source was observed by this
-// controller (time before an HA adoption is unknown here).
+// executed in this process counts its whole window as observed. A
+// distributed run — known from its ledger, its clients or its durable shard
+// placement, which survive finalize, restarts and adoption — counts only the
+// time every required source was observed by this controller; with no ledger
+// here (a restart or adoption before finalize) its whole window is unknown.
 func (tr *TestRunner) persistTelemetryCoverage(ctx context.Context, test *ManagedTest, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) error {
 	if test == nil || manifest == nil || manifest.TelemetryCoverage != nil {
 		return nil
 	}
 	tr.mu.RLock()
 	from, to, ok := telemetryRunWindowLocked(test, time.Now())
-	ledger, distributed := test.telemetrySources, test.telemetrySources != nil || len(test.remoteClientsByTarget) > 0
+	ledger := test.telemetrySources
 	assigned := assignedTelemetrySourcesLocked(test)
 	segments := telemetryPolicySegments(test, from, to)
 	tr.mu.RUnlock()
 	if !ok {
 		return nil
 	}
-	rows, err := loadArchiveIntervalSummariesForAction(record, "")
+	for _, shard := range manifest.Provenance.GeneratorShards {
+		assigned = append(assigned, shard.Target)
+	}
+	var rows []IntervalSummaryRecord
+	err := forEachArchiveRecordContext(ctx, record, func(manifest *RunArchiveManifest) string { return manifest.IntervalSummariesFile }, func(row *coverageIntervalRow) error {
+		summary := IntervalSummaryRecord{Timestamp: row.Timestamp, SampleWindowSeconds: row.SampleWindowSeconds}
+		if row.TelemetryStatus != nil {
+			summary.TelemetryStatus = &TelemetryRunHealth{Status: row.TelemetryStatus.Status}
+		}
+		rows = append(rows, summary)
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	observed := ledger.coverageSnapshot()
-	coverage, all := telemetryCoverageOver(observed, requiredTelemetrySources(observed, assigned), !distributed, from, to)
-	manifest.TelemetryCoverage = telemetryCoverageRecord(coverage, all, rows, segments)
+	manifest.TelemetryCoverage = telemetryRunCoverageRecord(ledger, assigned, from, to, rows, segments)
 	return nil
+}
+
+// telemetryRunCoverageRecord is a finished run's coverage account. A run
+// with a ledger or an assigned generator is distributed; any other run was
+// executed in this process.
+func telemetryRunCoverageRecord(ledger *telemetrySourceLedger, assigned []string, from, to time.Time, rows []IntervalSummaryRecord, segments []TelemetryPolicySegment) *TelemetryCoverageRecord {
+	distributed := ledger != nil || len(assigned) > 0
+	observed, requirements := ledger.coverageSnapshot()
+	coverage, all := telemetryCoverageOver(observed, requiredTelemetrySources(observed, requirements, assigned, from, to), !distributed, from, to)
+	return telemetryCoverageRecord(coverage, all, rows, segments)
 }

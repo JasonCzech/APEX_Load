@@ -12,7 +12,7 @@ const reasons: Record<string, string> = {
   current_unmatched: 'No current tuple',
   insufficient_final_documents: 'No qualified final documents',
 }
-const tuple = (row: BrowserDocumentComparison) => [row.engine, `profile ${row.device_profile || 'not recorded'}`, row.frame_scope === 'main_frame' ? 'main frame' : 'child frame', row.lifecycle_phase === 'navigation' ? 'navigation' : 'BFCache restore', row.group && `group ${row.group}`, row.region && `region ${row.region}`].filter(Boolean).join(' · ')
+const tuple = (row: BrowserDocumentComparison) => [row.engine, `profile ${row.device_profile || 'not recorded'}`, row.frame_scope === 'main_frame' ? 'main frame' : 'child frame', row.lifecycle_phase === 'navigation' ? 'navigation' : 'BFCache restore', row.group && `group ${row.group}`, row.region && `region ${row.region}`, row.cohort && `cohort ${row.cohort}`].filter(Boolean).join(' · ')
 const value = (v: number | undefined, unit: string) => v === undefined ? 'Unavailable' : `${number(v)} ${unit}`
 
 export default function BaselineBrowserDocuments({ rows, baselines, softNavigation }: { rows?: BrowserDocumentComparison[]; baselines: RunIdentity[]; softNavigation?: string }) {

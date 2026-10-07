@@ -1,4 +1,4 @@
-import { test, expect, seedScript, login } from './support/workflow'
+import { test, expect, idOf, json, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 // The script session binds a validation result to the exact draft it was
@@ -11,7 +11,13 @@ test('a validation that returns after an edit is ignored and the next one binds 
   const request = page.context().request
   const workspace = await createWorkspace(request)
   const name = `Session_${Date.now()}`
-  const id = await seedScript(request, workspace, name)
+  // An imported script: a validation result the editor wrongly admitted would
+  // be committed into the draft (reverting later edits), so the late result's
+  // rejection is observable rather than masked by a recomputed summary.
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: {
+    project_id: workspace.projectId,
+    script: { name, version: '1.0.0', protocol: 'http', config: { base_url: 'http://127.0.0.1:1' }, actions: [{ name: 'orders', type: 'request', method: 'GET', target: '/orders' }], metadata: { import: { source_format: 'openapi' } } },
+  } })))
   await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   const scriptName = page.locator('.side-panel-script-name input')
@@ -41,6 +47,11 @@ test('a validation that returns after an edit is ignored and the next one binds 
   release()
   const lateResponse = await late
   expect((await lateResponse.json()).validated_fingerprint).toBe(firstFingerprint)
+  // Recheck re-enables once the editor has handled the late response.
+  const readiness = page.locator('details.script-health-summary .debug-readiness-card')
+  await expect(readiness.getByRole('button', { name: 'Recheck', exact: true })).toBeEnabled()
+  await expect(scriptName).toHaveValue(`${name}_edited_twice`)
+  await expect(readiness).not.toContainText('Script validation passed')
   await expect(states).toContainText('Validation evidence: not yet')
   await expect(states).not.toContainText('Validation evidence: passed')
 

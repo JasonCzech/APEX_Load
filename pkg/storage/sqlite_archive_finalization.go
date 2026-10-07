@@ -636,6 +636,12 @@ func (s *SQLiteStore) completeArchiveFinalization(testID string, intentToken str
 	if _, err := tx.Exec(`DELETE FROM run_archive_failures WHERE test_id = ?`, testID); err != nil {
 		return false, err
 	}
+	// The archive now durably holds the evidence its accepted receipts
+	// claim: they are published with it, in the same transaction, so a crash
+	// after the commit cannot leave them accepted forever.
+	if _, err := tx.Exec(`UPDATE run_evidence_receipts SET state = ?, updated_at = ? WHERE test_id = ? AND state = ?`, EvidenceReceiptPublished, time.Now().UTC(), testID, EvidenceReceiptAccepted); err != nil {
+		return false, err
+	}
 	if identity != nil && identity.RequireAdjunctRefresh {
 		// Catalog completion and recovery reconciliation are one transaction.
 		// Preserve a newer dirty token, including one queued before the crash.

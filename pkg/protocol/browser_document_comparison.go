@@ -26,7 +26,10 @@ type BrowserDocumentComparison struct {
 	LifecyclePhase string `json:"lifecycle_phase"`
 	Engine         string `json:"engine"`
 	DeviceProfile  string `json:"device_profile"`
-	Comparable     bool   `json:"comparable"`
+	// Cohort is the runtime cohort's digest (BrowserRuntimeCohortDigest), so
+	// two rows that differ only by cohort are told apart.
+	Cohort     string `json:"cohort,omitempty"`
+	Comparable bool   `json:"comparable"`
 	// Reason is empty when comparable: algorithm_mismatch, unit_mismatch,
 	// lifecycle_phase_mismatch, frame_scope_mismatch, engine_mismatch,
 	// device_profile_mismatch, cohort_mismatch, baseline_unmatched,
@@ -175,7 +178,7 @@ func BrowserDocumentTupleMismatch(a, b BrowserDocumentMetricSummary) string {
 }
 
 func browserDocumentComparisonRow(m BrowserDocumentMetricSummary) BrowserDocumentComparison {
-	return BrowserDocumentComparison{Metric: m.Metric, Unit: m.Unit, Group: m.Group, Region: m.Region, FrameScope: m.FrameScope, LifecyclePhase: m.LifecyclePhase, Engine: m.Engine, DeviceProfile: m.DeviceProfile}
+	return BrowserDocumentComparison{Metric: m.Metric, Unit: m.Unit, Group: m.Group, Region: m.Region, FrameScope: m.FrameScope, LifecyclePhase: m.LifecyclePhase, Engine: m.Engine, DeviceProfile: m.DeviceProfile, Cohort: BrowserRuntimeCohortDigest(m.Cohort)}
 }
 
 // browserDocumentFields are the fields that decide what a tuple measured, in

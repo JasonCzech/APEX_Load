@@ -503,9 +503,25 @@ evidence.
   interval grid is regridded to its own interval, so detection still needs
   ten of those buckets before an onset. Imported series count as external
   evidence for hypotheses, like providers, and name their host as a node.
-  Partitions that mix metrics or identities are not enumerated
-  (`imported_series_unenumerated`); native analysis that is off or
-  unavailable for the project is `imported_dataset_unavailable`.
+  Partitions that mix metrics or identities, and histogram or summary
+  measures, are not enumerated (`imported_series_unenumerated`); empty
+  partitions are skipped; native analysis that is off or unavailable for the
+  project is `imported_dataset_unavailable`. Imported reads use at most a
+  quarter of the analysis's wall-time budget and 128 native queries, so the
+  run's own evidence is always judged (what they leave out is
+  `detection_evidence_cut`). A read the single native-analysis slot refuses
+  is retried with backoff; a slot still busy at the read budget fails the
+  analysis, which an identical request retries, rather than completing it with
+  less evidence. A dataset is checked again after its reads and dropped
+  (`imported_dataset_changed`) if it changed or lost its association
+  meanwhile. Joint slices rank last within the series budget: imported and
+  document series take the room they hold, and under the anomaly cap their
+  anomalies never displace those of a series that can be a symptom or cause.
+- **Provider series IDs** pair a run's series with a baseline run's. They
+  leave out the scenario the run was launched from (the series' identity keeps
+  it), so a copied scenario or an ad-hoc run still pairs; a provider's own
+  series discriminator (Prometheus's label-set hash) is part of both, so
+  series that the allowed labels alone would merge stay apart.
 - **Browser document series.** Each measurement tuple of the run's final
   FCP, LCP, CLS and INP document measurements (one algorithm, unit,
   lifecycle phase, frame scope, engine, device profile and actual runtime
@@ -763,7 +779,8 @@ MCP tools keep returning v1.
 - **Evidence revisions** freeze the archive's evidence sidecars, the run's
   monitor sources with their outcomes, the project's mapping decisions and the
   associated analysis datasets (at most eight, by ID; `imported_datasets_truncated`
-  beyond that), each with its revision, mapping SHA-256 and partition-manifest
+  beyond that, or when the project's dataset listing exceeds the 2,000 rows
+  scanned), each with its revision, mapping SHA-256 and partition-manifest
   digest. An analysis reads a dataset only while all three still match; one
   that changed or lost its association afterwards is
   `imported_dataset_changed` and is not read. A POST captures a revision when
@@ -1042,13 +1059,29 @@ A native query (live or archive evidence, the archive panel and the imported dat
 | `acknowledgement_ratio`, `settlement_ratio` | the `message` population | — (every bucket is `evidence_unavailable`: the engine records no acknowledgement or settlement counters yet) |
 | `baseline_delta`, `baseline_percent_delta` | archive panels with `comparison_run_id` | — |
 | `moving_mean`, `moving_stddev` | scalar series on an aligned grid (archive, merged live, imported) | `window_buckets` 2–1,000, `minimum_coverage` in (0, 1] |
-| `delta`, `rate` | imported counter series queried with `aggregation: max` | — |
+| `delta`, `rate` | imported counter series queried with `aggregation: max` (the controller then reads each bucket's highest counter reading; a display query still converts counters to rates) | — |
+
+Only a baseline derivation takes a `comparison_run_id`; any other derivation
+with one is refused, so a comparison panel never mixes a derived current
+series with a raw baseline. Moving statistics need contiguous buckets on one
+grid. Merged live buckets are complete when every expected source published
+into them with valid evidence (a rate also needs the bucket's whole window
+covered by publications inside it), so ratios and moving statistics score in
+merged live mode. An archive whose source coverage lists an uncollected
+generator, or whose CSV export is incomplete, makes every derived bucket
+`incomplete_evidence`. Evidence queries (`/native/evidence`) select the action
+or transaction population only; message and browser document populations are
+archive panels. Responses name the catalog operation even when an alias was
+asked for. A controller that predates derivations ignores the field: during a
+rolling upgrade a saved derivation can be dropped by an older peer that
+re-saves the dashboard, and a derived query answered by one returns raw
+values without a `derivation` echo.
 
 Each derived bucket carries its value or a `reason`: `zero_denominator`, `incomplete_evidence`, `numerator_not_subset`, `missing_bucket`, `missing_baseline_bucket`, `baseline_not_comparable`, `insufficient_window`, `insufficient_valid_buckets`, `insufficient_coverage`, `no_prior_sample`, `missing_counter_sample`, `counter_reset`, `counter_epoch_changed_or_unknown`, `evidence_unavailable` and the rest of the typed functions' reasons. A complete window with no events is a measured zero for counts and rates but an unscored zero denominator for a ratio; a bucket past run completion, with legacy population or missing property evidence, is incomplete. A baseline derivation compares only a comparable baseline run (the same comparison fingerprint and complete evidence); otherwise every bucket is `baseline_not_comparable`. Responses name the applied `derivation` and the derived unit (`ratio`, `percent` or the series' canonical unit); a query without a derivation renders exactly as before.
 
 The archive `message` population reads received messages from messaging v2 evidence (`message_count`, optionally filtered by `source`). A message ratio divides the messages its counter counted by the messages that counter observed, and a bucket is complete only when every selected dimension carried complete v2 evidence and the counter observed every eligible message; a bucket described only by v1 summaries stays missing. Duplicate ratios are lower bounds within each consumer's local sequence window. Imported counters use one epoch per dataset revision and identity; a falling reading is a `counter_reset`. Moving derivations on live per-source intervals, whose windows are not aligned, are refused.
 
-Saved dashboards validate through the catalog: catalog metrics and aggregations, the retained grouping and filter dimensions, and an alias table that keeps saved names meaning what they did (`tps` is `observation_rate`, `transaction_duration` is `response_time`, and live display cards such as `active_vusers`, `throughput`, `regional_activity`, `resource_cpu` and `resource_memory` keep rendering but are not catalog measurements and take no derivation; `stddev` remains a display aggregation). The catalog also declares `message_count` (population `message`) and `bytes_sent`/`bytes_received` (population `byte`); bytes have no native query yet. Browser document metrics `document_fcp`, `document_lcp`, `document_cls` (unit `score`) and `document_inp` (population `browser_document`, aggregations `p50`, `p75`, `p90`, `p95` and `p99`; each bucket's `count` is its final documents) read one measurement tuple's final document distribution; their filters (`engine`, `device_profile`, `frame_scope`, `lifecycle_phase`, `group`, `region`, `cohort`) apply to these metrics only, and a selection spanning more than one tuple is refused. See [Browser document evidence](guides/BROWSER_DOCUMENT_EVIDENCE.md#comparison-and-native-analysis).
+Saved dashboards validate through the catalog: catalog metrics and aggregations, the retained grouping and filter dimensions, and an alias table that keeps saved names meaning what they did (`tps` is `observation_rate`, `transaction_duration` is `response_time`, and live display cards such as `active_vusers`, `throughput`, `regional_activity`, `resource_cpu` and `resource_memory` keep rendering but are not catalog measurements and take no derivation; `stddev` remains a display aggregation). The catalog also declares `message_count` (population `message`; it takes moving statistics, and saved message panels may filter by `source`) and `bytes_sent`/`bytes_received` (population `byte`); bytes have no native query and declare no derivation yet. Browser document metrics `document_fcp`, `document_lcp`, `document_cls` (unit `score`) and `document_inp` (population `browser_document`, aggregations `p50`, `p75`, `p90`, `p95` and `p99`; each bucket's `count` is its final documents) read one measurement tuple's final document distribution; their filters (`engine`, `device_profile`, `frame_scope`, `lifecycle_phase`, `group`, `region`, `cohort`) apply to these metrics only, and a selection spanning more than one tuple is refused. See [Browser document evidence](guides/BROWSER_DOCUMENT_EVIDENCE.md#comparison-and-native-analysis).
 
 ## Event Hubs processor progress analysis
 

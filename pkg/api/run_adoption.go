@@ -572,6 +572,16 @@ func (tr *TestRunner) installAdoptedRun(b *distributedExecutionBackend, candidat
 		for target := range completed {
 			test.remoteTargetStates[target] = "complete"
 		}
+		// This controller requires each generator from the adoption; one
+		// that completed during the gap is never required here.
+		ledger := telemetrySourceLedgerLocked(test)
+		for target := range adopted {
+			ledger.assign(target, adoptedAt)
+		}
+		for target := range completed {
+			ledger.assign(target, adoptedAt)
+			ledger.retire(target, adoptedAt)
+		}
 		test.adoptedResume = &adoptedRunResume{
 			generation: generation, ownerID: ownerID,
 			adopted: cloneClientMap(adopted), completed: cloneClientMap(completed),
@@ -612,10 +622,15 @@ func (tr *TestRunner) bindRunAdoptionOutcome(b *distributedExecutionBackend, tes
 	err := tr.installRunAdoptionHandlesLocked(b, test, clients, nil, token)
 	if err == nil {
 		test.remoteArchiveClientsByTarget = archives
+		adoptedAt := time.Now().UTC()
+		ledger := telemetrySourceLedgerLocked(test)
 		for target := range completed {
 			test.remoteTargetStates[target] = "complete"
+			// Completed during the gap: never observed or required here.
+			ledger.assign(target, adoptedAt)
+			ledger.retire(target, adoptedAt)
 		}
-		test.adoptedResume = &adoptedRunResume{generation: generation, ownerID: ownerID, completed: cloneClientMap(completed), adoptedAt: time.Now().UTC(), finishStatus: status, finishMessage: message, finishTargets: append([]string(nil), targets...)}
+		test.adoptedResume = &adoptedRunResume{generation: generation, ownerID: ownerID, completed: cloneClientMap(completed), adoptedAt: adoptedAt, finishStatus: status, finishMessage: message, finishTargets: append([]string(nil), targets...)}
 	}
 	tr.mu.Unlock()
 	if err != nil {

@@ -3407,8 +3407,13 @@ type MetricsBatch struct {
 	// publication. Empty means an older generator without epochs.
 	SourceEpoch              string `protobuf:"bytes,31,opt,name=source_epoch,json=sourceEpoch,proto3" json:"source_epoch,omitempty"`
 	SourceEpochStartedUnixMs int64  `protobuf:"varint,32,opt,name=source_epoch_started_unix_ms,json=sourceEpochStartedUnixMs,proto3" json:"source_epoch_started_unix_ms,omitempty"`
-	unknownFields            protoimpl.UnknownFields
-	sizeCache                protoimpl.SizeCache
+	// sequence_prefix_state_only, on a subscriber's registration snapshot,
+	// says every earlier sequence of this epoch was a state-only lifecycle
+	// publication (no metric window), so a subscriber starting here has lost
+	// nothing before it and has observed the epoch's origin.
+	SequencePrefixStateOnly bool `protobuf:"varint,33,opt,name=sequence_prefix_state_only,json=sequencePrefixStateOnly,proto3" json:"sequence_prefix_state_only,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *MetricsBatch) Reset() {
@@ -3663,6 +3668,13 @@ func (x *MetricsBatch) GetSourceEpochStartedUnixMs() int64 {
 		return x.SourceEpochStartedUnixMs
 	}
 	return 0
+}
+
+func (x *MetricsBatch) GetSequencePrefixStateOnly() bool {
+	if x != nil {
+		return x.SequencePrefixStateOnly
+	}
+	return false
 }
 
 type MetricsBatchTelemetry struct {
@@ -7223,7 +7235,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x15run_supervision_token\x18\x04 \x01(\fR\x13runSupervisionToken\"T\n" +
 	"\aStopAck\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x12%\n" +
-	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xd1\x0f\n" +
+	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\x8e\x10\n" +
 	"\fMetricsBatch\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12!\n" +
 	"\fgenerator_id\x18\x02 \x01(\tR\vgeneratorId\x12*\n" +
@@ -7257,7 +7269,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x1dbrowser_document_summary_json\x18\x1d \x01(\tR\x1abrowserDocumentSummaryJson\x12G\n" +
 	" browser_document_summary_version\x18\x1e \x01(\rR\x1dbrowserDocumentSummaryVersion\x12!\n" +
 	"\fsource_epoch\x18\x1f \x01(\tR\vsourceEpoch\x12>\n" +
-	"\x1csource_epoch_started_unix_ms\x18  \x01(\x03R\x18sourceEpochStartedUnixMs\"\x88\x04\n" +
+	"\x1csource_epoch_started_unix_ms\x18  \x01(\x03R\x18sourceEpochStartedUnixMs\x12;\n" +
+	"\x1asequence_prefix_state_only\x18! \x01(\bR\x17sequencePrefixStateOnly\"\x88\x04\n" +
 	"\x15MetricsBatchTelemetry\x12'\n" +
 	"\x0fdropped_results\x18\x01 \x01(\x03R\x0edroppedResults\x12/\n" +
 	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x12/\n" +

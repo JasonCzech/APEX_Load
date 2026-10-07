@@ -3,6 +3,9 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -95,12 +98,13 @@ func TestImportedSeriesKeysAndWindow(t *testing.T) {
 		return &analysis.NormalizedPartitionIdentity{Source: "src", Host: host, Dimensions: map[string]string{"zone": "a"}}
 	}
 	manifest := &analysis.NormalizedPartitionManifest{Partitions: []analysis.NormalizedPartition{
-		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindGauge, Metric: &metric, Identity: identity("h2"), MinTime: at(0), MaxTime: at(50)}},
-		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindGauge, Metric: &metric, Identity: identity("h1"), MinTime: at(0), MaxTime: at(50)}},
-		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindGauge, Metric: &metric, Identity: identity("h1"), MinTime: at(60), MaxTime: at(90)}},    // same series
-		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindCounter, Metric: &other, Identity: identity("h1"), MinTime: at(500), MaxTime: at(600)}}, // outside
-		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindGauge, Identity: identity("h3"), MinTime: at(0), MaxTime: at(10)}},                      // mixed metrics
-		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindGauge, Metric: &metric, MinTime: at(0), MaxTime: at(10)}},                               // mixed identities
+		{Stats: analysis.NormalizedPartitionStats{Rows: 1, Kind: analysis.KindGauge, Metric: &metric, Identity: identity("h2"), MinTime: at(0), MaxTime: at(50)}},
+		{Stats: analysis.NormalizedPartitionStats{Rows: 1, Kind: analysis.KindGauge, Metric: &metric, Identity: identity("h1"), MinTime: at(0), MaxTime: at(50)}},
+		{Stats: analysis.NormalizedPartitionStats{Rows: 1, Kind: analysis.KindGauge, Metric: &metric, Identity: identity("h1"), MinTime: at(60), MaxTime: at(90)}},    // same series
+		{Stats: analysis.NormalizedPartitionStats{Rows: 1, Kind: analysis.KindCounter, Metric: &other, Identity: identity("h1"), MinTime: at(500), MaxTime: at(600)}}, // outside
+		{Stats: analysis.NormalizedPartitionStats{Rows: 1, Kind: analysis.KindGauge, Identity: identity("h3"), MinTime: at(0), MaxTime: at(10)}},                      // mixed metrics
+		{Stats: analysis.NormalizedPartitionStats{Rows: 1, Kind: analysis.KindGauge, Metric: &metric, MinTime: at(0), MaxTime: at(10)}},                               // mixed identities
+		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindGauge}},                                                                                          // empty: every row rejected, not mixed
 	}}
 	keys, mixed := importedSeriesKeys(manifest, *at(0), *at(100))
 	if mixed != 2 || len(keys) != 2 || keys[0].identity.Host != "h1" || keys[1].identity.Host != "h2" || keys[0].metric != "cpu" || keys[0].kind != analysis.KindGauge {
@@ -119,10 +123,15 @@ func TestImportedSeriesKeysAndWindow(t *testing.T) {
 	if !ok || bucket != 5*time.Second || !from.Equal(start.Add(-5*time.Second)) || !to.Equal(start.Add(50*time.Second)) {
 		t.Fatalf("window %s..%s by %s", from, to, bucket)
 	}
-	// A window longer than the point bound widens its grid.
+	// A window longer than the point bound widens its grid, counting a
+	// partial last bucket as the native query does.
 	long := []IntervalSummaryRecord{{Timestamp: start}, {Timestamp: start.Add(time.Second)}, {Timestamp: start.Add(20000 * time.Second)}}
-	if from, to, bucket, _ := rcaImportedWindow(long); to.Sub(from)/bucket > analysis.MaxSeriesPoints || bucket < 2*time.Second {
+	if from, to, bucket, _ := rcaImportedWindow(long); math.Ceil(to.Sub(from).Seconds()/bucket.Seconds()) > analysis.MaxSeriesPoints || bucket < 2*time.Second {
 		t.Fatalf("long window %s..%s by %s", from, to, bucket)
+	}
+	edge := []IntervalSummaryRecord{{Timestamp: start}, {Timestamp: start.Add(time.Second)}, {Timestamp: start.Add(9998*time.Second + 500*time.Millisecond)}}
+	if from, to, bucket, _ := rcaImportedWindow(edge); math.Ceil(to.Sub(from).Seconds()/bucket.Seconds()) > analysis.MaxSeriesPoints {
+		t.Fatalf("window %s..%s by %s exceeds the native point bound", from, to, bucket)
 	}
 }
 
@@ -133,23 +142,23 @@ func TestRCAImportedSeriesReportsWhatItCannotRead(t *testing.T) {
 	budgeter := rca.NewBudgeter(rca.DefaultBudget, nil, nil)
 	// Native analysis off for the project: nothing is read, and it says so.
 	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "")
-	series, limitations, err := server.rcaImportedSeries(context.Background(), storage.DefaultProjectID, "rca-run", frozen, summaries, -1, budgeter)
+	series, limitations, err := server.rcaImportedSeries(context.Background(), storage.DefaultProjectID, "rca-run", frozen, summaries, -1, budgeter, 0)
 	if err != nil || len(series) != 0 || limitationCodes(limitations) != limitationImportedDatasetUnavailable {
 		t.Fatalf("%+v %+v %v", series, limitations, err)
 	}
 	// A frozen dataset that no longer matches is reported, never read.
 	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", storage.DefaultProjectID)
-	series, limitations, err = server.rcaImportedSeries(context.Background(), storage.DefaultProjectID, "rca-run", frozen, summaries, -1, budgeter)
+	series, limitations, err = server.rcaImportedSeries(context.Background(), storage.DefaultProjectID, "rca-run", frozen, summaries, -1, budgeter, 0)
 	if err != nil || len(series) != 0 || limitationCodes(limitations) != limitationImportedDatasetChanged {
 		t.Fatalf("%+v %+v %v", series, limitations, err)
 	}
 	// Without intervals there is no window to read.
-	if _, limitations, _ := server.rcaImportedSeries(context.Background(), storage.DefaultProjectID, "rca-run", frozen, nil, -1, budgeter); limitationCodes(limitations) != limitationImportedDatasetUnavailable {
+	if _, limitations, _ := server.rcaImportedSeries(context.Background(), storage.DefaultProjectID, "rca-run", frozen, nil, -1, budgeter, 0); limitationCodes(limitations) != limitationImportedDatasetUnavailable {
 		t.Fatalf("%+v", limitations)
 	}
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, _, err := server.rcaImportedSeries(cancelled, storage.DefaultProjectID, "rca-run", frozen, summaries, -1, budgeter); err == nil {
+	if _, _, err := server.rcaImportedSeries(cancelled, storage.DefaultProjectID, "rca-run", frozen, summaries, -1, budgeter, 0); err == nil {
 		t.Fatal("cancellation was not reported")
 	}
 }
@@ -274,5 +283,113 @@ func TestCoarsenImportedSeriesRegridsSparseSamples(t *testing.T) {
 	}
 	if none, bucket := coarsenImportedSeries(nil, time.Second); none != nil || bucket != time.Second {
 		t.Fatal("an empty series changed")
+	}
+}
+
+// A read the native-analysis slot refuses is retried with backoff; a slot
+// still busy at the read budget fails the analysis (an identical request
+// retries it) rather than completing it with less evidence.
+func TestRCAImportedReadRetriesABusyAnalysisSlot(t *testing.T) {
+	calls := 0
+	want := &rca.Series{ID: "imported/x"}
+	read := func() (*rca.Series, error) {
+		calls++
+		if calls < 3 {
+			return nil, errAnalyticalAdmissionUnavailable
+		}
+		return want, nil
+	}
+	got, attempts, err := rcaReadWithAdmission(context.Background(), time.Now().Add(time.Second), time.Millisecond, read)
+	if err != nil || got != want || attempts != 3 {
+		t.Fatalf("got %v attempts %d err %v", got, attempts, err)
+	}
+	busy := func() (*rca.Series, error) { return nil, errAnalyticalAdmissionUnavailable }
+	if _, _, err := rcaReadWithAdmission(context.Background(), time.Now().Add(20*time.Millisecond), 5*time.Millisecond, busy); !errors.Is(err, errRCAImportedEvidenceBusy) {
+		t.Fatalf("persistently busy slot: %v", err)
+	}
+	failing := func() (*rca.Series, error) { return nil, errors.New("query failed") }
+	if _, attempts, err := rcaReadWithAdmission(context.Background(), time.Time{}, time.Millisecond, failing); err == nil || attempts != 1 {
+		t.Fatalf("other errors are not retried: %d %v", attempts, err)
+	}
+}
+
+// A dataset listing stopped by the page bound says so, and offset paging
+// does not repeat a dataset.
+func TestRCADatasetListingBoundAndDuplicates(t *testing.T) {
+	var rows []storage.AnalysisImport
+	for i := 0; i < rcaImportListPages*rcaImportListPage; i++ {
+		rows = append(rows, storage.AnalysisImport{ID: fmt.Sprintf("other-%05d", i), ProjectID: "p", RunID: "other-run", State: "ready"})
+	}
+	if _, truncated, err := loadRCADatasets(&rcaDatasetStore{rows: rows}, "p", "run"); err != nil || !truncated {
+		t.Fatalf("listing past the page bound: truncated=%v err=%v", truncated, err)
+	}
+	manifest := &analysis.NormalizedPartitionManifest{Digest: "d", MappingSHA256: "m"}
+	dup := []storage.AnalysisImport{{ID: "a", ProjectID: "p", RunID: "run", State: "ready", PartitionManifest: manifest}}
+	found, truncated, err := loadRCADatasets(&repeatingDatasetStore{row: dup[0]}, "p", "run")
+	if err != nil || truncated || len(found) != 1 {
+		t.Fatalf("repeated row: %+v truncated=%v err=%v", found, truncated, err)
+	}
+}
+
+// repeatingDatasetStore returns the same row on its first two pages, as a
+// concurrent insert shifting offsets can.
+type repeatingDatasetStore struct{ row storage.AnalysisImport }
+
+func (s *repeatingDatasetStore) GetAnalysisImport(string) (*storage.AnalysisImport, error) {
+	return &s.row, nil
+}
+func (s *repeatingDatasetStore) SaveAnalysisImport(in storage.AnalysisImport, _ int64) (*storage.AnalysisImport, error) {
+	return &in, nil
+}
+func (s *repeatingDatasetStore) ListAnalysisImports(_ string, limit, offset int) ([]storage.AnalysisImport, error) {
+	if offset >= 2*limit {
+		return nil, nil
+	}
+	page := make([]storage.AnalysisImport, limit)
+	for i := range page {
+		page[i] = storage.AnalysisImport{ID: fmt.Sprintf("x-%d-%d", offset, i)}
+	}
+	page[0] = s.row
+	return page, nil
+}
+
+// Joint action-dimension slices give way to imported and document series
+// within the series budget, and their anomalies never push out a cause's.
+func TestRCAJointSlicesRankLast(t *testing.T) {
+	series := []rca.Series{{ID: "transaction/a"}, {ID: rca.SeriesJointPrefix + "1"}, {ID: rca.SeriesJointPrefix + "2"}, {ID: "imported/x"}}
+	if rcaNonJointSeries(series) != 2 {
+		t.Fatal("non-joint count")
+	}
+	kept, dropped := trimRCAJointSeries(series, 3)
+	if dropped != 1 || len(kept) != 3 || kept[0].ID != "transaction/a" || kept[1].ID != rca.SeriesJointPrefix+"1" || kept[2].ID != "imported/x" {
+		t.Fatalf("trim %+v dropped %d", kept, dropped)
+	}
+	if kept, dropped := trimRCAJointSeries(series, 10); dropped != 0 || len(kept) != 4 {
+		t.Fatal("trimmed within the budget")
+	}
+}
+
+// A provider series' ID, which pairs it with a baseline run's, does not
+// depend on the scenario the run was launched from; its identity does. A
+// Prometheus label-set hash keeps series the allowed labels alone would merge
+// apart.
+func TestRCAProviderSeriesIDsAreRunIndependent(t *testing.T) {
+	point := analysis.MetricPoint{ProjectID: "project-a", ScenarioID: "scenario-1", Source: "prom-1", MetricName: "node_cpu", Kind: analysis.KindGauge, Unit: "%", Dimensions: map[string]string{"namespace": "shop"},
+		Provider: &analysis.ProviderMeasurement{Name: monitorprovider.ProviderPrometheus, QueryID: "q1", ResolutionSeconds: 15, Statistic: "avg", EntityIDs: map[string]string{"series": "aaaa"}}}
+	original, ok := monitorSeriesTemplate(point, "project-a", "monitor_points.jsonl")
+	if !ok {
+		t.Fatal("no series")
+	}
+	copied := point
+	copied.ScenarioID = "scenario-copy"
+	other, _ := monitorSeriesTemplate(copied, "project-a", "monitor_points.jsonl")
+	if other.ID != original.ID || other.Identity == original.Identity {
+		t.Fatalf("scenario changed the pairing ID (%s vs %s) or not the identity", other.ID, original.ID)
+	}
+	pod := point
+	pod.Provider = &analysis.ProviderMeasurement{Name: monitorprovider.ProviderPrometheus, QueryID: "q1", ResolutionSeconds: 15, Statistic: "avg", EntityIDs: map[string]string{"series": "bbbb"}}
+	second, _ := monitorSeriesTemplate(pod, "project-a", "monitor_points.jsonl")
+	if second.ID == original.ID || monitorSeriesKey(pod) == monitorSeriesKey(point) {
+		t.Fatal("two Prometheus label sets merged into one series")
 	}
 }

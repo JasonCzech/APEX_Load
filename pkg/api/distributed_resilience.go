@@ -836,6 +836,10 @@ sourceFenced:
 	// (e.g. "node maintenance") would not be recognized as evacuated and would fail
 	// the run right after the API reported the evacuation succeeded (F13).
 	test.remoteTargetStates[target] = remoteTargetStateEvacuated
+	// Coverage stops requiring the evacuated source and requires each
+	// replacement from now.
+	evacuatedAt := time.Now()
+	telemetrySourceLedgerLocked(test).retire(target, evacuatedAt)
 	for candidate, client := range dialedClients {
 		if len(newlyAssigned[candidate]) == 0 {
 			unusedDialedClients = append(unusedDialedClients, client)
@@ -843,6 +847,7 @@ sourceFenced:
 		}
 		test.remoteClientsByTarget[candidate] = client
 		test.remoteTargetStates[candidate] = "RUNNING"
+		telemetrySourceLedgerLocked(test).assign(candidate, evacuatedAt)
 	}
 	for candidate, stream := range openedStreams {
 		test.remoteMetricsStreamsByTarget[candidate] = stream

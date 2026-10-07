@@ -6782,6 +6782,22 @@ describe('ScriptEditor', () => {
     expect(card).not.toContain('newer revision warning')
   })
 
+  it('validates the clean baseline as a draft when the controller attests no stored revision', async () => {
+    // An older controller, or a failed durable read, attests no revision.
+    apiMock.validateScript.mockResolvedValueOnce({ script_id: 'script-1', valid: true, issues: [], warnings: ['unattested warning'], validated_content_revision: undefined })
+    apiMock.validateDraftScript.mockImplementationOnce(async (_script: unknown, _project: unknown, _folder: unknown, _variables: unknown, options?: { fingerprint?: string }) => ({ script_id: '', valid: true, issues: [], warnings: ['draft warning'], validated_fingerprint: options?.fingerprint }))
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} />) })
+    await act(async () => { findButtonByTitle(container, 'Recheck script readiness')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushReact()
+    expect(apiMock.validateScript).toHaveBeenCalledWith('script-1')
+    expect(apiMock.validateDraftScript).toHaveBeenCalledTimes(1)
+    expect(apiMock.validateDraftScript.mock.calls[0][4]).toEqual({ fingerprint: expect.stringMatching(/^sdf1-/) })
+    const card = findReadinessCard(container)?.textContent || ''
+    expect(card).toContain('draft warning')
+    expect(card).not.toContain('unattested warning')
+    expect(card).not.toContain('stored script changed')
+  })
+
   it('ignores a validation response when the editable draft changes in flight', async () => {
     const importedScript: ScriptDefinition = {
       ...initialScript,
@@ -7047,6 +7063,58 @@ describe('ScriptEditor', () => {
     const debugEvidenceItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
       .find(item => item.textContent?.includes('Debug Evidence'))
     expect(debugEvidenceItem?.textContent).toContain('missing')
+  })
+
+  it('requires a new replay after a configuration change even when the edited draft revalidates', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} initiallyDirty projectId="project-1" />)
+    })
+    await act(async () => {
+      findButtonByTitle(container, 'Recheck script readiness')?.click()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      findOpenDebuggerButton(container)?.click()
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+    await act(async () => {
+      findWorkspaceTab(container, 'Author')?.click()
+    })
+    await act(async () => {
+      findCenterTab(container, 'Runtime Settings')?.click()
+    })
+    const readyApprovalItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
+      .find(item => item.textContent?.includes('Approval readiness'))
+    expect(readyApprovalItem?.textContent).toContain('ready')
+    await act(async () => {
+      findCenterTab(container, 'Source')?.click()
+    })
+    await act(async () => {
+      findButtonByText(container, 'Full Script JSON')?.click()
+    })
+    const sourceEditor = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement
+    // Only the configuration changes; the actions the replay ran are the same.
+    await act(async () => {
+      changeTextareaValue(sourceEditor, sourceEditor.value.replace('https://api.example.com', 'https://api2.example.com'))
+    })
+    await act(async () => {
+      findButtonByTitle(container, 'Recheck script readiness')?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+    await act(async () => {
+      findCenterTab(container, 'Runtime Settings')?.click()
+    })
+    const approvalItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
+      .find(item => item.textContent?.includes('Approval readiness'))
+    expect(approvalItem?.textContent).toContain('needs evidence')
+    const debugEvidenceItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
+      .find(item => item.textContent?.includes('Debug Evidence'))
+    expect(debugEvidenceItem?.textContent).toContain('stale')
   })
 
   it('requires a new replay after actions change even when the edited draft revalidates', async () => {

@@ -117,6 +117,10 @@ func (b *distributedExecutionBackend) prepareDistributedTestRunWithLifecycle(tr 
 	test.remoteMetricsStreamsByTarget = cloneMetricsStreamMap(streamsByTarget)
 	test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
 	test.remoteTargetStates = make(map[string]string)
+	// Coverage requires each generator from its assignment.
+	for target := range clientsByTarget {
+		telemetrySourceLedgerLocked(test).assign(target, now)
+	}
 	test.remoteFinalizing = false
 	test.remoteLifecycleCtx = lifecycleCtx
 	test.remoteLifecycleCancel = lifecycleCancel
@@ -663,6 +667,18 @@ func recordDistributedMetricsReceipt(batch *generatorrpc.MetricsBatch, receivedA
 	}
 }
 
+// qualifyRemoteMetricsReceipt stamps a received publication with the
+// controller's receipt time and qualifies its cross-host stages by target's
+// clock calibration at that time.
+func qualifyRemoteMetricsReceipt(tr *TestRunner, test *ManagedTest, target string, batch *generatorrpc.MetricsBatch, receivedAt time.Time) {
+	recordDistributedMetricsReceipt(batch, receivedAt.UnixMilli())
+	tr.mu.RLock()
+	calibrations := test.clockCalibrations
+	tr.mu.RUnlock()
+	offset, clockQuality := calibrations.quality(target, receivedAt)
+	qualifyCrossHostTelemetry(batch.Telemetry, offset, clockQuality)
+}
+
 func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *TestRunner, test *ManagedTest, target string, stream *generatorrpc.MetricsStream) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -699,12 +715,7 @@ receiveLoop:
 			b.failDistributedTestOnStreamError(tr, test, target, fmt.Errorf("metrics generation %d does not match test generation %d", batch.ExecutionGeneration, executionGeneration))
 			return
 		}
-		recordDistributedMetricsReceipt(&batch, time.Now().UnixMilli())
-		tr.mu.RLock()
-		calibrations := test.clockCalibrations
-		tr.mu.RUnlock()
-		offset, clockQuality := calibrations.quality(target, time.Now())
-		qualifyCrossHostTelemetry(batch.Telemetry, offset, clockQuality)
+		qualifyRemoteMetricsReceipt(tr, test, target, &batch, time.Now())
 		// Source coverage counts each received publication once, including
 		// duplicates and late arrivals the live view rejects, and never the
 		// controller's own retries of the same publication below.
@@ -1768,8 +1779,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 	tr.mu.Lock()
 	live := buildLiveMetricsFromDistributedBatch(test, aggregated, fleetTPS, groupTPS)
 	if live.Telemetry != nil {
-		live.Telemetry.Sources = telemetrySourceSummaryLocked(test)
-		live.Telemetry.Loss = telemetryLossTotalsLocked(test)
+		live.Telemetry.Sources, live.Telemetry.Loss = telemetrySourceRollupLocked(test)
 		live.Telemetry.Coverage = telemetryLiveCoverageLocked(test, time.Now())
 	}
 	qualifyExpectedMessagingProgress(test, live, batches)

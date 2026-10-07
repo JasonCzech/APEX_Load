@@ -51,7 +51,7 @@ export interface TelemetryEvidence {
 // and runtime cohort all match, otherwise the first difference.
 export interface BrowserDocumentComparison {
  baseline_id: string; metric: string; unit: string; group?: string; region?: string
- frame_scope: string; lifecycle_phase: string; engine: string; device_profile: string
+ frame_scope: string; lifecycle_phase: string; engine: string; device_profile: string; cohort?: string
  comparable: boolean; reason?: string; current_final: number; baseline_final: number
  current_p75?: number; baseline_p75?: number; delta_p75?: number
 }

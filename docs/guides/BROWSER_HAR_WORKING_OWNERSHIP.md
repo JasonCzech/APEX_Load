@@ -92,9 +92,14 @@ generator holding the lease, and `writer-entered.json`, written and synced
 before the native HAR writer (the Playwright driver) is given the working
 path, records that writer. An identity is the machine, the kernel boot, the
 PID namespace, the PID and the process start time: on Linux the boot ID,
-`/proc/self/ns/pid`, `/etc/machine-id` when present and `/proc/<pid>/stat`;
-on macOS the boot session UUID, the hardware UUID and the kernel process
-table.
+`/proc/self/ns/pid`, `/etc/machine-id` paired with the host name (a
+machine-id alone is shared by container images and cloned VMs) and
+`/proc/<pid>/stat`; on macOS the boot session UUID and the kernel process
+table, with no machine identity (macOS offers none without IOKit, and
+`kern.uuid` names the kernel build), so an earlier boot never proves an exit
+there. A writer record is completed before the path is handed out: one that
+cannot be written leaves no writer entered (and is removed), and one a crash
+left half-written counts as no writer.
 
 Cleanup reclaims such a generation through the same retirement ledger only
 when its owner lease is free and every recorded process provably no longer
@@ -110,49 +115,69 @@ writer-joined rule. Pruning re-checks the identities while it holds the lease.
 
 Every new browser context sweeps its HAR directory, and a generator sweeps
 the default directory (the system temporary directory) once at start. A
-generator restarted inside the same container reclaims its killed
+generator restarted inside the same PID namespace reclaims its killed
 generations. A replacement container has a new PID namespace, so it
 preserves them; they stay until a later boot of the same identified machine
-or manual removal.
+or manual removal. The shipped images run the generator as PID 1 of its
+container, so every restart is a new PID namespace: there leftovers persist
+in the HAR directory (an `emptyDir` in Kubernetes survives container
+restarts) until the pod is replaced, and once they reach the admission bounds
+below every HAR-enabled browser VUser's initialization fails. Remove them
+when no generator process runs.
 
 ## Run archive transfer and receipts
 
 A completed, scrubbed HAR moves into the run archive when its session
 closes: the session hands it to the archive sink, which copies it under the
-HAR namespace lease and only then retires the published file from the HAR
-directory. A distributed generator copies it into its own run archive as
-`browser_har_<generation>.har` and lists it in the archive manifest
+HAR namespace lease. A distributed generator copies it into its own run
+archive as `browser_har_<generation>.har`, lists it in the archive manifest
 (`browser_har_artifacts`: kind `har_native`, fidelity `native`, source
-generation, sequence, SHA-256 and bytes). A controller running the test
-itself copies it straight into the run archive. A HAR that cannot be
+generation, sequence, SHA-256 and bytes) and retires the published file from
+the HAR directory only when that archive is finalized; an archive that fails
+and is discarded leaves its HARs in the HAR directory under its retention. A
+controller running the test itself copies it straight into the run archive
+and retires the published file. A HAR that cannot be
 retained stays in its HAR directory under its retention, is counted in
 `browser_har_omitted` by reason (`artifact_limit`, `artifact_too_large`,
 `run_byte_limit`, `archive_quota`, `transfer_failed`, `invalid_artifact`,
 `duplicate`, `source_unavailable`, `receipt_refused`) and marks the archive
 `browser_har_incomplete`. HAR is optional evidence and never fails a run. A
 run keeps at most 128 HARs and 1 GiB of them, each at most 100 MiB; on a
-generator a HAR is refused when it would leave less than a quarter of the
-run archive byte limit for required evidence.
+generator, optional evidence (HARs and interaction records together) is
+admitted only within a quarter of the run archive byte limit, so required
+evidence always keeps three quarters of it.
 
 At finalization the controller fetches each declared HAR from the live
 generator, never from the collection cache, so a source served only from
-the cache (its generator gone) has its HARs `source_unavailable`. It checks
-size and SHA-256, writes the HAR into the run archive, lists it in the
-manifest with its source identity and records an accepted receipt in
-`run_evidence_receipts` (schema release 49): run, execution generation,
-source identity and generation, sequence, kind, SHA-256, bytes and state.
-All of this happens before the manifest is written, so nothing is in
-flight when it is. Receipts are idempotent by source artifact: refetching
+the cache (its generator gone) has its HARs `source_unavailable`. The fetch is
+charged to the run's transfer reservation, whose writer refuses to go below
+the controller's free-space floor, with its own allowance, so optional
+evidence never exhausts the disk or the allowance the required archive
+needs (a refused HAR is `transfer_failed`). It checks size and SHA-256,
+moves the verified file into the run archive (a copy, checked again, only
+across filesystems), lists it in the manifest with its source identity and
+records an accepted receipt in `run_evidence_receipts` (schema release 49):
+run, execution generation, source identity and generation, sequence, kind,
+SHA-256, bytes and state. All of this happens before the manifest is
+written, so nothing is in flight when it is. Each staging attempt first
+forgets an earlier attempt's accepted receipts, so a HAR that attempt held
+but this one could not fetch is never published or acknowledged. Receipts are idempotent by source artifact: refetching
 the same HAR after a controller restart keeps one receipt, and different
 content for the same artifact is refused. A HAR received after the run's
 archive was published, after the run was deleted, or under an older
 execution generation than one already recorded is tombstoned and its copy
-removed. When the archive publication commits, the run's receipts are
-published and each generator is acknowledged (`AcknowledgeEvidence`, by
-name and SHA-256); only then does it delete its copy. A changed or unknown
-artifact is retained, a repeated acknowledgement is harmless, and a failed
+removed; a collection retry, which runs without the execution fence
+(generation 0), inherits the newest recorded generation instead. The run's
+receipts are published in the same transaction that publishes its archive,
+then each generator is acknowledged in the background (`AcknowledgeEvidence`,
+by name and SHA-256, at most 128 HARs plus the interactions sidecar), through
+a retained client or a fresh dial, since the run's clients are closed by
+then; only then does it delete its copy. A changed or unknown artifact is
+retained, a repeated acknowledgement is harmless, and a failed
 acknowledgement leaves the copy to the generator's archive retention.
-Deleting a run archive or its project tombstones its receipts.
+Deleting a run archive (including retention) or its project tombstones its
+receipts. On PostgreSQL, receipt admission is a read-then-write without a
+row lock; two stagers of one run are already excluded by the source fence.
 
 The archive manifest's artifact inventory lists each HAR (format `har`,
 record type `browser_har_native`) with its SHA-256, so object-store
@@ -195,6 +220,13 @@ real-driver crash test has not run on Linux. Windows acceptance must not be
 inferred from either. The filesystems and peer processes must honor the
 existing descriptor-lock contract. Only scrubbed, completed HARs leave a
 generator; raw working files never do.
+
+Crash reclamation changed the on-disk generation format one way:
+`writer-entered.json` and version 2 manifests with `processes`. A build from
+before it rejects a HAR directory holding such a generation ("unowned file")
+and cannot clean it, so do not share a HAR directory between older and newer
+builds, and after a rollback remove leftover generations while no generator
+runs.
 
 Legacy transaction/resource formats and HAR import behavior are unchanged.
 The deterministic frame-finalizer correction also prevents one stale native

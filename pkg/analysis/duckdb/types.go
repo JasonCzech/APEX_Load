@@ -71,6 +71,10 @@ type SeriesQuery struct {
 	// Derivation is evaluated by the controller over the worker's points
 	// with the same pkg/analysis functions; it never reaches the worker.
 	Derivation *analysis.QueryDerivation `json:"derivation,omitempty"`
+	// CounterReadings reads a counter as each bucket's highest reading
+	// (aggregation max) for a controller-side counter derivation. The
+	// controller sets it; a display query converts counters to rates.
+	CounterReadings bool `json:"counter_readings,omitempty"`
 }
 type Preview struct {
 	Schema  analysis.ParquetSchemaPreview `json:"schema"`

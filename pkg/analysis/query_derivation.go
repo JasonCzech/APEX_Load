@@ -130,6 +130,13 @@ func ValidateQueryDerivation(metric, population, inputKind string, d QueryDeriva
 		if !comparison {
 			return errors.New("baseline derivations need a comparison run")
 		}
+	default:
+		// Only a baseline derivation reads the comparison run; any other
+		// would derive the current series and leave the baseline raw, two
+		// measurements on one axis.
+		if comparison {
+			return fmt.Errorf("%s derives the current series only; drop the comparison run or use a baseline derivation", name)
+		}
 	}
 	if operation.UnitRule == "ratio" {
 		if !slices.Contains(operation.Populations, population) {
@@ -244,6 +251,13 @@ func ApplyQueryDerivation(series DerivationSeries, d QueryDerivation, baseline *
 		if step < time.Second || step%time.Second != 0 {
 			return DerivedSeries{}, errors.New("moving derivations need whole-second buckets")
 		}
+		// A trailing window is counted in buckets, so the buckets must be
+		// contiguous on one grid (the last may end early at the query's end).
+		for i := 1; i < len(series.Buckets); i++ {
+			if !series.Buckets[i].From.Equal(series.Buckets[i-1].From.Add(step)) {
+				return DerivedSeries{}, errors.New("moving derivations need contiguous buckets on one grid")
+			}
+		}
 		points := make([]MetricPoint, 0, len(series.Buckets))
 		for _, b := range series.Buckets {
 			points = append(points, series.point(b, nil))
@@ -251,6 +265,9 @@ func ApplyQueryDerivation(series DerivationSeries, d QueryDerivation, baseline *
 		stats, err := MovingStatistics(points, int(step/time.Second), d.WindowBuckets, d.MinimumCoverage)
 		if err != nil {
 			return DerivedSeries{}, err
+		}
+		if len(stats) != len(out.Buckets) {
+			return DerivedSeries{}, errors.New("moving derivations need contiguous buckets on one grid")
 		}
 		for i, stat := range stats {
 			value := stat.Mean

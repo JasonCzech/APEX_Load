@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -205,5 +206,38 @@ func TestDashboardQueriesValidateThroughTheCatalog(t *testing.T) {
 		if check() == nil {
 			t.Fatalf("%s accepted", name)
 		}
+	}
+}
+
+// Review fixes: a comparison run only serves a baseline derivation; moving
+// statistics refuse buckets that are not one contiguous grid instead of
+// indexing past them; message counts declare only what runs.
+func TestQueryDerivationComparisonGridAndCatalog(t *testing.T) {
+	if err := ValidateQueryDerivation("error_rate", PopulationAction, KindObservation, QueryDerivation{Operation: "error_ratio"}, true); err == nil {
+		t.Fatal("a ratio over a comparison run was accepted")
+	}
+	if err := ValidateQueryDerivation("response_time", PopulationAction, KindObservation, QueryDerivation{Operation: "baseline_delta"}, true); err != nil {
+		t.Fatalf("baseline derivation refused: %v", err)
+	}
+	start := time.Unix(1_800_000_000, 0).UTC()
+	value := 1.0
+	bucket := func(offset int) DerivationBucket {
+		from := start.Add(time.Duration(offset) * time.Second)
+		return DerivationBucket{From: from, To: from.Add(time.Second), Value: &value, Complete: true}
+	}
+	gapped := DerivationSeries{ProjectID: "p", Source: "s", MetricName: "response_time", Kind: KindGauge, Unit: "ms", Buckets: []DerivationBucket{bucket(1), bucket(2), bucket(4)}}
+	if _, err := ApplyQueryDerivation(gapped, QueryDerivation{Operation: "moving_mean", WindowBuckets: 2, MinimumCoverage: 1}, nil); err == nil {
+		t.Fatal("moving statistics over non-contiguous buckets")
+	}
+	message, _ := LookupMetric("message_count")
+	bytes, _ := LookupMetric("bytes_sent")
+	if message.Baseline || slices.Contains(message.Derivations, "baseline_delta") || !slices.Contains(message.Derivations, "moving_mean") || len(bytes.Derivations) != 0 {
+		t.Fatalf("catalog declares derivations that cannot run: %+v %+v", message.Derivations, bytes.Derivations)
+	}
+	if err := ValidateDashboardQuery("message_count", "count", nil, map[string]string{"source": "orders"}); err != nil {
+		t.Fatalf("message panel source filter: %v", err)
+	}
+	if err := ValidateDashboardQuery("response_time", "avg", nil, map[string]string{"source": "orders"}); err == nil {
+		t.Fatal("source filter accepted for a non-message metric")
 	}
 }

@@ -125,11 +125,16 @@ func buildCatalog() MetricCatalog {
 	} {
 		extra.Version = CatalogVersion
 		extra.InputKinds = []string{KindObservation}
-		// No native query profile executes them yet; derivations do.
+		// No native query profile executes them yet. Only what runs is
+		// declared: message counts take moving statistics on archive message
+		// panels (which take no comparison run); byte totals have no query.
 		extra.QueryProfiles = []string{}
-		extra.Derivations = []string{"baseline_delta", "baseline_percent_delta", "moving_mean", "moving_stddev"}
+		extra.Derivations = []string{}
+		if extra.Name == "message_count" {
+			extra.Derivations = []string{"moving_mean", "moving_stddev"}
+		}
 		extra.MissingRule, extra.ResetRule = MissingUnscored, ResetNotApplicable
-		extra.Baseline, extra.Correlation = true, true
+		extra.Baseline, extra.Correlation = false, true
 		metrics = append(metrics, extra)
 	}
 	// Browser document metrics read the final eligible document measurements
@@ -425,8 +430,9 @@ func DashboardMetric(name string) (canonical string, qualified bool, ok bool) {
 
 // ValidateDashboardQuery checks a saved dashboard query against the catalog:
 // a known metric (directly or through its alias), a catalog aggregation (or
-// a preserved display aggregation), and retained dimensions within the
-// catalog's bounds.
+// a preserved display aggregation), and retained dimensions. Saved panels
+// keep the legacy bound of 46 filters (executed queries are bounded by
+// MaxQueryFilters); message metrics may also filter by source.
 func ValidateDashboardQuery(metric, aggregation string, dimensions []string, filters map[string]string) error {
 	if _, _, ok := DashboardMetric(metric); !ok {
 		return fmt.Errorf("unsupported metric %q", metric)
@@ -445,8 +451,10 @@ func ValidateDashboardQuery(metric, aggregation string, dimensions []string, fil
 		}
 	}
 	_, document := BrowserDocumentMetric(metric)
+	definition, _ := LookupMetric(metric)
+	message := slices.Contains(definition.Populations, PopulationMessage)
 	for name := range filters {
-		if !slices.Contains(dashboardDimensions, name) && !(document && slices.Contains(BrowserDocumentFilters(), name)) {
+		if !slices.Contains(dashboardDimensions, name) && !(document && slices.Contains(BrowserDocumentFilters(), name)) && !(message && name == "source") {
 			return fmt.Errorf("unsupported filter %q", name)
 		}
 	}

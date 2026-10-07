@@ -316,6 +316,13 @@ func formatTransactionSLAResult(rule TransactionSLARule, observed float64, outco
 	return fmt.Sprintf("transaction %q%s %s %s: observed %.6g, expected %s %.6g (%s)", rule.Transaction, transactionSLAScope(rule), rule.Metric, outcome, observed, rule.Comparator, rule.Threshold, transactionSLASeverity(rule))
 }
 
+// archiveCollectionIncomplete says the archive lacks evidence a source or
+// an export did not deliver: derived buckets over it are incomplete, never
+// measured.
+func archiveCollectionIncomplete(manifest *RunArchiveManifest) bool {
+	return archiveSLAIncomplete(manifest) || manifest != nil && manifest.CSVExportIncomplete != ""
+}
+
 func archiveSLAIncomplete(manifest *RunArchiveManifest) bool {
 	if manifest != nil && manifest.SourceCoverage != nil {
 		for _, source := range manifest.SourceCoverage.Sources {

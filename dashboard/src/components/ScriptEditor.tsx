@@ -926,6 +926,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     notFoundCount: number
   } | null>(null)
   const [replayEditableActionsKey, setReplayEditableActionsKey] = useState<string | null>(null)
+  // The fingerprint of the exact document a replay or debug run was started
+  // with: its evidence is current only while the editor holds that document.
+  const [replayDocumentFingerprint, setReplayDocumentFingerprint] = useState<string | null>(null)
   const [initialSaveRequired, setInitialSaveRequired] = useState(initiallyDirty || Boolean(initialRetainedDraft))
   const initialSaveSourceRef = useRef({ script: initialScript, initiallyDirty })
   useEffect(() => {
@@ -1482,6 +1485,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     invalidateValidation,
     clearValidatedBinding,
     validatedBinding,
+    currentBinding: currentValidationBinding,
     validationIsCurrent: validationResultIsCurrent,
   } = useScriptAuthoringSession({
     resolveCurrentScript,
@@ -1516,6 +1520,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setValidationSidebarResult(null)
     setReplayStartPending(false)
     setReplayEditableActionsKey(null)
+    setReplayDocumentFingerprint(null)
     setActiveReplaySessionId(null)
     setUnavailableRuntimeSessionId(null)
     publishRuntimeAdmission({ ...EMPTY_DEBUG_RUNTIME, generation: runtimeAdmissionRef.current.generation + 1 })
@@ -2820,7 +2825,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
 
   flushPendingEditsRef.current = flushPendingParameterDataCellEdits
 
-  // The one dirty calculation: navigation guards, discard and save all read it.
+  // Dirty state for navigation guards and the validation binding; save and
+  // discard keep their own checks until the session owns them (A8).
   const scriptEditorDirty = initialSaveRequired || jsonDirty || pendingParameterDataCellEditCount > 0 || formattedScriptJson !== baselineJsonRef.current
 
   const handleDownloadScript = useCallback(async () => {
@@ -3007,7 +3013,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     // A stored script is attested only while the editor holds exactly its
     // baseline; anything else validates the resolved draft, pending data
     // cells included.
-    const stored = Boolean(scriptId) && !scriptEditorDirty && Boolean(authoringBaseline)
+    let stored = Boolean(scriptId) && !scriptEditorDirty && Boolean(authoringBaseline)
     let draft: ResolvedScriptDraft
     try {
       draft = resolveDraft()
@@ -3016,16 +3022,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       setDebuggerBottomTab('problems')
       return
     }
-    const request = beginValidation(draft, stored)
+    let request = beginValidation(draft, stored)
     const requestIsCurrent = () => isLatestValidation(request) && editorResourceScopeRef.current === requestResourceScope
     setValidating(true)
     try {
       const currentScript = draft.script
-      const res = stored && scriptId
-        ? await api.validateScript(scriptId)
-        : await api.validateDraftScript(currentScript, projectId, folderId, replayConfiguredVariables || undefined, { fingerprint: draft.fingerprint })
+      const validateAsDraft = () => api.validateDraftScript(currentScript, projectId, folderId, replayConfiguredVariables || undefined, { fingerprint: draft.fingerprint })
+      let res = stored && scriptId ? await api.validateScript(scriptId) : await validateAsDraft()
       if (!requestIsCurrent()) return
-      const admission = admitValidation(request, res)
+      let admission = admitValidation(request, res)
+      if (admission === 'unbound' && stored && !res.validated_content_revision) {
+        // The controller attested no stored revision (an older peer, a
+        // failed durable read): the clean editor holds exactly its baseline,
+        // so validate that document as a draft, bound by its fingerprint.
+        stored = false
+        request = beginValidation(draft, false)
+        res = await validateAsDraft()
+        if (!requestIsCurrent()) return
+        admission = admitValidation(request, res)
+      }
       if (admission === 'superseded') return
       if (admission === 'unbound') {
         setValidationSidebarResult({
@@ -3181,8 +3196,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     let requestedReplaySessionId = ''
     let startRuntimeRequest: DebugRuntimeRequest | undefined
     try {
-      const currentScript = resolveDraft().script
+      const replayDraft = resolveDraft()
+      const currentScript = replayDraft.script
       setReplayEditableActionsKey(scopedEditableActionsEvidenceKey(currentScript, projectId, scriptId))
+      setReplayDocumentFingerprint(replayDraft.fingerprint)
       const variables = parseReplayVariablesText(replayOptions.variablesText)
       const replaySessionId = createReplaySessionId()
       requestedReplaySessionId = replaySessionId
@@ -3381,6 +3398,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       invalidateRuntimeAuthority('Current state unavailable: debug start was rejected.')
       setReplayReport(null)
       setReplayEditableActionsKey(null)
+      setReplayDocumentFingerprint(null)
       setActiveReplaySessionId(null)
       setBrowserReplaySession(null)
       setExpandedReplayBrowserArtifacts({})
@@ -5131,9 +5149,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const activeScriptJsonSidebarTab = scriptJsonSidebarTab === 'details' && !hasScriptJsonDetailsTab
     ? SCRIPT_JSON_DEFAULT_COMPANION_TAB
     : scriptJsonSidebarTab
+  // Debug evidence describes the whole document it ran (configuration,
+  // parameters and data sources included), not only its actions.
   const replayEvidenceMatchesCurrentDraft = replayEditableActionsKey !== null
     && currentEditableActionsKey !== null
     && replayEditableActionsKey === currentEditableActionsKey
+    && replayDocumentFingerprint !== null
+    && replayDocumentFingerprint === currentValidationBinding?.fingerprint
   // Validation evidence describes one bound document (fingerprint, baseline
   // revision and context); any change to them makes it stale.
   const validationEvidenceMatchesCurrentDraft = validationResultIsCurrent

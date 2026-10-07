@@ -1522,8 +1522,10 @@ export function useScriptApi() {
     return response.body
   }, [])
 
-  // Deleting a listed scenario re-reads it first: a scenario changed since the
-  // user confirmed is refused locally, and the delete carries the current tag.
+  // Deleting a listed scenario re-reads it first: a scenario whose authored
+  // fields changed (its update time) since the user confirmed is refused
+  // locally, and the delete carries the current tag. Placement and
+  // monitor-binding changes do not move the update time.
   const deleteScenario = useCallback(async (id: string, observedUpdatedAt?: string) => {
     const headers = await scenarioPrecondition(id, observedUpdatedAt)
     return request<ScenarioDeleteResponse>(`/scenarios/${encodeURIComponent(id)}`, { method: 'DELETE', ...(headers ? { headers } : {}) })

@@ -3,11 +3,13 @@ package api
 import (
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 )
 
 // Observed spans merge into a sorted, disjoint union; overlapping and retried
-// windows count once, and past the bound new disjoint spans are dropped
-// (understated, never overstated).
+// windows count once, and past the bound the shortest span gives way to a
+// longer one (understated, never overstated).
 func TestCoverageSpansUnionAndBound(t *testing.T) {
 	c := &coverageSpans{}
 	c.add(10, 20)
@@ -36,12 +38,133 @@ func TestCoverageSpansUnionAndBound(t *testing.T) {
 	if bounded.spans[0] != [2]int64{0, 8} {
 		t.Fatalf("merge at the bound: %v", bounded.spans[0])
 	}
-	both := intersectCoverage([]*coverageSpans{{spans: [][2]int64{{0, 50}}}, {spans: [][2]int64{{20, 30}, {40, 60}}}}, 0, 100)
-	if both.within(0, 100) != 20 {
-		t.Fatalf("intersection %v", both.spans)
+	// A longer disjoint span replaces the shortest; a shorter one is dropped.
+	bounded.add(100_000, 100_100)
+	if last := bounded.spans[len(bounded.spans)-1]; last != [2]int64{100_000, 100_100} || len(bounded.spans) != maxTelemetryCoverageSpans {
+		t.Fatalf("longer span at the bound: %v (%d spans)", last, len(bounded.spans))
 	}
-	if intersectCoverage([]*coverageSpans{nil}, 0, 100).within(0, 100) != 0 {
-		t.Fatal("a source never observed covered time")
+	bounded.add(200_000, 200_001)
+	if last := bounded.spans[len(bounded.spans)-1]; last != [2]int64{100_000, 100_100} {
+		t.Fatalf("shorter span admitted at the bound: %v", last)
+	}
+	if got := subtractSpans([][2]int64{{0, 100}}, [][2]int64{{10, 20}, {30, 40}, {90, 120}}); len(got) != 3 || got[0] != [2]int64{0, 10} || got[1] != [2]int64{20, 30} || got[2] != [2]int64{40, 90} {
+		t.Fatalf("subtract %v", got)
+	}
+	if got := unionSpans([][2]int64{{30, 40}, {0, 10}, {5, 20}, {40, 41}}); len(got) != 2 || got[0] != [2]int64{0, 20} || got[1] != [2]int64{30, 41} {
+		t.Fatalf("union %v", got)
+	}
+}
+
+// coverageOf measures a ledger's coverage over [from, to) the way the live
+// view does.
+func coverageOf(ledger *telemetrySourceLedger, assigned []string, from, to time.Time) (TelemetryCoverage, *coverageSpans) {
+	observed, requirements := ledger.coverageSnapshot()
+	return telemetryCoverageOver(observed, requiredTelemetrySources(observed, requirements, assigned, from, to), false, from, to)
+}
+
+// observeSequenced publishes contiguous one-second windows received with
+// jitter: receipt i lands i*jitter late, so no two windows touch.
+func observeSequenced(ledger *telemetrySourceLedger, source string, start time.Time, count int, jitter time.Duration, skip func(int) bool) {
+	for i := 0; i < count; i++ {
+		if skip != nil && skip(i) {
+			continue
+		}
+		ledger.observe(source, generatorrpc.MetricsBatch{SourceEpoch: "e1", BatchSequence: uint64(i + 1), WindowMs: 1000}, start.Add(time.Duration(i+1)*time.Second+time.Duration(i)*jitter))
+	}
+}
+
+// Receipt jitter between contiguous publications does not fragment coverage
+// (a long run stays observed instead of filling the span bound); a missing
+// publication still leaves its gap unknown.
+func TestTelemetryCoverageBridgesJitterButNotLoss(t *testing.T) {
+	start := time.Unix(1_800_000_000, 0).UTC()
+	ledger := newTelemetrySourceLedger()
+	observeSequenced(ledger, "gen-a", start, 7200, 3*time.Millisecond, nil)
+	observed, _ := ledger.coverageSnapshot()
+	if spans := observed["gen-a"]; len(spans.spans) != 1 || spans.truncated {
+		t.Fatalf("jittered two-hour stream fragmented into %d spans (truncated %v)", len(spans.spans), spans.truncated)
+	}
+	lossy := newTelemetrySourceLedger()
+	observeSequenced(lossy, "gen-a", start, 100, 3*time.Millisecond, func(i int) bool { return i == 50 })
+	observed, _ = lossy.coverageSnapshot()
+	if spans := observed["gen-a"]; len(spans.spans) != 2 {
+		t.Fatalf("a lost publication was bridged: %v", spans.spans)
+	}
+}
+
+// An evacuated source is required only until it is retired and its
+// replacement only from its assignment: planned topology changes leave only
+// the hand-off unknown.
+func TestTelemetryCoverageFollowsEvacuation(t *testing.T) {
+	start := time.Unix(1_800_000_000, 0).UTC()
+	end := start.Add(10 * time.Minute)
+	ledger := newTelemetrySourceLedger()
+	ledger.assign("gen-a", start)
+	ledger.assign("gen-b", start)
+	observeSecondly(ledger, "gen-a", start, 0, 300, nil)
+	observeSecondly(ledger, "gen-b", start, 0, 600, nil)
+	ledger.retire("gen-a", start.Add(300*time.Second))
+	ledger.assign("gen-c", start.Add(300*time.Second))
+	observeSecondly(ledger, "gen-c", start, 302, 600, nil)
+	coverage, _ := coverageOf(ledger, []string{"gen-b", "gen-c"}, start, end)
+	if coverage.ObservedMs != 598_000 || coverage.UnknownMs != 2000 {
+		t.Fatalf("evacuation coverage %+v", coverage)
+	}
+}
+
+// After an adoption this controller requires its generators only from the
+// adoption, and one that completed during the gap never; a run whose
+// generators all finished during the gap is unknown throughout.
+func TestTelemetryCoverageAfterAdoption(t *testing.T) {
+	start := time.Unix(1_800_000_000, 0).UTC()
+	end := start.Add(10 * time.Minute)
+	adoptedAt := start.Add(300 * time.Second)
+	ledger := newTelemetrySourceLedger()
+	ledger.assign("gen-a", adoptedAt)
+	ledger.assign("gen-b", adoptedAt)
+	ledger.retire("gen-b", adoptedAt)
+	observeSecondly(ledger, "gen-a", start, 300, 600, nil)
+	coverage, _ := coverageOf(ledger, []string{"gen-a", "gen-b"}, start, end)
+	if coverage.ObservedMs != 300_000 || coverage.UnknownMs != 300_000 {
+		t.Fatalf("adopted coverage %+v", coverage)
+	}
+	outcome := newTelemetrySourceLedger()
+	outcome.assign("gen-a", end)
+	outcome.retire("gen-a", end)
+	if coverage, _ := coverageOf(outcome, []string{"gen-a"}, start, end); coverage.ObservedMs != 0 {
+		t.Fatalf("an outcome-only adoption observed time: %+v", coverage)
+	}
+}
+
+// At finalize a distributed run is recognised by its durable shard
+// placement even when its clients are closed and no ledger survived (a
+// restart or adoption before finalize): its window is unknown, never
+// observed throughout.
+func TestTelemetryRunCoverageWithoutALedger(t *testing.T) {
+	start := time.Unix(1_800_000_000, 0).UTC()
+	end := start.Add(100 * time.Second)
+	rows := healthyRows(start, 100)
+	if record := telemetryRunCoverageRecord(nil, []string{"gen-a"}, start, end, rows, nil); record.HealthyMs != 0 || record.UnknownMs != 100_000 {
+		t.Fatalf("distributed run without a ledger: %+v", record)
+	}
+	if record := telemetryRunCoverageRecord(nil, nil, start, end, rows, nil); record.HealthyMs != 100_000 {
+		t.Fatalf("run in this process: %+v", record)
+	}
+	// A silent assigned generator known only from the shards keeps the
+	// window unknown even when another published throughout.
+	ledger := newTelemetrySourceLedger()
+	observeSecondly(ledger, "gen-a", start, 0, 100, nil)
+	if record := telemetryRunCoverageRecord(ledger, []string{"gen-a", "gen-b"}, start, end, rows, nil); record.HealthyMs != 0 {
+		t.Fatalf("silent shard generator: %+v", record)
+	}
+}
+
+// A captured policy that fails validation names no hash.
+func TestTelemetryPolicySegmentRejectsAnInvalidPolicy(t *testing.T) {
+	start := time.Unix(1_800_000_000, 0).UTC()
+	test := &ManagedTest{initialArchiveProvenance: &RunArchiveProvenance{TelemetryPolicy: &TelemetryBudgetPolicy{Hash: "tampered"}}}
+	if segment := telemetryPolicySegments(test, start, start.Add(time.Second))[0]; segment.PolicyHash != "" || segment.Unavailable != "immutable-policy-invalid" || segment.Legacy {
+		t.Fatalf("invalid policy segment %+v", segment)
 	}
 }
 
@@ -53,7 +176,7 @@ func observeSecondly(ledger *telemetrySourceLedger, source string, start time.Ti
 			continue
 		}
 		ledger.mu.Lock()
-		ledger.observeCoverage(source, 1000, start.Add(time.Duration(second+1)*time.Second))
+		ledger.observeCoverage(source, generatorrpc.MetricsBatch{WindowMs: 1000}, start.Add(time.Duration(second+1)*time.Second))
 		ledger.mu.Unlock()
 	}
 }
@@ -72,8 +195,7 @@ func TestTelemetryCoverageCountsAGapAsUnknown(t *testing.T) {
 	start := time.Unix(1_800_000_000, 0).UTC()
 	ledger := newTelemetrySourceLedger()
 	observeSecondly(ledger, "gen-a", start, 0, 600, func(second int) bool { return second >= 300 && second < 360 })
-	observed := ledger.coverageSnapshot()
-	coverage, all := telemetryCoverageOver(observed, requiredTelemetrySources(observed, []string{"gen-a"}), false, start, start.Add(10*time.Minute))
+	coverage, all := coverageOf(ledger, []string{"gen-a"}, start, start.Add(10*time.Minute))
 	if coverage.WindowMs != 600_000 || coverage.ObservedMs != 540_000 || coverage.UnknownMs != 60_000 {
 		t.Fatalf("coverage %+v", coverage)
 	}
@@ -93,9 +215,11 @@ func TestTelemetryCoverageBeforeAdoptionAndForSilentSourcesIsUnknown(t *testing.
 	ledger := newTelemetrySourceLedger()
 	observeSecondly(ledger, "gen-a", start, 300, 600, nil)
 	observeSecondly(ledger, "gen-b", start, 0, 600, nil)
-	observed := ledger.coverageSnapshot()
 	end := start.Add(10 * time.Minute)
-	coverage, all := telemetryCoverageOver(observed, requiredTelemetrySources(observed, nil), false, start, end)
+	// gen-a was assigned at the start, so its silence before this
+	// controller observed it is unknown.
+	ledger.assign("gen-a", start)
+	coverage, all := coverageOf(ledger, nil, start, end)
 	if coverage.ObservedMs != 300_000 || len(coverage.Sources) != 2 || coverage.Sources[1].ObservedMs != 600_000 {
 		t.Fatalf("coverage after adoption %+v", coverage)
 	}
@@ -108,7 +232,7 @@ func TestTelemetryCoverageBeforeAdoptionAndForSilentSourcesIsUnknown(t *testing.
 	if fraction := *record.BreachedKnownFraction; fraction != 1.0/300 {
 		t.Fatalf("breached fraction %v", fraction)
 	}
-	silent, _ := telemetryCoverageOver(observed, requiredTelemetrySources(observed, []string{"gen-c"}), false, start, end)
+	silent, _ := coverageOf(ledger, []string{"gen-c"}, start, end)
 	if silent.ObservedMs != 0 || silent.UnknownMs != 600_000 {
 		t.Fatalf("a silent assigned generator left time observed: %+v", silent)
 	}
@@ -138,5 +262,22 @@ func TestTelemetryCoverageOfARunInThisProcess(t *testing.T) {
 	}
 	if record := telemetryCoverageRecord(coverage, all, overlapping, nil); record.HealthyMs != 10_000 || record.BreachedMs != 2000 {
 		t.Fatalf("overlapping windows %+v", record)
+	}
+}
+
+// A generator whose shard finished early (its terminal publication arrived)
+// is no longer required, so the rest of the run is observed by the
+// generators still running.
+func TestTelemetryCoverageRetiresAFinishedGenerator(t *testing.T) {
+	start := time.Unix(1_800_000_000, 0).UTC()
+	end := start.Add(10 * time.Minute)
+	ledger := newTelemetrySourceLedger()
+	ledger.assign("gen-a", start)
+	ledger.assign("gen-b", start)
+	observeSecondly(ledger, "gen-a", start, 0, 300, nil)
+	ledger.observe("gen-a", generatorrpc.MetricsBatch{LifecycleState: "COMPLETE"}, start.Add(300*time.Second))
+	observeSecondly(ledger, "gen-b", start, 0, 600, nil)
+	if coverage, _ := coverageOf(ledger, []string{"gen-a", "gen-b"}, start, end); coverage.ObservedMs != 600_000 {
+		t.Fatalf("finished generator still required: %+v", coverage)
 	}
 }

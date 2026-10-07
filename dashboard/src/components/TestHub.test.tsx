@@ -3804,6 +3804,64 @@ describe('TestHub', () => {
       expect(panel()).toBeNull()
     })
 
+    // A browser checkpoint of an edit records the baseline its form was
+    // loaded from. Resuming adopts a durable baseline only for that same
+    // revision, never because the listed row's update time matches.
+    const checkpointBlockedEdit = async () => {
+      const listed = await apiMock.listScripts()
+      apiMock.listScripts.mockResolvedValue({ ...listed, scripts: listed.scripts.map((script: StoredScript) => ({ ...script, authoring_health: { status: 'blocked', inputs: [] } })) })
+      await openConflictScenario()
+      await act(async () => setInputValue(nameInput(), 'Local name'))
+      await clickButton('Save draft')
+      expect(container.textContent).toContain('Draft progress saved in this browser')
+      expect(apiMock.updateScenario).not.toHaveBeenCalled()
+      const key = 'apexload.scenario.authoring.v1.project-1'
+      const draft = JSON.parse(window.localStorage.getItem(key)!)
+      expect(draft.baselineTag).toBe(tagFor('a'))
+      expect(draft.baselineForm.name).toBe('Checkout')
+      return { key, draft }
+    }
+    const resumeAfter = async (listed: StoredScenario, revisionChar: string) => {
+      await act(async () => root.unmount())
+      root = createRoot(container)
+      apiMock.listScenarios.mockResolvedValue({ scenarios: [listed], count: 1 })
+      apiMock.getScenario.mockResolvedValueOnce(withScenarioAuthoring({ ...listed }, revisionChar))
+      await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />))
+      await flushPromises()
+      await clickButton('Resume draft')
+      await flushPromises()
+    }
+
+    it('reconciles a resumed edit whose scenario changed after the checkpoint, even when the listed time matches', async () => {
+      const { key, draft } = await checkpointBlockedEdit()
+      // The list had refreshed to the newer row before the checkpoint.
+      const changed = { ...conflictScenario, duration: '10m', updated_at: '2026-05-13T00:00:00Z' }
+      window.localStorage.setItem(key, JSON.stringify({ ...draft, editingUpdatedAt: changed.updated_at }))
+      await resumeAfter(changed, 'b')
+      expect(nameInput().value).toBe('Local name')
+      expect(panel()?.textContent).toContain('changed after this draft was saved')
+      expect(container.textContent).not.toContain('Resumed as a new scenario')
+      apiMock.getScenario.mockResolvedValueOnce(withScenarioAuthoring(changed, 'b'))
+      await clickPanel('Load current baseline')
+      await clickPanel('Diff')
+      const diff = panel()!.querySelector('[aria-label="Scenario revision field diff"]')!
+      const [serverSection, localSection] = Array.from(diff.querySelectorAll(':scope > div'))
+      expect(serverSection.textContent).toContain('duration')
+      expect(localSection.textContent).toContain('name')
+      expect(localSection.textContent).not.toContain('duration')
+    })
+
+    it('adopts the durable baseline for a resumed edit whose revision is unchanged', async () => {
+      const { key, draft } = await checkpointBlockedEdit()
+      // The listed time moved (an unauthored change) but the revision did not.
+      const touched = { ...conflictScenario, updated_at: '2026-05-13T00:00:00Z' }
+      window.localStorage.setItem(key, JSON.stringify(draft))
+      await resumeAfter(touched, 'a')
+      expect(nameInput().value).toBe('Local name')
+      expect(panel()).toBeNull()
+      expect(container.textContent).not.toContain('Resumed as a new scenario')
+    })
+
     it('keeps the draft on 412 and saves the reapplied draft only against the reviewed baseline', async () => {
       await openConflictScenario()
       await act(async () => setInputValue(nameInput(), 'Local name'))

@@ -185,5 +185,8 @@ func baselineBrowserDocumentTuple(row protocol.BrowserDocumentComparison) string
 	if row.Region != "" {
 		parts = append(parts, "region "+row.Region)
 	}
+	if row.Cohort != "" {
+		parts = append(parts, "cohort "+row.Cohort)
+	}
 	return strings.Join(parts, " · ")
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -20,6 +21,8 @@ type blockingMetricsServerStream struct {
 	releaseSend chan struct{}
 	sendOnce    sync.Once
 }
+
+func (*blockingMetricsServerStream) SendHeader(metadata.MD) error { return nil }
 
 func (s *blockingMetricsServerStream) Context() context.Context { return s.ctx }
 

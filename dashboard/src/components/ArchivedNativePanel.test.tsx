@@ -49,3 +49,13 @@ it('authors only retained property categories and persists the selected category
   await act(async () => { container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
   expect(save).toHaveBeenCalledWith(expect.objectContaining({ tabs: [expect.objectContaining({ panels: [expect.objectContaining({ query: expect.objectContaining({ population: 'action', property_name: 'kind', property_value: 'paid' }) })] })] }))
 })
+
+it('renders a browser document panel in its own unit and without the transaction inspector', async () => {
+  const documentPanel: DashboardDefinitionPanel = { ...panel, query: { metric: 'document_lcp', aggregation: 'p75', population: 'browser_document', end_seconds: 20, bucket_seconds: 10 } }
+  request.mockResolvedValue(response)
+  await act(async () => root.render(<ArchivedNativePanel panel={documentPanel} testId="run" />))
+  expect(container.textContent).toContain('browser documents · document_lcp · p75 (ms)')
+  expect(container.textContent).toContain('bucket estimates')
+  expect(container.textContent).toContain('Final documents')
+  expect([...container.querySelectorAll('button')].some(node => node.textContent?.startsWith('Inspect current bucket'))).toBe(false)
+})

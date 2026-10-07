@@ -1651,6 +1651,11 @@ func (service *Service) applyVUserAdjustment(ctx context.Context, request *pb.VU
 			}
 		}
 
+		// The scale batch carries cumulative counts read at commit: build
+		// and publish it under the publication lock, as lifecycle
+		// transitions do, so a window published in between cannot take an
+		// earlier sequence with later counts.
+		service.metricsBroker.lockPublication()
 		service.mu.Lock()
 		var batch *pb.MetricsBatch
 		var currentVUsers int32
@@ -1662,10 +1667,12 @@ func (service *Service) applyVUserAdjustment(ctx context.Context, request *pb.VU
 		}
 		service.mu.Unlock()
 		if commitErr == nil {
+			service.broadcastMetricsLocked(batch)
+			service.metricsBroker.unlockPublication()
 			service.releaseScaleDrainAfterReap(plan, plan.targetGroupVUsers)
-			service.broadcastMetrics(batch)
 			return &pb.AdjustmentAck{Accepted: true, CurrentVusers: currentVUsers}, nil
 		}
+		service.metricsBroker.unlockPublication()
 
 		service.mu.RLock()
 		remoteJava := service.assignments[plan.testID].groupJavaHosts[plan.groupName] != ""

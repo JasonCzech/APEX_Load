@@ -320,7 +320,8 @@ type distributedExecutionBackend struct {
 	ensureRunCapacity     func(context.Context, *ManagedTest) error
 	releaseRunCapacity    func(*ManagedTest, bool)
 	// clockProbeInterval re-measures generator clocks during a run; zero
-	// means once a minute. Tests shorten it before starting a run.
+	// means clockProbeInterval() (30 s by default). Tests shorten it before
+	// starting a run.
 	clockProbeInterval time.Duration
 }
 

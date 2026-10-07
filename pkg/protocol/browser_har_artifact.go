@@ -4,6 +4,20 @@ package protocol
 // transfers, matching the per-run HAR artifact limit.
 const MaxBrowserHARArtifactsPerRun = 128
 
+// Reasons a run archive omits a native HAR, counted in its manifest. The
+// generator and the controller (remote transfer or its own runs) share them.
+const (
+	BrowserHAROmittedArtifactLimit     = "artifact_limit"
+	BrowserHAROmittedTooLarge          = "artifact_too_large"
+	BrowserHAROmittedRunBytes          = "run_byte_limit"
+	BrowserHAROmittedArchiveQuota      = "archive_quota"
+	BrowserHAROmittedTransfer          = "transfer_failed"
+	BrowserHAROmittedInvalid           = "invalid_artifact"
+	BrowserHAROmittedDuplicate         = "duplicate"
+	BrowserHAROmittedSourceUnavailable = "source_unavailable"
+	BrowserHAROmittedReceipt           = "receipt_refused"
+)
+
 // BrowserHARArtifact is a completed, scrubbed native HAR that a browser
 // session published into its HAR directory: the artifact's path and the
 // working generation that recorded it.

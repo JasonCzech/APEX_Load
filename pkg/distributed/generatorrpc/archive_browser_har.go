@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -64,12 +65,13 @@ func archiveHARGeneration(name string) (string, bool) {
 
 // Omission reasons a manifest counts.
 const (
-	harOmittedArtifactLimit = "artifact_limit"
-	harOmittedTooLarge      = "artifact_too_large"
-	harOmittedRunBytes      = "run_byte_limit"
-	harOmittedArchiveQuota  = "archive_quota"
-	harOmittedTransfer      = "transfer_failed"
-	harOmittedInvalid       = "invalid_artifact"
+	harOmittedArtifactLimit = protocol.BrowserHAROmittedArtifactLimit
+	harOmittedTooLarge      = protocol.BrowserHAROmittedTooLarge
+	harOmittedRunBytes      = protocol.BrowserHAROmittedRunBytes
+	harOmittedArchiveQuota  = protocol.BrowserHAROmittedArchiveQuota
+	harOmittedTransfer      = protocol.BrowserHAROmittedTransfer
+	harOmittedInvalid       = protocol.BrowserHAROmittedInvalid
+	harOmittedDuplicate     = protocol.BrowserHAROmittedDuplicate
 )
 
 var errArchiveHAROmitted = errors.New("browser HAR artifact omitted from the run archive")
@@ -116,7 +118,7 @@ func (w *archiveRecorder) RecordBrowserHARArtifact(artifact protocol.BrowserHARA
 	for _, existing := range w.manifest.BrowserHARArtifacts {
 		if existing.Name == name {
 			defer w.mu.Unlock()
-			return w.omitHARLocked(harOmittedInvalid)
+			return w.omitHARLocked(harOmittedDuplicate)
 		}
 	}
 	runRoot, budget, runBytes := w.runRoot, w.byteBudget, w.harBytes
@@ -127,7 +129,10 @@ func (w *archiveRecorder) RecordBrowserHARArtifact(artifact protocol.BrowserHARA
 	var size int64
 	ctx, cancel := context.WithTimeout(context.Background(), archiveHARTakeTimeout)
 	defer cancel()
-	err := browser.TakeRuntimeHARArtifact(ctx, artifact.Path, func(r io.Reader, length int64) error {
+	// The HAR directory keeps its copy until this archive is finalized: a
+	// run archive that fails is discarded whole, and the HAR then stays
+	// under its directory's retention instead of being lost with it.
+	identity, err := browser.ReadRuntimeHARArtifact(ctx, artifact.Path, func(r io.Reader, length int64) error {
 		switch {
 		case length > maxArchiveHARBytes:
 			reason = harOmittedTooLarge
@@ -141,6 +146,7 @@ func (w *archiveRecorder) RecordBrowserHARArtifact(artifact protocol.BrowserHARA
 		}
 		file, err := replaceGeneratorArchiveFile(runRoot, name, 0o644)
 		if err != nil {
+			budget.releaseOptional(length)
 			return err
 		}
 		digest := sha256.New()
@@ -156,6 +162,7 @@ func (w *archiveRecorder) RecordBrowserHARArtifact(artifact protocol.BrowserHARA
 				reason = harOmittedArchiveQuota
 			}
 			_ = runRoot.Remove(name)
+			budget.releaseOptional(length)
 			return err
 		}
 		sum, size = hex.EncodeToString(digest.Sum(nil)), length
@@ -167,19 +174,36 @@ func (w *archiveRecorder) RecordBrowserHARArtifact(artifact protocol.BrowserHARA
 		return errors.Join(w.omitHARLocked(reason), err)
 	}
 	w.harBytes += size
+	w.harSources = append(w.harSources, archivedHARSource{path: artifact.Path, identity: identity})
 	w.manifest.BrowserHARArtifacts = append(w.manifest.BrowserHARArtifacts, archiveEvidenceArtifact{Name: name, Kind: archiveHARKindNative, Fidelity: archiveHARFidelity, SourceGeneration: artifact.Generation, Sequence: int64(len(w.manifest.BrowserHARArtifacts) + 1), SHA256: sum, Bytes: size})
 	return nil
 }
 
-// admitOptional reports whether optional evidence of length bytes leaves a
-// quarter of the run's byte limit for required evidence.
+// admitOptional admits optional evidence of length bytes while all optional
+// evidence stays within a quarter of the run's byte limit and fits what is
+// left, so required evidence written later always keeps three quarters of
+// the limit. An admitted length that is then not written is released.
 func (b *generatorArchiveByteBudget) admitOptional(length int64) bool {
 	if b == nil || length < 0 {
 		return false
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.written <= b.maxBytes-b.maxBytes/4 && length <= b.maxBytes-b.maxBytes/4-b.written
+	if length > b.maxBytes/4-b.optional || length > b.maxBytes-b.written {
+		return false
+	}
+	b.optional += length
+	return true
+}
+
+// releaseOptional returns an admitted optional length that was not written.
+func (b *generatorArchiveByteBudget) releaseOptional(length int64) {
+	if b == nil || length <= 0 {
+		return
+	}
+	b.mu.Lock()
+	b.optional = max(b.optional-length, 0)
+	b.mu.Unlock()
 }
 
 // AcknowledgeEvidence deletes the acknowledged HAR copies of a finalized run
@@ -195,7 +219,9 @@ func (s *Service) AcknowledgeEvidence(_ context.Context, request *pb.EvidenceAck
 	if identity := request.GetSourceIdentity(); identity != "" && !validArchiveSourceIdentity(identity) {
 		return nil, status.Error(codes.InvalidArgument, "invalid archive source identity")
 	}
-	if len(request.GetArtifacts()) > protocol.MaxBrowserHARArtifactsPerRun {
+	// A run archive holds at most its HAR limit plus the interactions
+	// sidecar.
+	if len(request.GetArtifacts()) > protocol.MaxBrowserHARArtifactsPerRun+1 {
 		return nil, status.Error(codes.InvalidArgument, "too many acknowledged artifacts")
 	}
 	for _, artifact := range request.GetArtifacts() {
@@ -260,4 +286,25 @@ func (s *Service) AcknowledgeEvidence(_ context.Context, request *pb.EvidenceAck
 func validSHA256Hex(value string) bool {
 	decoded, err := hex.DecodeString(value)
 	return err == nil && len(decoded) == sha256.Size && strings.ToLower(value) == value
+}
+
+// archivedHARSource is a HAR directory copy a run archive holds, retired
+// from its directory once the archive is finalized.
+type archivedHARSource struct {
+	path     string
+	identity os.FileInfo
+}
+
+// retireArchivedHARSources retires the HAR directory copies of a finalized
+// archive's HARs. A copy that cannot be retired stays under its directory's
+// retention. The caller holds harMu.
+func (w *archiveRecorder) retireArchivedHARSources() {
+	for _, source := range w.harSources {
+		ctx, cancel := context.WithTimeout(context.Background(), archiveHARTakeTimeout)
+		if err := browser.RetireRuntimeHARArtifact(ctx, source.path, source.identity); err != nil && !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("archived HAR left in its HAR directory until retention", "path", source.path, "error", err)
+		}
+		cancel()
+	}
+	w.harSources = nil
 }

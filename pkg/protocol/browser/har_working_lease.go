@@ -266,12 +266,17 @@ func allowedHARWorkingName(name string) bool {
 // beginWriter durably records the native writer about to receive the
 // working path before it may write there; an identity it cannot record keeps
 // the generation until the writer joins.
+//
+// The writer counts as entered only once the record is durable: a write that
+// fails leaves no writer (the caller never opens the context) and removes
+// what it wrote, so neither this owner nor a later cleaner waits for a writer
+// that never received the path.
 func (o *harCaptureOwner) beginWriter() error {
-	o.mu.Lock()
-	o.writerEntered = true
-	o.mu.Unlock()
 	if o.root == nil {
 		// An owner without a generation has nowhere to record its writer.
+		o.mu.Lock()
+		o.writerEntered = true
+		o.mu.Unlock()
 		return errHAROwnershipUnproven
 	}
 	manifest := harOwnershipManifest{Version: 1, Generation: o.generation, State: "writer_entered"}
@@ -279,10 +284,24 @@ func (o *harCaptureOwner) beginWriter() error {
 		manifest.Version, manifest.Processes = 2, processes
 	}
 	data, _ := json.Marshal(manifest)
-	if err := writeHARPrivateDurable(o.root, "writer-entered.json", data); err != nil {
+	err := writeHARPrivateDurable(o.root, "writer-entered.json", data)
+	if err == nil {
+		err = syncHARRoot(o.root)
+	}
+	if err != nil {
+		// Remove only a record this call created (an existing one is not
+		// ours to delete).
+		if !errors.Is(err, os.ErrExist) {
+			if removeErr := o.root.Remove("writer-entered.json"); removeErr == nil {
+				_ = syncHARRoot(o.root)
+			}
+		}
 		return err
 	}
-	return syncHARRoot(o.root)
+	o.mu.Lock()
+	o.writerEntered = true
+	o.mu.Unlock()
+	return nil
 }
 func (o *harCaptureOwner) bindWriter(closer func() error) {
 	o.mu.Lock()
@@ -758,8 +777,12 @@ func readHARManifest(root *os.Root, name, generation, state string) error {
 	return err
 }
 
-// readHARManifestFile reads an ownership manifest. Only a sealed manifest
-// may be version 2, which records process identities.
+// errHARManifestMalformed: an ownership record that does not decode, which
+// a crash mid-write leaves.
+var errHARManifestMalformed = errors.New("browser HAR ownership record is malformed")
+
+// readHARManifestFile reads an ownership manifest. A sealed manifest and a
+// writer-entered record may be version 2, which records process identities.
 func readHARManifestFile(root *os.Root, name, generation, state string) (harOwnershipManifest, error) {
 	f, err := openHARRegular(root, name, false)
 	if err != nil {
@@ -772,7 +795,7 @@ func readHARManifestFile(root *os.Root, name, generation, state string) (harOwne
 	}
 	var m harOwnershipManifest
 	if err := strictHARJSON(data, &m); err != nil {
-		return harOwnershipManifest{}, err
+		return harOwnershipManifest{}, errors.Join(errHARManifestMalformed, err)
 	}
 	versioned := m.Version == 1 && len(m.Processes) == 0 || m.Version == 2 && (state == "sealed" || state == "writer_entered") && len(m.Processes) == 1
 	if !versioned || m.Generation != generation || m.State != state {
@@ -791,8 +814,10 @@ func harAbandonmentProven(root *os.Root, generation string) bool {
 	processes := sealed.Processes
 	entered, err := readHARManifestFile(root, "writer-entered.json", generation, "writer_entered")
 	switch {
-	case errors.Is(err, os.ErrNotExist):
-		// No native writer was ever given the working path.
+	case errors.Is(err, os.ErrNotExist), errors.Is(err, errHARManifestMalformed):
+		// No native writer was ever given the working path: the record is
+		// durable before the path is handed out, so one that does not
+		// decode was never completed.
 	case err != nil || len(entered.Processes) != 1 || entered.Processes[0].Role != harProcessWriter:
 		return false
 	default:

@@ -12,15 +12,16 @@ import (
 // Clock qualification (TEL-1 §3.1): a generator's measured clock offset
 // corrects the stages measured across its clock and the controller's
 // (transport lag, end-to-end sample age), and qualifies them. A calibration
-// expires after three missed probes; an offset that jumps by more than twice
-// its uncertainty, or a step in the controller's wall clock, invalidates it
-// until a consistent probe confirms the new mapping.
+// expires after three missed probes (measured on the controller's monotonic
+// clock); an offset that jumps by more than twice its uncertainty, or a step
+// in the controller's wall clock — between probes or since the last one —
+// invalidates it until a consistent probe confirms the new mapping.
 
 const (
 	envClockProbeInterval = "APEXLOAD_CLOCK_PROBE_INTERVAL"
-	// maxClockProbeInterval is the specification's maximum live cadence,
-	// and the default.
-	maxClockProbeInterval = 30 * time.Second
+	// minClockProbeInterval is the specification's maximum live cadence
+	// (at most one exchange per 30 seconds per source), and the default.
+	minClockProbeInterval = 30 * time.Second
 	// clockCalibrationMissedProbes expires a calibration that many probe
 	// intervals after its last observation.
 	clockCalibrationMissedProbes = 3
@@ -40,14 +41,14 @@ const (
 )
 
 // clockProbeInterval is the live clock-probe cadence: APEXLOAD_CLOCK_PROBE_INTERVAL
-// (a Go duration) when valid, never longer than 30 seconds.
+// (a Go duration) when valid, never more often than once per 30 seconds.
 func clockProbeInterval() time.Duration {
 	if raw := os.Getenv(envClockProbeInterval); raw != "" {
 		if interval, err := time.ParseDuration(raw); err == nil && interval > 0 {
-			return min(interval, maxClockProbeInterval)
+			return max(interval, minClockProbeInterval)
 		}
 	}
-	return maxClockProbeInterval
+	return minClockProbeInterval
 }
 
 // clockProcessStart anchors the controller's monotonic clock readings.
@@ -74,7 +75,7 @@ type clockCalibrations struct {
 
 func newClockCalibrations(interval time.Duration) *clockCalibrations {
 	if interval <= 0 {
-		interval = maxClockProbeInterval
+		interval = minClockProbeInterval
 	}
 	return &clockCalibrations{interval: interval, sources: map[string]*clockCalibration{}}
 }
@@ -110,6 +111,15 @@ func (c *clockCalibrations) observeAt(source string, offset, uncertainty time.Du
 // quality is source's offset and the quality it gives a cross-host duration
 // measured at the controller's time at.
 func (c *clockCalibrations) quality(source string, at time.Time) (float64, generatorrpc.ClockQuality) {
+	return c.qualityAt(source, at.Round(0), at.Sub(clockProcessStart))
+}
+
+// qualityAt judges source's calibration at the controller's wall time and
+// monotonic reading. A wall clock that moved differently from the monotonic
+// clock since the probe has stepped, so every wall-clock reading taken now
+// (receipt times, sample ages) disagrees with the offset: clock_step until
+// the next probes re-anchor it. Expiry runs on the monotonic clock.
+func (c *clockCalibrations) qualityAt(source string, wallNow time.Time, monotonicNow time.Duration) (float64, generatorrpc.ClockQuality) {
 	if c == nil {
 		return 0, generatorrpc.ClockQuality{Reason: clockReasonUncalibrated}
 	}
@@ -121,22 +131,27 @@ func (c *clockCalibrations) quality(source string, at time.Time) (float64, gener
 		return 0, generatorrpc.ClockQuality{Reason: clockReasonUncalibrated}
 	case calibration.reason != "":
 		return 0, generatorrpc.ClockQuality{Reason: calibration.reason}
-	case at.Sub(calibration.observedAt) > clockCalibrationMissedProbes*c.interval:
+	}
+	elapsed := monotonicNow - calibration.monotonic
+	switch {
+	case (wallNow.Round(0).Sub(calibration.observedAt) - elapsed).Abs() > clockStepTolerance:
+		return 0, generatorrpc.ClockQuality{Reason: clockReasonStep}
+	case elapsed > clockCalibrationMissedProbes*c.interval:
 		return 0, generatorrpc.ClockQuality{Reason: clockReasonExpired}
 	}
 	return calibration.offsetMs, generatorrpc.ClockQuality{Qualified: true, UncertaintyMs: calibration.uncertaintyMs}
 }
 
 // recordClockCalibration adds one generator probe to a run this controller
-// holds.
-func (tr *TestRunner) recordClockCalibration(test *ManagedTest, source string, offset, uncertainty time.Duration, now time.Time) {
+// holds; interval is the cadence the probes actually run at.
+func (tr *TestRunner) recordClockCalibration(test *ManagedTest, source string, offset, uncertainty, interval time.Duration, now time.Time) {
 	tr.mu.Lock()
 	if tr.tests[test.ID] != test {
 		tr.mu.Unlock()
 		return
 	}
 	if test.clockCalibrations == nil {
-		test.clockCalibrations = newClockCalibrations(clockProbeInterval())
+		test.clockCalibrations = newClockCalibrations(interval)
 	}
 	calibrations := test.clockCalibrations
 	tr.mu.Unlock()
@@ -147,14 +162,19 @@ func (tr *TestRunner) recordClockCalibration(test *ManagedTest, source string, o
 // stages by its generator's offset (the generator's clock minus the
 // controller's): transport lag gains the offset, and its collection time maps
 // to the controller's clock by subtracting it. Without a current calibration
-// the stages stay as measured, unqualified. A corrected transport lag below
-// zero by more than its uncertainty is implausible and unavailable.
+// the stages stay as measured, unqualified, and a negative one is unavailable
+// (zero). A corrected transport lag below zero by more than its uncertainty
+// is implausible and unavailable.
 func qualifyCrossHostTelemetry(telemetry *generatorrpc.MetricsTelemetry, offsetMs float64, quality generatorrpc.ClockQuality) {
 	if telemetry == nil {
 		return
 	}
 	if telemetry.PublishedAtUnixMs > 0 && telemetry.ControllerReceivedAtUnixMs > 0 {
 		transport := quality
+		if !quality.Qualified && telemetry.TransportLagMs < 0 {
+			// An unqualified negative delta is unavailable, never a figure.
+			telemetry.TransportLagMs = 0
+		}
 		if quality.Qualified {
 			corrected := telemetry.TransportLagMs + offsetMs
 			switch {
@@ -178,39 +198,66 @@ func qualifyCrossHostTelemetry(telemetry *generatorrpc.MetricsTelemetry, offsetM
 
 // combineClockQuality is the quality of a figure drawn from several
 // sources: qualified only when every one is, with the largest uncertainty.
-func combineClockQuality(current, next *generatorrpc.ClockQuality) *generatorrpc.ClockQuality {
+// nextValueMs is next's corrected figure; a qualified source raises the
+// combined lower bound to that figure minus its uncertainty.
+func combineClockQuality(current, next *generatorrpc.ClockQuality, nextValueMs float64) *generatorrpc.ClockQuality {
 	if next == nil {
 		return current
 	}
-	if current == nil {
-		copied := *next
-		return &copied
-	}
+	var combined generatorrpc.ClockQuality
 	switch {
+	case current == nil:
+		combined = *next
 	case !current.Qualified:
-		return current
+		combined = *current
 	case !next.Qualified:
-		copied := *next
-		return &copied
+		combined = *next
+	default:
+		combined = *current
+		combined.UncertaintyMs = max(current.UncertaintyMs, next.UncertaintyMs)
 	}
-	combined := *current
-	combined.UncertaintyMs = max(current.UncertaintyMs, next.UncertaintyMs)
+	combined.LowerBoundMs = nil
+	var bound *float64
+	if current != nil && current.LowerBoundMs != nil {
+		bound = current.LowerBoundMs
+	}
+	nextBound := next.LowerBoundMs
+	if next.Qualified {
+		value := max(nextValueMs-next.UncertaintyMs, 0)
+		nextBound = &value
+	}
+	if nextBound != nil && (bound == nil || *nextBound > *bound) {
+		bound = nextBound
+	}
+	if bound != nil {
+		value := *bound
+		combined.LowerBoundMs = &value
+	}
 	return &combined
 }
 
 // sampleAgeQualified corrects a distributed run's end-to-end sample age by
 // the offset of the generator whose sample was oldest. Without it the age
-// stays as measured, unqualified; an age below zero by more than its
-// uncertainty is implausible and unavailable.
-func sampleAgeQualified(rawMs, offsetMs float64, quality *generatorrpc.ClockQuality) (float64, *generatorrpc.ClockQuality) {
+// stays as measured, unqualified, and a negative one is unavailable (zero);
+// an age below zero by more than its uncertainty is implausible and
+// unavailable. boundAgeMs, when positive, is the age the qualified
+// generators prove, kept as the quality's lower bound.
+func sampleAgeQualified(rawMs, offsetMs float64, quality *generatorrpc.ClockQuality, boundAgeMs float64) (float64, *generatorrpc.ClockQuality) {
 	if quality == nil {
 		return rawMs, nil
 	}
 	copied := *quality
-	if !quality.Qualified {
-		return rawMs, &copied
+	copied.LowerBoundMs = nil
+	if boundAgeMs > 0 {
+		bound := boundAgeMs
+		copied.LowerBoundMs = &bound
 	}
+	// offsetMs is the oldest sample's own generator's offset, zero unless
+	// that generator is qualified; the fleet quality may still be worse.
 	corrected := rawMs + offsetMs
+	if !quality.Qualified {
+		return max(corrected, 0), &copied
+	}
 	if corrected < -quality.UncertaintyMs {
 		return 0, &generatorrpc.ClockQuality{Reason: clockReasonImplausible}
 	}
@@ -219,9 +266,14 @@ func sampleAgeQualified(rawMs, offsetMs float64, quality *generatorrpc.ClockQual
 
 // clockBudgetUnscored says why a budget decision on a cross-host duration
 // cannot be scored: the duration is not qualified, or its uncertainty
-// interval straddles the threshold.
+// interval straddles the threshold — unless a qualified source's lower
+// bound already exceeds the threshold, a definite breach.
 func clockBudgetUnscored(value float64, threshold *float64, quality *generatorrpc.ClockQuality) string {
 	if quality == nil || threshold == nil || *threshold <= 0 {
+		return ""
+	}
+	if quality.LowerBoundMs != nil && *quality.LowerBoundMs > *threshold {
+		// A qualified source proves the breach, whatever the others say.
 		return ""
 	}
 	if !quality.Qualified {
@@ -234,4 +286,13 @@ func clockBudgetUnscored(value float64, threshold *float64, quality *generatorrp
 		return "uncertainty_crosses_threshold"
 	}
 	return ""
+}
+
+// clockScoredValue is the figure a budget decision reports: the proven lower
+// bound when the figure itself is not qualified.
+func clockScoredValue(value float64, quality *generatorrpc.ClockQuality) float64 {
+	if quality != nil && !quality.Qualified && quality.LowerBoundMs != nil {
+		return *quality.LowerBoundMs
+	}
+	return value
 }

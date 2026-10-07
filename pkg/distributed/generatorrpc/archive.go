@@ -380,11 +380,16 @@ type archiveTelemetryHealth struct {
 type archiveRecorder struct {
 	// harMu serializes HAR moves with Finalize and Discard; it is taken
 	// before mu.
-	harMu                   sync.Mutex
-	harBytes                int64
-	interactionsFile        *os.File
-	interactionBytes        int64
-	interactionsBroken      bool
+	harMu    sync.Mutex
+	harBytes int64
+	// harSources are the HAR directory copies of the archived HARs, retired
+	// once the archive is finalized.
+	harSources         []archivedHARSource
+	interactionsFile   *os.File
+	interactionBytes   int64
+	interactionsBroken bool
+	// interactionCount is the interactions written into the sidecar.
+	interactionCount        int64
 	browserDocumentsFile    *os.File
 	browserDocumentsEncoder *json.Encoder
 	mu                      sync.Mutex
@@ -460,12 +465,16 @@ func (w *archiveRecorder) setTerminalMetrics(batch *pb.MetricsBatch) error {
 }
 
 type generatorArchiveByteBudget struct {
-	backlog       *archivequota.Budget
-	mu            sync.Mutex
-	root          string
-	maxBytes      int64
-	minFreeBytes  int64
-	written       int64
+	backlog      *archivequota.Budget
+	mu           sync.Mutex
+	root         string
+	maxBytes     int64
+	minFreeBytes int64
+	written      int64
+	// optional is the optional evidence (HARs, interaction records)
+	// admitted so far: at most a quarter of maxBytes, so required evidence
+	// always keeps the rest.
+	optional      int64
 	nextFreeCheck int64
 	knownFree     int64
 	freeKnown     bool
@@ -1476,11 +1485,13 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 			// result, and the descriptor is no longer usable after Close.
 			w.closed = true
 			cleanupOnError = false
+			w.retireArchivedHARSources()
 			return record, nil
 		}
 	}
 	w.closed = true
 	cleanupOnError = false
+	w.retireArchivedHARSources()
 	return record, nil
 }
 

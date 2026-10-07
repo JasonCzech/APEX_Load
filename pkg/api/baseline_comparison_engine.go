@@ -129,9 +129,24 @@ func (s *Server) readBaselineComparisonRun(ctx context.Context, t *ManagedTest, 
 		return nil, fmt.Errorf("comparison exceeds %d stable windows; narrow the measurement window", maxBaselineComparisonWindows)
 	}
 	r.telemetry = baselineTelemetryEvidence(t.ID, summaries)
-	if documents, _, _, err := readArchiveBrowserDocumentSummary(record, manifest); err != nil {
+	if documents, _, _, err := readArchiveBrowserDocumentSummaryContext(ctx, record, manifest); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		r.warnings = append(r.warnings, "Browser document evidence could not be read: "+err.Error())
 	} else {
+		// Documents pair by group as transactions do: through the policy's
+		// group mappings.
+		if documents != nil && len(p.GroupMappings) > 0 {
+			mapped := *documents
+			mapped.Metrics = append([]protocolmetrics.BrowserDocumentMetricSummary(nil), documents.Metrics...)
+			for i := range mapped.Metrics {
+				if group := p.GroupMappings[t.ID+"/"+mapped.Metrics[i].Group]; group != "" {
+					mapped.Metrics[i].Group = group
+				}
+			}
+			documents = &mapped
+		}
 		r.browserDocuments = documents
 		if documents != nil && documents.Incomplete {
 			r.warnings = append(r.warnings, "Browser document evidence is incomplete; its document comparisons cover only the retained measurements")
@@ -379,7 +394,7 @@ func compareBaselineRuns(current *baselineComparisonRun, baselines []*baselineCo
 	}
 	if len(out.BrowserDocuments) > 0 {
 		out.BrowserSoftNavigation = protocolmetrics.BrowserSoftNavigationUnsupported
-		out.Warnings = append(out.Warnings, "Browser document metrics compare the p75 of qualified final document measurements per tuple; they are not part of the regression verdict. Soft (same-document) navigations are not measured.")
+		out.Warnings = append(out.Warnings, "Browser document metrics compare the p75 of qualified final document measurements per tuple over each whole run (not the selected measurement windows or load range); they are not part of the regression verdict. Soft (same-document) navigations are not measured.")
 	}
 	buildBaselineFindings(out)
 	out.Verdict = evaluateBaselineRegression(out)

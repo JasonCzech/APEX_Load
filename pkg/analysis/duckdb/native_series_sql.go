@@ -46,7 +46,7 @@ func nativeSeriesAggregationSQL(table string, q SeriesQuery, kind string) (strin
 	if err := q.Validate(); err != nil {
 		return "", err
 	}
-	if err := analysis.ValidateScalarAggregation(kind, q.Aggregation); err != nil {
+	if err := validateNativeScalarAggregation(kind, q); err != nil {
 		return "", err
 	}
 	origin := "TIMESTAMPTZ " + literal(q.From.UTC().Format(time.RFC3339Nano))
@@ -112,4 +112,17 @@ func nativeSummaryAggregationSQL(table string, q SeriesQuery, statistic string, 
 		return "", errors.New("unsupported summary statistic")
 	}
 	return "SELECT bucket, CASE WHEN nv<n OR nt<n OR partial THEN NULL ELSE " + value + " END, CASE WHEN nv<n THEN '' WHEN nt<n THEN " + literal(analysis.MissingDuplicateSummaryWindow) + " WHEN partial THEN " + literal(analysis.MissingPartialSummaryWindow) + " ELSE " + reason + " END FROM (" + grouped + ") ORDER BY bucket LIMIT 10001", nil
+}
+
+// validateNativeScalarAggregation is the scalar aggregation contract, with
+// one exception: a counter read for a controller-side counter derivation
+// (CounterReadings) is its bucket's highest reading.
+func validateNativeScalarAggregation(kind string, q SeriesQuery) error {
+	if q.CounterReadings {
+		if kind != analysis.KindCounter || q.Aggregation != "max" {
+			return errors.New("counter readings require a counter read with aggregation max")
+		}
+		return nil
+	}
+	return analysis.ValidateScalarAggregation(kind, q.Aggregation)
 }

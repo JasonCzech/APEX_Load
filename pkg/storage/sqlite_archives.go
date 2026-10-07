@@ -283,6 +283,11 @@ func (s *SQLiteStore) DeleteRunArchiveIfUnchanged(expected *RunArchiveRecord) (b
 	if err := deleteRCAForTestTx(tx, expected.TestID); err != nil {
 		return false, err
 	}
+	// The archive held the run's evidence: its receipts end with it, as on
+	// every other archive deletion.
+	if _, err := tx.Exec(`UPDATE run_evidence_receipts SET state = ?, updated_at = ? WHERE test_id = ?`, EvidenceReceiptTombstoned, time.Now().UTC(), expected.TestID); err != nil {
+		return false, err
+	}
 	return true, tx.Commit()
 }
 

@@ -15,8 +15,11 @@ func readHARHost() (harHost, error) {
 	if err != nil {
 		return harHost{}, err
 	}
-	machine, _ := unix.Sysctl("kern.uuid")
-	host := harHost{machine: strings.TrimSpace(machine), boot: strings.TrimSpace(boot), namespace: "darwin"}
+	// macOS offers no host identity without IOKit: kern.uuid names the
+	// kernel image (equal on every Mac of one build, new after each update),
+	// so it is not recorded and an earlier boot never proves a process gone
+	// here; same-boot proof (PID and start time) still applies.
+	host := harHost{boot: strings.TrimSpace(boot), namespace: "darwin"}
 	if host.boot == "" {
 		return harHost{}, errors.New("boot identity is empty")
 	}

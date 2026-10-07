@@ -53,13 +53,13 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 		if reason := clockBudgetUnscored(live.Telemetry.SampleAgeMs, thresholds.MaxTelemetrySampleAgeMs, live.Telemetry.SampleAgeQuality); reason != "" {
 			unscored = append(unscored, "stale_sample:"+reason)
 		} else {
-			appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "stale_sample", "sample age", live.Telemetry.SampleAgeMs, thresholds.MaxTelemetrySampleAgeMs)
+			appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "stale_sample", "sample age", clockScoredValue(live.Telemetry.SampleAgeMs, live.Telemetry.SampleAgeQuality), thresholds.MaxTelemetrySampleAgeMs)
 		}
 		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "generator_lag", "generator processing lag", live.Telemetry.GeneratorProcessingLagMs, thresholds.MaxTelemetryGeneratorLagMs)
 		if reason := clockBudgetUnscored(live.Telemetry.TransportLagMs, thresholds.MaxTelemetryTransportLagMs, live.Telemetry.TransportLagQuality); reason != "" {
 			unscored = append(unscored, "transport_lag:"+reason)
 		} else {
-			appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "transport_lag", "transport lag", live.Telemetry.TransportLagMs, thresholds.MaxTelemetryTransportLagMs)
+			appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "transport_lag", "transport lag", clockScoredValue(live.Telemetry.TransportLagMs, live.Telemetry.TransportLagQuality), thresholds.MaxTelemetryTransportLagMs)
 		}
 		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "controller_fanout_lag", "controller fan-out lag", live.Telemetry.ControllerFanoutLagMs, thresholds.MaxTelemetryControllerFanoutMs)
 		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "browser_render_lag", "browser render lag", live.Telemetry.BrowserRenderLagMs, thresholds.MaxTelemetryBrowserRenderLagMs)
@@ -100,11 +100,23 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 		severity = maxDiagnosticSeverity(severity, ehSeverity)
 	}
 
+	// An unscored budget decision is neither a breach nor a pass: it is part
+	// of the signature so a change publishes, and run health records it.
+	for _, entry := range unscored {
+		signatureParts = append(signatureParts, "unscored:"+entry)
+	}
 	if len(conditions) == 0 {
+		if len(unscored) > 0 {
+			return &TelemetryDiagnostic{
+				Severity:  "healthy",
+				Summary:   "live telemetry budgets unscored: " + strings.Join(unscored, ", "),
+				Unscored:  unscored,
+				Telemetry: live.Telemetry,
+			}, strings.Join(signatureParts, "|")
+		}
 		return &TelemetryDiagnostic{
 			Severity:  "healthy",
 			Summary:   "live telemetry healthy",
-			Unscored:  unscored,
 			Samples:   nil,
 			Telemetry: live.Telemetry,
 		}, "healthy"
@@ -560,6 +572,11 @@ func updateTelemetryRunHealth(state *telemetryDiagnosticState, diagnostic *Telem
 		}
 	} else {
 		state.BreachStartedAt = nil
+		if len(diagnostic.Unscored) > 0 {
+			// Not a pass: an interval with an unscored budget decision is
+			// unknown in coverage and archive summaries.
+			status = "unscored"
+		}
 	}
 
 	lastTransitionAt := now
@@ -572,6 +589,7 @@ func updateTelemetryRunHealth(state *telemetryDiagnosticState, diagnostic *Telem
 		Summary:           diagnostic.Summary,
 		CurrentSignature:  signature,
 		Conditions:        append([]string(nil), diagnostic.Conditions...),
+		Unscored:          append([]string(nil), diagnostic.Unscored...),
 		BreachActive:      breachActive,
 		SustainedBreach:   sustained,
 		BreachDurationSec: breachDurationSec,
@@ -603,11 +621,25 @@ func cloneTelemetryRunHealth(in *TelemetryRunHealth) *TelemetryRunHealth {
 	if in.Conditions != nil {
 		out.Conditions = append([]string(nil), in.Conditions...)
 	}
+	if in.Unscored != nil {
+		out.Unscored = append([]string(nil), in.Unscored...)
+	}
 	if in.BreachStartedAt != nil {
 		startedAt := *in.BreachStartedAt
 		out.BreachStartedAt = &startedAt
 	}
 	return &out
+}
+
+// archivedTelemetryHealth is a copy of live telemetry for an interval row or
+// history snapshot: the run's cumulative coverage belongs to the live view
+// and the manifest's telemetry_coverage, not to every row.
+func archivedTelemetryHealth(in *TelemetryHealth) *TelemetryHealth {
+	out := cloneTelemetryHealth(in)
+	if out != nil {
+		out.Coverage = nil
+	}
+	return out
 }
 
 func cloneTelemetryHealth(in *TelemetryHealth) *TelemetryHealth {

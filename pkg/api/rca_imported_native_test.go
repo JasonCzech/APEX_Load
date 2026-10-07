@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	analytics "github.com/jasonczech/apexload/pkg/analysis/duckdb"
 	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -130,7 +131,7 @@ func TestRCAImportedSeriesFromAnAssociatedDataset(t *testing.T) {
 	}
 	read := func() rca.Series {
 		t.Helper()
-		series, limitations, err := server.rcaImportedSeries(context.Background(), "proj-a", "rca-imported", frozen, summaries, -1, rca.NewBudgeter(rca.DefaultBudget, nil, nil))
+		series, limitations, err := server.rcaImportedSeries(context.Background(), "proj-a", "rca-imported", frozen, summaries, -1, rca.NewBudgeter(rca.DefaultBudget, nil, nil), 0)
 		if err != nil || len(limitations) != 0 || len(series) != 1 {
 			t.Fatalf("series %+v limitations %+v err %v", series, limitations, err)
 		}
@@ -166,7 +167,7 @@ func TestRCAImportedSeriesFromAnAssociatedDataset(t *testing.T) {
 		defer cancel()
 		_ = restarted.Shutdown(ctx)
 	})
-	if after, _, err := restarted.rcaImportedSeries(context.Background(), "proj-a", "rca-imported", frozen, summaries, -1, rca.NewBudgeter(rca.DefaultBudget, nil, nil)); err != nil || len(after) != 1 || after[0].ID != s.ID || after[0].Identity != s.Identity {
+	if after, _, err := restarted.rcaImportedSeries(context.Background(), "proj-a", "rca-imported", frozen, summaries, -1, rca.NewBudgeter(rca.DefaultBudget, nil, nil), 0); err != nil || len(after) != 1 || after[0].ID != s.ID || after[0].Identity != s.Identity {
 		t.Fatalf("identity after restart: %+v %v", after, err)
 	}
 
@@ -177,7 +178,7 @@ func TestRCAImportedSeriesFromAnAssociatedDataset(t *testing.T) {
 	for i := 1; i <= 120; i++ {
 		fine = append(fine, IntervalSummaryRecord{Timestamp: start.Add(time.Duration(i) * time.Second)})
 	}
-	if regridded, _, err := server.rcaImportedSeries(context.Background(), "proj-a", "rca-imported", frozen, fine, -1, rca.NewBudgeter(rca.DefaultBudget, nil, nil)); err != nil || len(regridded) != 1 || regridded[0].Bucket != 5*time.Second || regridded[0].Points[1].Value != 20 || !regridded[0].Points[1].Valid || regridded[0].Identity == s.Identity {
+	if regridded, _, err := server.rcaImportedSeries(context.Background(), "proj-a", "rca-imported", frozen, fine, -1, rca.NewBudgeter(rca.DefaultBudget, nil, nil), 0); err != nil || len(regridded) != 1 || regridded[0].Bucket != 5*time.Second || regridded[0].Points[1].Value != 20 || !regridded[0].Points[1].Valid || regridded[0].Identity == s.Identity {
 		t.Fatalf("regridded %+v %v", regridded, err)
 	}
 
@@ -193,11 +194,36 @@ func TestRCAImportedSeriesFromAnAssociatedDataset(t *testing.T) {
 		if reply.Code != http.StatusOK {
 			t.Fatalf("reassociation: %d %s", reply.Code, reply.Body.String())
 		}
-		series, limitations, err := server.rcaImportedSeries(context.Background(), "proj-a", "rca-imported", frozen, summaries, -1, rca.NewBudgeter(rca.DefaultBudget, nil, nil))
+		series, limitations, err := server.rcaImportedSeries(context.Background(), "proj-a", "rca-imported", frozen, summaries, -1, rca.NewBudgeter(rca.DefaultBudget, nil, nil), 0)
 		if err != nil || len(series) != 0 || limitationCodes(limitations) != limitationImportedDatasetChanged {
 			t.Fatalf("changed dataset read: %+v %+v %v", series, limitations, err)
 		}
 	}
+	// A dataset that changes while it is being read is dropped too: the
+	// series read would describe another revision.
+	original := rcaQueryImportedDataset
+	t.Cleanup(func() { rcaQueryImportedDataset = original })
+	changed := false
+	rcaQueryImportedDataset = func(ctx context.Context, in *storage.AnalysisImport, query analytics.SeriesQuery) ([]analysis.MetricPoint, error) {
+		points, err := original(ctx, in, query)
+		if !changed {
+			changed = true
+			current, _ := store.(storage.AnalysisImportStore).GetAnalysisImport(dataset.ID)
+			request := httptest.NewRequest(http.MethodPut, "/api/v1/analysis/datasets/"+dataset.ID+"/association", bytes.NewReader([]byte(fmt.Sprintf(`{"revision":%d,"run_id":"rca-imported"}`, current.Revision))))
+			request.Header.Set("Content-Type", "application/json")
+			reply := httptest.NewRecorder()
+			server.mux.ServeHTTP(reply, request)
+			if reply.Code != http.StatusOK {
+				t.Errorf("reassociation during the read: %d %s", reply.Code, reply.Body.String())
+			}
+		}
+		return points, err
+	}
+	series, limitations, err := server.rcaImportedSeries(context.Background(), "proj-a", "rca-imported", frozen, summaries, -1, rca.NewBudgeter(rca.DefaultBudget, nil, nil), 0)
+	if err != nil || len(series) != 0 || !strings.Contains(limitationCodes(limitations), limitationImportedDatasetChanged) {
+		t.Fatalf("dataset changed during its read: %+v %+v %v", series, limitations, err)
+	}
+	rcaQueryImportedDataset = original
 	reassociate("rca-imported")
 	reassociate("rca-other")
 }

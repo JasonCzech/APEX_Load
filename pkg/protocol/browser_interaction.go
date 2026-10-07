@@ -32,6 +32,29 @@ const (
 	InteractionOutcomeNotDeclared = "not_declared"
 	InteractionOutcomeMet         = "met"
 	InteractionOutcomeMissed      = "missed"
+	// InteractionOutcomeNotReached: the gesture failed before its declared
+	// outcome was waited for.
+	InteractionOutcomeNotReached = "not_reached"
+)
+
+// Reasons an interaction's points or target were not observed.
+const (
+	// InteractionUnavailablePageState: the page could not be read after the
+	// gesture.
+	InteractionUnavailablePageState = "page_state_unavailable"
+	// InteractionUnavailableChildFrame: the gesture acted inside a child
+	// frame, which the main document's observer does not see.
+	InteractionUnavailableChildFrame = "child_frame_unobserved"
+	// InteractionUnavailableSyntheticDispatch: the runtime dispatched the
+	// gesture as synthetic events (touch emulation), which a page cannot tell
+	// from script and the observer ignores.
+	InteractionUnavailableSyntheticDispatch = "synthetic_dispatch"
+	// InteractionUnavailableDocumentChanged: the gesture navigated, so its
+	// document's events went with it.
+	InteractionUnavailableDocumentChanged = "document_changed"
+	// InteractionUnavailableTarget: the element a keyboard gesture acted on
+	// could not be resolved after it.
+	InteractionUnavailableTarget = "target_unresolved"
 )
 
 var browserInteractionKinds = map[string]bool{
@@ -127,7 +150,7 @@ func (i BrowserInteraction) Valid() bool {
 		if i.Outcome.Declared != "" || i.Outcome.DeadlineMS != 0 {
 			return false
 		}
-	case InteractionOutcomeMet, InteractionOutcomeMissed:
+	case InteractionOutcomeMet, InteractionOutcomeMissed, InteractionOutcomeNotReached:
 		if !browserEvidenceText(i.Outcome.Declared, 64) || i.Outcome.Declared == "" || i.Outcome.DeadlineMS < 0 || i.Outcome.DeadlineMS > 86400000 {
 			return false
 		}
@@ -163,7 +186,17 @@ func (i BrowserInteraction) Valid() bool {
 	if len(i.LayoutRevision) > 64 || !browserInteractionToken(i.LayoutRevision) || !browserEvidenceText(i.Route, 512) || strings.ContainsAny(i.Route, "?#") || i.Route != "" && !strings.HasPrefix(i.Route, "/") {
 		return false
 	}
-	return !i.CapturedAt.IsZero() && i.CapturedAt.Location() == time.UTC && browserEvidenceReason(i.UnavailableReason)
+	return !i.CapturedAt.IsZero() && i.CapturedAt.Location() == time.UTC && browserInteractionReason(i.UnavailableReason)
+}
+
+// browserInteractionReason admits an interaction's unavailable reason: the
+// shared evidence reasons and the interaction ones.
+func browserInteractionReason(v string) bool {
+	switch v {
+	case InteractionUnavailablePageState, InteractionUnavailableChildFrame, InteractionUnavailableSyntheticDispatch, InteractionUnavailableDocumentChanged, InteractionUnavailableTarget:
+		return true
+	}
+	return browserEvidenceReason(v)
 }
 
 func browserInteractionRole(role string) bool {

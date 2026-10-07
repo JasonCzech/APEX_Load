@@ -78,6 +78,42 @@ func testRunEvidenceReceipts(t *testing.T, s *SQLiteStore) {
 			t.Fatalf("deleted archive kept a live receipt: %+v", r)
 		}
 	}
+	// Retention's guarded archive delete tombstones receipts too.
+	if err := s.SaveTest(&TestRecord{ID: "retained-run", Name: "retained", Status: "COMPLETE", StartTime: now, EndTime: &now}); err != nil {
+		t.Fatal(err)
+	}
+	accept(evidenceReceiptFixture("retained-run", "source-a", "g7", 1), EvidenceReceiptAccepted)
+	retained := &RunArchiveRecord{TestID: "retained-run", ArchiveBackend: "filesystem", ArchivePath: "/tmp/z", ManifestPath: "/tmp/z/manifest.json", CreatedAt: now, CompletedAt: now}
+	if err := s.SaveRunArchive(retained); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := s.GetRunArchive("retained-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted, err := s.DeleteRunArchiveIfUnchanged(stored); err != nil || !deleted {
+		t.Fatalf("retention delete: %v %v", deleted, err)
+	}
+	if receipts, _ := s.ListRunEvidenceReceipts("retained-run"); len(receipts) != 1 || receipts[0].State != EvidenceReceiptTombstoned {
+		t.Fatalf("retention left a live receipt: %+v", receipts)
+	}
+	// A staging attempt forgets an earlier attempt's accepted claims, and a
+	// collection retry without the execution fence (generation 0) inherits
+	// the newest generation instead of tombstoning its evidence.
+	if err := s.SaveTest(&TestRecord{ID: "retry-run", Name: "retry", Status: "COMPLETE", StartTime: now, EndTime: &now}); err != nil {
+		t.Fatal(err)
+	}
+	accept(evidenceReceiptFixture("retry-run", "source-a", "g10", 3), EvidenceReceiptAccepted)
+	accept(evidenceReceiptFixture("retry-run", "source-a", "g11", 0), EvidenceReceiptAccepted)
+	if receipts, _ := s.ListRunEvidenceReceipts("retry-run"); len(receipts) != 2 || receipts[1].ExecutionGeneration != 3 {
+		t.Fatalf("unfenced retry receipts %+v", receipts)
+	}
+	if n, err := s.ResetAcceptedRunEvidenceReceipts("retry-run"); err != nil || n != 2 {
+		t.Fatalf("reset %d: %v", n, err)
+	}
+	if receipts, _ := s.ListRunEvidenceReceipts("retry-run"); len(receipts) != 0 {
+		t.Fatalf("reset kept %+v", receipts)
+	}
 	// Deleting a run tombstones its receipts; the rows outlive it.
 	if err := s.SaveTest(&TestRecord{ID: "deleted-run-graph", Name: "deleted", Status: "COMPLETE", StartTime: now, EndTime: &now}); err != nil {
 		t.Fatal(err)

@@ -625,7 +625,7 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 		Browser:                  cloneBrowserLiveMetrics(live.Browser),
 		BrowserDocuments:         live.BrowserDocuments.Clone(),
 		BrowserByDevice:          cloneBrowserByDeviceMetrics(live.BrowserByDevice),
-		Telemetry:                cloneTelemetryHealth(live.Telemetry),
+		Telemetry:                archivedTelemetryHealth(live.Telemetry),
 		TelemetryStatus:          cloneTelemetryRunHealth(live.TelemetryStatus),
 		ELK:                      cloneELKCaptureStatus(live.ELK),
 		Dynatrace:                cloneDynatraceCaptureStatus(live.Dynatrace),

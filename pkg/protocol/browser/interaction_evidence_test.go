@@ -2,6 +2,7 @@ package browser
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -104,5 +105,49 @@ func TestBrowserInteractionBoundsAndGenerations(t *testing.T) {
 	}
 	if len(b.TakeBrowserInteractionEvidence()) != 0 {
 		t.Fatal("interactions handed over twice")
+	}
+}
+
+// A handoff larger than the evidence record bound is split into records the
+// sinks accept, and a long-lived context forgets its least recently used
+// documents instead of refusing every document past the 1,024th.
+func TestBrowserInteractionHandoffSplitsAndDocumentsRotate(t *testing.T) {
+	b := &Browser{}
+	generation := strings.Repeat("a", 32)
+	b.evidence.generation = generation
+	interaction := func(document int) protocol.BrowserInteraction {
+		return protocol.BrowserInteraction{Version: protocol.BrowserInteractionVersion, SourceGeneration: generation, DocumentID: fmt.Sprintf("%s-idoc-%032x", generation, document), ActionName: strings.Repeat("n", 256), FrameScope: "main_frame", Kind: "click", Provenance: protocol.InteractionProvenanceScripted, CapturedAt: time.Now().UTC(), Outcome: protocol.BrowserInteractionOutcome{Observed: protocol.InteractionOutcomeNotDeclared}}
+	}
+	for i := 0; i < protocol.MaxBrowserInteractionsPerEvidence; i++ {
+		b.recordBrowserInteraction(interaction(i % 1500))
+	}
+	taken := b.TakeBrowserInteractionEvidence()
+	total := 0
+	for _, record := range taken {
+		encoded, _ := json.Marshal(record)
+		if len(encoded) > protocol.MaxBrowserInteractionEvidenceBytes {
+			t.Fatalf("record of %d bytes exceeds the bound", len(encoded))
+		}
+		if record.Dropped != 0 || record.Incomplete {
+			t.Fatalf("documents past 1,024 were dropped: %+v", record.Dropped)
+		}
+		total += len(record.Interactions)
+	}
+	if len(taken) < 2 || total != protocol.MaxBrowserInteractionsPerEvidence {
+		t.Fatalf("%d records holding %d interactions", len(taken), total)
+	}
+	if len(b.interactions.documents) > maxBrowserInteractionDocuments || len(b.interactions.order) != len(b.interactions.documents) {
+		t.Fatalf("tracked %d documents", len(b.interactions.documents))
+	}
+}
+
+// The interaction reasons are valid evidence reasons.
+func TestBrowserInteractionUnavailableReasonsAreValid(t *testing.T) {
+	generation := strings.Repeat("a", 32)
+	for _, reason := range []string{protocol.InteractionUnavailablePageState, protocol.InteractionUnavailableChildFrame, protocol.InteractionUnavailableSyntheticDispatch, protocol.InteractionUnavailableDocumentChanged, protocol.InteractionUnavailableTarget} {
+		interaction := protocol.BrowserInteraction{Version: protocol.BrowserInteractionVersion, SourceGeneration: generation, InteractionID: generation + "-i-1", FrameScope: "child_frame", Kind: "click", Provenance: protocol.InteractionProvenanceScripted, CapturedAt: time.Now().UTC(), Outcome: protocol.BrowserInteractionOutcome{Declared: "load", DeadlineMS: 1000, Observed: protocol.InteractionOutcomeNotReached}, UnavailableReason: reason}
+		if !interaction.Valid() {
+			t.Fatalf("reason %q refused", reason)
+		}
 	}
 }

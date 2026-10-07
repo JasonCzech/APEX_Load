@@ -160,6 +160,12 @@ func workerSeriesLineage(point analysis.MetricPoint, q SeriesQuery) ([]analysis.
 		if point.MissingReason != "" {
 			return nil, errWorkerProtocol
 		}
+		if q.CounterReadings {
+			if q.Aggregation != "max" {
+				return nil, errWorkerProtocol
+			}
+			return analysis.CounterReadingBucketDerivation(analysis.MetricPoint{Kind: point.InputKind}, q.BucketSeconds)
+		}
 		return analysis.ScalarBucketDerivation(analysis.MetricPoint{Kind: point.InputKind}, q.BucketSeconds, q.Aggregation)
 	}
 	statistic, window, ok := analysis.SummaryWindowFromDerivation(point.Derivation)

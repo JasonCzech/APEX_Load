@@ -20,6 +20,15 @@ export function nativePanelRows(panel: DashboardDefinitionPanel, history: Metric
   return history.map(point => ({ time: point.time, value: point.isGapBoundary || point.resourceSampleOnly && !query.metric.startsWith('resource_') ? undefined : typeof point[field] === 'number' && Number.isFinite(point[field]) ? point[field] as number : undefined }))
 }
 
+// Browser document metrics read final document measurements in saved archive
+// panels; they are not offered for action or transaction populations.
+export const browserDocumentPanelMetrics: Record<string, { label: string; unit: string }> = {
+ document_fcp: { label: 'First contentful paint', unit: 'ms' },
+ document_lcp: { label: 'Largest contentful paint', unit: 'ms' },
+ document_cls: { label: 'Cumulative layout shift', unit: 'score' },
+ document_inp: { label: 'Interaction to next paint', unit: 'ms' },
+}
+
 export const nativePopulationMetrics: Record<string, { label: string; aggregations: string[]; unit: string }> = {
  response_time: { ...nativeMetrics.response_time, unit: 'ms' },
  error_rate: { ...nativeMetrics.error_rate, unit: '%' },

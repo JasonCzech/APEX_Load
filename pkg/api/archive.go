@@ -904,11 +904,14 @@ type RunArchiveGoalCompletion struct {
 }
 
 type RunArchiveTelemetrySummary struct {
-	Status                      string           `json:"status"`
-	Samples                     int64            `json:"samples"`
-	HealthyIntervals            int64            `json:"healthy_intervals,omitempty"`
-	DegradedIntervals           int64            `json:"degraded_intervals,omitempty"`
-	BreachedIntervals           int64            `json:"breached_intervals,omitempty"`
+	Status            string `json:"status"`
+	Samples           int64  `json:"samples"`
+	HealthyIntervals  int64  `json:"healthy_intervals,omitempty"`
+	DegradedIntervals int64  `json:"degraded_intervals,omitempty"`
+	BreachedIntervals int64  `json:"breached_intervals,omitempty"`
+	// UnscoredIntervals had a budget decision on a cross-host duration that
+	// could not be scored and no breach; they are neither healthy nor breached.
+	UnscoredIntervals           int64            `json:"unscored_intervals,omitempty"`
 	SustainedBreachIntervals    int64            `json:"sustained_breach_intervals,omitempty"`
 	DroppedResults              int64            `json:"dropped_results,omitempty"`
 	WebsocketDroppedMessages    int64            `json:"websocket_dropped_messages,omitempty"`
@@ -1076,6 +1079,8 @@ type runArchiveWriter struct {
 	interactionsFile   *os.File
 	interactionBytes   int64
 	interactionsBroken bool
+	// interactionCount is the interactions written into the sidecar.
+	interactionCount int64
 }
 
 func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {

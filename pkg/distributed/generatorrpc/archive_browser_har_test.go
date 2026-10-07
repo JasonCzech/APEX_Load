@@ -48,6 +48,27 @@ func harTestClient(t *testing.T, service *Service) *Client {
 	return client
 }
 
+// A run archive that is discarded (a failed recording) leaves its HARs in
+// their HAR directory under its retention rather than deleting them with
+// the archive.
+func TestArchiveRecorderDiscardKeepsHARsInTheirDirectory(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	writer, err := newArchiveRecorder("har-generator", "har-discard", "har")
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact := publishedHAR(t, t.TempDir(), strings.Repeat("c", 32), `{"log":{"version":"1.2","entries":[]}}`)
+	if err := writer.RecordBrowserHARArtifact(artifact); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Discard(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(artifact.Path); err != nil {
+		t.Fatal("a discarded archive took its HAR with it", err)
+	}
+}
+
 func TestArchiveRecorderMovesHARsAndAcknowledgementDeletesThem(t *testing.T) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	service := NewService("har-generator", 10)
@@ -61,8 +82,9 @@ func TestArchiveRecorderMovesHARsAndAcknowledgementDeletesThem(t *testing.T) {
 	if err := writer.RecordBrowserHARArtifact(first); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(first.Path); !os.IsNotExist(err) {
-		t.Fatal("the HAR directory kept a moved artifact", err)
+	// The HAR directory keeps its copy until the archive is finalized.
+	if _, err := os.Stat(first.Path); err != nil {
+		t.Fatal("the HAR directory lost an artifact before its archive was final", err)
 	}
 	// A repeated generation is refused and counted, and the original stays.
 	again := publishedHAR(t, harDir, strings.Repeat("a", 32), content)
@@ -78,13 +100,16 @@ func TestArchiveRecorderMovesHARsAndAcknowledgementDeletesThem(t *testing.T) {
 	if err := service.finalizeArchiveWriter(writer, "COMPLETE", time.Now().UTC(), ""); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(first.Path); !os.IsNotExist(err) {
+		t.Fatal("a finalized archive's HAR stayed in its HAR directory", err)
+	}
 	manifest := writer.manifest
 	sum := sha256.Sum256([]byte(content))
 	name := archiveHARName(strings.Repeat("a", 32))
 	if len(manifest.BrowserHARArtifacts) != 1 || manifest.BrowserHARArtifacts[0].Name != name || manifest.BrowserHARArtifacts[0].SHA256 != hex.EncodeToString(sum[:]) || manifest.BrowserHARArtifacts[0].Kind != archiveHARKindNative || manifest.BrowserHARArtifacts[0].Fidelity != "native" {
 		t.Fatalf("manifest HARs %+v", manifest.BrowserHARArtifacts)
 	}
-	if !manifest.BrowserHARIncomplete || manifest.BrowserHAROmitted[harOmittedInvalid] != 1 || manifest.BrowserHAROmitted[harOmittedTransfer] != 1 {
+	if !manifest.BrowserHARIncomplete || manifest.BrowserHAROmitted[harOmittedDuplicate] != 1 || manifest.BrowserHAROmitted[harOmittedTransfer] != 1 {
 		t.Fatalf("omissions %+v", manifest.BrowserHAROmitted)
 	}
 	found := false
@@ -210,5 +235,23 @@ func TestArchiveRecorderInteractionBudgetCountsDrops(t *testing.T) {
 	defer writer.mu.Unlock()
 	if writer.recordErr != nil || !writer.manifest.BrowserInteractionsIncomplete || writer.manifest.BrowserInteractionsDropped != 3 {
 		t.Fatalf("drop accounting %+v err %v", writer.manifest, writer.recordErr)
+	}
+}
+
+// Optional evidence never takes more than a quarter of the run's byte limit,
+// whenever it arrives, and an admitted length that was not written is
+// returned.
+func TestOptionalEvidenceKeepsThreeQuartersForRequiredEvidence(t *testing.T) {
+	budget := &generatorArchiveByteBudget{maxBytes: 100}
+	if !budget.admitOptional(20) || budget.admitOptional(6) {
+		t.Fatal("optional evidence passed a quarter of the limit")
+	}
+	budget.releaseOptional(20)
+	if !budget.admitOptional(25) || budget.admitOptional(1) {
+		t.Fatal("released optional length was not returned")
+	}
+	full := &generatorArchiveByteBudget{maxBytes: 100, written: 90}
+	if full.admitOptional(11) {
+		t.Fatal("optional evidence admitted past the limit")
 	}
 }

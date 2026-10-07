@@ -48,6 +48,8 @@ func mergeRunArchiveTelemetrySummary(summary *RunArchiveTelemetrySummary, point 
 		recordTelemetryBreachTime(summary, point.Timestamp)
 	case "degraded":
 		summary.DegradedIntervals++
+	case "unscored":
+		summary.UnscoredIntervals++
 	case "healthy":
 		summary.HealthyIntervals++
 	}
@@ -278,6 +280,10 @@ func finalizeRunArchiveTelemetrySummary(summary RunArchiveTelemetrySummary) *Run
 		summary.Status = "breached"
 	} else if summary.DegradedIntervals > 0 {
 		summary.Status = "degraded"
+	} else if summary.UnscoredIntervals > 0 {
+		// Some budget decisions could not be scored: the run is not known
+		// to be healthy.
+		summary.Status = "unscored"
 	} else if summary.HealthyIntervals > 0 {
 		summary.Status = "healthy"
 	} else {

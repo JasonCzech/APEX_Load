@@ -457,3 +457,38 @@ func TestTelemetryLossTotalsAddProcessesOnce(t *testing.T) {
 		t.Fatalf("local run: %+v", local)
 	}
 }
+
+// A registration snapshot that follows only state-only publications counts
+// the epoch's origin as observed, so a complete run's loss is exact; without
+// the marker the same snapshot leaves the origin unobserved.
+func TestTelemetrySourceStateOnlyPrefixObservesTheOrigin(t *testing.T) {
+	at := time.Unix(1_800_000_000, 0).UTC()
+	for name, prefix := range map[string]bool{"state-only prefix": true, "unknown prefix": false} {
+		t.Run(name, func(t *testing.T) {
+			ledger := newTelemetrySourceLedger()
+			ledger.observe("gen-a", generatorrpc.MetricsBatch{SourceEpoch: "e1", BatchSequence: 2, SequencePrefixStateOnly: prefix}, at)
+			ledger.observe("gen-a", generatorrpc.MetricsBatch{SourceEpoch: "e1", BatchSequence: 3, WindowMs: 1000}, at)
+			ledger.observe("gen-a", generatorrpc.MetricsBatch{SourceEpoch: "e1", BatchSequence: 4, LifecycleState: "COMPLETE"}, at)
+			epochs, _ := ledger.snapshot()
+			if len(epochs) != 1 || epochs[0].LossExact != prefix || epochs[0].LostPublications != 0 || (prefix && epochs[0].FirstSequence != 1) {
+				t.Fatalf("epochs %+v", epochs)
+			}
+		})
+	}
+}
+
+// Lost publications from two epochs at the per-epoch cap clamp instead of
+// wrapping negative, and the total says it overflowed.
+func TestTelemetryLostPublicationsClampOnOverflow(t *testing.T) {
+	at := time.Unix(1_800_000_000, 0).UTC()
+	ledger := newTelemetrySourceLedger()
+	for _, epoch := range []string{"e1", "e2"} {
+		ledger.observe("gen-a", generatorrpc.MetricsBatch{SourceEpoch: epoch, BatchSequence: 1}, at)
+		ledger.observe("gen-a", generatorrpc.MetricsBatch{SourceEpoch: epoch, BatchSequence: 1<<62 + 10, LifecycleState: "COMPLETE"}, at)
+	}
+	summary, totals := ledger.rollup()
+	lost := totals[TelemetryCounterLostPublications]
+	if lost.Value != 1<<62 || lost.State != TelemetryCounterLowerBound || lost.Reason != "overflow" || summary.LostPublications < 0 {
+		t.Fatalf("lost %+v summary %+v", lost, summary)
+	}
+}

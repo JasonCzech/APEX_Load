@@ -108,6 +108,13 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 	if existing, err := tr.existingCollectedArchive(test); err != nil || existing != nil {
 		return existing, err
 	}
+	// A failed earlier attempt's receipt claims describe an archive that
+	// was never published: forget them before this attempt claims its own.
+	if store, ok := tr.receiptStore(); ok {
+		if _, err := store.ResetAcceptedRunEvidenceReceipts(test.ID); err != nil {
+			return nil, fmt.Errorf("reset evidence receipts: %w", err)
+		}
+	}
 	mergeOutput, err := newArchiveMergeBudget(archiveRoot)
 	if err != nil {
 		return nil, err
@@ -613,6 +620,13 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCache(ctx con
 	semaphore := make(chan struct{}, remoteArchiveFetchConcurrency)
 	budget := &remoteArchiveTransferBudget{remaining: limit, lease: lease}
 	harBudget := newRemoteHARBudget()
+	// Optional evidence has its own byte allowance on the same reservation,
+	// so it shares the free-space floor but never the required artifacts'
+	// limit.
+	harTransfer := &remoteArchiveTransferBudget{remaining: maxRunArchiveHARRunBytes, lease: lease}
+	// One run-wide allowance for every source's interactions, so the merged
+	// sidecar stays within what its reader accepts.
+	interactionsTransfer := &remoteArchiveTransferBudget{remaining: maxRunArchiveInteractionsBytes, lease: lease}
 	var workers sync.WaitGroup
 	for index, target := range targets {
 		workers.Add(1)
@@ -649,14 +663,14 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCache(ctx con
 				if clients[target] != nil {
 					live = clients[target]
 				}
-				bundle.hars, bundle.harOmitted = fetchRemoteHARArtifacts(ctx, live, test.ID, sourceIdentities[target], filepath.Join(transferStageRoot, fmt.Sprintf("target-%03d", index)), bundle.manifest.BrowserHARArtifacts, harBudget)
+				bundle.hars, bundle.harOmitted = fetchRemoteHARArtifacts(ctx, live, test.ID, sourceIdentities[target], filepath.Join(transferStageRoot, fmt.Sprintf("target-%03d", index)), bundle.manifest.BrowserHARArtifacts, harBudget, harTransfer)
 			}
 			if err == nil && !missing && bundle.manifest.BrowserInteractionsArtifact != nil {
 				var live archiveArtifactClient
 				if clients[target] != nil {
 					live = clients[target]
 				}
-				bundle.interactions, bundle.interactionsUnavailable = fetchRemoteInteractions(ctx, live, test.ID, sourceIdentities[target], filepath.Join(transferStageRoot, fmt.Sprintf("target-%03d", index)), bundle.manifest.BrowserInteractionsArtifact, bundle.manifest.BrowserInteractionRecordCount)
+				bundle.interactions, bundle.interactionsUnavailable = fetchRemoteInteractions(ctx, live, test.ID, sourceIdentities[target], filepath.Join(transferStageRoot, fmt.Sprintf("target-%03d", index)), bundle.manifest.BrowserInteractionsArtifact, bundle.manifest.BrowserInteractionRecordCount, interactionsTransfer)
 			}
 			results <- remoteArchiveFetchResult{index: index, bundle: bundle, missing: missing, err: err}
 		}(index, target)
@@ -1104,7 +1118,7 @@ func snapshotRemoteArchiveTargetHistory(tr *TestRunner, test *ManagedTest) []rem
 		snapshot := remoteArchiveTargetSnapshot{
 			timestamp:       live.Timestamp.UTC(),
 			targetTPS:       live.TargetTPS,
-			telemetry:       cloneTelemetryHealth(live.Telemetry),
+			telemetry:       archivedTelemetryHealth(live.Telemetry),
 			telemetryStatus: cloneTelemetryRunHealth(live.TelemetryStatus),
 		}
 		for name, group := range live.GroupMetrics {
@@ -2094,6 +2108,17 @@ func mergeRemoteArchiveSummaryTelemetryStatus(current, incoming *TelemetryRunHea
 		current.Conditions = append(current.Conditions, condition)
 	}
 	sort.Strings(current.Conditions)
+	unscored := make(map[string]struct{}, len(current.Unscored)+len(incoming.Unscored))
+	for _, entry := range append(append([]string(nil), current.Unscored...), incoming.Unscored...) {
+		if entry = strings.TrimSpace(entry); entry != "" {
+			unscored[entry] = struct{}{}
+		}
+	}
+	current.Unscored = nil
+	for entry := range unscored {
+		current.Unscored = append(current.Unscored, entry)
+	}
+	sort.Strings(current.Unscored)
 	current.BreachActive = current.BreachActive || incoming.BreachActive
 	current.SustainedBreach = current.SustainedBreach || incoming.SustainedBreach
 	if incoming.BreachDurationSec > current.BreachDurationSec {
@@ -2121,10 +2146,14 @@ func remoteArchivePreferTelemetryStatus(candidate, current *TelemetryRunHealth) 
 }
 
 func remoteArchiveTelemetryStatusRank(status string) int {
+	// Unscored outranks healthy: an interval one source could not score is
+	// not a pass.
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "breached":
-		return 3
+		return 4
 	case "degraded":
+		return 3
+	case "unscored":
 		return 2
 	case "healthy":
 		return 1
@@ -2597,7 +2626,7 @@ func applyRemoteArchiveTargetSnapshot(record *IntervalSummaryRecord, snapshots [
 	snapshot := snapshots[best]
 	if snapshot.telemetry != nil {
 		archived := record.Telemetry
-		record.Telemetry = cloneTelemetryHealth(snapshot.telemetry)
+		record.Telemetry = archivedTelemetryHealth(snapshot.telemetry)
 		record.Telemetry.DroppedResultsAvailable = snapshot.telemetry.DroppedResultsAvailable && snapshot.telemetry.DroppedResults >= 0
 		// A complete controller cohort supplies independent counter evidence.
 		// Metadata-only snapshots must not erase known archive measurements,

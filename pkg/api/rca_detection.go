@@ -513,12 +513,14 @@ func readMonitorSeries(ctx context.Context, record *storage.RunArchiveRecord, ma
 
 // monitorSeriesKey is a cheap key over every field a point's measurement
 // identity encodes, except provider entity IDs, which a series accumulates as
-// nodes. Points with equal keys have equal identities.
+// nodes — save a provider's own series discriminator (Prometheus's label-set
+// hash), which separates series the allowed labels alone would merge. Points
+// with equal keys have equal identities.
 func monitorSeriesKey(point analysis.MetricPoint) string {
 	m := point.Provider
 	parts := []string{point.ProjectID, point.Source, point.ScenarioID, point.Host, point.Service, point.MetricName, point.Population, point.MetricVersion, point.Kind, point.InputKind, point.Unit,
 		m.Name, m.Backend, strconv.FormatBool(m.Synthetic), m.MetricID, strconv.Itoa(m.ResolutionSeconds), m.Statistic, strconv.FormatBool(m.QueryWindow),
-		m.QueryID, m.DefinitionHash, m.BackendProfile, m.Mode, m.AnalysisStatistic, strconv.Itoa(m.EvaluationStepSeconds)}
+		m.QueryID, m.DefinitionHash, m.BackendProfile, m.Mode, m.AnalysisStatistic, strconv.Itoa(m.EvaluationStepSeconds), m.EntityIDs[providerSeriesEntityKey]}
 	for _, key := range slices.Sorted(maps.Keys(point.Dimensions)) {
 		parts = append(parts, key+"="+point.Dimensions[key])
 	}
@@ -528,8 +530,14 @@ func monitorSeriesKey(point analysis.MetricPoint) string {
 	return strings.Join(parts, "\x00")
 }
 
+// providerSeriesEntityKey is the entity ID a provider uses to tell apart
+// series whose allowed labels are equal (Prometheus: a hash of the full label
+// set).
+const providerSeriesEntityKey = "series"
+
 // monitorSeriesTemplate builds the series a provider point belongs to. Its
-// identity is the point's measurement series identity without entity IDs,
+// identity is the point's measurement series identity without entity IDs
+// other than the provider's series discriminator,
 // on the observation its provider declares (counters, and providers whose
 // values accumulate, are cumulative); a point recorded without a project
 // belongs to the run's. A point whose identity fields are incomplete keeps
@@ -554,11 +562,24 @@ func monitorSeriesTemplate(point analysis.MetricPoint, project, file string) (rc
 	}
 	provider := *m
 	provider.EntityIDs = nil
+	if series := m.EntityIDs[providerSeriesEntityKey]; series != "" {
+		provider.EntityIDs = map[string]string{providerSeriesEntityKey: series}
+	}
 	measured.Provider = &provider
 	digestOf := ""
-	identity, err := analysis.MeasurementSeriesIdentityOfRecorded(measured, analysis.SeriesObservation{Mode: observation, BucketNanos: int64(seconds) * int64(time.Second)})
+	grid := analysis.SeriesObservation{Mode: observation, BucketNanos: int64(seconds) * int64(time.Second)}
+	identity, err := analysis.MeasurementSeriesIdentityOfRecorded(measured, grid)
 	if err == nil {
+		// The series ID is how a baseline run's series is paired with this
+		// one, so it leaves out the scenario the run was launched from: a
+		// copied scenario or an ad-hoc run measures the same series. The
+		// full identity stays on the series.
+		comparable := measured
+		comparable.ScenarioID = ""
 		digestOf = identity.SHA256
+		if comparison, comparisonErr := analysis.MeasurementSeriesIdentityOfRecorded(comparable, grid); comparisonErr == nil {
+			digestOf = comparison.SHA256
+		}
 	} else {
 		legacy := []string{m.Name, point.Source, point.MetricName, m.QueryID, m.Statistic, point.Kind}
 		for _, key := range slices.Sorted(maps.Keys(point.Dimensions)) {

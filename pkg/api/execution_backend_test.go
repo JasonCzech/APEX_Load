@@ -2678,9 +2678,21 @@ func TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion(t *testing.T
 	if !qualified {
 		t.Fatal("no archived interval carried the transport lag's clock quality")
 	}
+	// The run's cumulative coverage stays in the live view and the manifest,
+	// not in every archived row.
+	for _, line := range bytes.Split(bytes.TrimSpace(intervals), []byte("\n")) {
+		var row struct {
+			Telemetry *struct {
+				Coverage json.RawMessage `json:"coverage"`
+			} `json:"telemetry"`
+		}
+		if json.Unmarshal(line, &row) == nil && row.Telemetry != nil && len(row.Telemetry.Coverage) > 0 {
+			t.Fatalf("archived interval carries the run's cumulative coverage: %s", line)
+		}
+	}
 	// The manifest carries the run's wall-time telemetry account.
 	coverage := manifest.TelemetryCoverage
-	if coverage == nil || coverage.Algorithm != telemetryCoverageAlgorithm || coverage.Coverage.WindowMs <= 0 || len(coverage.Coverage.Sources) != 1 || coverage.Coverage.Sources[0].ObservedMs <= 0 || len(coverage.Segments) != 1 || coverage.RetainedIntervals == 0 ||
+	if coverage == nil || coverage.Algorithm != telemetryCoverageAlgorithm || coverage.Coverage.WindowMs <= 0 || len(coverage.Coverage.Sources) != 1 || coverage.Coverage.Sources[0].ObservedMs <= 0 || coverage.Coverage.ObservedMs <= 0 || coverage.ClassifiedMs <= 0 || len(coverage.Segments) != 1 || coverage.RetainedIntervals == 0 ||
 		coverage.HealthyMs+coverage.DegradedMs+coverage.BreachedMs+coverage.UnknownMs != coverage.Coverage.WindowMs {
 		t.Fatalf("telemetry coverage record %+v", coverage)
 	}

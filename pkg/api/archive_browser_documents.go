@@ -263,7 +263,13 @@ func (a *archiveBrowserDocumentAccumulator) summary() *protocol.BrowserDocumentS
 	return protocol.SummarizeBrowserDocumentObservations(observations, a.dropped, a.incomplete)
 }
 func readArchiveBrowserDocumentSummary(record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (*protocol.BrowserDocumentSummary, []protocol.BrowserDocumentObservation, bool, error) {
-	accumulator, captured, err := readArchiveBrowserDocumentMeasurements(context.Background(), record, manifest)
+	return readArchiveBrowserDocumentSummaryContext(context.Background(), record, manifest)
+}
+
+// readArchiveBrowserDocumentSummaryContext is readArchiveBrowserDocumentSummary
+// bounded by ctx.
+func readArchiveBrowserDocumentSummaryContext(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (*protocol.BrowserDocumentSummary, []protocol.BrowserDocumentObservation, bool, error) {
+	accumulator, captured, err := readArchiveBrowserDocumentMeasurements(ctx, record, manifest)
 	if err != nil {
 		return nil, nil, false, err
 	}

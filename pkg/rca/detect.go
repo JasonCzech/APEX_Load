@@ -266,7 +266,7 @@ func Detect(input DetectionInput, params DetectParams, budgeter *Budgeter) ([]An
 	if out.insufficient > 0 {
 		limitations = append(limitations, Limitation{Code: LimitationInsufficientBaseline, Detail: fmt.Sprintf("%d series had fewer than %d baseline buckets at some level", out.insufficient, params.MinBaselineBuckets)})
 	}
-	anomalies, cut := strongest(out.anomalies, params.MaxAnomalies, func(a Anomaly) float64 { return math.Abs(a.PeakZ) }, func(a Anomaly) string { return a.ID })
+	anomalies, cut := keepAnomalies(out.anomalies, params.MaxAnomalies)
 	if cut > 0 {
 		limitations = append(limitations, Limitation{Code: LimitationAnomaliesTruncated, Detail: fmt.Sprintf("kept the %d largest of %d anomalies", len(anomalies), len(anomalies)+cut)})
 	}
@@ -369,6 +369,32 @@ func sortedPoints(points []SeriesPoint) []SeriesPoint {
 }
 
 // strongest keeps the n items with the largest score, ties broken by key.
+// keepAnomalies keeps at most n anomalies, the largest first. Anomalies of
+// series that can be a symptom or a cause come first: joint action-dimension
+// slices (which no hypothesis uses) fill only the room left, so they never
+// push out a cause.
+func keepAnomalies(anomalies []Anomaly, n int) ([]Anomaly, int) {
+	if n <= 0 || len(anomalies) <= n {
+		return anomalies, 0
+	}
+	var primary, joint []Anomaly
+	for _, anomaly := range anomalies {
+		if strings.HasPrefix(anomaly.Series, SeriesJointPrefix) {
+			joint = append(joint, anomaly)
+		} else {
+			primary = append(primary, anomaly)
+		}
+	}
+	score := func(a Anomaly) float64 { return math.Abs(a.PeakZ) }
+	key := func(a Anomaly) string { return a.ID }
+	kept, _ := strongest(primary, n, score, key)
+	if room := n - len(kept); room > 0 {
+		fill, _ := strongest(joint, room, score, key)
+		kept = append(kept, fill...)
+	}
+	return kept, len(anomalies) - len(kept)
+}
+
 func strongest[T any](items []T, n int, score func(T) float64, key func(T) string) ([]T, int) {
 	if n <= 0 || len(items) <= n {
 		return items, 0

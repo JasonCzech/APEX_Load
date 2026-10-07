@@ -51,13 +51,15 @@ const (
 	maxRunArchiveHARRunBytes = int64(1 << 30)
 	runArchiveHARRecordType  = "browser_har_native"
 
-	harOmittedSourceUnavailable = "source_unavailable"
-	harOmittedTransfer          = "transfer_failed"
-	harOmittedInvalid           = "invalid_artifact"
-	harOmittedReceipt           = "receipt_refused"
-	harOmittedRunBytes          = "run_byte_limit"
-	harOmittedDuplicate         = "duplicate"
-	harOmittedArtifactLimit     = "artifact_limit"
+	harOmittedSourceUnavailable = protocol.BrowserHAROmittedSourceUnavailable
+	harOmittedTransfer          = protocol.BrowserHAROmittedTransfer
+	harOmittedInvalid           = protocol.BrowserHAROmittedInvalid
+	harOmittedReceipt           = protocol.BrowserHAROmittedReceipt
+	harOmittedRunBytes          = protocol.BrowserHAROmittedRunBytes
+	harOmittedDuplicate         = protocol.BrowserHAROmittedDuplicate
+	harOmittedArtifactLimit     = protocol.BrowserHAROmittedArtifactLimit
+	harOmittedTooLarge          = protocol.BrowserHAROmittedTooLarge
+	harOmittedArchiveQuota      = protocol.BrowserHAROmittedArchiveQuota
 )
 
 // runArchiveHARGeneration parses a run archive HAR name.
@@ -118,7 +120,12 @@ type stagedRemoteHAR struct {
 // fetchRemoteHARArtifacts fetches a source's declared HARs from its live
 // generator client into dir. The collection cache never holds HARs, so a
 // source served from it, or without a client, has its HARs unavailable.
-func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, testID, sourceIdentity, dir string, declared []RunArchiveEvidenceArtifact, budget *remoteHARBudget) ([]stagedRemoteHAR, map[string]int64) {
+//
+// transfer charges the bytes to the run's transfer reservation, whose writer
+// refuses to go below the controller's free-space floor, so optional evidence
+// can never exhaust the disk the required archive needs; a HAR it refuses is
+// omitted.
+func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, testID, sourceIdentity, dir string, declared []RunArchiveEvidenceArtifact, budget *remoteHARBudget, transfer *remoteArchiveTransferBudget) ([]stagedRemoteHAR, map[string]int64) {
 	omitted := map[string]int64{}
 	var staged []stagedRemoteHAR
 	for _, entry := range declared {
@@ -135,7 +142,7 @@ func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, 
 			continue
 		}
 		path := filepath.Join(dir, entry.Name)
-		copied, err := fetchRemoteArchiveArtifactFileForSource(ctx, client, testID, entry.Name, sourceIdentity, path, entry.Bytes, nil)
+		copied, err := fetchRemoteArchiveArtifactFileForSource(ctx, client, testID, entry.Name, sourceIdentity, path, entry.Bytes, transfer)
 		if err == nil && copied != entry.Bytes {
 			err = io.ErrUnexpectedEOF
 		}
@@ -227,6 +234,21 @@ func mergeRemoteHARArtifacts(workingDir string, manifest *RunArchiveManifest, bu
 
 // copyStagedHAR durably copies a verified staged HAR into the archive.
 func copyStagedHAR(staged stagedRemoteHAR, workingDir string) (err error) {
+	// The staged file was verified as fetched and is private to this
+	// staging attempt: move it rather than hold two copies on disk. Only
+	// across filesystems is it copied (and verified again).
+	destination := filepath.Join(workingDir, staged.entry.Name)
+	if _, statErr := os.Lstat(destination); errors.Is(statErr, os.ErrNotExist) {
+		if os.Rename(staged.path, destination) == nil {
+			return syncArchiveDirectory(workingDir)
+		}
+	}
+	return copyStagedHARBytes(staged, workingDir)
+}
+
+// copyStagedHARBytes copies a staged HAR into the archive, verifying its
+// size and SHA-256 as it goes.
+func copyStagedHARBytes(staged stagedRemoteHAR, workingDir string) (err error) {
 	source, _, err := openArchiveArtifactForRead(filepath.Dir(staged.path), filepath.Base(staged.path))
 	if err != nil {
 		return err
@@ -291,9 +313,11 @@ type evidenceAcknowledgingClient interface {
 const evidenceAcknowledgementTimeout = 30 * time.Second
 
 // publishRunEvidence publishes a run's accepted receipts once its archive
-// publication committed, then acknowledges the published HARs to their
-// generators. A failed acknowledgement only leaves the generator's copy to
-// its archive retention.
+// publication committed, then acknowledges the published evidence to its
+// generators in the background, outside the commit's fences: by then the
+// run's generator clients are closed, so a target without a retained client
+// is dialed afresh. A failed acknowledgement only leaves the generator's copy
+// to its archive retention.
 func (tr *TestRunner) publishRunEvidence(testID string) {
 	store, ok := tr.receiptStore()
 	if !ok {
@@ -317,24 +341,62 @@ func (tr *TestRunner) publishRunEvidence(testID string) {
 	if len(bySource) == 0 {
 		return
 	}
-	clients := tr.evidenceClients(testID)
+	var acks []evidenceAcknowledgementTarget
 	for _, source := range slices.Sorted(maps.Keys(bySource)) {
 		published := bySource[source]
-		client, ok := clients[published[0].Target].(evidenceAcknowledgingClient)
-		if !ok {
-			continue
-		}
 		request := generatorrpc.EvidenceAcknowledgement{TestID: testID, SourceIdentity: source}
 		for _, receipt := range published {
 			request.Artifacts = append(request.Artifacts, generatorrpc.AcknowledgedEvidence{Name: receipt.Name, SHA256: receipt.SHA256})
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), evidenceAcknowledgementTimeout)
-		result, err := client.AcknowledgeEvidence(ctx, request)
-		cancel()
-		if err != nil || len(result.Retained) > 0 {
-			slog.Warn("generator kept acknowledged evidence", "test_id", testID, "source", source, "retained", len(result.Retained), "err", err)
-		}
+		acks = append(acks, evidenceAcknowledgementTarget{target: published[0].Target, request: request})
 	}
+	clients := tr.evidenceClients(testID)
+	tr.mu.RLock()
+	backend, _ := tr.execution.(*distributedExecutionBackend)
+	tr.mu.RUnlock()
+	tr.evidenceAcknowledgements.Add(1)
+	go func() {
+		defer tr.evidenceAcknowledgements.Done()
+		acknowledgeRunEvidence(testID, acks, clients, backend)
+	}()
+}
+
+// evidenceAcknowledgementTarget is one source's published evidence and the
+// generator target holding it.
+type evidenceAcknowledgementTarget struct {
+	target  string
+	request generatorrpc.EvidenceAcknowledgement
+}
+
+// acknowledgeRunEvidence tells each generator which of its copies the
+// published archive now holds, through a retained client or a fresh dial.
+func acknowledgeRunEvidence(testID string, acks []evidenceAcknowledgementTarget, clients map[string]generatorClient, backend *distributedExecutionBackend) {
+	for _, ack := range acks {
+		ctx, cancel := context.WithTimeout(context.Background(), evidenceAcknowledgementTimeout)
+		client, ok := clients[ack.target].(evidenceAcknowledgingClient)
+		var dialed generatorClient
+		if !ok && backend != nil && backend.dial != nil && ack.target != "" {
+			if fresh, err := backend.dial(ctx, ack.target); err == nil && fresh != nil {
+				dialed = fresh
+				client, ok = fresh.(evidenceAcknowledgingClient)
+			}
+		}
+		if !ok {
+			slog.Warn("no generator client to acknowledge published evidence; its copy stays until retention", "test_id", testID, "target", ack.target, "source", ack.request.SourceIdentity)
+		} else if result, err := client.AcknowledgeEvidence(ctx, ack.request); err != nil || len(result.Retained) > 0 {
+			slog.Warn("generator kept acknowledged evidence", "test_id", testID, "source", ack.request.SourceIdentity, "retained", len(result.Retained), "err", err)
+		}
+		if dialed != nil {
+			_ = dialed.Close()
+		}
+		cancel()
+	}
+}
+
+// waitEvidenceAcknowledgements waits for the background acknowledgements
+// started so far (tests and shutdown).
+func (tr *TestRunner) waitEvidenceAcknowledgements() {
+	tr.evidenceAcknowledgements.Wait()
 }
 
 // evidenceClients are the run's generator clients by target, live or
@@ -418,7 +480,7 @@ func (w *runArchiveWriter) RecordBrowserHARArtifact(artifact protocol.BrowserHAR
 	err := browser.TakeRuntimeHARArtifact(ctx, artifact.Path, func(r io.Reader, length int64) (err error) {
 		switch {
 		case length > maxRunArchiveHARBytes:
-			reason = harOmittedInvalid
+			reason = harOmittedTooLarge
 			return errors.New("HAR exceeds its size limit")
 		case length > maxRunArchiveHARRunBytes-runBytes:
 			reason = harOmittedRunBytes
@@ -448,6 +510,9 @@ func (w *runArchiveWriter) RecordBrowserHARArtifact(artifact protocol.BrowserHAR
 			err = file.Sync()
 		}
 		if err != nil {
+			if errors.Is(err, errArchiveCaptureLimit) || errors.Is(err, errArchiveCaptureFreeSpace) {
+				reason = harOmittedArchiveQuota
+			}
 			return err
 		}
 		sum, size, keep = hex.EncodeToString(digest.Sum(nil)), length, true
