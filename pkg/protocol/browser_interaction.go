@@ -243,6 +243,37 @@ func (e *BrowserInteractionEvidence) Clone() *BrowserInteractionEvidence {
 	return &out
 }
 
+// SplitBrowserInteractionEvidence returns e as one or more records of the
+// same source generation, each within MaxBrowserInteractionEvidenceBytes
+// when serialized, in order; Dropped and Incomplete stay on the last. A
+// record already within the bound is returned as is. Redaction after
+// capture can lengthen a record its capture split to fit.
+func SplitBrowserInteractionEvidence(e *BrowserInteractionEvidence) []*BrowserInteractionEvidence {
+	if e == nil {
+		return nil
+	}
+	if raw, err := json.Marshal(e); err == nil && len(raw) <= MaxBrowserInteractionEvidenceBytes || len(e.Interactions) < 2 {
+		return []*BrowserInteractionEvidence{e}
+	}
+	envelope, _ := json.Marshal(BrowserInteractionEvidence{Version: e.Version, SourceGeneration: e.SourceGeneration, Interactions: []BrowserInteraction{}, Dropped: e.Dropped, Incomplete: e.Incomplete})
+	limit := MaxBrowserInteractionEvidenceBytes - len(envelope)
+	var out []*BrowserInteractionEvidence
+	size := 0
+	for _, interaction := range e.Interactions {
+		raw, _ := json.Marshal(interaction)
+		encoded := len(raw) + 1 // and its separating comma
+		if len(out) == 0 || size+encoded > limit && len(out[len(out)-1].Interactions) > 0 {
+			out = append(out, &BrowserInteractionEvidence{Version: e.Version, SourceGeneration: e.SourceGeneration, Interactions: []BrowserInteraction{}})
+			size = 0
+		}
+		last := out[len(out)-1]
+		last.Interactions = append(last.Interactions, interaction)
+		size += encoded
+	}
+	out[len(out)-1].Dropped, out[len(out)-1].Incomplete = e.Dropped, e.Incomplete
+	return out
+}
+
 // DecodeBrowserInteractionEvidence admits one serialized evidence record.
 func DecodeBrowserInteractionEvidence(raw []byte) (*BrowserInteractionEvidence, error) {
 	if len(raw) > MaxBrowserInteractionEvidenceBytes {

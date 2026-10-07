@@ -28,3 +28,30 @@ func TestPublishedClockIgnoresWallStepsUntilAHeartbeat(t *testing.T) {
 		t.Fatal("a clock within tolerance was re-anchored")
 	}
 }
+
+// Drift within the tolerance is never corrected, even by an idle heartbeat;
+// beyond it the anchor moves.
+func TestPublishedClockKeepsSubSecondDrift(t *testing.T) {
+	now := time.Now()
+	for _, tc := range []struct {
+		drift time.Duration
+		moves bool
+	}{
+		{600 * time.Millisecond, false},
+		{-600 * time.Millisecond, false},
+		{1500 * time.Millisecond, true},
+		{-1500 * time.Millisecond, true},
+	} {
+		clock := &publishedClock{wall: now.Round(0).Add(tc.drift), mono: now}
+		if moved := clock.reanchor(now); moved != tc.moves {
+			t.Fatalf("drift %s re-anchored %v, want %v", tc.drift, moved, tc.moves)
+		}
+		want := now.Round(0).Add(tc.drift)
+		if tc.moves {
+			want = now.Round(0)
+		}
+		if got := clock.at(now); !got.Equal(want) {
+			t.Fatalf("drift %s published %s, want %s", tc.drift, got, want)
+		}
+	}
+}

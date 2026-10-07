@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -170,5 +172,49 @@ func TestScrubbedInteractionRoutesKeepRecordsValid(t *testing.T) {
 	}
 	if got := sink.interactions[0].Interactions[1].Route; len(marker)-1 > len(secret) && got != "" {
 		t.Fatalf("a route lengthened past the bound was kept: %d bytes", len(got))
+	}
+}
+
+// A near-full record whose routes the run's redaction lengthens is split at
+// handoff, so the sink keeps every interaction rather than refusing the
+// record as too large.
+func TestScrubLengthenedInteractionRecordIsSplitAtHandoff(t *testing.T) {
+	gen := strings.Repeat("d", 32)
+	secret := "q7Zx"
+	config := WithSecretValueRedaction(nil, []string{secret})
+	if marker := scrubSensitiveTextWithConfig("/"+secret, config); len(marker)-1 <= len(secret) {
+		t.Skip("the redaction marker does not lengthen a route")
+	}
+	record := &protocol.BrowserInteractionEvidence{Version: protocol.BrowserInteractionVersion, SourceGeneration: gen}
+	for n := 0; ; n++ {
+		id := strconv.Itoa(n)
+		interaction := protocol.BrowserInteraction{Version: protocol.BrowserInteractionVersion, SourceGeneration: gen, InteractionID: gen + "-i" + id, ActionID: gen + "-a" + id, DocumentID: gen + "-idoc-" + strings.Repeat("b", 32), FrameScope: "main_frame", Kind: "click", PointerType: "mouse", Points: []protocol.BrowserInteractionPoint{{X: 140, Y: 170}},
+			ViewportWidth: 1000, ViewportHeight: 700, DeviceScaleFactor: 1, LayoutRevision: "0123456789abcdef", Route: "/" + strings.Repeat(secret+"/", 40),
+			Outcome: protocol.BrowserInteractionOutcome{Observed: protocol.InteractionOutcomeNotDeclared}, Provenance: protocol.InteractionProvenanceScripted, Success: true, CapturedAt: time.Now().UTC()}
+		record.Interactions = append(record.Interactions, interaction)
+		raw, _ := json.Marshal(record)
+		if len(raw) > protocol.MaxBrowserInteractionEvidenceBytes-2048 {
+			break
+		}
+	}
+	if record.Clone() == nil {
+		t.Fatal("fixture record is invalid")
+	}
+	total := len(record.Interactions)
+	sink := &interactionUnitSink{}
+	handOffBrowserInteractions(&interactionUnitProtocol{evidence: []*protocol.BrowserInteractionEvidence{record}}, sink, config)
+	if len(sink.interactions) < 2 {
+		t.Fatalf("records %d: the lengthened record was not split", len(sink.interactions))
+	}
+	kept := 0
+	for _, part := range sink.interactions {
+		raw, _ := json.Marshal(part)
+		if _, err := protocol.DecodeBrowserInteractionEvidence(raw); err != nil {
+			t.Fatalf("a handed-off record does not decode (%d bytes): %v", len(raw), err)
+		}
+		kept += len(part.Interactions)
+	}
+	if kept != total {
+		t.Fatalf("kept %d of %d interactions", kept, total)
 	}
 }

@@ -197,8 +197,10 @@ Deleting a run archive (including retention) or its project tombstones its
 receipts. Receipt rows are kept, at most one per HAR (128 per run) and one per
 source's interactions sidecar: they outlive the run so that a deleted
 archive's tombstones keep refusing late uploads (a deleted run refuses them
-anyway, and still records a tombstone for each). On PostgreSQL, receipt admission is a read-then-write without a
-row lock. Two stagers of one run are excluded by the execution lease (one
+anyway, and still records a tombstone for each). Receipt admission is a
+read-then-write; under the durable execution fence it first locks the
+execution lease row (on PostgreSQL), and otherwise takes no row lock. Two
+stagers of one run are excluded by the execution lease (one
 controller holds a run), and receipts are fenced by execution generation: an
 older generation's staging attempt (a deposed controller still merging)
 neither forgets nor changes a newer generation's claims, and a controller

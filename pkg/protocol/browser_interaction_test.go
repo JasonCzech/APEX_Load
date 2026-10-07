@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -93,5 +94,51 @@ func TestBrowserInteractionEvidenceRoundTripsStrictly(t *testing.T) {
 	}
 	if _, err := DecodeBrowserInteractionEvidence([]byte(`{"version":1,"source_generation":"` + first.SourceGeneration + `","interactions":[],"dropped":0,"incomplete":false,"extra":1}`)); err == nil {
 		t.Fatal("unknown field admitted")
+	}
+}
+
+// A record past the byte bound splits into in-order records within it, each
+// valid, with the drop count and incompleteness on the last.
+func TestSplitBrowserInteractionEvidenceKeepsEveryInteractionWithinTheBound(t *testing.T) {
+	base := interactionFixture()
+	record := &BrowserInteractionEvidence{Version: BrowserInteractionVersion, SourceGeneration: base.SourceGeneration, Dropped: 3, Incomplete: true}
+	for n := 0; ; n++ {
+		interaction := base
+		interaction.InteractionID = fmt.Sprintf("%s-i%d", base.SourceGeneration, n)
+		interaction.Route = "/" + strings.Repeat("r", 250)
+		record.Interactions = append(record.Interactions, interaction)
+		if raw, _ := json.Marshal(record); len(raw) > MaxBrowserInteractionEvidenceBytes+20_000 {
+			break
+		}
+	}
+	if same := SplitBrowserInteractionEvidence(&BrowserInteractionEvidence{Version: record.Version, SourceGeneration: record.SourceGeneration, Interactions: record.Interactions[:2]}); len(same) != 1 || len(same[0].Interactions) != 2 {
+		t.Fatalf("a record within the bound was split: %d", len(same))
+	}
+	parts := SplitBrowserInteractionEvidence(record)
+	if len(parts) < 2 {
+		t.Fatalf("parts %d", len(parts))
+	}
+	next := 0
+	for k, part := range parts {
+		raw, err := json.Marshal(part)
+		if err != nil || len(raw) > MaxBrowserInteractionEvidenceBytes {
+			t.Fatalf("part %d is %d bytes", k, len(raw))
+		}
+		if _, err := DecodeBrowserInteractionEvidence(raw); err != nil {
+			t.Fatalf("part %d does not decode: %v", k, err)
+		}
+		for _, interaction := range part.Interactions {
+			if interaction.InteractionID != record.Interactions[next].InteractionID {
+				t.Fatalf("interaction %d out of order", next)
+			}
+			next++
+		}
+		last := k == len(parts)-1
+		if last != (part.Dropped == 3 && part.Incomplete) || !last && (part.Dropped != 0 || part.Incomplete) {
+			t.Fatalf("part %d dropped %d incomplete %v", k, part.Dropped, part.Incomplete)
+		}
+	}
+	if next != len(record.Interactions) {
+		t.Fatalf("split kept %d of %d interactions", next, len(record.Interactions))
 	}
 }

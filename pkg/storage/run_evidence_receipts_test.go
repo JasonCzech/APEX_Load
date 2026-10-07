@@ -205,14 +205,47 @@ func testRunEvidenceReceiptFences(t *testing.T, s *SQLiteStore) {
 			t.Fatalf("%s-fenced accept: %q %v", name, state, err)
 		}
 	}
-	if receipts, _ := s.ListRunEvidenceReceipts("fenced-run"); len(receipts) != 1 && len(receipts) != 2 {
-		t.Fatalf("fenced accepts wrote rows: %+v", receipts)
-	} else {
-		for _, r := range receipts {
-			if r.SourceIdentity == "source-d" {
-				t.Fatalf("a fenced accept wrote %+v", r)
-			}
+	receipts, _ := s.ListRunEvidenceReceipts("fenced-run")
+	want := 2 // f2 and the holder's f3
+	if term.Generation < 5 {
+		want = 1 // f2 was forgotten to let the term in
+	}
+	if len(receipts) != want {
+		t.Fatalf("receipts after fenced accepts: %+v", receipts)
+	}
+	for _, r := range receipts {
+		if r.SourceIdentity == "source-d" {
+			t.Fatalf("a fenced accept wrote %+v", r)
 		}
+	}
+	// A takeover: once another controller holds a later term, the deposed
+	// controller's accept under its own term records nothing, and the new
+	// holder's does.
+	const takeover = "receipt-takeover-lease"
+	ok, deposedTerm, err := s.TryAcquireSchedulerLeaseTerm(takeover, "controller-old", now, 300*time.Millisecond)
+	if err != nil || !ok {
+		t.Fatalf("acquire old term: %v %v", ok, err)
+	}
+	time.Sleep(600 * time.Millisecond)
+	ok, newTerm, err := s.TryAcquireSchedulerLeaseTerm(takeover, "controller-new", time.Now().UTC(), time.Minute)
+	if err != nil || !ok || newTerm.Generation <= deposedTerm.Generation {
+		t.Fatalf("takeover: %v %+v %v", ok, newTerm, err)
+	}
+	if _, err := s.ResetAcceptedRunEvidenceReceipts("fenced-run", 0); err != nil {
+		t.Fatal(err)
+	}
+	old := evidenceReceiptFixture("fenced-run", "source-f", "f6", deposedTerm.Generation)
+	old.LeaseName, old.LeaseOwner = takeover, "controller-old"
+	if state, err := s.AcceptRunEvidenceReceipt(old); err != nil || state != EvidenceReceiptTombstoned {
+		t.Fatalf("deposed accept after takeover: %q %v", state, err)
+	}
+	current := evidenceReceiptFixture("fenced-run", "source-f", "f7", newTerm.Generation)
+	current.LeaseName, current.LeaseOwner = takeover, "controller-new"
+	if state, err := s.AcceptRunEvidenceReceipt(current); err != nil || state != EvidenceReceiptAccepted {
+		t.Fatalf("new holder's accept: %q %v", state, err)
+	}
+	if receipts, _ := s.ListRunEvidenceReceipts("fenced-run"); len(receipts) != 1 || receipts[0].SourceGeneration != "f7" {
+		t.Fatalf("takeover receipts: %+v", receipts)
 	}
 	for name, mutate := range map[string]func(*RunEvidenceReceipt){
 		"no owner":      func(r *RunEvidenceReceipt) { r.LeaseOwner = "" },

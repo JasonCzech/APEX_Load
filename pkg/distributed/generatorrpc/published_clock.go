@@ -6,7 +6,9 @@ import (
 )
 
 // publishedClockTolerance is how far the published clock may drift from the
-// wall clock (slewing, or a step) before an idle heartbeat re-anchors it.
+// wall clock (slewing, or a step) before an idle heartbeat re-anchors it; a
+// smaller drift is never corrected, so offsets measured against this clock
+// can differ from the wall clock by up to this much.
 const publishedClockTolerance = time.Second
 
 // publishedClock is the clock a generator stamps on what the controller

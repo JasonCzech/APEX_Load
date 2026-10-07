@@ -401,11 +401,16 @@ controller's wall clock steps back, a source's observations are not recorded
 until the clock passes its last recorded window, and that gap is not marked
 truncated. The file is written only when the run measured a clock.
 A generator's offset is against the clock it stamps its pongs and telemetry
-with: its wall clock as of the last heartbeat answered while it had no test
-assigned, advanced on its monotonic clock. A wall-clock step on the
-generator during a run therefore moves neither its telemetry nor these
-offsets (it shows at the first probe after the run), but it does move the
-run's transaction timestamps, which these offsets do not track. Observations live with the controller holding the run, so a
+with: its wall clock, advanced on its monotonic clock from an anchor that is
+moved to the wall clock only at a heartbeat answered while it has no test
+assigned, and only when the two have drifted more than 1 second apart. A
+wall-clock step on the generator during a run therefore moves neither its
+telemetry nor these offsets; a step of more than 1 second shows at the
+first probe after the run, and a smaller one (an ntpd step of 600 ms, say)
+never moves the anchor, so the offsets can stay up to 1 second away from
+the generator's wall clock while their uncertainty says a few
+milliseconds. Such a step does move the run's transaction timestamps,
+which these offsets do not track. Observations live with the controller holding the run, so a
 collector batch accepted by another replica, or a probe lost to a controller
 restart, is not archived. With HA, offsets are against the replica that
 measured them: generator observations name the execution owner in

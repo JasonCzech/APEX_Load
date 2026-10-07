@@ -142,3 +142,27 @@ func TestEvidenceAcknowledgementConfirmsSweptArchivesAndBacksOffFailures(t *test
 		})
 	}
 }
+
+// Shutdown waits for background acknowledgements only until its deadline.
+func TestShutdownWaitForAcknowledgementsIsBounded(t *testing.T) {
+	tr := NewTestRunner(1, nil, nil)
+	tr.evidenceAcknowledgements.Add(1)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	tr.waitEvidenceAcknowledgementsUntil(ctx)
+	if elapsed := time.Since(started); elapsed < 40*time.Millisecond || elapsed > 2*time.Second {
+		t.Fatalf("an unfinished acknowledgement held shutdown for %s", elapsed)
+	}
+	tr.evidenceAcknowledgements.Done()
+	done := make(chan struct{})
+	go func() {
+		tr.waitEvidenceAcknowledgementsUntil(context.Background())
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("finished acknowledgements still held shutdown")
+	}
+}

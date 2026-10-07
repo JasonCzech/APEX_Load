@@ -49,13 +49,14 @@ type BrowserInteractionEvidenceSink interface {
 	RecordBrowserInteractionEvidence(*protocol.BrowserInteractionEvidence) error
 }
 
-// handOffBrowserInteractions gives a sink the interactions a protocol
-// recorded since the last handoff, their routes scrubbed like any other run
-// evidence. Without such a sink they are dropped.
 // maxHandedOffInteractionRoute is the interaction route bound
 // (protocol.BrowserInteraction.Valid).
 const maxHandedOffInteractionRoute = 512
 
+// handOffBrowserInteractions gives a sink the interactions a protocol
+// recorded since the last handoff, their routes scrubbed like any other run
+// evidence. A record the scrubbing lengthened past the record bound is split
+// so the sink can keep all of it. Without such a sink they are dropped.
 func handOffBrowserInteractions(p protocol.Protocol, sink ResultSink, config *RedactionConfig) {
 	provider, ok := p.(protocol.BrowserInteractionEvidenceProvider)
 	if !ok {
@@ -82,8 +83,10 @@ func handOffBrowserInteractions(p protocol.Protocol, sink ResultSink, config *Re
 			}
 			record.Interactions[i].Route = route
 		}
-		if err := interactionSink.RecordBrowserInteractionEvidence(record); err != nil {
-			slog.Warn("browser interaction evidence was not retained in the run archive", "generation", record.SourceGeneration, "err", err)
+		for _, part := range protocol.SplitBrowserInteractionEvidence(record) {
+			if err := interactionSink.RecordBrowserInteractionEvidence(part); err != nil {
+				slog.Warn("browser interaction evidence was not retained in the run archive", "generation", part.SourceGeneration, "err", err)
+			}
 		}
 	}
 }

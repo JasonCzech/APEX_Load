@@ -515,19 +515,21 @@ func (a *acknowledgedEvidenceSet) has(key string) bool {
 func (a *acknowledgedEvidenceSet) add(key string) { a.set(key, time.Time{}) }
 
 // retryAfter defers a failed acknowledgement; it never undoes a confirmation.
-func (a *acknowledgedEvidenceSet) retryAfter(key string, at time.Time) {
-	if !a.has(key) {
-		a.set(key, at)
-	}
-}
+func (a *acknowledgedEvidenceSet) retryAfter(key string, at time.Time) { a.set(key, at) }
 
+// set records a confirmation (a zero time) or a retry time, in one locked
+// step so a confirmation made meanwhile is never replaced by a retry.
 func (a *acknowledgedEvidenceSet) set(key string, at time.Time) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.keys == nil {
 		a.keys = map[string]time.Time{}
 	}
-	if _, ok := a.keys[key]; !ok {
+	current, ok := a.keys[key]
+	if ok && current.IsZero() {
+		return
+	}
+	if !ok {
 		a.order = append(a.order, key)
 	}
 	a.keys[key] = at
