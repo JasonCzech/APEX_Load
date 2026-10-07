@@ -700,6 +700,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -3225,6 +3226,20 @@ export interface operations {
               }>;
               "browser_har_incomplete"?: boolean;
               "browser_har_omitted"?: Record<string, number>;
+              "browser_interaction_record_count"?: number;
+              "browser_interactions_artifact"?: ({
+                "bytes"?: number;
+                "fidelity"?: string;
+                "kind"?: string;
+                "name"?: string;
+                "sequence"?: number;
+                "sha256"?: string;
+                "source_generation"?: string;
+                "source_identity"?: string;
+              }) | null;
+              "browser_interactions_dropped"?: number;
+              "browser_interactions_file"?: string;
+              "browser_interactions_incomplete"?: boolean;
               "business_key_digests_unavailable"?: boolean;
               "clock_observation_count"?: number;
               "clock_observations_file"?: string;
@@ -4174,6 +4189,7 @@ export interface operations {
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<{
@@ -4609,6 +4625,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -4932,6 +4949,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -5748,6 +5766,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -6466,6 +6485,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -11907,6 +11927,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -12777,6 +12798,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -13472,6 +13494,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -14135,6 +14158,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -14686,6 +14710,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -15311,6 +15336,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -15949,6 +15975,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -16827,6 +16854,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -17327,6 +17355,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -19000,6 +19029,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -19398,6 +19428,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -20071,6 +20102,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -20469,6 +20501,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -21210,6 +21243,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -22266,6 +22300,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -23077,6 +23112,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -24932,6 +24968,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -25609,6 +25646,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -26495,6 +26533,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -27788,6 +27827,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -28495,6 +28535,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -32979,6 +33020,7 @@ export interface operations {
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<Record<string, unknown>>;
@@ -33350,6 +33392,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -35002,6 +35045,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -36003,6 +36047,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -36201,6 +36246,7 @@ export interface operations {
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<{
@@ -36915,6 +36961,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -37313,6 +37360,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -37935,6 +37983,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -39089,6 +39138,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -40001,6 +40051,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -40208,6 +40259,7 @@ export interface operations {
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<{
@@ -41391,6 +41443,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -43885,6 +43938,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -46865,6 +46919,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -47528,6 +47583,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -48113,6 +48169,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -48776,6 +48833,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -50880,6 +50938,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -51087,6 +51146,7 @@ export interface operations {
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<{
@@ -51643,6 +51703,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -52414,6 +52475,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -54440,6 +54502,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -63246,6 +63309,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -64238,6 +64302,20 @@ export interface operations {
             }>;
             "browser_har_incomplete"?: boolean;
             "browser_har_omitted"?: Record<string, number>;
+            "browser_interaction_record_count"?: number;
+            "browser_interactions_artifact"?: ({
+              "bytes": number;
+              "fidelity": string;
+              "kind": string;
+              "name": string;
+              "sequence": number;
+              "sha256": string;
+              "source_generation": string;
+              "source_identity"?: string;
+            }) | null;
+            "browser_interactions_dropped"?: number;
+            "browser_interactions_file"?: string;
+            "browser_interactions_incomplete"?: boolean;
             "business_key_digests_unavailable"?: boolean;
             "clock_observation_count"?: number;
             "clock_observations_file"?: string;
@@ -64716,6 +64794,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -65569,6 +65648,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -68201,6 +68281,20 @@ export interface operations {
               }>;
               "browser_har_incomplete"?: boolean;
               "browser_har_omitted"?: Record<string, number>;
+              "browser_interaction_record_count"?: number;
+              "browser_interactions_artifact"?: ({
+                "bytes": number;
+                "fidelity": string;
+                "kind": string;
+                "name": string;
+                "sequence": number;
+                "sha256": string;
+                "source_generation": string;
+                "source_identity"?: string;
+              }) | null;
+              "browser_interactions_dropped"?: number;
+              "browser_interactions_file"?: string;
+              "browser_interactions_incomplete"?: boolean;
               "business_key_digests_unavailable"?: boolean;
               "clock_observation_count"?: number;
               "clock_observations_file"?: string;
@@ -70511,6 +70605,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -70909,6 +71004,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -71369,6 +71465,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -72095,6 +72192,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -72794,6 +72892,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -76152,6 +76251,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -78646,6 +78746,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -79259,6 +79360,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -79559,6 +79661,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -79845,6 +79948,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -80131,6 +80235,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -80727,6 +80832,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -81236,6 +81342,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -81762,6 +81869,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -84087,6 +84195,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -84786,6 +84895,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -96369,6 +96479,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -98863,6 +98974,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -99782,6 +99894,7 @@ export interface operations {
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<Record<string, unknown>>;
@@ -101533,6 +101646,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -102439,6 +102553,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -103147,6 +103262,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -103924,6 +104040,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -104910,6 +105027,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -105605,6 +105723,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -106268,6 +106387,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -106819,6 +106939,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -108655,6 +108776,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -109354,6 +109476,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -110046,6 +110169,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -112376,6 +112500,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -114110,6 +114235,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -115844,6 +115970,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -117578,6 +117705,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -119312,6 +119440,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -119860,6 +119989,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -120653,6 +120783,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -123750,6 +123881,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -125433,6 +125565,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -125700,6 +125833,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -126329,6 +126463,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -128256,6 +128391,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -128661,6 +128797,7 @@ export interface operations {
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
             "capture_document_metrics"?: (boolean) | null;
+            "capture_interactions"?: (boolean) | null;
             "capture_screenshots"?: string;
             "check_newer_versions"?: (boolean) | null;
             "client_certificates"?: Array<{
@@ -128817,6 +128954,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -130096,6 +130234,7 @@ export interface operations {
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
             "capture_document_metrics"?: (boolean) | null;
+            "capture_interactions"?: (boolean) | null;
             "capture_screenshots"?: string;
             "check_newer_versions"?: (boolean) | null;
             "client_certificates"?: Array<{
@@ -130252,6 +130391,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -131594,6 +131734,7 @@ export interface operations {
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
             "capture_document_metrics"?: (boolean) | null;
+            "capture_interactions"?: (boolean) | null;
             "capture_screenshots"?: string;
             "check_newer_versions"?: (boolean) | null;
             "client_certificates"?: Array<{
@@ -131764,6 +131905,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -133129,6 +133271,7 @@ export interface operations {
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
             "capture_document_metrics"?: (boolean) | null;
+            "capture_interactions"?: (boolean) | null;
             "capture_screenshots"?: string;
             "check_newer_versions"?: (boolean) | null;
             "client_certificates"?: Array<{
@@ -133299,6 +133442,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -134665,6 +134809,7 @@ export interface operations {
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
             "capture_document_metrics"?: (boolean) | null;
+            "capture_interactions"?: (boolean) | null;
             "capture_screenshots"?: string;
             "check_newer_versions"?: (boolean) | null;
             "client_certificates"?: Array<{
@@ -134835,6 +134980,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -136200,6 +136346,7 @@ export interface operations {
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
             "capture_document_metrics"?: (boolean) | null;
+            "capture_interactions"?: (boolean) | null;
             "capture_screenshots"?: string;
             "check_newer_versions"?: (boolean) | null;
             "client_certificates"?: Array<{
@@ -136370,6 +136517,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -142952,6 +143100,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -145446,6 +145595,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -146394,6 +146544,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -147100,6 +147251,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -150631,6 +150783,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -150829,6 +150982,7 @@ export interface operations {
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<{
@@ -151542,6 +151696,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -151940,6 +152095,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -152682,6 +152838,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -153834,6 +153991,7 @@ export interface operations {
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_document_metrics"?: (boolean) | null;
+                  "capture_interactions"?: (boolean) | null;
                   "capture_screenshots"?: string;
                   "check_newer_versions"?: (boolean) | null;
                   "client_certificates"?: Array<Record<string, unknown>>;
@@ -158007,6 +158165,7 @@ export interface operations {
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<{
@@ -158302,6 +158461,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<{
@@ -159032,6 +159192,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -160244,6 +160405,7 @@ export interface operations {
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_document_metrics"?: (boolean) | null;
+                "capture_interactions"?: (boolean) | null;
                 "capture_screenshots"?: string;
                 "check_newer_versions"?: (boolean) | null;
                 "client_certificates"?: Array<Record<string, unknown>>;
@@ -160442,6 +160604,7 @@ export interface operations {
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
               "capture_screenshots"?: string;
               "check_newer_versions"?: (boolean) | null;
               "client_certificates"?: Array<{

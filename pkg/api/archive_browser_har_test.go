@@ -168,7 +168,7 @@ func TestDistributedArchiveTransfersHARsWithReceipts(t *testing.T) {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256([]byte(late))
-	entry := RunArchiveHARArtifact{Name: filepath.Base(staged), Kind: storage.EvidenceKindHARNative, Fidelity: "native", SourceIdentity: identity, SourceGeneration: strings.Repeat("4", 32), Sequence: 3, SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(late))}
+	entry := RunArchiveEvidenceArtifact{Name: filepath.Base(staged), Kind: storage.EvidenceKindHARNative, Fidelity: "native", SourceIdentity: identity, SourceGeneration: strings.Repeat("4", 32), Sequence: 3, SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(late))}
 	working := t.TempDir()
 	var lateManifest RunArchiveManifest
 	bundles := []remoteArchiveBundle{{target: "a", hars: []stagedRemoteHAR{{entry: entry, path: staged}}}}
@@ -286,4 +286,150 @@ func TestLocalRunArchiveRetainsBrowserHARs(t *testing.T) {
 
 func protocolHAR(path, generation string) protocol.BrowserHARArtifact {
 	return protocol.BrowserHARArtifact{Path: path, Generation: generation}
+}
+
+func fakeInteractionEvidence(gen string, interactions int) *protocol.BrowserInteractionEvidence {
+	evidence := &protocol.BrowserInteractionEvidence{Version: protocol.BrowserInteractionVersion, SourceGeneration: gen}
+	for i := 0; i < interactions; i++ {
+		evidence.Interactions = append(evidence.Interactions, protocol.BrowserInteraction{Version: protocol.BrowserInteractionVersion, SourceGeneration: gen, InteractionID: gen + "-i" + strings.Repeat("1", i+1), FrameScope: "main_frame", Kind: "click", Provenance: protocol.InteractionProvenanceScripted, CapturedAt: time.Now().UTC(), Outcome: protocol.BrowserInteractionOutcome{Observed: protocol.InteractionOutcomeNotDeclared}})
+	}
+	return evidence
+}
+
+// declareFakeInteractions adds an interactions sidecar to a fake generator
+// archive; declaredRecords overrides the real record count when non-zero.
+func declareFakeInteractions(t *testing.T, client *archiveStreamingFakeClient, gen string, records int, declaredRecords int) {
+	t.Helper()
+	var body []byte
+	for i := 0; i < records; i++ {
+		data, err := json.Marshal(fakeInteractionEvidence(gen, i+1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		body = append(append(body, data...), '\n')
+	}
+	path := filepath.Join(t.TempDir(), browserInteractionsFileName)
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(body)
+	client.mu.Lock()
+	client.artifacts[browserInteractionsFileName] = path
+	manifestPath := client.artifacts[runArchiveManifestFileName]
+	client.mu.Unlock()
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest map[string]any
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if declaredRecords == 0 {
+		declaredRecords = records
+	}
+	manifest["browser_interaction_record_count"] = declaredRecords
+	manifest["browser_interactions_artifact"] = map[string]any{"name": browserInteractionsFileName, "kind": "interaction_evidence", "fidelity": "native", "source_generation": "interactions", "sequence": 1, "sha256": hex.EncodeToString(sum[:]), "bytes": len(body)}
+	if data, err = json.Marshal(manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDistributedArchiveMergesInteractionEvidenceWithReceipts(t *testing.T) {
+	tr, store, run, backend := collectionCacheFixture(t, "a", "b", "c")
+	a := &ackingArchiveClient{archiveStreamingFakeClient: run.remoteClientsByTarget["a"].(*archiveStreamingFakeClient)}
+	run.remoteClientsByTarget["a"] = a
+	declareFakeInteractions(t, a.archiveStreamingFakeClient, strings.Repeat("a", 32), 2, 0)
+	declareFakeInteractions(t, run.remoteClientsByTarget["b"].(*archiveStreamingFakeClient), strings.Repeat("b", 32), 1, 0)
+	// A sidecar whose records differ from its declaration is not archived.
+	declareFakeInteractions(t, run.remoteClientsByTarget["c"].(*archiveStreamingFakeClient), strings.Repeat("c", 32), 2, 5)
+	ended := time.Now().UTC()
+	record, err := backend.stageRemoteArchive(tr, run, "COMPLETE", "", ended, true)
+	if err != nil || record == nil {
+		t.Fatalf("stage: %v", err)
+	}
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.BrowserInteractionsFile != browserInteractionsFileName || manifest.BrowserInteractionRecordCount != 3 || !manifest.BrowserInteractionsIncomplete || manifest.BrowserInteractionsArtifact != nil {
+		t.Fatalf("archive interactions %+v", manifest)
+	}
+	interactions := 0
+	count, err := forEachBrowserInteractionRecord(filepath.Join(record.ArchivePath, manifest.BrowserInteractionsFile), func(e *protocol.BrowserInteractionEvidence) error {
+		interactions += len(e.Interactions)
+		return nil
+	})
+	if err != nil || count != 3 || interactions != 4 {
+		t.Fatalf("merged %d records, %d interactions: %v", count, interactions, err)
+	}
+	inventoried := false
+	for _, artifact := range manifest.Artifacts {
+		inventoried = inventoried || artifact.Name == browserInteractionsFileName && artifact.RecordType == browserInteractionsRecordType && artifact.Count == 3
+	}
+	if !inventoried {
+		t.Fatal("interactions missing from the archive inventory")
+	}
+	receipts, err := store.ListRunEvidenceReceipts(run.ID)
+	if err != nil || len(receipts) != 2 || receipts[0].Kind != storage.EvidenceKindInteraction {
+		t.Fatalf("receipts %+v %v", receipts, err)
+	}
+	if _, err := store.UpdateTestStatusIfActive(run.ID, "COMPLETE", &ended, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.finalizeRunArchiveDurably(context.Background(), run, record, true); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.acks) != 1 || len(a.acks[0].Artifacts) != 1 || a.acks[0].Artifacts[0].Name != browserInteractionsFileName {
+		t.Fatalf("acknowledgements %+v", a.acks)
+	}
+	// After publication a late interactions upload is tombstoned, not merged.
+	late := filepath.Join(t.TempDir(), browserInteractionsFileName)
+	data, _ := json.Marshal(fakeInteractionEvidence(strings.Repeat("f", 32), 1))
+	if err := os.WriteFile(late, append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(append(data, '\n'))
+	identity := generatorrpc.ArchiveSourceIdentity(run.ID, bytesRepeat(1), "b")
+	entry := RunArchiveEvidenceArtifact{Name: browserInteractionsFileName, Kind: storage.EvidenceKindInteraction, Fidelity: "native", SourceIdentity: identity, SourceGeneration: "late-interactions", Sequence: 1, SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(data) + 1)}
+	var lateManifest RunArchiveManifest
+	working := t.TempDir()
+	if err := mergeRemoteInteractions(working, &lateManifest, []remoteArchiveBundle{{target: "b", interactions: &stagedRemoteHAR{entry: entry, path: late}}}, tr.acceptRemoteHARReceipt(run, map[string]string{identity: "b"})); err != nil {
+		t.Fatal(err)
+	}
+	if lateManifest.BrowserInteractionsFile != "" || !lateManifest.BrowserInteractionsIncomplete {
+		t.Fatalf("late interactions merged: %+v", lateManifest)
+	}
+	if _, err := os.Stat(filepath.Join(working, browserInteractionsFileName)); !os.IsNotExist(err) {
+		t.Fatal("tombstoned interactions written", err)
+	}
+}
+
+func TestLocalRunArchiveWritesInteractionEvidence(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
+	writer, err := newRunArchiveWriter(&ManagedTest{ID: "local-interactions", Name: "local"}, RunArchiveProvenance{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gen := strings.Repeat("9", 32)
+	for i := 0; i < 2; i++ {
+		if err := writer.RecordBrowserInteractionEvidence(fakeInteractionEvidence(gen, 3)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record, err := writer.Finalize("COMPLETE", time.Now().UTC(), "", false, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil || manifest.BrowserInteractionsFile != browserInteractionsFileName || manifest.BrowserInteractionRecordCount != 2 {
+		t.Fatalf("local interactions %+v %v", manifest, err)
+	}
+	if count, err := forEachBrowserInteractionRecord(filepath.Join(record.ArchivePath, browserInteractionsFileName), func(*protocol.BrowserInteractionEvidence) error { return nil }); err != nil || count != 2 {
+		t.Fatalf("records %d: %v", count, err)
+	}
 }

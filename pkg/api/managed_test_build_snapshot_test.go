@@ -218,6 +218,7 @@ func TestManagedTestCapacitySnapshotPreservesEveryRequiredFeature(t *testing.T) 
 		{"Event Hubs processor", &dsl.Script{Protocol: "eventhubs", Config: dsl.ScriptConfig{EventHubs: dsl.EventHubsConfig{ConsumerMode: "processor", ProcessorMaxPartitions: 2, ObservePartitionTail: true}}, Actions: []dsl.Action{{Type: "eventhubs_consume"}}}, []string{"eventhubs_processor_checkpoints_v1", "eventhubs_processor_reservations_v1", "messaging_progress_v1"}},
 		{"Kafka seek and EOS", &dsl.Script{Protocol: "kafka", Config: dsl.ScriptConfig{Kafka: dsl.KafkaConfig{ConsumerTransactions: true}}, Actions: []dsl.Action{{Type: "kafka_seek"}}}, []string{"kafka_real_seek_v1", "kafka_consumer_transactions_v1"}},
 		{"browser documents", &dsl.Script{Protocol: "browser", Config: dsl.ScriptConfig{Browser: dsl.BrowserConfig{CaptureDocumentMetrics: boolPointer(true)}}}, []string{dsl.FeatureBrowserDocumentEvidenceV2}},
+		{"browser interactions", &dsl.Script{Protocol: "browser", Config: dsl.ScriptConfig{Browser: dsl.BrowserConfig{CaptureInteractions: boolPointer(true)}}}, []string{dsl.FeatureBrowserInteractionEvidenceV1}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

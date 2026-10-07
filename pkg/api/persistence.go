@@ -1312,7 +1312,7 @@ func trimTerminalManagedTestRuntime(test *ManagedTest) {
 			test.terminalGroupRuntimeTrimmed = true
 		}
 		if group.script != nil {
-			group.BrowserDocumentCaptureRequested = len(dsl.RequiredBrowserRuntimeFeatures(group.script)) > 0
+			group.BrowserDocumentCaptureRequested = dsl.BrowserDocumentCaptureRequested(group.script)
 		}
 		group.script = nil
 		group.baseScript = nil

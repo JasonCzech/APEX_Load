@@ -42,30 +42,36 @@ type archiveManifest struct {
 	BrowserDocumentsParquetSHA256   string `json:"browser_documents_parquet_sha256,omitempty"`
 	// BrowserHARArtifacts are native HARs moved into the run archive;
 	// BrowserHAROmitted counts, by reason, the ones that could not be.
-	BrowserHARArtifacts          []archiveHARArtifact         `json:"browser_har_artifacts,omitempty"`
-	BrowserHARIncomplete         bool                         `json:"browser_har_incomplete,omitempty"`
-	BrowserHAROmitted            map[string]int64             `json:"browser_har_omitted,omitempty"`
-	SourceIdentity               string                       `json:"source_identity,omitempty"`
-	SchemaVersion                string                       `json:"schema_version"`
-	TestID                       string                       `json:"test_id"`
-	TestName                     string                       `json:"test_name"`
-	CreatedAt                    time.Time                    `json:"created_at"`
-	CompletedAt                  time.Time                    `json:"completed_at,omitempty"`
-	Status                       string                       `json:"status,omitempty"`
-	Error                        string                       `json:"error,omitempty"`
-	ExecutionGeneration          uint64                       `json:"execution_generation,omitempty"`
-	ExecutionGroups              []string                     `json:"execution_groups,omitempty"`
-	TransactionsFile             string                       `json:"transactions_file"`
-	TransactionsParquetFile      string                       `json:"transactions_parquet_file,omitempty"`
-	ResourceSamplesFile          string                       `json:"resource_samples_file"`
-	ResourceSamplesParquetFile   string                       `json:"resource_samples_parquet_file,omitempty"`
-	IntervalSummariesFile        string                       `json:"interval_summaries_file"`
-	IntervalSummariesParquetFile string                       `json:"interval_summaries_parquet_file,omitempty"`
-	TransactionCount             int64                        `json:"transaction_count"`
-	ResourceSampleCount          int64                        `json:"resource_sample_count"`
-	IntervalSummaryCount         int64                        `json:"interval_summary_count"`
-	TerminalMetrics              json.RawMessage              `json:"terminal_metrics,omitempty"`
-	MessageDetailCapture         *archiveMessageDetailCapture `json:"message_detail_capture,omitempty"`
+	BrowserHARArtifacts  []archiveEvidenceArtifact `json:"browser_har_artifacts,omitempty"`
+	BrowserHARIncomplete bool                      `json:"browser_har_incomplete,omitempty"`
+	BrowserHAROmitted    map[string]int64          `json:"browser_har_omitted,omitempty"`
+	// Interaction evidence (E3): the sidecar's record count and, once
+	// finalized, its transferable artifact.
+	BrowserInteractionRecordCount int64                        `json:"browser_interaction_record_count,omitempty"`
+	BrowserInteractionsIncomplete bool                         `json:"browser_interactions_incomplete,omitempty"`
+	BrowserInteractionsDropped    int64                        `json:"browser_interactions_dropped,omitempty"`
+	BrowserInteractionsArtifact   *archiveEvidenceArtifact     `json:"browser_interactions_artifact,omitempty"`
+	SourceIdentity                string                       `json:"source_identity,omitempty"`
+	SchemaVersion                 string                       `json:"schema_version"`
+	TestID                        string                       `json:"test_id"`
+	TestName                      string                       `json:"test_name"`
+	CreatedAt                     time.Time                    `json:"created_at"`
+	CompletedAt                   time.Time                    `json:"completed_at,omitempty"`
+	Status                        string                       `json:"status,omitempty"`
+	Error                         string                       `json:"error,omitempty"`
+	ExecutionGeneration           uint64                       `json:"execution_generation,omitempty"`
+	ExecutionGroups               []string                     `json:"execution_groups,omitempty"`
+	TransactionsFile              string                       `json:"transactions_file"`
+	TransactionsParquetFile       string                       `json:"transactions_parquet_file,omitempty"`
+	ResourceSamplesFile           string                       `json:"resource_samples_file"`
+	ResourceSamplesParquetFile    string                       `json:"resource_samples_parquet_file,omitempty"`
+	IntervalSummariesFile         string                       `json:"interval_summaries_file"`
+	IntervalSummariesParquetFile  string                       `json:"interval_summaries_parquet_file,omitempty"`
+	TransactionCount              int64                        `json:"transaction_count"`
+	ResourceSampleCount           int64                        `json:"resource_sample_count"`
+	IntervalSummaryCount          int64                        `json:"interval_summary_count"`
+	TerminalMetrics               json.RawMessage              `json:"terminal_metrics,omitempty"`
+	MessageDetailCapture          *archiveMessageDetailCapture `json:"message_detail_capture,omitempty"`
 }
 
 type archiveMessageDetailCapture struct {
@@ -376,6 +382,9 @@ type archiveRecorder struct {
 	// before mu.
 	harMu                   sync.Mutex
 	harBytes                int64
+	interactionsFile        *os.File
+	interactionBytes        int64
+	interactionsBroken      bool
 	browserDocumentsFile    *os.File
 	browserDocumentsEncoder *json.Encoder
 	mu                      sync.Mutex
@@ -791,7 +800,7 @@ func newArchiveRecorderInNamespace(namespace *generatorArchiveNamespace, testID 
 	}
 	artifactNames := []string{
 		"transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl",
-		"browser_documents.jsonl", "browser_documents.parquet",
+		"browser_documents.jsonl", "browser_documents.parquet", archiveInteractionsName,
 		"transactions.parquet", "resources.parquet", "interval_summaries.parquet",
 		"manifest.json",
 	}
@@ -887,7 +896,7 @@ type archiveRecorderCleanup struct {
 
 func (w *archiveRecorder) detachCleanupLocked() archiveRecorderCleanup {
 	cleanup := archiveRecorderCleanup{
-		files:         []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.browserDocumentsFile},
+		files:         []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.browserDocumentsFile, w.interactionsFile},
 		namespace:     w.namespace,
 		runRoot:       w.runRoot,
 		runIdentity:   w.runIdentity,
@@ -903,6 +912,7 @@ func (w *archiveRecorder) detachCleanupLocked() archiveRecorderCleanup {
 	w.resourceFile = nil
 	w.summaryFile = nil
 	w.browserDocumentsFile = nil
+	w.interactionsFile = nil
 	w.runRoot = nil
 	w.closed = true
 	return cleanup
@@ -1402,6 +1412,9 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 	if w.runRoot == nil {
 		return nil, fmt.Errorf("archive run root is unavailable")
 	}
+	if err := w.finalizeBrowserInteractionsLocked(); err != nil {
+		return nil, err
+	}
 	if err := writeArchiveParquetFilesAtWithBudget(w.runRoot, &w.manifest, w.byteBudget); err != nil {
 		return nil, err
 	}
@@ -1507,6 +1520,9 @@ func archiveArtifactNames(manifest *archiveManifest) []string {
 	}
 	for _, har := range manifest.BrowserHARArtifacts {
 		names = append(names, har.Name)
+	}
+	if manifest.BrowserInteractionsArtifact != nil {
+		names = append(names, manifest.BrowserInteractionsArtifact.Name)
 	}
 	return names
 }

@@ -6,6 +6,10 @@ import (
 )
 
 const FeatureBrowserDocumentEvidenceV2 = "browser_document_evidence_v2"
+
+// FeatureBrowserInteractionEvidenceV1 advertises gesture interaction
+// evidence capture (E3).
+const FeatureBrowserInteractionEvidenceV1 = "browser_interaction_evidence_v1"
 const maxBrowserDocumentSummaryBytes = 512 << 10
 
 func browserDocumentsVersion(s *protocol.BrowserDocumentSummary) uint32 {

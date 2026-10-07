@@ -73,6 +73,7 @@ describe('ScriptDefinition runtime contract', () => {
     expectTypeOf<keyof RunLogicConfig>().toEqualTypeOf<keyof GeneratedRunLogic>()
     expectTypeOf<keyof BrowserConfig>().toEqualTypeOf<keyof GeneratedBrowser>()
     expectTypeOf<BrowserConfig['capture_document_metrics']>().toEqualTypeOf<GeneratedBrowser['capture_document_metrics']>()
+    expectTypeOf<BrowserConfig['capture_interactions']>().toEqualTypeOf<GeneratedBrowser['capture_interactions']>()
     expectTypeOf<keyof BrowserGeolocation>().toEqualTypeOf<keyof GeneratedBrowserGeolocation>()
     expectTypeOf<keyof BrowserHTTPCredentials>().toEqualTypeOf<keyof GeneratedBrowserCredentials>()
     expectTypeOf<keyof BrowserProxyConfig>().toEqualTypeOf<keyof GeneratedBrowserProxy>()

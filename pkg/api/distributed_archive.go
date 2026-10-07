@@ -168,13 +168,20 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 	if err := writeMergedRemoteArchiveFilesWithBudget(workingDir, &manifest, bundles, targetHistory, mergeOutput, test); err != nil {
 		return nil, err
 	}
-	harTargets := map[string]string{}
+	evidenceTargets := map[string]string{}
 	for _, bundle := range bundles {
 		for _, har := range bundle.hars {
-			harTargets[har.entry.SourceIdentity] = bundle.target
+			evidenceTargets[har.entry.SourceIdentity] = bundle.target
+		}
+		if bundle.interactions != nil {
+			evidenceTargets[bundle.interactions.entry.SourceIdentity] = bundle.target
 		}
 	}
-	if err := mergeRemoteHARArtifacts(workingDir, &manifest, bundles, tr.acceptRemoteHARReceipt(test, harTargets)); err != nil {
+	acceptor := tr.acceptRemoteHARReceipt(test, evidenceTargets)
+	if err := mergeRemoteHARArtifacts(workingDir, &manifest, bundles, acceptor); err != nil {
+		return nil, err
+	}
+	if err := mergeRemoteInteractions(workingDir, &manifest, bundles, acceptor); err != nil {
 		return nil, err
 	}
 	if err := writeDistributedELKEvidence(workingDir, &manifest, tr, test, completedAt, mergeOutput); err != nil {
@@ -420,10 +427,14 @@ type remoteArchiveBundle struct {
 	summariesPath             string
 	// hars are the source's fetched, verified HARs; harOmitted counts the
 	// ones it declared that could not be fetched.
-	hars              []stagedRemoteHAR
-	harOmitted        map[string]int64
-	transferStageRoot string
-	transferLease     *archiveTransferLease
+	hars       []stagedRemoteHAR
+	harOmitted map[string]int64
+	// interactions is the source's fetched, verified interactions sidecar;
+	// interactionsUnavailable says why a declared one could not be fetched.
+	interactions            *stagedRemoteHAR
+	interactionsUnavailable string
+	transferStageRoot       string
+	transferLease           *archiveTransferLease
 }
 
 func cleanupRemoteArchiveBundles(bundles []remoteArchiveBundle) {
@@ -639,6 +650,13 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCache(ctx con
 					live = clients[target]
 				}
 				bundle.hars, bundle.harOmitted = fetchRemoteHARArtifacts(ctx, live, test.ID, sourceIdentities[target], filepath.Join(transferStageRoot, fmt.Sprintf("target-%03d", index)), bundle.manifest.BrowserHARArtifacts, harBudget)
+			}
+			if err == nil && !missing && bundle.manifest.BrowserInteractionsArtifact != nil {
+				var live archiveArtifactClient
+				if clients[target] != nil {
+					live = clients[target]
+				}
+				bundle.interactions, bundle.interactionsUnavailable = fetchRemoteInteractions(ctx, live, test.ID, sourceIdentities[target], filepath.Join(transferStageRoot, fmt.Sprintf("target-%03d", index)), bundle.manifest.BrowserInteractionsArtifact, bundle.manifest.BrowserInteractionRecordCount)
 			}
 			results <- remoteArchiveFetchResult{index: index, bundle: bundle, missing: missing, err: err}
 		}(index, target)

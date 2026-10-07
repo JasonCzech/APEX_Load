@@ -32,8 +32,9 @@ import (
 // evidence: a HAR that cannot be transferred is counted under an omission
 // reason and the archive records browser_har_incomplete.
 
-// RunArchiveHARArtifact describes one HAR of a run archive.
-type RunArchiveHARArtifact struct {
+// RunArchiveEvidenceArtifact describes one transferable evidence artifact of
+// a run archive: a native HAR or the browser interactions sidecar.
+type RunArchiveEvidenceArtifact struct {
 	Name     string `json:"name"`
 	Kind     string `json:"kind"`
 	Fidelity string `json:"fidelity"`
@@ -73,10 +74,14 @@ func runArchiveHARGeneration(name string) (string, bool) {
 }
 
 // validDeclaredHAR checks a generator manifest's HAR entry.
-func validDeclaredHAR(a RunArchiveHARArtifact) bool {
+func validDeclaredHAR(a RunArchiveEvidenceArtifact) bool {
 	generation, ok := runArchiveHARGeneration(a.Name)
-	sum, err := hex.DecodeString(a.SHA256)
-	return ok && generation == a.SourceGeneration && a.Kind == storage.EvidenceKindHARNative && a.Fidelity == "native" && err == nil && len(sum) == sha256.Size && strings.ToLower(a.SHA256) == a.SHA256 && a.Bytes >= 0 && a.Bytes <= maxRunArchiveHARBytes && a.Sequence > 0
+	return ok && generation == a.SourceGeneration && a.Kind == storage.EvidenceKindHARNative && a.Fidelity == "native" && validDeclaredSHA256(a.SHA256) && a.Bytes >= 0 && a.Bytes <= maxRunArchiveHARBytes && a.Sequence > 0
+}
+
+func validDeclaredSHA256(value string) bool {
+	sum, err := hex.DecodeString(value)
+	return err == nil && len(sum) == sha256.Size && strings.ToLower(value) == value
 }
 
 // remoteHARBudget bounds one run's transferred HAR bytes across sources.
@@ -106,14 +111,14 @@ func (b *remoteHARBudget) reserve(bytes int64) string {
 
 // stagedRemoteHAR is a fetched, verified HAR awaiting the archive merge.
 type stagedRemoteHAR struct {
-	entry RunArchiveHARArtifact
+	entry RunArchiveEvidenceArtifact
 	path  string
 }
 
 // fetchRemoteHARArtifacts fetches a source's declared HARs from its live
 // generator client into dir. The collection cache never holds HARs, so a
 // source served from it, or without a client, has its HARs unavailable.
-func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, testID, sourceIdentity, dir string, declared []RunArchiveHARArtifact, budget *remoteHARBudget) ([]stagedRemoteHAR, map[string]int64) {
+func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, testID, sourceIdentity, dir string, declared []RunArchiveEvidenceArtifact, budget *remoteHARBudget) ([]stagedRemoteHAR, map[string]int64) {
 	omitted := map[string]int64{}
 	var staged []stagedRemoteHAR
 	for _, entry := range declared {
@@ -149,7 +154,7 @@ func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, 
 }
 
 // verifyHARFile checks a file's size and SHA-256 against its entry.
-func verifyHARFile(path string, entry RunArchiveHARArtifact) error {
+func verifyHARFile(path string, entry RunArchiveEvidenceArtifact) error {
 	file, info, err := openArchiveArtifactForRead(filepath.Dir(path), filepath.Base(path))
 	if err != nil {
 		return err
@@ -170,7 +175,7 @@ func verifyHARFile(path string, entry RunArchiveHARArtifact) error {
 
 // harReceiptAcceptor records the controller's receipt of a HAR and returns
 // its state.
-type harReceiptAcceptor func(RunArchiveHARArtifact) (string, error)
+type harReceiptAcceptor func(RunArchiveEvidenceArtifact) (string, error)
 
 // mergeRemoteHARArtifacts places the sources' staged HARs in the run archive
 // working directory and lists them in the manifest. Each is durably written
@@ -214,7 +219,7 @@ func mergeRemoteHARArtifacts(workingDir string, manifest *RunArchiveManifest, bu
 		manifest.BrowserHARIncomplete = true
 		manifest.BrowserHAROmitted = omitted
 	}
-	slices.SortFunc(manifest.BrowserHARArtifacts, func(a, b RunArchiveHARArtifact) int {
+	slices.SortFunc(manifest.BrowserHARArtifacts, func(a, b RunArchiveEvidenceArtifact) int {
 		return strings.Compare(a.SourceIdentity+"\x00"+fmt.Sprintf("%020d", a.Sequence), b.SourceIdentity+"\x00"+fmt.Sprintf("%020d", b.Sequence))
 	})
 	return syncArchiveDirectory(workingDir)
@@ -259,12 +264,12 @@ func copyStagedHAR(staged stagedRemoteHAR, workingDir string) (err error) {
 func (tr *TestRunner) acceptRemoteHARReceipt(test *ManagedTest, targets map[string]string) harReceiptAcceptor {
 	store, ok := tr.receiptStore()
 	if !ok {
-		return func(RunArchiveHARArtifact) (string, error) { return storage.EvidenceReceiptAccepted, nil }
+		return func(RunArchiveEvidenceArtifact) (string, error) { return storage.EvidenceReceiptAccepted, nil }
 	}
 	tr.mu.RLock()
 	generation := test.executionGeneration
 	tr.mu.RUnlock()
-	return func(entry RunArchiveHARArtifact) (string, error) {
+	return func(entry RunArchiveEvidenceArtifact) (string, error) {
 		return store.AcceptRunEvidenceReceipt(storage.RunEvidenceReceipt{TestID: test.ID, ExecutionGeneration: generation, SourceIdentity: entry.SourceIdentity, Target: targets[entry.SourceIdentity], SourceGeneration: entry.SourceGeneration, Sequence: entry.Sequence, Kind: entry.Kind, Name: entry.Name, SHA256: entry.SHA256, Bytes: entry.Bytes})
 	}
 }
@@ -454,6 +459,6 @@ func (w *runArchiveWriter) RecordBrowserHARArtifact(artifact protocol.BrowserHAR
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.harBytes += size
-	w.manifest.BrowserHARArtifacts = append(w.manifest.BrowserHARArtifacts, RunArchiveHARArtifact{Name: name, Kind: storage.EvidenceKindHARNative, Fidelity: "native", SourceGeneration: artifact.Generation, Sequence: int64(len(w.manifest.BrowserHARArtifacts) + 1), SHA256: sum, Bytes: size})
+	w.manifest.BrowserHARArtifacts = append(w.manifest.BrowserHARArtifacts, RunArchiveEvidenceArtifact{Name: name, Kind: storage.EvidenceKindHARNative, Fidelity: "native", SourceGeneration: artifact.Generation, Sequence: int64(len(w.manifest.BrowserHARArtifacts) + 1), SHA256: sum, Bytes: size})
 	return nil
 }

@@ -32,8 +32,9 @@ const (
 	archiveHARTakeTimeout = 30 * time.Second
 )
 
-// archiveHARArtifact describes one HAR in the run archive manifest.
-type archiveHARArtifact struct {
+// archiveEvidenceArtifact describes one transferable evidence artifact (a
+// native HAR or the interactions sidecar) in the run archive manifest.
+type archiveEvidenceArtifact struct {
 	Name             string `json:"name"`
 	Kind             string `json:"kind"`
 	Fidelity         string `json:"fidelity"`
@@ -166,7 +167,7 @@ func (w *archiveRecorder) RecordBrowserHARArtifact(artifact protocol.BrowserHARA
 		return errors.Join(w.omitHARLocked(reason), err)
 	}
 	w.harBytes += size
-	w.manifest.BrowserHARArtifacts = append(w.manifest.BrowserHARArtifacts, archiveHARArtifact{Name: name, Kind: archiveHARKindNative, Fidelity: archiveHARFidelity, SourceGeneration: artifact.Generation, Sequence: int64(len(w.manifest.BrowserHARArtifacts) + 1), SHA256: sum, Bytes: size})
+	w.manifest.BrowserHARArtifacts = append(w.manifest.BrowserHARArtifacts, archiveEvidenceArtifact{Name: name, Kind: archiveHARKindNative, Fidelity: archiveHARFidelity, SourceGeneration: artifact.Generation, Sequence: int64(len(w.manifest.BrowserHARArtifacts) + 1), SHA256: sum, Bytes: size})
 	return nil
 }
 
@@ -198,8 +199,8 @@ func (s *Service) AcknowledgeEvidence(_ context.Context, request *pb.EvidenceAck
 		return nil, status.Error(codes.InvalidArgument, "too many acknowledged artifacts")
 	}
 	for _, artifact := range request.GetArtifacts() {
-		if _, ok := archiveHARGeneration(artifact.GetName()); !ok || !validSHA256Hex(artifact.GetSha256()) {
-			return nil, status.Error(codes.InvalidArgument, "acknowledged artifact is not a run archive HAR")
+		if _, ok := archiveHARGeneration(artifact.GetName()); !ok && artifact.GetName() != archiveInteractionsName || !validSHA256Hex(artifact.GetSha256()) {
+			return nil, status.Error(codes.InvalidArgument, "acknowledged artifact is not run archive evidence")
 		}
 	}
 	manager := s.archiveManager
@@ -240,7 +241,7 @@ func (s *Service) AcknowledgeEvidence(_ context.Context, request *pb.EvidenceAck
 			continue
 		}
 		digest := sha256.New()
-		_, copyErr := io.Copy(digest, io.LimitReader(file, maxArchiveHARBytes+1))
+		_, copyErr := io.Copy(digest, io.LimitReader(file, max(maxArchiveHARBytes, maxArchiveInteractionsRunBytes)+1))
 		closeErr := file.Close()
 		current, statErr := runRoot.Lstat(name)
 		if copyErr != nil || closeErr != nil || statErr != nil || !os.SameFile(info, current) || hex.EncodeToString(digest.Sum(nil)) != artifact.GetSha256() {

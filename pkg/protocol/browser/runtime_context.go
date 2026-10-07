@@ -182,6 +182,17 @@ func (b *Browser) openAdmittedBrowserContext() error {
 		b.stopRequestPolicyWaiters()
 		return b.failBrowserContextInitialization(browserContext, err)
 	}
+	if b.interactionsEnabled {
+		b.mu.Lock()
+		generation := b.evidence.generation
+		// Document bounds belong to this context's documents.
+		b.interactions.documents = nil
+		b.mu.Unlock()
+		if err := browserContext.AddInitScript(playwright.Script{Content: playwright.String(browserInteractionObserver(browserInteractionGlobal(generation)))}); err != nil {
+			b.stopRequestPolicyWaiters()
+			return b.failBrowserContextInitialization(browserContext, err)
+		}
+	}
 	b.installBrowserContextHandlers(browserContext)
 
 	if script := b.environmentEmulationScript(); script != "" {

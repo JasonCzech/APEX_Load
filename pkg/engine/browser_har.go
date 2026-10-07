@@ -42,3 +42,46 @@ func takeBrowserHARArtifacts(provider protocol.BrowserHARArtifactProvider) (out 
 	}()
 	return provider.TakeBrowserHARArtifacts()
 }
+
+// BrowserInteractionEvidenceSink retains a session's interaction evidence.
+type BrowserInteractionEvidenceSink interface {
+	RecordBrowserInteractionEvidence(*protocol.BrowserInteractionEvidence) error
+}
+
+// handOffBrowserInteractions gives a sink the interactions a protocol
+// recorded since the last handoff. Without such a sink they are dropped.
+func handOffBrowserInteractions(p protocol.Protocol, sink ResultSink) {
+	provider, ok := p.(protocol.BrowserInteractionEvidenceProvider)
+	if !ok {
+		return
+	}
+	evidence := takeBrowserInteractions(provider)
+	interactionSink, ok := sink.(BrowserInteractionEvidenceSink)
+	if !ok {
+		return
+	}
+	for _, record := range evidence {
+		if record == nil {
+			continue
+		}
+		if err := interactionSink.RecordBrowserInteractionEvidence(record); err != nil {
+			slog.Warn("browser interaction evidence was not retained in the run archive", "generation", record.SourceGeneration, "err", err)
+		}
+	}
+}
+
+func takeBrowserInteractions(provider protocol.BrowserInteractionEvidenceProvider) (out []*protocol.BrowserInteractionEvidence) {
+	defer func() {
+		if recover() != nil {
+			out = nil
+		}
+	}()
+	return provider.TakeBrowserInteractionEvidence()
+}
+
+// handOffBrowserSessionEvidence hands over everything a closed browser
+// session produced: its HARs and its interactions.
+func handOffBrowserSessionEvidence(p protocol.Protocol, sink ResultSink) {
+	handOffBrowserHARArtifacts(p, sink)
+	handOffBrowserInteractions(p, sink)
+}

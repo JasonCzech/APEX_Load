@@ -477,6 +477,9 @@ func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 	if browserCfg.CaptureDocumentMetrics != nil {
 		cfg["browser_capture_document_metrics"] = *browserCfg.CaptureDocumentMetrics
 	}
+	if browserCfg.CaptureInteractions != nil {
+		cfg["browser_capture_interactions"] = *browserCfg.CaptureInteractions
+	}
 	policy := "persistent_context"
 	if browserEmulationNewUserEachIteration(script.Config) {
 		policy = "cookies_each_iteration"

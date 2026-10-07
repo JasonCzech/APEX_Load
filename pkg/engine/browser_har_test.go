@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -74,5 +75,38 @@ func TestFinalTeardownHandsBrowserHARArtifactsToThePublishedSink(t *testing.T) {
 	_ = runProtocolTeardownWithMessagingProgress(p, entry)
 	if len(sink.recorded) != 1 || sink.recorded[0].Generation != "g1" {
 		t.Fatalf("final teardown handoff %+v", sink.recorded)
+	}
+}
+
+type interactionUnitProtocol struct {
+	harUnitProtocol
+	evidence []*protocol.BrowserInteractionEvidence
+}
+
+func (p *interactionUnitProtocol) TakeBrowserInteractionEvidence() []*protocol.BrowserInteractionEvidence {
+	out := p.evidence
+	p.evidence = nil
+	return out
+}
+
+type interactionUnitSink struct {
+	harUnitSink
+	interactions []*protocol.BrowserInteractionEvidence
+}
+
+func (s *interactionUnitSink) RecordBrowserInteractionEvidence(evidence *protocol.BrowserInteractionEvidence) error {
+	s.interactions = append(s.interactions, evidence)
+	return nil
+}
+
+func TestBrowserSessionEvidenceHandsOverInteractionsAndHARs(t *testing.T) {
+	gen := strings.Repeat("a", 32)
+	p := &interactionUnitProtocol{harUnitProtocol: harUnitProtocol{published: []protocol.BrowserHARArtifact{{Path: "/a.har", Generation: gen}}},
+		evidence: []*protocol.BrowserInteractionEvidence{{Version: protocol.BrowserInteractionVersion, SourceGeneration: gen}, nil}}
+	sink := &interactionUnitSink{}
+	handOffBrowserSessionEvidence(p, sink)
+	handOffBrowserSessionEvidence(p, sink)
+	if len(sink.recorded) != 1 || len(sink.interactions) != 1 || sink.interactions[0].SourceGeneration != gen {
+		t.Fatalf("handoff HARs %d interactions %d", len(sink.recorded), len(sink.interactions))
 	}
 }

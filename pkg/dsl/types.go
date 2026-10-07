@@ -599,6 +599,10 @@ type BrowserCacheSimulationConfig struct {
 
 type BrowserConfig struct {
 	CaptureDocumentMetrics *bool `json:"capture_document_metrics,omitempty"`
+	// CaptureInteractions records gesture interaction evidence: dispatched
+	// points, layout revision, sanitized route and keyboard targets, never
+	// input values.
+	CaptureInteractions *bool `json:"capture_interactions,omitempty"`
 	// StorageState is a whole project-secret reference resolving to a Playwright
 	// cookies/localStorage JSON snapshot captured before the tested transaction.
 	StorageState string `json:"storage_state,omitempty"`

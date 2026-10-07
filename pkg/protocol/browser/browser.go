@@ -81,23 +81,26 @@ type Browser struct {
 	// publishedHARArtifacts are the artifacts published since the engine last
 	// took them (see TakeBrowserHARArtifacts).
 	publishedHARArtifacts []protocol.BrowserHARArtifact
-	harMonitorStop        chan struct{}
-	harMonitorWG          sync.WaitGroup
-	harLimitExceeded      chan struct{}
-	harLimitOnce          sync.Once
-	harObservedBytes      int64
-	harObservedEntries    int
-	runtimeTextRedactor   protocol.TextRedactor
-	runtimeSecretsActive  func() bool
-	mobile                bool
-	touchMode             bool
-	orientation           string
-	orientationExplicit   bool
-	deviceScaleFactor     float64
-	cpuThrottleRate       float64
-	cpuThrottleExplicit   bool
-	viewportW             int
-	viewportH             int
+	// interactionsEnabled records gesture interaction evidence (E3).
+	interactionsEnabled  bool
+	interactions         browserInteractionState
+	harMonitorStop       chan struct{}
+	harMonitorWG         sync.WaitGroup
+	harLimitExceeded     chan struct{}
+	harLimitOnce         sync.Once
+	harObservedBytes     int64
+	harObservedEntries   int
+	runtimeTextRedactor  protocol.TextRedactor
+	runtimeSecretsActive func() bool
+	mobile               bool
+	touchMode            bool
+	orientation          string
+	orientationExplicit  bool
+	deviceScaleFactor    float64
+	cpuThrottleRate      float64
+	cpuThrottleExplicit  bool
+	viewportW            int
+	viewportH            int
 
 	pwContext            playwright.BrowserContext
 	pwPage               playwright.Page
@@ -337,6 +340,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		actionErr = b.afterActionDelay(actionCtx)
 	}
 	b.finalizeActionResult(actionCtx, action, result, actionErr, consoleStart, networkStart, networkOwner, processBefore, actionDuration)
+	b.captureBrowserInteraction(actionCtx, action, result, actionErr)
 	if b.harSLABreachThreshold > 0 && result.Duration > b.harSLABreachThreshold {
 		b.noteHARSLABreach()
 	}

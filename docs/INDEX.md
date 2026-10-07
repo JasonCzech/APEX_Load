@@ -16,6 +16,7 @@ kept for planning or audit context only.
 | [Browser document evidence](guides/BROWSER_DOCUMENT_EVIDENCE.md) | Current | Opt-in capture, lifecycle populations, bounded live/archive inspection and qualification limits |
 | [Retained resource inspection](guides/RETAINED_RESOURCE_INSPECTION.md) | Current | Authorized bounded archive resource pages, exact filters, native availability and CLI inspection |
 | [Native HAR working-file ownership](guides/BROWSER_HAR_WORKING_OWNERSHIP.md) | Current | Private staging, joined native close, protected retirement and remaining transfer/platform limits |
+| [Browser interaction evidence](guides/BROWSER_INTERACTION_EVIDENCE.md) | Current | Opt-in gesture evidence: dispatched points, keyboard targets, layout revision, transport and bounds |
 | [Telemetry budget policy receipts](guides/TELEMETRY_POLICY_RECEIPTS.md) | Current | Immutable run budgets, digest verification, live/archive inspection and diagnostic limits |
 | [Scenario and queued-run authoring fidelity](guides/AUTHORING_SCENARIO_FIDELITY.md) | Current | Whole-section settings, library snapshot compatibility and revised queued copies |
 | [BASELINE_COMPARISON.md](BASELINE_COMPARISON.md) | Current | Pinned baseline selection, matched-load evidence, advisory policies and saved comparison exports |

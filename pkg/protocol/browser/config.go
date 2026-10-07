@@ -22,9 +22,11 @@ const (
 )
 
 func (b *Browser) applyConfig(config map[string]any) error {
-	if raw, present := config["browser_capture_document_metrics"]; present {
-		if _, valid := raw.(bool); !valid {
-			return fmt.Errorf("browser_capture_document_metrics must be boolean")
+	for _, key := range []string{"browser_capture_document_metrics", "browser_capture_interactions"} {
+		if raw, present := config[key]; present {
+			if _, valid := raw.(bool); !valid {
+				return fmt.Errorf("%s must be boolean", key)
+			}
 		}
 	}
 	if raw, present := config["browser_runtime_new_user_policy"]; present {
@@ -130,6 +132,7 @@ func (b *Browser) applyDefaultConfig() {
 
 func (b *Browser) applyConfigOverrides(config map[string]any) {
 	b.documentMetricsEnabled, _ = config["browser_capture_document_metrics"].(bool)
+	b.interactionsEnabled, _ = config["browser_capture_interactions"].(bool)
 	if policy, present := config["browser_runtime_new_user_policy"].(string); present {
 		b.newUserPolicy = policy
 	}

@@ -358,6 +358,7 @@ export interface HTTPConfig {
 export interface BrowserConfig {
   /** Explicit document-evidence request; unsupported peers must refuse true. */
   capture_document_metrics?: boolean | null
+  capture_interactions?: boolean | null
   storage_state?: string
   system_language?: string
   available_screen_width?: number

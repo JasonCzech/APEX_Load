@@ -1592,6 +1592,9 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 			if _, ok := instance.(protocol.BrowserDocumentEvidenceProvider); ok {
 				features = append(features, FeatureBrowserDocumentEvidenceV2)
 			}
+			if _, ok := instance.(protocol.BrowserInteractionEvidenceProvider); ok {
+				features = append(features, FeatureBrowserInteractionEvidenceV1)
+			}
 		}
 		if normalized == "websocket" {
 			features = append(features, FeatureWebSocketDiagnosticsV1)
@@ -3654,4 +3657,15 @@ func (s *combinedSink) RecordBrowserHARArtifact(artifact protocol.BrowserHARArti
 		}
 	}
 	return fmt.Errorf("browser HAR archive sink is unavailable")
+}
+
+// RecordBrowserInteractionEvidence hands interaction evidence to the first
+// sink that retains it.
+func (s *combinedSink) RecordBrowserInteractionEvidence(evidence *protocol.BrowserInteractionEvidence) error {
+	for _, sink := range s.sinks {
+		if target, ok := sink.(engine.BrowserInteractionEvidenceSink); ok {
+			return target.RecordBrowserInteractionEvidence(evidence)
+		}
+	}
+	return fmt.Errorf("browser interaction archive sink is unavailable")
 }

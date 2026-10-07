@@ -276,7 +276,7 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 			messagingRuntimeFeatures:        append([]string(nil), requiredMessagingFeaturesForGroup(group)...),
 			requiredRuntimeFeature:          groupRequiredRuntimeFeature(group),
 			requiredRuntimeFeatureKnown:     true,
-			BrowserDocumentCaptureRequested: len(requiredBrowserFeaturesForGroup(group)) > 0,
+			BrowserDocumentCaptureRequested: groupRequestsBrowserDocumentCapture(group),
 		}
 	}
 	return &ManagedTest{

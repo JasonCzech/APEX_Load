@@ -85,9 +85,16 @@ type RunArchiveManifest struct {
 	BrowserDocumentsParquetFile       string               `json:"browser_documents_parquet_file,omitempty"`
 	// BrowserHARArtifacts are the run's native HARs; BrowserHAROmitted
 	// counts, by reason, the ones the archive could not retain.
-	BrowserHARArtifacts               []RunArchiveHARArtifact            `json:"browser_har_artifacts,omitempty"`
-	BrowserHARIncomplete              bool                               `json:"browser_har_incomplete,omitempty"`
-	BrowserHAROmitted                 map[string]int64                   `json:"browser_har_omitted,omitempty"`
+	BrowserHARArtifacts  []RunArchiveEvidenceArtifact `json:"browser_har_artifacts,omitempty"`
+	BrowserHARIncomplete bool                         `json:"browser_har_incomplete,omitempty"`
+	BrowserHAROmitted    map[string]int64             `json:"browser_har_omitted,omitempty"`
+	// BrowserInteractionsFile is the run's interaction evidence sidecar;
+	// BrowserInteractionsArtifact describes a generator's sidecar for transfer.
+	BrowserInteractionsFile           string                             `json:"browser_interactions_file,omitempty"`
+	BrowserInteractionRecordCount     int64                              `json:"browser_interaction_record_count,omitempty"`
+	BrowserInteractionsIncomplete     bool                               `json:"browser_interactions_incomplete,omitempty"`
+	BrowserInteractionsDropped        int64                              `json:"browser_interactions_dropped,omitempty"`
+	BrowserInteractionsArtifact       *RunArchiveEvidenceArtifact        `json:"browser_interactions_artifact,omitempty"`
 	BrowserDocumentRecordCount        int64                              `json:"browser_document_record_count,omitempty"`
 	BrowserDocumentsSHA256            string                             `json:"browser_documents_sha256,omitempty"`
 	BrowserDocumentsParquetSHA256     string                             `json:"browser_documents_parquet_sha256,omitempty"`
@@ -1064,8 +1071,11 @@ type runArchiveWriter struct {
 	lookupBuf     *bufio.Writer
 	lookupEncoder *json.Encoder
 	// harMu serializes HAR moves with Finalize; it is taken before mu.
-	harMu    sync.Mutex
-	harBytes int64
+	harMu              sync.Mutex
+	harBytes           int64
+	interactionsFile   *os.File
+	interactionBytes   int64
+	interactionsBroken bool
 }
 
 func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {
@@ -1075,7 +1085,7 @@ func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {
 	cloned := make([]TestGroup, len(groups))
 	copy(cloned, groups)
 	for i := range cloned {
-		cloned[i].BrowserDocumentCaptureRequested = len(requiredBrowserFeaturesForGroup(groups[i])) > 0
+		cloned[i].BrowserDocumentCaptureRequested = groupRequestsBrowserDocumentCapture(groups[i])
 		cloned[i].EffectiveEndAt = cloneTimePtr(groups[i].EffectiveEndAt)
 		cloned[i].EndedAt = cloneTimePtr(groups[i].EndedAt)
 		cloned[i].Stages = cloneLoadStages(groups[i].Stages)

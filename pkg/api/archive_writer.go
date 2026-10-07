@@ -773,7 +773,7 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	w.manifest.SLABreached = slaBreached
 	w.manifest.SLADetails = slaDetails
 
-	if err := errors.Join(w.flushBuffersLocked(), w.syncAndCloseDataFilesLocked()); err != nil {
+	if err := errors.Join(w.flushBuffersLocked(), w.syncAndCloseDataFilesLocked(), w.closeBrowserInteractionsLocked()); err != nil {
 		return nil, err
 	}
 	if err := applyTransactionSLARules(w.rootDir, &w.manifest); err != nil {
@@ -1074,6 +1074,9 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 	}
 	for _, har := range manifest.BrowserHARArtifacts {
 		descriptors = append(descriptors, RunArchiveArtifact{Name: har.Name, Kind: "evidence", Format: "har", RecordType: runArchiveHARRecordType})
+	}
+	if manifest.BrowserInteractionsFile != "" {
+		descriptors = append(descriptors, RunArchiveArtifact{Name: manifest.BrowserInteractionsFile, Kind: "evidence", Format: "jsonl", RecordType: browserInteractionsRecordType, Count: manifest.BrowserInteractionRecordCount})
 	}
 	for _, export := range manifest.CSVExports {
 		if export.Status == "complete" {

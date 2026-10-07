@@ -20,6 +20,7 @@ const (
 
 	EvidenceKindHARNative    = "har_native"
 	EvidenceKindHARSynthetic = "har_synthetic"
+	EvidenceKindInteraction  = "interaction_evidence"
 )
 
 // RunEvidenceReceipt identifies one evidence artifact of a run by its source
@@ -63,7 +64,7 @@ func validateRunEvidenceReceipt(r RunEvidenceReceipt) error {
 		return errors.New("evidence receipt needs a bounded source identity")
 	case strings.TrimSpace(r.SourceGeneration) == "" || len(r.SourceGeneration) > 128 || strings.TrimSpace(r.Name) == "" || len(r.Name) > 256:
 		return errors.New("evidence receipt needs a bounded source generation and name")
-	case r.Kind != EvidenceKindHARNative && r.Kind != EvidenceKindHARSynthetic:
+	case r.Kind != EvidenceKindHARNative && r.Kind != EvidenceKindHARSynthetic && r.Kind != EvidenceKindInteraction:
 		return fmt.Errorf("unsupported evidence kind %q", r.Kind)
 	case err != nil || len(sum) != 32 || strings.ToLower(r.SHA256) != r.SHA256:
 		return errors.New("evidence receipt needs a lowercase SHA-256")

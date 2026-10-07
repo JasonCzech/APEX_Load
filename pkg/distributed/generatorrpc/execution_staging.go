@@ -1009,7 +1009,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if err := json.Unmarshal(plan.scriptContent, &script); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "decode script: %v", err)
 	}
-	prepared.browserDocumentCaptureRequested = len(dsl.RequiredBrowserRuntimeFeatures(&script)) > 0
+	prepared.browserDocumentCaptureRequested = dsl.BrowserDocumentCaptureRequested(&script)
 	if len(request.GetRunCorrelationOrigins()) > 0 {
 		if err := engine.ValidateRunCorrelationHeaders(&script, request.GetTestId()); err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())

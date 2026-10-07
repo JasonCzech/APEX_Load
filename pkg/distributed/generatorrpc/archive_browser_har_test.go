@@ -148,3 +148,67 @@ func TestArchiveRecorderHAROmissionsNeverFailTheRun(t *testing.T) {
 		t.Fatalf("omission %+v err %v", writer.manifest.BrowserHAROmitted, writer.recordErr)
 	}
 }
+
+func interactionEvidenceFixture(gen string, count int) *protocol.BrowserInteractionEvidence {
+	evidence := &protocol.BrowserInteractionEvidence{Version: protocol.BrowserInteractionVersion, SourceGeneration: gen}
+	for i := 0; i < count; i++ {
+		evidence.Interactions = append(evidence.Interactions, protocol.BrowserInteraction{Version: protocol.BrowserInteractionVersion, SourceGeneration: gen, InteractionID: gen + "-i" + strings.Repeat("1", i+1), FrameScope: "main_frame", Kind: "click", Provenance: protocol.InteractionProvenanceScripted, CapturedAt: time.Now().UTC(), Outcome: protocol.BrowserInteractionOutcome{Observed: protocol.InteractionOutcomeNotDeclared}})
+	}
+	return evidence
+}
+
+func TestArchiveRecorderDeclaresInteractionsAndAcknowledgementDeletesThem(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	service := NewService("ix-generator", 10)
+	writer, err := newArchiveRecorder("ix-generator", "ix-run", "ix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gen := strings.Repeat("d", 32)
+	for i := 0; i < 2; i++ {
+		if err := writer.RecordBrowserInteractionEvidence(interactionEvidenceFixture(gen, 2)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.RecordBrowserInteractionEvidence(&protocol.BrowserInteractionEvidence{Version: 9}); err == nil {
+		t.Fatal("malformed interaction evidence recorded")
+	}
+	if err := service.finalizeArchiveWriter(writer, "COMPLETE", time.Now().UTC(), ""); err != nil {
+		t.Fatal(err)
+	}
+	artifact := writer.manifest.BrowserInteractionsArtifact
+	if writer.manifest.BrowserInteractionRecordCount != 2 || artifact == nil || artifact.Name != archiveInteractionsName || artifact.Kind != archiveInteractionsKind || artifact.Bytes == 0 {
+		t.Fatalf("declared %+v (%d records)", artifact, writer.manifest.BrowserInteractionRecordCount)
+	}
+	client := harTestClient(t, service)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var served bytes.Buffer
+	if _, err := client.StreamArchiveArtifact(ctx, ArchiveArtifactRequest{TestID: "ix-run", Name: archiveInteractionsName}, &served, 1<<20); err != nil || int64(served.Len()) != artifact.Bytes {
+		t.Fatalf("served %d bytes: %v", served.Len(), err)
+	}
+	result, err := client.AcknowledgeEvidence(ctx, EvidenceAcknowledgement{TestID: "ix-run", Artifacts: []AcknowledgedEvidence{{Name: archiveInteractionsName, SHA256: artifact.SHA256}}})
+	if err != nil || len(result.Deleted) != 1 {
+		t.Fatalf("acknowledgement %+v %v", result, err)
+	}
+}
+
+func TestArchiveRecorderInteractionBudgetCountsDrops(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	writer, err := newArchiveRecorder("ix-budget", "ix-budget-run", "ix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Discard()
+	writer.mu.Lock()
+	writer.interactionBytes = maxArchiveInteractionsRunBytes
+	writer.mu.Unlock()
+	if err := writer.RecordBrowserInteractionEvidence(interactionEvidenceFixture(strings.Repeat("e", 32), 3)); err == nil {
+		t.Fatal("evidence over the sidecar budget was recorded")
+	}
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	if writer.recordErr != nil || !writer.manifest.BrowserInteractionsIncomplete || writer.manifest.BrowserInteractionsDropped != 3 {
+		t.Fatalf("drop accounting %+v err %v", writer.manifest, writer.recordErr)
+	}
+}

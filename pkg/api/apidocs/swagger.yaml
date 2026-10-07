@@ -2110,6 +2110,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -9067,6 +9070,38 @@ paths:
                           additionalProperties:
                             type: integer
                             format: int64
+                        browser_interaction_record_count:
+                          type: integer
+                          format: int64
+                        browser_interactions_artifact:
+                          type: object
+                          properties:
+                            bytes:
+                              type: integer
+                              format: int64
+                            fidelity:
+                              type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            sequence:
+                              type: integer
+                              format: int64
+                            sha256:
+                              type: string
+                            source_generation:
+                              type: string
+                            source_identity:
+                              type: string
+                          nullable: true
+                        browser_interactions_dropped:
+                          type: integer
+                          format: int64
+                        browser_interactions_file:
+                          type: string
+                        browser_interactions_incomplete:
+                          type: boolean
                         business_key_digests_unavailable:
                           type: boolean
                         clock_observation_count:
@@ -11665,6 +11700,9 @@ paths:
                         capture_document_metrics:
                           type: boolean
                           nullable: true
+                        capture_interactions:
+                          type: boolean
+                          nullable: true
                         capture_screenshots:
                           type: string
                         check_newer_versions:
@@ -12800,6 +12838,9 @@ paths:
                             capture_document_metrics:
                               type: boolean
                               nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
                             capture_screenshots:
                               type: string
                             check_newer_versions:
@@ -13677,6 +13718,9 @@ paths:
                               type: boolean
                               nullable: true
                             capture_document_metrics:
+                              type: boolean
+                              nullable: true
+                            capture_interactions:
                               type: boolean
                               nullable: true
                             capture_screenshots:
@@ -15744,6 +15788,9 @@ paths:
                             capture_document_metrics:
                               type: boolean
                               nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
                             capture_screenshots:
                               type: string
                             check_newer_versions:
@@ -17613,6 +17660,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -49279,6 +49329,9 @@ paths:
                           capture_document_metrics:
                             type: boolean
                             nullable: true
+                          capture_interactions:
+                            type: boolean
+                            nullable: true
                           capture_screenshots:
                             type: string
                           check_newer_versions:
@@ -78607,6 +78660,9 @@ paths:
                         capture_document_metrics:
                           type: boolean
                           nullable: true
+                        capture_interactions:
+                          type: boolean
+                          nullable: true
                         capture_screenshots:
                           type: string
                         check_newer_versions:
@@ -79619,6 +79675,9 @@ paths:
                               type: boolean
                               nullable: true
                             capture_document_metrics:
+                              type: boolean
+                              nullable: true
+                            capture_interactions:
                               type: boolean
                               nullable: true
                             capture_screenshots:
@@ -84764,6 +84823,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -90114,6 +90176,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -95461,6 +95526,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -100824,6 +100892,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -106183,6 +106254,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -111546,6 +111620,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -116905,6 +116982,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -132972,6 +133052,9 @@ paths:
                                 capture_document_metrics:
                                   type: boolean
                                   nullable: true
+                                capture_interactions:
+                                  type: boolean
+                                  nullable: true
                                 capture_screenshots:
                                   type: string
                                 check_newer_versions:
@@ -134055,6 +134138,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -134604,6 +134690,9 @@ paths:
                           type: boolean
                           nullable: true
                         capture_document_metrics:
+                          type: boolean
+                          nullable: true
+                        capture_interactions:
                           type: boolean
                           nullable: true
                         capture_screenshots:
@@ -136553,6 +136642,9 @@ paths:
                           capture_document_metrics:
                             type: boolean
                             nullable: true
+                          capture_interactions:
+                            type: boolean
+                            nullable: true
                           capture_screenshots:
                             type: string
                           check_newer_versions:
@@ -137597,6 +137689,9 @@ paths:
                                   type: boolean
                                   nullable: true
                                 capture_document_metrics:
+                                  type: boolean
+                                  nullable: true
+                                capture_interactions:
                                   type: boolean
                                   nullable: true
                                 capture_screenshots:
@@ -139679,6 +139774,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -140723,6 +140821,9 @@ paths:
                                       type: boolean
                                       nullable: true
                                     capture_document_metrics:
+                                      type: boolean
+                                      nullable: true
+                                    capture_interactions:
                                       type: boolean
                                       nullable: true
                                     capture_screenshots:
@@ -142088,6 +142189,9 @@ paths:
                                   capture_document_metrics:
                                     type: boolean
                                     nullable: true
+                                  capture_interactions:
+                                    type: boolean
+                                    nullable: true
                                   capture_screenshots:
                                     type: string
                                   check_newer_versions:
@@ -143227,6 +143331,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -143776,6 +143883,9 @@ paths:
                           type: boolean
                           nullable: true
                         capture_document_metrics:
+                          type: boolean
+                          nullable: true
+                        capture_interactions:
                           type: boolean
                           nullable: true
                         capture_screenshots:
@@ -145725,6 +145835,9 @@ paths:
                           capture_document_metrics:
                             type: boolean
                             nullable: true
+                          capture_interactions:
+                            type: boolean
+                            nullable: true
                           capture_screenshots:
                             type: string
                           check_newer_versions:
@@ -146769,6 +146882,9 @@ paths:
                                   type: boolean
                                   nullable: true
                                 capture_document_metrics:
+                                  type: boolean
+                                  nullable: true
+                                capture_interactions:
                                   type: boolean
                                   nullable: true
                                 capture_screenshots:
@@ -148749,6 +148865,9 @@ paths:
                           capture_document_metrics:
                             type: boolean
                             nullable: true
+                          capture_interactions:
+                            type: boolean
+                            nullable: true
                           capture_screenshots:
                             type: string
                           check_newer_versions:
@@ -149793,6 +149912,9 @@ paths:
                                   type: boolean
                                   nullable: true
                                 capture_document_metrics:
+                                  type: boolean
+                                  nullable: true
+                                capture_interactions:
                                   type: boolean
                                   nullable: true
                                 capture_screenshots:
@@ -152581,6 +152703,9 @@ paths:
                           capture_document_metrics:
                             type: boolean
                             nullable: true
+                          capture_interactions:
+                            type: boolean
+                            nullable: true
                           capture_screenshots:
                             type: string
                           check_newer_versions:
@@ -153625,6 +153750,9 @@ paths:
                                   type: boolean
                                   nullable: true
                                 capture_document_metrics:
+                                  type: boolean
+                                  nullable: true
+                                capture_interactions:
                                   type: boolean
                                   nullable: true
                                 capture_screenshots:
@@ -155340,6 +155468,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -158875,6 +159006,9 @@ paths:
                             capture_document_metrics:
                               type: boolean
                               nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
                             capture_screenshots:
                               type: string
                             check_newer_versions:
@@ -160723,6 +160857,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -162784,6 +162921,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -164443,6 +164583,9 @@ paths:
                               type: boolean
                               nullable: true
                             capture_document_metrics:
+                              type: boolean
+                              nullable: true
+                            capture_interactions:
                               type: boolean
                               nullable: true
                             capture_screenshots:
@@ -166295,6 +166438,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -167791,6 +167937,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -168340,6 +168489,9 @@ paths:
                           type: boolean
                           nullable: true
                         capture_document_metrics:
+                          type: boolean
+                          nullable: true
+                        capture_interactions:
                           type: boolean
                           nullable: true
                         capture_screenshots:
@@ -184616,6 +184768,9 @@ paths:
                             capture_document_metrics:
                               type: boolean
                               nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
                             capture_screenshots:
                               type: string
                             check_newer_versions:
@@ -187677,6 +187832,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -190686,6 +190844,9 @@ paths:
                                   capture_document_metrics:
                                     type: boolean
                                     nullable: true
+                                  capture_interactions:
+                                    type: boolean
+                                    nullable: true
                                   capture_screenshots:
                                     type: string
                                   check_newer_versions:
@@ -192560,6 +192721,9 @@ paths:
                                     type: boolean
                                     nullable: true
                                   capture_document_metrics:
+                                    type: boolean
+                                    nullable: true
+                                  capture_interactions:
                                     type: boolean
                                     nullable: true
                                   capture_screenshots:
@@ -194492,6 +194656,9 @@ paths:
                               type: boolean
                               nullable: true
                             capture_document_metrics:
+                              type: boolean
+                              nullable: true
+                            capture_interactions:
                               type: boolean
                               nullable: true
                             capture_screenshots:
@@ -197553,6 +197720,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -200490,6 +200660,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -202165,6 +202338,9 @@ paths:
                     capture_document_metrics:
                       type: boolean
                       nullable: true
+                    capture_interactions:
+                      type: boolean
+                      nullable: true
                     capture_screenshots:
                       type: string
                     check_newer_versions:
@@ -202562,6 +202738,9 @@ paths:
                               type: boolean
                               nullable: true
                             capture_document_metrics:
+                              type: boolean
+                              nullable: true
+                            capture_interactions:
                               type: boolean
                               nullable: true
                             capture_screenshots:
@@ -206442,6 +206621,9 @@ paths:
                     capture_document_metrics:
                       type: boolean
                       nullable: true
+                    capture_interactions:
+                      type: boolean
+                      nullable: true
                     capture_screenshots:
                       type: string
                     check_newer_versions:
@@ -206868,6 +207050,9 @@ paths:
                               type: boolean
                               nullable: true
                             capture_document_metrics:
+                              type: boolean
+                              nullable: true
+                            capture_interactions:
                               type: boolean
                               nullable: true
                             capture_screenshots:
@@ -211761,6 +211946,9 @@ paths:
                             capture_document_metrics:
                               type: boolean
                               nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
                             capture_screenshots:
                               type: string
                             check_newer_versions:
@@ -213412,6 +213600,9 @@ paths:
                     capture_document_metrics:
                       type: boolean
                       nullable: true
+                    capture_interactions:
+                      type: boolean
+                      nullable: true
                     capture_screenshots:
                       type: string
                     check_newer_versions:
@@ -213838,6 +214029,9 @@ paths:
                               type: boolean
                               nullable: true
                             capture_document_metrics:
+                              type: boolean
+                              nullable: true
+                            capture_interactions:
                               type: boolean
                               nullable: true
                             capture_screenshots:
@@ -218773,6 +218967,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -222402,6 +222599,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -224292,6 +224492,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -226277,6 +226480,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -228181,6 +228387,9 @@ paths:
                             capture_document_metrics:
                               type: boolean
                               nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
                             capture_screenshots:
                               type: string
                             check_newer_versions:
@@ -230009,6 +230218,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -233878,6 +234090,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -235697,6 +235912,9 @@ paths:
                     capture_document_metrics:
                       type: boolean
                       nullable: true
+                    capture_interactions:
+                      type: boolean
+                      nullable: true
                     capture_screenshots:
                       type: string
                     check_newer_versions:
@@ -236094,6 +236312,9 @@ paths:
                               type: boolean
                               nullable: true
                             capture_document_metrics:
+                              type: boolean
+                              nullable: true
+                            capture_interactions:
                               type: boolean
                               nullable: true
                             capture_screenshots:
@@ -239988,6 +240209,9 @@ paths:
                             capture_document_metrics:
                               type: boolean
                               nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
                             capture_screenshots:
                               type: string
                             check_newer_versions:
@@ -241828,6 +242052,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -243920,6 +244147,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -245611,6 +245841,9 @@ paths:
                     capture_document_metrics:
                       type: boolean
                       nullable: true
+                    capture_interactions:
+                      type: boolean
+                      nullable: true
                     capture_screenshots:
                       type: string
                     check_newer_versions:
@@ -246037,6 +246270,9 @@ paths:
                               type: boolean
                               nullable: true
                             capture_document_metrics:
+                              type: boolean
+                              nullable: true
+                            capture_interactions:
                               type: boolean
                               nullable: true
                             capture_screenshots:
@@ -249988,6 +250224,9 @@ paths:
                             capture_document_metrics:
                               type: boolean
                               nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
                             capture_screenshots:
                               type: string
                             check_newer_versions:
@@ -252757,6 +252996,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -254511,6 +254753,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -256709,6 +256954,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -258436,6 +258684,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -260572,6 +260823,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -263543,6 +263797,9 @@ paths:
                             capture_document_metrics:
                               type: boolean
                               nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
                             capture_screenshots:
                               type: string
                             check_newer_versions:
@@ -265886,6 +266143,9 @@ paths:
                               type: boolean
                               nullable: true
                             capture_document_metrics:
+                              type: boolean
+                              nullable: true
+                            capture_interactions:
                               type: boolean
                               nullable: true
                             capture_screenshots:
@@ -269318,6 +269578,9 @@ paths:
                                   capture_document_metrics:
                                     type: boolean
                                     nullable: true
+                                  capture_interactions:
+                                    type: boolean
+                                    nullable: true
                                   capture_screenshots:
                                     type: string
                                   check_newer_versions:
@@ -271181,6 +271444,9 @@ paths:
                                   capture_document_metrics:
                                     type: boolean
                                     nullable: true
+                                  capture_interactions:
+                                    type: boolean
+                                    nullable: true
                                   capture_screenshots:
                                     type: string
                                   check_newer_versions:
@@ -272974,6 +273240,9 @@ paths:
                                     capture_document_metrics:
                                       type: boolean
                                       nullable: true
+                                    capture_interactions:
+                                      type: boolean
+                                      nullable: true
                                     capture_screenshots:
                                       type: string
                                     check_newer_versions:
@@ -274523,6 +274792,9 @@ paths:
                                       type: boolean
                                       nullable: true
                                     capture_document_metrics:
+                                      type: boolean
+                                      nullable: true
+                                    capture_interactions:
                                       type: boolean
                                       nullable: true
                                     capture_screenshots:
@@ -276500,6 +276772,9 @@ paths:
                                   capture_document_metrics:
                                     type: boolean
                                     nullable: true
+                                  capture_interactions:
+                                    type: boolean
+                                    nullable: true
                                   capture_screenshots:
                                     type: string
                                   check_newer_versions:
@@ -278363,6 +278638,9 @@ paths:
                                   capture_document_metrics:
                                     type: boolean
                                     nullable: true
+                                  capture_interactions:
+                                    type: boolean
+                                    nullable: true
                                   capture_screenshots:
                                     type: string
                                   check_newer_versions:
@@ -280156,6 +280434,9 @@ paths:
                                     capture_document_metrics:
                                       type: boolean
                                       nullable: true
+                                    capture_interactions:
+                                      type: boolean
+                                      nullable: true
                                     capture_screenshots:
                                       type: string
                                     check_newer_versions:
@@ -281705,6 +281986,9 @@ paths:
                                       type: boolean
                                       nullable: true
                                     capture_document_metrics:
+                                      type: boolean
+                                      nullable: true
+                                    capture_interactions:
                                       type: boolean
                                       nullable: true
                                     capture_screenshots:
@@ -283717,6 +284001,9 @@ paths:
                             capture_document_metrics:
                               type: boolean
                               nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
                             capture_screenshots:
                               type: string
                             check_newer_versions:
@@ -285532,6 +285819,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -287487,6 +287777,9 @@ paths:
                             capture_document_metrics:
                               type: boolean
                               nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
                             capture_screenshots:
                               type: string
                             check_newer_versions:
@@ -289151,6 +289444,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -290843,6 +291139,9 @@ paths:
                             capture_document_metrics:
                               type: boolean
                               nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
                             capture_screenshots:
                               type: string
                             check_newer_versions:
@@ -292476,6 +292775,9 @@ paths:
                     capture_document_metrics:
                       type: boolean
                       nullable: true
+                    capture_interactions:
+                      type: boolean
+                      nullable: true
                     capture_screenshots:
                       type: string
                     check_newer_versions:
@@ -292902,6 +293204,9 @@ paths:
                               type: boolean
                               nullable: true
                             capture_document_metrics:
+                              type: boolean
+                              nullable: true
+                            capture_interactions:
                               type: boolean
                               nullable: true
                             capture_screenshots:
@@ -296857,6 +297162,9 @@ paths:
                             capture_document_metrics:
                               type: boolean
                               nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
                             capture_screenshots:
                               type: string
                             check_newer_versions:
@@ -298709,6 +299017,9 @@ paths:
                             capture_document_metrics:
                               type: boolean
                               nullable: true
+                            capture_interactions:
+                              type: boolean
+                              nullable: true
                             capture_screenshots:
                               type: string
                             check_newer_versions:
@@ -300518,6 +300829,9 @@ paths:
                                     type: boolean
                                     nullable: true
                                   capture_document_metrics:
+                                    type: boolean
+                                    nullable: true
+                                  capture_interactions:
                                     type: boolean
                                     nullable: true
                                   capture_screenshots:
@@ -302373,6 +302687,9 @@ paths:
                                     type: boolean
                                     nullable: true
                                   capture_document_metrics:
+                                    type: boolean
+                                    nullable: true
+                                  capture_interactions:
                                     type: boolean
                                     nullable: true
                                   capture_screenshots:
@@ -304340,6 +304657,9 @@ paths:
                               type: boolean
                               nullable: true
                             capture_document_metrics:
+                              type: boolean
+                              nullable: true
+                            capture_interactions:
                               type: boolean
                               nullable: true
                             capture_screenshots:
@@ -315710,6 +316030,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -316279,6 +316602,9 @@ paths:
                           type: boolean
                           nullable: true
                         capture_document_metrics:
+                          type: boolean
+                          nullable: true
+                        capture_interactions:
                           type: boolean
                           nullable: true
                         capture_screenshots:
@@ -319834,6 +320160,9 @@ paths:
                                   type: boolean
                                   nullable: true
                                 capture_document_metrics:
+                                  type: boolean
+                                  nullable: true
+                                capture_interactions:
                                   type: boolean
                                   nullable: true
                                 capture_screenshots:
@@ -328251,6 +328580,9 @@ paths:
                             type: boolean
                             nullable: true
                           capture_document_metrics:
+                            type: boolean
+                            nullable: true
+                          capture_interactions:
                             type: boolean
                             nullable: true
                           capture_screenshots:
@@ -332239,6 +332571,9 @@ paths:
                                 capture_document_metrics:
                                   type: boolean
                                   nullable: true
+                                capture_interactions:
+                                  type: boolean
+                                  nullable: true
                                 capture_screenshots:
                                   type: string
                                 check_newer_versions:
@@ -340656,6 +340991,9 @@ paths:
                           capture_document_metrics:
                             type: boolean
                             nullable: true
+                          capture_interactions:
+                            type: boolean
+                            nullable: true
                           capture_screenshots:
                             type: string
                           check_newer_versions:
@@ -343907,6 +344245,46 @@ paths:
                     additionalProperties:
                       type: integer
                       format: int64
+                  browser_interaction_record_count:
+                    type: integer
+                    format: int64
+                  browser_interactions_artifact:
+                    type: object
+                    properties:
+                      bytes:
+                        type: integer
+                        format: int64
+                      fidelity:
+                        type: string
+                      kind:
+                        type: string
+                      name:
+                        type: string
+                      sequence:
+                        type: integer
+                        format: int64
+                      sha256:
+                        type: string
+                      source_generation:
+                        type: string
+                      source_identity:
+                        type: string
+                    required:
+                      - bytes
+                      - fidelity
+                      - kind
+                      - name
+                      - sequence
+                      - sha256
+                      - source_generation
+                    nullable: true
+                  browser_interactions_dropped:
+                    type: integer
+                    format: int64
+                  browser_interactions_file:
+                    type: string
+                  browser_interactions_incomplete:
+                    type: boolean
                   business_key_digests_unavailable:
                     type: boolean
                   clock_observation_count:
@@ -345371,6 +345749,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -347919,6 +348300,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -357203,6 +357587,46 @@ paths:
                         additionalProperties:
                           type: integer
                           format: int64
+                      browser_interaction_record_count:
+                        type: integer
+                        format: int64
+                      browser_interactions_artifact:
+                        type: object
+                        properties:
+                          bytes:
+                            type: integer
+                            format: int64
+                          fidelity:
+                            type: string
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          sequence:
+                            type: integer
+                            format: int64
+                          sha256:
+                            type: string
+                          source_generation:
+                            type: string
+                          source_identity:
+                            type: string
+                        required:
+                          - bytes
+                          - fidelity
+                          - kind
+                          - name
+                          - sequence
+                          - sha256
+                          - source_generation
+                        nullable: true
+                      browser_interactions_dropped:
+                        type: integer
+                        format: int64
+                      browser_interactions_file:
+                        type: string
+                      browser_interactions_incomplete:
+                        type: boolean
                       business_key_digests_unavailable:
                         type: boolean
                       clock_observation_count:
@@ -370414,6 +370838,9 @@ paths:
                                 capture_document_metrics:
                                   type: boolean
                                   nullable: true
+                                capture_interactions:
+                                  type: boolean
+                                  nullable: true
                                 capture_screenshots:
                                   type: string
                                 check_newer_versions:
@@ -378829,6 +379256,9 @@ paths:
                             type: boolean
                             nullable: true
                           capture_document_metrics:
+                            type: boolean
+                            nullable: true
+                          capture_interactions:
                             type: boolean
                             nullable: true
                           capture_screenshots:
@@ -382761,6 +383191,9 @@ paths:
                                 capture_document_metrics:
                                   type: boolean
                                   nullable: true
+                                capture_interactions:
+                                  type: boolean
+                                  nullable: true
                                 capture_screenshots:
                                   type: string
                                 check_newer_versions:
@@ -391178,6 +391611,9 @@ paths:
                           capture_document_metrics:
                             type: boolean
                             nullable: true
+                          capture_interactions:
+                            type: boolean
+                            nullable: true
                           capture_screenshots:
                             type: string
                           check_newer_versions:
@@ -393492,6 +393928,9 @@ paths:
                           capture_document_metrics:
                             type: boolean
                             nullable: true
+                          capture_interactions:
+                            type: boolean
+                            nullable: true
                           capture_screenshots:
                             type: string
                           check_newer_versions:
@@ -394261,6 +394700,9 @@ paths:
                           capture_document_metrics:
                             type: boolean
                             nullable: true
+                          capture_interactions:
+                            type: boolean
+                            nullable: true
                           capture_screenshots:
                             type: string
                           check_newer_versions:
@@ -394988,6 +395430,9 @@ paths:
                           capture_document_metrics:
                             type: boolean
                             nullable: true
+                          capture_interactions:
+                            type: boolean
+                            nullable: true
                           capture_screenshots:
                             type: string
                           check_newer_versions:
@@ -395713,6 +396158,9 @@ paths:
                             type: boolean
                             nullable: true
                           capture_document_metrics:
+                            type: boolean
+                            nullable: true
+                          capture_interactions:
                             type: boolean
                             nullable: true
                           capture_screenshots:
@@ -396505,6 +396953,9 @@ paths:
                         capture_document_metrics:
                           type: boolean
                           nullable: true
+                        capture_interactions:
+                          type: boolean
+                          nullable: true
                         capture_screenshots:
                           type: string
                         check_newer_versions:
@@ -397222,6 +397673,9 @@ paths:
                             type: boolean
                             nullable: true
                           capture_document_metrics:
+                            type: boolean
+                            nullable: true
+                          capture_interactions:
                             type: boolean
                             nullable: true
                           capture_screenshots:
@@ -398724,6 +399178,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -400201,6 +400658,9 @@ paths:
                                 type: boolean
                                 nullable: true
                               capture_document_metrics:
+                                type: boolean
+                                nullable: true
+                              capture_interactions:
                                 type: boolean
                                 nullable: true
                               capture_screenshots:
@@ -401760,6 +402220,9 @@ paths:
                                   type: boolean
                                   nullable: true
                                 capture_document_metrics:
+                                  type: boolean
+                                  nullable: true
+                                capture_interactions:
                                   type: boolean
                                   nullable: true
                                 capture_screenshots:
@@ -417339,6 +417802,9 @@ paths:
                               capture_document_metrics:
                                 type: boolean
                                 nullable: true
+                              capture_interactions:
+                                type: boolean
+                                nullable: true
                               capture_screenshots:
                                 type: string
                               check_newer_versions:
@@ -417908,6 +418374,9 @@ paths:
                           type: boolean
                           nullable: true
                         capture_document_metrics:
+                          type: boolean
+                          nullable: true
+                        capture_interactions:
                           type: boolean
                           nullable: true
                         capture_screenshots:
@@ -419360,6 +419829,9 @@ paths:
                                   type: boolean
                                   nullable: true
                                 capture_document_metrics:
+                                  type: boolean
+                                  nullable: true
+                                capture_interactions:
                                   type: boolean
                                   nullable: true
                                 capture_screenshots:
@@ -420822,6 +421294,9 @@ paths:
                           type: boolean
                           nullable: true
                         capture_document_metrics:
+                          type: boolean
+                          nullable: true
+                        capture_interactions:
                           type: boolean
                           nullable: true
                         capture_screenshots:

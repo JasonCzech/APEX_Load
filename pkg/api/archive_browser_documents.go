@@ -23,11 +23,20 @@ const maxArchiveBrowserDocumentMeasurements = 4096
 
 func groupsRequestBrowserDocumentCapture(groups []TestGroup) bool {
 	for _, group := range groups {
-		if len(requiredBrowserFeaturesForGroup(group)) > 0 {
+		if groupRequestsBrowserDocumentCapture(group) {
 			return true
 		}
 	}
 	return false
+}
+
+// groupRequestsBrowserDocumentCapture reports a group's document-metric
+// opt-in (interaction capture is a separate feature).
+func groupRequestsBrowserDocumentCapture(group TestGroup) bool {
+	if group.script != nil {
+		return dsl.BrowserDocumentCaptureRequested(group.script)
+	}
+	return group.BrowserDocumentCaptureRequested
 }
 
 func requiredBrowserFeaturesForGroup(group TestGroup) []string {
