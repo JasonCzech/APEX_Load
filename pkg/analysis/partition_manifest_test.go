@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -249,6 +250,29 @@ func TestPartitionManifestTotalEscapedBudget(t *testing.T) {
 		Rows int64      `json:"rows,omitempty"`
 	}{}, 2); err != nil || string(body) != "{}" {
 		t.Fatal("omitted optional fields were charged", string(body), err)
+	}
+	long := strings.Repeat("v", 64)
+	// A written optional field is still charged before marshalling: each
+	// value below needs more than the budget, so the estimate refuses it
+	// even though nothing is marshalled.
+	for name, value := range map[string]any{
+		"map": struct {
+			M map[string]string `json:"m,omitempty"`
+		}{M: map[string]string{"k": long}},
+		"slice": struct {
+			S []string `json:"s,omitempty"`
+		}{S: []string{long}},
+		"string": struct {
+			S string `json:"s,omitempty"`
+		}{S: long},
+		"pointer": struct {
+			P *string `json:"p,omitempty"`
+		}{P: &long},
+	} {
+		left := int64(32)
+		if analysisJSONCharge(reflect.ValueOf(value), 0, &left) == nil {
+			t.Fatalf("%s: a written optional field was not charged", name)
+		}
 	}
 	cycle := map[string]any{}
 	cycle["self"] = cycle

@@ -235,7 +235,7 @@ func TestResourceTimingJoinNeedsOneUniqueEntry(t *testing.T) {
 	b.evidence.timingRequests[resourceTimingKey{frame: frame, hash: unique}] = 1
 	b.evidence.timingRequests[resourceTimingKey{frame: frame, hash: repeated}] = 1
 	v := b.associateResourceEvidence(associationEvidence(t, b, 100), resourceJoin{page: page, frame: frame, urlHash: unique}, gen)
-	if v.DocumentID != first || v.DocumentAssociation != "page_resource_timing_join" || v.DocumentOffsetMS == nil || *v.DocumentOffsetMS != 12.5 || v.Cache != nil || v.InitiatorType != "" {
+	if v.DocumentID != first || v.DocumentAssociation != "page_resource_timing_join" || v.DocumentOffsetMS == nil || *v.DocumentOffsetMS != 12.5 || v.Cache != nil || v.InitiatorType != "" || v.Version != protocol.BrowserResourceEvidenceVersion {
 		t.Fatalf("unique entry %+v", v)
 	}
 	if v := b.associateResourceEvidence(associationEvidence(t, b, 100), resourceJoin{page: page, frame: frame, urlHash: repeated}, gen); v.DocumentID != "" || v.IdentityUnavailableReason != "resource_timing_unobserved" {
@@ -478,8 +478,8 @@ func TestWebKitNavigationRequestsNeverTakeAResourceTimingJoin(t *testing.T) {
 
 // A context that existed before the session installed its binding never ran
 // the bootstrap's report, so a report from it (a page script calling the
-// still-global binding) proves nothing; neither does one from another frame
-// or after the contexts were cleared.
+// still-global binding) proves nothing; neither does one after the contexts
+// were cleared.
 func TestLoaderReportsNeedAContextCreatedAfterTheBinding(t *testing.T) {
 	b := &Browser{}
 	if err := b.resetBrowserEvidence("test"); err != nil {
@@ -520,6 +520,9 @@ func TestLoaderTokenFromAnotherFrameProvesNothing(t *testing.T) {
 	commitFrame(b, state, "F", "L1")
 	createContext(b, state, 1, "F")
 	reportDocument(b, state, 1, documentToken(1))
+	if state.loaderTokens["L1"] != documentToken(1) {
+		t.Fatalf("fixture: the loader's report was not admitted: %v", state.loaderTokens)
+	}
 	beginDocument(b, child, page, origin, documentToken(1))
 	join := resourceJoin{page: page, frame: main, key: resourceKey("GET", "http://a.test/app.js"), ordinal: 1}
 	got := b.associateResourceEvidence(associationEvidence(t, b, origin+5), join, b.evidence.generation)

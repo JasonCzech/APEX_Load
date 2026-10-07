@@ -214,8 +214,9 @@ func exerciseAnalysisUploadMetadataLimit(t *testing.T, owner, reader *SQLiteStor
 		}
 		t.Run(name, func(t *testing.T) {
 			in := uploadWriterFixture(t, owner)
-			// Locate the admitted bounded metadata edge, including conservatively
-			// charged omitted fields. Plain encoded length is no longer admission.
+			// Locate the admitted bounded metadata edge (the estimate charges
+			// worst-case timestamp and separator bytes). Plain encoded length is
+			// no longer admission.
 			low, high := 0, 2<<20
 			for low < high {
 				mid := low + (high-low+1)/2

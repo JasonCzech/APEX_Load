@@ -1047,8 +1047,8 @@ jobs:
           postgres_test_port=$(docker port "${postgres_test_container}" 5432/tcp | awk -F: 'NR == 1 { print $NF }')
           test -n "${postgres_test_port}"
           APEXLOAD_TEST_POSTGRES_URL="postgres://apexload:${POSTGRES_TEST_PASSWORD}@127.0.0.1:${postgres_test_port}/apexload?sslmode=disable" \
-            go test -tags postgres_integration ./pkg/storage \
-              -run '^Test(Postgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle|AnalysisWorkflows|AuthoringMutationReceipts|AuthoringReceiptTombstoneRestore|AuthoringReceiptTombstoneRenewal|AuthoringReceiptRenewalOutlastsAWaitingRestore|ExclusivePolicyDefaults|FeatureEvaluationJobs|EvaluationJobReviewFixes|EvaluationJobTakeoverAndCancelThenLatePublish|EvaluationJobCompletionFences|FeatureAcceptanceSequence)|AppDynamicsDurablePostgresHeadsCursorAndOwnerFence)$' -count=1
+            go test -tags postgres_integration ./pkg/storage ./pkg/api \
+              -run '^Test(Postgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle|AnalysisWorkflows|AuthoringMutationReceipts|AuthoringReceiptTombstoneRestore|AuthoringReceiptTombstoneRenewal|AuthoringReceiptRenewalOutlastsAWaitingRestore|ExclusivePolicyDefaults|FeatureEvaluationJobs|EvaluationJobReviewFixes|EvaluationJobTakeoverAndCancelThenLatePublish|EvaluationJobCompletionFences|FeatureAcceptanceSequence|ScenarioAuthoringConditionedSaveAcrossReplicas|ScenarioConditionedSaveRaceAcrossReplicas|ScenarioStrictPolicyFlipIsFencedInTransaction|ScenarioRuntimeCommitFingerprintSurvivesStorage)|AppDynamicsDurablePostgresHeadsCursorAndOwnerFence)$' -count=1
 
   containers:
     name: Container (${{ matrix.binary }}, ${{ matrix.profile }})

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log"
 	"log/slog"
 	"strings"
 	"sync"
@@ -482,9 +483,14 @@ func (c *evidenceLogCapture) count(message string) int {
 func captureEvidenceLogs(t *testing.T) *evidenceLogCapture {
 	t.Helper()
 	capture := &evidenceLogCapture{}
-	previous := slog.Default()
+	// slog.SetDefault also redirects the log package; restore both.
+	previous, writer, flags := slog.Default(), log.Writer(), log.Flags()
 	slog.SetDefault(slog.New(slog.NewTextHandler(capture, nil)))
-	t.Cleanup(func() { slog.SetDefault(previous) })
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		log.SetOutput(writer)
+		log.SetFlags(flags)
+	})
 	return capture
 }
 

@@ -216,11 +216,20 @@ func (tr *TestRunner) reconcileRuntimeOverrideSecretAttempt(record *storage.Runt
 					return tr.completeRuntimeOverrideSecretAttempt(attempt)
 				}
 				// A scenario saved again since (an edit echoing the masked
-				// values inside the journal's lease) no longer matches the
-				// fingerprint but may still use these credentials; rolling
-				// them back would leave its references dangling.
-				if scenarioReferencesRuntimeSecrets(scenario, scripts, record.SecretNames) {
-					return tr.completeRuntimeOverrideSecretAttempt(attempt)
+				// values inside the journal's lease), or the earlier version an
+				// update failed to replace, no longer matches the fingerprint
+				// but may still use some of these credentials. Rolling those
+				// back would leave its references dangling; the rest are
+				// rolled back as usual.
+				if referenced, unreferenced := scenarioRuntimeSecretReferences(scenario, scripts, record.SecretNames); len(referenced) > 0 {
+					if len(unreferenced) == 0 {
+						return tr.completeRuntimeOverrideSecretAttempt(attempt)
+					}
+					attempt.Candidates = attempt.Candidates[:0]
+					for _, name := range unreferenced {
+						attempt.Candidates = append(attempt.Candidates, runtimeOverrideSecretRollbackCandidate{Name: name, Ambiguous: true})
+					}
+					return tr.rollbackRuntimeOverrideSecretAttempt(record.ProjectID, record.TestID, attempt, "expired_provisioning_attempt")
 				}
 			}
 		}
@@ -310,20 +319,24 @@ func (tr *TestRunner) waitRuntimeOverrideSecretAttemptReconciliation(ctx context
 	}
 }
 
-// scenarioReferencesRuntimeSecrets reports whether the stored scenario still
-// references any of the named governed runtime credentials.
-func scenarioReferencesRuntimeSecrets(scenario *storage.Scenario, scripts []storage.ScenarioScript, names []string) bool {
+// scenarioRuntimeSecretReferences splits the named governed runtime
+// credentials into those the stored scenario still references and the rest.
+// A scenario that cannot be encoded references none of them.
+func scenarioRuntimeSecretReferences(scenario *storage.Scenario, scripts []storage.ScenarioScript, names []string) (referenced, unreferenced []string) {
 	payload, err := json.Marshal(struct {
 		Scenario *storage.Scenario
 		Scripts  []storage.ScenarioScript
 	}{scenario, scripts})
-	if err != nil {
-		return false
-	}
 	for _, name := range names {
-		if name = strings.TrimSpace(name); name != "" && strings.Contains(string(payload), "{{secret."+name+"}}") {
-			return true
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if err == nil && strings.Contains(string(payload), "{{secret."+name+"}}") {
+			referenced = append(referenced, name)
+		} else {
+			unreferenced = append(unreferenced, name)
 		}
 	}
-	return false
+	return referenced, unreferenced
 }

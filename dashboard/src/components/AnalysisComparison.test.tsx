@@ -338,3 +338,22 @@ it('aligns the range to the window grid of the series its identity filters selec
   expect(onGrid(executed!.from)).toBe(0)
   expect(onGrid(executed!.to)).toBe(0)
 })
+
+it('aligns the range to the comparison side\'s identity-filtered window grid', async () => {
+  let executed: { from: string; to: string; right: { host?: string } } | undefined
+  const hostB = Date.parse('2026-01-01T00:04:00Z')
+  const series = (host: string, iso: string) => ({ stats: { kind: 'summary', metric: 'latency', min_time: iso, identity: { source: 's', host, service: '', dimensions: {} } } })
+  const right: AnalysisImport = { ...dataset, id: 'b', name: 'B', mapping: { version: 2, timestamp: ['ts'], timestamp_encoding: 'unix_s', timezone: 'UTC', measures: [{ value: ['p90'], name: 'latency', kind: 'summary', unit: 'ms', statistic: 'p90', window_seconds: 300 }] }, partition_manifest: { partitions: [series('a', '2026-01-01T00:02:00Z'), series('b', '2026-01-01T00:04:00Z')] } } as AnalysisImport
+  const p90 = { ...saved, definition: { ...definition, right: { dataset_id: 'b', host: 'b', metric: 'latency', aggregation: 'p90' }, mode: 'overlay', max_lag_seconds: 0 } }
+  request.mockImplementation(async (path: string, opts?: RequestInit) => {
+    if (path.startsWith('/analysis/compare?')) { executed = JSON.parse(String(opts?.body)); return { request: executed, left: [], right: [] } }
+    return [p90]
+  })
+  await act(async () => root.render(<AnalysisComparison importedIdentityVersion={2} projectId="p" dataset={dataset} datasets={[dataset, right]} canEdit onAssociated={() => {}} />))
+  await change('Saved comparison', 'saved')
+  await act(async () => [...container.querySelectorAll('button')].find(x => x.textContent === 'Analyze comparison')!.click())
+  expect(executed?.right.host).toBe('b')
+  const onGrid = (iso: string) => (((Date.parse(iso) - hostB) % 300000) + 300000) % 300000
+  expect(onGrid(executed!.from)).toBe(0)
+  expect(onGrid(executed!.to)).toBe(0)
+})

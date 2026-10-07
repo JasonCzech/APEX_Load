@@ -1567,4 +1567,24 @@ func TestScenarioCredentialRecoveryKeepsCredentialsAnEditedScenarioStillUses(t *
 	if orphanRetained {
 		t.Fatal("a credential no stored scenario references was kept")
 	}
+	// An update that failed to replace the scenario provisioned one new
+	// credential beside one the stored version still uses: only the new one
+	// is rolled back.
+	added := runtimeOverrideSecretName(scenario.ID, -1, "env.DB_PASSWORD")
+	secrets.mu.Lock()
+	secrets.values[storage.DefaultProjectID+"/"+added], secrets.creators[storage.DefaultProjectID+"/"+added] = "uncommitted", creator
+	secrets.mu.Unlock()
+	if err := server.runner.reconcileRuntimeOverrideSecretAttempt(journal("dddddddd-dddd-4ddd-8ddd-dddddddddddd", name, added)); err != nil {
+		t.Fatal(err)
+	}
+	secrets.mu.Lock()
+	_, kept := secrets.values[key]
+	_, addedRetained := secrets.values[storage.DefaultProjectID+"/"+added]
+	secrets.mu.Unlock()
+	if !kept || addedRetained {
+		t.Fatalf("partially referenced attempt: referenced kept=%v, unreferenced kept=%v", kept, addedRetained)
+	}
+	if attempts, err := records.ListRuntimeSecretProvisioningAttempts(); err != nil || len(attempts) != 0 {
+		t.Fatalf("the partially rolled back attempt's journal was not completed: %#v, %v", attempts, err)
+	}
 }
