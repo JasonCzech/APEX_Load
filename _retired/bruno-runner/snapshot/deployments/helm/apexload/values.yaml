@@ -1,0 +1,315 @@
+namespace:
+  create: true
+  # Empty uses the Helm release namespace.
+  name: ""
+
+image:
+  registry: changeme.azurecr.io
+  tag: "0.1.0"
+  # Always re-pull at schedule time: production runs pin a registry tag, and a
+  # re-pushed tag (or a hotfix) must not be masked by a stale node-cached image.
+  pullPolicy: Always
+  controllerRepository: apexload-controller
+  generatorRepository: apexload-generator
+
+dataPlatform:
+  configMapName: apexload-data-platform
+  secretName: apexload-data-platform
+  createSecret: false
+  databaseUrl: ""
+  redisUrl: ""
+  grpcAuthToken: ""
+  store: postgres
+  databaseMaxOpenConns: "25"
+  databaseMaxIdleConns: "10"
+  databaseConnMaxLifetime: 30m
+  timescaleDB: "false"
+  archiveBackend: azure_blob
+  archiveContainer: apexload-archives
+  archivePrefix: production/run-evidence
+  azureStorageAccount: changemestorageaccount
+  cacheBackend: redis
+  redisKeyPrefix: apexload:prod
+  redisTimeout: 2s
+  redisFanoutChannel: telemetry:fanout
+  keyVaultUrl: https://change-me.vault.azure.net
+  keyVaultAuth: azure_identity
+  # Exact comma-separated script-safe Key Vault secret names. Empty disables
+  # Key Vault interpolation even when the workload identity can read the vault.
+  keyVaultAllowedSecrets: ""
+  # Exact comma-separated Service Bus/Event Hubs namespaces allowed to receive
+  # this workload identity's bearer tokens. Empty disables AAD messaging auth.
+  azureMessagingAllowedNamespaces: ""
+  # Azure Event Hubs connection details remain per-script. Provision a namespace with the terraform module
+  # (eventhubs_enabled=true), then either set config.eventhubs.auth_type=aad with
+  # the granted workload identity (and add its exact FQDN above), or reference the Key Vault SAS secrets from
+  # config.eventhubs.connection_string_secret. The native eventhubs adapter needs
+  # images built with -tags eventhubs_real (image.tag); the default image
+  # fail-closes on non-mock Event Hubs scripts.
+  # Empty derives the headless-service target from namespace.name, falling back
+  # to the Helm release namespace.
+  generators: ""
+  generatorDiscoveryInterval: 15s
+  generatorTimeout: 10s
+  metricsAddr: ":9091"
+  apiKeyRateLimitPerMinute: "600"
+  idempotencyKeyTTL: 15m
+
+projectSecrets:
+  # database encrypts values in the configured SQLite/PostgreSQL store.
+  # azure_key_vault stores values in dataPlatform.keyVaultUrl and keeps only
+  # managed metadata in the database.
+  provider: database
+  # The controller uses one wrapping key for encrypted project secrets and
+  # encrypted Bruno source artifacts. Prefer supplying the master key through
+  # dataPlatform.secretName. These inline values are intended for secret-value
+  # injection by deployment automation when dataPlatform.createSecret=true.
+  wrappingMasterKey: ""
+  wrappingKeyVaultKeyId: ""
+  azureKeyVaultApiVersion: "7.4"
+
+workloadIdentity:
+  enabled: true
+  controllerClientId: ""
+  generatorClientId: ""
+
+controller:
+  # Keep one active controller unless HA is explicitly enabled below. Replicas
+  # above one require APEXLOAD_CONTROLLER_HA plus shared PostgreSQL/Redis.
+  replicas: 1
+  # Stable externally reachable HTTPS URL. The controller hashes this into its
+  # deployment-specific GitHub Actions OIDC audience unless ciOIDCAudience is
+  # set explicitly. Empty derives https://<ingress.host>.
+  publicURL: ""
+  ciOIDCAudience: ""
+  # Set a custom bind address for the controller API. The numeric port
+  # portion is propagated into container and service ports, including
+  # EndpointSlice.
+  addr: ":8080"
+  ha:
+    enabled: false
+    # EndpointSlice address family for the leader-only controller Service.
+    # Set IPv6 for IPv6-only clusters.
+    endpointAddressType: IPv4
+  serviceAccountName: apexload-controller
+  grpcTlsSecretName: apexload-controller-grpc-tls
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+      ephemeral-storage: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+      ephemeral-storage: 14Gi
+  scratch:
+    tmpSizeLimit: 2Gi
+    dataSizeLimit: 10Gi
+
+restartControls:
+  enabled: true
+  allowForce: true
+  controllerDeployment: apexload-controller
+  generatorStatefulSet: apexload-generator
+  # One Kubernetes label-selector requirement: existence, equality, or a
+  # canonical in/notin set expression. Combined requirements are not accepted.
+  generatorSelector: app.kubernetes.io/name=apexload-generator
+
+importAssets:
+  root: /var/lib/apexload-import-assets
+  persistence:
+    enabled: true
+    existingClaim: ""
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: ""
+    size: 10Gi
+
+# Optional durable controller evidence staging. The claim must provide POSIX
+# flock, atomic rename and fsync; access mode alone does not prove that contract.
+archiveStaging:
+  persistence:
+    enabled: false
+    existingClaim: ""
+    accessModes:
+      - ReadWriteMany
+    # Empty uses the cluster default only when creating a claim. Select and
+    # qualify the storage class before enabling this option in production.
+    storageClassName: ""
+    size: 256Gi
+
+generator:
+  replicas: 2
+  serviceAccountName: apexload-generator
+  grpcTlsSecretName: apexload-generator-grpc-tls
+  maxVUsers: 10000
+  runSupervision:
+    ttl: 60s
+    abandonDrain: 5s
+    renewInterval: 10s
+  nodeSelector: {}
+  tolerations: []
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+      ephemeral-storage: 1Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+      ephemeral-storage: 6Gi
+  scratch:
+    tmpSizeLimit: 4Gi
+  # Durable per-ordinal fencing state and generator-side run evidence share this
+  # PVC. Leave storageClassName empty to use the cluster default.
+  statePersistence:
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: ""
+    size: 10Gi
+
+bruno:
+  # Import and execution are independently gated. Both require protected
+  # artifact retention; only execution requires the runner and shared PVC.
+  importEnabled: false
+  enabled: false
+  compatibilityVersion: "3.5.2"
+  artifactRoot: /var/lib/apexload-bruno
+  artifactPersistence:
+    # Existing ReadWriteMany claim mounted by controller and every generator.
+    existingClaim: ""
+  # Prefer a versioned Key Vault key id. When empty, the data-platform Secret
+  # must contain the protocol-neutral APEXLOAD_WRAPPING_MASTER_KEY.
+  keyVaultKeyId: ""
+  artifactMasterKey: ""
+  egressBrokerUrl: ""
+  # Intended only for isolated local clusters. Production should use the
+  # governed broker and enforce pod-level egress policy externally.
+  allowDirectEgress: false
+  maxSessions: 256
+  maxPendingEvents: 10000
+  maxBundleBytes: 4294967296
+  sessionTtlMs: 86400000
+  sessionIdleTtlMs: 1800000
+  maxJumps: 10000
+  maxRunRequestDepth: 64
+  maxParallelRequests: 100
+  maxOutputBytes: 4194304
+  maxStreamTimeoutMs: 60000
+  runner:
+    image:
+      repository: apexload-bruno-runner
+      tag: ""
+      pullPolicy: Always
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+        ephemeral-storage: 1Gi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+        ephemeral-storage: 6Gi
+    scratch:
+      tmpSizeLimit: 4Gi
+
+javaVuser:
+  # Java Vuser execution is opt-in and uses a credential-minimized same-pod
+  # runner. Java source is never compiled here; classes and JARs must already
+  # exist in the signed runner image or the optional read-only assets claim.
+  # This non-privileged sidecar has no writable cgroup v2 delegation, so the
+  # stock chart supports legacy full_lifecycle execution only. Combined
+  # persistent lifecycles require a separately governed Windows runner or a
+  # Linux runner with a narrowly delegated cgroup subtree; see
+  # docs/PROTOCOL_SUPPORT.md.
+  enabled: false
+  runner:
+    image:
+      repository: apexload-java-vuser-runner
+      # Empty derives <base image.tag>-standard. The runner is published only
+      # in the standard coordinate even for enterprise controller/generator
+      # installations. Set an explicit tag for a signed custom runner image.
+      tag: ""
+      pullPolicy: Always
+    maxProcesses: 25
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+        ephemeral-storage: 512Mi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+        ephemeral-storage: 4Gi
+    scratch:
+      tmpSizeLimit: 2Gi
+  assets:
+    # Optional ReadOnlyMany/ReadWriteMany PVC containing precompiled classes,
+    # JARs, and operator-approved alternate JDK homes.
+    existingClaim: ""
+    mountPath: /opt/apexload/java-assets
+
+ingress:
+  enabled: true
+  className: webapprouting.kubernetes.azure.com
+  host: apexload.example.com
+  tls:
+    # Secure by default: the public ingress terminates TLS. Operators must supply
+    # a certificate in secretName (or let cert-manager populate it). Set to false
+    # only behind a TLS-terminating gateway you control.
+    enabled: true
+    secretName: apexload-tls
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: 64m
+
+networkPolicy:
+  enabled: true
+  ingressNamespace: app-routing-system
+  monitoringNamespace: monitoring
+
+pdb:
+  enabled: true
+
+keda:
+  # Override with a globally unique ID when Prometheus spans clusters.
+  # Empty defaults to <namespace>/<release>. Must match all controllers in this installation.
+  fleetID: ""
+  enabled: true
+  minReplicaCount: 2
+  maxReplicaCount: 50
+  pollingInterval: 15
+  cooldownPeriod: 300
+  prometheusServerAddress: http://prometheus-operated.monitoring.svc:9090
+  azureMonitor:
+    enabled: false
+    triggerAuthenticationName: apexload-azure-monitor
+    identityId: ""
+    serverAddress: https://CHANGE-ME.monitor.azure.com
+
+serviceMonitor:
+  enabled: true
+  releaseLabel: prometheus
+  interval: 15s
+  scrapeTimeout: 10s
+
+tracing:
+  # Disabled by default. When enabled, endpoint is required and is shared by
+  # controller/generator; use collector routing by their distinct service.name.
+  # Collector authentication headers must come from an existing Secret; never
+  # place their value in this file or the shared ConfigMap.
+  enabled: false
+  endpoint: ""
+  protocol: http/protobuf
+  sampler: parentbased_traceidratio
+  samplerArg: "0.10"
+  actionSampleRatio: "0.01"
+  resourceAttributes: ""
+  headersSecretName: ""
+  headersSecretKey: OTEL_EXPORTER_OTLP_HEADERS
+
+certManager:
+  enabled: false
+  issuerName: apexload-grpc-ca
+  selfSignedBootstrap: true

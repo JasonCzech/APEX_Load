@@ -12,7 +12,8 @@ for (const width of [1024, 1280, 1440]) {
     await page.goto(`/#/settings?setting=grafana&${scopeQuery(workspace)}`)
     await page.reload()
     await expect(page.getByRole('heading', { name: 'Grafana', exact: true })).toBeVisible()
-    await expect(page.getByText('Applies to: Entire deployment', { exact: true })).toBeVisible()
+    // The settings scope is shown in the top bar (pages start with their cards).
+    await expect(page.locator('.main-topbar').getByText('Applies to: Entire deployment', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: /Reset.*Defaults/ })).toBeHidden()
     const browse = page.getByRole('button', { name: 'Expand Settings navigation' })
     if (await browse.isVisible()) await browse.click()

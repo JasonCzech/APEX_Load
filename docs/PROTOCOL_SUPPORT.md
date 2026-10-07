@@ -143,9 +143,7 @@ Document/literal operations can be exact. RPC/encoded ambiguity and sensitive mi
 
 ### Planning Envelopes
 
-Bruno collections are importable and executable through the version-pinned Bruno 3.5.2
-compatibility runner. Execution is disabled until the runner and project egress policy are
-configured; it does not share the high-density native HTTP envelope.
+Bruno HTTP requests can be converted into native APEX scripts. The Bruno compatibility runner is retired and excluded from builds. Canonical `bruno_run` scripts cannot execute; re-import the retained source as native HTTP drafts and resolve conversion findings before replay. See [retired integrations](RETIRED_INTEGRATIONS.md).
 
 The Web/API support endpoint mirrors the protocol density envelopes in `docs/ENTERPRISE_FLEET_AND_CAPACITY.md`. These are design/planning targets, not measured benchmark results.
 

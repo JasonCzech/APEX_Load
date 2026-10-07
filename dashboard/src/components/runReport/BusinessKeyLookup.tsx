@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { request } from '../../hooks/apiClient'
-import type { MonitorSource } from '../../types/appdynamics'
+import type { MonitorSource } from '../../types/runMonitoring'
 import type { BusinessKeyLookupResponse, BusinessKeyMapping, BusinessKeyMappingDefinition } from '../../types/businessKeys'
 import { getErrorMessage } from '../../utils/errorUtils'
 import { parseBusinessKeyValues } from './businessKeyModel'

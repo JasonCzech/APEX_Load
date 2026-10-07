@@ -42,6 +42,12 @@ func (s *Server) runMonitorStore(w http.ResponseWriter, project string) storage.
 		writeError(w, http.StatusConflict, "run monitoring is not enabled for this project")
 		return nil
 	}
+	return s.runMonitorRuntimeStore(w)
+}
+
+// The project gate controls new assignments. Existing jobs and retained data
+// stay available while active collection drains through its bounded lifecycle.
+func (s *Server) runMonitorRuntimeStore(w http.ResponseWriter) storage.RunMonitorStore {
 	store, ok := s.store.(storage.RunMonitorStore)
 	if !ok {
 		writeError(w, http.StatusNotImplemented, "run monitoring storage unavailable")
@@ -92,8 +98,12 @@ func (s *Server) handleMonitorSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	source.ProjectID = project
-	if source.AppDynamics != nil {
-		source.AppDynamics.ProjectID = project
+	if source.Elastic != nil {
+		source.Elastic.ProjectID = project
+	}
+	if source.Pack == monitorprovider.PackAppDynamics || source.AppDynamics != nil {
+		writeError(w, 400, retiredAppDynamicsMessage)
+		return
 	}
 	if source.Dynatrace != nil {
 		source.Dynatrace.ProjectID = project
@@ -240,7 +250,7 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 	if c == nil {
 		return
 	}
-	store := s.runMonitorStore(w, c.ProjectID)
+	store := s.runMonitorRuntimeStore(w)
 	if store == nil {
 		return
 	}
@@ -267,7 +277,13 @@ func (s *Server) handlePollRunMonitorJobs(w http.ResponseWriter, r *http.Request
 			writeError(w, 400, "collector contracts must be advertised separately")
 			return
 		}
+		ad.Packs = slices.DeleteFunc(ad.Packs, func(pack string) bool {
+			return pack == monitorprovider.PackAppDynamics || pack == collectoragent.AppDynamicsBatchContract
+		})
 		for _, contract := range ad.Contracts {
+			if contract == collectoragent.AppDynamicsBatchContract {
+				continue
+			}
 			if provider, governed := providerForCapability(contract); governed {
 				if !slices.Contains(ad.Packs, provider.Pack) {
 					writeError(w, 400, provider.ContractLabel+" contract requires pack approval")
@@ -407,7 +423,7 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 		s.handleManagementSamples(w, r, c, batch)
 		return
 	}
-	store := s.runMonitorStore(w, c.ProjectID)
+	store := s.runMonitorRuntimeStore(w)
 	if store == nil || !s.requireAnalysisBackend(w) {
 		return
 	}
@@ -418,13 +434,17 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 	}
 	now := time.Now().UTC()
 	grant, err := collectoragent.VerifyRunJob(batch.Job, key.Public().(ed25519.PublicKey), c.ID, now)
-	if err != nil || grant.ProjectID != c.ProjectID || grant.ID != r.PathValue("job_id") {
+	if err != nil || grant.Cleanup || grant.ProjectID != c.ProjectID || grant.ID != r.PathValue("job_id") {
 		writeError(w, 403, "invalid monitor collection grant")
 		return
 	}
 	job, err := store.GetRunMonitorJob(c.ProjectID, grant.ID)
 	if err != nil {
 		writeError(w, 404, "monitor job unavailable")
+		return
+	}
+	if job.Source.Pack == monitorprovider.PackAppDynamics || grant.Pack == monitorprovider.PackAppDynamics {
+		writeError(w, 409, retiredAppDynamicsMessage)
 		return
 	}
 	if job.Source.ManagementScope != nil || grant.Management != nil {
@@ -436,7 +456,7 @@ func (s *Server) handleRunMonitorSamples(w http.ResponseWriter, r *http.Request)
 			writeError(w, status, message)
 			return
 		}
-		payload := storage.ProviderMonitorBatch{Points: batch.Points, Evidence: batch.Evidence, Coverage: batch.Coverage, QueryWindowEnd: batch.QueryWindowEnd, Final: batch.Final, Topology: batch.Topology, Progress: batch.Progress, QueryFromUTC: batch.QueryFromUTC, QueryUntilUTC: batch.QueryUntilUTC}
+		payload := storage.ProviderMonitorBatch{ResolvedIndices: batch.ResolvedIndices, Points: batch.Points, Evidence: batch.Evidence, Coverage: batch.Coverage, QueryWindowEnd: batch.QueryWindowEnd, Final: batch.Final, Topology: batch.Topology, Progress: batch.Progress, QueryFromUTC: batch.QueryFromUTC, QueryUntilUTC: batch.QueryUntilUTC}
 		if err := provider.Ingest(s, r.Context(), *job, batch.Sequence, payload, executionLeaseTerm{}); err != nil {
 			writeError(w, 409, err.Error())
 			return
@@ -534,7 +554,7 @@ func (s *Server) handleRunMonitors(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, message)
 		return
 	}
-	store := s.runMonitorStore(w, project)
+	store := s.runMonitorRuntimeStore(w)
 	if store == nil {
 		return
 	}
@@ -555,7 +575,7 @@ func (s *Server) handleRunMonitorSeries(w http.ResponseWriter, r *http.Request) 
 		writeError(w, status, message)
 		return
 	}
-	store := s.runMonitorStore(w, project)
+	store := s.runMonitorRuntimeStore(w)
 	if store == nil {
 		return
 	}

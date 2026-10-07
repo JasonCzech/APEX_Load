@@ -107,17 +107,7 @@ services:
       APEXLOAD_GENERATOR_ABANDON_DRAIN: "5s"
       APEXLOAD_GENERATOR_STATE_DIR: /data/state
       APEXLOAD_ARCHIVE_DIR: /data/archives
-      APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED: "true"
-      APEXLOAD_BRUNO_ARTIFACT_ROOT: /var/lib/apexload-bruno
       APEXLOAD_WRAPPING_MASTER_KEY: ${APEXLOAD_WRAPPING_MASTER_KEY:-apexload-local-wrapping-key-change-me}
-      APEXLOAD_BRUNO_RUNNER_URL: http://127.0.0.1:8097
-      APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1: "true"
-      APEXLOAD_BRUNO_ALLOW_DIRECT_EGRESS: "true"
-      APEXLOAD_BRUNO_MAX_JUMPS: "10000"
-      APEXLOAD_BRUNO_MAX_RUN_REQUEST_DEPTH: "64"
-      APEXLOAD_BRUNO_MAX_PARALLEL_REQUESTS: "100"
-      APEXLOAD_BRUNO_MAX_OUTPUT_BYTES: "4194304"
-      APEXLOAD_BRUNO_MAX_STREAM_TIMEOUT_MS: "60000"
       # Keep operator enablement independent from service selection. Start the
       # java-vuser profile with APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true; the
       # profile alone must not silently enable arbitrary Java execution.
@@ -131,42 +121,6 @@ services:
       - /tmp
     volumes:
       - generator-data:/data
-      - bruno-artifacts:/var/lib/apexload-bruno:ro
-    depends_on:
-      bruno-artifacts-init:
-        condition: service_completed_successfully
-
-  bruno-runner:
-    build:
-      context: ./runners/bruno
-      dockerfile: Dockerfile
-    image: apexload-bruno-runner:local
-    init: true
-    restart: unless-stopped
-    network_mode: service:generator
-    read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    environment:
-      APEXLOAD_BRUNO_RUNNER_ADDR: 127.0.0.1
-      APEXLOAD_BRUNO_RUNNER_PORT: "8097"
-      APEXLOAD_BRUNO_ALLOW_DIRECT_EGRESS: "true"
-      APEXLOAD_BRUNO_MAX_SESSIONS: "128"
-      APEXLOAD_BRUNO_MAX_PENDING_EVENTS: "10000"
-      APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1: "true"
-    tmpfs:
-      - /tmp
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8097/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
-      interval: 15s
-      timeout: 3s
-      retries: 5
-      start_period: 20s
-    depends_on:
-      - generator
-
   java-vuser-runner:
     profiles:
       - java-vuser

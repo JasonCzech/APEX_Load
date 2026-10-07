@@ -1,4 +1,4 @@
-import { test, expect, json, idOf, login, seedScript, seedScenario } from './support/workflow'
+import { test, expect, json, idOf, login, seedScript, seedScenario, signOut } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('Library assignments persist, bulk failures recover, and launches require an explicit release', async ({ page }, testInfo) => {
@@ -103,7 +103,7 @@ test('Viewer cannot change script or scenario assignments', async ({ page }) => 
   const users = (await json(await request.get('/api/v1/auth/users'))).users as Array<{id:string;subject:string}>
   const viewer = users.find(user => user.subject === 'local:user')!
   await json(await request.post(`/api/v1/auth/users/${viewer.id}/bindings`, { data: { scope_type: 'domain', scope_id: workspace.domainId, role: 'viewer' } }))
-  await page.getByRole('button', { name: 'Sign out' }).click()
+  await signOut(page)
   await login(page, 'user')
   for (const [kind,id] of [['scripts',script],['scenarios',scenario]]) {
     await page.goto(`/#/${kind === 'scenarios' ? 'tests?view=library&' : 'scripts?'}${scopeQuery(workspace)}`); await page.reload()

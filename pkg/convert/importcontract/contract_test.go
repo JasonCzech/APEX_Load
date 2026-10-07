@@ -62,13 +62,13 @@ func TestBaselineNormalizedContracts(t *testing.T) {
 // converter's complete JSON-visible ConvertResult plus shared validation and
 // accounting. Any update must be reviewed as an intentional importer delta.
 var frozenImportContractHashes = map[string]string{
-	"har":      "4b14e330aa2283f3c065df37f74206534d9858071f3801239eb32fe84d1d402a",
-	"jmeter":   "80b9eb2a7b751512db19bcefcee3416afb25480635e4baf4163b42d21d85b3c3",
-	"k6":       "83fa7df58e867e39d7544c6b4c0a5124ede5ae3b4a3ebcfb51de6a7736b69c59",
-	"openapi":  "282ad40974d2d7ecc3dda22a77b490e2a36149cb0584e7dc43722639c8780041",
-	"postman":  "fa2639cd6e22229d0b471fc02dc9a79a29c21ed7a6bb13e23e00b368e17ca38a",
-	"raw_http": "c8affb82d1c2afe97979a035e55f45eefbce98780452593bb489e6b707ff5749",
-	"wsdl":     "ab668d0db72d276a0c6f7fd526f08c274278225ea025e2e9a4ac574c804b160e",
+	"har":      "dd7c0e2eb00381e8c741f959c856b175b3f62c837064fb8efdd3566d53b4bbe1",
+	"jmeter":   "e0cfea72ada43ce06b4d58479d9244996dd39ba0dc6edaba651421a20ba6b819",
+	"k6":       "223d2eb2c757a624f7c0f670f04d32bb0d9de0abb406ab040af52cbf2b2eba94",
+	"openapi":  "1daf8f24fc70e9e8968051d47ac70c1aedbbb909ce76e124f07766d960f80e65",
+	"postman":  "74ea6c7c7e6f101277ea127091e243e68f201e329247e07ecbfeca4c129cbd39",
+	"raw_http": "baf7c224f75f8963016f84addc2a0a6a65b1d2734d0b708cfc677cba263ce082",
+	"wsdl":     "4790eed3abc380baaca0067468c2ac9a3831a3d06a489886430b9efae59e909a",
 }
 
 func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
@@ -102,6 +102,7 @@ func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
 			}
 			requireIntentionalDelta(t, "credential_preserving_import_marker")
 			requireIntentionalDelta(t, "script_results_contract")
+			requireIntentionalDelta(t, "retired_runner_config_omitted")
 			if importer.name != "wsdl" {
 				requireIntentionalDelta(t, "http_imports_disable_implicit_traceparent")
 			}
@@ -578,6 +579,7 @@ func TestCredentialDispositionContractCharacterizesCurrentDeltas(t *testing.T) {
 }
 
 var intentionalDeltaAllowlist = map[string]string{
+	"retired_runner_config_omitted":                  "Empty retired Bruno Runner configuration is omitted from native scripts; populated legacy configuration remains readable for source retention.",
 	"credential_preserving_import_marker":            "Finalized imports carry a stable policy marker so operator-supplied values remain exact across scripts, source review, persistence, and authorized authoring reads.",
 	"postman_http_credentials_use_shared_projection": "Postman HTTP headers, typed auth, and structured bodies now reach the source-neutral credential projector before any compatibility rewriting.",
 	"postman_source_file_provenance":                 "Postman results identify the collection and selected environment source files so credential guidance can name the exact contributing artifact.",

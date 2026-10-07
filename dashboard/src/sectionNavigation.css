@@ -1,0 +1,407 @@
+/*
+ * In-page navigation that matches the top bar and sidebar: the section list
+ * (Settings, Access), the Repository catalog scope toggle and related links. Colours come from theme
+ * tokens; the current item uses the same indicator as the sidebar and tabs
+ * (--brand-highlight in the Light theme, the accent elsewhere). Selectors start
+ * with `body` so they outrank the page stylesheets injected after this file.
+ */
+
+/* Links styled as buttons read as buttons, not underlined text. */
+body a.btn {
+  text-decoration: none;
+}
+
+/* Settings section list: a card with grouped rows. */
+@media (min-width: 1101px) {
+  body .settings-tabbed-layout:not(.navigation-collapsed) {
+    grid-template-columns: 264px minmax(0, 1fr);
+  }
+}
+
+body :is(.settings-task-navigation, .section-nav) {
+  gap: 0;
+  width: auto;
+  padding: 0 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  box-shadow: none;
+}
+
+body .settings-task-navigation .settings-navigation-search {
+  gap: 8px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+body .settings-task-navigation .settings-navigation-search input {
+  font-weight: 400;
+}
+
+body :is(.settings-task-navigation, .section-nav) > :is(div, nav) {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0 4px;
+}
+
+body :is(.settings-task-navigation, .section-nav) > :is(div, nav) + :is(div, nav) {
+  border-top: 1px solid var(--border-subtle);
+}
+
+body :is(.settings-task-navigation, .section-nav) :is(h2, h3) {
+  margin: 0 16px 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: var(--label-tracking, 0.06em);
+  text-transform: var(--label-case, uppercase);
+}
+
+body :is(.settings-task-navigation, .section-nav) :is(button, a) {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 16px 8px 20px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: inset 4px 0 0 transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.3;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+body :is(.settings-task-navigation, .section-nav) :is(button, a):hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+body :is(.settings-task-navigation, .section-nav) :is(button, a)[aria-current='page'] {
+  background: var(--accent-soft);
+  box-shadow: inset 4px 0 0 var(--brand-highlight, var(--accent));
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+body :is(.settings-task-navigation, .section-nav) :is(button, a):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* The show/hide control for the list is a quiet text action. */
+body .settings-tabbed-layout .settings-browse-button {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent);
+  font-weight: 700;
+  padding: 4px 0;
+}
+
+/* Repository catalog scope: one segmented control with a filled selection. */
+body .repository-scope-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-card);
+}
+
+/* .btn-secondary is in the selector to outrank the shared outline-button style. */
+body .repository-scope-toggle > button.btn.btn-secondary {
+  min-height: 32px;
+  padding: 6px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+body .repository-scope-toggle > button.btn.btn-secondary:hover:not(:disabled):not([aria-pressed='true']) {
+  border: 0;
+  background: var(--bg-hover);
+  box-shadow: none;
+  color: var(--accent);
+}
+
+body .repository-scope-toggle > button.btn.btn-secondary[aria-pressed='true'] {
+  background: var(--accent);
+  box-shadow: none;
+  color: var(--accent-contrast);
+}
+
+/* Pages with many sections (Settings, Access) put a section list beside the
+ * content. The list keeps its entries and order whichever one is selected. */
+body .section-layout {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+body :is(.section-layout, .settings-tabbed-layout) > .section-nav {
+  position: sticky;
+  top: 64px;
+}
+
+body .section-layout > .section-layout-main {
+  min-width: 0;
+}
+
+body :is(.settings-task-navigation, .section-nav) :is(button, a) > strong {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--subtle-fill-strong);
+  color: inherit;
+  font-size: var(--font-size-xs, 11px);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* A solid count badge: its tinted version stacked on the current row's tint
+ * and lost contrast. Inverting the danger text colour keeps the pairing every
+ * theme already guarantees against its page background. */
+body .section-nav .access-attention-badge {
+  margin-left: 6px;
+  border-color: transparent;
+  background: var(--danger-text);
+  color: var(--bg-primary);
+  font-weight: 700;
+}
+
+@media (max-width: 1100px) {
+  body .section-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body .section-layout > .section-nav {
+    position: static;
+  }
+}
+
+/* Shortcuts to another page are text links, so they never read as a submenu. */
+body .related-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0 0 16px;
+}
+
+body .related-link {
+  color: var(--accent);
+  font-size: var(--font-size-base, 13px);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+body .related-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+body .related-link::after {
+  content: ' \2192' / '';
+}
+
+/* Help & documentation uses the same section list beside its reading pane. */
+body .help-columns {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+body .help-columns > .help-sidebar {
+  position: sticky;
+  top: 64px;
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+}
+
+@media (max-width: 1100px) {
+  body .help-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body .help-columns > .help-sidebar,
+  body .section-layout > .section-nav {
+    position: static;
+    max-height: 340px;
+    overflow-y: auto;
+  }
+}
+
+/* Every section list sticks at the same offset, aligned with the content title. */
+body .settings-tabbed-layout > .settings-task-navigation {
+  top: 64px;
+}
+
+/* Help groups articles inside one nav; separate the groups like other lists. */
+body .section-nav .help-article-group + .help-article-group {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Settings content (Settings, Access security policy, Repository test data)
+ * follows the same flat card pattern as the rest of the app. */
+body .settings-task-heading > p:first-child {
+  /* The group label repeats the section list's group heading. */
+  display: none;
+}
+
+body .settings-card .settings-subsection {
+  padding: 16px;
+}
+
+body .settings-card .settings-manager-summary .setting-label {
+  color: var(--text-primary);
+  font-size: var(--font-size-lg, 15px);
+  font-weight: 700;
+}
+
+/* Rows inside a section read as divided rows, not grey boxes nested in the card. */
+body .settings-card .settings-subsection > .setting-row {
+  padding: 14px 0 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body .settings-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+body .access-table-wrap {
+  background: var(--bg-card);
+}
+
+/* Table headers stick while the rows scroll, so they need an opaque surface:
+ * in the glass themes --bg-card is translucent and scrolled rows showed
+ * through. Layer the card tint (card + table wrap) over the page colour. */
+body .access-data-table th {
+  background: linear-gradient(var(--bg-card), var(--bg-card)), linear-gradient(var(--bg-card), var(--bg-card)), var(--bg-primary);
+  box-shadow: inset 0 -1px 0 var(--border); /* collapsed borders do not stick */
+}
+
+/* Access filter bars: text fields match the selects beside them (same
+ * surface, same height), and labels line up even when a long select value
+ * wraps onto a second line. */
+body .access-table-toolbar {
+  align-items: start;
+}
+
+body .access-table-toolbar > :is(button, a, .btn) {
+  align-self: end;
+}
+
+body .access-table-toolbar :is(input, select) {
+  box-sizing: border-box;
+  min-height: 38px;
+}
+
+body .access-table-toolbar input {
+  background: var(--select-bg);
+}
+
+/* Feature policy is an editable table in the audit-table style: rows are not
+ * clickable (only the Allow checkbox is), it fits the settings card, and the
+ * status text is already sentence case. */
+body .feature-access-table-wrap {
+  margin-top: 16px;
+}
+
+body .access-data-table.feature-access-table {
+  min-width: 760px;
+}
+
+body .feature-access-table tbody tr {
+  cursor: default;
+}
+
+body .feature-access-table .feature-access-name {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+body .feature-access-table th:last-child,
+body .feature-access-table td:last-child {
+  width: 1%;
+  text-align: center;
+}
+
+body .feature-access-table td:last-child input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+:root[data-theme] body .access-status-badge.feature-access-status {
+  text-transform: none;
+  white-space: nowrap;
+}
+
+/* Settings-style pages start with their cards, like every other page: the
+ * section list (or tab) names the page and the top bar shows its scope. The
+ * heading stays available to screen readers and as the focus target; only a
+ * pending-changes summary remains visible here. */
+body .settings-task-heading {
+  margin: 0;
+}
+
+body .settings-task-heading > h2 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+body .settings-task-heading > h2 + p,
+body .settings-task-heading > p.setting-desc {
+  display: none;
+}
+
+body .settings-task-heading > p[role='status'] {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--warning-border);
+  border-radius: 8px;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  font-size: var(--font-size-sm, 12px);
+  font-weight: 600;
+}
+
+body .main-topbar .settings-scope-status {
+  color: var(--text-secondary);
+}
+
+/* With nothing pending the heading holds only screen-reader text, so it leaves
+ * the layout flow and the first card starts level with the section list. */
+body .settings-task-heading:not(:has(> p[role='status'])) {
+  position: absolute;
+}

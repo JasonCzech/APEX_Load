@@ -520,7 +520,8 @@ func monitorSeriesKey(point analysis.MetricPoint) string {
 	m := point.Provider
 	parts := []string{point.ProjectID, point.Source, point.ScenarioID, point.Host, point.Service, point.MetricName, point.Population, point.MetricVersion, point.Kind, point.InputKind, point.Unit,
 		m.Name, m.Backend, strconv.FormatBool(m.Synthetic), m.MetricID, strconv.Itoa(m.ResolutionSeconds), m.Statistic, strconv.FormatBool(m.QueryWindow),
-		m.QueryID, m.DefinitionHash, m.BackendProfile, m.Mode, m.AnalysisStatistic, strconv.Itoa(m.EvaluationStepSeconds), m.EntityIDs[providerSeriesEntityKey]}
+		m.QueryID, m.DefinitionHash, m.BackendProfile, m.Mode, m.AnalysisStatistic, strconv.Itoa(m.EvaluationStepSeconds), m.EntityIDs[providerSeriesEntityKey],
+		m.CatalogPath, m.WindowKind, strconv.FormatBool(m.Approximate), m.DerivedAggregation}
 	for _, key := range slices.Sorted(maps.Keys(point.Dimensions)) {
 		parts = append(parts, key+"="+point.Dimensions[key])
 	}
@@ -549,10 +550,15 @@ func monitorSeriesTemplate(point analysis.MetricPoint, project, file string) (rc
 		return rca.Series{}, false
 	}
 	observation := descriptor.Observation
-	if point.Kind == analysis.KindCounter || m.Statistic == "counter" {
+	if m.WindowKind == "instant" {
+		observation = rca.ObservationSnapshot
+	} else if point.Kind == analysis.KindCounter || m.Statistic == "counter" {
 		observation = rca.ObservationCumulative
 	}
 	seconds := m.ResolutionSeconds
+	if m.WindowKind == "instant" {
+		seconds = 0
+	}
 	if (observation == rca.ObservationSnapshot || seconds <= 0) && m.EvaluationStepSeconds > 0 {
 		seconds = m.EvaluationStepSeconds
 	}

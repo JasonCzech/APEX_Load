@@ -1,0 +1,167 @@
+/*
+ * One top bar and one tab style for every sidebar destination.
+ *
+ * Pages contribute their page-level tabs to the top bar with the
+ * `topbar-page-section-toggle` class (Dashboard, New Test, Monitoring, Scripts,
+ * Scenarios, Access, Help). Each page used to style that control differently;
+ * these rules give them all the same underline tabs. Selectors start with
+ * `body` so they outrank the page stylesheets that lazy-loaded pages inject
+ * after this file. Colours come from theme tokens, so every theme keeps its
+ * palette through --tab-link and --brand-highlight (AT&T colours in Light).
+ */
+
+/* Layout: title, tabs and page controls sit on one row with the shared
+ * help/status/theme actions pushed to the right. The row wraps only when the
+ * content does not fit, instead of always dropping the actions to a new line. */
+body .main-topbar .topbar-page-section-toggle {
+  width: auto;
+}
+
+body .main-topbar.contextual .topbar-contribution-controls:has(.topbar-page-section-toggle),
+body .main-topbar .monitoring-topbar-controls > .topbar-page-section-toggle {
+  flex: 0 1 auto;
+}
+
+body .main-topbar .main-topbar-actions {
+  margin-left: auto;
+}
+
+/* App.css gives the actions a full row below 1500px, sized for the old pill
+ * tabs. The underline tabs are compact, so keep one row down to the tablet
+ * breakpoint, where ux.css stacks the top bar. */
+@media (min-width: 1101px) {
+  body .main-topbar.contextual:has(.topbar-page-section-toggle) .main-topbar-actions {
+    flex: 0 1 auto;
+    justify-content: flex-end;
+  }
+}
+
+/* Page-level tabs. */
+body .main-topbar .topbar-page-section-toggle,
+body :is(.repository-tab-row, .access-subtab-row) {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* In-page tab rows filter the content below them, so they keep a baseline rule. */
+body :is(.repository-tab-row, .access-subtab-row) {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+
+body .main-topbar .topbar-page-section-toggle :is(button, a),
+body :is(.repository-tab-row, .access-subtab-row) > button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: inset 0 -3px 0 transparent;
+  color: var(--tab-link, var(--text-secondary));
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: normal;
+  text-decoration: none;
+  text-transform: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+body .main-topbar .topbar-page-section-toggle :is(button, a):hover:not(:disabled),
+body :is(.repository-tab-row, .access-subtab-row) > button:hover:not(:disabled) {
+  background: transparent;
+  box-shadow: inset 0 -3px 0 var(--border);
+  color: var(--accent);
+}
+
+body .main-topbar .topbar-page-section-toggle :is(button.active, button[aria-pressed='true'], [aria-selected='true'], a[aria-current='page']),
+body :is(.repository-tab-row, .access-subtab-row) > :is(button.active, button[aria-selected='true']) {
+  background: transparent;
+  box-shadow: inset 0 -3px 0 var(--brand-highlight, var(--accent));
+  color: var(--text-primary);
+}
+
+body .main-topbar .topbar-page-section-toggle :is(button, a):focus-visible,
+body :is(.repository-tab-row, .access-subtab-row) > button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+body .main-topbar .topbar-page-section-toggle button:disabled,
+body :is(.repository-tab-row, .access-subtab-row) > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Count badges inside tabs (Dashboard, Access, Repository). */
+body .main-topbar .topbar-page-section-toggle :is(button, a) > strong,
+body :is(.repository-tab-row, .access-subtab-row) > button > strong {
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--subtle-fill-strong);
+  color: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* Run Results section tabs already underline; use the same indicator colour. */
+body .run-report-areas button[aria-selected='true'] {
+  border-bottom-color: var(--brand-highlight, var(--accent));
+  color: var(--text-primary);
+}
+
+/* Phones: tabs stay on one line and scroll sideways; the shared actions sit
+ * side by side instead of each taking a full-width row. */
+@media (max-width: 768px) {
+  body .main-topbar .topbar-page-section-toggle {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  body .main-topbar .topbar-page-section-toggle::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Action groups size to their buttons on wide screens; beside the icon rail
+     a phone row is narrower than a full set of pill buttons, so cap each group
+     at the row width and let its buttons wrap instead of overflowing. */
+  body .main-topbar .topbar-action-group {
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  body .main-topbar .main-topbar-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  body .main-topbar .main-topbar-actions .theme-toggle {
+    width: auto;
+  }
+}

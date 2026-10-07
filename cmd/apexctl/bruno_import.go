@@ -17,6 +17,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 const (
@@ -161,55 +163,6 @@ type brunoCLICommitAmbiguousError struct {
 // command timeout.
 type brunoCLICommitReceiptError struct {
 	cause error
-}
-
-type brunoCLIHTTPError struct {
-	operation                string
-	status                   string
-	statusCode               int
-	message                  string
-	code                     string
-	requirements             []brunoCLISecretRequirement
-	sessionRetained          bool
-	sessionRetainedSet       bool
-	manualRetrySafe          bool
-	manualRetrySafeSet       bool
-	importSessionConsumed    bool
-	importSessionConsumedSet bool
-	hasRetryMetadata         bool
-	idempotencySessionID     string
-	committedSecretNames     []string
-	retryAfter               time.Duration
-}
-
-func (e *brunoCLIHTTPError) Error() string {
-	if e == nil {
-		return "Bruno request failed"
-	}
-	message := strings.TrimSpace(e.message)
-	if message == "" {
-		message = strings.TrimSpace(e.status)
-	}
-	if e.code != "" {
-		message += " (" + e.code + ")"
-	}
-	if e.sessionRetained {
-		message += "; import session retained"
-	}
-	if e.idempotencySessionID != "" {
-		message += "; retry session " + e.idempotencySessionID
-	}
-	if len(e.committedSecretNames) > 0 {
-		message += "; retained secrets: " + strings.Join(e.committedSecretNames, ", ")
-	}
-	if len(e.requirements) > 0 {
-		var missing []string
-		for _, requirement := range e.requirements {
-			missing = append(missing, requirement.ID+"="+requirement.SuggestedName)
-		}
-		message += "; bind with --secret-binding <" + strings.Join(missing, "|") + ">=<logical-secret-name>"
-	}
-	return e.operation + ": " + message
 }
 
 type brunoCLIReviewRequiredError struct {
@@ -379,14 +332,6 @@ func importCmd() {
 			writeJSON(payload)
 			return
 		}
-		writeJSON(map[string]any{
-			"status":         "success",
-			"script":         result.Script,
-			"revision":       result.Revision,
-			"created":        result.Created,
-			"change_summary": result.ChangeSummary,
-		})
-		return
 	}
 	if args.output == "native" {
 		fmt.Printf("Imported %d native Bruno API script%s", result.Count, pluralSuffix(result.Count))
@@ -420,16 +365,6 @@ func importCmd() {
 		}
 		return
 	}
-	operation := "Imported"
-	if args.syncScriptID != "" {
-		operation = "Synchronized"
-	}
-	fmt.Printf("%s Bruno collection %q\n", operation, result.Script.Name)
-	fmt.Printf("  Script:   %s\n", result.Script.ID)
-	if result.Script.RefKey != "" {
-		fmt.Printf("  Ref key:  %s\n", result.Script.RefKey)
-	}
-	fmt.Printf("  Revision: %s\n", result.Revision.ID)
 }
 
 func parseBrunoImportArgs(raw []string) (brunoImportArgs, error) {
@@ -439,8 +374,7 @@ func parseBrunoImportArgs(raw []string) (brunoImportArgs, error) {
 		bearerToken:    strings.TrimSpace(os.Getenv("APEXLOAD_BEARER_TOKEN")),
 		format:         "text",
 		timeout:        defaultCLIImportTimeout,
-		sandbox:        "safe",
-		output:         "canonical",
+		output:         "native",
 		migrateSecrets: true,
 		secretBindings: map[string]string{},
 		conflicts:      map[string]string{},
@@ -453,10 +387,10 @@ func parseBrunoImportArgs(raw []string) (brunoImportArgs, error) {
 	flags.StringVar(&args.path, "path", "", "Bruno collection path")
 	flags.StringVar(&args.path, "p", "", "Bruno collection path")
 	flags.StringVar(&args.projectID, "project", "", "project ID")
-	flags.StringVar(&args.syncScriptID, "sync", "", "script ID to synchronize")
+	flags.StringVar(&args.syncScriptID, "sync", "", "retired Runner synchronization option")
 	flags.StringVar(&args.name, "name", "", "script name")
-	flags.StringVar(&args.sandbox, "sandbox", args.sandbox, "safe or developer sandbox")
-	flags.StringVar(&args.output, "output", args.output, "canonical or native output")
+	flags.StringVar(&args.sandbox, "sandbox", args.sandbox, "retired Runner sandbox option")
+	flags.StringVar(&args.output, "output", args.output, "native HTTP output")
 	flags.StringVar(&args.folderID, "folder", "", "native output folder ID")
 	flags.BoolVar(&args.ackReview, "ack-review-required", false, "acknowledge review findings")
 	flags.StringVar(&args.api, "api", args.api, "controller URL")
@@ -514,8 +448,14 @@ func parseBrunoImportArgs(raw []string) (brunoImportArgs, error) {
 	if args.api == "" {
 		return args, errors.New("--api is required (or set APEXLOAD_API)")
 	}
-	if args.sandbox != "safe" && args.sandbox != "developer" {
-		return args, errors.New("--sandbox must be safe or developer")
+	if args.output == "canonical" || args.syncScriptID != "" || args.sandboxSet || args.sandbox != "" || len(args.conflicts) > 0 {
+		return args, errors.New(dsl.BrunoRunnerRetiredMessage)
+	}
+	if args.output != "native" {
+		return args, errors.New("--output must be native")
+	}
+	if args.name != "" {
+		return args, errors.New("--name is incompatible with native imports; names are derived per request")
 	}
 	if err := validateCLIOutputFormat(args.format); err != nil {
 		return args, err
@@ -523,39 +463,26 @@ func parseBrunoImportArgs(raw []string) (brunoImportArgs, error) {
 	if err := validateCLIControllerURL(args.api); err != nil {
 		return args, err
 	}
-	if args.output != "canonical" && args.output != "native" {
-		return args, errors.New("--output must be canonical or native")
-	}
-	if args.output == "native" {
-		if args.folderID == "" {
-			return args, errors.New("--folder is required with --output native")
-		}
-		if args.syncScriptID != "" {
-			return args, errors.New("--sync is incompatible with --output native")
-		}
-		if args.name != "" {
-			return args, errors.New("--name is incompatible with --output native; native script names are derived per request")
-		}
-		if args.sandboxSet {
-			return args, errors.New("--sandbox is incompatible with --output native")
-		}
-		if len(args.conflicts) > 0 {
-			return args, errors.New("--conflict-resolution is incompatible with --output native")
-		}
-	} else {
-		if args.folderID != "" {
-			return args, errors.New("--folder requires --output native")
-		}
-		if args.ackReview {
-			return args, errors.New("--ack-review-required requires --output native")
-		}
+	if args.folderID == "" {
+		return args, errors.New("--folder is required for native Bruno imports")
 	}
 	return args, nil
 }
 
+func retiredBrunoCLIOptions(args brunoImportArgs) error {
+	if (args.output != "" && args.output != "native") || strings.TrimSpace(args.syncScriptID) != "" ||
+		args.sandboxSet || strings.TrimSpace(args.sandbox) != "" || len(args.conflicts) > 0 {
+		return errors.New(dsl.BrunoRunnerRetiredMessage)
+	}
+	return nil
+}
+
 func runBrunoImport(ctx context.Context, args brunoImportArgs) (*brunoCLICommitResponse, error) {
 	if args.output == "" {
-		args.output = "canonical"
+		args.output = "native"
+	}
+	if err := retiredBrunoCLIOptions(args); err != nil {
+		return nil, err
 	}
 	info, err := os.Lstat(args.path)
 	if err != nil {
@@ -638,72 +565,14 @@ func runBrunoImport(ctx context.Context, args brunoImportArgs) (*brunoCLICommitR
 		}
 		return committed, err
 	}
-	commit := map[string]any{
-		"project_id":           args.projectID,
-		"import_session_id":    inspected.ImportSessionID,
-		"mode":                 "create",
-		"migrate_secrets":      args.migrateSecrets,
-		"secret_bindings":      bindings,
-		"conflict_resolutions": args.conflicts,
-	}
-	if args.name != "" {
-		commit["name"] = args.name
-	}
-	if args.syncScriptID != "" {
-		commit["mode"] = "sync"
-		commit["sync_script_id"] = args.syncScriptID
-		if updatedAt, ok := inspected.SyncPreview["expected_updated_at"].(string); ok && updatedAt != "" {
-			commit["expected_updated_at"] = updatedAt
-		}
-		if revision, ok := inspected.SyncPreview["active_revision"].(string); ok && revision != "" {
-			commit["expected_active_revision_id"] = revision
-		}
-	}
-	return client.CommitBrunoImport(ctx, commit)
+	return nil, errors.New(dsl.BrunoRunnerRetiredMessage)
 }
 
 func (c *ApiClient) InspectBrunoFile(ctx context.Context, args brunoImportArgs) (*brunoCLIInspectResponse, error) {
-	if args.output == "native" {
-		return c.inspectBrunoNativeFile(ctx, args)
-	}
-	data, err := readStableBrunoSourceFile(args.path, args.pathIdentity)
-	if err != nil {
+	if err := retiredBrunoCLIOptions(args); err != nil {
 		return nil, err
 	}
-	defer clear(data)
-	query := url.Values{
-		"project_id": {args.projectID},
-		"filename":   {filepath.Base(args.path)},
-		"sandbox":    {args.sandbox},
-	}
-	if args.name != "" {
-		query.Set("name", args.name)
-	}
-	if args.syncScriptID != "" {
-		query.Set("sync_script_id", args.syncScriptID)
-	}
-	response, err := c.doContext(
-		ctx,
-		http.MethodPost,
-		"/api/v1/scripts/import/bruno/inspect?"+query.Encode(),
-		bytes.NewReader(data),
-		"application/octet-stream",
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil, brunoCLIResponseError("inspect Bruno source", response)
-	}
-	var inspected brunoCLIInspectResponse
-	if err := json.NewDecoder(response.Body).Decode(&inspected); err != nil {
-		return nil, fmt.Errorf("decode Bruno inspection: %w", err)
-	}
-	if inspected.ImportSessionID == "" {
-		return nil, errors.New("Bruno inspection response is missing import_session_id")
-	}
-	return &inspected, nil
+	return c.inspectBrunoNativeFile(ctx, args)
 }
 
 func (c *ApiClient) inspectBrunoNativeFile(ctx context.Context, args brunoImportArgs) (*brunoCLIInspectResponse, error) {
@@ -766,6 +635,9 @@ func (c *ApiClient) inspectBrunoNativeFile(ctx context.Context, args brunoImport
 }
 
 func (c *ApiClient) InspectBrunoDirectory(ctx context.Context, args brunoImportArgs) (*brunoCLIInspectResponse, error) {
+	if err := retiredBrunoCLIOptions(args); err != nil {
+		return nil, err
+	}
 	files, err := deterministicBrunoDirectoryFiles(args.path, args.pathIdentity)
 	if err != nil {
 		return nil, err
@@ -814,6 +686,9 @@ func (c *ApiClient) InspectBrunoDirectory(ctx context.Context, args brunoImportA
 }
 
 func (c *ApiClient) CommitBrunoImport(ctx context.Context, request map[string]any) (*brunoCLICommitResponse, error) {
+	if request["mode"] != "create_native_batch" {
+		return nil, errors.New(dsl.BrunoRunnerRetiredMessage)
+	}
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return nil, err
@@ -831,12 +706,6 @@ func (c *ApiClient) CommitBrunoImport(ctx context.Context, request map[string]an
 		return nil, &brunoCLICommitReceiptError{cause: fmt.Errorf("decode Bruno commit receipt: %w", err)}
 	}
 	committed.HTTPStatus = response.StatusCode
-	if mode, _ := request["mode"].(string); mode == "create_native_batch" {
-		return &committed, nil
-	}
-	if committed.Script.ID == "" || committed.Revision.ID == "" {
-		return nil, errors.New("Bruno commit response is missing script or revision identity")
-	}
 	return &committed, nil
 }
 
@@ -1261,13 +1130,7 @@ func writeBrunoDirectoryMultipart(writer *multipart.Writer, args brunoImportArgs
 		value string
 	}
 	fields := []multipartField{{name: "project_id", value: args.projectID}}
-	if args.output != "native" {
-		fields = append(fields,
-			multipartField{name: "name", value: args.name},
-			multipartField{name: "sandbox", value: args.sandbox},
-			multipartField{name: "sync_script_id", value: args.syncScriptID},
-		)
-	}
+	fields = append(fields, multipartField{name: "options", value: `{"output_mode":"native_requests"}`})
 	for _, field := range fields {
 		if field.value != "" {
 			if err := writer.WriteField(field.name, field.value); err != nil {
@@ -1494,71 +1357,17 @@ func escapeMIMEQuoted(value string) string {
 	return strings.NewReplacer("\\", "\\\\", `"`, `\"`, "\r", "", "\n", "").Replace(value)
 }
 
-func brunoCLIResponseError(operation string, response *http.Response) error {
-	payload, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-	var decoded struct {
-		Error                 string                      `json:"error"`
-		Code                  string                      `json:"code"`
-		Requirements          []brunoCLISecretRequirement `json:"requirements"`
-		SessionRetained       *bool                       `json:"session_retained"`
-		ManualRetrySafe       *bool                       `json:"manual_retry_safe"`
-		ImportSessionConsumed *bool                       `json:"import_session_consumed"`
-		IdempotencySessionID  string                      `json:"idempotency_session_id"`
-		CommittedSecretNames  []string                    `json:"committed_secret_names"`
-		CommittedNames        []string                    `json:"committed_names"`
-		MigratedSecretNames   []string                    `json:"migrated_secret_names"`
-	}
-	var fields map[string]json.RawMessage
-	decodedJSON := json.Unmarshal(payload, &fields) == nil
-	_ = json.Unmarshal(payload, &decoded)
-	committedNames := append([]string(nil), decoded.CommittedSecretNames...)
-	committedNames = append(committedNames, decoded.CommittedNames...)
-	committedNames = append(committedNames, decoded.MigratedSecretNames...)
-	sort.Strings(committedNames)
-	message := strings.TrimSpace(decoded.Error)
-	if message == "" && !decodedJSON {
-		message = strings.TrimSpace(string(payload))
-	}
-	_, sessionRetainedSet := fields["session_retained"]
-	_, manualRetrySafeSet := fields["manual_retry_safe"]
-	_, importSessionConsumedSet := fields["import_session_consumed"]
-	_, idempotencySessionIDSet := fields["idempotency_session_id"]
-	return &brunoCLIHTTPError{
-		operation:                operation,
-		status:                   response.Status,
-		statusCode:               response.StatusCode,
-		message:                  message,
-		code:                     decoded.Code,
-		requirements:             decoded.Requirements,
-		sessionRetained:          decoded.SessionRetained != nil && *decoded.SessionRetained,
-		sessionRetainedSet:       sessionRetainedSet,
-		manualRetrySafe:          decoded.ManualRetrySafe != nil && *decoded.ManualRetrySafe,
-		manualRetrySafeSet:       manualRetrySafeSet,
-		importSessionConsumed:    decoded.ImportSessionConsumed != nil && *decoded.ImportSessionConsumed,
-		importSessionConsumedSet: importSessionConsumedSet,
-		hasRetryMetadata:         sessionRetainedSet || manualRetrySafeSet || importSessionConsumedSet || idempotencySessionIDSet,
-		idempotencySessionID:     decoded.IdempotencySessionID,
-		committedSecretNames:     committedNames,
-		retryAfter:               parseCIRetryAfter(response.Header.Get("Retry-After"), time.Now()),
-	}
-}
-
 func brunoImportUsage() string {
 	return `Usage:
   apexctl import bruno --api <controller> --path <directory|archive|file> --project <project-id> [options]
 
 Options:
-  --output <canonical|native>     Import one canonical Bruno script (default) or one native script per API
+  --output native               Import one native APEX HTTP script per OpenCollection YAML request (default)
   --folder <folder-id>           Required destination script folder for native imports
   --ack-review-required          Acknowledge review-gated native conversion findings
-  --sync <script-id>              Synchronize an existing canonical Bruno script
-  --name <script-name>            Override the imported collection name
-  --sandbox <safe|developer>      Requested JavaScript sandbox (default: safe)
   --migrate-secrets               Migrate imported values when authorized and writable (default)
   --no-migrate-secrets            Require binding-only behavior; never write imported values
   --secret-binding <id>=<name>    Bind an import requirement to an APEX logical secret (repeatable)
-  --conflict-resolution <id>=<resolution>
-                                   Resolve a synchronization conflict from the inspect preview (repeatable)
   --api-key <key>                 Controller API key (or APEXLOAD_API_KEY)
   --bearer-token <token>          Controller bearer token (or APEXLOAD_BEARER_TOKEN)
   --timeout <duration>            Upload/inspection timeout (default: 30m)

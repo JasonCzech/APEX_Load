@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/appdynamics"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/monitorcontract"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -28,7 +28,7 @@ func rcaGraphServer(t *testing.T) *Server {
 		tx.DependencyTarget = "https://api.shop.local/cart"
 	})
 	writeArchiveSidecar(t, record, "monitor_points.jsonl", []analysis.MetricPoint{}, func(m *RunArchiveManifest) {
-		m.MonitorCoverage = []RunMonitorCoverage{{SourceID: "dt-src", Dynatrace: &dynatrace.Selection{}, Topology: []appdynamics.Entity{
+		m.MonitorCoverage = []RunMonitorCoverage{{SourceID: "dt-src", Dynatrace: &dynatrace.Selection{}, Topology: []monitorprovider.Entity{
 			{ID: "SERVICE-1", Name: "api.shop.local", Type: "SERVICE"},
 			{ID: "SERVICE-2", Name: "orders-db", Type: "SERVICE"},
 			{ID: "HOST-1", Name: "node-a", Type: "HOST"},
@@ -148,13 +148,13 @@ func TestRCAMappingDefinitionsAreValidatedAndGated(t *testing.T) {
 
 func TestArchiveGraphTopologyNormalizesProviders(t *testing.T) {
 	manifest := &RunArchiveManifest{MonitorCoverage: []RunMonitorCoverage{
-		{SourceID: "dt", Dynatrace: &dynatrace.Selection{}, Topology: []appdynamics.Entity{
+		{SourceID: "dt", Dynatrace: &dynatrace.Selection{}, Topology: []monitorprovider.Entity{
 			// A classic entity lists its relationships as entity IDs.
 			{ID: "SERVICE-1", Name: "cart", Type: "SERVICE", EntityIDs: map[string]string{"classic_id": "SERVICE-1", "from.calls.0": "SERVICE-2", "to.calls.0": "SERVICE-0", "from.runsOn.0": "PROCESS_GROUP_INSTANCE-9", "to.isInstanceOf.0": "SERVICE-I"}},
 			// A Smartscape entity keeps its classic ID as an alias.
 			{ID: "smartscape-host", Name: "node-a", Type: "HOST", EntityIDs: map[string]string{"smartscape_id": "smartscape-host", "classic_id": "HOST-7"}},
 		}},
-		{SourceID: "appd", Selection: &appdynamics.Selection{}, Topology: []appdynamics.Entity{
+		{SourceID: "appd", Selection: &monitorcontract.AppDynamicsSelection{}, Topology: []monitorprovider.Entity{
 			{ID: "7", Name: "web", Type: "tier", ParentID: "1"},
 			{ID: "5", Name: "web-1", Type: "node", EntityIDs: map[string]string{"tier": "7"}},
 		}},

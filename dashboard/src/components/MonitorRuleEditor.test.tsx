@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { act, useState } from 'react'
-import { createRoot } from 'react-dom/client'
-import { expect, it, vi } from 'vitest'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import MonitorRuleEditor from './MonitorRuleEditor'
-import type { MonitorRule } from '../types/appdynamics'
+import type { MonitorRule } from '../types/runMonitoring'
 const request = vi.hoisted(() => vi.fn())
 const api = vi.hoisted(() => ({ createDynatraceOperation: vi.fn(), getDynatraceOperation: vi.fn() }))
 vi.mock('../hooks/apiClient', () => ({ request }))
@@ -146,4 +146,95 @@ it('distinguishes grid quantile estimates from totals and disables raw counter r
     expect(JSON.parse(container.querySelector('output')!.textContent!)[0]).toMatchObject({ query_id: 'cpu', statistic: 'avg', evaluation_mode: 'series_points' })
     expect(Array.from(container.querySelectorAll('option')).find(option => option.value === 'sum')!.disabled).toBe(true)
   } finally { act(() => root.unmount()); container.remove(); vi.clearAllMocks() }
+})
+
+
+describe('Elastic monitoring criteria', () => {
+let root: Root; let container: HTMLElement
+beforeEach(() => { container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); request.mockResolvedValue([{ id: 'elastic', name: 'Elastic metrics', pack: 'elastic', enabled: true, elastic: { metrics: [{ name: 'interval_count', statistic: 'count', unit: 'count', bucket_seconds: 10 }, { name: 'bucket_p99', unit: 'us', statistic: 'p99', bucket_seconds: 10 }, { name: 'final_p99', unit: 'us', statistic: 'p99', exact_window: true }], queries: [{ name: 'esql_bucket_p99', language: 'esql', kind: 'metric', statistic: 'p99', unit: 'ms', bucket_seconds: 10 }] } }]) })
+afterEach(() => { act(() => root.unmount()); container.remove() })
+it('re-queries native percentile metrics for exact rule values while rejecting nonexact ES|QL and bucket aggregation', async () => {
+  const onChange = vi.fn()
+  function Harness() { const [rules, setRules] = useState<MonitorRule[]>([{ source_id: 'elastic', metric: '', unit: '', statistic: 'avg', comparator: 'lte', threshold: 100, severity: 'fail', min_coverage_pct: 95, start_offset_seconds: 0 }]); return <MonitorRuleEditor projectId="p" value={rules} onChange={next => { onChange(next); setRules(next) }} /> }
+  await act(async () => root.render(<Harness />))
+  const metric = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('Criterion 1 metric'))!.querySelector('select')!
+  expect(Array.from(metric.options).find(option => option.value === 'bucket_p99')!.disabled).toBe(false)
+  expect(Array.from(metric.options).find(option => option.value === 'esql_bucket_p99')!.disabled).toBe(true)
+  await act(async () => { metric.value = 'bucket_p99'; metric.dispatchEvent(new Event('change', { bubbles: true })) })
+  expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ metric: 'bucket_p99', unit: 'ms', statistic: 'value' })])
+  await act(async () => { metric.value = 'final_p99'; metric.dispatchEvent(new Event('change', { bubbles: true })) })
+  expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ metric: 'final_p99', unit: 'ms', statistic: 'value' })])
+  const statistic = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('Criterion 1 statistic'))!.querySelector('select')!
+  expect(statistic.value).toBe('value')
+  expect(Array.from(statistic.options).find(option => option.value === 'avg')!.disabled).toBe(true)
+})
+
+it('exposes summation of native DSL interval counts', async () => {
+  const onChange = vi.fn()
+  function Harness() { const [rules, setRules] = useState<MonitorRule[]>([{ source_id: 'elastic', metric: '', unit: '', statistic: 'avg', comparator: 'lte', threshold: 100, severity: 'fail', min_coverage_pct: 95, start_offset_seconds: 0 }]); return <MonitorRuleEditor projectId="p" value={rules} onChange={next => { onChange(next); setRules(next) }} /> }
+  await act(async () => root.render(<Harness />))
+  const metric = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('Criterion 1 metric'))!.querySelector('select')!
+  await act(async () => { metric.value = 'interval_count'; metric.dispatchEvent(new Event('change', { bubbles: true })) })
+  const statistic = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('Criterion 1 statistic'))!.querySelector('select')!
+  expect(Array.from(statistic.options).find(option => option.value === 'sum')!.disabled).toBe(false)
+  await act(async () => { statistic.value = 'sum'; statistic.dispatchEvent(new Event('change', { bubbles: true })) })
+  expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ metric: 'interval_count', unit: 'count', statistic: 'sum' })])
+})
+
+it('blocks invalid dimension drafts immediately and retains their validation across other edits', async () => {
+  const validation = vi.fn(); const onChange = vi.fn()
+  function Harness() { const [rules, setRules] = useState<MonitorRule[]>([{ source_id: 'elastic', metric: 'interval_count', unit: 'count', statistic: 'sum', comparator: 'lte', threshold: 100, severity: 'fail', min_coverage_pct: 95, start_offset_seconds: 0, dimensions: { host: 'old' } }]); return <MonitorRuleEditor projectId="p" value={rules} onChange={next => { setRules(next); onChange(next) }} onValidationChange={validation} /> }
+  await act(async () => root.render(<Harness />))
+  const input = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('Criterion 1 entity dimensions'))!.querySelector('input')!
+  const fill = async (value: string) => act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })) })
+  await fill('{"host":')
+  expect(validation).toHaveBeenLastCalledWith(expect.stringContaining('before saving or launching'))
+  expect(onChange).not.toHaveBeenCalled()
+  expect(input.getAttribute('aria-label')).toBe('Criterion 1 entity dimensions')
+  expect(document.getElementById(input.getAttribute('aria-describedby')!)?.textContent).toContain('before saving or launching')
+  const comparator = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('Criterion 1 comparator'))!.querySelector('select')!
+  await act(async () => { comparator.value = 'lt'; comparator.dispatchEvent(new Event('change', { bubbles: true })) })
+  expect(input.value).toBe('{"host":')
+  expect(validation).toHaveBeenLastCalledWith(expect.stringContaining('before saving or launching'))
+  await fill('{"host":42}')
+  expect(input.getAttribute('aria-invalid')).toBe('true')
+  await fill('{"host":"new"}')
+  expect(validation).toHaveBeenLastCalledWith('')
+  expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ dimensions: { host: 'new' } })])
+  await fill('[]')
+  await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Remove criterion 1')!.click())
+  expect(validation).toHaveBeenLastCalledWith('')
+})
+
+
+it('clears dimension validation when a parent removes the criterion', async () => {
+  const validation = vi.fn()
+  const rule: MonitorRule = { source_id: 'elastic', metric: 'interval_count', unit: 'count', statistic: 'sum', comparator: 'lte', threshold: 100, severity: 'fail', min_coverage_pct: 95, start_offset_seconds: 0 }
+  const render = (value: MonitorRule[]) => root.render(<MonitorRuleEditor projectId="p" value={value} onChange={vi.fn()} onValidationChange={validation} />)
+  await act(async () => render([rule]))
+  const input = container.querySelector<HTMLInputElement>('[aria-label="Criterion 1 entity dimensions"]')!
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '{'); input.dispatchEvent(new Event('input', { bubbles: true })) })
+  expect(validation).toHaveBeenLastCalledWith(expect.stringContaining('before saving or launching'))
+  await act(async () => render([]))
+  expect(validation).toHaveBeenLastCalledWith('')
+})
+
+it('keeps dimension drafts with their own rows when an identical earlier criterion is removed', async () => {
+  const validation = vi.fn()
+  const rule: MonitorRule = { source_id: 'elastic', metric: 'interval_count', unit: 'count', statistic: 'sum', comparator: 'lte', threshold: 100, severity: 'fail', min_coverage_pct: 95, start_offset_seconds: 0, dimensions: { host: 'same' } }
+  function Harness() { const [rules, setRules] = useState([rule, { ...rule }, { ...rule }]); return <MonitorRuleEditor projectId="p" value={rules} onChange={setRules} onValidationChange={validation} /> }
+  await act(async () => root.render(<Harness />))
+  const inputs = () => Array.from(container.querySelectorAll('label')).filter(label => label.textContent?.includes('entity dimensions')).map(label => label.querySelector('input')!)
+  const fill = async (input: HTMLInputElement, value: string) => act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })) })
+  await fill(inputs()[0], '{"removed":')
+  await fill(inputs()[2], '{"retained":')
+  await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Remove criterion 1')!.click())
+  expect(inputs().map(input => input.value)).toEqual(['{"host":"same"}', '{"retained":'])
+  expect(inputs()[0].getAttribute('aria-invalid')).toBe('false')
+  expect(inputs()[1].getAttribute('aria-invalid')).toBe('true')
+  expect(validation).toHaveBeenLastCalledWith(expect.stringContaining('before saving or launching'))
+  await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Remove criterion 2')!.click())
+  expect(validation).toHaveBeenLastCalledWith('')
+})
+
 })

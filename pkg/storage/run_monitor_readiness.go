@@ -72,6 +72,9 @@ func validateCollectorRunReadiness(project, collector string, packs, destination
 	if containsReadinessPack(packs, "prometheus-scrape.v2") && !containsReadinessPack(packs, "prometheus") {
 		return errors.New("Prometheus scrape contract requires pack approval")
 	}
+	if containsReadinessPack(packs, "elastic.v1") && !containsReadinessPack(packs, "elastic") {
+		return errors.New("Elastic contract requires pack approval")
+	}
 	for _, destination := range destinations {
 		valid := false
 		raw, key, hasKey := strings.Cut(destination, "#")
@@ -88,7 +91,7 @@ func validateCollectorRunReadiness(project, collector string, packs, destination
 			if provider, governed := monitorprovider.Lookup(pack); governed && provider.CollectorCredentialKey {
 				// Sealed provider grants need the collector key and HTTPS.
 				u, e := url.Parse(raw)
-				valid = valid || (hasKey && e == nil && u.Scheme == "https" && u.Host != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "")
+				valid = valid || (hasKey && e == nil && u.Scheme == "https" && u.Host != "" && u.User == nil && (pack == "elastic" || u.Path == "") && u.RawQuery == "" && u.Fragment == "")
 			} else if governed {
 				u, e := url.Parse(raw)
 				valid = valid || (e == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "")

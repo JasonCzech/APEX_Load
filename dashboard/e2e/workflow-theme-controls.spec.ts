@@ -26,7 +26,12 @@ for (const theme of ['dark', 'light', 'solarized-dark', 'solarized-light', 'mono
       const root = getComputedStyle(document.documentElement)
       return { background: style.backgroundColor, expected: root.getPropertyValue('--bg-primary').trim(), text: style.color, expectedText: root.getPropertyValue('--text-primary').trim() }
     })
-    const rgb = (hex: string) => `rgb(${hex.slice(1).match(/../g)!.map(v => parseInt(v, 16)).join(', ')})`
+    // Minified builds shorten tokens such as #ffffff to #fff.
+    const rgb = (hex: string) => {
+      const digits = hex.slice(1)
+      const full = digits.length === 3 ? digits.split('').map(digit => digit + digit).join('') : digits
+      return `rgb(${full.match(/../g)!.map(v => parseInt(v, 16)).join(', ')})`
+    }
     expect(colors.background).toBe(rgb(colors.expected))
     expect(colors.text).toBe(rgb(colors.expectedText))
     await page.keyboard.press('Escape')
@@ -34,13 +39,14 @@ for (const theme of ['dark', 'light', 'solarized-dark', 'solarized-light', 'mono
     await nav.hover()
     await expect(tooltip).toBeVisible()
     await page.keyboard.press('Escape')
-    await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+    // The sidebar starts as the icon rail; expanded, labels are visible and the
+    // popup is suppressed. Escape closes the expanded overlay again.
+    await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
     await nav.focus()
-    await expect(tooltip).toBeVisible()
+    await expect(tooltip).toHaveCount(0)
     expect(await nav.evaluate(element => getComputedStyle(element, '::after').content)).toBe('none')
     await page.keyboard.press('Escape')
-    await expect(tooltip).toHaveCount(0)
-    await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeVisible()
     await page.goto(`/#/settings?setting=platform&${scope}`)
     const checkbox = page.getByRole('checkbox', { name: 'Desktop Client Promotion', exact: true })
     await expect(checkbox).toBeVisible()
@@ -50,7 +56,10 @@ for (const theme of ['dark', 'light', 'solarized-dark', 'solarized-light', 'mono
     await page.goto(`/#/access?setting=audit&${scope}`)
     const from = page.getByLabel('From (local time)', { exact: true })
     await expect(from).toBeVisible()
-    await expect(from).not.toHaveCSS('background-color', 'rgb(255, 255, 255)')
+    // Themed, not the browser default: the field follows the theme surface token.
+    const field = await from.evaluate(element => ({ background: getComputedStyle(element).backgroundColor, expected: getComputedStyle(document.documentElement).getPropertyValue('--bg-secondary').trim() }))
+    expect(field.background).toBe(rgb(field.expected))
+    await expect(from).not.toHaveCSS('border-top-color', 'rgb(118, 118, 118)')
     expect(await from.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(34)
     await from.fill('2026-09-01T09:30')
     await expect(from).toHaveValue('2026-09-01T09:30')
@@ -69,8 +78,9 @@ for (const theme of ['dark', 'light', 'solarized-dark', 'solarized-light', 'mono
     await page.goto(`/#/scripts?${scope}`)
     await expect(page.getByRole('button', { name: 'Create your first script', exact: true })).toBeVisible()
     await expect(page.locator('.scripts-library-table')).toHaveCount(0)
-    await expect(page.getByText('Assigned application', { exact: true })).toHaveCSS('text-transform', 'uppercase')
-    await expect(page.getByText('Assigned release', { exact: true })).toHaveCSS('text-transform', 'uppercase')
+    // Field labels use sentence case in every theme (shared style; themes only change colour).
+    await expect(page.getByText('Assigned application', { exact: true })).toHaveCSS('text-transform', 'none')
+    await expect(page.getByText('Assigned release', { exact: true })).toHaveCSS('text-transform', 'none')
 
   })
 }

@@ -171,7 +171,7 @@ and of the archive volume's free space above its floor, both as they stood at
 the first optional copy, so the required outputs written after it keep the
 rest; a refused copy is `archive_quota`. The
 archived HAR is listed in the manifest with its source identity, and the
-controller records an accepted receipt in `run_evidence_receipts` (schema release 49):
+controller records an accepted receipt in `run_evidence_receipts` (schema release 51):
 run, execution generation, source identity and generation, sequence, kind,
 SHA-256, bytes and state. All of this happens before the manifest is
 written, so nothing is in flight when it is. Each staging attempt first

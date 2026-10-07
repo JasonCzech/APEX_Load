@@ -1,0 +1,349 @@
+apiVersion: v1
+kind: Service
+{{- $controllerAddr := trim (default ":8080" .Values.controller.addr) }}
+{{- $restartControls := include "apexload.restartControls" . | fromJson }}
+{{- $controllerHTTPPort := regexFind "[0-9]+$" $controllerAddr }}
+{{- if not $controllerHTTPPort }}
+{{- fail "controller.addr must include a numeric port, for example :8080 or 127.0.0.1:8080" }}
+{{- end }}
+{{- $controllerHTTPPortInt := atoi $controllerHTTPPort }}
+{{- if or (lt $controllerHTTPPortInt 1) (gt $controllerHTTPPortInt 65535) }}
+{{- fail (printf "controller.addr port must be within 1-65535, got %s" $controllerHTTPPort) }}
+{{- end }}
+{{- if and .Values.controller.ha.enabled (ne .Values.dataPlatform.store "postgres") }}
+{{- fail "controller.ha.enabled requires dataPlatform.store=postgres" }}
+{{- end }}
+{{- if and .Values.controller.ha.enabled (ne .Values.dataPlatform.cacheBackend "redis") }}
+{{- fail "controller.ha.enabled requires dataPlatform.cacheBackend=redis" }}
+{{- end }}
+{{- if and (gt (int .Values.controller.replicas) 1) (not .Values.controller.ha.enabled) }}
+{{- fail "controller.replicas greater than 1 requires controller.ha.enabled=true" }}
+{{- end }}
+{{- if and .Values.controller.ha.enabled (not (has .Values.controller.ha.endpointAddressType (list "IPv4" "IPv6"))) }}
+{{- fail "controller.ha.endpointAddressType must be IPv4 or IPv6" }}
+{{- end }}
+metadata:
+  name: apexload-controller
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: controller
+{{ include "apexload.labels" . | indent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: apexload-controller
+  ports:
+    - name: http
+      port: {{ $controllerHTTPPortInt }}
+      targetPort: http
+    - name: metrics
+      port: 9091
+      targetPort: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: apexload-controller-active
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: active-controller
+{{ include "apexload.labels" . | indent 4 }}
+spec:
+{{- if not .Values.controller.ha.enabled }}
+  selector:
+    app.kubernetes.io/name: apexload-controller
+{{- end }}
+  ports:
+    - name: http
+      port: {{ $controllerHTTPPortInt }}
+      targetPort: http
+{{- if .Values.controller.ha.enabled }}
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: apexload-controller-active
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+    kubernetes.io/service-name: apexload-controller-active
+    endpointslice.kubernetes.io/managed-by: apexload-controller
+{{ include "apexload.labels" . | indent 4 }}
+  annotations:
+    apexload.io/execution-lease-owner: ""
+    apexload.io/execution-lease-generation: "0"
+addressType: {{ .Values.controller.ha.endpointAddressType | quote }}
+ports:
+  - name: http
+    protocol: TCP
+    port: {{ $controllerHTTPPortInt }}
+endpoints: []
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: apexload-controller-active-endpoint
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+{{ include "apexload.labels" . | indent 4 }}
+rules:
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    resourceNames:
+      - apexload-controller-active
+    verbs:
+      - get
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: apexload-controller-active-endpoint
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+{{ include "apexload.labels" . | indent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.controller.serviceAccountName }}
+    namespace: {{ include "apexload.namespace" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: apexload-controller-active-endpoint
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apexload-controller
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: controller
+{{ include "apexload.labels" . | indent 4 }}
+spec:
+  replicas: {{ ternary 2 .Values.controller.replicas .Values.controller.ha.enabled }}
+{{- if not .Values.controller.ha.enabled }}
+  # A non-HA controller must never overlap its replacement: overlapping pods
+  # can both orchestrate runs, and the default RWO import-assets claim may not
+  # attach to replacement and incumbent pods on different nodes.
+  strategy:
+    type: Recreate
+{{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: apexload-controller
+        app.kubernetes.io/component: controller
+{{- if .Values.workloadIdentity.enabled }}
+        azure.workload.identity/use: "true"
+{{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Values.controller.serviceAccountName }}
+      terminationGracePeriodSeconds: 45
+      automountServiceAccountToken: {{ $restartControls.enabled }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: apexload-controller
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: controller
+          image: {{ include "apexload.controllerImage" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: {{ $controllerHTTPPortInt }}
+            - name: metrics
+              containerPort: 9091
+          env:
+            - name: APEXLOAD_K8S_RESTART_ENABLED
+              value: {{ $restartControls.enabled | quote }}
+{{- if $restartControls.enabled }}
+            - name: APEXLOAD_K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: APEXLOAD_K8S_CONTROLLER_DEPLOYMENT
+              value: {{ $restartControls.controllerDeployment | quote }}
+            - name: APEXLOAD_K8S_GENERATOR_STATEFULSET
+              value: {{ $restartControls.generatorStatefulSet | quote }}
+            - name: APEXLOAD_K8S_GENERATOR_SELECTOR
+              value: {{ $restartControls.generatorSelector | quote }}
+            - name: APEXLOAD_K8S_RESTART_ALLOW_FORCE
+              value: {{ $restartControls.allowForce | quote }}
+{{- end }}
+            - name: APEXLOAD_ENV
+              value: production
+            - name: APEXLOAD_ADDR
+              value: ":{{ $controllerHTTPPort }}"
+            - name: APEXLOAD_PUBLIC_URL
+              value: {{ default (printf "https://%s" .Values.ingress.host) .Values.controller.publicURL | quote }}
+{{- if .Values.tracing.headersSecretName }}
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.tracing.headersSecretName | quote }}
+                  key: {{ .Values.tracing.headersSecretKey | quote }}
+{{- end }}
+{{ if .Values.controller.ciOIDCAudience }}
+            - name: APEXLOAD_CI_OIDC_AUDIENCE
+              value: {{ .Values.controller.ciOIDCAudience | quote }}
+{{ end }}
+            - name: APEXLOAD_ARCHIVE_DIR
+              value: /var/lib/apexload/archives
+{{- if .Values.archiveStaging.persistence.enabled }}
+            - name: APEXLOAD_ARCHIVE_STAGING_DIR
+              value: /var/lib/apexload/archives/_object_staging
+            - name: APEXLOAD_ARCHIVE_READER_CACHE_DIR
+              value: /var/lib/apexload/archive-read-cache
+{{- end }}
+            - name: APEXLOAD_EXPORT_DIR
+              value: /var/lib/apexload/exports
+            - name: APEXLOAD_IMPORT_ASSET_DIR
+              value: {{ .Values.importAssets.root | quote }}
+{{- $wrappingKeyVaultKeyId := include "apexload.wrappingKeyVaultKeyId" . }}
+{{- if and (or (eq .Values.projectSecrets.provider "database") .Values.bruno.importEnabled .Values.bruno.enabled) (not $wrappingKeyVaultKeyId) }}
+            - name: APEXLOAD_WRAPPING_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dataPlatform.secretName }}
+                  key: APEXLOAD_WRAPPING_MASTER_KEY
+{{- end }}
+{{- if or .Values.bruno.importEnabled .Values.bruno.enabled }}
+            - name: APEXLOAD_BRUNO_ARTIFACT_ROOT
+              value: {{ .Values.bruno.artifactRoot | quote }}
+{{- end }}
+{{- if .Values.controller.ha.enabled }}
+            - name: APEXLOAD_CONTROLLER_HA
+              value: "true"
+            - name: APEXLOAD_ACTIVE_ENDPOINT_SLICE
+              value: apexload-controller-active
+            - name: APEXLOAD_ACTIVE_ENDPOINT_SERVICE
+              value: apexload-controller-active
+            - name: APEXLOAD_ACTIVE_ENDPOINT_TOKEN_FILE
+              value: /var/run/secrets/apexload-active-endpoint/token
+            - name: APEXLOAD_ACTIVE_ENDPOINT_CA_FILE
+              value: /var/run/secrets/apexload-active-endpoint/ca.crt
+            - name: APEXLOAD_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: APEXLOAD_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: APEXLOAD_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+{{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.dataPlatform.configMapName }}
+            - secretRef:
+                name: {{ .Values.dataPlatform.secretName }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: data
+              mountPath: /var/lib/apexload
+{{- if .Values.archiveStaging.persistence.enabled }}
+            - name: archive-staging
+              mountPath: /var/lib/apexload/archives
+{{- end }}
+            - name: grpc-tls
+              mountPath: /etc/apexload/grpc-tls
+              readOnly: true
+            - name: import-assets
+              mountPath: {{ .Values.importAssets.root | quote }}
+{{- if or .Values.bruno.importEnabled .Values.bruno.enabled }}
+            - name: bruno-artifacts
+              mountPath: {{ .Values.bruno.artifactRoot | quote }}
+{{- end }}
+{{- if .Values.controller.ha.enabled }}
+            - name: active-endpoint-identity
+              mountPath: /var/run/secrets/apexload-active-endpoint
+              readOnly: true
+{{- end }}
+          readinessProbe:
+            httpGet:
+              path: /api/v1/system/readiness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/system/health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+{{ toYaml .Values.controller.resources | indent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.controller.scratch.tmpSizeLimit }}
+        - name: data
+          emptyDir:
+            sizeLimit: {{ .Values.controller.scratch.dataSizeLimit }}
+{{- if .Values.archiveStaging.persistence.enabled }}
+        - name: archive-staging
+          persistentVolumeClaim:
+            claimName: {{ include "apexload.archiveStagingClaimName" . | quote }}
+{{- end }}
+        - name: grpc-tls
+          secret:
+            secretName: {{ .Values.controller.grpcTlsSecretName }}
+        - name: import-assets
+{{- if .Values.importAssets.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "apexload.importAssetsClaimName" . | quote }}
+{{- else }}
+          emptyDir:
+            sizeLimit: {{ .Values.importAssets.persistence.size | quote }}
+{{- end }}
+{{- if or .Values.bruno.importEnabled .Values.bruno.enabled }}
+        - name: bruno-artifacts
+          persistentVolumeClaim:
+            claimName: {{ required "bruno.artifactPersistence.existingClaim is required when Bruno import or execution is enabled" .Values.bruno.artifactPersistence.existingClaim | quote }}
+{{- end }}
+{{- if .Values.controller.ha.enabled }}
+        - name: active-endpoint-identity
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+{{- end }}

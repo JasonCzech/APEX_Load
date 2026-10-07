@@ -1,6 +1,6 @@
-// Package bruno imports Bruno collections without translating away source
-// behavior. It builds an immutable, deterministic bundle and a canonical APEX
-// bruno_run script that delegates execution to the compatibility runner.
+// Package bruno imports OpenCollection YAML HTTP requests as native APEX
+// scripts and retains immutable source for review. Legacy canonical DTOs stay
+// readable for protected sessions written before Bruno Runner was retired.
 package bruno
 
 import (
@@ -82,13 +82,12 @@ type Result struct {
 	SecretRequirements []SecretRequirement `json:"secret_requirements,omitempty"`
 	SecurityFindings   []SecurityFinding   `json:"security_findings,omitempty"`
 	Fidelity           FidelityReport      `json:"fidelity"`
-	NativeProjection   ProjectionReport    `json:"native_projection"`
+	NativeProjection   ProjectionReport    `json:"native_projection,omitempty,omitzero"`
 	MissingVariables   []string            `json:"missing_variables,omitempty"`
-	// Script is the canonical compatibility-runner script. It is retained for
-	// backward compatibility and is nil when output_mode is native_requests.
+	// Script decodes canonical runner sessions retained before retirement.
+	// New inspections produce only native candidates.
 	Script *dsl.Script `json:"script,omitempty"`
-	// Scripts contains the ordered, server-authored native candidates produced
-	// by output_mode=native_requests. Canonical inspection leaves it empty.
+	// Scripts contains the ordered native HTTP candidates from inspection.
 	Scripts          []NativeScriptCandidate `json:"scripts,omitempty"`
 	RawArchive       []byte                  `json:"-"`
 	SanitizedArchive []byte                  `json:"-"`
@@ -155,7 +154,7 @@ type Capabilities struct {
 	HasCertificates    bool     `json:"has_certificates"`
 	HasPrivateKeyFiles bool     `json:"has_private_key_files"`
 	HasBrunoApps       bool     `json:"has_bruno_apps"`
-	RequiredSandbox    string   `json:"required_sandbox"`
+	RequiredSandbox    string   `json:"required_sandbox,omitempty"`
 	RunnerProfile      string   `json:"runner_profile,omitempty"`
 }
 

@@ -1,0 +1,69 @@
+{
+  "schema": "apexload.provider_qualification.v1",
+  "provider": "elasticsearch",
+  "pack": "elastic",
+  "updated": "2026-10-06",
+  "required_permissions": [
+    "Read/search, selected-index and field discovery, and PIT create/delete on the approved source namespace; no document writes or index administration",
+    "Optional cluster/node/index statistics require separately approved monitor privileges; Kibana and Logstash have independent destinations and identities"
+  ],
+  "environments": [],
+  "capabilities": [
+    {
+      "name": "metrics",
+      "summary": "Mapped DSL/ES|QL metrics, units, weighted statistics and terminal windows in the expanded elastic pack",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/elastic/elastic_test.go#TestWeightedMetricBucketsPreserveLeadingBoundaries", "pkg/elastic/elastic_test.go#TestTerminalMetricWindowsPreserveQueryIdentityAndBounds", "docs/ELASTIC_QUALIFICATION.md"],
+      "remaining": "Provider-only TLS trials cover Elasticsearch 8.14.3 and 9.1.0; qualify the complete controller/collector-to-archive workflow and hosted/serverless deployment modes separately"
+    },
+    {
+      "name": "diagnostics",
+      "summary": "Scrubbed projected logs, errors, transactions and spans with concrete-index document identity",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/elastic/elastic_test.go#TestRecordProjectionScrubTimeAndTraceIdentity", "pkg/storage/elastic_monitoring_test.go#TestElasticCanonicalEvidenceIdentityCursorAndTerminalDrain", "docs/ELASTIC_QUALIFICATION.md"],
+      "remaining": "Qualify deployed application/APM mappings and the complete retained-evidence workflow; provider document pagination alone does not qualify durable retention"
+    },
+    {
+      "name": "trace_lookup",
+      "summary": "Observed trace IDs narrow approved queries and preserve correlation classification",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/elastic/elastic_test.go#TestObservedTraceCorrelationIsPrivateAndRunIdentityWins"],
+      "remaining": "Qualify a live instrumented SUT, upstream sampling and missing ancestors across retained trace views"
+    },
+    {
+      "name": "run_header",
+      "summary": "Opt-in managed run-header propagation with authored-header conflict checks and frozen run scope",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/api/elastic_feature_gate_test.go#TestElasticManagedRunHeaderAliasConflictBeforeTraffic", "pkg/api/elastic_feature_gate_test.go#TestElasticFeatureDisablePreservesFrozenRunHeader"],
+      "remaining": "Qualify deployed application ingestion of X-Apex-Test-Run and approved-origin redirect behavior with real indexed data"
+    },
+    {
+      "name": "esql",
+      "summary": "Constrained synchronous and capability-probed asynchronous ES|QL with mapped output and owned cleanup",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/elastic/elastic_test.go#TestESQLMappedWindowAndAsyncOwnership", "pkg/elastic/elastic_test.go#TestESQLRowLimitIsTruncatedAndOpenSearchRejectsESQL", "docs/ELASTIC_QUALIFICATION.md"],
+      "remaining": "Provider-only synchronous/async trials passed on 8.14.3 and 9.1.0; qualify deployed permissions, serverless capabilities and durable controller/collector cleanup"
+    },
+    {
+      "name": "pagination",
+      "summary": "Bounded PIT/search-after reads preserve equal timestamps, index-scoped identity and immutable query windows",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/elastic/elastic_test.go#TestExhaustivePaginationAboveTenThousandAndPrivateContinuation", "pkg/elastic/elastic_test.go#TestPITExpiryRestartsSameWindowAndDeduplicates", "docs/ELASTIC_QUALIFICATION.md"],
+      "remaining": "Provider-only 10,005-record TLS trials passed; qualify multi-node outage, data-stream rollover and default durable retention quotas in a deployed run"
+    },
+    {
+      "name": "private_collector",
+      "summary": "Locally approved destinations and indices, sealed signed work, bounded spool replay and cleanup ownership",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/collectoragent/elastic_test.go#TestElasticCollectorLocalIndexApproval", "pkg/collectoragent/elastic_inspection_spool_test.go#TestElasticInspectionResultDurablyReplaysAfterRestart"],
+      "remaining": "Qualify an actual remote collector-to-vendor deployment, private DNS/TLS trust, restarts and controller failover"
+    },
+    {
+      "name": "component_health",
+      "summary": "Independently authorized cluster/index, Kibana and Logstash health with instantaneous measurement semantics",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/elastic/elastic_test.go#TestHealthIsInstantaneousAndComponentAuthIndependent", "pkg/elastic/elastic_test.go#TestCapabilitiesAreProbedAndOptionalMonitorPermissionsAreIndependent"],
+      "remaining": "Qualify deployed cluster-monitor roles and actual Kibana/Logstash APIs; local vendor trials covered search while cluster health was forbidden"
+    }
+  ]
+}

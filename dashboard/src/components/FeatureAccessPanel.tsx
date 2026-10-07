@@ -1,3 +1,4 @@
+import './Access.css'
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 
 import type { Domain } from '../types'
@@ -37,7 +38,7 @@ const FeatureAccessPanel = forwardRef<FeatureAccessController, Props>(function F
   const [disabledIds, setDisabledIds] = useState<string[]>([])
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<FeatureFilter>('all')
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [categoryFilter, setCategoryFilter] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -63,7 +64,7 @@ const FeatureAccessPanel = forwardRef<FeatureAccessController, Props>(function F
       const next = await api.getDomainFeatures(nextDomainId)
       setPolicy(next)
       setDisabledIds(next.disabled_feature_ids || [])
-      setExpanded(new Set(next.categories.map(category => category.id)))
+      setCategoryFilter(current => next.categories.some(category => category.id === current) ? current : '')
     } catch (loadError: unknown) {
       setPolicy(null)
       setDisabledIds([])
@@ -123,6 +124,7 @@ const FeatureAccessPanel = forwardRef<FeatureAccessController, Props>(function F
     setError('')
   }
   const visible = (feature: DomainFeatureState) => {
+    if (categoryFilter && feature.category !== categoryFilter) return false
     const enabled = effective(feature)
     if (filter === 'enabled' && !enabled) return false
     if (filter === 'disabled' && enabled) return false
@@ -131,6 +133,12 @@ const FeatureAccessPanel = forwardRef<FeatureAccessController, Props>(function F
   }
   const enabledCount = policy?.features.filter(effective).length || 0
   const totalCount = policy?.features.length || 0
+  const categoryNames = new Map((policy?.categories || []).map(category => [category.id, category.name]))
+  const categoryOrder = new Map((policy?.categories || []).map((category, index) => [category.id, index]))
+  const rows = (policy?.features || [])
+    .filter(visible)
+    .sort((a, b) => (categoryOrder.get(a.category) ?? Number.MAX_SAFE_INTEGER) - (categoryOrder.get(b.category) ?? Number.MAX_SAFE_INTEGER))
+  const savedDisabled = new Set(policy?.disabled_feature_ids || [])
 
   return (
     <div className="settings-group">
@@ -142,51 +150,64 @@ const FeatureAccessPanel = forwardRef<FeatureAccessController, Props>(function F
           </div>
           <strong>{enabledCount} / {totalCount}</strong>
         </div>
-        <div className="inline-create-row" style={{ gridTemplateColumns: 'minmax(12rem, 1fr) minmax(12rem, 2fr) minmax(9rem, auto)' }}>
-          <select className="settings-input" aria-label="Feature policy domain" value={domainId} onChange={event => setDomainId(event.target.value)} disabled={dirty || loading || saving}>
-            {domains.map(domain => <option key={domain.id} value={domain.id}>{domain.name}</option>)}
-          </select>
-          <input className="settings-input" type="search" aria-label="Search domain features" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search features…" />
-          <select className="settings-input" aria-label="Filter domain features" value={filter} onChange={event => setFilter(event.target.value as FeatureFilter)}>
-            <option value="all">All features</option>
-            <option value="enabled">Enabled</option>
-            <option value="disabled">Disabled</option>
-          </select>
+        <div className="access-table-toolbar">
+          <label>
+            <span>Domain</span>
+            <select aria-label="Feature policy domain" value={domainId} onChange={event => setDomainId(event.target.value)} disabled={dirty || loading || saving}>
+              {domains.map(domain => <option key={domain.id} value={domain.id}>{domain.name}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Search</span>
+            <input type="search" aria-label="Search domain features" value={query} onChange={event => setQuery(event.target.value)} placeholder="name, key, description" />
+          </label>
+          <label>
+            <span>Category</span>
+            <select aria-label="Filter feature category" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}>
+              <option value="">All categories</option>
+              {policy?.categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Status</span>
+            <select aria-label="Filter domain features" value={filter} onChange={event => setFilter(event.target.value as FeatureFilter)}>
+              <option value="all">All statuses</option>
+              <option value="enabled">Enabled</option>
+              <option value="disabled">Disabled</option>
+            </select>
+          </label>
         </div>
         {loading && <p className="new-test-inline-note" role="status">Loading feature policy…</p>}
         {error && <div className="settings-inline-actions" role="alert"><span className="settings-error-inline">{error}</span><button type="button" className="btn btn-secondary btn-sm" onClick={() => void load()}>Reload</button></div>}
         {notice && <p className="settings-success-inline" role="status">{notice}</p>}
+        {policy && (
+          <div className="access-table-wrap feature-access-table-wrap" data-table-pagination="off">
+            <table className="access-data-table feature-access-table">
+              <caption className="sr-only">Domain features</caption>
+              <thead><tr>{['Feature', 'Category', 'Key', 'Depends on', 'Status', 'Allow'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
+              <tbody>{rows.map(feature => {
+                const enabled = effective(feature)
+                const status = enabled ? 'Enabled' : disabled.has(feature.id) ? 'Disabled' : 'Disabled by parent'
+                const changed = disabled.has(feature.id) !== savedDisabled.has(feature.id)
+                return (
+                  <tr key={feature.id} className={changed ? 'selected' : undefined}>
+                    <td>
+                      <span className="feature-access-name">{feature.name}</span>
+                      {(feature.description || changed) && <span className="access-row-meta">{changed ? 'Unsaved change' : feature.description}</span>}
+                    </td>
+                    <td>{categoryNames.get(feature.category) || feature.category}</td>
+                    <td>{feature.id}</td>
+                    <td>{feature.parent_id ? byId.get(feature.parent_id)?.name || feature.parent_id : '—'}</td>
+                    <td><span className={`access-status-badge feature-access-status${enabled ? ' healthy' : ''}`}>{status}</span></td>
+                    <td><input type="checkbox" aria-label={`Allow ${feature.name}`} checked={!disabled.has(feature.id)} onChange={() => toggle(feature)} disabled={saving} /></td>
+                  </tr>
+                )
+              })}</tbody>
+            </table>
+            {!rows.length && <div className="access-empty-state"><strong>No features match these filters</strong><span>Clear the search or choose a broader category or status.</span></div>}
+          </div>
+        )}
       </div>
-
-      {policy?.categories.map(category => {
-        const features = policy.features.filter(feature => feature.category === category.id && visible(feature))
-        if (features.length === 0) return null
-        const isExpanded = expanded.has(category.id)
-        return (
-          <section className="settings-subsection" key={category.id}>
-            <button type="button" className="settings-manager-summary" aria-expanded={isExpanded} onClick={() => setExpanded(current => {
-              const next = new Set(current)
-              if (next.has(category.id)) next.delete(category.id); else next.add(category.id)
-              return next
-            })}>
-              <div><span className="setting-label">{category.name}</span><span className="setting-desc">{category.description}</span></div>
-              <strong>{features.filter(effective).length} / {features.length}</strong>
-            </button>
-            {isExpanded && features.map(feature => (
-              <div className="setting-row" key={feature.id}>
-                <div className="setting-info">
-                  <span className="setting-label">{feature.name}</span>
-                  <span className="setting-desc">{feature.id}{feature.parent_id ? ` · controlled by ${byId.get(feature.parent_id)?.name || feature.parent_id}` : ''}</span>
-                </div>
-                <label className="settings-toggle">
-                  <input type="checkbox" checked={!disabled.has(feature.id)} onChange={() => toggle(feature)} disabled={saving} />
-                  <span>{effective(feature) ? 'Enabled' : disabled.has(feature.id) ? 'Disabled' : 'Disabled by parent'}</span>
-                </label>
-              </div>
-            ))}
-          </section>
-        )
-      })}
 
       <div className="settings-inline-actions">
         <button type="button" className="btn btn-primary" disabled={!dirty || saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save Feature Access'}</button>

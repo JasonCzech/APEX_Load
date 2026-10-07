@@ -3,6 +3,8 @@ package api
 import "net/http"
 
 var prometheusAPIRouteCatalog = apiRouteCatalog{Domain: "prometheus-monitoring", Routes: []apiRouteSpec{
+	newPublicAPIRoute(http.MethodGet, "/api/v1/monitoring/collectors/{id}/inspections", "handlePollProviderInspections", func(s *Server) http.Handler { return http.HandlerFunc(s.handlePollProviderInspections) }),
+	newPublicAPIRoute(http.MethodPost, "/api/v1/monitoring/collectors/{id}/inspections/{operation_id}/result", "handleProviderInspectionResult", func(s *Server) http.Handler { return http.HandlerFunc(s.handleProviderInspectionResult) }),
 	newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/adopt-dashboard", "handlePrometheusAdoptDashboard", projectAdminAccess(resolveProjectIDFromPath), func(s *Server) http.Handler { return http.HandlerFunc(s.handlePrometheusAdoptDashboard) }),
 	newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/projects/{id}/monitoring/prometheus-connections", "handleListPrometheusConnections", viewerProjectAccess(resolveProjectIDFromPath), func(s *Server) http.Handler { return http.HandlerFunc(s.handleListPrometheusConnections) }),
 	newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/projects/{id}/monitoring/prometheus-connections", "handleCreatePrometheusConnection", projectAdminAccess(resolveProjectIDFromPath), func(s *Server) http.Handler { return http.HandlerFunc(s.handleCreatePrometheusConnection) }),

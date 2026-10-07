@@ -1,14 +1,16 @@
 # Observability Integrations
 
-Configuration and operating guidance for Prometheus, OpenTelemetry, Dynatrace, AppDynamics, Power BI, Elastic, and Confluence integrations.
+Configuration and operating guidance for Prometheus, OpenTelemetry, Dynatrace, Power BI, Elastic, and Confluence integrations.
 
-## AppDynamics test monitoring
+## Retired monitoring integration
 
-Classic AppDynamics SaaS and on-premises Controllers can be configured as project connections and attached to tests through revisioned monitor sources. A source selects direct controller collection or an assigned collector, application/entity scope, metric paths, events, health-rule violations, bounded snapshot summaries, and optional licensed Analytics queries. Credentials use project-secret references; values and reference names are excluded from public connection and job projections.
+AppDynamics monitoring is retired and excluded from product builds. Existing connections, source selections, credentials and run evidence remain stored. Historical evidence is available through generic monitoring archive and export views. Remove retired sources from scenario/run bindings before launching a new test. See [retired integrations](RETIRED_INTEGRATIONS.md).
 
-Configure **Settings → Integrations → AppDynamics test capture**, test the saved connection, discover applications and metric paths, then add an AppDynamics source in **Monitoring → Telemetry → Run monitor sources**. Save reusable scenario bindings or override them for one run in Run Setup. Collection continues through pauses and drains delayed source data after load ends. Terminal performance criteria require settled, compatible measurements with sufficient coverage.
+## Run-bound monitoring storage and signing
 
-See [AppDynamics setup and operation](APPDYNAMICS.md) and [implementation specification](APPDYNAMICS_SPEC.md) for transport policy, authentication, selection, evidence semantics, rollout, and acceptance criteria. The generated [OpenAPI specification](swagger.yaml) is the authority for route contracts.
+Enable supported run monitoring for exact project IDs in `APEXLOAD_RUN_MONITOR_PROJECTS`. Controller assignment signing requires a persistent base64-encoded 32-byte Ed25519 seed in `APEXLOAD_MONITOR_SIGNING_SEED`; assigned collectors use the corresponding base64 public key through `APEXLOAD_MONITOR_PUBLIC_KEY` or `--monitor-public-key`. Preserve this trust configuration across controller restarts.
+
+HA controller replicas must share the database and durable monitoring artifacts. Object storage uses the configured archive backend. For filesystem artifacts, mount the same shared path on every replica and set `APEXLOAD_MONITOR_SHARED_FILESYSTEM=true` only after an administrator verifies the shared mount. This setting is an attestation and does not provision or validate storage. Supported provider readiness fails when HA filesystem artifacts are not attested as shared.
 
 
 ## Prometheus target-system test monitoring
@@ -21,21 +23,22 @@ See [setup and operation](PROMETHEUS_MONITORING.md) and [specification/qualifica
 
 ## Governed provider registry
 
-AppDynamics, Dynatrace and Prometheus query sources share the durable provider pipeline. Each one's contract is a descriptor in `pkg/monitorprovider/registry.go`, and the controller adds its ingestion, direct-collection, grant and submission hooks in `pkg/api/provider_monitoring.go`. Code dispatches through the registry; a test fails if any other Go source compares a provider name.
+Dynatrace, Elasticsearch and Prometheus query sources share the durable provider pipeline. Each one's contract is a descriptor in `pkg/monitorprovider/registry.go`, and the controller adds its ingestion, direct-collection, grant and submission hooks in `pkg/api/provider_monitoring.go`. Code dispatches through the registry; a test fails if any other Go source compares a provider name.
 
 | Provider | Source pack | Scheduling | Observation | Default / minimum interval | Collector key |
 | --- | --- | --- | --- | --- | --- |
-| AppDynamics | `appdynamics` | Windowed: closed windows behind the clock | Interval buckets | 60 s / 60 s | Required |
 | Dynatrace | `dynatrace` | Cursor: resumable queries under scan budgets | Interval buckets | 60 s / 60 s | Required |
 | Prometheus query | `prometheus-query` | Polled at a fixed interval | Snapshot evaluations | 30 s / 15 s | Not used |
 | Elasticsearch query | `elastic-query` | Windowed, re-reading a five-minute overlap | Interval buckets | 60 s / 30 s | Not used (controller only) |
 
-Intervals may go up to 3,600 seconds. Dynatrace defaults to direct execution. The registry marks Dynatrace and Elasticsearch query as trace-lookup providers: Dynatrace sources look up exemplar trace IDs, while Elasticsearch lookups run in the legacy ELK capture. An `elastic-query` search reserves room for a trace lookup but does not yet send exemplar trace IDs. Collectors must advertise the provider's capability (`appdynamics.v1`, `dynatrace.v1` or `prometheus-query.v1`); a job whose collector lacks it records that provider's `collector_*_contract_unavailable` coverage reason.
+Intervals may go up to 3,600 seconds. Dynatrace defaults to direct execution. The registry marks Dynatrace and Elasticsearch query as trace-lookup providers: Dynatrace sources look up exemplar trace IDs, while Elasticsearch lookups run in the legacy ELK capture. An `elastic-query` search reserves room for a trace lookup but does not yet send exemplar trace IDs. Collectors must advertise the provider's capability (`elastic-query.v1`, `dynatrace.v1` or `prometheus-query.v1`); a job whose collector lacks it records that provider's `collector_*_contract_unavailable` coverage reason.
 
 ### Provider qualification
 
-Each governed provider has a record in `docs/qa/qualification/<provider>.json`
-(`apexload.provider_qualification.v1`): its required permissions, any real
+Each governed provider/pack has a record in `docs/qa/qualification/<provider>.json`
+or a pack-specific `<provider>.<pack>.json` override. A legacy record applies
+only to the pack it names. Each record uses `apexload.provider_qualification.v1`
+and describes its required permissions, any real
 environments it was checked against (product and API versions, non-production
 tenant type, permissions, observed limits and date) and an outcome per
 capability with its evidence. **Qualified** means checked against such an
@@ -53,11 +56,6 @@ qualification succeeds, then regenerate the table with
 <!-- provider-qualification:begin -->
 | Provider | Capability | Status | Qualified on |
 | --- | --- | --- | --- |
-| AppDynamics | metrics | fixture-tested | — |
-| AppDynamics | diagnostics | fixture-tested | — |
-| AppDynamics | run header | fixture-tested | — |
-| AppDynamics | analytics | fixture-tested | — |
-| AppDynamics | private collector | fixture-tested | — |
 | Dynatrace | metrics | fixture-tested | — |
 | Dynatrace | diagnostics | fixture-tested | — |
 | Dynatrace | grail queries | fixture-tested | — |
@@ -70,6 +68,22 @@ qualification succeeds, then regenerate the table with
 | Elasticsearch query | opensearch profile | fixture-tested | — |
 | Elasticsearch query | deep links | fixture-tested | — |
 | Elasticsearch query | legacy capture | fixture-tested | — |
+| Elasticsearch (elastic) | metrics | fixture-tested | — |
+| Elasticsearch (elastic) | diagnostics | fixture-tested | — |
+| Elasticsearch (elastic) | trace lookup | fixture-tested | — |
+| Elasticsearch (elastic) | run header | fixture-tested | — |
+| Elasticsearch (elastic) | esql | fixture-tested | — |
+| Elasticsearch (elastic) | pagination | fixture-tested | — |
+| Elasticsearch (elastic) | private collector | fixture-tested | — |
+| Elasticsearch (elastic) | component health | fixture-tested | — |
+| OpenSearch (elastic) | metrics | fixture-tested | — |
+| OpenSearch (elastic) | diagnostics | fixture-tested | — |
+| OpenSearch (elastic) | trace lookup | fixture-tested | — |
+| OpenSearch (elastic) | run header | fixture-tested | — |
+| OpenSearch (elastic) | esql | unsupported | — |
+| OpenSearch (elastic) | pagination | fixture-tested | — |
+| OpenSearch (elastic) | private collector | fixture-tested | — |
+| OpenSearch (elastic) | component health | fixture-tested | — |
 | Prometheus | metrics | qualified | Prometheus 2.55.1 (2026-10-04); Prometheus 3.13.0 (2026-10-04) |
 | Prometheus | diagnostics | qualified | Prometheus 2.55.1 (2026-10-04); Prometheus 3.13.0 (2026-10-04) |
 | Prometheus | discovery | qualified | Prometheus 2.55.1 (2026-10-04); Prometheus 3.13.0 (2026-10-04) |
@@ -291,7 +305,7 @@ A run can opt into correlation headers for operator-approved origins with the
 `trace_context` run setting (Run Setup → Trace context, or `trace_context` on
 `POST /api/v1/tests`): `{"enabled": true, "transaction_marker": true,
 "origins": ["https://shop.example.com"]}`. Origins are `scheme://host[:port]`
-only, at most 32, shared with any AppDynamics run-header origins bound to the
+only, at most 32, shared with supported provider run-header origins bound to the
 run.
 
 - `enabled` sends generated `traceparent` headers to the approved origins,
@@ -386,7 +400,7 @@ silent correction: a point more than 30 s ahead of its receipt keeps its
   live (`APEXLOAD_CLOCK_PROBE_INTERVAL`, a Go duration, can only lengthen
   that; 30 s is the minimum), by the same heartbeat exchange the start barrier uses,
   including after HA adoption.
-- **Providers** (AppDynamics, Dynatrace, Prometheus queries, Elasticsearch
+- **Providers** (Dynatrace, Prometheus queries, Elasticsearch
   query buckets) never exchange clocks with the controller, so their points say
   `unknown` with an uncertainty of half the bucket or evaluation step;
   Prometheus points add `freshness_seconds` when the sample time is known. The
@@ -482,9 +496,9 @@ without links and with `links_unavailable`.
   ID field when it has a plain name (free text otherwise); Discover opens on
   Kibana's default data view, so save a template naming the data view when
   that is not the logs index. With no Kibana URL there is no ELK link.
-  AppDynamics snapshot and Dynatrace problem links remain on
+  Historical AppDynamics snapshot and current Dynatrace problem links remain on
   `ProviderDiagnostic.DeepLink`, validated against their connection's origin;
-  Dynatrace and AppDynamics ingestion share the template target check.
+  Dynatrace ingestion applies the template target check.
 - **Budget.** Link settings are one definition per connection and do not count
   toward the project's 1000 mappings and comparisons. They outlive a deleted
   connection unused, since connection IDs are never reused.

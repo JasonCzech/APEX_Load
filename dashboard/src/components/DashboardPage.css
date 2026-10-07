@@ -43,8 +43,8 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.05em);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -90,8 +90,8 @@
 }
 
 @keyframes badgePulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
-  50% { box-shadow: 0 0 0 6px rgba(99, 102, 241, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(var(--accent-rgb), 0); }
 }
 
 /* Empty states */
@@ -227,8 +227,8 @@
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.04em);
+  text-transform: var(--label-case, uppercase);
 }
 
 .dac-editor select {
@@ -273,8 +273,8 @@
 .dac-metric-label {
   font-size: 10px;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.05em);
 }
 
 .dac-sparkline {
@@ -290,8 +290,8 @@
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.05em);
+  text-transform: var(--label-case, uppercase);
   pointer-events: none;
 }
 
@@ -323,8 +323,8 @@
   background: var(--bg-card);
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.05em);
+  text-transform: var(--label-case, uppercase);
 }
 
 .dac-group-table tr:last-child td {
@@ -471,8 +471,8 @@
   color: var(--accent);
   font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.06em);
+  text-transform: var(--label-case, uppercase);
 }
 
 .release-panel-toggle,
@@ -531,8 +531,8 @@
 
 .release-panel-rail-kicker {
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.06em);
 }
 
 .dash-release-selector {
@@ -587,7 +587,7 @@
 .dash-release-option.active {
   border-color: var(--accent-border);
   background: color-mix(in srgb, var(--accent) 14%, var(--bg-card));
-  color: var(--accent);
+  color: var(--text-primary);
   box-shadow: var(--glow-sm);
 }
 
@@ -657,8 +657,8 @@
   color: var(--text-secondary);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.05em);
+  text-transform: var(--label-case, uppercase);
 }
 
 .release-panel-stat.tone-accent .release-panel-stat-value {
@@ -1171,8 +1171,8 @@
   margin-top: 3px;
   color: var(--text-muted);
   font-size: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.05em);
+  text-transform: var(--label-case, uppercase);
 }
 
 .load-comparison-chart {
@@ -1197,7 +1197,7 @@
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: var(--label-case, uppercase);
 }
 
 @media (max-width: 900px) {
@@ -1242,8 +1242,8 @@
   margin-top: 3px;
   color: var(--text-muted);
   font-size: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.05em);
+  text-transform: var(--label-case, uppercase);
 }
 
 .trend-table-wrap {
@@ -1273,8 +1273,8 @@
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.05em);
+  text-transform: var(--label-case, uppercase);
   background: var(--bg-card);
 }
 
@@ -1481,11 +1481,11 @@
 }
 
 .release-trend-row-regressed {
-  background: var(--danger-bg, rgba(239, 68, 68, 0.08));
+  background: var(--danger-bg, rgba(var(--danger-rgb), 0.08));
 }
 
 .release-trend-row-regressed:hover {
-  background: var(--danger-bg, rgba(239, 68, 68, 0.12));
+  background: var(--danger-bg, rgba(var(--danger-rgb), 0.12));
 }
 
 .release-trend-panel .trend-table tbody tr {
@@ -1498,7 +1498,7 @@
 
 .release-trend-row-selected,
 .release-trend-row-selected:hover {
-  background: var(--accent-bg, rgba(59, 130, 246, 0.12));
+  background: var(--accent-bg, rgba(var(--info-rgb), 0.12));
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
@@ -1521,8 +1521,8 @@
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.05em);
+  text-transform: var(--label-case, uppercase);
 }
 
 .release-trend-filter select {
@@ -1618,8 +1618,8 @@
 .release-trend-detail-stat-label {
   color: var(--text-muted);
   font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.04em);
+  text-transform: var(--label-case, uppercase);
 }
 
 .release-trend-detail-grid {
@@ -1639,8 +1639,8 @@
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.04em);
+  text-transform: var(--label-case, uppercase);
 }
 
 .release-trend-delta-list,
@@ -1724,8 +1724,8 @@
 .aggregate-label {
   font-size: 11px;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.04em);
   display: block;
   margin-bottom: 8px;
 }

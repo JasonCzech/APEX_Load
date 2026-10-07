@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"mime/multipart"
 	"net/url"
 	"path"
@@ -26,7 +27,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -298,7 +298,7 @@ func nativeRequestScripts(
 		extension := strings.ToLower(path.Ext(file.Path))
 		if extension != ".yml" && extension != ".yaml" {
 			failures.add(fmt.Errorf(
-				"native_requests supports OpenCollection YAML HTTP items only; %q has unsupported extension %q",
+				"Bruno Runner has been retired; native_requests supports OpenCollection YAML HTTP items only; %q has unsupported extension %q",
 				relative,
 				extension,
 			))
@@ -315,7 +315,7 @@ func nativeRequestScripts(
 		// only learn about them after fixing the item types and re-uploading.
 		if !failures.saturated() {
 			failures.add(fmt.Errorf(
-				"native_requests supports OpenCollection YAML HTTP items only; canonical mode is required for: %s",
+				"Bruno Runner has been retired; native_requests supports OpenCollection YAML HTTP items only; unsupported items: %s",
 				strings.Join(unsupported, ", "),
 			))
 		}

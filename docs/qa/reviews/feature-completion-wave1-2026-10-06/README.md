@@ -2,7 +2,7 @@
 
 Status: implemented on `claude/feature-completion-wave1` and reviewed: each work package through independent review rounds until no finding stayed open, then once across the whole wave. Every finding is fixed, documented below, or accepted as a listed residual. The requirements these packages advance remain open; nothing here promotes support.
 
-Wave 1 delivers eleven work packages of the [feature completion specification](../../../FEATURE_COMPLETION_SPEC.md); F1 (root-cause analysis v2) landed before it. Schema releases 43–48 are additive: `authoring-mutation-receipts`, `feature-evaluation-jobs`, `feature-acceptance-records`, `evaluation-job-request-digest-attempts`, `feature-acceptance-record-sequence` and `evaluation-job-result-bytes`.
+Wave 1 delivers eleven work packages of the [feature completion specification](../../../FEATURE_COMPLETION_SPEC.md); F1 (root-cause analysis v2) landed before it. Schema releases 45–50 (numbered 43–48 on the branch, and renumbered when it merged into main after main's releases 43 and 44) are additive: `authoring-mutation-receipts`, `feature-evaluation-jobs`, `feature-acceptance-records`, `evaluation-job-request-digest-attempts`, `feature-acceptance-record-sequence` and `evaluation-job-result-bytes`.
 
 ## Work packages
 

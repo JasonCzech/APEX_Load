@@ -19,6 +19,14 @@ func TestSchemaPublicationMergePreservesMainLedgerAndAddsFeatureReleases(t *test
 		{Version: 32, Name: "durable-messaging-management-polls", Fingerprint: "8302b2875bbd64d91edac96ab4c39b6adf66bbfb288f60fbef5428718a1d4911"},
 		{Version: 33, Name: "isolated-native-analysis-attempts", Fingerprint: "348e5bff6128c23431046d91f301e65f219eaa542faead33fc42d1508c4587df"},
 		{Version: 34, Name: "durable-analysis-upload-physical-writers", Fingerprint: "52971cd3c20e72aefeb2c719f02e125a3689f107a50981c4da14d01a8e34783b"},
+		{Version: 35, Name: "dynatrace-saas-durable-run-monitoring", Fingerprint: "de996ade9928b95fa97e6ede0c811d2ee20ee73e0f44d1e26945547814066d7a"},
+		{Version: 36, Name: "durable-script-goal-config", Fingerprint: "2d937708f297ade2cdcdc224678c7f25689d3f5f923124549963014c38e0b29e"},
+		{Version: 37, Name: "durable-script-content-revision", Fingerprint: "d741b8384d281d84172d60b888a72228892173bbbc96d4f04a0e480cc1e9b745"},
+		{Version: 38, Name: "durable-scenario-content-revision", Fingerprint: "185b01e0a6e99c3a5d43a668d2113d7258b5cd89aa0f30e45f094bb2f9c7f5d4"},
+		{Version: 39, Name: "run-trace-context-policy", Fingerprint: "26cd04b1928418d383f28268ae70c20e2b943e08217c7fdb3855e8a092a6d8cc"},
+		{Version: 40, Name: "rca-analysis-revisions", Fingerprint: "0aa6b5258f7162db82e7647c622672b145dd1db69356907c774882a4071a54e3"},
+		{Version: 41, Name: "business-key-project-keys", Fingerprint: "385585ff3818a833a350cd25838901726297b40a458670abf302d52bbb667c52"},
+		{Version: 42, Name: "rca-critiques", Fingerprint: "b17ff1432f5b81961297d33644433a760017d6bf8317877509633fab06ac70bb"},
 	}
 	path := filepath.Join(t.TempDir(), "published-main.db")
 	raw, err := sql.Open("sqlite", sqliteDSN(path))
@@ -56,7 +64,7 @@ func TestSchemaPublicationMergePreservesMainLedgerAndAddsFeatureReleases(t *test
 				t.Fatalf("published ledger identity changed: %#v", record)
 			}
 		}
-		for _, table := range []string{"monitor_collection_leases", "monitor_management_polls", "analysis_attempt_journal", "analysis_upload_writers", "dynatrace_operations", "dynatrace_scan_reservations"} {
+		for _, table := range []string{"monitor_collection_leases", "monitor_management_polls", "analysis_attempt_journal", "analysis_upload_writers", "dynatrace_operations", "dynatrace_scan_reservations", "elastic_inspections"} {
 			var count int
 			if err = store.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil || count != 1 {
 				store.Close()

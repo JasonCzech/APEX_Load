@@ -316,7 +316,13 @@ func newRunArtifacts(tr *TestRunner, test *ManagedTest, saveRecord func(record *
 	keyCtx, cancelKey := context.WithTimeout(context.Background(), 30*time.Second)
 	recorder.businessKeys = tr.newBusinessKeyArchiver(keyCtx, authoritativeInitial.ProjectID, authoritativeInitial.BusinessKeys)
 	cancelKey()
-	return &runArtifacts{runner: tr, test: test, recorder: recorder, saveRecord: saveRecord, externalMetrics: newExternalMetricCollector(nil)}, nil
+	artifacts := &runArtifacts{runner: tr, test: test, recorder: recorder, saveRecord: saveRecord, externalMetrics: newExternalMetricCollector(nil), elasticTraceEnabled: tr.testUsesElasticTraceEvidence(test)}
+	tr.mu.Lock()
+	if tr.tests[test.ID] == test {
+		test.elkArtifacts = artifacts
+	}
+	tr.mu.Unlock()
+	return artifacts, nil
 }
 
 func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProvenance {
@@ -504,8 +510,23 @@ func (a *runArtifacts) resultSink() engine.ResultSink {
 	}
 	return combinedResultSink{
 		a.recorder,
+		elkTraceEvidenceSink{artifacts: a},
 		liveErrorEvidenceSink{runner: a.runner, test: a.test},
 	}
+}
+
+type elkTraceEvidenceSink struct{ artifacts *runArtifacts }
+
+func (sink elkTraceEvidenceSink) RecordResult(result *protocol.Result) error {
+	if sink.artifacts == nil || result == nil || !sink.artifacts.elasticTraceEnabled {
+		return nil
+	}
+	sink.artifacts.observeElasticTraceID(traceIDFromCorrelationID(result.CorrelationID))
+	return nil
+}
+
+func (sink elkTraceEvidenceSink) RecordTransaction(result *protocol.Result) error {
+	return sink.RecordResult(result)
 }
 
 type combinedResultSink []engine.ResultSink

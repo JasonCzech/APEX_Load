@@ -108,6 +108,9 @@ type ProviderMeasurement struct {
 	QueryWindow           bool              `json:"query_window,omitempty"`
 	Backend               string            `json:"backend,omitempty"`
 	Synthetic             bool              `json:"synthetic,omitempty"`
+	DerivedAggregation    string            `json:"derived_aggregation,omitempty"`
+	WindowKind            string            `json:"window_kind,omitempty"`
+	Approximate           bool              `json:"approximate,omitempty"`
 }
 
 // Validate rejects non-finite, ambiguous, and unbounded measurements before
@@ -115,7 +118,7 @@ type ProviderMeasurement struct {
 func (p MetricPoint) Validate() error {
 	if p.Provider != nil {
 		m := p.Provider
-		if !monitorprovider.KnownProviderName(m.Name) || m.MetricID == "" || len(m.MetricID) > 256 || len(m.CatalogPath) > 4096 || len(m.EntityIDs) > 16 || len(m.Statistic) > 64 || len(m.Backend) > 64 {
+		if !monitorprovider.KnownProviderName(m.Name) || m.MetricID == "" || len(m.MetricID) > 256 || isElasticProvider(m) && len(m.QueryID) > 128 || len(m.CatalogPath) > 4096 || len(m.EntityIDs) > 16 || len(m.Statistic) > 64 || len(m.Backend) > 64 {
 			return errors.New("invalid provider bucket measurement")
 		}
 		provider, _ := monitorprovider.ByProviderName(m.Name)
@@ -123,9 +126,29 @@ func (p MetricPoint) Validate() error {
 			if err := validatePrometheusMeasurement(p); err != nil {
 				return err
 			}
+		} else if isElasticProvider(m) && (m.QueryID != "" || m.WindowKind != "") {
+			if m.Mode != "" || m.WindowKind != "" && m.WindowKind != "bucket" && m.WindowKind != "query_window" && m.WindowKind != "instant" {
+				return errors.New("invalid Elastic provider window kind")
+			}
+			if m.WindowKind == "instant" {
+				if m.QueryWindow || m.ResolutionSeconds != 0 || m.BucketStart.IsZero() || m.BucketStart.Location() != time.UTC || !m.BucketEnd.Equal(m.BucketStart) || !p.TimestampUTC.Equal(m.BucketStart) || m.AggregationEligible {
+					return errors.New("invalid instant provider measurement")
+				}
+			} else if m.BucketStart.Location() != time.UTC || m.BucketEnd.Location() != time.UTC || m.BucketStart.IsZero() || !m.BucketEnd.After(m.BucketStart) || m.ResolutionSeconds < 1 || (!m.QueryWindow && m.ResolutionSeconds > 86400) || int64(m.ResolutionSeconds) > math.MaxInt64/int64(time.Second) || m.BucketEnd.Year() < 1 || m.BucketEnd.Year() > 9999 || (!m.QueryWindow && !m.BucketStart.Add(time.Duration(m.ResolutionSeconds)*time.Second).Equal(m.BucketEnd) || m.QueryWindow && int(math.Ceil(m.BucketEnd.Sub(m.BucketStart).Seconds())) != m.ResolutionSeconds) || !p.TimestampUTC.Equal(m.BucketStart) {
+				return errors.New("invalid provider bucket measurement")
+			}
 		} else if m.Mode != "" && m.Mode != "interval_bucket" && m.Mode != "query_window" || provider.Observation == monitorprovider.ObservationInterval && (m.BucketStart.Location() != time.UTC || m.BucketEnd.Location() != time.UTC || m.BucketStart.IsZero() || !m.BucketEnd.After(m.BucketStart) || m.ResolutionSeconds < 1 || (!m.QueryWindow && m.ResolutionSeconds > 86400) || int64(m.ResolutionSeconds) > math.MaxInt64/int64(time.Second) || m.BucketEnd.Year() < 1 || m.BucketEnd.Year() > 9999 || !m.BucketStart.Add(time.Duration(m.ResolutionSeconds)*time.Second).Equal(m.BucketEnd) || !p.TimestampUTC.Equal(m.BucketStart)) {
 			return errors.New("invalid provider bucket measurement")
 		}
+		if m.Approximate && m.AggregationEligible {
+			return errors.New("approximate provider measurement cannot support aggregation")
+		}
+		if m.DerivedAggregation != "" {
+			if m.DerivedAggregation != "avg" && m.DerivedAggregation != "min" && m.DerivedAggregation != "max" && m.DerivedAggregation != "sum" || m.AggregationEligible || m.QueryWindow {
+				return errors.New("invalid derived provider aggregate")
+			}
+		}
+
 		for k, v := range m.EntityIDs {
 			if k == "" || len(k) > 128 || len(v) > 128 {
 				return errors.New("invalid provider entity identity")
@@ -473,3 +496,8 @@ func Pearson(pairs []AlignedPair) (float64, bool) {
 	}
 	return math.Max(-1, math.Min(1, score)), true
 }
+
+func isElasticProvider(m *ProviderMeasurement) bool {
+	return m != nil && (m.Name == monitorprovider.ProviderElasticsearch || m.Name == monitorprovider.ProviderOpenSearch)
+}
+func sameProviderSemantics(a, b *ProviderMeasurement) bool { return compatibleProvider(a, b) }

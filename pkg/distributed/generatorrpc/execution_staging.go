@@ -961,7 +961,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	}
 	request := plan.validated.request
 	// Reject before any runtime capacity provider or helper can be invoked.
-	if request.GetPrepareOnly() && (request.GetJavaHost() != nil || plan.protocol == "java_vuser" || plan.protocol == "bruno") {
+	if request.GetPrepareOnly() && (request.GetJavaHost() != nil || plan.protocol == "java_vuser") {
 		return nil, status.Error(codes.FailedPrecondition, "runtime cannot guarantee traffic-free preparation")
 	}
 	if ctx != nil {
@@ -1008,6 +1008,9 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	var script dsl.Script
 	if err := json.Unmarshal(plan.scriptContent, &script); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "decode script: %v", err)
+	}
+	if err := engine.RetiredBrunoRuntimeError(&script); err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	prepared.browserDocumentCaptureRequested = dsl.BrowserDocumentCaptureRequested(&script)
 	if len(request.GetRunCorrelationOrigins()) > 0 {
@@ -1066,10 +1069,6 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			capabilities, hasCapabilities, capabilityErr := protocol.ReadRuntimeCapabilities(instance)
 			if capabilityErr != nil {
 				return nil, status.Error(codes.FailedPrecondition, capabilityErr.Error())
-			}
-			if strings.EqualFold(script.Protocol, "bruno") &&
-				(!hasCapabilities || !brunoRuntimeContained(capabilities.Features)) {
-				return nil, status.Error(codes.FailedPrecondition, "bruno runtime does not advertise required runner owner and session lease capabilities")
 			}
 			if hasCapabilities {
 				if !capabilities.Available {
@@ -1164,7 +1163,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			redactionConfig = scriptSourcedRedaction
 		}
 	}
-	if request.GetPrepareOnly() && (javaHost != nil || script.Protocol == "java_vuser" || script.Protocol == "bruno") {
+	if request.GetPrepareOnly() && (javaHost != nil || script.Protocol == "java_vuser") {
 		return nil, status.Error(codes.FailedPrecondition, "runtime does not support traffic-free preparation")
 	}
 	runtimeSecrets := secretBundleResolver(request.GetSecretBundle())

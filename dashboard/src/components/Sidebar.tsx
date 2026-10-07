@@ -202,7 +202,10 @@ export default function Sidebar({
   showAccess = false,
   onDevPreviewLogout,
 }: Props) {
-  const [collapsed, setCollapsed] = useState(false)
+  // Collapsed to the icon rail by default; expanding opens the full sidebar as
+  // an overlay above the page instead of pushing the content right.
+  const [collapsed, setCollapsed] = useState(true)
+  const asideRef = useRef<HTMLElement | null>(null)
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const [domainOpen, setDomainOpen] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
@@ -324,6 +327,50 @@ export default function Sidebar({
     }
   }, [applicationOpen, closeWorkspaceMenus, domainOpen, projectOpen, releaseOpen, workspaceOpen])
 
+  const anyModalOpen = showProjectModal || showApplicationModal || showReleaseModal
+  const anyMenuOpen = workspaceOpen || domainOpen || projectOpen || applicationOpen || releaseOpen
+
+  // The expanded overlay closes on an outside click or Escape. Escape closes an
+  // open workspace menu first, and a modal opened from the sidebar keeps it open.
+  useEffect(() => {
+    if (collapsed || anyModalOpen) {
+      return undefined
+    }
+
+    const collapse = () => {
+      closeWorkspaceMenus()
+      setDevViewOpen(false)
+      setCollapsed(true)
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Node && asideRef.current?.contains(target)) {
+        return
+      }
+      collapse()
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !anyMenuOpen) {
+        collapse()
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown, true)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [anyMenuOpen, anyModalOpen, closeWorkspaceMenus, collapsed])
+
+  const navigateTo = (page: NavPage) => {
+    onNavigate(page)
+    closeWorkspaceMenus()
+    setCollapsed(true)
+  }
+
   const toggleWorkspace = () => {
     setWorkspaceOpen(open => (collapsed ? true : !open))
     setDomainOpen(false)
@@ -419,21 +466,23 @@ export default function Sidebar({
   }
 
   return (
-    <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
-      <button type="button" className="sidebar-brand" onClick={() => onNavigate('dashboard')} aria-label="APEX Load dashboard">
+    <div className={`sidebar-shell ${collapsed ? '' : 'overlay-open'}`}>
+    <aside ref={asideRef} className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+      <button type="button" className="sidebar-brand" onClick={() => navigateTo('dashboard')} aria-label="APEX Load dashboard">
         <Logo size={28} className="brand-icon" title="APEX Load" />
         {!collapsed && <span className="brand-name">APEX Load</span>}
       </button>
 
       <div className={`sidebar-workspace ${workspaceOpen ? 'open' : ''}`} ref={workspaceRef}>
-        <button
+        <TooltipButton
           type="button"
           className="workspace-summary"
           onClick={toggleWorkspace}
           aria-label={`Workspace context. ${workspaceLabel}`}
+          title={collapsed ? workspaceLabel : undefined}
+          tooltipPlacement="right"
           aria-expanded={workspaceOpen && !collapsed}
           aria-controls="sidebar-workspace-context"
-          data-workspace-label={workspaceLabel}
         >
           <span className="workspace-summary-icon" aria-hidden="true">◈</span>
           {!collapsed && (
@@ -443,7 +492,7 @@ export default function Sidebar({
             </span>
           )}
           {!collapsed && <span className="project-chevron" aria-hidden="true">⌄</span>}
-        </button>
+        </TooltipButton>
         <div
           className="workspace-context"
           id="sidebar-workspace-context"
@@ -455,7 +504,8 @@ export default function Sidebar({
         <TooltipButton
           className="project-selector"
           onClick={toggleDomainMenu}
-          title={activeDomain?.name || 'Domain'}
+          title={collapsed ? activeDomain?.name || 'Domain' : undefined}
+          tooltipPlacement="right"
           aria-label={`Select domain. Current domain: ${activeDomain?.name || 'none'}`}
           aria-expanded={domainOpen && !collapsed}
           aria-controls="sidebar-domain-options"
@@ -493,7 +543,8 @@ export default function Sidebar({
         <TooltipButton
           className="project-selector"
           onClick={toggleProjectMenu}
-          title={activeProject?.name || 'Project'}
+          title={collapsed ? activeProject?.name || 'Project' : undefined}
+          tooltipPlacement="right"
           aria-label={`Select project. Current project: ${activeProject?.name || 'none'}`}
           aria-expanded={projectOpen && !collapsed}
           aria-controls="sidebar-project-options"
@@ -548,7 +599,8 @@ export default function Sidebar({
         <TooltipButton
           className="project-selector"
           onClick={toggleApplicationMenu}
-          title={activeApplication?.name || 'Application'}
+          title={collapsed ? activeApplication?.name || 'Application' : undefined}
+          tooltipPlacement="right"
           aria-label={`Select application. Current application: ${activeApplication?.name || 'none'}`}
           aria-expanded={applicationOpen && !collapsed}
           aria-controls="sidebar-application-options"
@@ -607,7 +659,8 @@ export default function Sidebar({
         <TooltipButton
           className="project-selector"
           onClick={toggleReleaseMenu}
-          title={activeRelease?.name || 'Release'}
+          title={collapsed ? activeRelease?.name || 'Release' : undefined}
+          tooltipPlacement="right"
           aria-label={`Select release. Current release: ${activeRelease?.name || 'none'}`}
           aria-expanded={releaseOpen && !collapsed}
           aria-controls="sidebar-release-options"
@@ -662,9 +715,10 @@ export default function Sidebar({
         {visibleNavItemsById.get('new-test') && (
           <TooltipButton
             className={`nav-item nav-item-primary ${active === 'new-test' ? 'active' : ''}`}
-            onClick={() => onNavigate('new-test')}
-            title="New Test"
+            onClick={() => navigateTo('new-test')}
             aria-label="New Test"
+            title={collapsed ? 'New Test' : undefined}
+            tooltipPlacement="right"
             aria-current={active === 'new-test' ? 'page' : undefined}
             data-nav-label="New Test"
           >
@@ -684,9 +738,10 @@ export default function Sidebar({
                 <TooltipButton
                   key={item.id}
                   className={`nav-item ${active === item.id ? 'active' : ''}`}
-                  onClick={() => onNavigate(item.id)}
-                  title={item.label}
+                  onClick={() => navigateTo(item.id)}
                   aria-label={item.label}
+                  title={collapsed ? item.label : undefined}
+                  tooltipPlacement="right"
                   aria-current={active === item.id ? 'page' : undefined}
                   data-nav-label={item.label}
                 >
@@ -701,6 +756,22 @@ export default function Sidebar({
 
       <div className="sidebar-footer">
         <div className="sidebar-footer-meta">
+          {collapsed && authStatus?.authenticated && authStatus.user && identityName && (
+            // The collapsed rail hides the identity card, so keep the signed-in
+            // user and any session-expiry warning visible as an avatar. Clicking
+            // it opens the sidebar on the full card with Sign out.
+            <TooltipButton
+              type="button"
+              className={`sidebar-rail-avatar ${sessionExpiryNotice ? (sessionExpiryNotice === 'Session expired' ? 'session-expired' : 'session-warning') : ''}`}
+              onClick={() => setCollapsed(false)}
+              aria-label={[identityName, identityMeta, sessionExpiryNotice, 'Open account details'].filter(Boolean).join('. ')}
+              title={[identityName, identityMeta, sessionExpiryNotice].filter(Boolean).join(' · ')}
+              tooltipPlacement="right"
+            >
+              <span aria-hidden="true">{identityInitials}</span>
+              {sessionExpiryNotice && <span className="sidebar-rail-avatar-alert" aria-hidden="true" />}
+            </TooltipButton>
+          )}
           {!collapsed && authStatus?.authenticated && authStatus.user && identityName && (
             <div className="sidebar-identity" title={identityTitle}>
               <div className="sidebar-identity-avatar" aria-hidden="true">{identityInitials}</div>
@@ -726,10 +797,12 @@ export default function Sidebar({
           )}
           {isDevDashboard && (
             <div className="dev-view-control">
-              <button
+              <TooltipButton
                 type="button"
                 className="dev-view-toggle"
                 aria-label={`Preview permissions. Current mode: ${devViewMode}`}
+                title={collapsed ? `Preview permissions (${devViewMode})` : undefined}
+                tooltipPlacement="right"
                 aria-expanded={devViewOpen && !collapsed}
                 aria-controls="sidebar-dev-view-panel"
                 onClick={() => {
@@ -739,7 +812,7 @@ export default function Sidebar({
               >
                 <span aria-hidden="true">DEV</span>
                 {!collapsed && <span>Preview permissions</span>}
-              </button>
+              </TooltipButton>
               {devViewOpen && !collapsed && (
                 <div className="dev-view-panel" id="sidebar-dev-view-panel" aria-label="Development preview mode">
               <div className="dev-view-label-row">
@@ -776,7 +849,7 @@ export default function Sidebar({
             </div>
           )}
           <div className="sidebar-footer-row">
-            <div className={`sidebar-status ${connectionClass}`} title={connectionLabel}>
+            <div className={`sidebar-status ${connectionClass}`} title={collapsed ? connectionLabel : undefined}>
               <span className="status-dot" />
               <span className="status-text">{connectionLabel}</span>
             </div>
@@ -786,7 +859,8 @@ export default function Sidebar({
         <TooltipButton
           className="collapse-btn"
           onClick={() => setCollapsed(!collapsed)}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand sidebar' : undefined}
+          tooltipPlacement="right"
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-expanded={!collapsed}
         >
@@ -825,6 +899,7 @@ export default function Sidebar({
         />
       )}
     </aside>
+    </div>
   )
 }
 

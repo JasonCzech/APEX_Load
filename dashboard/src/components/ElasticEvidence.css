@@ -1,0 +1,28 @@
+.elastic-evidence { min-width: 0; width: 100%; }
+.elastic-evidence p { margin: 8px 0; overflow-wrap: anywhere; }
+.elastic-evidence ul { margin: 8px 0 16px; padding-left: 20px; }
+.elastic-evidence fieldset {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.elastic-evidence label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.elastic-evidence input, .elastic-evidence select { min-width: 0; width: 100%; }
+.elastic-evidence button {
+  padding: 8px 12px;
+  margin: 4px 8px 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 6px);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.elastic-evidence button:disabled { opacity: 0.5; cursor: not-allowed; }
+.elastic-evidence fieldset button { align-self: end; justify-self: start; }
+.elastic-evidence details { margin: 12px 0; }
+.elastic-evidence summary { cursor: pointer; margin-bottom: 8px; }

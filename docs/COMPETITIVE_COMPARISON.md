@@ -84,7 +84,7 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 | DevWeb import | Supported for import-review scope | `/api/v1/scripts/import/devweb`, `/api/v1/scripts/import/devweb/support-matrix` | Dynamic JavaScript runtime compatibility is review-only. |
 | HAR import | Supported | `/api/v1/scripts/import/sample`, `pkg/convert/har` | More guided repair affordances. |
 | Raw HTTP / cURL / REST samples | Supported | `/api/v1/scripts/import/sample`, `pkg/convert/sample` | Expand canonical sample projects. |
-| Bruno collections | Supported for governed execution | `/api/v1/scripts/import/bruno/*`, `pkg/protocol/bruno`, `runners/bruno` | Requires the version-pinned runner and an approved egress policy. |
+| Bruno collections | Native HTTP import supported | `/api/v1/scripts/import/bruno/*`, `pkg/convert/bruno` | Runner retired; conversion findings require review before replay. |
 | k6 script import/export | Supported for constrained HTTP subset | `/api/v1/scripts/import/k6`, `/api/v1/scripts/export/k6`, `/api/v1/scripts/import/k6/support-matrix` | Broader fixture coverage; APEX Load does not run k6 JavaScript. |
 | k6 result import | Supported for summary ingestion | `/api/v1/results/import` | Richer trend overlays after script conversion work. |
 | Gatling result import | Supported for summary ingestion | `/api/v1/results/import` | Gatling-specific fixture packs. |
@@ -98,7 +98,7 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 | REST / OpenAPI | Supported | Supported | Supported | `/api/v1/scripts/import/openapi` | Dashboard guided create flow. |
 | SOAP / WSDL | Supported | Via HTTP scripting | Supported | `pkg/protocol/soap`, `pkg/convert/wsdl` | Complex XSD generation is scaffolded. |
 | Java-over-HTTP | Supported | Not primary | Enterprise coverage | `pkg/protocol/java_http` | Enterprise fixtures on demand. |
-| Bruno collections | Supported via governed compatibility runner | N/A | Varies | `pkg/protocol/bruno`, `runners/bruno` | Version-pinned runner and egress policy required. |
+| Bruno collections | Native HTTP import supported | N/A | Varies | `pkg/convert/bruno` | Runner retired; canonical source execution unavailable. |
 | JMS / broker | Partial (Solace and Azure Service Bus real adapters opt-in) | Extensions | Enterprise | `pkg/protocol/jms` | IBM MQ real adapter remains review-only; Service Bus requires `-tags jms_servicebus_real`. |
 | Kafka / event streaming | Supported (mock default; real adapter opt-in) | Extensions | Enterprise | `pkg/protocol/kafka`, `pkg/convert/asyncapi` | Mock broker + AsyncAPI import; live execution via `-tags kafka_real`. |
 | WebSocket | Supported | Supported | Supported | `pkg/protocol/websocket` | More subscription-protocol fixtures. |
@@ -901,7 +901,7 @@ DevWeb is OpenText's JavaScript-based protocol-level HTTP testing engine. APEX L
 
 ### Protocol Bundle Coverage
 
-APEX Load's protocol bundle support is code-owned. Bundle entitlements, runner-pool placement, and the Database / Network / Oracle E-Business / Templates / SAP rows are published through `GET /api/v1/protocol-bundles/support-matrix`, whose `web_api` entries cover the governed Bruno collection runner. The protocol-level **Web / API** rows are published through `GET /api/v1/scripts/web-api/support-matrix` (HTTP, SOAP/WSDL, Java-over-HTTP, WebSocket, gRPC, JMS, Bruno, browser canaries) and `GET /api/v1/protocols/native-support-matrix` (WebSocket, gRPC, JMS Solace / Azure Service Bus / IBM MQ, Kafka).
+APEX Load's protocol bundle support is code-owned. Bundle entitlements, runner-pool placement, and the Database / Network / Oracle E-Business / Templates / SAP rows are published through `GET /api/v1/protocol-bundles/support-matrix`, whose `web_api` entries cover native Bruno HTTP import. The protocol-level **Web / API** rows are published through `GET /api/v1/scripts/web-api/support-matrix` (HTTP, SOAP/WSDL, Java-over-HTTP, WebSocket, gRPC, JMS, browser canaries) and `GET /api/v1/protocols/native-support-matrix` (WebSocket, gRPC, JMS Solace / Azure Service Bus / IBM MQ, Kafka).
 
 Bundles correspond to OpenText LoadRunner Enterprise protocol-bundle groups.
 
@@ -910,7 +910,7 @@ Bundles correspond to OpenText LoadRunner Enterprise protocol-bundle groups.
 | **Web / API** | HTTP/HTTPS, WebSocket, gRPC | Supported | Go generator (Linux) |
 | **Web / API** | SOAP/WSDL | Supported | Go generator (Linux) |
 | **Web / API** | Java-over-HTTP | Supported (bounded codec) | Go generator (Linux) |
-| **Web / API** | Bruno collections | Supported (version-pinned compatibility runner; policy-gated) | Governed Node runner (Linux/Windows) |
+| **Web / API** | Bruno collections | Supported as native HTTP conversion; compatibility runner retired | Native HTTP engine |
 | **Web / API** | JMS (Solace, IBM MQ, Azure Service Bus) | Partial (Service Bus real adapter opt-in via `-tags jms_servicebus_real`; transactions/no-op ack parity documented) | Go generator (Linux) |
 | **Web / API** | Kafka (event streaming) | Supported (mock default; real adapter opt-in via `-tags kafka_real`) | Go generator (Linux) |
 | **Database (DB1)** | SQL / ODBC-style (database/sql) | Supported | Go generator (Linux) |

@@ -27,59 +27,16 @@
       ]
     },
     {
-      "id": "bruno-canonical-replay",
-      "scope": "Attached source \u2192 encrypted bundle \u2192 Go replay \u2192 pinned Node runner \u2192 loopback SOAP target",
-      "source_kind": "repository-attached-with-synthetic-environment",
-      "sources": [
-        "pkg/convert/bruno/canonical_replay_test.go"
-      ],
-      "expectations": [
-        "All three original fault assertions pass against expected HTTP 500 response",
-        "Altered fault fails; exact request body/path/headers and dummy basic auth preserved"
-      ],
-      "command": [
-        "go",
-        "test",
-        "-json",
-        "-count=1",
-        "-timeout=5m",
-        "./pkg/convert/bruno",
-        "-run",
-        "^TestAttachedCanonicalBrunoReplayFidelity$"
-      ]
-    },
-    {
-      "id": "bruno-runner-conformance",
-      "scope": "Pinned runtime behavior and egress/lease/cleanup contracts against local test servers",
+      "id": "bruno-native-batch",
+      "scope": "Native HTTP inspection, protected source retention and atomic idempotent batch commit",
       "source_kind": "synthetic",
       "sources": [
-        "runners/bruno/test/server.test.js",
-        "runners/bruno/test/egress.test.js"
+        "pkg/api/handlers_bruno_native_import_test.go",
+        "pkg/convert/bruno/retirement_test.go"
       ],
       "expectations": [
-        "Bruno scripts, environments, data iteration and controlled protocol transports retain their tested semantics"
-      ],
-      "command": [
-        "node",
-        "--test",
-        "--test-reporter=tap",
-        "test/egress.test.js",
-        "test/runtime.test.js",
-        "test/sbom.test.js",
-        "test/server.test.js"
-      ],
-      "cwd": "runners/bruno",
-      "format": "tap"
-    },
-    {
-      "id": "bruno-commit-revisions",
-      "scope": "Canonical inspection, persisted source revision, synchronization and rollback",
-      "source_kind": "synthetic",
-      "sources": [
-        "pkg/api/handlers_bruno_import_test.go"
-      ],
-      "expectations": [
-        "Persisted immutable source revisions retain import/rollback contract"
+        "Only native request conversion can be inspected and committed; canonical runner modes are rejected",
+        "Selected native scripts are committed atomically with a repeatable receipt and preserved source artifacts"
       ],
       "command": [
         "go",
@@ -89,7 +46,7 @@
         "-timeout=5m",
         "./pkg/api",
         "-run",
-        "^TestBrunoImportInspectCommitSourceSyncAndRollback$"
+        "^TestBrunoNative(BatchInspectCommitAndIdempotentRetry|SessionRequiresNativeCommitMode|BatchKeepsSourceArtifactsWithoutReferenceChecker)$"
       ]
     },
     {

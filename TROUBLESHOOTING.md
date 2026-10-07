@@ -313,7 +313,7 @@ go mod download
 go mod tidy
 
 # Run tests again
-go test ./...
+go test -timeout=20m ./...
 ```
 
 #### TypeScript compilation errors in frontend

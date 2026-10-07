@@ -119,12 +119,13 @@ describe('FeatureAccessPanel', () => {
     const search = container.querySelector<HTMLInputElement>('input[aria-label="Search domain features"]')
     await act(async () => {
       if (search) {
-        search.value = 'postman'
+        // Set through the native setter so React's value tracker sees the change.
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(search, 'postman')
         search.dispatchEvent(new Event('input', { bubbles: true }))
       }
     })
-    expect(container.textContent).toContain('Postman')
-    expect(container.textContent).not.toContain('WorkflowsImported')
+    const featureRows = () => Array.from(container.querySelectorAll('table.access-data-table tbody tr')).map(row => row.querySelector('.feature-access-name')?.textContent)
+    expect(featureRows()).toEqual(['Postman'])
 
     const filter = container.querySelector<HTMLSelectElement>('select[aria-label="Filter domain features"]')
     await act(async () => {
@@ -133,6 +134,30 @@ describe('FeatureAccessPanel', () => {
         filter.dispatchEvent(new Event('change', { bubbles: true }))
       }
     })
-    expect(container.textContent).not.toContain('Postman')
+    expect(featureRows()).toEqual([])
+    expect(container.textContent).toContain('No features match these filters')
+  })
+
+  it('presents features as one audit-style table and filters by category', async () => {
+    await act(async () => {
+      root.render(<FeatureAccessPanel domains={[{ id: 'domain-a', name: 'Domain A', created_at: '', updated_at: '' }]} />)
+    })
+    await flush()
+
+    const table = container.querySelector('.access-table-wrap > table.access-data-table')
+    expect(table).not.toBeNull()
+    expect(Array.from(table!.querySelectorAll('thead th')).map(th => th.textContent)).toEqual(['Feature', 'Category', 'Key', 'Depends on', 'Status', 'Allow'])
+    const postman = Array.from(table!.querySelectorAll('tbody tr')).find(row => row.textContent?.includes('script_import.postman'))
+    expect(Array.from(postman!.querySelectorAll('td')).map(cell => cell.textContent)).toEqual(['Postman', 'Imported Collections & Scripts', 'script_import.postman', 'Imported Collections & Scripts', 'Enabled', ''])
+    expect(postman!.querySelector('input[type="checkbox"]')?.getAttribute('aria-label')).toBe('Allow Postman')
+
+    const category = container.querySelector<HTMLSelectElement>('select[aria-label="Filter feature category"]')
+    await act(async () => {
+      if (category) {
+        category.value = 'script_builder'
+        category.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    })
+    expect(Array.from(table!.querySelectorAll('tbody tr')).map(row => row.querySelector('.feature-access-name')?.textContent)).toEqual(['Imported Collections & Scripts'])
   })
 })

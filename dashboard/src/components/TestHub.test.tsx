@@ -1857,6 +1857,28 @@ describe('TestHub', () => {
     }))
   })
 
+  it('retains invalid monitoring criterion drafts across steps and blocks saving until corrected', async () => {
+    const stored: StoredScenario = { id: 'criterion-draft', name: 'Criterion draft', duration: '5m', scripts: [{ order: 0, script_id: 'script-1', vusers: 12 }], goal_config: { monitor_rules: [{ source_id: 'elastic', metric: 'interval_count', unit: 'count', statistic: 'sum', comparator: 'lte', threshold: 100, severity: 'fail', min_coverage_pct: 95, start_offset_seconds: 0, dimensions: { host: 'original' } }] }, created_at: '', updated_at: '', script_count: 1 }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
+    await flushPromises()
+    await clickButton('Edit')
+    await clickWizardStep('Data')
+    const dimensions = () => container.querySelector<HTMLInputElement>('[aria-label="Criterion 1 entity dimensions"]')!
+    await act(async () => setInputValue(dimensions(), '{'))
+    await clickWizardStep('Review')
+    expect(dimensions().closest('[hidden]')).not.toBeNull()
+    await clickButton('Save draft')
+    expect(apiMock.updateScenario).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('before saving or launching')
+    expect(container.textContent).toContain('Editing · Unsaved changes')
+    await clickWizardStep('Data')
+    expect(dimensions().value).toBe('{')
+    await act(async () => setInputValue(dimensions(), '{"host":"corrected"}'))
+    await clickButton('Save draft')
+    expect(apiMock.updateScenario).toHaveBeenCalledWith('criterion-draft', expect.objectContaining({ goal_config: expect.objectContaining({ monitor_rules: [expect.objectContaining({ dimensions: { host: 'corrected' } })] }) }), taggedBaseline())
+  })
+
   it.each([
     ['absent whole goal', undefined],
     ['absent early stop', { transaction_response_time_sla_ms: 0.001 }],

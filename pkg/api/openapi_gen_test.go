@@ -110,13 +110,36 @@ func TestBrunoOpenAPIContractsDescribeNativeModesAndRecovery(t *testing.T) {
 		Path:   "/api/v1/scripts/import/bruno/inspect",
 	}
 	outputMode := queryParameterSchema(inspectRoute, "output_mode", false)
-	if !reflect.DeepEqual(outputMode.Enum, []string{"canonical", "native_requests"}) {
+	if !reflect.DeepEqual(outputMode.Enum, []string{"native_requests"}) {
 		t.Fatalf("Bruno output_mode enum = %v", outputMode.Enum)
 	}
 
+	analysis := newHandlerContractAnalysis()
+	for _, name := range []string{"output_mode", "project_id", "sandbox", "sync_script_id"} {
+		analysis.queryNames[name] = true
+	}
+	parameters := inferredQueryParameters(inspectRoute, analysis)
+	if len(parameters) != 2 || parameters[0].Name != "output_mode" || parameters[1].Name != "project_id" {
+		t.Fatalf("Bruno query parameters advertise retired options: %#v", parameters)
+	}
+	// Filtering retired Bruno options must not alter other route contracts.
+	if len(inferredQueryParameters(discoveredRoute{Method: http.MethodPost, Path: "/api/v1/other"}, analysis)) != 4 {
+		t.Fatal("retired query filtering changed an unrelated route")
+	}
+
 	schemas := brunoOpenAPIComponentSchemas()
+	for _, name := range []string{"BrunoCanonicalInspectResult", "BrunoCanonicalCommitRequest", "BrunoCanonicalCommitResponse", "BrunoCanonicalExecutionPreflight", "BrunoSyncPreview"} {
+		if _, present := schemas[name]; present {
+			t.Errorf("retired runner contract %s is advertised", name)
+		}
+	}
+	for _, field := range []string{"execution", "selection", "paths", "include_tags", "recursive", "default_environment", "bail", "tests_only", "delay_ms", "stream_timeout_ms", "persist_session"} {
+		if _, present := schemas["BrunoInspectOptions"].Properties[field]; present {
+			t.Errorf("retired runner option %s is advertised", field)
+		}
+	}
 	preflight := schemas["BrunoExecutionPreflight"]
-	if len(preflight.OneOf) != 2 {
+	if preflight.Ref != "#/components/schemas/BrunoNativeExecutionPreflight" {
 		t.Fatalf("Bruno execution preflight variants = %#v", preflight.OneOf)
 	}
 	nativePreflight := schemas["BrunoNativeExecutionPreflight"]

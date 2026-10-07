@@ -1,0 +1,552 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "image": {
+      "type": "object",
+      "properties": {
+        "registry": { "$ref": "#/definitions/nonPlaceholder" },
+        "tag": { "type": "string", "minLength": 1 },
+        "controllerRepository": { "type": "string", "minLength": 1 },
+        "generatorRepository": { "type": "string", "minLength": 1 },
+        "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "dataPlatform": {
+      "type": "object",
+      "properties": {
+        "azureStorageAccount": {
+          "type": "string",
+          "pattern": "^[a-z0-9]{3,24}$",
+          "not": { "pattern": "(changeme|CHANGE-ME|change-me)" }
+        },
+        "keyVaultUrl": {
+          "type": "string",
+          "format": "uri",
+          "not": { "pattern": "(changeme|CHANGE-ME|change-me)" }
+        },
+        "azureMessagingAllowedNamespaces": {
+          "type": "string",
+          "pattern": "^$|^[A-Za-z0-9.-]+(?:,[A-Za-z0-9.-]+)*$"
+        },
+        "createSecret": { "type": "boolean" },
+        "databaseUrl": { "type": "string" },
+        "redisUrl": { "type": "string" },
+        "grpcAuthToken": { "type": "string" }
+      }
+    },
+    "projectSecrets": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "enum": ["database", "azure_key_vault"]
+        },
+        "wrappingMasterKey": {
+          "type": "string"
+        },
+        "wrappingKeyVaultKeyId": {
+          "type": "string",
+          "pattern": "^$|^https://[^/]+/keys/[^/]+/[^/]+$"
+        },
+        "azureKeyVaultApiVersion": {
+          "type": "string",
+          "pattern": "^7\\.[0-9]+$"
+        }
+      },
+      "required": ["provider", "azureKeyVaultApiVersion"]
+    },
+    "workloadIdentity": {
+      "type": "object",
+      "properties": {
+        "importEnabled": { "type": "boolean" },
+        "enabled": { "type": "boolean" },
+        "controllerClientId": { "type": "string" },
+        "generatorClientId": { "type": "string" }
+      }
+    },
+    "controller": {
+      "type": "object",
+      "properties": {
+        "replicas": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "publicURL": {
+          "type": "string",
+          "pattern": "^$|^https://\\S+$"
+        },
+        "ciOIDCAudience": {
+          "type": "string",
+          "pattern": "^$|^[^\\s\\x00-\\x1F\\x7F]{1,512}$"
+        },
+        "addr": {
+          "type": "string",
+          "pattern": "^(|[A-Za-z0-9._-]*|\\[[0-9A-Fa-f:.]+\\]):[0-9]{1,5}$"
+        },
+        "ha": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "endpointAddressType": { "enum": ["IPv4", "IPv6"] }
+          }
+        }
+      }
+    },
+    "restartControls": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "allowForce": { "type": "boolean", "default": true },
+        "controllerDeployment": {
+          "type": "string",
+          "default": "apexload-controller",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$"
+        },
+        "generatorStatefulSet": {
+          "type": "string",
+          "default": "apexload-generator",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$"
+        },
+        "generatorSelector": {
+          "type": "string",
+          "default": "app.kubernetes.io/name=apexload-generator",
+          "minLength": 1,
+          "maxLength": 253,
+          "oneOf": [
+            {
+              "pattern": "^!?([a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/)?[A-Za-z0-9](?:[-_.A-Za-z0-9]{0,61}[A-Za-z0-9])?$"
+            },
+            {
+              "pattern": "^([a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/)?[A-Za-z0-9](?:[-_.A-Za-z0-9]{0,61}[A-Za-z0-9])?(?:=|==|!=)(?:[A-Za-z0-9](?:[-_.A-Za-z0-9]{0,61}[A-Za-z0-9])?)?$"
+            },
+            {
+              "pattern": "^([a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/)?[A-Za-z0-9](?:[-_.A-Za-z0-9]{0,61}[A-Za-z0-9])? (?:in|notin) \\([A-Za-z0-9](?:[-_.A-Za-z0-9]{0,61}[A-Za-z0-9])?(?:, ?[A-Za-z0-9](?:[-_.A-Za-z0-9]{0,61}[A-Za-z0-9])?)*\\)$"
+            }
+          ]
+        }
+      }
+    },
+    "importAssets": {
+      "type": "object",
+      "properties": {
+        "root": { "type": "string", "pattern": "^/" },
+        "persistence": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "existingClaim": { "type": "string" },
+            "accessModes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "enum": ["ReadWriteOnce", "ReadOnlyMany", "ReadWriteMany", "ReadWriteOncePod"] }
+            },
+            "storageClassName": { "type": "string" },
+            "size": { "type": "string", "minLength": 1 }
+          },
+          "required": ["enabled", "existingClaim", "accessModes", "storageClassName", "size"]
+        }
+      },
+      "required": ["root", "persistence"]
+    },
+    "archiveStaging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "persistence": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "existingClaim": { "type": "string", "maxLength": 253, "pattern": "^$|^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)*$" },
+            "accessModes": {
+              "type": "array", "minItems": 1, "maxItems": 1,
+              "items": { "enum": ["ReadWriteOnce", "ReadWriteMany", "ReadWriteOncePod"] }
+            },
+            "storageClassName": { "type": "string" },
+            "size": { "type": "string", "pattern": "^[1-9][0-9]*(Ki|Mi|Gi|Ti|Pi|Ei)?$" }
+          },
+          "required": ["enabled", "existingClaim", "accessModes", "storageClassName", "size"]
+        }
+      },
+      "required": ["persistence"]
+    },
+    "generator": {
+      "type": "object",
+      "properties": {
+        "runSupervision": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttl": { "type": "string", "pattern": "^(3[0-9]|[45][0-9]|60)s$" },
+            "abandonDrain": { "type": "string", "pattern": "^(?:[0-9]|10)s$" },
+            "renewInterval": { "type": "string", "pattern": "^(?:[1-9]|10)s$" }
+          },
+          "required": ["ttl", "abandonDrain", "renewInterval"]
+        },
+        "statePersistence": {
+          "type": "object",
+          "properties": {
+            "accessModes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": ["ReadWriteOnce", "ReadOnlyMany", "ReadWriteMany", "ReadWriteOncePod"]
+              }
+            },
+            "storageClassName": { "type": "string" },
+            "size": { "type": "string", "minLength": 1 }
+          },
+          "required": ["accessModes", "size"]
+        }
+      }
+    },
+    "tracing": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "endpoint": {
+          "type": "string",
+          "pattern": "^$|^https?://[^\\s]+$"
+        },
+        "protocol": { "enum": ["http/protobuf", "grpc"] },
+        "sampler": {
+          "enum": [
+            "always_on",
+            "always_off",
+            "traceidratio",
+            "parentbased_always_on",
+            "parentbased_always_off",
+            "parentbased_traceidratio"
+          ]
+        },
+        "samplerArg": {
+          "type": "string",
+          "pattern": "^(0(?:\\.[0-9]+)?|1(?:\\.0+)?)$"
+        },
+        "actionSampleRatio": {
+          "type": "string",
+          "pattern": "^(0(?:\\.[0-9]+)?|1(?:\\.0+)?)$"
+        },
+        "resourceAttributes": { "type": "string" },
+        "headersSecretName": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+        },
+        "headersSecretKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        }
+      },
+      "required": [
+        "enabled",
+        "endpoint",
+        "protocol",
+        "sampler",
+        "samplerArg",
+        "actionSampleRatio",
+        "resourceAttributes",
+        "headersSecretName",
+        "headersSecretKey"
+      ]
+    },
+    "bruno": {
+      "type": "object",
+      "properties": {
+        "importEnabled": { "type": "boolean" },
+        "enabled": { "type": "boolean" },
+        "compatibilityVersion": { "const": "3.5.2" },
+        "artifactRoot": { "type": "string", "pattern": "^/" },
+        "artifactPersistence": {
+          "type": "object",
+          "properties": {
+            "existingClaim": { "type": "string" }
+          },
+          "required": ["existingClaim"]
+        },
+        "keyVaultKeyId": {
+          "type": "string",
+          "pattern": "^$|^https://[^/]+/keys/[^/]+/[^/]+$"
+        },
+        "artifactMasterKey": { "type": "string" },
+        "egressBrokerUrl": {
+          "type": "string",
+          "pattern": "^$|^http://[^\\s]+$"
+        },
+        "allowDirectEgress": { "type": "boolean" },
+        "maxSessions": { "type": "integer", "minimum": 1 },
+        "maxPendingEvents": { "type": "integer", "minimum": 1 },
+        "maxBundleBytes": { "type": "integer", "minimum": 65536 },
+        "sessionTtlMs": { "type": "integer", "minimum": 1 },
+        "sessionIdleTtlMs": { "type": "integer", "minimum": 1 },
+        "maxJumps": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "maxRunRequestDepth": { "type": "integer", "minimum": 1, "maximum": 1024 },
+        "maxParallelRequests": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "maxOutputBytes": { "type": "integer", "minimum": 65536, "maximum": 1073741824 },
+        "maxStreamTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 86400000 },
+        "runner": {
+          "type": "object",
+          "properties": {
+            "image": {
+              "type": "object",
+              "properties": {
+                "repository": { "type": "string", "minLength": 1 },
+                "tag": { "type": "string" },
+                "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "javaVuser": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "runner": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "image": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repository": { "type": "string", "minLength": 1 },
+                "tag": { "type": "string" },
+                "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+              },
+              "required": ["repository", "tag", "pullPolicy"]
+            },
+            "maxProcesses": { "type": "integer", "minimum": 1, "maximum": 10000 },
+            "resources": { "type": "object" },
+            "scratch": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "tmpSizeLimit": { "type": "string", "minLength": 1 }
+              },
+              "required": ["tmpSizeLimit"]
+            }
+          },
+          "required": [
+            "image",
+            "maxProcesses",
+            "resources",
+            "scratch"
+          ]
+        },
+        "assets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "existingClaim": { "type": "string" },
+            "mountPath": { "type": "string", "pattern": "^/" }
+          },
+          "required": ["existingClaim", "mountPath"]
+        }
+      },
+      "required": ["enabled", "runner", "assets"]
+    },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "not": { "pattern": "(example\\.com|changeme|CHANGE-ME|change-me)" }
+        }
+      }
+    },
+    "keda": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minReplicaCount": { "type": "integer", "minimum": 0 },
+        "maxReplicaCount": { "type": "integer", "minimum": 1 },
+        "azureMonitor": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "identityId": { "type": "string" },
+            "serverAddress": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "bruno": {
+            "properties": {
+              "importEnabled": { "const": true }
+            },
+            "required": ["importEnabled"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "bruno": {
+            "properties": {
+              "artifactPersistence": {
+                "properties": {
+                  "existingClaim": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "bruno": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "bruno": {
+            "properties": {
+              "artifactPersistence": {
+                "properties": {
+                  "existingClaim": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
+            "anyOf": [
+              {
+                "properties": {
+                  "egressBrokerUrl": { "type": "string", "minLength": 1 }
+                }
+              },
+              {
+                "properties": {
+                  "allowDirectEgress": { "const": true }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "controller": {
+            "properties": {
+              "replicas": { "minimum": 2 }
+            },
+            "required": ["replicas"]
+          }
+        },
+        "required": ["controller"]
+      },
+      "then": {
+        "properties": {
+          "controller": {
+            "properties": {
+              "ha": {
+                "properties": {
+                  "enabled": { "const": true }
+                },
+                "required": ["enabled"]
+              }
+            },
+            "required": ["ha"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "workloadIdentity": {
+            "properties": { "enabled": { "const": true } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "workloadIdentity": {
+            "properties": {
+              "controllerClientId": { "$ref": "#/definitions/nonPlaceholder" },
+              "generatorClientId": { "$ref": "#/definitions/nonPlaceholder" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ingress": {
+            "properties": { "enabled": { "const": true } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "ingress": {
+            "properties": {
+              "host": { "$ref": "#/definitions/nonPlaceholder" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "keda": {
+            "properties": {
+              "azureMonitor": {
+                "properties": { "enabled": { "const": true } }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "keda": {
+            "properties": {
+              "azureMonitor": {
+                "properties": {
+                  "identityId": { "$ref": "#/definitions/nonPlaceholder" },
+                  "serverAddress": { "$ref": "#/definitions/nonPlaceholder" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "nonPlaceholder": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "pattern": "(changeme|CHANGE-ME|change-me|example\\.com|\\$\\{[A-Z0-9_]+\\})"
+      }
+    }
+  }
+}

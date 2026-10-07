@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/xml"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"html"
 	"io"
 	"path"
@@ -15,7 +16,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/scrub"
-	"gopkg.in/yaml.v3"
 )
 
 const nativeXMLRequirementKeyPrefix = "native-xml:"

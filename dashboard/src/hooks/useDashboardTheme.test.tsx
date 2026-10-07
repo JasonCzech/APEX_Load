@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { useDashboardTheme } from './useDashboardTheme'
+import { applyInitialTheme, useDashboardTheme } from './useDashboardTheme'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -64,15 +64,27 @@ describe('useDashboardTheme', () => {
     delete (window as unknown as { matchMedia?: unknown }).matchMedia
   })
 
-  it('defaults to dark mode and applies it to the document root', async () => {
+  it('defaults to light mode and applies it to the document root', async () => {
     await act(async () => {
       root.render(<ThemeHarness />)
     })
 
-    expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('dark')
-    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('light')
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(document.documentElement.style.colorScheme).toBe('light')
+    expect(window.localStorage.getItem('apexload.theme')).toBe('light')
+  })
+
+  it('applies the stored theme before the first render', () => {
+    window.localStorage.setItem('apexload.theme', 'solarized-dark')
+    applyInitialTheme()
+    expect(document.documentElement.dataset.theme).toBe('solarized-dark')
     expect(document.documentElement.style.colorScheme).toBe('dark')
-    expect(window.localStorage.getItem('apexload.theme')).toBe('dark')
+
+    window.localStorage.removeItem('apexload.theme')
+    applyInitialTheme()
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(document.documentElement.style.colorScheme).toBe('light')
   })
 
   it('loads and persists light mode changes', async () => {
@@ -169,16 +181,16 @@ describe('useDashboardTheme', () => {
     expect(document.documentElement.dataset.theme).toBe('light')
   })
 
-  it('rejects unknown stored theme values back to dark', async () => {
+  it('rejects unknown stored theme values back to the light default', async () => {
     window.localStorage.setItem('apexload.theme', 'midnight')
 
     await act(async () => {
       root.render(<ThemeHarness />)
     })
 
-    expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('dark')
-    expect(document.documentElement.dataset.theme).toBe('dark')
-    expect(document.documentElement.style.colorScheme).toBe('dark')
-    expect(window.localStorage.getItem('apexload.theme')).toBe('dark')
+    expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('light')
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(document.documentElement.style.colorScheme).toBe('light')
+    expect(window.localStorage.getItem('apexload.theme')).toBe('light')
   })
 })

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-type DynatraceSecretConsumer = AppDynamicsSecretConsumer
+type DynatraceSecretConsumer = MonitorSecretConsumer
 type DynatraceSecretReferenceStore interface {
 	ListDynatraceSecretConsumers(project, name string) ([]DynatraceSecretConsumer, error)
 	InvalidateDynatraceSecretPreparations(project, name string, now time.Time) ([]Preparation, error)

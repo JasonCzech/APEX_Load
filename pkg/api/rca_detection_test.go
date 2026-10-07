@@ -18,6 +18,34 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+func TestRCAExpandedElasticPreservesSnapshotAndQuerySemantics(t *testing.T) {
+	point := analysis.MetricPoint{Source: "elastic-source", MetricName: "cluster_nodes", Kind: analysis.KindGauge, Unit: "count", Provider: &analysis.ProviderMeasurement{Name: "elasticsearch", QueryID: "health-query", MetricID: "health-query", Statistic: "value", WindowKind: "instant"}}
+	series, ok := monitorSeriesTemplate(point, storage.DefaultProjectID, "monitor-evidence")
+	if !ok || series.Observation != rca.ObservationSnapshot || series.Bucket != 0 {
+		t.Fatalf("instantaneous health acquired interval semantics: %+v", series)
+	}
+	for name, change := range map[string]func(*analysis.MetricPoint){
+		"units": func(p *analysis.MetricPoint) { p.Unit = "ms" },
+		"window": func(p *analysis.MetricPoint) {
+			p.Provider.WindowKind = "native_bucket"
+			p.Provider.ResolutionSeconds = 10
+		},
+		"approximation": func(p *analysis.MetricPoint) { p.Provider.Approximate = true },
+		"query":         func(p *analysis.MetricPoint) { p.Provider.QueryID = "different-query" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			altered := point
+			meta := *point.Provider
+			altered.Provider = &meta
+			change(&altered)
+			other, ok := monitorSeriesTemplate(altered, storage.DefaultProjectID, "monitor-evidence")
+			if !ok || other.ID == series.ID || monitorSeriesKey(altered) == monitorSeriesKey(point) {
+				t.Fatal("incompatible series semantics collapsed")
+			}
+		})
+	}
+}
+
 // rcaDetectionServer archives runs whose request durations latency gives.
 func rcaDetectionServer(t *testing.T, runs map[string]func(i int) float64) (*Server, *storage.SQLiteStore) {
 	t.Helper()

@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +18,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/appdynamics"
+
 	"github.com/jasonczech/apexload/pkg/dynatrace"
 )
 
@@ -361,7 +362,7 @@ func TestDynatraceSignedRunContractAndDurableContinuation(t *testing.T) {
 	reads := 0
 	reader := func(context.Context, time.Time, time.Time) (providerResult, error) {
 		reads++
-		return providerResult{Progress: progress, Coverage: map[string]appdynamics.Coverage{"problems": {Status: "pending", From: from, To: now}}}, nil
+		return providerResult{Progress: progress, Coverage: map[string]monitorprovider.Coverage{"problems": {Status: "pending", From: from, To: now}}}, nil
 	}
 	if err = a.collectProviderJob(t.Context(), job, envelope, reader); err != nil {
 		t.Fatal(err)

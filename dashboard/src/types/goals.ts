@@ -1,4 +1,4 @@
-import type { MonitorRule } from './appdynamics'
+import type { MonitorRule } from './runMonitoring'
 export type ScenarioMode = 'vuser_driven' | 'goal_oriented'
 
 export interface TransactionSLARule {

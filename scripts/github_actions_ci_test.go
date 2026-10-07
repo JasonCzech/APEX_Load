@@ -523,7 +523,7 @@ func TestRequiredAggregationEnforcesEventSpecificResults(t *testing.T) {
 
 	fullJobs := []string{
 		"workflow-policy", "go-quality", "go-tests", "build", "protocol-tags",
-		"dashboard", "bruno-runner", "deployment-artifacts", "containers", "govulncheck", "codeql",
+		"dashboard", "deployment-artifacts", "containers", "govulncheck", "codeql",
 	}
 	results := func(defaultResult string) map[string]map[string]string {
 		out := map[string]map[string]string{}
@@ -988,7 +988,7 @@ func TestPostgresStartupRegressionSelection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, name := range []string{"TestPostgresSchedulerLeaseGenerationMigration", "TestPostgresConcurrentInitialization", "TestPostgresInitializationLockLifecycle", "TestPostgresAnalysisWorkflows", "TestAppDynamicsDurablePostgresHeadsCursorAndOwnerFence"} {
+			for _, name := range []string{"TestPostgresSchedulerLeaseGenerationMigration", "TestPostgresConcurrentInitialization", "TestPostgresInitializationLockLifecycle", "TestPostgresAnalysisWorkflows", "TestPostgresMonitorRetirementHistory", "TestElasticPostgresDurableEvidenceMetadataAndRetry", "TestElasticPostgresVerifiedSourcePreparationAuthorization"} {
 				if !selector.MatchString(name) {
 					t.Errorf("live runner omits %s", name)
 				}
@@ -996,9 +996,32 @@ func TestPostgresStartupRegressionSelection(t *testing.T) {
 			if selector.MatchString("TestPostgresUnrelatedDestructiveProbe") {
 				t.Error("runner selection is unexpectedly broad")
 			}
-			if selector.MatchString("TestAppDynamicsUnrelatedDestructiveProbe") {
-				t.Error("AppDynamics runner selection is unexpectedly broad")
+			if selector.MatchString("TestAppDynamicsDurablePostgresHeadsCursorAndOwnerFence") {
+				t.Error("retired AppDynamics suite must not run in active CI")
 			}
 		})
+	}
+}
+
+func TestDocumentationDiscoveryExcludesColdArchivesAndDeletedSources(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 is required")
+	}
+	check := `import importlib.util
+from pathlib import Path
+from unittest.mock import patch
+spec = importlib.util.spec_from_file_location("check_docs", "scripts/check-docs.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+with patch.object(module, "git_files", return_value=[Path("README.md"), Path("_retired/bruno-runner/README.md"), Path("runners/bruno/NOTICE.md")]):
+    assert module.active_markdown_files() == [Path("README.md")]
+assert "_retired" in Path(".dockerignore").read_text()
+assert "_retired" in Path("pytest.ini").read_text()
+`
+	cmd := exec.Command(python, "-c", check)
+	cmd.Dir = ".."
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("documentation/archive discovery: %v\n%s", err, output)
 	}
 }

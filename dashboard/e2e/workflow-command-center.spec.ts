@@ -70,7 +70,7 @@ test('Command Center supports empty actions, run triage, persistent switching an
   await expect(dialog).toBeHidden()
   await page.getByRole('link', { name: '+4 runs', exact: true }).click()
   await expect(overview).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Scenario Library', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('heading', { level: 1, name: 'Scenarios', exact: true })).toHaveCount(0)
   failCatalog = true
   await overview.getByRole('button', { name: 'Refresh runs' }).click()
   await expect(overview.getByRole('alert')).toContainText('Showing the last successful list')

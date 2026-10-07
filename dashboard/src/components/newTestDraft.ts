@@ -1,4 +1,4 @@
-import type { MonitorBinding, MonitorRule } from '../types/appdynamics'
+import type { MonitorBinding, MonitorRule } from '../types/runMonitoring'
 import type { GroupRunOverride, RunDefaultOverrides } from './newTestRunModel'
 import type { RunTraceContextSettings } from './runTraceContext'
 

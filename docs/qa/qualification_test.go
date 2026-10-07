@@ -16,7 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
-// Provider qualification records (docs/qa/qualification/<provider>.json) say,
+// Provider qualification records (<provider>.json or <provider>.<pack>.json) say,
 // per capability, whether a provider is qualified against a real
 // non-production environment or only fixture-tested. Gate C requires a record
 // for every provider the RCA evaluation corpus uses; every governed provider
@@ -85,12 +85,53 @@ func loadQualificationRecords(t *testing.T) map[string]qualificationRecord {
 		if err := decoder.Decode(&record); err != nil {
 			t.Fatalf("%s: %v", path, err)
 		}
-		if want := strings.TrimSuffix(filepath.Base(path), ".json"); record.Provider != want {
-			t.Fatalf("%s names provider %q", path, record.Provider)
+		key := strings.TrimSuffix(filepath.Base(path), ".json")
+		provider, pack, scoped := strings.Cut(key, ".")
+		if record.Provider != provider || scoped && record.Pack != pack {
+			t.Fatalf("%s names provider %q and pack %q", path, record.Provider, record.Pack)
 		}
-		records[record.Provider] = record
+		records[key] = record
 	}
 	return records
+}
+
+// A product may be supported by several packs with distinct execution and
+// retention contracts. Never use one pack's qualification for another pack.
+func qualificationForPack(records map[string]qualificationRecord, provider, pack string) (qualificationRecord, bool) {
+	if record, ok := records[provider+"."+pack]; ok && record.Provider == provider && record.Pack == pack {
+		return record, true
+	}
+	record, ok := records[provider]
+	return record, ok && record.Provider == provider && record.Pack == pack
+}
+
+func TestQualificationSelectionKeepsElasticPacksSeparate(t *testing.T) {
+	legacy := qualificationRecord{Provider: monitorprovider.ProviderElasticsearch, Pack: monitorprovider.PackElasticQuery, Updated: "legacy"}
+	expanded := qualificationRecord{Provider: monitorprovider.ProviderElasticsearch, Pack: monitorprovider.PackElastic, Updated: "expanded"}
+	records := map[string]qualificationRecord{monitorprovider.ProviderElasticsearch: legacy, monitorprovider.ProviderElasticsearch + "." + monitorprovider.PackElastic: expanded}
+	for _, tc := range []struct{ pack, updated string }{{monitorprovider.PackElasticQuery, "legacy"}, {monitorprovider.PackElastic, "expanded"}} {
+		if got, ok := qualificationForPack(records, monitorprovider.ProviderElasticsearch, tc.pack); !ok || got.Updated != tc.updated {
+			t.Fatalf("pack %s selected %+v, %v", tc.pack, got, ok)
+		}
+	}
+	delete(records, monitorprovider.ProviderElasticsearch+"."+monitorprovider.PackElastic)
+	if _, ok := qualificationForPack(records, monitorprovider.ProviderElasticsearch, monitorprovider.PackElastic); ok {
+		t.Fatal("legacy qualification silently qualified another pack")
+	}
+	exactLegacy := legacy
+	exactLegacy.Updated = "exact override"
+	records[monitorprovider.ProviderElasticsearch+"."+monitorprovider.PackElasticQuery] = exactLegacy
+	if got, ok := qualificationForPack(records, monitorprovider.ProviderElasticsearch, monitorprovider.PackElasticQuery); !ok || got.Updated != exactLegacy.Updated {
+		t.Fatal("exact pack qualification did not override legacy record")
+	}
+	openSearch := qualificationRecord{Provider: monitorprovider.ProviderOpenSearch, Pack: monitorprovider.PackElastic}
+	records[monitorprovider.ProviderOpenSearch] = openSearch
+	if _, ok := qualificationForPack(records, monitorprovider.ProviderOpenSearch, monitorprovider.PackElastic); !ok {
+		t.Fatal("alternate product's matching legacy record was unavailable")
+	}
+	if _, ok := qualificationForPack(records, monitorprovider.ProviderOpenSearch, monitorprovider.PackElasticQuery); ok {
+		t.Fatal("alternate product qualification crossed packs")
+	}
 }
 
 // qualificationEvidenceExists resolves "path" or "path#TestName" from the
@@ -122,42 +163,41 @@ func validDay(day string) bool {
 
 func TestEveryGovernedProviderHasAQualificationRecord(t *testing.T) {
 	records := loadQualificationRecords(t)
-	governed := map[string]bool{}
 	for _, pack := range monitorprovider.Packs() {
 		d, _ := monitorprovider.Lookup(pack)
-		governed[d.ProviderName] = true
-		record, ok := records[d.ProviderName]
-		if !ok {
-			t.Errorf("provider %s (pack %s) has no docs/qa/qualification/%s.json", d.ProviderName, pack, d.ProviderName)
-			continue
-		}
-		if record.Pack != pack {
-			t.Errorf("%s record names pack %q, want %q", d.ProviderName, record.Pack, pack)
-		}
-		// The registry's declared capabilities must each carry an outcome.
-		required := []string{"metrics"}
-		if d.SupportsDiagnostics {
-			required = append(required, "diagnostics")
-		}
-		if d.SupportsTraceLookup {
-			required = append(required, "trace_lookup")
-		}
-		if d.SupportsRunHeader {
-			required = append(required, "run_header")
-		}
-		for _, name := range required {
-			found := false
-			for _, c := range record.Capabilities {
-				found = found || c.Name == name
+		providers := append([]string{d.ProviderName}, d.AlternateProviderNames...)
+		for _, provider := range providers {
+			record, ok := qualificationForPack(records, provider, pack)
+			if !ok {
+				t.Errorf("provider %s (pack %s) has no matching qualification record", provider, pack)
+				continue
 			}
-			if !found {
-				t.Errorf("%s record lacks the %s capability", d.ProviderName, name)
+			// The registry's declared capabilities must each carry an outcome.
+			required := []string{"metrics"}
+			if d.SupportsDiagnostics {
+				required = append(required, "diagnostics")
+			}
+			if d.SupportsTraceLookup {
+				required = append(required, "trace_lookup")
+			}
+			if d.SupportsRunHeader {
+				required = append(required, "run_header")
+			}
+			for _, name := range required {
+				found := false
+				for _, c := range record.Capabilities {
+					found = found || c.Name == name
+				}
+				if !found {
+					t.Errorf("%s (pack %s) record lacks the %s capability", provider, pack, name)
+				}
 			}
 		}
 	}
-	for provider := range records {
-		if !governed[provider] {
-			t.Errorf("qualification record for unknown provider %s", provider)
+	for key, record := range records {
+		d, ok := monitorprovider.Lookup(record.Pack)
+		if !ok || !d.AcceptsProvider(record.Provider) {
+			t.Errorf("qualification record %s names an unknown provider/pack: %s/%s", key, record.Provider, record.Pack)
 		}
 	}
 }
@@ -237,6 +277,16 @@ func qualificationTable(records map[string]qualificationRecord) string {
 		label := provider
 		if d, ok := monitorprovider.Lookup(record.Pack); ok {
 			label = d.Label
+			if len(d.AlternateProviderNames) > 0 {
+				product := record.Provider
+				switch product {
+				case monitorprovider.ProviderElasticsearch:
+					product = "Elasticsearch"
+				case monitorprovider.ProviderOpenSearch:
+					product = "OpenSearch"
+				}
+				label = product + " (" + record.Pack + ")"
+			}
 		}
 		environments := map[string]qualificationEnvironment{}
 		for _, env := range record.Environments {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { validateGoalConfig } from './goalConfigValidation'
 import type { TransactionSLARule } from '../types/goals'
-import type { MonitorRule } from '../types/appdynamics'
+import type { MonitorRule } from '../types/runMonitoring'
 
 describe('scoped archive SLA validation', () => {
   const rule: TransactionSLARule = { population: 'action', protocol: 'kafka', group: 'consumer', transaction: 'Receive', metric: 'max_acknowledgement_ms', comparator: 'lte', threshold: 10 }

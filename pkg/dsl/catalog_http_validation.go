@@ -111,6 +111,9 @@ func httpSequenceRequestMap(value any) (map[string]any, bool) {
 }
 
 func validateHTTPSequenceRequestIssues(label string, requestIndex int, request map[string]any) []string {
+	if strings.EqualFold(strings.TrimSpace(stringAnyValue(request["type"])), "bruno_run") {
+		return []string{fmt.Sprintf("%s.params.requests[%d]: %s", label, requestIndex, BrunoRunnerRetiredMessage)}
+	}
 	var issues []string
 	name := stringAnyValue(request["name"])
 	method := strings.ToUpper(strings.TrimSpace(firstNonEmptyString(stringAnyValue(request["method"]), stringAnyValue(request["type"]))))

@@ -2,9 +2,9 @@ package analysis
 
 import "github.com/jasonczech/apexload/pkg/monitorprovider"
 
-// Aliases keep every provider on one additive durable evidence contract.
-type ProviderEntity = monitorprovider.Entity
-type ProviderDiagnostic = monitorprovider.Diagnostic
-type ProviderCoverage = monitorprovider.Coverage
-type ProviderQueryProgress = monitorprovider.QueryProgress
-type ProviderScanSettlement = monitorprovider.ScanSettlement
+// Aliases preserve existing provider wire names on shared canonical contracts.
+type ProviderEntity = monitorprovider.ProviderEntity
+type ProviderDiagnostic = monitorprovider.ProviderEvidence
+type ProviderQueryProgress = monitorprovider.ProviderProgress
+type ProviderEvaluationWindow = monitorprovider.ProviderEvaluationWindow
+type ProviderScanSettlement = monitorprovider.ProviderScanSettlement

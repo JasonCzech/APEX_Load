@@ -227,14 +227,14 @@ spec:
             - name: APEXLOAD_IMPORT_ASSET_DIR
               value: {{ .Values.importAssets.root | quote }}
 {{- $wrappingKeyVaultKeyId := include "apexload.wrappingKeyVaultKeyId" . }}
-{{- if and (or (eq .Values.projectSecrets.provider "database") .Values.bruno.importEnabled .Values.bruno.enabled) (not $wrappingKeyVaultKeyId) }}
+{{- if and (or (eq .Values.projectSecrets.provider "database") .Values.bruno.importEnabled) (not $wrappingKeyVaultKeyId) }}
             - name: APEXLOAD_WRAPPING_MASTER_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.dataPlatform.secretName }}
                   key: APEXLOAD_WRAPPING_MASTER_KEY
 {{- end }}
-{{- if or .Values.bruno.importEnabled .Values.bruno.enabled }}
+{{- if .Values.bruno.importEnabled }}
             - name: APEXLOAD_BRUNO_ARTIFACT_ROOT
               value: {{ .Values.bruno.artifactRoot | quote }}
 {{- end }}
@@ -281,7 +281,7 @@ spec:
               readOnly: true
             - name: import-assets
               mountPath: {{ .Values.importAssets.root | quote }}
-{{- if or .Values.bruno.importEnabled .Values.bruno.enabled }}
+{{- if .Values.bruno.importEnabled }}
             - name: bruno-artifacts
               mountPath: {{ .Values.bruno.artifactRoot | quote }}
 {{- end }}
@@ -328,10 +328,10 @@ spec:
           emptyDir:
             sizeLimit: {{ .Values.importAssets.persistence.size | quote }}
 {{- end }}
-{{- if or .Values.bruno.importEnabled .Values.bruno.enabled }}
+{{- if .Values.bruno.importEnabled }}
         - name: bruno-artifacts
           persistentVolumeClaim:
-            claimName: {{ required "bruno.artifactPersistence.existingClaim is required when Bruno import or execution is enabled" .Values.bruno.artifactPersistence.existingClaim | quote }}
+            claimName: {{ required "bruno.artifactPersistence.existingClaim is required when native Bruno import is enabled" .Values.bruno.artifactPersistence.existingClaim | quote }}
 {{- end }}
 {{- if .Values.controller.ha.enabled }}
         - name: active-endpoint-identity

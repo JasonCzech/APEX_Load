@@ -29,12 +29,12 @@ func TestProtocolBundleSupportMatrixEndpointCoversRequestedBundles(t *testing.T)
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	for _, bundle := range []string{"web_api", "database", "network", "oracle_e_business", "templates", "sap_gui_foundation"} {
+	for _, bundle := range []string{"database", "network", "oracle_e_business", "templates", "sap_gui_foundation"} {
 		if payload.BundleCounts[bundle] == nil {
 			t.Fatalf("bundle_counts missing %q in %#v", bundle, payload.BundleCounts)
 		}
 	}
-	for _, id := range []string{"web-api-bruno", "database-sql", "network-dns", "network-ldap", "oeb-oracle-web", "oeb-oracle-nca", "sap-gui-foundation"} {
+	for _, id := range []string{"database-sql", "network-dns", "network-ldap", "oeb-oracle-web", "oeb-oracle-nca", "sap-gui-foundation"} {
 		if !protocolBundleMatrixContains(payload.SupportMatrix, id) {
 			t.Fatalf("support_matrix missing %q", id)
 		}
@@ -45,8 +45,8 @@ func TestProtocolBundleSupportMatrixEndpointCoversRequestedBundles(t *testing.T)
 	if !protocolBundleRunnerContains(payload.RunnerClasses, "windows_sap_gui_runner") {
 		t.Fatalf("runner_classes = %#v, want windows_sap_gui_runner", payload.RunnerClasses)
 	}
-	if !protocolBundleRunnerContains(payload.RunnerClasses, "bruno_node_runner") {
-		t.Fatalf("runner_classes = %#v, want bruno_node_runner", payload.RunnerClasses)
+	if protocolBundleRunnerContains(payload.RunnerClasses, "bruno_node_runner") {
+		t.Fatalf("runner_classes = %#v, retired bruno_node_runner must be absent", payload.RunnerClasses)
 	}
 	if payload.StatusCounts["review_only"] == 0 || payload.StatusCounts["external_runner_required"] == 0 {
 		t.Fatalf("status_counts = %#v, want review-only and external-runner rows", payload.StatusCounts)

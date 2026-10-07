@@ -28,7 +28,7 @@ func TestDynatraceSchemaUpgradesPublishedAppDynamicsWithoutRewritingEvidence(t *
 	// generic archived map have different key ordering, which is not a mutation.
 	run, _ = s.GetTest("monitor-run")
 	before, _ := json.Marshal(run.DynatraceCapture)
-	for _, q := range []string{`DROP TABLE dynatrace_operations`, `DROP TABLE dynatrace_scan_reservations`, `ALTER TABLE dynatrace_connections DROP COLUMN revision`, `ALTER TABLE dynatrace_connections DROP COLUMN verified_revision`, `ALTER TABLE dynatrace_connections DROP COLUMN native_config_json`, `DELETE FROM schema_migrations WHERE version=35`} {
+	for _, q := range []string{`DROP TABLE dynatrace_operations`, `DROP TABLE dynatrace_scan_reservations`, `ALTER TABLE dynatrace_connections DROP COLUMN revision`, `ALTER TABLE dynatrace_connections DROP COLUMN verified_revision`, `ALTER TABLE dynatrace_connections DROP COLUMN native_config_json`, `DELETE FROM schema_migrations WHERE version>=35`} {
 		if _, err = s.db.Exec(q); err != nil {
 			t.Fatal(err)
 		}

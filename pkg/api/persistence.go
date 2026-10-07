@@ -2073,7 +2073,17 @@ func (tr *TestRunner) saveManagedTestRecordSnapshot(record *storage.TestRecord, 
 	if record == nil {
 		return fmt.Errorf("test record is required")
 	}
-	if runMonitoringEnabled(record.ProjectID) {
+	monitoring := runMonitoringEnabled(record.ProjectID)
+	if !monitoring {
+		if monitors, ok := tr.testStore.(storage.RunMonitorStore); ok {
+			jobs, err := monitors.ListRunMonitorJobs(record.ProjectID, record.ID)
+			if err != nil {
+				return fmt.Errorf("cannot load existing run monitors: %w", err)
+			}
+			monitoring = len(jobs) > 0
+		}
+	}
+	if monitoring {
 		store, ok := tr.testStore.(interface {
 			SaveTestWithRunMonitors(*storage.TestRecord, string, string, bool) (bool, error)
 		})

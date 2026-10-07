@@ -4,10 +4,12 @@ import type { DashboardAuditEvent } from '../types'
 import { detailsSummary, eventResourceLabel, formatTimestamp } from './accessUtils'
 
 /** Shared evidence presentation. Callers retain their authorized query/filter API. */
-export function AuditEventTable({ events, header, scopeLabel, onSelect, selectedId, emptyMessage = 'No activity found', paginated = false }: {
+export function AuditEventTable({ events, header, footer, scopeLabel, onSelect, selectedId, emptyMessage = 'No activity found', paginated = false }: {
   paginated?: boolean
   events: DashboardAuditEvent[]
   header?: ReactNode
+  /** Rendered at the end of the scrolling box, after the last row (e.g. LoadOlderEvents). */
+  footer?: ReactNode
   scopeLabel?: (event: DashboardAuditEvent) => string
   onSelect?: (event: DashboardAuditEvent) => void
   selectedId?: string
@@ -26,5 +28,27 @@ export function AuditEventTable({ events, header, scopeLabel, onSelect, selected
       </tr>)}</tbody>
     </table>
     {!events.length && <div className="access-empty-state"><strong>{emptyMessage}</strong><span>Adjust filters or select a broader timeframe.</span></div>}
+    {footer}
+  </div>
+}
+
+/**
+ * End of a server-batched event list. Older events are appended to the same
+ * scrolling table, so scrolling is the only way through the history; a failed
+ * load leaves the rows in place and the button retries the same batch.
+ */
+export function LoadOlderEvents({ loaded, hasMore, loading, error, onLoad }: {
+  loaded: number
+  hasMore: boolean
+  loading: boolean
+  error?: string
+  onLoad: () => void
+}) {
+  if (!loaded) return null
+  return <div className="access-load-older">
+    {error && <span role="alert">{error}</span>}
+    {hasMore
+      ? <button type="button" className="btn btn-secondary btn-sm" disabled={loading} onClick={onLoad}>{loading ? 'Loading older events…' : 'Load older events'}</button>
+      : <span>All {loaded} matching event{loaded === 1 ? '' : 's'} loaded</span>}
   </div>
 }

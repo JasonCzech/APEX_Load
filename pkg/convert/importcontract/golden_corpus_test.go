@@ -330,8 +330,13 @@ func validateGoldenResultScripts(t *testing.T, name string, value any) {
 		}
 	}
 	if field := result.FieldByName("Scripts"); field.IsValid() && field.CanInterface() {
-		if many, ok := field.Interface().([]*dsl.Script); ok {
+		switch many := field.Interface().(type) {
+		case []*dsl.Script:
 			scripts = append(scripts, many...)
+		case []bruno.NativeScriptCandidate:
+			for _, candidate := range many {
+				scripts = append(scripts, candidate.Script)
+			}
 		}
 	}
 	if len(scripts) == 0 {

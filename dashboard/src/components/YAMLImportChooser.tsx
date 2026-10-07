@@ -46,9 +46,9 @@ export default function YAMLImportChooser({ initialFiles, projectId, folderId, o
       </header>
       <section className="bruno-summary-grid">
         <article className="bruno-card">
-          <span className="bruno-kicker">Canonical source execution</span>
+          <span className="bruno-kicker">Native HTTP conversion</span>
           <h3>Bruno collection or request</h3>
-          <p>Preserve YAML/BRU source, scripts, environments, dependencies, certificates, and request semantics in the Bruno compatibility runner.</p>
+          <p>Convert supported Bruno HTTP requests into native APEX scripts and review conversion requirements before replay.</p>
           <button className="btn btn-primary" onClick={() => setChoice('bruno')}>Use Bruno importer</button>
         </article>
         <article className="bruno-card">

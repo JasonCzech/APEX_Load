@@ -10,7 +10,7 @@
 {{- if and .Values.importAssets.persistence.enabled (eq $archiveClaim (include "apexload.importAssetsClaimName" .)) }}
 {{- fail "archive staging requires a separate claim from importAssets" }}
 {{- end }}
-{{- if or .Values.bruno.importEnabled .Values.bruno.enabled }}
+{{- if .Values.bruno.importEnabled }}
 {{- $brunoRoot := clean .Values.bruno.artifactRoot }}
 {{- $brunoClaim := .Values.bruno.artifactPersistence.existingClaim }}
 {{- range $protectedRoot := list $archiveRoot "/var/lib/apexload/archive-read-cache" }}

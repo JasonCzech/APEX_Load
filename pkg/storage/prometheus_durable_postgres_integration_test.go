@@ -114,7 +114,7 @@ func TestPrometheusDurablePostgresSnapshotsSecretsCursorRevisionsAndMigration(t 
 	if loaded.PrometheusConnectionSnapshot.TokenSecretName != "prom.old" || loaded.PrometheusConnectionSnapshot.Revision != oldRevision {
 		t.Fatal("consumed run snapshot changed with connection edit")
 	}
-	consumers, err := s.ListAppDynamicsSecretConsumers(source.ProjectID, "prom.old")
+	consumers, err := s.ListMonitorSecretConsumers(source.ProjectID, "prom.old")
 	if err != nil || len(consumers) == 0 {
 		t.Fatal("frozen job secret reference not protected", err)
 	}
@@ -132,7 +132,7 @@ func TestPrometheusDurablePostgresSnapshotsSecretsCursorRevisionsAndMigration(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	invalidated, err := s.InvalidateAppDynamicsSecretPreparations(source.ProjectID, "prom.current", now.Add(time.Second))
+	invalidated, err := s.InvalidateRetainedMonitorSecretPreparations(source.ProjectID, "prom.current", now.Add(time.Second))
 	if err != nil || len(invalidated) != 1 || invalidated[0].ID != pending.ID {
 		t.Fatal("secret rotation did not invalidate pending preparation", err)
 	}

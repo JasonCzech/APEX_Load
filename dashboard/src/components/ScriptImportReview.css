@@ -84,8 +84,8 @@
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.04em);
 }
 
 .secret-binding-review {
@@ -276,8 +276,8 @@
   color: var(--accent);
   font-size: 10px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.03em);
 }
 
 /* Reusing one binding across every script that needs the same credential is an
@@ -308,8 +308,8 @@
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.04em);
+  text-transform: var(--label-case, uppercase);
 }
 
 .secret-binding-review-script > strong {
@@ -337,8 +337,8 @@
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.03em);
 }
 
 .secret-binding-review-source code {
@@ -572,8 +572,8 @@
   flex: 0 0 auto;
   color: var(--text-muted);
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.04em);
 }
 
 .script-import-review-section p {
@@ -692,7 +692,7 @@
   border-radius: 6px;
   background: var(--bg-secondary);
   color: var(--text-primary);
-  font-size: 0.875rem;
+  font-size: 14px;
 }
 
 .credentials-review-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 16px 0; }
@@ -712,8 +712,8 @@
 .secret-binding-review-control[open] > :not(summary) { margin-top: 8px; }
 .secret-binding-review-list { overflow-wrap: anywhere; }
 .script-import-review [hidden] { display: none !important; }
-.credential-inline-current { display: grid; align-content: start; gap: .35rem; min-width: 0; font-size: .875rem; }
-.credential-inline-current > span { color: var(--text-secondary); font-size: .75rem; }
+.credential-inline-current { display: grid; align-content: start; gap: .35rem; min-width: 0; font-size: 14px; }
+.credential-inline-current > span { color: var(--text-secondary); font-size: 12px; }
 .credential-inline-current code { overflow-wrap: anywhere; }
 .secret-binding-review-control[hidden] { display: none !important; }
 .secret-binding-review-control select { max-width: 100%; width: 100%; padding: .5rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); }

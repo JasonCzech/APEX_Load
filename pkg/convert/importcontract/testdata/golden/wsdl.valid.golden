@@ -73,9 +73,6 @@
         "review_policy": {},
         "viewport": {}
       },
-      "bruno": {
-        "limits": {}
-      },
       "database": {},
       "error_handling": {},
       "eventhubs": {},

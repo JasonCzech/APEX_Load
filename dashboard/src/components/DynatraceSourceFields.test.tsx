@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import DynatraceSourceFields from './DynatraceSourceFields'
 import { emptyDynatraceSelection } from '../types/dynatrace'
-import type { MonitorSource } from '../types/appdynamics'
+import type { MonitorSource } from '../types/runMonitoring'
 const api = vi.hoisted(() => ({ listDynatraceConnections: vi.fn(), createDynatraceOperation: vi.fn(), getDynatraceOperation: vi.fn() }))
 vi.mock('../hooks/api/useDynatraceConnectionsApi', () => ({ useDynatraceConnectionsApi: () => api }))
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true

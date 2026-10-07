@@ -2994,7 +2994,6 @@ function AppShell({
     view.page === "scripts" && scriptsTopbarState
       ? pageTitleForScriptSubView(scriptsTopbarState.subView)
       : pageTitleForView(view, {
-          repositoryName: applicationRepository?.name,
           testName: currentTestRun?.name,
         });
   const orderedTopbarRuns =

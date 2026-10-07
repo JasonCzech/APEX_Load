@@ -703,12 +703,6 @@
         <div class="node-sub">Azure AMQP</div>
       </div>
 
-      <div class="node" id="proto-bruno" data-layer="protocol" style="left:447px;top:1415px;min-width:90px;max-width:120px">
-        <div class="node-icon">&#128054;</div>
-        <div class="node-title">Bruno</div>
-        <div class="node-sub">Node sidecar runner</div>
-      </div>
-
       <div class="node" id="proto-javavuser" data-layer="protocol" style="left:585px;top:1415px;min-width:90px;max-width:120px">
         <div class="node-icon">&#9749;</div>
         <div class="node-title">Java Vuser</div>
@@ -1222,14 +1216,6 @@ const COMPONENTS = {
     connections: ['VUser Engine &mdash; Execute() calls', 'Azure Event Hubs &mdash; real adapter only with eventhubs_real'],
     files: ['pkg/protocol/eventhubs/']
   },
-  'proto-bruno': {
-    title: 'Bruno Protocol',
-    subtitle: 'Governed Node sidecar runner',
-    layer: 'protocol',
-    body: `<p>Governed Node sidecar runner (<code>bruno</code>) that executes imported Bruno collections. Distributed execution is disabled unless <code>APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED</code> is set and a governed egress broker is configured.</p>`,
-    connections: ['VUser Engine &mdash; Execute() calls', 'Bruno Converter &mdash; collection import'],
-    files: ['pkg/protocol/bruno/', 'pkg/convert/bruno/']
-  },
   'proto-javavuser': {
     title: 'Java Vuser Protocol',
     subtitle: 'Governed JVM sidecar runner',
@@ -1242,8 +1228,8 @@ const COMPONENTS = {
     title: 'Bruno Converter',
     subtitle: 'Bruno collections',
     layer: 'convert',
-    body: `<p>Imports Bruno collections (native and bundle forms) into JSON DSL or the governed <code>bruno</code> runner target, preserving credential-handling policy.</p>`,
-    connections: ['REST API &mdash; Bruno import endpoints', 'Bruno Protocol &mdash; runner target', 'DSL Parser &mdash; output script'],
+    body: `<p>Imports supported Bruno HTTP requests into native JSON DSL, preserving credential-handling policy. Bruno Runner is retired; its source is retained outside product builds.</p>`,
+    connections: ['REST API &mdash; Bruno import endpoints', 'DSL Parser &mdash; output script'],
     files: ['pkg/convert/bruno/', 'pkg/api/handlers_bruno_import.go']
   },
   'conv-postman': {
@@ -1338,7 +1324,6 @@ const CONNECTIONS = [
   { from: 'engine', to: 'proto-javahttp', type: 'solid' },
   { from: 'engine', to: 'proto-kafka', type: 'solid' },
   { from: 'engine', to: 'proto-eventhubs', type: 'solid' },
-  { from: 'engine', to: 'proto-bruno', type: 'solid' },
   { from: 'engine', to: 'proto-javavuser', type: 'solid' },
   { from: 'proto-javavuser', to: 'javarunner', type: 'solid' },
   { from: 'conv-bruno', to: 'dslparser', type: 'solid' },

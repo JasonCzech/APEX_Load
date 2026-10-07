@@ -3197,6 +3197,51 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Audit export downloaded (up to 1,000 matching events).')
   })
 
+  it('appends older governance audit events into the same table instead of paging', async () => {
+    const auditEvent = (index: number) => ({
+      id: `audit-${index}`,
+      action: 'system.settings.update',
+      actor_type: 'dev_mode',
+      actor_subject: 'dev-mode',
+      actor_display_name: 'Development Mode',
+      resource_type: 'system_settings',
+      resource_id: `setting-${index}`,
+      status: 'success',
+      created_at: new Date(Date.UTC(2026, 4, 16, 0, 59 - index)).toISOString(),
+    })
+    const firstBatch = Array.from({ length: 20 }, (_, index) => auditEvent(index))
+    apiMock.listAuthAuditEvents
+      .mockResolvedValueOnce({ events: firstBatch, count: 20 })
+      // An event recorded since the first load shifts the window by one row.
+      .mockResolvedValueOnce({ events: [firstBatch[19], auditEvent(20)], count: 2 })
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} authStatus={{ enabled: false, mode: 'dev', authenticated: false }} onNavigate={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+    await selectGeneralSubnav(generalSection, 'Governance')
+    await selectSettingsSubnav(generalSection, 'Recent Audit Events')
+    const auditPanel = generalSection.querySelector('#settings-governance-panel-recent-audit-events')
+    const rows = () => auditPanel?.querySelectorAll('.access-table-wrap tbody tr').length
+    expect(rows()).toBe(20)
+    expect(Array.from(auditPanel?.querySelectorAll('button') || []).map(button => button.textContent)).not.toContain('Next audit page')
+
+    const loadOlder = Array.from(auditPanel?.querySelectorAll('.access-table-wrap .access-load-older button') || []).find(button => button.textContent === 'Load older events')
+    expect(loadOlder).toBeDefined()
+    await act(async () => {
+      loadOlder?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.listAuthAuditEvents).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 20, offset: 20 }))
+    expect(rows()).toBe(21)
+    expect(auditPanel?.querySelector('.access-load-older')?.textContent).toBe('All 21 matching events loaded')
+  })
+
   it('shows the current authenticated identity and effective roles when trusted-header auth is enabled', async () => {
     apiMock.getSystemSettings.mockResolvedValueOnce({
       general: {

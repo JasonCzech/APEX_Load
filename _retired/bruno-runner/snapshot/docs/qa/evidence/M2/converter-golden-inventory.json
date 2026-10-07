@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "source": "pkg/api/authoring_capabilities.go:authoringImportSurfaces",
+  "totals": {
+    "covered": 15,
+    "registered": 17,
+    "review_only": 2
+  },
+  "surfaces": [
+    {
+      "surface": "openapi",
+      "converter": "openapi",
+      "valid_golden": "openapi.valid.golden",
+      "diagnostic_golden": "openapi.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "bruno",
+      "converter": "bruno",
+      "valid_golden": "bruno.valid.golden",
+      "diagnostic_golden": "bruno.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "postman",
+      "converter": "postman",
+      "valid_golden": "postman.valid.golden",
+      "diagnostic_golden": "postman.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "wsdl",
+      "converter": "wsdl",
+      "valid_golden": "wsdl.valid.golden",
+      "diagnostic_golden": "wsdl.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "asyncapi",
+      "converter": "asyncapi",
+      "valid_golden": "asyncapi.valid.golden",
+      "diagnostic_golden": "asyncapi.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "raml",
+      "converter": "raml",
+      "valid_golden": "raml.valid.golden",
+      "diagnostic_golden": "raml.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "traffic_har",
+      "converter": "har",
+      "valid_golden": "har.valid.golden",
+      "diagnostic_golden": "har.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "recorder_export",
+      "converter": "recorderjson",
+      "valid_golden": "recorderjson.valid.golden",
+      "diagnostic_golden": "recorderjson.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "sample",
+      "converter": "sample_curl",
+      "valid_golden": "sample_curl.valid.golden",
+      "diagnostic_golden": "sample_curl.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "enterprise_archive",
+      "converter": "enterprisearchive",
+      "valid_golden": "enterprisearchive.valid.golden",
+      "diagnostic_golden": "enterprisearchive.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "jmeter",
+      "converter": "jmeter",
+      "valid_golden": "jmeter.valid.golden",
+      "diagnostic_golden": "jmeter.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "devweb",
+      "converter": "devweb",
+      "valid_golden": "devweb.valid.golden",
+      "diagnostic_golden": "devweb.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "k6",
+      "converter": "k6",
+      "valid_golden": "k6.valid.golden",
+      "diagnostic_golden": "k6.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "cloudtest",
+      "state": "review_only",
+      "rationale": "The converter remains fixture-gated until sanitized dependency-complete CloudTest exports establish stable wire-shape goldens."
+    },
+    {
+      "surface": "eventhubs_capture",
+      "converter": "eventhubscapture",
+      "valid_golden": "eventhubscapture.valid.golden",
+      "diagnostic_golden": "eventhubscapture.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "broker_config",
+      "converter": "brokerconfig",
+      "valid_golden": "brokerconfig.valid.golden",
+      "diagnostic_golden": "brokerconfig.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "oracle_ebusiness_review",
+      "state": "review_only",
+      "rationale": "Capability launches the enterprise-archive review flow; it is not a distinct converter registration."
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{{- if and .Values.projectSecrets.wrappingKeyVaultKeyId .Values.bruno.keyVaultKeyId (ne .Values.projectSecrets.wrappingKeyVaultKeyId .Values.bruno.keyVaultKeyId) }}
+{{- fail "projectSecrets.wrappingKeyVaultKeyId and bruno.keyVaultKeyId must match because the controller uses one wrapping key" }}
+{{- end }}
+{{- if and .Values.projectSecrets.wrappingMasterKey .Values.bruno.artifactMasterKey (ne .Values.projectSecrets.wrappingMasterKey .Values.bruno.artifactMasterKey) }}
+{{- fail "projectSecrets.wrappingMasterKey and bruno.artifactMasterKey must match because the controller uses one wrapping key" }}
+{{- end }}
+{{- if and .Values.tracing.enabled (not .Values.tracing.endpoint) }}
+{{- fail "tracing.endpoint is required when tracing.enabled=true" }}
+{{- end }}
+{{- if not (has .Values.tracing.protocol (list "http/protobuf" "grpc")) }}
+{{- fail "tracing.protocol must be http/protobuf or grpc" }}
+{{- end }}
+{{- if and .Values.tracing.headersSecretName (not .Values.tracing.headersSecretKey) }}
+{{- fail "tracing.headersSecretKey is required when tracing.headersSecretName is set" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.dataPlatform.configMapName }}
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+    app.kubernetes.io/name: apexload
+    app.kubernetes.io/component: data-platform
+{{ include "apexload.labels" . | indent 4 }}
+data:
+  APEXLOAD_FLEET_ID: {{ include "apexload.fleetID" . | quote }}
+  APEXLOAD_STORE: {{ .Values.dataPlatform.store | quote }}
+  APEXLOAD_DATABASE_MAX_OPEN_CONNS: {{ .Values.dataPlatform.databaseMaxOpenConns | quote }}
+  APEXLOAD_DATABASE_MAX_IDLE_CONNS: {{ .Values.dataPlatform.databaseMaxIdleConns | quote }}
+  APEXLOAD_DATABASE_CONN_MAX_LIFETIME: {{ .Values.dataPlatform.databaseConnMaxLifetime | quote }}
+  APEXLOAD_TIMESCALEDB: {{ .Values.dataPlatform.timescaleDB | quote }}
+  APEXLOAD_ARCHIVE_BACKEND: {{ .Values.dataPlatform.archiveBackend | quote }}
+  APEXLOAD_ARCHIVE_CONTAINER: {{ .Values.dataPlatform.archiveContainer | quote }}
+  APEXLOAD_ARCHIVE_PREFIX: {{ .Values.dataPlatform.archivePrefix | quote }}
+  AZURE_STORAGE_ACCOUNT: {{ include "apexload.requiredCleanValue" (list "dataPlatform.azureStorageAccount" .Values.dataPlatform.azureStorageAccount) | quote }}
+  APEXLOAD_CACHE_BACKEND: {{ .Values.dataPlatform.cacheBackend | quote }}
+  APEXLOAD_REDIS_KEY_PREFIX: {{ .Values.dataPlatform.redisKeyPrefix | quote }}
+  APEXLOAD_REDIS_TIMEOUT: {{ .Values.dataPlatform.redisTimeout | quote }}
+  APEXLOAD_REDIS_FANOUT_CHANNEL: {{ .Values.dataPlatform.redisFanoutChannel | quote }}
+  APEXLOAD_AZURE_KEY_VAULT_URL: {{ include "apexload.requiredCleanValue" (list "dataPlatform.keyVaultUrl" .Values.dataPlatform.keyVaultUrl) | quote }}
+  APEXLOAD_AZURE_KEY_VAULT_AUTH: {{ .Values.dataPlatform.keyVaultAuth | quote }}
+  APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS: {{ .Values.dataPlatform.keyVaultAllowedSecrets | quote }}
+  APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED: {{ eq .Values.projectSecrets.provider "azure_key_vault" | quote }}
+  APEXLOAD_AZURE_KEY_VAULT_API_VERSION: {{ .Values.projectSecrets.azureKeyVaultApiVersion | quote }}
+  APEXLOAD_AZURE_MESSAGING_ALLOWED_NAMESPACES: {{ .Values.dataPlatform.azureMessagingAllowedNamespaces | quote }}
+  APEXLOAD_GENERATORS: {{ default (printf "dns://apexload-generator.%s.svc.cluster.local:9090" (include "apexload.namespace" .)) .Values.dataPlatform.generators | quote }}
+  APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: {{ .Values.dataPlatform.generatorDiscoveryInterval | quote }}
+  APEXLOAD_GENERATOR_TIMEOUT: {{ .Values.dataPlatform.generatorTimeout | quote }}
+  APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL: {{ .Values.generator.runSupervision.ttl | quote }}
+  APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL: {{ .Values.generator.runSupervision.renewInterval | quote }}
+  APEXLOAD_GENERATOR_AUTOSCALING_OWNER: {{ ternary "keda" "controller" .Values.keda.enabled | quote }}
+  APEXLOAD_GRPC_TLS_CERT: /etc/apexload/grpc-tls/tls.crt
+  APEXLOAD_GRPC_TLS_KEY: /etc/apexload/grpc-tls/tls.key
+  APEXLOAD_GRPC_TLS_CA: /etc/apexload/grpc-tls/ca.crt
+  APEXLOAD_GRPC_TLS_SERVER_NAME: apexload-generator.{{ include "apexload.namespace" . }}.svc.cluster.local
+  APEXLOAD_METRICS_ADDR: {{ .Values.dataPlatform.metricsAddr | quote }}
+  APEXLOAD_API_KEY_RATE_LIMIT_PER_MINUTE: {{ .Values.dataPlatform.apiKeyRateLimitPerMinute | quote }}
+  APEXLOAD_IDEMPOTENCY_KEY_TTL: {{ .Values.dataPlatform.idempotencyKeyTTL | quote }}
+  APEXLOAD_OTEL_ENABLED: {{ .Values.tracing.enabled | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.tracing.endpoint | quote }}
+  OTEL_EXPORTER_OTLP_PROTOCOL: {{ .Values.tracing.protocol | quote }}
+  OTEL_TRACES_SAMPLER: {{ .Values.tracing.sampler | quote }}
+  OTEL_TRACES_SAMPLER_ARG: {{ .Values.tracing.samplerArg | quote }}
+  APEXLOAD_OTEL_ACTION_SAMPLE_RATIO: {{ .Values.tracing.actionSampleRatio | quote }}
+  OTEL_RESOURCE_ATTRIBUTES: {{ .Values.tracing.resourceAttributes | quote }}
+  APEXLOAD_BRUNO_IMPORT_ENABLED: {{ .Values.bruno.importEnabled | quote }}
+  APEXLOAD_BRUNO_SAFE_EXECUTION_ENABLED: {{ .Values.bruno.enabled | quote }}
+  APEXLOAD_BRUNO_DEVELOPER_EXECUTION_ENABLED: "false"
+  APEXLOAD_BRUNO_NATIVE_PROJECTION_ENABLED: "false"
+  APEXLOAD_BRUNO_EGRESS_BROKER_URL: {{ .Values.bruno.egressBrokerUrl | quote }}
+{{- $wrappingKeyVaultKeyId := include "apexload.wrappingKeyVaultKeyId" . }}
+{{- if $wrappingKeyVaultKeyId }}
+  APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID: {{ $wrappingKeyVaultKeyId | quote }}
+{{- end }}

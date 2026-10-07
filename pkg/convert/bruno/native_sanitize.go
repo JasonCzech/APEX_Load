@@ -2,12 +2,11 @@ package bruno
 
 import (
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"path"
 	"sort"
 	"strconv"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 const nativeVariableRequirementKeyPrefix = "native-variable:"

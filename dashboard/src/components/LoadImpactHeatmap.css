@@ -79,7 +79,7 @@
 .load-impact-card.load-impact-card-graph .load-impact-table thead th,
 .load-impact-card.load-impact-card-graph .load-impact-table tbody th {
   padding: 8px 10px;
-  font-size: 0.76rem;
+  font-size: 12px;
 }
 
 .load-impact-card.load-impact-card-graph .load-impact-table thead th:first-child,
@@ -94,11 +94,11 @@
 }
 
 .load-impact-card.load-impact-card-graph .load-impact-cell strong {
-  font-size: 0.82rem;
+  font-size: 13px;
 }
 
 .load-impact-card.load-impact-card-graph .load-impact-cell span {
-  font-size: 0.68rem;
+  font-size: 11px;
 }
 
 .load-impact-card.load-impact-card-graph .load-impact-cell span::after,
@@ -149,7 +149,7 @@
 .load-impact-copy {
   margin: 4px 0 0;
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: 14px;
 }
 
 .load-impact-badges {
@@ -183,7 +183,7 @@
   padding: 5px 12px;
   color: var(--text-muted);
   background: transparent;
-  font-size: 0.75rem;
+  font-size: 12px;
   font-weight: 700;
   transition: background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
 }
@@ -220,7 +220,7 @@
 .load-impact-context p {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 0.78rem;
+  font-size: 12px;
   line-height: 1.4;
 }
 
@@ -235,7 +235,7 @@
   flex-wrap: wrap;
   gap: 6px;
   color: var(--text-muted);
-  font-size: 0.74rem;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -286,7 +286,7 @@
 .load-impact-table tbody th {
   background: var(--bg-surface);
   color: var(--text-primary);
-  font-size: 0.82rem;
+  font-size: 13px;
   font-weight: 700;
   line-height: 1.2;
   padding: 10px 12px;
@@ -320,7 +320,7 @@
   display: block;
   margin-top: 3px;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -353,7 +353,7 @@
 .load-impact-sort-icon {
   flex: 0 0 auto;
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: 12px;
   line-height: 1;
 }
 
@@ -388,13 +388,13 @@
 }
 
 .load-impact-cell strong {
-  font-size: 0.88rem;
+  font-size: 14px;
   font-weight: 800;
 }
 
 .load-impact-cell span {
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -430,7 +430,7 @@
 .load-impact-3d-instructions {
   margin: 0;
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: 12px;
 }
 
 .load-impact-3d-scene {
@@ -463,12 +463,12 @@
   justify-content: space-between;
   gap: 12px;
   color: var(--text-secondary);
-  font-size: 0.82rem;
+  font-size: 13px;
 }
 
 .load-impact-3d-readout strong {
   color: var(--text-primary);
-  font-size: 0.86rem;
+  font-size: 14px;
 }
 
 .load-impact-3d-axis {
@@ -492,7 +492,7 @@
   border-radius: 999px;
   color: var(--text-muted);
   background: var(--subtle-fill);
-  font-size: 0.72rem;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -506,7 +506,7 @@
   align-items: center;
   gap: 8px;
   color: var(--text-secondary);
-  font-size: 0.78rem;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -519,7 +519,7 @@
   background: var(--subtle-fill);
   cursor: pointer;
   font: inherit;
-  font-size: 0.72rem;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -539,13 +539,13 @@
 
 .load-impact-detail h4 {
   margin: 0;
-  font-size: 0.98rem;
+  font-size: 16px;
 }
 
 .load-impact-detail p {
   margin: 4px 0 0;
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: 14px;
 }
 
 .load-impact-detail-table-wrap {
@@ -573,7 +573,7 @@
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
   color: var(--text-primary);
-  font-size: 0.8rem;
+  font-size: 13px;
   white-space: nowrap;
 }
 
@@ -583,8 +583,8 @@
   z-index: 1;
   background: var(--bg-surface);
   color: var(--text-muted);
-  font-size: 0.72rem;
-  text-transform: uppercase;
+  font-size: 12px;
+  text-transform: var(--label-case, uppercase);
 }
 
 .load-impact-detail-sort-header {
@@ -622,13 +622,13 @@
 .load-impact-graph-drawer h3 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 0.96rem;
+  font-size: 15px;
 }
 
 .load-impact-graph-drawer p {
   margin: 4px 0 0;
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: 13px;
   line-height: 1.4;
 }
 
@@ -728,12 +728,12 @@
 
 .load-impact-graph-option strong {
   color: var(--text-primary);
-  font-size: 0.88rem;
+  font-size: 14px;
 }
 
 .load-impact-graph-option small {
   color: var(--text-muted);
-  font-size: 0.76rem;
+  font-size: 12px;
 }
 
 .load-impact-graph-drawer-note {

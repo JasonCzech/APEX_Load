@@ -1,0 +1,42 @@
+.new-test-run-config-row:has(.run-monitor-controls) { grid-template-columns: minmax(0, 1fr); }
+.run-monitor-controls {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.run-monitor-controls > legend { padding: 0 4px; font-weight: 600; }
+.run-monitor-controls p { max-width: 85ch; margin: 8px 0 16px; color: var(--text-secondary); }
+.run-monitor-controls label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.run-monitor-controls input:not([type="checkbox"]),
+.run-monitor-controls select { width: 100%; min-width: 0; }
+.run-monitor-bindings > label { max-width: 360px; }
+.run-monitor-bindings > div { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.run-monitor-bindings > div > label { flex-direction: row; align-items: center; }
+.run-monitor-bindings input[type="checkbox"] { flex: 0 0 auto; }
+.run-monitor-criteria > fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.run-monitor-criteria > fieldset > button { justify-self: start; }
+.run-monitor-controls button {
+  padding: 8px 12px;
+  margin: 4px 8px 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 6px);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.run-monitor-controls button:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 600px) {
+  .run-monitor-criteria > fieldset { grid-template-columns: minmax(0, 1fr); }
+}

@@ -122,9 +122,23 @@ func (a *runArtifacts) stopMonitoring() {
 // lookups that are on. Each provider poll then takes the best 64 since its
 // last poll: errors first, then slow requests, then representative samples.
 func (a *runArtifacts) observeMonitoringTraces(live *LiveMetrics) {
-	if a == nil || live == nil || a.test == nil || (a.test.ELKCapture == nil && a.test.DynatraceCapture == nil && !a.nativeDynatrace.Load()) {
+	if a == nil || live == nil || a.test == nil || (a.test.ELKCapture == nil && a.test.DynatraceCapture == nil && !a.nativeDynatrace.Load() && !a.elasticTraceEnabled) {
 		return
 	}
+	if a.elasticTraceEnabled {
+		for _, tx := range live.Transactions {
+			if tx == nil {
+				continue
+			}
+			for _, exemplar := range tx.Exemplars {
+				a.observeElasticTraceID(exemplar.TraceID)
+			}
+			for _, correlation := range tx.CorrelationIDs {
+				a.observeElasticTraceID(traceIDFromCorrelationID(correlation))
+			}
+		}
+	}
+
 	if a.test.ELKCapture != nil {
 		a.elkMu.Lock()
 		a.elkLookups.observe(live)

@@ -546,7 +546,8 @@ describe('MonitoringPage', () => {
     const topbar = container.querySelector('[data-testid="topbar-contribution"]')
     expect(topbar?.textContent).toContain('Monitoring')
     expect(topbar?.querySelector('[aria-label="Monitor categories"]')?.classList.contains('topbar-page-section-toggle')).toBe(true)
-    expect(topbar?.querySelectorAll('[aria-label="Monitor categories"] [role="tab"]')).toHaveLength(6)
+    // Analysis is no longer a tab; its workspace appears on Overview when enabled.
+    expect(Array.from(topbar?.querySelectorAll('[aria-label="Monitor categories"] [role="tab"]') || []).map(tab => tab.textContent?.trim())).toEqual(['Overview', 'Fleet', 'Telemetry', 'Alerts', 'Schedules'])
     expect(topbar?.textContent).toContain('1 advisory warning')
     expect(topbar?.querySelector('.monitoring-topbar-controls .warning')?.textContent).toBe('1 advisory warning')
     const topbarText = topbar?.textContent ?? ''
@@ -671,7 +672,7 @@ describe('MonitoringPage', () => {
 
     await clickMonitorTab('Telemetry')
 
-    expect(visibleMonitorCardIds()).toEqual(['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections', 'appdynamics-connections'])
+    expect(visibleMonitorCardIds()).toEqual(['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections'])
     expect(container.textContent).toContain('Telemetry Diagnostics')
     expect(container.textContent).toContain('danger')
     expect(container.textContent).toContain('1 danger')
@@ -737,7 +738,7 @@ describe('MonitoringPage', () => {
         />,
       )
     })
-    expect(visibleMonitorCardIds()).toEqual(['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections', 'appdynamics-connections'])
+    expect(visibleMonitorCardIds()).toEqual(['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections'])
     expect(container.querySelector('.monitor-page-title')?.textContent).toContain('Telemetry')
   })
 
@@ -758,7 +759,7 @@ describe('MonitoringPage', () => {
     expect(pending).not.toBeNull()
     expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
     await act(async () => (pending as unknown as () => void)())
-    expect(visibleMonitorCardIds()).toEqual(['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections', 'appdynamics-connections'])
+    expect(visibleMonitorCardIds()).toEqual(['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections'])
   })
 
   it('traps focus in telemetry details, closes on Escape, and restores the trigger', async () => {

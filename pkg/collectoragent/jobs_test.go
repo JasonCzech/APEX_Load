@@ -120,6 +120,54 @@ func TestSignedCollectorRejectsUnapprovedDestination(t *testing.T) {
 	}
 }
 
+func TestSignedLocalJobKeepsCollectionScopedAndAgentConfiguration(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scrapes atomic.Int64
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		scrapes.Add(1)
+		_, _ = w.Write([]byte("# TYPE test_gauge gauge\ntest_gauge 1\n"))
+	}))
+	defer target.Close()
+	now := time.Now().UTC()
+	job := RunJob{ID: "local-job", ProjectID: "p", RunID: "r", CollectorID: "c", SourceID: "local", SourceRevision: 1, IntervalSeconds: 60, Pack: "go-runtime", StartedAt: now.Add(-time.Second), ExpiresAt: now.Add(time.Hour), LeaseExpiresAt: now.Add(time.Minute)}
+	envelope, err := SignRunJob(job, private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var accepted RunSampleBatch
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/jobs") {
+			_ = json.NewEncoder(w).Encode([]SignedRunJob{envelope})
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&accepted); err != nil {
+			t.Error(err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer controller.Close()
+	agent, err := New(Config{ControllerURL: controller.URL, CollectorID: "c", Token: "token", ControllerPublicKey: public, Packs: []string{"go-runtime", "prometheus"}, PrometheusURL: target.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := agent.runJobTick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if scrapes.Load() != 0 || len(accepted.Points) == 0 {
+		t.Fatalf("assigned local pack scraped another pack or produced no data: scrapes=%d points=%d", scrapes.Load(), len(accepted.Points))
+	}
+	if len(agent.cfg.Packs) != 2 || agent.cfg.Packs[0] != "go-runtime" || agent.cfg.Packs[1] != "prometheus" {
+		t.Fatalf("scoped collection changed agent configuration: %v", agent.cfg.Packs)
+	}
+	heartbeat, err := agent.collect(context.Background())
+	if err != nil || len(heartbeat.Packs) != 2 || scrapes.Load() != 1 {
+		t.Fatalf("later collection lost a configured pack: heartbeat=%+v scrapes=%d err=%v", heartbeat, scrapes.Load(), err)
+	}
+}
+
 func TestCloudEmptyWindowRetainsCollectionInterval(t *testing.T) {
 	pub, key, _ := ed25519.GenerateKey(rand.Reader)
 	now := time.Now().UTC()

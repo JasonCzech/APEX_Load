@@ -2,13 +2,13 @@ package bruno
 
 import (
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"path"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/scrub"
-	"gopkg.in/yaml.v3"
 )
 
 // sanitizeNativePolicyHeaders extends the native-only source scrub to every

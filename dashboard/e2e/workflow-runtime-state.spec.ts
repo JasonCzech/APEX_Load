@@ -221,7 +221,10 @@ test('current paused values and parameter receipts survive inspection without co
   expect(afterRequest.runtime_state.snapshot!.rows).toContainEqual(expect.objectContaining({ kind: 'parameter', name: 'person', row_ordinal: 2, state: 'selected' }))
   await stableInspections(request, afterRequest)
   await page.screenshot({ path: testInfo.outputPath('paused-runtime-receipts.png'), fullPage: true })
-  await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+  // The sidebar starts as a collapsed icon rail; collapse it only if it was expanded.
+  const collapseSidebar = page.getByRole('button', { name: 'Collapse sidebar', exact: true })
+  if (await collapseSidebar.isVisible()) await collapseSidebar.click()
+  await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
   try {
     await page.setViewportSize({ width: 390, height: 1300 })
     await page.getByRole('group', { name: 'Debug panes', exact: true }).getByRole('button', { name: 'Inspector', exact: true }).click()

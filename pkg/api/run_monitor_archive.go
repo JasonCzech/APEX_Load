@@ -2,38 +2,83 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
+	"sort"
 	"strconv"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/appdynamics"
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/elastic"
+	"github.com/jasonczech/apexload/pkg/monitorcontract"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+type ElasticQueryMetadata struct {
+	ID        string `json:"id"`
+	Language  string `json:"language"`
+	Signal    string `json:"signal"`
+	Statistic string `json:"statistic,omitempty"`
+	Unit      string `json:"unit,omitempty"`
+	Revision  string `json:"revision"`
+}
+
+// This projection records interpretation and immutable query identities without
+// retaining query text, parameter values, component destinations or credentials.
+type ElasticMonitoringMetadata struct {
+	Product         string                    `json:"product"`
+	Preset          string                    `json:"preset,omitempty"`
+	MappingRevision string                    `json:"mapping_revision"`
+	Metrics         []elastic.MetricSelection `json:"metrics,omitempty"`
+	Queries         []ElasticQueryMetadata    `json:"queries,omitempty"`
+	Signals         []string                  `json:"signals"`
+}
+
+func elasticMonitoringMetadata(selection elastic.Selection, product string) *ElasticMonitoringMetadata {
+	encoded, _ := json.Marshal(selection)
+	hash := sha256.Sum256(encoded)
+	result := &ElasticMonitoringMetadata{Product: product, Preset: selection.Preset, MappingRevision: hex.EncodeToString(hash[:]), Metrics: selection.Metrics, Signals: []string{}}
+	for _, q := range selection.Queries {
+		body, _ := json.Marshal(q)
+		digest := sha256.Sum256(body)
+		result.Queries = append(result.Queries, ElasticQueryMetadata{ID: q.Name, Language: q.Language, Signal: q.Kind, Statistic: q.Statistic, Unit: q.Unit, Revision: hex.EncodeToString(digest[:])})
+	}
+	for name, enabled := range map[string]bool{"log": selection.Logs, "error": selection.Errors, "span": selection.Traces, "transaction": selection.Transactions, "cluster_health": selection.ClusterHealth, "kibana_health": selection.KibanaHealth, "logstash_health": selection.LogstashHealth} {
+		if enabled {
+			result.Signals = append(result.Signals, name)
+		}
+	}
+	sort.Strings(result.Signals)
+	return result
+}
+
 type RunMonitorCoverage struct {
-	Dynatrace                     *dynatrace.Selection            `json:"dynatrace,omitempty"`
-	ManagementSnapshots           int64                           `json:"management_snapshots,omitempty"`
-	ManagementIncompleteSnapshots int64                           `json:"management_incomplete_snapshots,omitempty"`
-	JobID                         string                          `json:"job_id"`
-	SourceID                      string                          `json:"source_id"`
-	SourceRevision                int64                           `json:"source_revision"`
-	BindingRevision               int64                           `json:"binding_revision"`
-	ConnectionID                  string                          `json:"connection_id,omitempty"`
-	ConnectionRevision            int64                           `json:"connection_revision,omitempty"`
-	ExecutorMode                  string                          `json:"executor_mode,omitempty"`
-	PrometheusSelection           *prometheus.Selection           `json:"prometheus,omitempty"`
-	Selection                     *appdynamics.Selection          `json:"appdynamics,omitempty"`
-	Required                      bool                            `json:"required"`
-	State                         string                          `json:"state"`
-	Reason                        string                          `json:"reason,omitempty"`
-	Batches                       int64                           `json:"batches"`
-	ProviderCoverage              map[string]appdynamics.Coverage `json:"provider_coverage,omitempty"`
-	Topology                      []appdynamics.Entity            `json:"topology,omitempty"`
+	Dynatrace                     *dynatrace.Selection                  `json:"dynatrace,omitempty"`
+	ManagementSnapshots           int64                                 `json:"management_snapshots,omitempty"`
+	ManagementIncompleteSnapshots int64                                 `json:"management_incomplete_snapshots,omitempty"`
+	JobID                         string                                `json:"job_id"`
+	SourceID                      string                                `json:"source_id"`
+	SourceRevision                int64                                 `json:"source_revision"`
+	BindingRevision               int64                                 `json:"binding_revision"`
+	ConnectionID                  string                                `json:"connection_id,omitempty"`
+	ConnectionRevision            int64                                 `json:"connection_revision,omitempty"`
+	ExecutorMode                  string                                `json:"executor_mode,omitempty"`
+	PrometheusSelection           *prometheus.Selection                 `json:"prometheus,omitempty"`
+	Selection                     *monitorcontract.AppDynamicsSelection `json:"appdynamics,omitempty"`
+	Required                      bool                                  `json:"required"`
+	State                         string                                `json:"state"`
+	Reason                        string                                `json:"reason,omitempty"`
+	Batches                       int64                                 `json:"batches"`
+	ProviderCoverage              map[string]monitorprovider.Coverage   `json:"provider_coverage,omitempty"`
+	Topology                      []monitorprovider.Entity              `json:"topology,omitempty"`
+	Elastic                       *ElasticMonitoringMetadata            `json:"elastic,omitempty"`
+	QueryWatermark                time.Time                             `json:"query_watermark,omitempty,omitzero"`
+	ElasticIngestionWatermark     time.Time                             `json:"elastic_ingestion_watermark,omitempty,omitzero"`
 }
 
 func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, budget *archiveOutputBudget) error {
@@ -81,6 +126,12 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			reason = "no_accepted_samples"
 		}
 		coverage := RunMonitorCoverage{JobID: job.ID, SourceID: job.Source.ID, SourceRevision: job.Source.Revision, BindingRevision: job.BindingRevision, Required: job.Required, State: job.State, Reason: reason, Batches: job.NextSequence, ExecutorMode: job.Source.ExecutorMode, ConnectionID: job.Source.ConnectionID, ProviderCoverage: job.Coverage, Topology: job.Topology}
+		coverage.QueryWatermark = job.QueryWatermark
+		coverage.ElasticIngestionWatermark = job.ElasticIngestionWatermark
+		if job.ElasticConnectionSnapshot != nil && job.Source.Elastic != nil {
+			coverage.ConnectionRevision = job.ElasticConnectionSnapshot.Revision
+			coverage.Elastic = elasticMonitoringMetadata(*job.Source.Elastic, job.ElasticConnectionSnapshot.Config.Product)
+		}
 		if job.ConnectionSnapshot != nil {
 			coverage.ConnectionRevision = job.ConnectionSnapshot.Revision
 		}
@@ -138,6 +189,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 	// the shared archive writer or discarding the performance archive.
 	reserve := int64(1<<20) + 4*int64(len(encodedManifest))
 	truncatedSources := map[string]bool{}
+	truncatedMetricSources := map[string]bool{}
 	recordPoint := func(encoder *json.Encoder, p analysis.MetricPoint) error {
 		if p.Provider != nil {
 			written, err := encodeProviderMonitorArchiveRecord(encoder, budget, reserve, p)
@@ -146,6 +198,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			}
 			if !written {
 				truncatedSources[p.Source] = true
+				truncatedMetricSources[p.Source] = true
 				return nil
 			}
 		} else {
@@ -159,6 +212,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 				eligibleMetrics[p.Source] = map[string]bool{}
 			}
 			eligibleMetrics[p.Source][p.Provider.EntityIDs["application"]+":"+p.MetricName] = true
+			eligibleMetrics[p.Source][p.MetricName] = true
 		}
 		if p.Provider != nil && p.Provider.Name == monitorprovider.ProviderPrometheus && p.Provider.Mode == "evaluation_point" {
 			key := p.Source + ":" + p.Provider.QueryID
@@ -248,7 +302,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 		// Each provider bucket appears once with its latest accepted revision. Delayed
 		// values supersede older receipt contents rather than inflating counts.
 		for _, job := range jobs {
-			if !job.Source.CanonicalProvider() {
+			if !canonicalProviderPack(job.Source.Pack) {
 				continue
 			}
 			after := ""
@@ -278,7 +332,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 		coverage := &manifest.MonitorCoverage[index]
 		if coverage.PrometheusSelection != nil {
 			if coverage.ProviderCoverage == nil {
-				coverage.ProviderCoverage = map[string]appdynamics.Coverage{}
+				coverage.ProviderCoverage = map[string]monitorprovider.Coverage{}
 			}
 			selection := coverage.PrometheusSelection.Defaults()
 			anchor := prometheusGridAnchor(manifestLoadStart(manifest))
@@ -312,7 +366,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 				} else if counts[1] > 0 {
 					freshness = "mixed"
 				}
-				coverage.ProviderCoverage["numeric:"+query.ID] = appdynamics.Coverage{Status: status, From: manifestLoadStart(manifest), To: until, Points: eligible, ExpectedPoints: expected, MissingPoints: max(0, expected-eligible), Freshness: freshness}
+				coverage.ProviderCoverage["numeric:"+query.ID] = monitorprovider.Coverage{Status: status, From: manifestLoadStart(manifest), To: until, Points: eligible, ExpectedPoints: expected, MissingPoints: max(0, expected-eligible), Freshness: freshness}
 			}
 		}
 		for key, value := range coverage.ProviderCoverage {
@@ -322,7 +376,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 				manifest.MonitoringStatus = "incomplete"
 			}
 		}
-		if coverage.Selection != nil && !selectedMonitorMetricsObserved(*coverage.Selection, eligibleMetrics[coverage.SourceID]) {
+		if coverage.Selection != nil && !selectedMonitorMetricsObserved(*coverage.Selection, eligibleMetrics[coverage.SourceID]) || coverage.Elastic != nil && !selectedElasticMetricsObserved(*coverage.Elastic, eligibleMetrics[coverage.SourceID]) {
 			coverage.State = "incomplete"
 			coverage.Reason = "no_eligible_metric_buckets"
 			manifest.MonitoringStatus = "incomplete"
@@ -340,13 +394,13 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 	var diagnosticCount int64
 	hasProvider := false
 	for _, job := range jobs {
-		hasProvider = hasProvider || job.Source.CanonicalProvider()
+		hasProvider = hasProvider || canonicalProviderPack(job.Source.Pack)
 	}
 	if hasProvider {
 		err = writeArchiveArtifactDurableWithWriter(record.ArchivePath, diagnosticsName, nil, 0600, func(file *os.File, _ []byte) (int, error) {
 			encoder := json.NewEncoder(&archiveOutputFile{file: file, budget: budget})
 			for _, job := range jobs {
-				if !job.Source.CanonicalProvider() {
+				if !canonicalProviderPack(job.Source.Pack) {
 					continue
 				}
 				after := ""
@@ -356,7 +410,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 						return 0, err
 					}
 					for _, diagnostic := range page.Evidence {
-						row := RunMonitorDiagnostic{SourceID: job.Source.ID, Diagnostic: diagnostic}
+						row := RunMonitorDiagnostic{SourceID: job.Source.ID, Diagnostic: scrubRetainedProviderEvidence(diagnostic), SchemaVersion: providerEvidenceVersion(diagnostic)}
 						written, err := encodeProviderMonitorArchiveRecord(encoder, budget, reserve, row)
 						if err != nil {
 							return 0, err
@@ -396,11 +450,11 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 			continue
 		}
 		coverage.State, coverage.Reason = "incomplete", "archive_evidence_budget"
-		providerCoverage := make(map[string]appdynamics.Coverage, len(coverage.ProviderCoverage)+1)
+		providerCoverage := make(map[string]monitorprovider.Coverage, len(coverage.ProviderCoverage)+1)
 		for key, value := range coverage.ProviderCoverage {
 			providerCoverage[key] = value
 		}
-		providerCoverage["archive"] = appdynamics.Coverage{Status: "partial", From: start, To: end, Truncated: true, Message: "monitoring export reached the archive evidence budget"}
+		providerCoverage["archive"] = monitorprovider.Coverage{Status: "partial", From: start, To: end, Truncated: true, Message: "monitoring export reached the archive evidence budget"}
 		coverage.ProviderCoverage = providerCoverage
 		manifest.MonitoringStatus = "incomplete"
 	}
@@ -408,7 +462,7 @@ func (tr *TestRunner) persistRunMonitorArchive(project, run string, record *stor
 	for _, rule := range rules {
 		result := analysis.EvaluateMonitorRule(rule, rulePoints, start, end)
 		result = guardPrometheusRuleCoverage(result, jobs, start, end)
-		if truncatedSources[rule.SourceID] {
+		if truncatedMetricSources[rule.SourceID] {
 			result = analysis.MonitorRuleResult{Rule: rule, Status: "not_evaluated", Message: "monitoring export reached the archive evidence budget"}
 		} else if ruleBudgetExceeded {
 			result = analysis.MonitorRuleResult{Rule: rule, Status: "not_evaluated", Message: "monitor rule evaluation exceeds bounded evidence budget"}
@@ -499,9 +553,17 @@ func encodeProviderMonitorArchiveRecord(encoder *json.Encoder, budget *archiveOu
 	return true, nil
 }
 
+func providerEvidenceVersion(e analysis.ProviderEvidence) string {
+	if e.Provider == "elasticsearch" || e.Provider == "opensearch" {
+		return "apexload.provider-evidence.v1"
+	}
+	return ""
+}
+
 type RunMonitorDiagnostic struct {
-	SourceID   string                 `json:"source_id"`
-	Diagnostic appdynamics.Diagnostic `json:"diagnostic"`
+	SchemaVersion string                     `json:"schema_version,omitempty"`
+	SourceID      string                     `json:"source_id"`
+	Diagnostic    monitorprovider.Diagnostic `json:"diagnostic"`
 }
 
 func monitorRulesFromManifest(manifest *RunArchiveManifest) []analysis.MonitorRule {
@@ -541,7 +603,7 @@ func monitorPointSatisfiesCapture(point analysis.MetricPoint, start, end time.Ti
 	return point.Provider != nil && !point.Provider.Synthetic && point.Value != nil && point.Quality == analysis.QualityValid && point.Validate() == nil && point.Provider.Settled && !point.Provider.BucketStart.Before(start) && !point.Provider.BucketEnd.After(end)
 }
 
-func selectedMonitorMetricsObserved(selection appdynamics.Selection, observed map[string]bool) bool {
+func selectedMonitorMetricsObserved(selection monitorcontract.AppDynamicsSelection, observed map[string]bool) bool {
 	for _, metric := range selection.Metrics {
 		if !observed[metric.ApplicationID+":"+metric.Name] {
 			return false
@@ -563,6 +625,19 @@ func selectedDynatraceMetricsObserved(selection dynatrace.Selection, observed ma
 	}
 	for _, query := range selection.Grail {
 		if (query.Kind == "metric" || query.Kind == "aggregate") && !observed[":"+query.Name] {
+			return false
+		}
+	}
+	return true
+}
+func selectedElasticMetricsObserved(selection ElasticMonitoringMetadata, observed map[string]bool) bool {
+	for _, metric := range selection.Metrics {
+		if !observed[metric.Name] {
+			return false
+		}
+	}
+	for _, query := range selection.Queries {
+		if query.Signal == "metric" && !observed[query.ID] {
 			return false
 		}
 	}

@@ -1,6 +1,6 @@
 import { readFile, stat } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
-import { test, expect, login, createWorkspaceUI, importOpenAPI, buildScenarioUI, mutation, json, idOf, runStatus } from './support/workflow'
+import { test, expect, login, createWorkspaceUI, importOpenAPI, buildScenarioUI, mutation, json, idOf, runStatus, signOut } from './support/workflow'
 
 test.beforeEach(() => { test.skip(process.env.APEXLOAD_E2E_PROFILE !== 'local-auth', 'local-auth profile') })
 
@@ -81,7 +81,7 @@ test('[U02] viewer cannot launch and sign-out does not reopen a protected worksp
   await expect(page.getByRole('button', { name: 'Start Now' })).toBeDisabled()
   const denied = await page.context().request.post('/api/v1/tests', { data: { name: 'viewer must not create', duration: '1m', groups: [] } })
   expect(denied.status()).toBe(403)
-  await page.getByRole('button', { name: 'Sign out' }).click()
+  await signOut(page)
   await expect(page.getByRole('heading', { name: 'Choose a test persona' })).toBeVisible()
   await page.goBack()
   await expect(page.getByRole('heading', { name: 'Choose a test persona' })).toBeVisible()

@@ -130,7 +130,7 @@ it('lets operators select individual entity series instead of merging wildcard m
     if (path.includes('capabilities')) return { monitoring_enabled: true, diagnostics_enabled: false }
     if (path.endsWith('/monitors')) return [{ id: 'run:apm', source: { id: 'apm', name: 'APM', pack: 'appdynamics' }, state: 'stopped', next_sequence: 1 }]
     if (path.includes('monitor-evidence')) return { evidence: [], has_more: false, after_key: '' }
-    if (path.includes('monitor-series')) return { points: [1, 2].map(node => ({ source: 'apm', metric_name: 'cpu', value: node * 5, unit: '%', quality: 'valid', timestamp_utc: '2026-10-03T12:00:00Z', dimensions: { node: String(node) } })), has_more: false }
+    if (path.includes('monitor-series')) return { points: [1, 2].map(node => ({ source: 'apm', metric_name: 'cpu', value: node * 5, unit: '%', quality: 'valid', timestamp_utc: '2026-10-03T12:00:00Z', dimensions: { node: String(node) }, provider: { name: 'appdynamics', statistic: 'value', resolution_seconds: 60, settled: true, bucket_start: '2026-10-03T12:00:00Z', bucket_end: '2026-10-03T12:01:00Z' } })), has_more: false }
     return []
   })
   await act(async () => root.render(<RunMonitorTimeline projectId="p" testId="run" history={[]} />))
@@ -144,32 +144,7 @@ it('lets operators select individual entity series instead of merging wildcard m
   await act(async () => { series.value = series.options[1].value; series.dispatchEvent(new Event('change', { bubbles: true })) })
   expect(container.querySelector('[data-chart-node]')?.getAttribute('data-chart-node')).toBe('2')
   expect(container.textContent).toContain('1 valid / 1 observed samples in the selected series')
-})
-
-it('requires at least one selected AppDynamics collection capability before saving', async () => {
-  request.mockImplementation(async (path: string) => {
-    if (path.includes('capabilities')) return { monitoring_enabled: true }
-    if (path.includes('appdynamics-connections')) return { connections: [{ id: 'connection', name: 'APM', enabled: true, revision: 1, verified_revision: 1, collection_mode: 'direct' }] }
-    if (path.includes('collectors?')) return { collectors: [] }
-    return []
-  })
-  await act(async () => root.render(<RunMonitorSources projectId="p" canManage />))
-  const pack = container.querySelectorAll('select')[1]
-  await act(async () => { pack.value = 'appdynamics'; pack.dispatchEvent(new Event('change', { bubbles: true })) })
-  const changeInput = async (label: string, value: string) => {
-    const input = Array.from(container.querySelectorAll('label')).find(item => item.textContent?.startsWith(label))!.querySelector('input')!
-    await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })) })
-  }
-  await changeInput('Name', 'APM source'); await changeInput('Application IDs', '123')
-  const connection = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('AppDynamics connection'))!.querySelector('select')!
-  await act(async () => { connection.value = 'connection'; connection.dispatchEvent(new Event('change', { bubbles: true })) })
-  const save = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save monitor source')!
-  expect(save.disabled).toBe(false)
-  for (const name of ['Capture events', 'Capture health rule violations']) {
-    const input = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.trim() === name)!.querySelector('input')!
-    await act(async () => input.click())
-  }
-  expect(save.disabled).toBe(true)
+  expect(container.textContent).toContain('resolution 60 seconds')
 })
 
 
@@ -226,29 +201,14 @@ it('keeps provider sources available beside management packs and clears manageme
   })
   await act(async () => root.render(<RunMonitorSources projectId="p" canManage />))
   const pack = container.querySelectorAll('select')[1]
-  expect(Array.from(pack.options).map(option => option.value)).toEqual(expect.arrayContaining(['appdynamics', 'prometheus-query', 'kafka-offsets']))
+  expect(Array.from(pack.options).map(option => option.value)).toEqual(expect.arrayContaining(['dynatrace', 'prometheus-query', 'kafka-offsets']))
   await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit Combined monitoring')!.click())
-  await act(async () => { pack.value = 'appdynamics'; pack.dispatchEvent(new Event('change', { bubbles: true })) })
+  await act(async () => { pack.value = 'dynatrace'; pack.dispatchEvent(new Event('change', { bubbles: true })) })
   expect(container.querySelectorAll('select')[0].disabled).toBe(true)
   expect(container.textContent).not.toContain('Management collection ownership')
   expect(container.textContent).not.toContain('Approved destination')
   expect(Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('Collection interval (seconds)'))!.querySelector<HTMLInputElement>('input[type=number]')!.value).toBe('60')
-  const application = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('Application IDs'))!.querySelector('input')!
-  await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(application, '123'); application.dispatchEvent(new Event('input', { bubbles: true })) })
-  const connection = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('AppDynamics connection'))!.querySelector('select')!
-  await act(async () => { connection.value = 'connection'; connection.dispatchEvent(new Event('change', { bubbles: true })) })
-  const save = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save monitor source')!
-  expect(save.disabled).toBe(false)
-  await act(async () => save.click())
-  const payload = JSON.parse(request.mock.calls.find(([, options]) => options?.method === 'PUT')![1].body)
-  expect(payload.pack).toBe('appdynamics')
-  expect(payload.connection_id).toBe('connection')
-  expect(payload.appdynamics.applications).toEqual(['123'])
-  expect(payload.management_scope).toBeUndefined()
-  expect(payload.management_identity).toBeUndefined()
-  expect(payload.prometheus).toBeUndefined()
-  expect(payload.destination).toBe('')
-  expect(payload.collector_public_key).toBe('')
+  expect(Array.from(pack.options).map(option => option.value)).not.toContain('appdynamics')
 })
 
 it('clears provider connection fields when switching back to a host collection pack', async () => {

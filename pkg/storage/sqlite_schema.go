@@ -61,6 +61,10 @@ func schemaCreateTableStatements() []string {
  id TEXT PRIMARY KEY,
  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
  connection_id TEXT NOT NULL,connection_revision BIGINT NOT NULL,collector_id TEXT NOT NULL DEFAULT '',provider TEXT NOT NULL DEFAULT 'appdynamics',kind TEXT NOT NULL,state TEXT NOT NULL,payload_json TEXT NOT NULL,result_json TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '',owner_token TEXT NOT NULL DEFAULT '',lease_expires_at DATETIME,created_at DATETIME NOT NULL,expires_at DATETIME NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS elastic_inspections (
+ id TEXT PRIMARY KEY,
+ project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+ connection_id TEXT NOT NULL,connection_revision BIGINT NOT NULL,collector_id TEXT NOT NULL DEFAULT '',kind TEXT NOT NULL,state TEXT NOT NULL,payload_json TEXT NOT NULL,result_json TEXT NOT NULL DEFAULT '',cleanup_json TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '',owner_token TEXT NOT NULL DEFAULT '',lease_expires_at DATETIME,created_at DATETIME NOT NULL,expires_at DATETIME NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS run_monitor_observation_heads (
  job_id TEXT NOT NULL REFERENCES run_monitor_jobs(id) ON DELETE CASCADE,
  record_key TEXT NOT NULL,
@@ -1650,6 +1654,7 @@ func schemaCreateTableStatements() []string {
 			username_secret_name TEXT NOT NULL DEFAULT '',
 			password_secret_name TEXT NOT NULL DEFAULT '',
 			metric_aggregations_json TEXT NOT NULL DEFAULT '[]',
+            elastic_profile_json TEXT NOT NULL DEFAULT '',
 			last_checked_at DATETIME,
 			last_check_status TEXT NOT NULL DEFAULT '',
 			last_check_message TEXT NOT NULL DEFAULT '',
@@ -1928,6 +1933,13 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.scenario_mode", query: `ALTER TABLE tests ADD COLUMN scenario_mode TEXT`},
 		{name: "tests.goal_config_json", query: `ALTER TABLE tests ADD COLUMN goal_config_json TEXT`},
 		{name: "tests.traffic_profile_json", query: `ALTER TABLE tests ADD COLUMN traffic_profile_json TEXT`},
+		{name: "run_monitor_observation_heads.evidence_service", query: `ALTER TABLE run_monitor_observation_heads ADD COLUMN evidence_service TEXT NOT NULL DEFAULT ''`},
+		{name: "run_monitor_observation_heads.evidence_severity", query: `ALTER TABLE run_monitor_observation_heads ADD COLUMN evidence_severity TEXT NOT NULL DEFAULT ''`},
+		{name: "run_monitor_observation_heads.evidence_trace_id", query: `ALTER TABLE run_monitor_observation_heads ADD COLUMN evidence_trace_id TEXT NOT NULL DEFAULT ''`},
+		{name: "run_monitor_observation_heads.evidence_time", query: `ALTER TABLE run_monitor_observation_heads ADD COLUMN evidence_time TEXT NOT NULL DEFAULT ''`},
+		{name: "run_monitor_observation_heads.record_bytes", query: `ALTER TABLE run_monitor_observation_heads ADD COLUMN record_bytes BIGINT NOT NULL DEFAULT 0`},
+		{name: "elk_connections.elastic_profile_json", query: `ALTER TABLE elk_connections ADD COLUMN elastic_profile_json TEXT NOT NULL DEFAULT ''`},
+		{name: "elastic_inspections.cleanup_json", query: `ALTER TABLE elastic_inspections ADD COLUMN cleanup_json TEXT NOT NULL DEFAULT ''`},
 		{name: "tests.elk_capture_json", query: `ALTER TABLE tests ADD COLUMN elk_capture_json TEXT`},
 		{name: "tests.dynatrace_capture_json", query: `ALTER TABLE tests ADD COLUMN dynatrace_capture_json TEXT`},
 		{name: "tests.monitor_bindings_json", query: `ALTER TABLE tests ADD COLUMN monitor_bindings_json TEXT`},
@@ -2170,6 +2182,9 @@ var dataPoolRowsPageIndex = schemaIndex{
 // indexes skip NULL/empty values so legacy rows awaiting backfill do not collide.
 var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_prometheus_connections_project ON prometheus_connections(project_id,name,id)`, "idx_prometheus_connections_project"},
+	{name: "idx_monitor_evidence_scope_time", query: `CREATE INDEX IF NOT EXISTS idx_monitor_evidence_scope_time ON run_monitor_observation_heads(job_id,diagnostic_kind,evidence_time,record_key) WHERE record_kind='diagnostic'`},
+	{name: "idx_monitor_evidence_trace", query: `CREATE INDEX IF NOT EXISTS idx_monitor_evidence_trace ON run_monitor_observation_heads(job_id,evidence_trace_id,record_key) WHERE record_kind='diagnostic'`},
+	{`CREATE INDEX IF NOT EXISTS idx_elastic_inspections_poll ON elastic_inspections(collector_id,state,expires_at)`, "idx_elastic_inspections_poll"},
 	{`CREATE INDEX IF NOT EXISTS idx_appdynamics_quota_expiry ON appdynamics_quota_leases(resource_key,expires_at)`, "idx_appdynamics_quota_expiry"},
 	{`CREATE INDEX IF NOT EXISTS idx_object_activity_scope_time ON object_activity_events(project_id,created_at,id)`, "idx_object_activity_scope_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_object_activity_resource_time ON object_activity_events(project_id,resource_type,resource_id,created_at)`, "idx_object_activity_resource_time"},

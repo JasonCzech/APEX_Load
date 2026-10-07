@@ -353,6 +353,9 @@ func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, err
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
+	if err := engine.RetiredBrunoRuntimeError(script); err != nil {
+		return nil, err
+	}
 	releaseReferenceMutation, err := tr.acquireSecretReferenceMutation(script.ProjectID)
 	if err != nil {
 		return nil, err
@@ -566,6 +569,9 @@ func (tr *TestRunner) storeScriptDurableForRestore(script *dsl.Script) (*StoredS
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
+	if err := engine.RetiredBrunoRuntimeError(script); err != nil {
+		return nil, err
+	}
 	releaseReferenceMutation, err := tr.acquireSecretReferenceMutation(script.ProjectID)
 	if err != nil {
 		return nil, err
@@ -577,6 +583,9 @@ func (tr *TestRunner) storeScriptDurableForRestore(script *dsl.Script) (*StoredS
 func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJava bool) (*StoredScript, error) {
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
+	}
+	if err := engine.RetiredBrunoRuntimeError(script); err != nil {
+		return nil, err
 	}
 	if scriptRequiresJavaVuserAuthoringApproval(script) && !restoringExistingJava {
 		return nil, fmt.Errorf("Java Vuser scripts must be saved through authoring-session review and approval")
@@ -1274,6 +1283,9 @@ func (tr *TestRunner) replayScriptDefinitionContext(
 ) (*engine.ReplayReport, error) {
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
+	}
+	if err := engine.RetiredBrunoRuntimeError(script); err != nil {
+		return nil, err
 	}
 	if ctx == nil {
 		ctx = context.Background()

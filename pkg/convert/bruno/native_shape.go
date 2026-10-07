@@ -2,13 +2,13 @@ package bruno
 
 import (
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"math"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/scrub"
-	"gopkg.in/yaml.v3"
 )
 
 func validateNativeLayerShape(file sourceFile, role string) error {

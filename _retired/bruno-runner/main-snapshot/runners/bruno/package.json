@@ -1,0 +1,38 @@
+{
+  "name": "@apexload/bruno-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Version-pinned Bruno compatibility runner for APEX Load",
+  "license": "MIT",
+  "type": "commonjs",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "lint": "eslint .",
+    "test": "node --test test/*.test.js",
+    "sbom": "node scripts/sbom.js --output sbom.cdx.json"
+  },
+  "dependencies": {
+    "@usebruno/cli": "3.5.2",
+    "@usebruno/common": "0.23.0",
+    "@usebruno/filestore": "0.10.0",
+    "@usebruno/js": "0.49.0",
+    "@usebruno/lang": "0.37.1",
+    "@usebruno/requests": "0.18.0",
+    "csv-parse": "5.5.6",
+    "decomment": "0.9.5",
+    "https-proxy-agent": "7.0.6",
+    "lodash": "4.18.1",
+    "socks-proxy-agent": "8.0.5",
+    "tar-stream": "3.1.7",
+    "ws": "8.21.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.27.0",
+    "globals": "^17.7.0"
+  }
+}

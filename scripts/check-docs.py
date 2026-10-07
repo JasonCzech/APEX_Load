@@ -12,9 +12,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-# Historical folders exempt from link/route checks. Currently none: docs/archive and docs/qa/reviews
-# are validated like active docs (add a prefix here if archived text needs to stay untouched).
-NON_CURRENT_PREFIXES: tuple[Path, ...] = ()
+# Retired source snapshots preserve former contracts and are not current documentation.
+NON_CURRENT_PREFIXES: tuple[Path, ...] = (Path("_retired"),)
 INDEX_PATH = Path("docs/INDEX.md")
 LINK_RE = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 EXTERNAL_LINK_PREFIXES = ("#", "http://", "https://", "mailto:", "app://")
@@ -45,7 +44,8 @@ def active_markdown_files() -> list[Path]:
     return [
         p
         for p in git_files("*.md")
-        if not any(p.is_relative_to(prefix) for prefix in NON_CURRENT_PREFIXES)
+        if (ROOT / p).is_file()
+        and not any(p.is_relative_to(prefix) for prefix in NON_CURRENT_PREFIXES)
     ]
 
 

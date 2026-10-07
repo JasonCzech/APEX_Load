@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/appdynamics"
+
 	"github.com/jasonczech/apexload/pkg/dynatrace"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/rca"
@@ -38,7 +38,7 @@ func TestRCAHypothesisFromConnectedProviderEvidence(t *testing.T) {
 	}
 	writeArchiveSidecar(t, record, "monitor_points.jsonl", points, func(m *RunArchiveManifest) {
 		m.MonitorEvidenceFile = "monitor_points.jsonl"
-		m.MonitorCoverage = []RunMonitorCoverage{{SourceID: "dt-src", Dynatrace: &dynatrace.Selection{}, Topology: []appdynamics.Entity{{ID: "SERVICE-1", Name: "api.shop.local", Type: "SERVICE"}}}}
+		m.MonitorCoverage = []RunMonitorCoverage{{SourceID: "dt-src", Dynatrace: &dynatrace.Selection{}, Topology: []monitorprovider.Entity{{ID: "SERVICE-1", Name: "api.shop.local", Type: "SERVICE"}}}}
 	})
 	t.Setenv("APEXLOAD_RCA_V2_PROJECTS", storage.DefaultProjectID)
 

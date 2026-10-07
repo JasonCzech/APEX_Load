@@ -47,6 +47,9 @@ func validateScriptIssues(script *Script, allowPreservedJavaVMCredentials bool) 
 	if issues := validateScriptStructureIssues(script); len(issues) != 0 {
 		return issues
 	}
+	if strings.EqualFold(strings.TrimSpace(script.Protocol), "bruno") {
+		return []string{BrunoRunnerRetiredMessage}
+	}
 	if issues := validateRunIdentityTemplateIssues(script); len(issues) != 0 {
 		return issues
 	}
@@ -123,9 +126,6 @@ func validateScriptIssues(script *Script, allowPreservedJavaVMCredentials bool) 
 	issues = append(issues, validateWebRuntimeIssues(script)...)
 	issues = append(issues, validateHTTPHeaderContractIssues(script)...)
 	issues = append(issues, validateGoalConfigIssues(script.GoalConfig)...)
-	if script.Protocol == "bruno" {
-		issues = append(issues, validateBrunoConfigIssues(script.Config.Bruno)...)
-	}
 
 	return issues
 }
@@ -835,6 +835,9 @@ func validateActionForProtocol(protocol string, index int, action Action) []stri
 }
 
 func validateActionForProtocolAtPath(protocol string, path string, index int, action Action) []string {
+	if strings.EqualFold(strings.TrimSpace(action.Type), "bruno_run") {
+		return []string{fmt.Sprintf("%s: %s", path, BrunoRunnerRetiredMessage)}
+	}
 	var issues []string
 	protocol = ProtocolFamily(protocol)
 	if action.HTTPVersion.IsPresent() {
@@ -884,15 +887,6 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 		return issues
 	}
 	switch protocol {
-	case "bruno":
-		spec, ok := protocolActionSpec("bruno", action.Type)
-		if !ok {
-			return append(issues, fmt.Sprintf("%s: unsupported bruno action type %q", actionLabel(path, action), action.Type))
-		}
-		if spec.Validate != nil {
-			return append(issues, rebased(spec.Validate(index, action))...)
-		}
-		return issues
 	case "browser":
 		return append(issues, rebased(validateBrowserActionIssues(index, action))...)
 	case "websocket":

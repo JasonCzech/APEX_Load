@@ -17,8 +17,8 @@
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.04em);
 }
 
 .paramize-review-header p {
@@ -182,8 +182,8 @@
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.03em);
 }
 
 .paramize-confidence-high {
@@ -208,8 +208,8 @@
   color: var(--danger);
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.03em);
 }
 
 .paramize-script-tag {

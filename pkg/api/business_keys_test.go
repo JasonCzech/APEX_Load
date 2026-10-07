@@ -225,8 +225,8 @@ func (f *businessKeyLogs) RoundTrip(r *http.Request) (*http.Response, error) {
 
 func TestBusinessKeyLookupJoinsRequestsAndLogsWithoutKeepingValues(t *testing.T) {
 	server, store := businessKeyServer(t)
-	if server.appDynamicsCancel != nil {
-		server.appDynamicsCancel()
+	if server.providerMonitoringCancel != nil {
+		server.providerMonitoringCancel()
 	}
 	mappingID := approveBusinessKeyMapping(t, server, store)
 	digester, err := server.runner.businessKeyDigester(context.Background(), storage.DefaultProjectID)
@@ -331,8 +331,8 @@ func TestBusinessKeyLookupJoinsRequestsAndLogsWithoutKeepingValues(t *testing.T)
 
 func TestBusinessKeyLookupReportsWhatItCannotMatch(t *testing.T) {
 	server, store := businessKeyServer(t)
-	if server.appDynamicsCancel != nil {
-		server.appDynamicsCancel()
+	if server.providerMonitoringCancel != nil {
+		server.providerMonitoringCancel()
 	}
 	mappingID := approveBusinessKeyMapping(t, server, store)
 	record := exemplarArchiveFixture(t, server, store, "bk-old-run", func(i int, tx *TransactionEvent) {

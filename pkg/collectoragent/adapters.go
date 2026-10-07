@@ -18,8 +18,9 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
-	"github.com/jasonczech/apexload/pkg/appdynamics"
+
 	"github.com/jasonczech/apexload/pkg/dynatrace"
+	"github.com/jasonczech/apexload/pkg/elastic"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
 )
@@ -27,22 +28,31 @@ import (
 // AdapterTarget is a local operator approval. A signed job cannot add a remote
 // identity, executable, driver, command, query, or credential destination.
 type AdapterTarget struct {
-	DynatraceOrigins []string           `json:"dynatrace_origins,omitempty"`
-	Management       *ManagementTarget  `json:"management,omitempty"`
-	Prometheus       *prometheus.Config `json:"prometheus,omitempty"`
-	Cloud            *CloudQuery        `json:"cloud,omitempty"`
-	ApprovedCIDRs    []string           `json:"approved_cidrs,omitempty"`
-	CAPEM            string             `json:"ca_pem,omitempty"`
-	EventsEndpoint   string             `json:"events_endpoint,omitempty"`
-	Applications     []string           `json:"applications,omitempty"`
-	Pack             string             `json:"pack"`
-	Destination      string             `json:"destination"`
-	HostKey          string             `json:"host_key,omitempty"`
-	JavaExecutable   string             `json:"java_executable,omitempty"`
-	HelperClassPath  string             `json:"helper_class_path,omitempty"`
-	QueryPack        string             `json:"query_pack,omitempty"`
-	TLSCAFile        string             `json:"tls_ca_file,omitempty"`
-	JVMTrustStore    string             `json:"jvm_trust_store,omitempty"`
+	DynatraceOrigins      []string           `json:"dynatrace_origins,omitempty"`
+	Management            *ManagementTarget  `json:"management,omitempty"`
+	Prometheus            *prometheus.Config `json:"prometheus,omitempty"`
+	Cloud                 *CloudQuery        `json:"cloud,omitempty"`
+	ApprovedCIDRs         []string           `json:"approved_cidrs,omitempty"`
+	CAPEM                 string             `json:"ca_pem,omitempty"`
+	EventsEndpoint        string             `json:"events_endpoint,omitempty"`
+	Applications          []string           `json:"applications,omitempty"`
+	Pack                  string             `json:"pack"`
+	Destination           string             `json:"destination"`
+	HostKey               string             `json:"host_key,omitempty"`
+	JavaExecutable        string             `json:"java_executable,omitempty"`
+	HelperClassPath       string             `json:"helper_class_path,omitempty"`
+	QueryPack             string             `json:"query_pack,omitempty"`
+	TLSCAFile             string             `json:"tls_ca_file,omitempty"`
+	JVMTrustStore         string             `json:"jvm_trust_store,omitempty"`
+	KibanaCAPEM           string             `json:"kibana_ca_pem,omitempty"`
+	KibanaApprovedCIDRs   []string           `json:"kibana_approved_cidrs,omitempty"`
+	LogstashCAPEM         string             `json:"logstash_ca_pem,omitempty"`
+	LogstashApprovedCIDRs []string           `json:"logstash_approved_cidrs,omitempty"`
+	ElasticESQL           bool               `json:"elastic_esql,omitempty"`
+	ElasticHealth         bool               `json:"elastic_health,omitempty"`
+	Indices               []string           `json:"indices,omitempty"`
+	KibanaEndpoint        string             `json:"kibana_endpoint,omitempty"`
+	LogstashEndpoint      string             `json:"logstash_endpoint,omitempty"`
 }
 
 func LoadAdapterTargets(path string) ([]AdapterTarget, error) {
@@ -198,9 +208,9 @@ func validateAdapterTargets(cfg Config) error {
 			seen[target.Pack+"\x00"+target.Destination] = true
 			continue
 		}
-		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "appdynamics": "https", "dynatrace": "https", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[target.Pack]
+		expected := map[string]string{"ssh-linux": "ssh", "jmx": "jmx", "jdbc": "postgresql", "otel-metrics": "otlp", "dynatrace": "https", "elastic": "https", "cloudwatch": "cloudwatch", "azure-monitor": "azure-monitor"}[target.Pack]
 		endpoint, err := url.Parse(target.Destination)
-		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && endpoint.Path != "" && !((target.Pack == monitorprovider.PackAppDynamics || target.Pack == monitorprovider.PackDynatrace) && endpoint.Path == "/") {
+		if expected == "" || err != nil || endpoint.Scheme != expected || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" || len(target.Destination) > 2048 || target.Pack != "jdbc" && target.Pack != "elastic" && endpoint.Path != "" && !((target.Pack == monitorprovider.PackDynatrace) && endpoint.Path == "/") {
 			return errors.New("invalid approved monitor destination")
 		}
 		if seen[target.Pack+"\x00"+target.Destination] {
@@ -208,6 +218,14 @@ func validateAdapterTargets(cfg Config) error {
 		}
 		seen[target.Pack+"\x00"+target.Destination] = true
 		switch target.Pack {
+		case "elastic":
+			cfg := elastic.Config{Product: elastic.ProductElasticsearch, Endpoint: target.Destination, AuthType: elastic.AuthBasic, ApprovedCIDRs: target.ApprovedCIDRs, CAPEM: target.CAPEM, KibanaEndpoint: target.KibanaEndpoint, LogstashEndpoint: target.LogstashEndpoint, KibanaCAPEM: target.KibanaCAPEM, KibanaApprovedCIDRs: target.KibanaApprovedCIDRs, LogstashCAPEM: target.LogstashCAPEM, LogstashApprovedCIDRs: target.LogstashApprovedCIDRs}
+			if err := cfg.Validate(); err != nil {
+				return err
+			}
+			if len(target.Indices) == 0 && !target.ElasticHealth || len(target.Indices) > 32 {
+				return errors.New("Elastic targets require locally approved index patterns")
+			}
 		case monitorprovider.PackDynatrace:
 			if len(target.DynatraceOrigins) > 3 || len(target.DynatraceOrigins) == 0 {
 				return errors.New("Dynatrace requires locally approved origins")
@@ -223,14 +241,6 @@ func validateAdapterTargets(cfg Config) error {
 				if err := dynatrace.ValidateOrigin(origin, suffix); err != nil {
 					return err
 				}
-			}
-		case monitorprovider.PackAppDynamics:
-			cfg := appdynamics.Config{Endpoint: target.Destination, AccountName: "validation", ApprovedCIDRs: target.ApprovedCIDRs, CAPEM: target.CAPEM, EventsEndpoint: target.EventsEndpoint}
-			if err := cfg.Validate(); err != nil {
-				return err
-			}
-			if len(target.Applications) > 32 {
-				return errors.New("application approval exceeds bound")
 			}
 		case "cloudwatch", "azure-monitor":
 			if endpoint.Port() != "" {

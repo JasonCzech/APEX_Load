@@ -67,3 +67,14 @@ it('shows immutable requested and admitted processor resources on a prepared run
   expect(container.textContent).toContain('Admitted processors / workers2 / 8')
   expect(container.textContent).toContain('Partition ceiling per processor4')
 })
+
+it('shows optional monitoring warnings while preserving ready Start and required failure details', async () => {
+  request.mockImplementation(async (path: string) => path.includes('capabilities') ? { preparation_enabled: true } : { id: 'prep', state: 'ready', execution_revision: 'hash', monitors: { warnings: ['Optional Elastic source: forbidden'] } })
+  await act(async () => root.render(<PreparationControls projectId="p" testId="run" status="INITIALIZING" canEdit />))
+  expect(container.querySelector('[aria-label="Monitoring readiness warnings"]')?.textContent).toContain('Optional Elastic source: forbidden')
+  expect([...container.querySelectorAll('button')].find(button => button.textContent === 'Start prepared run')?.disabled).toBe(false)
+  request.mockImplementation(async (path: string) => path.includes('capabilities') ? { preparation_enabled: true } : { id: 'required', state: 'failed', execution_revision: 'hash', failure: 'Required Elastic source is unavailable' })
+  await act(async () => root.render(<PreparationControls projectId="p" testId="another" status="INITIALIZING" canEdit />))
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('Required Elastic source is unavailable')
+  expect([...container.querySelectorAll('button')].some(button => button.textContent === 'Start prepared run')).toBe(false)
+})

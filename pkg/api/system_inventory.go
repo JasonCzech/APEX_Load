@@ -336,10 +336,7 @@ func defaultSupportedProtocols() []string {
 	registered := protocol.List()
 	protocols := registered[:0]
 	for _, name := range registered {
-		// Bruno requires a runner plus project-scoped immutable artifact
-		// delivery. Unknown/legacy generator inventory must not inherit it from
-		// the controller's compile-time registry; a live heartbeat or explicit
-		// target declaration must prove support.
+		// Retired protocol identity must never become an advertised capability.
 		if strings.EqualFold(strings.TrimSpace(name), "bruno") {
 			continue
 		}

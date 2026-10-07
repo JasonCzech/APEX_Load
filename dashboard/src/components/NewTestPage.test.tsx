@@ -10,6 +10,7 @@ import { pacingFromEdit } from './pacingEditModel'
 import { readNewTestDraft, saveNewTestDraft } from './newTestDraft'
 import { persistNewTestQueueAttempt } from './newTestQueueAttempt'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
+import { useNavigationGuardRunner } from '../hooks/NavigationGuardProvider'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -4491,16 +4492,43 @@ describe('NewTestPage', () => {
     expect(container.querySelector('[aria-label="Blackout windows window 1 end time"]')).toBeInstanceOf(HTMLInputElement)
     expect(container.querySelector('[aria-label="Blackout windows window 1 days of week"]')).not.toBeNull()
   })
-  async function renderAuditPage() {
+  async function renderAuditPage(extra?: ReactNode) {
     await act(async () => root.render(<NavigationGuardProvider><NewTestPage
       activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
       activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
       releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
       onSelectTest={vi.fn()} onCreateRelease={vi.fn().mockResolvedValue(null)}
-    /></NavigationGuardProvider>))
+    />{extra}</NavigationGuardProvider>))
     await flushPromises()
   }
   const auditButton = (name: string) => Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === name)
+
+  it('retains invalid criterion drafts across schedule views and discards back to inherited dimensions', async () => {
+    const catalog = await apiMock.listScenarios('project-1')
+    const rule = { source_id: 'elastic', metric: 'interval_count', unit: 'count', statistic: 'sum', comparator: 'lte', threshold: 100, severity: 'fail', min_coverage_pct: 95, start_offset_seconds: 0, dimensions: { host: 'inherited' } }
+    apiMock.listScenarios.mockResolvedValue({ ...catalog, scenarios: catalog.scenarios.map((scenario: Record<string, unknown>) => ({ ...scenario, goal_config: { monitor_rules: [rule] } })) })
+    const left = vi.fn()
+    function LeaveRunSetup() { const { runGuarded } = useNavigationGuardRunner(); return <button type="button" onClick={() => runGuarded(left)}>Leave Run Setup</button> }
+    await renderAuditPage(<LeaveRunSetup />)
+    const dimensions = () => container.querySelector<HTMLInputElement>('[aria-label="Criterion 1 entity dimensions"]')!
+    expect(dimensions().value).toBe('{"host":"inherited"}')
+    await act(async () => setInputValue(dimensions(), '{'))
+    await act(async () => auditButton('Schedules')?.click())
+    expect(dimensions().closest('[hidden]')).not.toBeNull()
+    await act(async () => auditButton('Run Setup')?.click())
+    expect(dimensions().value).toBe('{')
+    await act(async () => auditButton('Save draft')?.click())
+    expect(readNewTestDraft('project-1', 'app-1')).toBeNull()
+    expect(container.textContent).toContain('before saving or launching')
+    await act(async () => auditButton('Leave Run Setup')?.click())
+    expect(left).not.toHaveBeenCalled()
+    await act(async () => auditButton('Discard changes')?.click())
+    expect(left).toHaveBeenCalledOnce()
+    expect(dimensions().value).toBe('{"host":"inherited"}')
+    expect(dimensions().getAttribute('aria-invalid')).toBe('false')
+    await act(async () => auditButton('Save draft')?.click())
+    expect(readNewTestDraft('project-1', 'app-1')).not.toBeNull()
+  })
 
   it('keeps the selected scenario identity visible when filtering excludes its row', async () => {
     await renderAuditPage()

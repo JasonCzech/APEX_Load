@@ -30,6 +30,9 @@ func preparationProjectEnabled(project string) bool {
 }
 
 func (tr *TestRunner) preparationRevision(id string) (string, error) {
+	if err := tr.validateRetiredExecution(id, ""); err != nil {
+		return "", err
+	}
 	fingerprint, err := tr.scriptShakeoutExecutableFingerprint(id)
 	if err != nil {
 		return "", err
@@ -73,9 +76,9 @@ func (tr *TestRunner) preparationRevision(id string) (string, error) {
 			for _, binding := range snapshot.Bindings.Sources {
 				if binding.SourceID == source.ID {
 					snapshot.Sources = append(snapshot.Sources, source)
-					if source.Pack == monitorprovider.PackAppDynamics {
-						if connections, ok := tr.testStore.(storage.AppDynamicsConnectionStore); ok {
-							c, e := connections.GetAppDynamicsConnection(source.ConnectionID)
+					if source.Pack == "elastic" {
+						if connections, ok := tr.testStore.(storage.ELKConnectionStore); ok {
+							c, e := connections.GetELKConnection(source.ConnectionID)
 							if e != nil {
 								return "", e
 							}
@@ -199,11 +202,15 @@ func (s *Server) handlePreparation(w http.ResponseWriter, r *http.Request) {
 	assignment := cloneGeneratorAssignmentSettings(test.Assignment)
 	unsupported := test.ScriptShakeout
 	for _, group := range test.groupSpecs {
-		if group.Script != nil && (group.Script.Protocol == "java_vuser" || group.Script.Protocol == "bruno") {
+		if group.Script != nil && group.Script.Protocol == "java_vuser" {
 			unsupported = true
 		}
 	}
 	s.runner.mu.RUnlock()
+	if err := s.runner.validateRetiredExecution(id, req.PreparationID); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	if req.PreparationID == "" && req.Capacity.Selection == "ephemeral" {
 		if assignment == nil || assignment.PoolID == "" || s.capacityBackends == nil {
 			writeError(w, 422, "ephemeral preparation requires a supported capacity pool")
@@ -376,6 +383,9 @@ func (tr *TestRunner) awaitPreparedStart(test *ManagedTest) error {
 }
 
 func (tr *TestRunner) consumePreparation(id string, opts StartTestOptions) error {
+	if err := tr.validateRetiredExecution(id, opts.PreparationID); err != nil {
+		return err
+	}
 	if !tr.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
@@ -466,6 +476,9 @@ func preparationAllocationMatches(test *ManagedTest, p *storage.Preparation) boo
 }
 
 func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
+	if err := tr.validateRetiredExecution(id, ""); err != nil {
+		return err
+	}
 	if err := tr.validateRunMonitorCorrelation(id); err != nil {
 		return err
 	}
@@ -514,11 +527,39 @@ func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
 	if err := tr.validatePrometheusCollectionBudgets(bindings, sources, goals); err != nil {
 		return err
 	}
-	if err := tr.validateAppDynamicsCollectionBudgets(bindings, sources); err != nil {
-		return err
-	}
 	if err := tr.validateDynatraceReadiness(readinessContext, record.ProjectID, bindings, sources); err != nil {
 		return err
+	}
+	monitorWarnings := []string{}
+	for _, binding := range bindings.Sources {
+		if binding.Required {
+			continue
+		}
+		for _, source := range sources {
+			if source.ID != binding.SourceID || source.Pack != "elastic" {
+				continue
+			}
+			optionalCtx, cancel := context.WithTimeout(readinessContext, 10*time.Second)
+			err := tr.validateRequiredElastic(optionalCtx, record.ProjectID, source)
+			cancel()
+			if err != nil {
+				monitorWarnings = append(monitorWarnings, "monitor "+source.ID+": optional_connection_unavailable")
+			}
+		}
+	}
+	tr.mu.Lock()
+	if current := tr.tests[id]; current != nil {
+		current.MonitorWarnings = append([]string(nil), monitorWarnings...)
+	}
+	tr.mu.Unlock()
+	if warnings, ok := tr.testStore.(interface {
+		SetPreparationMonitorWarnings(string, string, []string) error
+	}); ok {
+		if err := tr.trackDurableWrite(func() error {
+			return warnings.SetPreparationMonitorWarnings(record.ProjectID, id, monitorWarnings)
+		}); err != nil {
+			return err
+		}
 	}
 	for _, binding := range bindings.Sources {
 		if !binding.Required {
@@ -528,41 +569,9 @@ func (tr *TestRunner) validatePreparedMonitorReadiness(id string) error {
 			if source.ID != binding.SourceID {
 				continue
 			}
-			if source.Pack == monitorprovider.PackAppDynamics {
-				connections, ok := tr.testStore.(storage.AppDynamicsConnectionStore)
-				if !ok {
-					return errors.New("AppDynamics connection storage unavailable")
-				}
-				c, err := connections.GetAppDynamicsConnection(source.ConnectionID)
-				if err != nil || c.ProjectID != record.ProjectID || c.ConfigurationStatus() != "ready" {
-					return errors.New("required AppDynamics connection is not verified")
-				}
-				if err := storage.ValidateAppDynamicsSourceConnection(source, c.Snapshot()); err != nil {
+			if source.Pack == "elastic" {
+				if err := tr.validateRequiredElastic(readinessContext, record.ProjectID, source); err != nil {
 					return err
-				}
-				if source.ExecutorMode != "direct" {
-					inspections, ok := tr.testStore.(storage.AppDynamicsInspectionStore)
-					if !ok {
-						return errors.New("AppDynamics collector enrollment storage unavailable")
-					}
-					key, err := inspections.AppDynamicsCollectorPublicKey(record.ProjectID, source.CollectorID, source.Destination, time.Now().UTC())
-					if err != nil || key != source.CollectorPublicKey {
-						return errors.New("AppDynamics source collector enrollment changed; update the source before preparing")
-					}
-				}
-				if source.AppDynamics == nil || len(source.AppDynamics.Metrics) > 0 && !c.Capabilities.Metrics || source.AppDynamics.Events && !c.Capabilities.Events || source.AppDynamics.Violations && !c.Capabilities.Violations || source.AppDynamics.Snapshots && !c.Capabilities.Snapshots || len(source.AppDynamics.Analytics) > 0 && !c.Capabilities.Analytics {
-					return errors.New("required AppDynamics capability has not been verified")
-				}
-				if _, err := resolveAppDynamicsCredentials(readinessContext, tr.secretResolverForProject(record.ProjectID), c.Snapshot()); err != nil {
-					return err
-				}
-				if tr.appDynamicsPrepare != nil {
-					ctx, cancel := context.WithTimeout(readinessContext, time.Minute)
-					err := tr.appDynamicsPrepare(ctx, source, c.Snapshot())
-					cancel()
-					if err != nil {
-						return err
-					}
 				}
 			} else if source.Pack == monitorprovider.PackPrometheusQuery {
 				if err := tr.validatePreparedPrometheus(readinessContext, source, record.ProjectID, goals); err != nil {

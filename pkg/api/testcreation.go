@@ -1350,6 +1350,11 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	if elkCapture != nil {
+		if err = tr.validateLegacyElasticConflict(projectID, req.ScenarioID, elkCapture.ConnectionID, requestMonitorBindings(req.MonitorBindings)); err != nil {
+			return nil, err
+		}
+	}
 	traceContext, err := normalizeRunTraceContext(req.TraceContext)
 	if err != nil {
 		return nil, err

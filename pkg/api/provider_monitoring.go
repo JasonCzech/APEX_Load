@@ -40,11 +40,6 @@ func init() {
 		return d
 	}
 	providerDescriptors = map[string]providerDescriptor{
-		monitorprovider.PackAppDynamics: describe(monitorprovider.PackAppDynamics, providerDescriptor{
-			Ingest: (*Server).ingestAppDynamicsBatch, CollectDirect: (*Server).collectDirectAppDynamics,
-			PopulateGrant: (*Server).populateAppDynamicsGrant, GrantUnavailable: "AppDynamics credential unavailable", ContractLabel: "AppDynamics",
-			ValidateSubmission: validateAppDynamicsSubmission,
-		}),
 		monitorprovider.PackDynatrace: describe(monitorprovider.PackDynatrace, providerDescriptor{
 			Ingest: (*Server).ingestDynatraceBatch, CollectDirect: (*Server).collectDirectDynatrace,
 			PopulateGrant: (*Server).populateDynatraceGrant, GrantUnavailable: "Dynatrace credential or quota unavailable", ContractLabel: "Dynatrace",
@@ -54,6 +49,11 @@ func init() {
 			Ingest: (*Server).ingestPrometheusBatch, CollectDirect: (*Server).collectDirectPrometheus,
 			PopulateGrant: (*Server).populatePrometheusGrant, GrantUnavailable: "Prometheus executor unavailable", ContractLabel: "Prometheus query",
 			ValidateSubmission: validatePrometheusSubmission,
+		}),
+		monitorprovider.PackElastic: describe(monitorprovider.PackElastic, providerDescriptor{
+			Ingest: (*Server).ingestExpandedElasticBatch, CollectDirect: (*Server).collectDirectExpandedElastic,
+			PopulateGrant: (*Server).populateElasticGrant, GrantUnavailable: "Elastic credential or executor unavailable", ContractLabel: "Elastic",
+			ValidateSubmission: validateExpandedElasticSubmission,
 		}),
 		monitorprovider.PackElasticQuery: describe(monitorprovider.PackElasticQuery, providerDescriptor{
 			Ingest: (*Server).ingestElasticBatch, CollectDirect: (*Server).collectDirectElastic,
@@ -78,18 +78,13 @@ func validateDynatraceSubmission(grant collectoragent.RunJob, job storage.RunMon
 	return 0, ""
 }
 
-func validateAppDynamicsSubmission(grant collectoragent.RunJob, job storage.RunMonitorJob, collector string, batch collectoragent.RunSampleBatch) (int, string) {
-	endpoint := grant.AppDynamics != nil && job.ConnectionSnapshot != nil && grant.AppDynamics.Config.Endpoint == job.ConnectionSnapshot.Config.Endpoint
-	return validateWindowedSubmission(grant, job, collector, batch, endpoint)
-}
-
 func validatePrometheusSubmission(grant collectoragent.RunJob, job storage.RunMonitorJob, collector string, batch collectoragent.RunSampleBatch) (int, string) {
 	endpoint := grant.Prometheus != nil && job.PrometheusConnectionSnapshot != nil && grant.Prometheus.Config.Endpoint == job.PrometheusConnectionSnapshot.Config.Endpoint
 	return validateWindowedSubmission(grant, job, collector, batch, endpoint)
 }
 
-// validateWindowedSubmission is the grant check AppDynamics and Prometheus
-// share; endpoint says whether the grant's endpoint matches the job's snapshot.
+// validateWindowedSubmission is the grant check for windowed provider submissions.
+// endpoint says whether the grant's endpoint matches the job's snapshot.
 func validateWindowedSubmission(grant collectoragent.RunJob, job storage.RunMonitorJob, collector string, batch collectoragent.RunSampleBatch, endpoint bool) (int, string) {
 	if job.Source.CollectorID != collector || grant.SourceID != job.Source.ID || grant.SourceRevision != job.Source.Revision || grant.RunID != job.RunID || grant.Pack != job.Source.Pack || !endpoint || batch.Sequence > grant.NextSequence+int64(max(1, grant.MaxBatches))-1 {
 		return 403, "provider grant does not match job"
@@ -120,4 +115,12 @@ func providerForCapability(capability string) (providerDescriptor, bool) {
 // Older point-only collector packs retain their existing ingestion contract.
 func nativeProviderPack(pack string) bool {
 	return monitorprovider.Canonical(pack)
+}
+
+func validateExpandedElasticSubmission(grant collectoragent.RunJob, job storage.RunMonitorJob, collector string, batch collectoragent.RunSampleBatch) (int, string) {
+	endpoint := grant.Elastic != nil && job.ElasticConnectionSnapshot != nil && grant.Elastic.Config.Endpoint == job.ElasticConnectionSnapshot.Config.Endpoint
+	if grant.ScenarioID != job.ScenarioID || batch.Sequence < 0 {
+		return 403, "Elastic grant does not match job"
+	}
+	return validateWindowedSubmission(grant, job, collector, batch, endpoint)
 }

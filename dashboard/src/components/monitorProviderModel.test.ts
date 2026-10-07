@@ -1,13 +1,13 @@
 import { expect, it } from 'vitest'
 import { monitorMetricCatalog, monitorSourceSelectionComplete, nativeMonitorProvider } from './monitorProviderModel'
-import { monitorJobState } from './appDynamicsConnectionModel'
+import { monitorJobState } from './monitorJobState'
 import { emptyDynatraceSelection } from '../types/dynatrace'
 import { emptyPrometheusQuery, emptyPrometheusSelection } from './prometheusConnectionModel'
-import type { MonitorSource } from '../types/appdynamics'
+import type { MonitorSource } from '../types/runMonitoring'
 
 const source: MonitorSource = { id: 'dt', name: 'SaaS', pack: 'dynatrace', revision: 1, enabled: true, collector_id: '', executor_mode: 'direct', connection_id: 'connection', interval_seconds: 60, dynatrace: emptyDynatraceSelection() }
-it('offers Dynatrace and AppDynamics canonical sources without changing legacy packs', () => {
-  expect(nativeMonitorProvider('dynatrace')).toBe(true); expect(nativeMonitorProvider('appdynamics')).toBe(true); expect(nativeMonitorProvider('cloudwatch')).toBe(false)
+it('offers supported canonical sources while excluding retired authoring', () => {
+  expect(nativeMonitorProvider('dynatrace')).toBe(true); expect(nativeMonitorProvider('appdynamics')).toBe(false); expect(nativeMonitorProvider('cloudwatch')).toBe(false)
   expect(monitorSourceSelectionComplete(source)).toBe(true)
   expect(monitorSourceSelectionComplete({ ...source, connection_id: undefined })).toBe(false)
   expect(monitorSourceSelectionComplete({ ...source, executor_mode: 'collector' })).toBe(false)
@@ -45,4 +45,15 @@ it('keeps approved Prometheus query sources canonical and validates their collec
   expect(monitorSourceSelectionComplete({ ...selected, prometheus: { ...selected.prometheus!, queries: [] } })).toBe(false)
   expect(monitorSourceSelectionComplete({ ...selected, prometheus: { ...selected.prometheus!, queries: [{ ...query, expression: '' }] } })).toBe(false)
   expect(monitorMetricCatalog(selected)).toEqual([{ name: 'cpu', unit: 'seconds', statistic: 'gauge', path: 'gauge' }])
+})
+
+
+it('keeps Elastic canonical readiness and health overlays beside existing native providers', () => {
+  const elastic: MonitorSource = { ...source, pack: 'elastic', dynatrace: undefined, interval_seconds: 10, elastic: { indices: [], cluster_health: true } }
+  expect(nativeMonitorProvider('elastic')).toBe(true)
+  expect(monitorSourceSelectionComplete(elastic)).toBe(true)
+  expect(monitorSourceSelectionComplete({ ...elastic, elastic: { ...elastic.elastic!, logs: true } })).toBe(false)
+  expect(monitorMetricCatalog(elastic).some(metric => metric.name === 'elasticsearch.cluster.status')).toBe(true)
+  const metricSource = { ...elastic, elastic: { indices: ['metrics-*'], metrics: [{ name: 'count', statistic: 'count', unit: 'count', bucket_seconds: 10 }] } }
+  expect(monitorMetricCatalog(metricSource)).toEqual([expect.objectContaining({ name: 'count', unit: 'count', statistic: 'count' })])
 })

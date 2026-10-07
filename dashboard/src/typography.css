@@ -1,0 +1,87 @@
+/*
+ * One type scale for page content, shared by every sidebar destination.
+ *
+ * Most components size their own text (12-13px). Text without a size used to
+ * inherit the browser's 16px, so pages built from plain elements (Activity,
+ * the Command Center landing state, parts of New Test) read noticeably larger
+ * than the rest. Page content now inherits the base size instead; the top bar
+ * keeps its own sizing.
+ */
+:root {
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 15px;
+  --font-size-title: 20px;
+}
+
+body .main-content > :not(.main-topbar) {
+  font-size: var(--font-size-base);
+}
+
+/* Long-form help articles read one step larger than dense app content. */
+body .main-content .help-reading-pane {
+  font-size: var(--font-size-md);
+}
+
+/* Content titles: the main heading inside a page, under the top bar. */
+body .main-content .command-overview-heading h2,
+body .main-content .settings-task-heading h2 {
+  font-size: var(--font-size-title);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+/* Section titles: the heading of a list, table or card section. */
+body .main-content .section-title,
+body .main-content .library-source-header .section-title,
+body .main-content .access-panel-header h3,
+body .main-content .swagger-docs-hero h3 {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+}
+
+/* Field labels and table headers share one small-label style on every page.
+ * Case and tracking come from the shared --label-case/--label-tracking tokens
+ * (sentence case). Pages had used 10-13px, regular to extra-bold, ink or muted. */
+body .main-content :is(.object-activity-filters, .monitor-workflow-actions, .ux-library-filter-fields, .new-test-setup-grid, .page) > label:not(:has(input[type='checkbox'], input[type='radio'])),
+body .main-content :is(label.library-search, label.library-filter, label.project-redaction-rule-field, label.repository-domain-select, .repository-filter-row label, .access-table-toolbar label) > span:first-child,
+body .main-content :is(.data-table, .access-data-table, .object-activity-table) th {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  letter-spacing: var(--label-tracking, 0.05em);
+  text-transform: var(--label-case, uppercase);
+}
+
+/* Controls inside those labels keep normal field text. */
+body .main-content :is(.object-activity-filters, .monitor-workflow-actions, .ux-library-filter-fields, .new-test-setup-grid, .page) > label :is(input, select, textarea) {
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* Content sits in cards on every page: Activity's filters and history table
+ * join the card pattern, and the Results panel uses the shared corner radius. */
+body .main-content .object-activity-filters,
+body .main-content .object-activity-table {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+}
+
+body .main-content .object-activity-filters {
+  margin: 16px 0;
+  padding: 16px;
+}
+
+body .main-content .object-activity-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+body .main-content .library-source-panel {
+  border-radius: var(--radius);
+}

@@ -1,0 +1,69 @@
+{
+  "schema": "apexload.provider_qualification.v1",
+  "provider": "opensearch",
+  "pack": "elastic",
+  "updated": "2026-10-06",
+  "required_permissions": [
+    "Read/search, selected-index and field discovery, and product-specific PIT create/delete on the approved namespace using a supported configured identity",
+    "Optional cluster/node/index statistics require independent monitor privileges; AWS SigV4 is outside this release"
+  ],
+  "environments": [],
+  "capabilities": [
+    {
+      "name": "metrics",
+      "summary": "Mapped Query DSL metrics, units, weighted statistics and terminal windows in the expanded elastic pack",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/elastic/elastic_test.go#TestWeightedMetricBucketsPreserveLeadingBoundaries", "pkg/elastic/elastic_test.go#TestExactCountEstablishesZeroAndPercentilesAreApproximate", "docs/ELASTIC_QUALIFICATION.md"],
+      "remaining": "Provider-only TLS trials cover OpenSearch 2.19.0 and 3.3.0; qualify the complete controller/collector-to-archive workflow and managed deployments separately"
+    },
+    {
+      "name": "diagnostics",
+      "summary": "Scrubbed projected logs, errors, transactions and spans with concrete-index document identity",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/elastic/elastic_test.go#TestRecordProjectionScrubTimeAndTraceIdentity", "pkg/storage/elastic_monitoring_test.go#TestElasticCanonicalEvidenceIdentityCursorAndTerminalDrain", "docs/ELASTIC_QUALIFICATION.md"],
+      "remaining": "Qualify actual Data Prepper/OTel field mappings and the complete retained-evidence workflow; provider pagination alone does not qualify durable retention"
+    },
+    {
+      "name": "trace_lookup",
+      "summary": "Observed trace IDs narrow approved queries and preserve correlation classification",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/elastic/elastic_test.go#TestObservedTraceCorrelationIsPrivateAndRunIdentityWins"],
+      "remaining": "Qualify a live instrumented SUT, upstream sampling and missing ancestors across retained trace views"
+    },
+    {
+      "name": "run_header",
+      "summary": "Opt-in managed run-header propagation with authored-header conflict checks and frozen run scope",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/api/elastic_feature_gate_test.go#TestElasticManagedRunHeaderAliasConflictBeforeTraffic", "pkg/api/elastic_feature_gate_test.go#TestElasticFeatureDisablePreservesFrozenRunHeader"],
+      "remaining": "Qualify deployed application ingestion of X-Apex-Test-Run and approved-origin redirect behavior with real indexed data"
+    },
+    {
+      "name": "esql",
+      "summary": "OpenSearch explicitly rejects Elastic ES|QL and does not translate it to PPL",
+      "outcome": "unsupported",
+      "evidence": ["pkg/elastic/elastic_test.go#TestESQLRowLimitIsTruncatedAndOpenSearchRejectsESQL", "docs/ELASTIC_QUALIFICATION.md"],
+      "remaining": "ES|QL is an Elasticsearch-only capability; OpenSearch PPL/SQL adapters are outside this release"
+    },
+    {
+      "name": "pagination",
+      "summary": "Product-specific PIT/search-after reads with configured sortable-ID fallback or native index/shard ties",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/elastic/elastic_test.go#TestOpenSearchSeparateEndpointsAndStableTies", "pkg/elastic/elastic_test.go#TestOpenSearchNativeTieIncludesConcreteIndex", "docs/ELASTIC_QUALIFICATION.md"],
+      "remaining": "Provider-only 10,005-record TLS trials passed on the 2.19.0 fallback and 3.3.0 native paths; qualify multi-node outages and deployed durable quotas"
+    },
+    {
+      "name": "private_collector",
+      "summary": "Locally approved destinations and indices, sealed signed work, bounded spool replay and cleanup ownership",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/collectoragent/elastic_test.go#TestElasticCollectorLocalIndexApproval", "pkg/collectoragent/elastic_inspection_spool_test.go#TestElasticInspectionResultDurablyReplaysAfterRestart"],
+      "remaining": "Qualify an actual remote collector-to-vendor deployment, private DNS/TLS trust, restarts and controller failover"
+    },
+    {
+      "name": "component_health",
+      "summary": "Independently authorized OpenSearch cluster/node/index statistics with instantaneous measurement semantics",
+      "outcome": "fixture_tested",
+      "evidence": ["pkg/elastic/elastic_test.go#TestHealthIsInstantaneousAndComponentAuthIndependent", "pkg/elastic/elastic_test.go#TestCapabilitiesAreProbedAndOptionalMonitorPermissionsAreIndependent"],
+      "remaining": "Qualify deployed monitor roles; local vendor trials covered search while cluster health was forbidden. Prometheus-hosted observability metrics use the existing Prometheus source"
+    }
+  ]
+}

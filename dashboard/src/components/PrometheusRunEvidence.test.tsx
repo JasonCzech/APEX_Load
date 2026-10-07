@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it } from 'vitest'
 import PrometheusRunEvidence, { PrometheusDiagnosticTable } from './PrometheusRunEvidence'
-import type { RunMonitorJob } from '../types/appdynamics'
+import type { RunMonitorJob } from '../types/runMonitoring'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 it('distinguishes reconciliation, API coverage, source freshness and warnings', async () => {
   const container = document.createElement('div'); const root = createRoot(container)

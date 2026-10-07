@@ -127,8 +127,8 @@ func apiElasticFixture(t *testing.T, terms []string) (*Server, providerMonitorSt
 func apiElasticProfileFixture(t *testing.T, terms []string, profile, authType string) (*Server, providerMonitorStore, storage.RunMonitorJob, *elasticFixture) {
 	t.Helper()
 	server, db := newTimeslotServer(t)
-	if server.appDynamicsCancel != nil {
-		server.appDynamicsCancel()
+	if server.providerMonitoringCancel != nil {
+		server.providerMonitoringCancel()
 	}
 	t.Setenv("APEXLOAD_RUN_MONITOR_PROJECTS", "proj-a")
 	t.Setenv("APEXLOAD_MONITOR_SIGNING_SEED", "")

@@ -1,0 +1,837 @@
+{
+  "status": "retired",
+  "baseline_revision": "0a480cee9d80efd68c984e2cbc1627e25443b2fd",
+  "source": "current working tree including uncommitted and untracked inputs",
+  "files": [
+    {
+      "original_path": "cmd/apexctl/appdynamics.go",
+      "sha256": "378d7ea8d56830d5f020603e8843eca082f36dd54a05671f4a91457720e6d1a6",
+      "snapshot_path": "_retired/appdynamics/snapshot/cmd/apexctl/appdynamics.go"
+    },
+    {
+      "original_path": "cmd/apexctl/appdynamics_ci.go",
+      "sha256": "59ba6a41601ee0ed80af8260a5345b0f956619817e871f005ada1c7fb1e39be4",
+      "snapshot_path": "_retired/appdynamics/snapshot/cmd/apexctl/appdynamics_ci.go"
+    },
+    {
+      "original_path": "cmd/apexctl/appdynamics_ci_test.go",
+      "sha256": "2bd612bba55c67cb7ad438478155bdebc8ba84426ed28aa93c0183d148d36403",
+      "snapshot_path": "_retired/appdynamics/snapshot/cmd/apexctl/appdynamics_ci_test.go"
+    },
+    {
+      "original_path": "cmd/apexctl/appdynamics_test.go",
+      "sha256": "b716f2f34ef2e4fe14e670fb219c348b2674041b1156bfae327c53367fb4c7f1",
+      "snapshot_path": "_retired/appdynamics/snapshot/cmd/apexctl/appdynamics_test.go"
+    },
+    {
+      "original_path": "dashboard/src/components/AppDynamicsArchiveEvidence.test.tsx",
+      "sha256": "322a7d827d309bde3f7495cd09959cbfe4e10644442a1f2e1a10b481ec0d4145",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/AppDynamicsArchiveEvidence.test.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/AppDynamicsArchiveEvidence.tsx",
+      "sha256": "78090eddb6c890c9d1523d855e670e0507ebd6ec6f703422165f89a7333a8837",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/AppDynamicsArchiveEvidence.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/AppDynamicsConnectionsCard.test.tsx",
+      "sha256": "205137708f642ac3e27d116f3216ba72a19e3ba5453416487f67b97cc180d45b",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/AppDynamicsConnectionsCard.test.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/AppDynamicsConnectionsCard.tsx",
+      "sha256": "cb85ea5f4e637e69bf8b50c1407c1dea01958042aeea17b5f8078f354a579204",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/AppDynamicsConnectionsCard.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/AppDynamicsEvidenceTable.tsx",
+      "sha256": "5f679bd9ba39b89acd2f7162a3d559203bf5f962a3079c10cec460f1378dd5cf",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/AppDynamicsEvidenceTable.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/AppDynamicsMetricPresets.test.tsx",
+      "sha256": "9910a19181c2cad2947906aedbddeb227d971bdca3df8018f27ae79467f47324",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/AppDynamicsMetricPresets.test.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/AppDynamicsMetricPresets.tsx",
+      "sha256": "d09df6855b91d1c6bfb0b49c7539e8970036e5692bc4893fa9224f283e995bf6",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/AppDynamicsMetricPresets.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/AppDynamicsRunEvidence.test.tsx",
+      "sha256": "dd1a01350acb1634b50fc8c2b92c3b3fa76011b83b5f252c432bcc7f692e32f1",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/AppDynamicsRunEvidence.test.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/AppDynamicsRunEvidence.tsx",
+      "sha256": "f605fa88f77fe174cdf2e992b6c44ca0d8cf2d5deb61da6ec59459445fd28264",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/AppDynamicsRunEvidence.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/AppDynamicsSourceFields.tsx",
+      "sha256": "a6fccab5fc8a3f02fcbbd9b9400ed9a57cefdb9fb2efe387f14df390506587b0",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/AppDynamicsSourceFields.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/ElasticArchiveEvidence.test.tsx",
+      "sha256": "f118f9655e2541bba54751b07a363588868848a1e0a3252fae8d68bae2ed524b",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/ElasticArchiveEvidence.test.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/ElasticArchiveEvidence.tsx",
+      "sha256": "56d48d4102d572dbaa2d58561a018731f1f07a4d56e506833256d83aec8e2b0b",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/ElasticArchiveEvidence.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/ElasticRunEvidence.test.tsx",
+      "sha256": "fd1ccfdf78d89b32353b7b789fea6e3e87e48009a49c89b0a3c3e9380bc8fe0f",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/ElasticRunEvidence.test.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/MonitorRuleEditor.tsx",
+      "sha256": "669f373b1101a0c5e2d8bb4a7e0b2961febb8c050a9816c70e69cb433abe3172",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/MonitorRuleEditor.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/MonitorRuleResults.test.tsx",
+      "sha256": "07015fba6d57f4709b7e3262848d5a8a3b0ca5350f1343b2f482ab2b1aba283f",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/MonitorRuleResults.test.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/MonitorRuleResults.tsx",
+      "sha256": "5bbfc4ce885bbb50460d07e1ea439be74ef543c80b40f5dff47ddbd6bd37ef17",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/MonitorRuleResults.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/RunMonitorBindingSelector.test.tsx",
+      "sha256": "e210d6722458d843ab0713fb54f78fcd23a27bf5e73ef004fa3d24a85877c336",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/RunMonitorBindingSelector.test.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/appDynamicsConnectionModel.ts",
+      "sha256": "33832e35537eaf833cafdf164b79e030efd17be40480565c80146c99f340e92c",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/appDynamicsConnectionModel.ts"
+    },
+    {
+      "original_path": "dashboard/src/components/appDynamicsEvidenceModel.ts",
+      "sha256": "a33945380e8bfdc891afdb4aabf6b97495d2177dacdcd03a8f5c6afaa8a9cad4",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/appDynamicsEvidenceModel.ts"
+    },
+    {
+      "original_path": "dashboard/src/components/elasticMonitoringModel.ts",
+      "sha256": "3be0b99ff37cefdc02a17fbe6d1c31633ee6154e5444632e988964202c4c68b8",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/elasticMonitoringModel.ts"
+    },
+    {
+      "original_path": "dashboard/src/components/monitorTimelineModel.test.ts",
+      "sha256": "d8361afaeb437ada0a534eb0f87c1019450b5c75d6094ef74169e4fb86f034b3",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/monitorTimelineModel.test.ts"
+    },
+    {
+      "original_path": "dashboard/src/components/monitorTimelineModel.ts",
+      "sha256": "f9bb69581da9a6f7951602be8ccdda3038836e5f8c5b85f1819e177736af197d",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/monitorTimelineModel.ts"
+    },
+    {
+      "original_path": "dashboard/src/hooks/api/useAppDynamicsConnectionsApi.ts",
+      "sha256": "53fcc681b41f35710bb5408a8859558b3002fdac70cffd6fd5cf538d28bf358a",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/hooks/api/useAppDynamicsConnectionsApi.ts"
+    },
+    {
+      "original_path": "dashboard/src/types/appdynamics.ts",
+      "sha256": "2e64db712f7c39f33c80ecca25cf0696a731653fdbfcbc2f254d3d0618f67f6e",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/types/appdynamics.ts"
+    },
+    {
+      "original_path": "dashboard/src/types/runMonitoring.ts",
+      "sha256": "eafe30de3b2f320ac52b672a83b853e315b598ec5488580395faa581851e813f",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/types/runMonitoring.ts"
+    },
+    {
+      "original_path": "docs/APPDYNAMICS.md",
+      "sha256": "ea2d0a54e7139fd650c618e19a03e441cf5d3248911647fd73e8759d37297c39",
+      "snapshot_path": "_retired/appdynamics/snapshot/docs/APPDYNAMICS.md"
+    },
+    {
+      "original_path": "docs/APPDYNAMICS_SPEC.md",
+      "sha256": "e8a842a07bae571a0737ab5badc34f591874960c9e16fd6599a312dccf14089b",
+      "snapshot_path": "_retired/appdynamics/snapshot/docs/APPDYNAMICS_SPEC.md"
+    },
+    {
+      "original_path": "docs/ELASTIC.md",
+      "sha256": "657add34df50c85c3eb1f1f1a5dd818591cd736ade306c5ea1ca5a29349ef2b5",
+      "snapshot_path": "_retired/appdynamics/snapshot/docs/ELASTIC.md"
+    },
+    {
+      "original_path": "docs/ELASTIC_SPEC.md",
+      "sha256": "0bdf9bdd3e6dd8d29ae56eec43aab62cec9a9d543fef151a68ab37eac4cd258b",
+      "snapshot_path": "_retired/appdynamics/snapshot/docs/ELASTIC_SPEC.md"
+    },
+    {
+      "original_path": "pkg/analysis/monitor_rules.go",
+      "sha256": "df248e4c5b1416b568a55b4b5d87f0e61ba402644daf0c9c2cf243967c65e31c",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/analysis/monitor_rules.go"
+    },
+    {
+      "original_path": "pkg/analysis/monitor_rules_test.go",
+      "sha256": "b825d633843f2e132935d0d5472feae980aca62346ff3704a473ad9f74d7ea62",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/analysis/monitor_rules_test.go"
+    },
+    {
+      "original_path": "pkg/analysis/provider.go",
+      "sha256": "1e5d97e16eb4f9adc19629feddce36bf0541332002ebb2b7f9e9aac6858ce3e6",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/analysis/provider.go"
+    },
+    {
+      "original_path": "pkg/analysis/provider_buckets.go",
+      "sha256": "b77e601215514cdaf59a03e4fb8a3fc983e7a54fc46cf2f1173c5838a9186a99",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/analysis/provider_buckets.go"
+    },
+    {
+      "original_path": "pkg/analysis/provider_test.go",
+      "sha256": "9bbe6db44803ce07ae53b95609ef085b08c6b5cf12af01d4e2edcebff61eb18a",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/analysis/provider_test.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_ci_checks_test.go",
+      "sha256": "56951bf5fa5e95570ad419411ed0aa81f67619e1ad2eedc268c6829ca0d39e79",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_ci_checks_test.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_connections.go",
+      "sha256": "4bb3169df53ee87c49fff4311128f0b1a6d9baa4d0de1495104ef454a8105777",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_connections.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_connections_inspections.go",
+      "sha256": "a9a40c24dbac2eb0ad7c102820ae53b5c333969749ba59c7074e13eaee66bf8e",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_connections_inspections.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_connections_test.go",
+      "sha256": "5f0036fd6c3761e6c29fc9c03a3727a735797df1fa5cd70731a90c4c91fed577",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_connections_test.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_evidence.go",
+      "sha256": "822fa5d1c310ea602b17f95f28b64a2fa58c54ba42c36826c372b201b63111b1",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_evidence.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_ingestion.go",
+      "sha256": "5862424aa40f544660218d979b788c5f78002673d66bc3315e238b495ade4f15",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_ingestion.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_ingestion_test.go",
+      "sha256": "fdde3b5e053b700bb7b8e802dbeb5cb7bb53d39263e93a99ba58fe6011090124",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_ingestion_test.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_ingestion_validation.go",
+      "sha256": "67ed7e81152a73563260a564d5fdfb25b85f85e542eb634f41a9bdc9dec1e8ba",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_ingestion_validation.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_ingestion_validation_test.go",
+      "sha256": "4a4b821d1b3eda7e96aa0b3a8314b241909a5746a9a47432e317d8af5c4cad90",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_ingestion_validation_test.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_long_window_validation_test.go",
+      "sha256": "5b611fce5a1ccc516c326a277acfb00ea1c475782b072ee381c53f379735c419",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_long_window_validation_test.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_prepare.go",
+      "sha256": "67f3556299906217bd53473affc718dee287069a47e10413472767a147776d83",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_prepare.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_quota.go",
+      "sha256": "ce45ccbe30f88045a70b88add8c075d5b9d737c5efa04d3e1fae785bcfe25f7d",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_quota.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_readiness.go",
+      "sha256": "34a236a60b4c22e5f248a8e42a118f6e529b3d8cbd5d69d6329f3b3c6610529c",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_readiness.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_readiness_test.go",
+      "sha256": "eedb0c4aef657dff4e7c3bd2ef016cd37269597d4361ea2ee0fe6dfa2a727ba4",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_readiness_test.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_scheduler.go",
+      "sha256": "cdc79e5daf11258bf80df7ef2303142c8383a1b2a30ee7a12807ba0b829a854e",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_scheduler.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_scheduler_test.go",
+      "sha256": "576d153abda35a08b75e67ab0f0903b8e9d1d7e84a3239a769857d93ce6d41ea",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_scheduler_test.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_secrets.go",
+      "sha256": "fbdddceb0e8f07022ef9e112dd892ae0e994fd5b2f8f9a8770b0d642b29fe0f0",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_secrets.go"
+    },
+    {
+      "original_path": "pkg/api/appdynamics_secrets_test.go",
+      "sha256": "a439322ef0ad281953bb7c74c0f6bc768009897be903d619bd27fe2b696a7c2e",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/appdynamics_secrets_test.go"
+    },
+    {
+      "original_path": "pkg/api/elastic_cleanup_test.go",
+      "sha256": "c40e2bfa277032ba3057b1885f584059c54efc131db4b785fca6ac9a9a48344a",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/elastic_cleanup_test.go"
+    },
+    {
+      "original_path": "pkg/api/elastic_ingestion_test.go",
+      "sha256": "10b800e15311c645ad4643f6f3a48896a46b8310af0a0d77eb17f13d54c10514",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/elastic_ingestion_test.go"
+    },
+    {
+      "original_path": "pkg/api/elastic_inspections.go",
+      "sha256": "2b0da87a4209810605e356051fab1657ce9d9763afcdb66e62d0d7f03c7e0dc9",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/elastic_inspections.go"
+    },
+    {
+      "original_path": "pkg/api/monitor_provider.go",
+      "sha256": "3738fcdd59ac8e7ba992358995c6be5af6e0a0c10050b051fa467158ed78479e",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/monitor_provider.go"
+    },
+    {
+      "original_path": "pkg/api/route_registry_appdynamics.go",
+      "sha256": "aa258f8599894abf71179ac6a44c6f41e3cb66535f9cbe377c083d16bcac3eae",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/route_registry_appdynamics.go"
+    },
+    {
+      "original_path": "pkg/api/run_monitor_archive_test.go",
+      "sha256": "bb3045e101d17fd2a56949a7b65ab263ef1105e37c77d059581abf2a926982dd",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/run_monitor_archive_test.go"
+    },
+    {
+      "original_path": "pkg/api/run_monitor_correlation.go",
+      "sha256": "c4e15dad6b9667239d880708c8ba77ceef563c9a45de55b5636dd0dc135e60b6",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/run_monitor_correlation.go"
+    },
+    {
+      "original_path": "pkg/api/test_monitor_bindings.go",
+      "sha256": "bd50162f37f0cff0cfeb88dff322e790d5dab6f0ac20c112d36e50a7e09474d7",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/test_monitor_bindings.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/analytics_filter.go",
+      "sha256": "935c7104aeb46c2e65d848817f944c4f96d6facbbc2f1fb8a4445f7ae8146e1b",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/analytics_filter.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/analytics_filter_test.go",
+      "sha256": "71151689a6f9c9134cb9b7df5cde095042ddcc400205a5e32da8288fe0d335e0",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/analytics_filter_test.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/analytics_semantics.go",
+      "sha256": "59bd5db19162510accea4f543e510d52aa28462449ed7417ddd2c2a76836030c",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/analytics_semantics.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/analytics_semantics_test.go",
+      "sha256": "ff2215656b19fce650eac54a50be0c8b2d016610b8f1811eb9de72d0c930c9e9",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/analytics_semantics_test.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/analytics_test.go",
+      "sha256": "4803d5285b2a8521ac1605e70663e72f18886bd0d2f19e88bcc041e390d30923",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/analytics_test.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/capabilities.go",
+      "sha256": "534de24ded3f7153fdda6866f30997d96992f0debae15dc15c0d721a785ea8f4",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/capabilities.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/capabilities_test.go",
+      "sha256": "415b21dba77055f4991c540a33c8aacd7475733bf9624b02eeb9ac1536f5332d",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/capabilities_test.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/client.go",
+      "sha256": "a006efbc0ae4eaef499df7057f22d6c644fadb385048ae570cde1a9cb97070a1",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/client.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/client_test.go",
+      "sha256": "9f588d4f196ee415fad74566c5de4bfd9be31b05363a4673c9f4287147ecbd1b",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/client_test.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/collect.go",
+      "sha256": "960de5a3ee8b00004a70c20dd0f035fa9d62350268297a18dd41905fb1388803",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/collect.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/collect_window_test.go",
+      "sha256": "6514c32ad6672bab2afcd7be2254fd97c458c38864008bbc65646ea1bc411dc5",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/collect_window_test.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/diagnostics_test.go",
+      "sha256": "9cb6bc95a74a17ffd21937e08b49d808d33ebe6ae40561765d8cffde4f8e4176",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/diagnostics_test.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/identity.go",
+      "sha256": "6cad7d84c923a9c10fae606d4c24b2b99d14676f3d0e923fea9c5a3fc3ca5a23",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/identity.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/identity_test.go",
+      "sha256": "5ceced7d31d908b4fcf47b8b64976898d3bee8cdf9fb547ba9bacd25825e348a",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/identity_test.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/normalize_metric_test.go",
+      "sha256": "35d4fc1cc819f2d5aed16bdd680b50a89292fef7427a38a07c0b11c34bbd249c",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/normalize_metric_test.go"
+    },
+    {
+      "original_path": "pkg/appdynamics/types.go",
+      "sha256": "afe156ac8a4dec0b0e7ab9706fc907d15f65865cb1341dd64a3a842109296720",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/appdynamics/types.go"
+    },
+    {
+      "original_path": "pkg/collectoragent/adapters.go",
+      "sha256": "939e3e9acf6d8237dabc831ceb450f40ddbcb3aa7882cfc578ffe63016a31f68",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/collectoragent/adapters.go"
+    },
+    {
+      "original_path": "pkg/collectoragent/appdynamics.go",
+      "sha256": "df14d80c91c2da3b280e84f308286824ec5bf3004e543abf7dddaeb8c853657b",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/collectoragent/appdynamics.go"
+    },
+    {
+      "original_path": "pkg/collectoragent/appdynamics_test.go",
+      "sha256": "db6069fe1c5c02a07a61ab37e101d2455de1f0e137c3f43f0cc023f635b3a14d",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/collectoragent/appdynamics_test.go"
+    },
+    {
+      "original_path": "pkg/collectoragent/credentials.go",
+      "sha256": "a99171f037c1c3351c57aac9b1fad8d0c4780d73ad2850cc829817355272ea55",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/collectoragent/credentials.go"
+    },
+    {
+      "original_path": "pkg/protocol/http/run_correlation.go",
+      "sha256": "61d6c9da6d8df0a32bb1e944ae1180e6c07ddb8319fa9bbeabecc82aed6b67da",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/protocol/http/run_correlation.go"
+    },
+    {
+      "original_path": "pkg/storage/appdynamics_connections.go",
+      "sha256": "c27847a7fc10057ef9f42fb06e72adf483897f21030261adae9670a2e123fb4d",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/appdynamics_connections.go"
+    },
+    {
+      "original_path": "pkg/storage/appdynamics_contract_readiness_test.go",
+      "sha256": "eca2be7d00a7d2e0591997b864d07bf22fa0121b465240258c60a65dec627f81",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/appdynamics_contract_readiness_test.go"
+    },
+    {
+      "original_path": "pkg/storage/appdynamics_durable_postgres_integration_test.go",
+      "sha256": "ce52a80c09e8465d54631f8ce3709e53600a6acc547a80522a656e0888baa46d",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/appdynamics_durable_postgres_integration_test.go"
+    },
+    {
+      "original_path": "pkg/storage/appdynamics_inspections.go",
+      "sha256": "5efc68f3538867681b7d49ddfe02c86f572281c095c09b6f2b197f6a2d0d37c3",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/appdynamics_inspections.go"
+    },
+    {
+      "original_path": "pkg/storage/appdynamics_inspections_test.go",
+      "sha256": "2bcf2b5fe19056016d96f6cf5813b9dd1100e02522f212adf870c093d8ced488",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/appdynamics_inspections_test.go"
+    },
+    {
+      "original_path": "pkg/storage/appdynamics_owner_fence_test.go",
+      "sha256": "5a347dad85c274ebde63b100bcb99e26025c2baca7ff2598f496588ff79cc987",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/appdynamics_owner_fence_test.go"
+    },
+    {
+      "original_path": "pkg/storage/appdynamics_quotas.go",
+      "sha256": "ac6d2728edc32011355350f97eed6de680f9ef6689cf28ccb1d16702c6022cb7",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/appdynamics_quotas.go"
+    },
+    {
+      "original_path": "pkg/storage/appdynamics_quotas_test.go",
+      "sha256": "ad45127ddcbeeae4e0ba8adfc5a86728b83d3dafbc6b64b06fd26672763a73f3",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/appdynamics_quotas_test.go"
+    },
+    {
+      "original_path": "pkg/storage/appdynamics_run_monitors.go",
+      "sha256": "f4efc027ec541ef35456c5f5cbd858b2f1847d4e95f884f0029fd8485a2a2f4c",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/appdynamics_run_monitors.go"
+    },
+    {
+      "original_path": "pkg/storage/appdynamics_run_monitors_test.go",
+      "sha256": "12cdad1c245ba103f48e3a0d95a309930db30c7dddfbe70d51d485327fec2c01",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/appdynamics_run_monitors_test.go"
+    },
+    {
+      "original_path": "pkg/storage/appdynamics_secret_references.go",
+      "sha256": "bed284e04898261519198ec5ecac1a5fb3f9213fb2563ca3dff885a7c3f05c8f",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/appdynamics_secret_references.go"
+    },
+    {
+      "original_path": "pkg/storage/appdynamics_secret_references_test.go",
+      "sha256": "7c7712f33845df42ab4a3416b67558b27507f4512201ea4344865ef97002aead",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/appdynamics_secret_references_test.go"
+    },
+    {
+      "original_path": "pkg/storage/appdynamics_source_compatibility_test.go",
+      "sha256": "dcc5eaebe4ff587e5b73a0b9182abfd3a74cb4c305b7f90ffa2771bd04ff81d1",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/appdynamics_source_compatibility_test.go"
+    },
+    {
+      "original_path": "pkg/storage/elastic_run_monitors.go",
+      "sha256": "d2adae57f8b22b1a949a48000945dacac45642658f63ac72d16bba7b9b42b647",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/elastic_run_monitors.go"
+    },
+    {
+      "original_path": "pkg/storage/elastic_secret_references.go",
+      "sha256": "a6da319f3f6ac68dba5f7c0ab0ab38495119fa0e445e0a715c101ea0ceed79be",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/elastic_secret_references.go"
+    },
+    {
+      "original_path": "pkg/storage/run_monitor_private_json.go",
+      "sha256": "283f4df948e88199668ef47e650036708a6abd9ff79bb0b9f67e77fe82e85618",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/run_monitor_private_json.go"
+    },
+    {
+      "original_path": "pkg/storage/run_monitor_private_json_test.go",
+      "sha256": "371ef255569f4f864444c776dcd25b05dff3816eee202d97304c8e89c0b0c6aa",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/run_monitor_private_json_test.go"
+    },
+    {
+      "original_path": "pkg/storage/sqlite_appdynamics_connections.go",
+      "sha256": "bd87bf5aef1bba42807642228a50d81cd074187ed3ca9e7f5e4e130b7f29f847",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/sqlite_appdynamics_connections.go"
+    },
+    {
+      "original_path": "pkg/storage/sqlite_appdynamics_connections_test.go",
+      "sha256": "03d6773ae242e5919c169a758fb24ed8a025d6c081016b96ed89135fb9fa6804",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/sqlite_appdynamics_connections_test.go"
+    },
+    {
+      "original_path": ".dockerignore",
+      "sha256": "1cf1aa4a12121f0860bdec225e8e10f38bf384e32fa4acd4761a408270af55b0",
+      "snapshot_path": "_retired/appdynamics/snapshot/.dockerignore"
+    },
+    {
+      "original_path": ".github/workflows/ci.yml",
+      "sha256": "85ff2a53fad401697249da1d8e41f2059ce8fe8d8a8f4cee0b88e41e06208a1a",
+      "snapshot_path": "_retired/appdynamics/snapshot/.github/workflows/ci.yml"
+    },
+    {
+      "original_path": "AGENTS.md",
+      "sha256": "47b84735d6922bf3e5c65076d8a60bf5e6e011375b13e314e46fa15bf69a3fc4",
+      "snapshot_path": "_retired/appdynamics/snapshot/AGENTS.md"
+    },
+    {
+      "original_path": "Makefile",
+      "sha256": "a6cd866fae1c5b254b2cb6964bfef4399f98e1da69611e458361aab8dd85096c",
+      "snapshot_path": "_retired/appdynamics/snapshot/Makefile"
+    },
+    {
+      "original_path": "cmd/apexctl/main.go",
+      "sha256": "72b1acadb8dfdb4ac5e74d5888fad70e705bf51e8a0195f5a00b3d4a8a95b721",
+      "snapshot_path": "_retired/appdynamics/snapshot/cmd/apexctl/main.go"
+    },
+    {
+      "original_path": "cmd/apexload-collector-agent/main.go",
+      "sha256": "f99ff361edb601a477e36596b498b62838a01cf50d1ee2f0bd12fd76b5c70ccb",
+      "snapshot_path": "_retired/appdynamics/snapshot/cmd/apexload-collector-agent/main.go"
+    },
+    {
+      "original_path": "dashboard/e2e/workflow-monitoring.spec.ts",
+      "sha256": "53d68df8f26a8c8d386b292a3871258ab51508c15fdc5306840e177b132eceb3",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/e2e/workflow-monitoring.spec.ts"
+    },
+    {
+      "original_path": "dashboard/src/components/CreateTestModal.tsx",
+      "sha256": "14266360b715c1becc7c18950e4d18650c181da3d88993cc1a5ce7d453c00133",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/CreateTestModal.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/MonitoringPage.test.tsx",
+      "sha256": "1986c5a204cbb13c1d0091a68d83a3fd92405e03246eb046969f883c1c84c9d7",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/MonitoringPage.test.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/MonitoringPage.tsx",
+      "sha256": "39a6d63584210e54128310f107e13f5f3dce7de563774ef0a685be631961eaa5",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/MonitoringPage.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/NewTestPage.tsx",
+      "sha256": "9314dba6aa1528b0c2cdc2fcc78a53b4ce691c756508cb0869239cb5fdd900e5",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/NewTestPage.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/ProjectSecretsPanel.test.tsx",
+      "sha256": "ea1e5130d4f570ce7fd48a0d7cdd9e97192bf6597fc30409482426f4bda5cb4a",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/ProjectSecretsPanel.test.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/RunMonitoring.test.tsx",
+      "sha256": "6c8bf8c5ad991303d113691ea489f702cd8f38033526afbe240f6f4fd974f8e5",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/RunMonitoring.test.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/RunMonitoring.tsx",
+      "sha256": "d2b2d00a653d9f5e52d2ff8c34b754c160956edc129c94fc5ebbb2f33e3afbaa",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/RunMonitoring.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/SettingsPage.tsx",
+      "sha256": "ae19dc2700c068039bece9a67cbec054a9a8157a0206c5ae3c98093507da4bbd",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/SettingsPage.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/TestExecutionArchive.tsx",
+      "sha256": "a026ff945d77a20170b76e16c4a5956bb7a46d04cf713b5ce8a51f23ce7bdd22",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/TestExecutionArchive.tsx"
+    },
+    {
+      "original_path": "dashboard/src/components/newTestDraft.ts",
+      "sha256": "73c5563bc13df176c1787b290ff7ad31196ea0959d5541af21092f5bed2263c6",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/newTestDraft.ts"
+    },
+    {
+      "original_path": "dashboard/src/components/scenarioPayloadUtils.ts",
+      "sha256": "739182803cda75a2c0bb88af46bc63c42eed9a748ca102c0f51d4775dd3e6bea",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/scenarioPayloadUtils.ts"
+    },
+    {
+      "original_path": "dashboard/src/components/settingsNavigation.ts",
+      "sha256": "7b121b447ae7d2194cfc3b604e6066cec72e034cc9632a50b8582055c3ed90bc",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/settingsNavigation.ts"
+    },
+    {
+      "original_path": "dashboard/src/components/settingsSectionLayout.test.ts",
+      "sha256": "7f7081028367b2e2c379b401da5f5cc1c1269ad5739666b8e24d25113bfbbf6a",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/settingsSectionLayout.test.ts"
+    },
+    {
+      "original_path": "dashboard/src/components/settingsSectionLayout.ts",
+      "sha256": "38ce64b642cd8da30c4f080d5f6840caaa3ba2f0ebed31c62426014c85b48705",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/components/settingsSectionLayout.ts"
+    },
+    {
+      "original_path": "dashboard/src/hooks/apiServiceRegistry.test.tsx",
+      "sha256": "79b37667537d392cab2766cd510348deb2da9019170119cf959aac68254931c8",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/hooks/apiServiceRegistry.test.tsx"
+    },
+    {
+      "original_path": "dashboard/src/hooks/useApi.ts",
+      "sha256": "44eff255c56d4027c94c75793c98aa4a165cb61a84f9d3f5933fc5df201b22af",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/hooks/useApi.ts"
+    },
+    {
+      "original_path": "dashboard/src/types.ts",
+      "sha256": "27d8b3be0444cc4deabfd93bfd0dbc10007302fbeae64732a721432bb29de3a4",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/types.ts"
+    },
+    {
+      "original_path": "dashboard/src/types/analysis.ts",
+      "sha256": "f9c32f52aff6e232ade680c9c0b2fa5668833b5ef86c17728c6e104ea2eb3e76",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/types/analysis.ts"
+    },
+    {
+      "original_path": "dashboard/src/types/generated/openapi.ts",
+      "sha256": "712b6647ee125b7cfd962320b800d29937d37d8656ffac32f8f3a526fbccdc88",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/types/generated/openapi.ts"
+    },
+    {
+      "original_path": "dashboard/src/types/goals.ts",
+      "sha256": "9d2a6c1dffc0e81a2d4e52f6b27e88eff0df003a9445af91c2191153b9c81975",
+      "snapshot_path": "_retired/appdynamics/snapshot/dashboard/src/types/goals.ts"
+    },
+    {
+      "original_path": "docs/INDEX.md",
+      "sha256": "50a6a36e2800dd37bd91f9fc31ab0d2a75cefecfe4f1e9ae318c04ac04344077",
+      "snapshot_path": "_retired/appdynamics/snapshot/docs/INDEX.md"
+    },
+    {
+      "original_path": "docs/OBSERVABILITY_INTEGRATIONS.md",
+      "sha256": "e5c80a9323b483c08c3b25a3bb24632a26847061939cde951e822c3111ca037d",
+      "snapshot_path": "_retired/appdynamics/snapshot/docs/OBSERVABILITY_INTEGRATIONS.md"
+    },
+    {
+      "original_path": "docs/ROADMAP.md",
+      "sha256": "f479baeea248f60a3e5b42fb175ea068de82e41e02b291255dcecd9db13b95ce",
+      "snapshot_path": "_retired/appdynamics/snapshot/docs/ROADMAP.md"
+    },
+    {
+      "original_path": "docs/api-endpoint-catalog.json",
+      "sha256": "a349be5056de503375a74503310a02bfcc02aae9e076ae887047f22cb5c6a5cf",
+      "snapshot_path": "_retired/appdynamics/snapshot/docs/api-endpoint-catalog.json"
+    },
+    {
+      "original_path": "docs/qa/evidence/M1/api-contract-matrix.json",
+      "sha256": "d3a4a07105b21ed19f78ffd26b25a093066ea68934bb6d5294ca44bb13cd5f90",
+      "snapshot_path": "_retired/appdynamics/snapshot/docs/qa/evidence/M1/api-contract-matrix.json"
+    },
+    {
+      "original_path": "go.mod",
+      "sha256": "b01575864bc3c74e7f0525a69ea27e9864305310ef8ffe0b87cfa788ce8dfd88",
+      "snapshot_path": "_retired/appdynamics/snapshot/go.mod"
+    },
+    {
+      "original_path": "go.sum",
+      "sha256": "7e0093981176b33f93d10de9b0accc55b0c34855c3da1c70a3232f27cce771f4",
+      "snapshot_path": "_retired/appdynamics/snapshot/go.sum"
+    },
+    {
+      "original_path": "mcp/apexload_mcp/tools.py",
+      "sha256": "07e1473106ede4774c263860b40d7d27279a66caef91941b963a59000d360903",
+      "snapshot_path": "_retired/appdynamics/snapshot/mcp/apexload_mcp/tools.py"
+    },
+    {
+      "original_path": "mcp/tests/test_tools.py",
+      "sha256": "27f59743ccb71dd4e4c308b3ef35a20a95fbe6790092ef3eeb36bfd52b51561d",
+      "snapshot_path": "_retired/appdynamics/snapshot/mcp/tests/test_tools.py"
+    },
+    {
+      "original_path": "pkg/analysis/points.go",
+      "sha256": "fed986f3edbdf48224f9396cef6fb3774a4207b5b59a53d2c2a51dd576daf717",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/analysis/points.go"
+    },
+    {
+      "original_path": "pkg/api/apidocs/api-endpoint-catalog.json",
+      "sha256": "a349be5056de503375a74503310a02bfcc02aae9e076ae887047f22cb5c6a5cf",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/apidocs/api-endpoint-catalog.json"
+    },
+    {
+      "original_path": "pkg/api/archive_report.go",
+      "sha256": "c0a753d1ac6eaaa034d5d511b8fb029e4e1abcce99976c8f8de55cdecdc28108",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/archive_report.go"
+    },
+    {
+      "original_path": "pkg/api/durable_write_call_site_guard_test.go",
+      "sha256": "eba84ae3395cc272ce8c18198f8b9678f0469f1f90da6008ee1a240b9c58db53",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/durable_write_call_site_guard_test.go"
+    },
+    {
+      "original_path": "pkg/api/handlers_project_secrets.go",
+      "sha256": "c25de7e51b8a21b7199b5dd15a7dd4ab6bd18f92f6e66e7f8c938d07a21ae1d5",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/handlers_project_secrets.go"
+    },
+    {
+      "original_path": "pkg/api/handlers_run_monitors.go",
+      "sha256": "641602ce0d6240c35d453b06ab5b1371ecf53d984a29479cc0ea7d6295fea4b1",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/handlers_run_monitors.go"
+    },
+    {
+      "original_path": "pkg/api/integration_profiles.go",
+      "sha256": "788ba826bc5af9fee7aa7df52a198fceb334f25132a057f16d359af29b1c1bc0",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/integration_profiles.go"
+    },
+    {
+      "original_path": "pkg/api/openapi_contract_infer.go",
+      "sha256": "20b1bd45b5790011c5fdfb22982b85d0e6c8120bd218c71932dfbedd99d66243",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/openapi_contract_infer.go"
+    },
+    {
+      "original_path": "pkg/api/openapi_cross_package_infer_test.go",
+      "sha256": "e799dca2141ccd7a9a0c626573437e01e78b13ae6d47694034dde66f572870da",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/openapi_cross_package_infer_test.go"
+    },
+    {
+      "original_path": "pkg/api/preparation.go",
+      "sha256": "e06c4245f48af18137478d6ebcca4a954d8d3344d478b7b54ed3659ea81bcc91",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/preparation.go"
+    },
+    {
+      "original_path": "pkg/api/route_catalog_characterization_test.go",
+      "sha256": "f076fd89c6d2bc815b7ee55b757762eaa75438ba008355b93b44c0d6fc72626d",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/route_catalog_characterization_test.go"
+    },
+    {
+      "original_path": "pkg/api/route_registry_foundation.go",
+      "sha256": "48bcc0e437333f86e21e2f2ef23246b221c3ca9325d31b7c16b621f373b9b1b0",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/route_registry_foundation.go"
+    },
+    {
+      "original_path": "pkg/api/run_monitor_archive.go",
+      "sha256": "90b3951700f2e6a4a253eeeaeaf6735bc7c2b4903d81fa289dbbfd47637943bb",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/run_monitor_archive.go"
+    },
+    {
+      "original_path": "pkg/api/runner.go",
+      "sha256": "78c54887469c509e99f66300454d24fb485cdb925d9919eb6486a89bfeda9622",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/runner.go"
+    },
+    {
+      "original_path": "pkg/api/script_secret_references.go",
+      "sha256": "b263698f5e17a9d3cb0f6fc1855985eafa4b33ce7692156dd860e7da553603c4",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/script_secret_references.go"
+    },
+    {
+      "original_path": "pkg/api/server.go",
+      "sha256": "1eba9f8786d3ce1d81712304494f550a574e3e00599da06741c9f74b3c62837b",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/server.go"
+    },
+    {
+      "original_path": "pkg/collectoragent/agent.go",
+      "sha256": "70a64dbb8e950c8d918e410986466a85b4b348b7845ca4f17dc61614768506ee",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/collectoragent/agent.go"
+    },
+    {
+      "original_path": "pkg/collectoragent/jobs.go",
+      "sha256": "899e4a1b49e5011cb356820bc92f366f6f157601435772adebb58b9da0096410",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/collectoragent/jobs.go"
+    },
+    {
+      "original_path": "pkg/storage/preparation_monitors.go",
+      "sha256": "881e8442f703c858741627aa155c6a900723a2416beee3805eed04a17c06b1ec",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/preparation_monitors.go"
+    },
+    {
+      "original_path": "pkg/storage/run_monitor_readiness.go",
+      "sha256": "0c2af9bd23cde4775f6dd90de60fdb8f7ff0b1f8c27778bc691bf5ebe5f44728",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/run_monitor_readiness.go"
+    },
+    {
+      "original_path": "pkg/storage/run_monitors.go",
+      "sha256": "ade837846bbd4422260df830c9283e2bebc324297bdd1ac9149e6e19802f6cbe",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/run_monitors.go"
+    },
+    {
+      "original_path": "pkg/storage/schema_migrations.go",
+      "sha256": "d3b11f8b6db55553e120f13d4f46e2610658c7d134ef70ebadf024f2b10d29b4",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/schema_migrations.go"
+    },
+    {
+      "original_path": "pkg/storage/sqlite_schema.go",
+      "sha256": "a18e68dd78e2a7dec1adcac8e9756f878e6e211a3b10948b15f2ae5c1a6ac769",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/storage/sqlite_schema.go"
+    },
+    {
+      "original_path": "scripts/github_actions_ci_test.go",
+      "sha256": "1e632f6a11ada468ed7ad853a1a5a88eaed5a469425b86de7ab5b9dded9721ce",
+      "snapshot_path": "_retired/appdynamics/snapshot/scripts/github_actions_ci_test.go"
+    },
+    {
+      "original_path": "scripts/run-optin-suites.sh",
+      "sha256": "acd06c3c9d7d0959380f7af3ec3c829f737df0a0824252de63a70a0a0727b1a8",
+      "snapshot_path": "_retired/appdynamics/snapshot/scripts/run-optin-suites.sh"
+    },
+    {
+      "original_path": "pkg/api/testexecution.go",
+      "sha256": "0454eca896de5d8a9607003f4df412dfb2b55c62b6109acfac2f9aea21f870b2",
+      "snapshot_path": "_retired/appdynamics/snapshot/pkg/api/testexecution.go"
+    }
+  ]
+}

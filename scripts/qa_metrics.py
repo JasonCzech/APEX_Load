@@ -11,9 +11,12 @@ import subprocess
 
 def tracked_count(root: Path, pattern: str) -> int:
     output = subprocess.run(
-        ["git", "-C", str(root), "ls-files", pattern], check=True, text=True, capture_output=True
+        ["git", "-C", str(root), "ls-files", "-z", pattern], check=True, text=True, capture_output=True
     ).stdout
-    return len([line for line in output.splitlines() if line])
+    return sum(
+        1 for name in output.split("\0")
+        if name and Path(name).parts[0] != "_retired" and (root / name).is_file()
+    )
 
 
 def packages_without_tests(root: Path) -> int:

@@ -3,12 +3,10 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -19,7 +17,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/debugserver"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/engine"
-	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/protocol/browser"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
 	"github.com/jasonczech/apexload/pkg/protocol/java_vuser"
@@ -97,12 +94,6 @@ func main() {
 
 	cfg := config.LoadGeneratorConfigFromEnv(os.Getenv)
 	reclaimAbandonedBrowserHAR()
-	restoreBrunoResolver, err := configureBrunoResolver()
-	if err != nil {
-		slog.Error("invalid Bruno distributed artifact configuration", "err", err)
-		os.Exit(1)
-	}
-	defer restoreBrunoResolver()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -285,36 +276,6 @@ func startGeneratorSafetyWatchdog(requests <-chan generatorrpc.SelfTerminationRe
 		exit(1)
 	}()
 	return triggered
-}
-
-func configureBrunoResolver() (func(), error) {
-	enabled, err := strconv.ParseBool(strings.TrimSpace(os.Getenv("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED")))
-	if err != nil && strings.TrimSpace(os.Getenv("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED")) != "" {
-		return nil, fmt.Errorf("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED: %w", err)
-	}
-	if !enabled {
-		return func() {}, nil
-	}
-	root := strings.TrimSpace(os.Getenv("APEXLOAD_BRUNO_ARTIFACT_ROOT"))
-	if root == "" {
-		return nil, errors.New("APEXLOAD_BRUNO_ARTIFACT_ROOT is required when distributed Bruno execution is enabled")
-	}
-	wrapper, err := importartifact.NewConfiguredKeyWrapper(false)
-	if err != nil {
-		return nil, err
-	}
-	objects, err := importartifact.NewEncryptedStore(importartifact.StoreOptions{
-		RootDir:  root,
-		Wrapper:  wrapper,
-		ReadOnly: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return importartifact.SetResolver(&importartifact.ContentAddressedResolver{
-		Objects: objects,
-		Kind:    "sanitized",
-	}), nil
 }
 
 func shutdownGeneratorRuntime(service generatorShutdownService, health healthStatusSetter, controlServer grpcStopper, healthServer grpcStopper, waitForNaturalDrain bool) {

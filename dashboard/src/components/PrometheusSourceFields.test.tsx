@@ -13,7 +13,7 @@ beforeEach(() => { vi.clearAllMocks(); container = document.createElement('div')
 afterEach(() => act(() => root.unmount()))
 async function field(name: string, value: string) { const label = Array.from(container.querySelectorAll('label')).find(item => item.textContent?.startsWith(name))!; const input = label.querySelector('input,textarea,select')!; await act(async () => { const proto = input.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : input.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(input, value); input.dispatchEvent(new Event(input.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })) }) }
 it('requires typed queries and uses the saved assigned execution location', async () => {
-  await act(async () => root.render(<RunMonitorSources projectId="p" canManage />)); await field('Pack', 'appdynamics')
+  await act(async () => root.render(<RunMonitorSources projectId="p" canManage />)); await field('Pack', 'dynatrace')
   const interval = () => Array.from(container.querySelectorAll('label')).find(item => item.textContent?.startsWith('Collection interval (seconds)'))!.querySelector('input')!.value
   expect(interval()).toBe('60')
   await field('Pack', 'prometheus-query')

@@ -154,7 +154,7 @@ run_suite "live PostgreSQL migration and concurrent startup" \
   "--all and APEXLOAD_TEST_POSTGRES_URL (dedicated test database)" \
   "[[ ${run_all} == 1 && -n \"\${APEXLOAD_TEST_POSTGRES_URL:-}\" ]]" \
   go test -tags postgres_integration -count=1 \
-    -run '^Test(Postgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle|AnalysisWorkflows|AuthoringMutationReceipts|AuthoringReceiptTombstoneRestore|AuthoringReceiptTombstoneRenewal|AuthoringReceiptRenewalOutlastsAWaitingRestore|ScriptDeleteRefusedWhileInUse|ExclusivePolicyDefaults|FeatureEvaluationJobs|EvaluationJobReviewFixes|EvaluationJobTakeoverAndCancelThenLatePublish|EvaluationJobCompletionFences|FeatureAcceptanceSequence|RunEvidenceReceipts|ScenarioAuthoringConditionedSaveAcrossReplicas|ScenarioConditionedSaveRaceAcrossReplicas|ScenarioStrictPolicyFlipIsFencedInTransaction|ScenarioRuntimeCommitFingerprintSurvivesStorage)|AppDynamicsDurablePostgresHeadsCursorAndOwnerFence)$' ./pkg/storage ./pkg/api
+    -run '^Test(Postgres(SchedulerLeaseGenerationMigration|ConcurrentInitialization|InitializationLockLifecycle|AnalysisWorkflows|AuthoringMutationReceipts|AuthoringReceiptTombstoneRestore|AuthoringReceiptTombstoneRenewal|AuthoringReceiptRenewalOutlastsAWaitingRestore|ScriptDeleteRefusedWhileInUse|ExclusivePolicyDefaults|FeatureEvaluationJobs|EvaluationJobReviewFixes|EvaluationJobTakeoverAndCancelThenLatePublish|EvaluationJobCompletionFences|FeatureAcceptanceSequence|RunEvidenceReceipts|ScenarioAuthoringConditionedSaveAcrossReplicas|ScenarioConditionedSaveRaceAcrossReplicas|ScenarioStrictPolicyFlipIsFencedInTransaction|ScenarioRuntimeCommitFingerprintSurvivesStorage)|PostgresMonitorRetirementHistory|ElasticPostgresDurableEvidenceMetadataAndRetry|ElasticPostgresVerifiedSourcePreparationAuthorization)$' ./pkg/storage ./pkg/api
 
 # These separate profiles provision their own pinned disposable broker.
 # --all is the sole opt-in; do not silently skip missing tools/required fixtures.
@@ -187,6 +187,11 @@ run_suite "live Azure Event Hubs round trip" \
   "[[ ${run_all} == 1 && -n \"\${EVENTHUBS_CONNECTION_STRING:-}\" ]]" \
   go test -tags eventhubs_real -count=1 -run TestEventHubsRealRoundTrip ./pkg/protocol/eventhubs
 
+run_suite "live Elasticsearch/OpenSearch vendor qualification" \
+  "--all, APEXLOAD_ELASTIC_INTEGRATION=1, and dedicated disposable TLS vendor fixture credentials" \
+  "[[ ${run_all} == 1 && \"\${APEXLOAD_ELASTIC_INTEGRATION:-}\" == 1 && -n \"\${APEXLOAD_ELASTIC_INTEGRATION_URL:-}\" ]]" \
+  go test -count=1 -v -run '^TestVendorQualification$' ./pkg/elastic
+
 printf '\n=== opt-in suite summary ===\n'
 for line in "${results[@]}"; do
   printf '%s\n' "${line}"
@@ -201,4 +206,5 @@ if [[ ${failures} -gt 0 ]]; then
   printf '\n%d opt-in suite(s) FAILED\n' "${failures}"
   exit 1
 fi
+
 printf '\nno opt-in suite failures\n'

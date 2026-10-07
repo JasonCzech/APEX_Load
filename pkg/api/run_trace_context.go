@@ -24,7 +24,7 @@ type RunTraceContextSettings struct {
 	// test names) on the approved origins.
 	TransactionMarker bool `json:"transaction_marker,omitempty"`
 	// Origins are scheme://host[:port] values. They are shared with any
-	// AppDynamics run-header origins bound to the run.
+	// provider run-header origins bound to the run.
 	Origins []string `json:"origins,omitempty"`
 }
 
@@ -104,7 +104,7 @@ func (c runCorrelation) carriesRunMarker() bool {
 	return len(c.Carriers) == 0 || slices.Contains(c.Carriers, engine.CorrelationCarrierRunMarker)
 }
 
-// combineRunCorrelation merges AppDynamics run-header origins with the run's
+// combineRunCorrelation merges provider run-header origins with the run's
 // trace-context setting. Approved origins are shared by every carrier. A run
 // with only run-header origins keeps the carrier-free form older generators
 // understand.

@@ -21,14 +21,16 @@
   /* Fluid mesh gradient background */
   background: 
     radial-gradient(circle at 15% 50%, var(--app-sheen), transparent 25%),
-    radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.03), transparent 25%),
+    radial-gradient(circle at 85% 30%, rgba(var(--info-rgb), 0.03), transparent 25%),
     var(--bg-primary);
   background-attachment: fixed;
 }
 
 .main-topbar {
   position: sticky;
-  top: 0;
+  /* Sticky offsets are measured inside .main-content's padding, so match the
+     negative top margin or the bar sits below a strip of scrolling content. */
+  top: -20px;
   z-index: 80;
   display: flex;
   align-items: center;
@@ -457,15 +459,15 @@
   max-width: 100%;
 }
 
-.topbar-title-mode .page > .page-header:has(> div:first-child:last-child) {
+.topbar-title-mode :is(.page, .section-layout-main) > .page-header:has(> div:first-child:last-child) {
   display: none;
 }
 
-.topbar-title-mode .page > .page-header:has(> div:first-child + *) {
+.topbar-title-mode :is(.page, .section-layout-main) > .page-header:has(> div:first-child + *) {
   margin-top: 4px;
 }
 
-.topbar-title-mode .page > .page-header:has(> div:first-child + *) > div:first-child {
+.topbar-title-mode :is(.page, .section-layout-main) > .page-header:has(> div:first-child + *) > div:first-child {
   display: none;
 }
 
@@ -491,73 +493,28 @@
   font-weight: 700;
 }
 
+/* The theme picker is one pill-shaped select; the wrapper only positions it.
+   (The old three-button toggle styles drew a second pill around the select.) */
 .theme-toggle {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(62px, 1fr));
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 3px;
+}
+
+.theme-select {
+  min-height: 32px;
+  padding: 4px 28px 4px 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--control-bg);
-  box-shadow: var(--shadow-sm);
-}
-
-.theme-toggle button {
-  min-width: 0;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0;
-}
-
-.theme-toggle button[aria-pressed='false'] {
-  background: transparent;
-  color: var(--text-secondary);
-  box-shadow: none;
-}
-
-.theme-toggle button:hover:not(.active),
-.theme-toggle button[aria-pressed='false']:hover {
-  background: var(--control-hover);
   color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  box-shadow: none;
+  cursor: pointer;
 }
 
-.theme-toggle button.active,
-.theme-toggle button[aria-pressed='true'] {
-  background: var(--theme-toggle-active-bg);
-  color: var(--theme-toggle-active-text);
-  box-shadow: var(--shadow-sm);
-}
-
-.theme-toggle button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.theme-toggle-icon {
-  width: 15px;
-  height: 15px;
-  display: inline-flex;
-  color: currentColor;
-}
-
-.theme-toggle-icon svg {
-  width: 15px;
-  height: 15px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.theme-select:hover:not(:disabled) {
+  border-color: var(--accent-border);
 }
 
 @media (max-width: 1500px) {
@@ -596,6 +553,7 @@
     flex-direction: row;
     flex-wrap: wrap;
     justify-content: flex-start;
+    top: -16px;
     margin: -16px -16px 20px;
     padding: 12px 16px;
   }

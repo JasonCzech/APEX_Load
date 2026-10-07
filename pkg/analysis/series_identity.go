@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/jasonczech/apexload/pkg/monitorprovider"
 )
 
 // SeriesIdentityVersion pins the measurement and observation fields encoded by
@@ -135,6 +137,10 @@ type providerIdentityProjection struct {
 }
 
 type providerIdentityFields struct {
+	CatalogPath           string `json:"catalog_path,omitempty"`
+	WindowKind            string `json:"window_kind,omitempty"`
+	Approximate           bool   `json:"approximate,omitempty"`
+	DerivedAggregation    string `json:"derived_aggregation,omitempty"`
 	Profile               string `json:"profile"`
 	Name                  string `json:"name,omitempty"`
 	Backend               string `json:"backend,omitempty"`
@@ -170,7 +176,7 @@ func (p measurementIdentityProjection) equal(other measurementIdentityProjection
 }
 
 func providerIdentityOf(provider *ProviderMeasurement) providerIdentityProjection {
-	if provider != nil && provider.Name == "prometheus" {
+	if provider != nil && provider.Name == monitorprovider.ProviderPrometheus {
 		return prometheusIdentityOf(provider)
 	}
 	return generalProviderIdentityOf(provider)
@@ -182,7 +188,7 @@ func generalProviderIdentityOf(provider *ProviderMeasurement) providerIdentityPr
 	if provider == nil {
 		return providerIdentityProjection{Fields: providerIdentityFields{Profile: "none"}}
 	}
-	return providerIdentityProjection{
+	projection := providerIdentityProjection{
 		Fields: providerIdentityFields{
 			Profile: "provider", Name: provider.Name, Backend: provider.Backend,
 			Synthetic: provider.Synthetic, MetricID: provider.MetricID,
@@ -191,6 +197,14 @@ func generalProviderIdentityOf(provider *ProviderMeasurement) providerIdentityPr
 		},
 		EntityIDs: provider.EntityIDs,
 	}
+	if isElasticProvider(provider) {
+		projection.Fields.QueryID = provider.QueryID
+		projection.Fields.CatalogPath = provider.CatalogPath
+		projection.Fields.WindowKind = provider.WindowKind
+		projection.Fields.Approximate = provider.Approximate
+		projection.Fields.DerivedAggregation = provider.DerivedAggregation
+	}
+	return projection
 }
 
 // Prometheus measurement comparisons retain evaluation-grid provenance rather
@@ -218,7 +232,7 @@ func (p measurementIdentityProjection) validateUTF8() error {
 		fields.ProjectID, fields.Source, fields.ScenarioID, fields.Host, fields.Service,
 		fields.MetricName, fields.Population, fields.MetricVersion, fields.Kind, fields.InputKind, fields.Unit,
 		provider.Profile, provider.Name, provider.Backend, provider.MetricID, provider.Statistic,
-		provider.QueryID, provider.DefinitionHash, provider.BackendProfile, provider.Mode, provider.AnalysisStatistic,
+		provider.QueryID, provider.DefinitionHash, provider.BackendProfile, provider.Mode, provider.AnalysisStatistic, provider.CatalogPath, provider.WindowKind, provider.DerivedAggregation,
 	} {
 		if !utf8.ValidString(value) {
 			return errors.New("measurement series identity contains invalid UTF-8")

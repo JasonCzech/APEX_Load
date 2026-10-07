@@ -286,14 +286,14 @@ npm run test
 ### Running tests
 
 ```bash
-# Run all Go tests
-go test ./...
+# Run all Go tests (20-minute package timeout)
+go test -timeout=20m ./...
 
 # Run specific package tests
 go test ./pkg/engine
 
 # Run with coverage
-go test -cover ./...
+go test -timeout=20m -cover ./...
 
 # Benchmark performance
 go test -run='^$' -bench=BenchmarkHarnessOverhead -benchmem ./pkg/engine/
@@ -502,7 +502,7 @@ examples/            # Sample scripts and HAR files
 **Run tests:**
 ```bash
 # Go tests
-go test ./...
+go test -timeout=20m ./...
 
 # Frontend tests
 cd dashboard && npm test

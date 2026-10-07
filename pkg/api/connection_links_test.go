@@ -89,8 +89,8 @@ func TestExemplarAPIReturnsWorkingDeepLinks(t *testing.T) {
 	wrapped := &failingJobsStore{SQLiteStore: store}
 	server := NewServer(ServerConfig{Store: wrapped})
 	// The run gets a live direct-mode monitor job; keep the poller off it.
-	if server.appDynamicsCancel != nil {
-		server.appDynamicsCancel()
+	if server.providerMonitoringCancel != nil {
+		server.providerMonitoringCancel()
 	}
 	linkFixtureConnections(t, store)
 	record := exemplarArchiveFixture(t, server, store, "linked-run", nil)

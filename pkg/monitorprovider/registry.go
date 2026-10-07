@@ -9,6 +9,7 @@ const (
 	PackDynatrace       = "dynatrace"
 	PackPrometheusQuery = "prometheus-query"
 	PackElasticQuery    = "elastic-query"
+	PackElastic         = "elastic"
 )
 
 // Provider names carried on metric points, diagnostics and monitor rules.
@@ -18,6 +19,7 @@ const (
 	ProviderDynatrace     = "dynatrace"
 	ProviderPrometheus    = "prometheus"
 	ProviderElasticsearch = "elasticsearch"
+	ProviderOpenSearch    = "opensearch"
 )
 
 // Scheduling says how a provider's collection advances.
@@ -44,9 +46,10 @@ const (
 // its own scheduling, ingestion, validation and observation semantics; the
 // descriptor names them so callers can dispatch without comparing names.
 type Descriptor struct {
-	Pack         string
-	ProviderName string
-	Label        string
+	Pack                   string
+	ProviderName           string
+	AlternateProviderNames []string
+	Label                  string
 	// CapabilityPack is what a collector must advertise to run the provider.
 	CapabilityPack string
 	// ContractUnavailableReason is the coverage reason when it does not.
@@ -66,7 +69,27 @@ type Descriptor struct {
 	SupportsRunHeader      bool
 }
 
+func (d Descriptor) AcceptsProvider(name string) bool {
+	if name == d.ProviderName {
+		return true
+	}
+	for _, alternate := range d.AlternateProviderNames {
+		if alternate == name {
+			return true
+		}
+	}
+	return false
+}
+
 var descriptors = map[string]Descriptor{
+	PackElastic: {
+		Pack: PackElastic, ProviderName: ProviderElasticsearch, AlternateProviderNames: []string{ProviderOpenSearch}, Label: "Elastic",
+		CapabilityPack: "elastic.v1", ContractUnavailableReason: "collector_elastic_contract_unavailable",
+		Scheduling: SchedulingWindowed, Observation: ObservationInterval,
+		DefaultIntervalSeconds: 10, MinIntervalSeconds: 10, MaxIntervalSeconds: 3600, DefaultExecutorMode: "direct",
+		CollectorCredentialKey: true, SupportsDiagnostics: true, SupportsTraceLookup: true, SupportsRunHeader: true,
+	},
+	// Retained for decoding historical sources, points and archives only.
 	PackAppDynamics: {
 		Pack: PackAppDynamics, ProviderName: ProviderAppDynamics, Label: "AppDynamics",
 		CapabilityPack: "appdynamics.v1", ContractUnavailableReason: "collector_appdynamics_contract_unavailable",
@@ -114,7 +137,7 @@ func Canonical(pack string) bool {
 // is name, such as "dynatrace.v1".
 func ByCapabilityPack(name string) (Descriptor, bool) {
 	for _, d := range descriptors {
-		if d.CapabilityPack == name {
+		if d.Pack != PackAppDynamics && d.CapabilityPack == name {
 			return d, true
 		}
 	}
@@ -130,8 +153,16 @@ func IsCapabilityPack(name string) bool {
 
 // ByProviderName returns the governed provider that reports under name.
 func ByProviderName(name string) (Descriptor, bool) {
-	for _, d := range descriptors {
-		if d.ProviderName == name {
+	// Keep the historical Elasticsearch product lookup on the lightweight pack.
+	if name == ProviderElasticsearch {
+		return descriptors[PackElasticQuery], true
+	}
+	if name == ProviderAppDynamics {
+		return descriptors[PackAppDynamics], true
+	}
+	for _, pack := range Packs() {
+		d := descriptors[pack]
+		if d.AcceptsProvider(name) {
 			return d, true
 		}
 	}
@@ -144,10 +175,13 @@ func KnownProviderName(name string) bool {
 	return ok
 }
 
-// Packs lists the governed provider packs in a stable order.
+// Packs lists the active governed provider packs in a stable order.
 func Packs() []string {
 	out := make([]string, 0, len(descriptors))
 	for pack := range descriptors {
+		if pack == PackAppDynamics {
+			continue
+		}
 		out = append(out, pack)
 	}
 	sort.Strings(out)

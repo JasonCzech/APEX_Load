@@ -31,9 +31,8 @@ test('Access policy navigation keeps the requested body through links and reload
   await expect(page.locator('#settings-section-feature-access')).toBeVisible()
   await page
     .getByRole('navigation', { name: 'Access administration' })
-    .getByRole('link', { name: 'Users & service accounts' })
+    .getByRole('link', { name: /^Service accounts/ })
     .click()
-  await page.getByRole('tab', { name: /Service Accounts/ }).click()
   await page.getByRole('tab', { name: 'Create service account', exact: true }).click()
   await expect(page).toHaveURL(/accessView=create-account/)
   await expect(page.locator('.access-inspector')).toHaveCount(0)
@@ -55,7 +54,7 @@ test('Access policy navigation keeps the requested body through links and reload
   await expect(page.getByRole('tab', { name: 'Existing Accounts', exact: true })).toHaveAttribute('aria-selected', 'true')
 })
 
-test('Access history pages beyond 50 and downloads all matching events', async ({ page, request }) => {
+test('Access history loads older events beyond 50 into the same table and downloads all matching events', async ({ page, request }) => {
   test.setTimeout(90_000)
   const workspace = await createWorkspace(request)
   const user = await json(
@@ -73,15 +72,20 @@ test('Access history pages beyond 50 and downloads all matching events', async (
   await page.goto(`/#/access?accessView=events&${scopeQuery(workspace)}`)
   await page.getByPlaceholder('auth.user.create').fill('auth.user.binding.create')
   await page.getByRole('button', { name: 'Apply Filters', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Next events', exact: true })).toBeEnabled()
-  const firstIds = await page
-    .getByRole('table', { name: 'Audit events', exact: true })
-    .locator('tbody tr')
-    .count()
-  // Use the server pagination controls, not the generic DOM-table paginator.
-  await page.getByRole('button', { name: 'Next events', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Previous events', exact: true })).toBeEnabled()
-  await expect(page.getByRole('button', { name: 'Next events', exact: true })).toBeDisabled()
+  const loadOlder = page.getByRole('button', { name: 'Load older events', exact: true })
+  await expect(loadOlder).toBeEnabled()
+  const rows = page.getByRole('table', { name: 'Audit events', exact: true }).locator('tbody tr')
+  const firstIds = await rows.count()
+  // Older batches append to the same scrolling table; there is no page pager.
+  await expect(page.getByRole('button', { name: 'Next events', exact: true })).toHaveCount(0)
+  const allLoaded = page.locator('.access-load-older').getByText(/^All \d+ matching events loaded$/)
+  for (let batch = 0; batch < 5 && (await allLoaded.count()) === 0; batch++) {
+    const before = await rows.count()
+    await loadOlder.click()
+    await expect.poll(() => rows.count()).toBeGreaterThan(before)
+  }
+  await expect(allLoaded).toBeVisible()
+  expect(await rows.count()).toBeGreaterThan(50)
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export all matching events CSV', exact: true }).click()
   const download = await downloadPromise
@@ -137,7 +141,7 @@ test('Access review opens remediation and renders long identities at narrow widt
     return wrapper.scrollWidth <= wrapper.clientWidth
   })).toBe(true)
   await page.screenshot({ path: 'test-results/access-users-desktop.png', animations: 'disabled' })
-  await page.getByRole('tab', { name: /Activity/ }).click()
+  await page.getByRole('navigation', { name: 'Access administration' }).getByRole('button', { name: /^Activity/ }).click()
   await page.getByRole('tab', { name: 'Access Review', exact: true }).click()
   const accountName = `Later review account ${Date.now()}`
   await json(await request.post('/api/v1/auth/service-accounts', { data: {

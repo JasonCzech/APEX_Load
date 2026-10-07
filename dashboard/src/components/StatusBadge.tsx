@@ -25,7 +25,9 @@ export default function StatusBadge({ status, stoppedByOperator }: Props) {
   const normalizedStatus = normalizeTestStatus(status)
   return (
     <span className={`status-badge ${STATUS_STYLES[normalizedStatus] || ''}`}>
-      {testOutcomeStatus(status, stoppedByOperator) === 'STOPPED' ? 'Stopped by operator' : normalizedStatus || 'UNKNOWN'}
+      <span className="status-badge-label">
+        {testOutcomeStatus(status, stoppedByOperator) === 'STOPPED' ? 'Stopped by operator' : normalizedStatus || 'UNKNOWN'}
+      </span>
     </span>
   )
 }

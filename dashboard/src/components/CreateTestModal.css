@@ -32,8 +32,8 @@
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.05em);
 }
 
 .mode-chip.active {
@@ -50,8 +50,8 @@
 .modal-form label span {
   font-size: 11px;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.05em);
   font-weight: 600;
 }
 
@@ -141,8 +141,8 @@
   margin: 0;
   font-size: 13px;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.05em);
 }
 
 .draft-capacity-status {
@@ -169,8 +169,8 @@
 .draft-capacity-label {
   color: var(--text-muted);
   font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.05em);
 }
 
 .draft-capacity-metric strong {
@@ -221,8 +221,8 @@
   right: 12px;
   font-size: 10px;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.05em);
   font-weight: 600;
   pointer-events: none;
 }
@@ -241,8 +241,8 @@
   margin: 0 0 6px;
   font-size: 14px;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.05em);
 }
 
 .assignment-settings-header p {
@@ -402,8 +402,8 @@
   font-size: 14px;
   margin-bottom: 6px;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.05em);
 }
 
 .goal-settings-header p {
@@ -507,8 +507,8 @@
   font-size: 14px;
   margin-bottom: 16px;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.05em);
 }
 
 .overrides-grid {

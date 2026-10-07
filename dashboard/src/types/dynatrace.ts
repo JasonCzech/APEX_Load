@@ -1,4 +1,4 @@
-import type { AppDynamicsCapability, AppDynamicsEntity, AppDynamicsEvidence } from './appdynamics'
+import type { MonitorCapability, MonitorEntity, MonitorEvidence } from './runMonitoring'
 import type { AnalysisPoint } from './analysis'
 
 export interface DynatraceConfig {
@@ -30,7 +30,7 @@ export interface DynatraceDiscoveryOptions {
 export interface DynatraceOperationRequest { kind: 'verify' | 'discover' | 'preview'; source_id?: string; options?: DynatraceDiscoveryOptions; selection?: DynatraceSelection }
 export interface DynatraceOperation {
   id: string; connection_id?: string; connection_revision?: number; kind: string; status: string; created_at: string; expires_at: string; message?: string
-  result?: { capabilities?: Record<string, AppDynamicsCapability | string | boolean | Record<string, string>>; entities?: AppDynamicsEntity[]; items?: AppDynamicsEntity[]; metrics?: AppDynamicsEntity[]; next_cursor?: string; truncated?: boolean; message?: string; preview?: { points?: AnalysisPoint[]; evidence?: AppDynamicsEvidence[]; coverage?: Record<string, AppDynamicsCapability>; progress?: { scanned_bytes?: number; query_cost_known?: boolean } } }
+  result?: { capabilities?: Record<string, MonitorCapability | string | boolean | Record<string, string>>; entities?: MonitorEntity[]; items?: MonitorEntity[]; metrics?: MonitorEntity[]; next_cursor?: string; truncated?: boolean; message?: string; preview?: { points?: AnalysisPoint[]; evidence?: MonitorEvidence[]; coverage?: Record<string, MonitorCapability>; progress?: { scanned_bytes?: number; query_cost_known?: boolean } } }
 }
 
 export const emptyDynatraceSelection = (): DynatraceSelection => ({ metrics: [], problems: true, events: false, grail: [], settle_seconds: 120 })

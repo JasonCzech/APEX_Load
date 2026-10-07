@@ -1,4 +1,4 @@
-import { test, expect, json, idOf, login, seedScript, seedScenario } from './support/workflow'
+import { test, expect, json, idOf, login, seedScript, seedScenario, signOut } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('Operators move scripts individually and in bulk, recover failures, and retain assignments after reload', async ({ page }, testInfo) => {
@@ -74,7 +74,7 @@ test('Viewers cannot move scripts through the library or API', async ({ page }) 
   await json(await request.post(`/api/v1/auth/users/${viewer.id}/bindings`, {
     data: { scope_type: 'domain', scope_id: workspace.domainId, role: 'viewer' },
   }))
-  await page.getByRole('button', { name: 'Sign out' }).click()
+  await signOut(page)
   await login(page, 'user')
   await page.goto(`/#/scripts?${scopeQuery(workspace)}`)
   // API-seeded projects must be loaded into the signed-in workspace provider.

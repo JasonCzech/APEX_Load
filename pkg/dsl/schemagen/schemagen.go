@@ -47,6 +47,16 @@ func GenerateSchema() ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("reflected schema has no $defs")
 	}
+	// Legacy DTOs still decode saved scripts and source revisions, while the
+	// authoring contract exposes only configuration supported by this build.
+	if config, ok := defs["ScriptConfig"].(map[string]any); ok {
+		if properties, ok := config["properties"].(map[string]any); ok {
+			delete(properties, "bruno")
+		}
+	}
+	delete(defs, "BrunoConfig")
+	delete(defs, "BrunoRuntimeConfig")
+	delete(defs, "BrunoRuntimeLimits")
 
 	// Struct tags without omitempty are not a statement of requiredness —
 	// the catalog and the Go validator are. Drop every reflected required

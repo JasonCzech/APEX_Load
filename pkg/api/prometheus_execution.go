@@ -6,7 +6,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/appdynamics"
 	"github.com/jasonczech/apexload/pkg/collectoragent"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/prometheus"
@@ -20,12 +19,12 @@ func (s *Server) prometheusQuotaConfig(ctx context.Context, snapshot *storage.Pr
 		return cfg, err
 	}
 	store, ok := s.store.(interface {
-		AllocateAppDynamicsQuota(string, string, time.Time) (bool, error)
+		AllocateMonitorQuota(string, string, time.Time) (bool, error)
 	})
 	if !ok {
 		return cfg, errors.New("monitoring request quota storage unavailable")
 	}
-	allowed, err := store.AllocateAppDynamicsQuota(prometheus.QuotaKey(cfg, credentials), executor, time.Now().UTC())
+	allowed, err := store.AllocateMonitorQuota(prometheus.QuotaKey(cfg, credentials), executor, time.Now().UTC())
 	if err != nil || !allowed {
 		return cfg, errors.New("Prometheus executor request quota is busy")
 	}
@@ -101,7 +100,7 @@ func (s *Server) populatePrometheusGrant(ctx context.Context, grant *collectorag
 		return err
 	}
 	grant.Prometheus = &prometheus.JobConfig{Config: cfg, Selection: prometheusSelection(job)}
-	grant.QueryFromUTC, grant.QueryUntilUTC = appDynamicsQueryWindow(job, time.Now().UTC())
+	grant.QueryFromUTC, grant.QueryUntilUTC = providerQueryWindow(job, time.Now().UTC())
 	grant.LoadEndedAt, grant.DrainDeadline, grant.QueryWatermark = job.LoadEndedAt, job.DrainDeadline, job.QueryWatermark
 	grant.Reconciling = job.State == "reconciling"
 	grant.MaxBatches = 32
@@ -133,7 +132,7 @@ func (s *Server) collectDirectPrometheus(parent context.Context, job storage.Run
 	defer cancel()
 	ctx, stop := context.WithTimeout(ctx, 30*time.Second)
 	defer stop()
-	from, to := appDynamicsQueryWindow(job, time.Now().UTC())
+	from, to := providerQueryWindow(job, time.Now().UTC())
 	if !to.After(from) {
 		return
 	}
@@ -186,10 +185,10 @@ func (s *Server) collectDirectPrometheus(parent context.Context, job storage.Run
 	defer ingestCancel()
 	// Reuse the common bounded chunk and final-progress protocol. Provider SDK
 	// result types share their observation/evidence contracts.
-	common := appdynamics.Result{Points: result.Points, Evidence: result.Evidence, Coverage: result.Coverage, Progress: result.Progress, Topology: result.Topology}
+	common := providerCollectionResult{Points: result.Points, Evidence: result.Evidence, Coverage: result.Coverage, Progress: result.Progress, Topology: result.Topology}
 	sequence := job.NextSequence
 	for len(common.Points) > 0 || len(common.Evidence) > 0 {
-		payload, n, m, e := boundedDirectAppDynamicsBatch(common, job, from, to)
+		payload, n, m, e := boundedProviderMonitorBatch(common, job, from, to)
 		if e != nil {
 			return
 		}

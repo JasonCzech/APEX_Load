@@ -67,13 +67,17 @@ var schemaReleases = []schemaRelease{
 	{Version: 40, Name: "rca-analysis-revisions", Fingerprint: "0aa6b5258f7162db82e7647c622672b145dd1db69356907c774882a4071a54e3"},
 	{Version: 41, Name: "business-key-project-keys", Fingerprint: "385585ff3818a833a350cd25838901726297b40a458670abf302d52bbb667c52"},
 	{Version: 42, Name: "rca-critiques", Fingerprint: "b17ff1432f5b81961297d33644433a760017d6bf8317877509633fab06ac70bb"},
-	{Version: 43, Name: "authoring-mutation-receipts", Fingerprint: "f5162d40f9f1292edc151854823456d291ec91e5843c48f3faea27936bc108c9"},
-	{Version: 44, Name: "feature-evaluation-jobs", Fingerprint: "8a3b85bc69d51fc99ef82b036f5dd3095c959feccd968268eddd2b3b0b06da85"},
-	{Version: 45, Name: "feature-acceptance-records", Fingerprint: "6e18988c1ecd91779b20dd7d0176c5676e1ca8d85b17b7f4bb95ee808f693aac"},
-	{Version: 46, Name: "evaluation-job-request-digest-attempts", Fingerprint: "e0a9875257c2eec52d7e3db93e37e93337696235d5cd1a3df62ab7077dd692be"},
-	{Version: 47, Name: "feature-acceptance-record-sequence", Fingerprint: "97e0b12e5e5f458ee14262ff22bba3876a8128ff73cdd02cbd6c96fdfd495244"},
-	{Version: 48, Name: "evaluation-job-result-bytes", Fingerprint: "be98302163e49efb45a5d716d080b4f48f413493aab1bf3c426864a34f8efaad"},
-	{Version: 49, Name: "run-evidence-receipts", Fingerprint: "a4930f9dc677def990112f3e09abbd82532c6a495c277451ae9f73990f31ef6f"},
+	{Version: 43, Name: "elastic-provider-monitoring", Fingerprint: "9151ca56509c9194e7eb425bb8f4f9f243f04400388b04d86f26151f0dfc744a"},
+	{Version: 44, Name: "provider-evidence-searchable-metadata", Fingerprint: "8674a06ddd84e1e571ed5fa760b3affbff4453b30c076ca7591918d0b5e68c37"},
+	// Releases 45-51 were 43-49 on the feature completion branch; they were
+	// renumbered when it merged after main's 43 and 44 had shipped.
+	{Version: 45, Name: "authoring-mutation-receipts", Fingerprint: "f5162d40f9f1292edc151854823456d291ec91e5843c48f3faea27936bc108c9"},
+	{Version: 46, Name: "feature-evaluation-jobs", Fingerprint: "8a3b85bc69d51fc99ef82b036f5dd3095c959feccd968268eddd2b3b0b06da85"},
+	{Version: 47, Name: "feature-acceptance-records", Fingerprint: "6e18988c1ecd91779b20dd7d0176c5676e1ca8d85b17b7f4bb95ee808f693aac"},
+	{Version: 48, Name: "evaluation-job-request-digest-attempts", Fingerprint: "e0a9875257c2eec52d7e3db93e37e93337696235d5cd1a3df62ab7077dd692be"},
+	{Version: 49, Name: "feature-acceptance-record-sequence", Fingerprint: "97e0b12e5e5f458ee14262ff22bba3876a8128ff73cdd02cbd6c96fdfd495244"},
+	{Version: 50, Name: "evaluation-job-result-bytes", Fingerprint: "be98302163e49efb45a5d716d080b4f48f413493aab1bf3c426864a34f8efaad"},
+	{Version: 51, Name: "run-evidence-receipts", Fingerprint: "4de7650fd22ebc9bd5bbc873fa909fd9583056c0436d2514256c6398719433bc"},
 }
 
 type SchemaMigrationRecord struct {

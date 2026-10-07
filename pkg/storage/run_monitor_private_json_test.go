@@ -2,16 +2,15 @@ package storage
 
 import (
 	"encoding/json"
+	"github.com/jasonczech/apexload/pkg/analysis"
 	"testing"
 	"time"
-
-	"github.com/jasonczech/apexload/pkg/appdynamics"
 )
 
 func TestAppDynamicsPrivateSnapshotsSurviveDurableRoundTrip(t *testing.T) {
 	snapshot := &AppDynamicsConnectionSnapshot{ConnectionID: "c", Revision: 3, PasswordSecretName: "project-secret-ref"}
 	now := time.Now().UTC().Truncate(time.Second)
-	job := RunMonitorJob{ID: "job", ConnectionSnapshot: snapshot, QueryCoverage: map[string]appdynamics.Coverage{"metrics": {From: now, To: now.Add(time.Minute), Status: "complete"}}, QueryOffset: 2}
+	job := RunMonitorJob{ID: "job", ConnectionSnapshot: snapshot, QueryCoverage: map[string]analysis.ProviderCoverage{"metrics": {From: now, To: now.Add(time.Minute), Status: "complete"}}, QueryOffset: 2}
 	body, err := json.Marshal(job)
 	if err != nil {
 		t.Fatal(err)

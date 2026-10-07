@@ -21,7 +21,6 @@ import { useEntitlementsApi } from './api/useEntitlementsApi'
 import { useDashboardDefinitionsApi } from './api/useDashboardDefinitionsApi'
 import { useELKConnectionsApi } from './api/useELKConnectionsApi'
 import { useDynatraceConnectionsApi } from './api/useDynatraceConnectionsApi'
-import { useAppDynamicsConnectionsApi } from './api/useAppDynamicsConnectionsApi'
 
 function useApiServices() {
   const tests = useTestApi()
@@ -43,7 +42,6 @@ function useApiServices() {
   const dashboardDefinitions = useDashboardDefinitionsApi()
   const elkConnections = useELKConnectionsApi()
   const dynatraceConnections = useDynatraceConnectionsApi()
-  const appDynamicsConnections = useAppDynamicsConnectionsApi()
 
   // Spread order is preserved by mergeApiServiceGroups; the group names are the
   // labels a collision report points at.
@@ -69,9 +67,8 @@ function useApiServices() {
 		dashboardDefinitions,
 		elkConnections,
 		dynatraceConnections,
-        appDynamicsConnections,
       }),
-    [tests, applications, projects, repository, scripts, system, recorder, browserRecorder, library, capacity, fleet, executionPlans, monitoringCollectors, objectRepositories, correlationRulesets, entitlements, dashboardDefinitions, elkConnections, dynatraceConnections, appDynamicsConnections],
+    [tests, applications, projects, repository, scripts, system, recorder, browserRecorder, library, capacity, fleet, executionPlans, monitoringCollectors, objectRepositories, correlationRulesets, entitlements, dashboardDefinitions, elkConnections, dynatraceConnections],
   )
 }
 

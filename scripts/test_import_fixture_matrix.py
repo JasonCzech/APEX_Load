@@ -45,6 +45,15 @@ class MatrixEvidenceTests(unittest.TestCase):
     def test_manual_coverage_gap_is_not_executable(self):
         self.assertEqual(matrix.preflight({"manual_gap": "No provider fixture"}, {}, True), "No provider fixture")
 
+    def test_active_matrix_excludes_retired_runner_execution(self):
+        rows = json.loads(matrix.MANIFEST.read_text())["cases"]
+        ids = {row["id"] for row in rows}
+        self.assertIn("bruno-native-batch", ids)
+        self.assertFalse(ids & {"bruno-canonical-replay", "bruno-runner-conformance", "bruno-commit-revisions"})
+        for row in rows:
+            self.assertNotIn("runners/bruno", row.get("cwd", ""))
+            self.assertFalse(any(source.startswith("_retired/") for source in row["sources"]))
+
     def test_manifest_has_unique_ids_and_inspectable_sources(self):
         rows = json.loads(matrix.MANIFEST.read_text())["cases"]
         self.assertEqual(len({row["id"] for row in rows}), len(rows))

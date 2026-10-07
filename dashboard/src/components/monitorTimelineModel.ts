@@ -1,6 +1,6 @@
 import type { MetricsHistoryPoint } from '../types'
 import type { AnalysisPoint } from '../types/analysis'
-import type { AppDynamicsEntity } from '../types/appdynamics'
+import type { MonitorEntity } from '../types/runMonitoring'
 
 export const monitorLoadOverlays = {
   latency: { label: 'Response time', unit: 'ms', field: 'avgMs' },
@@ -12,14 +12,16 @@ export type MonitorLoadOverlay = keyof typeof monitorLoadOverlays
 export interface MonitorTimelineRow { time: number; monitor?: number | null; load?: number | null }
 
 export function monitorSeriesIdentity(point: AnalysisPoint): string {
-  return JSON.stringify([point.source, point.metric_name, point.unit, point.kind, point.host, point.provider?.name, point.provider?.backend, point.provider?.query_id, point.provider?.definition_hash, point.provider?.backend_profile, point.provider?.mode, point.provider?.evaluation_step_seconds, point.provider?.metric_id, point.provider?.statistic, point.provider?.query_window ? 'query_window' : point.provider?.resolution_seconds, Object.entries(point.dimensions || {}).sort(([a], [b]) => a.localeCompare(b)), Object.entries(point.provider?.entity_ids || {}).sort(([a], [b]) => a.localeCompare(b))])
+  const windowKind = point.provider?.window_kind || (point.provider?.query_window ? 'query_window' : 'bucket')
+  const resolution = windowKind === 'bucket' ? point.provider?.resolution_seconds : undefined
+  return JSON.stringify([point.source, point.metric_name, point.unit, point.kind, point.host, point.provider?.name, point.provider?.backend, point.provider?.query_id, point.provider?.definition_hash, point.provider?.backend_profile, point.provider?.mode, point.provider?.evaluation_step_seconds, point.provider?.metric_id, point.provider?.statistic, windowKind, resolution, Object.entries(point.dimensions || {}).sort(([a], [b]) => a.localeCompare(b)), Object.entries(point.provider?.entity_ids || {}).sort(([a], [b]) => a.localeCompare(b))])
 }
 
 export function latestMonitorQueryAggregate(points: AnalysisPoint[]): AnalysisPoint | undefined {
   return points.filter(point => point.provider?.query_window).sort((a, b) => Date.parse(b.provider!.bucket_end) - Date.parse(a.provider!.bucket_end) || Date.parse(a.provider!.bucket_start) - Date.parse(b.provider!.bucket_start))[0]
 }
 
-export function monitorEntityLabel(point: AnalysisPoint, topology: AppDynamicsEntity[] = []): string {
+export function monitorEntityLabel(point: AnalysisPoint, topology: MonitorEntity[] = []): string {
   const dimensions = point.provider?.name === 'prometheus' ? point.provider.display_labels || point.dimensions || {} : point.provider?.entity_ids || point.dimensions || {}
   return Object.entries(dimensions).map(([kind, id]) => {
     const entity = topology.find(item => item.type === kind && item.id === id && (!dimensions.application || item.entity_ids?.application === dimensions.application))
@@ -36,7 +38,7 @@ export function buildMonitorTimelineRows(points: AnalysisPoint[], history: Metri
     const time = Date.parse(point.timestamp_utc)
     if (!Number.isFinite(time)) return
     const previous = sorted[index - 1]
-    const previousEnd = previous?.provider?.name === 'prometheus' && previous.provider.mode === 'evaluation_point' ? Date.parse(previous.timestamp_utc) + (previous.provider.evaluation_step_seconds || 0) * 1000 : previous?.provider ? Date.parse(previous.provider.bucket_end) : NaN
+    const previousEnd = previous?.provider?.name === 'prometheus' && previous.provider.mode === 'evaluation_point' ? Date.parse(previous.timestamp_utc) + (previous.provider.evaluation_step_seconds || 0) * 1000 : previous?.provider && (!previous.provider.window_kind || previous.provider.window_kind === 'bucket') ? Date.parse(previous.provider.bucket_end) : NaN
     if (Number.isFinite(previousEnd) && time > previousEnd) rows.push({ time: previousEnd, monitor: null })
     rows.push({ time, monitor: point.quality === 'valid' && Number.isFinite(point.value) ? point.value : null })
   })

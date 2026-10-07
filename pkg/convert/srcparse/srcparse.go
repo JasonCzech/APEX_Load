@@ -19,13 +19,13 @@ package srcparse
 import (
 	"encoding/json"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"io"
 	"strconv"
 	"strings"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
-	"gopkg.in/yaml.v3"
 )
 
 // DefaultMaxDepth bounds nesting for both YAML and JSON source documents.

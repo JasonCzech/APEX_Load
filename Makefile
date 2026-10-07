@@ -112,7 +112,7 @@ java-vuser-slot-runtime:
 
 test:
 	go test -race -count=1 github.com/mxschmitt/playwright-go -run '^TestAPEXOwnedHAR'
-	go test -race -count=1 ./...
+	go test -race -count=1 -timeout=20m ./...
 
 test-jms-solace-real:
 	go test -tags jms_solace_real ./pkg/protocol/jms
@@ -133,7 +133,7 @@ performance-evidence:
 	./scripts/run-performance-evidence.sh "$(PERF_JSON)" "$(PERF_MD)"
 
 test-cover:
-	go test -race -coverprofile=coverage.out ./...
+	go test -race -timeout=20m -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
 lint:

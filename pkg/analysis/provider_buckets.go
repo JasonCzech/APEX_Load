@@ -55,7 +55,7 @@ func bucketProviderSeries(points []MetricPoint, from, to time.Time, seconds int,
 		a.min = math.Min(a.min, value)
 		a.max = math.Max(a.max, value)
 		if aggregation == "sum" {
-			if meta.Statistic != "sum" {
+			if !providerIntervalSumEligible(meta) {
 				return nil, errors.New("sum requires an interval count or sum metric")
 			}
 			a.sum += value
@@ -80,6 +80,18 @@ func bucketProviderSeries(points []MetricPoint, from, to time.Time, seconds int,
 		point.RelativeTimeMS = nil
 		point.ActiveRuntimeMS = nil
 		point.TimestampUTC = from.Add(time.Duration(index*seconds) * time.Second).UTC()
+		if isElasticProvider(p[0].Provider) {
+			meta := *p[0].Provider
+			meta.BucketStart = point.TimestampUTC
+			meta.BucketEnd = point.TimestampUTC.Add(time.Duration(seconds) * time.Second)
+			meta.ResolutionSeconds = seconds
+			meta.WindowKind = "bucket"
+			meta.QueryWindow = false
+			meta.DerivedAggregation = aggregation
+			meta.AggregationEligible = false
+			meta.Count, meta.Sum, meta.Min, meta.Max = nil, nil, nil, nil
+			point.Provider = &meta
+		}
 		point.Value = nil
 		point.Quality = QualityMissing
 		point.Kind = KindGauge
@@ -103,4 +115,15 @@ func bucketProviderSeries(points []MetricPoint, from, to time.Time, seconds int,
 		out = append(out, point)
 	}
 	return out, nil
+}
+
+func providerIntervalSumEligible(meta *ProviderMeasurement) bool {
+	if meta == nil {
+		return false
+	}
+	if meta.Statistic == "sum" {
+		return true
+	}
+	return (meta.Name == "elasticsearch" || meta.Name == "opensearch") && meta.Statistic == "count" && !meta.Approximate &&
+		(meta.WindowKind == "bucket" && !meta.QueryWindow || meta.WindowKind == "query_window" && meta.QueryWindow)
 }

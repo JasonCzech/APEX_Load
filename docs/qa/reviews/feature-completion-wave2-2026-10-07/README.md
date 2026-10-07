@@ -2,7 +2,7 @@
 
 Status: implemented on `claude/feature-completion-wave1` and reviewed: each work package through independent review rounds until no finding stayed open, then once across the whole wave. Every finding is fixed, documented below, or accepted as a listed residual. The requirements these packages advance remain open; nothing here promotes support.
 
-Wave 2 delivers eleven work packages of the [feature completion specification](../../../FEATURE_COMPLETION_SPEC.md), building on [Wave 1](../feature-completion-wave1-2026-10-06/README.md). Schema release 49 (`run_evidence_receipts`) is additive; the next free release is 50. The generator protocol gains `MetricsBatch.sequence_prefix_state_only` (field 33), `MetricsBatchTelemetry.test_dropped_subscriber_batches` (field 9), the `AcknowledgeEvidence` RPC, the `apexload-metrics-subscribed` stream header and the `browser_interaction_evidence_v1` capability; older peers keep working with the documented limits.
+Wave 2 delivers eleven work packages of the [feature completion specification](../../../FEATURE_COMPLETION_SPEC.md), building on [Wave 1](../feature-completion-wave1-2026-10-06/README.md). Schema release 51 (`run_evidence_receipts`; numbered 49 on the branch, and renumbered with Wave 1's releases when the branch merged into main after main's releases 43 and 44) is additive; the next free release is 52. The generator protocol gains `MetricsBatch.sequence_prefix_state_only` (field 33), `MetricsBatchTelemetry.test_dropped_subscriber_batches` (field 9), the `AcknowledgeEvidence` RPC, the `apexload-metrics-subscribed` stream header and the `browser_interaction_evidence_v1` capability; older peers keep working with the documented limits.
 
 ## Work packages
 

@@ -24,6 +24,7 @@ func distributedMonitoringArtifacts(tr *TestRunner, test *ManagedTest) *runArtif
 	if tr == nil || test == nil {
 		return nil
 	}
+	elasticEnabled := tr.testUsesElasticTraceEvidence(test)
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	current := tr.tests[test.ID]
@@ -36,7 +37,7 @@ func distributedMonitoringArtifacts(tr *TestRunner, test *ManagedTest) *runArtif
 	nativeSelection := runMonitoringEnabled(current.ProjectID) &&
 		(current.MonitorBindings != nil && len(current.MonitorBindings.Sources) > 0 ||
 			current.MonitorBindings == nil && current.ScenarioID != "")
-	if current.ELKCapture == nil && current.DynatraceCapture == nil && !nativeSelection {
+	if current.ELKCapture == nil && current.DynatraceCapture == nil && !nativeSelection && !elasticEnabled {
 		return nil
 	}
 	artifacts := current.elkArtifacts
@@ -44,7 +45,7 @@ func distributedMonitoringArtifacts(tr *TestRunner, test *ManagedTest) *runArtif
 		artifacts = current.dynatraceArtifacts
 	}
 	if artifacts == nil {
-		artifacts = &runArtifacts{runner: tr, test: current}
+		artifacts = &runArtifacts{runner: tr, test: current, elasticTraceEnabled: elasticEnabled}
 	}
 	current.elkArtifacts = artifacts
 	current.dynatraceArtifacts = artifacts

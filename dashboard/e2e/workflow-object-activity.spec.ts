@@ -1,4 +1,4 @@
-import { test, expect, seedScript, seedScenario, json, login } from './support/workflow'
+import { test, expect, seedScript, seedScenario, json, login, signOut } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('archive, restore, dependency admission and retained deleted history', async ({ page }) => {
@@ -75,7 +75,7 @@ test('project viewers can inspect deleted history but cannot archive or restore'
   const users = (await json(await request.get('/api/v1/auth/users'))).users as Array<{ id: string; subject: string }>
   const viewer = users.find(user => user.subject === 'local:user')!
   await json(await request.post(`/api/v1/auth/users/${viewer.id}/bindings`, { data: { scope_type: 'domain', scope_id: workspace.domainId, role: 'viewer' } }))
-  await page.getByRole('button', { name: 'Sign out' }).click(); await login(page, 'user')
+  await signOut(page); await login(page, 'user')
   await page.goto(`/#/scripts?${scopeQuery(workspace)}`); await page.reload()
   await expect(page.getByRole('row').filter({ hasText: name })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Archive', exact: true })).toHaveCount(0)

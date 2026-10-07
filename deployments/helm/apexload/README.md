@@ -172,30 +172,9 @@ artifact upload are intentionally out of scope. See
 [`docs/PROTOCOL_SUPPORT.md`](../../../docs/PROTOCOL_SUPPORT.md) for the JDK,
 classpath, and trust contract.
 
-Bruno source import is available independently of runner deployment. Enable it
-with `bruno.importEnabled=true` and configure a wrapping key. To enable
-canonical Bruno execution, also set `bruno.enabled=true` and provide:
+Bruno native HTTP import remains available with `bruno.importEnabled=true`, a protected artifact PVC through `bruno.artifactPersistence.existingClaim`, and the existing wrapping key. Only controllers mount source artifacts. The physical PVC and artifact directory names remain unchanged, including `/var/lib/apexload-bruno`.
 
-- `bruno.artifactPersistence.existingClaim`: a pre-created `ReadWriteMany` PVC
-  mounted by the controller and every generator for encrypted,
-  content-addressed source artifacts.
-- `bruno.egressBrokerUrl`: the governed HTTP CONNECT broker endpoint. The
-  chart fails closed without it unless `bruno.allowDirectEgress=true` is
-  explicitly selected for an isolated local cluster.
-- Either a versioned `projectSecrets.wrappingKeyVaultKeyId`, or
-  `APEXLOAD_WRAPPING_MASTER_KEY` in `dataPlatform.secretName` (the chart
-  can populate it from `projectSecrets.wrappingMasterKey` when
-  `createSecret=true`). The older `bruno.keyVaultKeyId` and
-  `bruno.artifactMasterKey` values remain compatible aliases.
-- A published `apexload-bruno-runner` image compatible with Bruno 3.5.2.
-
-The safe runner is injected as a loopback-only generator sidecar and never
-receives a Kubernetes service-account token. Developer sandbox execution is
-not enabled by this chart; it requires the separate isolated worker class
-described by the Bruno execution policy. The `bruno.maxJumps`,
-`maxRunRequestDepth`, `maxParallelRequests`, `maxOutputBytes`, and
-`maxStreamTimeoutMs` values are operator ceilings: imported scripts may select
-smaller values but cannot raise them.
+Bruno Runner is retired. The chart rejects `bruno.enabled=true` and no longer deploys a generator sidecar or its egress configuration. When upgrading a runner-enabled release with `--reuse-values`, pass `--set bruno.enabled=false`; retain the existing artifact PVC and wrapping key. The older `bruno.keyVaultKeyId` and `bruno.artifactMasterKey` aliases remain accepted. Canonical scripts remain stored but cannot execute. See [retired integrations](../../../docs/RETIRED_INTEGRATIONS.md).
 
 Set `certManager.enabled=true` when the cluster uses cert-manager to issue the
 controller/generator mTLS secrets. If the platform syncs those secrets from Key

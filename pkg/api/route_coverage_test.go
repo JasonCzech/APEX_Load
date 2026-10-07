@@ -31,6 +31,12 @@ var intentionallyPublicAPIRoutes = map[string]bool{
 	"GET /api/v1/monitoring/collectors/{id}/dynatrace-operations":                        true,
 	"POST /api/v1/monitoring/collectors/{id}/dynatrace-operations/{operation_id}/result": true,
 	"POST /api/v1/monitoring/collectors/{id}/jobs/{job_id}/scan-reservations":            true,
+	// Elastic inspection and cleanup handlers authenticate the assigned collector
+	// token and fence results against signed, expiring grants and immutable jobs.
+	"GET /api/v1/monitoring/collectors/{id}/elastic-inspections":                        true,
+	"POST /api/v1/monitoring/collectors/{id}/elastic-inspections/{operation_id}/result": true,
+	"GET /api/v1/monitoring/collectors/{id}/elastic-cleanups":                           true,
+	"POST /api/v1/monitoring/collectors/{id}/jobs/{job_id}/cleanup":                     true,
 	"GET /api/v1/auth/login":    true,
 	"POST /api/v1/auth/login":   true,
 	"GET /api/v1/auth/callback": true,

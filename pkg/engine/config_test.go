@@ -316,32 +316,6 @@ func TestRuntimeProtocolBasicCompositeValuesAcceptSpacedSecretReference(t *testi
 	}
 }
 
-func TestBuildProtoConfigBrunoPreservesSourceKeyAndResolvesOnlyBindingValue(t *testing.T) {
-	resolver := SecretResolverFunc(func(name string) (string, bool) {
-		if name == "PROJECT_API_TOKEN" {
-			return "resolved-bruno-material", true
-		}
-		return "", false
-	})
-	script := &dsl.Script{Config: dsl.ScriptConfig{Bruno: dsl.BrunoConfig{
-		SecretBindings: map[string]string{
-			"API_TOKEN": "{{secret.PROJECT_API_TOKEN}}",
-		},
-	}}}
-
-	cfg := buildProtoConfigWithSecretResolver(script, resolver)
-	bindings, ok := cfg["bruno_secret_bindings"].(map[string]string)
-	if !ok {
-		t.Fatalf("bruno_secret_bindings = %#v", cfg["bruno_secret_bindings"])
-	}
-	if got := bindings["API_TOKEN"]; got != "resolved-bruno-material" {
-		t.Fatalf("API_TOKEN = %q, want resolved governed value", got)
-	}
-	if _, exposed := bindings["PROJECT_API_TOKEN"]; exposed {
-		t.Fatalf("project logical name was exposed as a Bruno source variable: %#v", bindings)
-	}
-}
-
 func TestBuildProtoConfig_BaseURL(t *testing.T) {
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{

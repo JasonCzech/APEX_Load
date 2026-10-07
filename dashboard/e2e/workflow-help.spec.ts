@@ -151,20 +151,21 @@ test('Help is readable at narrow widths and exposes accessible navigation', asyn
   await page.screenshot({ path: testInfo.outputPath('help-desktop.png'), animations: 'disabled' })
   await page.setViewportSize({ width: 800, height: 900 })
   await page.goto('/#/docs?guide=user-guide&article=capabilities')
-  await expect(page.getByRole('heading', { name: 'Capabilities & limitations', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Capabilities & limitations', exact: true })).toBeInViewport()
+  // The article title is for screen readers; readers see the open article marked in the list and its contents in view.
+  await expect(page.getByRole('heading', { name: 'Capabilities & limitations', exact: true })).toBeAttached()
+  await expect(page.getByRole('navigation', { name: 'Help articles' }).getByRole('link', { name: 'Capabilities & limitations', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('navigation', { name: 'On this page' })).toBeInViewport()
   for (const link of await page.getByRole('navigation', { name: 'Help areas' }).getByRole('link').all()) {
     const box = await link.boundingBox()
     expect(box!.x + box!.width).toBeLessThanOrEqual(800)
   }
-  await page.getByText('Browse articles', { exact: true }).click()
+  // The article list is always shown (no collapsible "Browse articles" toggle), as on Settings and Access.
   await expect(page.getByRole('navigation', { name: 'Help articles' })).toBeVisible()
   await page.getByRole('navigation', { name: 'Help articles' }).getByRole('link', { name: 'Capabilities & limitations', exact: true }).click()
-  await page.getByText('Browse articles', { exact: true }).click()
   expect(await page.locator('.help-workspace').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
   const violations = await page.evaluate(async () => (await (window as typeof window & { axe: typeof axe }).axe.run('.help-workspace, .help-primary-nav', { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } })).violations)
   expect(violations).toEqual([])
-  await page.getByRole('heading', { name: 'Capabilities & limitations', exact: true }).scrollIntoViewIfNeeded()
+  await page.getByRole('navigation', { name: 'On this page' }).scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath('help-narrow.png'), animations: 'disabled' })
 })
 
@@ -189,6 +190,8 @@ test('Help maintains readable contrast across the supported themes', async ({ pa
     await page.getByRole('combobox', { name: 'Dashboard Theme', exact: true }).selectOption(theme)
     await page.goto('/#/docs?guide=general&article=api-overview')
     await expect(page.getByRole('heading', { name: 'Overview & first API calls', exact: true })).toBeVisible()
+    // The page keeps its theme colour transitions; audit the settled colours, not a frame mid-switch.
+    await page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'))
     const violations = await page.evaluate(async () => (await (window as typeof window & { axe: typeof axe }).axe.run('.help-workspace, .help-primary-nav', { runOnly: ['color-contrast'] })).violations)
     expect(violations, theme).toEqual([])
   }

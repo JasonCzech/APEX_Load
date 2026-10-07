@@ -38,10 +38,10 @@ type prometheusInspectionWork struct {
 	FromUTC            time.Time                             `json:"from_utc,omitempty"`
 	ToUTC              time.Time                             `json:"to_utc,omitempty"`
 }
-type PrometheusOperationResponse = AppDynamicsOperationResponse
+type PrometheusOperationResponse = MonitorOperationResponse
 
 func prometheusOperationResponse(op *storage.PrometheusInspection) PrometheusOperationResponse {
-	return appDynamicsOperationResponse(op)
+	return monitorOperationResponse(op)
 }
 
 type prometheusInspectionProjection struct {

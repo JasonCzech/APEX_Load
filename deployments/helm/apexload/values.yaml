@@ -169,49 +169,15 @@ generator:
     size: 10Gi
 
 bruno:
-  # Import and execution are independently gated. Both require protected
-  # artifact retention; only execution requires the runner and shared PVC.
+  # Native HTTP import and protected source retention remain supported.
   importEnabled: false
+  # Compatibility tombstone: enabling the retired runner is rejected.
   enabled: false
-  compatibilityVersion: "3.5.2"
   artifactRoot: /var/lib/apexload-bruno
   artifactPersistence:
-    # Existing ReadWriteMany claim mounted by controller and every generator.
     existingClaim: ""
-  # Prefer a versioned Key Vault key id. When empty, the data-platform Secret
-  # must contain the protocol-neutral APEXLOAD_WRAPPING_MASTER_KEY.
   keyVaultKeyId: ""
   artifactMasterKey: ""
-  egressBrokerUrl: ""
-  # Intended only for isolated local clusters. Production should use the
-  # governed broker and enforce pod-level egress policy externally.
-  allowDirectEgress: false
-  maxSessions: 256
-  maxPendingEvents: 10000
-  maxBundleBytes: 4294967296
-  sessionTtlMs: 86400000
-  sessionIdleTtlMs: 1800000
-  maxJumps: 10000
-  maxRunRequestDepth: 64
-  maxParallelRequests: 100
-  maxOutputBytes: 4194304
-  maxStreamTimeoutMs: 60000
-  runner:
-    image:
-      repository: apexload-bruno-runner
-      tag: ""
-      pullPolicy: Always
-    resources:
-      requests:
-        cpu: 250m
-        memory: 512Mi
-        ephemeral-storage: 1Gi
-      limits:
-        cpu: "2"
-        memory: 2Gi
-        ephemeral-storage: 6Gi
-    scratch:
-      tmpSizeLimit: 4Gi
 
 javaVuser:
   # Java Vuser execution is opt-in and uses a credential-minimized same-pod

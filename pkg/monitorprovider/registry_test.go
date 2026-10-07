@@ -24,7 +24,7 @@ func TestRegistryDescribesEveryGovernedProvider(t *testing.T) {
 		if d.MinIntervalSeconds <= 0 || d.DefaultIntervalSeconds < d.MinIntervalSeconds || d.MaxIntervalSeconds < d.DefaultIntervalSeconds {
 			t.Fatalf("%s interval bounds %+v", pack, d)
 		}
-		if byName, ok := ByProviderName(d.ProviderName); !ok || byName.Pack != pack {
+		if byName, ok := ByProviderName(d.ProviderName); !ok || !byName.AcceptsProvider(d.ProviderName) {
 			t.Fatalf("%s provider name %q does not map back", pack, d.ProviderName)
 		}
 	}
@@ -108,5 +108,42 @@ func TestByCapabilityPackMapsContractsToProviders(t *testing.T) {
 	}
 	if _, ok := ByCapabilityPack("prometheus-scrape.v2"); ok {
 		t.Fatal("the scrape contract is not a governed provider capability")
+	}
+}
+
+func TestRetiredProviderKeepsHistoricalIdentityWithoutActiveDiscovery(t *testing.T) {
+	d, ok := Lookup(PackAppDynamics)
+	if !ok || !Canonical(PackAppDynamics) || !KnownProviderName(ProviderAppDynamics) {
+		t.Fatal("historical identity lost")
+	}
+	if byName, ok := ByProviderName(ProviderAppDynamics); !ok || byName.Pack != d.Pack {
+		t.Fatal("historical provider cannot be decoded")
+	}
+	for _, pack := range Packs() {
+		if pack == PackAppDynamics {
+			t.Fatal("retired provider advertised")
+		}
+	}
+	if _, ok := ByCapabilityPack(d.CapabilityPack); ok || IsCapabilityPack(d.CapabilityPack) {
+		t.Fatal("retired provider capability accepted")
+	}
+	for _, pack := range []string{PackDynatrace, PackPrometheusQuery, PackElasticQuery} {
+		active, _ := Lookup(pack)
+		if _, ok := ByCapabilityPack(active.CapabilityPack); !ok {
+			t.Fatalf("supported provider %s removed", pack)
+		}
+	}
+}
+
+func TestExpandedElasticRegistryPreservesProductLookup(t *testing.T) {
+	d, ok := Lookup(PackElastic)
+	if !ok || !d.AcceptsProvider(ProviderElasticsearch) || !d.AcceptsProvider(ProviderOpenSearch) || d.MinIntervalSeconds != 10 || d.DefaultIntervalSeconds != 10 || d.CapabilityPack != "elastic.v1" || !d.CollectorCredentialKey || !d.SupportsDiagnostics || !d.SupportsTraceLookup || !d.SupportsRunHeader {
+		t.Fatalf("invalid Elastic descriptor: %+v", d)
+	}
+	if legacy, ok := ByProviderName(ProviderElasticsearch); !ok || legacy.Pack != PackElasticQuery {
+		t.Fatal("legacy product lookup changed", legacy)
+	}
+	if open, ok := ByProviderName(ProviderOpenSearch); !ok || open.Pack != PackElastic {
+		t.Fatal("OpenSearch product lookup unavailable", open)
 	}
 }

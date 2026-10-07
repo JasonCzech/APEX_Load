@@ -517,3 +517,17 @@ func TestMeasurementSeriesIdentityOfRecordedMatchesAndChecksOnlyIdentity(t *test
 		}
 	}
 }
+
+func TestMeasurementSeriesIdentityRetainsExpandedElasticSemantics(t *testing.T) {
+	p := seriesIdentityPoint()
+	p.Provider = &ProviderMeasurement{Name: "elasticsearch", MetricID: "query", QueryID: "query", WindowKind: "bucket", BucketStart: p.TimestampUTC, BucketEnd: p.TimestampUTC.Add(time.Minute), ResolutionSeconds: 60, Statistic: "count"}
+	observation := SeriesObservation{Mode: "interval", BucketNanos: int64(time.Minute)}
+	first := requireSeriesIdentity(t, p, observation)
+	for _, edit := range []func(*ProviderMeasurement){func(m *ProviderMeasurement) { m.QueryID = "other" }, func(m *ProviderMeasurement) { m.CatalogPath = "other" }, func(m *ProviderMeasurement) { m.Approximate = true }, func(m *ProviderMeasurement) { m.DerivedAggregation = "avg" }, func(m *ProviderMeasurement) { m.WindowKind = "query_window" }} {
+		copy := copySeriesIdentityPoint(p)
+		edit(copy.Provider)
+		if identity := requireSeriesIdentity(t, copy, observation); identity == first {
+			t.Fatal("Elastic semantics collapsed into one measurement")
+		}
+	}
+}

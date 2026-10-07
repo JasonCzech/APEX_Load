@@ -21,6 +21,9 @@ func importExecutionGateError(script *dsl.Script, operation string) error {
 	if script == nil {
 		return nil
 	}
+	if err := RetiredBrunoRuntimeError(script); err != nil {
+		return err
+	}
 	operation = strings.TrimSpace(operation)
 	if operation == "" {
 		operation = "execution"

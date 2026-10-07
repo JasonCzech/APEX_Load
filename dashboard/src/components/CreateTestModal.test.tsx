@@ -11,6 +11,9 @@ import { useNavigationGuard, useNavigationGuardRunner } from '../hooks/Navigatio
 import { buildScenarioDraftFromTest } from './scenarioDraftUtils'
 import type { ScenarioDraft, TestSummary } from '../types'
 
+const monitorRequest = vi.hoisted(() => vi.fn())
+vi.mock('../hooks/apiClient', () => ({ request: monitorRequest }))
+
 const apiMock = {
   estimateTest: vi.fn(),
   createTest: vi.fn(),
@@ -34,6 +37,7 @@ describe('CreateTestModal', () => {
   let root: Root
 
   beforeEach(() => {
+    monitorRequest.mockImplementation((path: string) => Promise.resolve(path.includes('/analysis/capabilities') ? { monitoring_enabled: false } : []))
     vi.useFakeTimers()
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -73,6 +77,40 @@ describe('CreateTestModal', () => {
     container.remove()
     vi.clearAllMocks()
     vi.useRealTimers()
+  })
+
+  it.each([
+    ['inherit', undefined],
+    ['off', []],
+    ['custom', [{ source_id: 'elastic-metrics', required: true }, { source_id: 'opensearch-logs', required: false }]],
+  ] as const)('preserves %s monitor bindings when revising a queued run', async (_mode, bindings) => {
+    const initialScenario = weightedScenarioDraft()
+    initialScenario.revisionContext = { projectId: 'p', sourceTestId: 'original', folderId: null, dataPools: [], monitorBindings: bindings?.map(binding => ({ ...binding })) }
+    await act(async () => root.render(<CreateTestModal mode="revise-queued-run" scripts={[{ id: 'script-1', name: 'Checkout', protocol: 'http', created_at: '' } as never]} initialScenario={initialScenario} onClose={vi.fn()} onCreated={vi.fn()} />))
+    await click('Create Revised Copy')
+    const payload = apiMock.createTest.mock.calls[0][0]
+    if (bindings === undefined) expect(payload).not.toHaveProperty('monitor_bindings')
+    else expect(payload.monitor_bindings).toEqual(bindings)
+  })
+
+  it('allows several optional sources and an explicitly required source in the modal', async () => {
+    monitorRequest.mockImplementation((path: string) => Promise.resolve(path.includes('/analysis/capabilities') ? { monitoring_enabled: true } : [
+      { id: 'elastic-metrics', name: 'Elastic metrics', pack: 'elastic', enabled: true },
+      { id: 'opensearch-logs', name: 'OpenSearch logs', pack: 'elastic', enabled: true },
+    ]))
+    await act(async () => root.render(<CreateTestModal projectId="p" scripts={[{ id: 'script-1', name: 'Checkout', protocol: 'http', created_at: '' } as never]} initialScenario={weightedScenarioDraft()} onClose={vi.fn()} onCreated={vi.fn()} />))
+    const bindings = container.querySelector('[aria-label="Run monitor selection"]')!
+    const mode = bindings.querySelector('select')!
+    await act(async () => { mode.value = 'custom'; mode.dispatchEvent(new Event('change', { bubbles: true })) })
+    const check = async (name: string) => {
+      const input = Array.from(bindings.querySelectorAll('label')).find(label => label.textContent === name)!.querySelector<HTMLInputElement>('input')!
+      await act(async () => input.click())
+    }
+    await check('Elastic metrics (elastic)')
+    await check('OpenSearch logs (elastic)')
+    await check('Require Elastic metrics readiness and complete evidence')
+    await click('Create Queued Run')
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({ monitor_bindings: [{ source_id: 'elastic-metrics', required: true }, { source_id: 'opensearch-logs', required: false }] }))
   })
 
   it('submits richer runtime overrides in the create payload', async () => {
@@ -426,7 +464,7 @@ describe('CreateTestModal', () => {
   })
 
   it('retains safe source capture IDs through strict mount, unrelated edit and actual copy submission', async () => {
-    apiMock.listELKConnections.mockResolvedValue({ connections: [{ id: 'source-elk', name: 'Source logs', status: 'ready' }], count: 1 })
+    apiMock.listELKConnections.mockResolvedValue({ connections: [{ id: 'source-elk', name: 'Source logs', enabled: true, status: 'ready' }], count: 1 })
     // The actual modern response distinguishes legacy configuration from native readiness.
     apiMock.listDynatraceConnections.mockResolvedValue({ connections: [{ id: 'source-dt', name: 'Source SaaS', status: 'unverified', legacy_capture_status: 'ready' }], count: 1 })
     const source = captureSource()
@@ -484,7 +522,7 @@ describe('CreateTestModal', () => {
 
   it('clears capture IDs only on a real project change and ignores old project list completions', async () => {
     let finishOld!: (value: { connections: { id: string; name: string; status: string }[]; count: number }) => void
-    apiMock.listELKConnections.mockImplementation((project: string) => project === 'project-old' ? Promise.resolve({ connections: [{ id: 'old-elk', name: 'Old logs', status: 'ready' }], count: 1 }) : Promise.resolve({ connections: [], count: 0 }))
+    apiMock.listELKConnections.mockImplementation((project: string) => project === 'project-old' ? Promise.resolve({ connections: [{ id: 'old-elk', name: 'Old logs', enabled: true, status: 'ready' }], count: 1 }) : Promise.resolve({ connections: [], count: 0 }))
     apiMock.listDynatraceConnections.mockImplementation((project: string) => project === 'project-old' ? Promise.resolve({ connections: [{ id: 'old-dt', name: 'Old SaaS', status: 'ready' }], count: 1 }) : Promise.resolve({ connections: [], count: 0 }))
     const render = async (project: string) => { await act(async () => root.render(<CreateTestModal projectId={project} scripts={captureScripts} onClose={vi.fn()} onCreated={vi.fn()} />)) }
     await render('project-old')

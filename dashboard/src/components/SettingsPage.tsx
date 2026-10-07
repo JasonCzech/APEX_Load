@@ -1,16 +1,16 @@
 import AccessNavigation from './AccessNavigation'
+import RepositorySectionTabs from './RepositorySectionTabs'
 import ELKConnectionsCard from './ELKConnectionsCard'
 import DynatraceConnectionsCard from './DynatraceConnectionsCard'
 import PrometheusConnectionsCard from './PrometheusConnectionsCard'
-import AppDynamicsConnectionsCard from './AppDynamicsConnectionsCard'
 import TabList from './ux/TabList'
 import FormField from './ux/FormField'
-import PanelToggle from "./ux/PanelToggle"
 import DialogLayer from './ux/DialogLayer'
 import { InfrastructureSetupGuide } from './InfrastructureSetupGuide'
 import { CapacityCommitments } from './CapacityCommitments'
 import { changedSettingsFields } from './settingsChangeSummary'
-import { AuditEventTable } from './AuditEventTable'
+import { AuditEventTable, LoadOlderEvents } from './AuditEventTable'
+import { appendNewEvents } from './accessUtils'
 import ConnectionDiagnostics from './ConnectionDiagnostics'
 import RedactionPreview from './RedactionPreview'
 import NotificationDiagnostics from './NotificationDiagnostics'
@@ -21,7 +21,6 @@ import ClustersCard from './ClustersCard'
 import FleetPoolsCard from './FleetPoolsCard'
 import PoolAllocationCard from './PoolAllocationCard'
 import FleetGeneratorsCard from './FleetGeneratorsCard'
-import WorkspaceSetupGuide from './WorkspaceSetupGuide'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { type DashboardThemePreference } from '../hooks/useDashboardTheme'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
@@ -137,6 +136,8 @@ import type { FleetPool } from '../types/fleet'
 import { consumeProjectSecretsSettingsProjectId } from './projectSecretsNavigation'
 import { reconcileSettingsProjectSnapshots } from './settingsProjectCatalog'
 import FeatureAccessPanel, { type FeatureAccessController } from './FeatureAccessPanel'
+
+const AUDIT_BATCH_SIZE = 20
 
 const NOTIFICATION_FORMAT_OPTIONS = [
   { value: 'slack', label: 'Slack Block Kit' },
@@ -351,11 +352,11 @@ export default function SettingsPage({
 }: SettingsPageProps) {
   const destination = settingsDestination(destinationId)
   const accessSettings = destination?.group === 'Access & Security'
+  const repositorySettings = Boolean(destination && settingsOwner(destination.id) === 'repository')
   const resourceId = new URLSearchParams(window.location.hash.split('?')[1] || '').get('resourceId') || ''
   const requestedReturn = new URLSearchParams(window.location.hash.split('?')[1] || '').get('returnTo') || ''
   const returnTo = /^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|new-test|tests|test\/[^?#]+)(\?|$)/.test(requestedReturn) ? requestedReturn : ''
   const [navigationSearch, setNavigationSearch] = useState('')
-  const [navigationOpen, setNavigationOpen] = useState(() => window.innerWidth > 1100)
   const desktopSurface = isDesktopSurface()
   const api = useApi()
   const applicationApi = useApplicationApi()
@@ -375,7 +376,6 @@ export default function SettingsPage({
     refreshApplications,
     refreshReleases,
     createAndSelectApplication,
-    createAndSelectRelease,
   } = useApplication()
   const {
     projects: scopedProjects,
@@ -396,7 +396,10 @@ export default function SettingsPage({
   const [loadedEffectiveAuthAccessScope, setLoadedEffectiveAuthAccessScope] = useState<string | null>(null)
   const [authRoles, setAuthRoles] = useState<DashboardAuthRoleDefinition[]>([])
   const [serviceAccounts, setServiceAccounts] = useState<DashboardServiceAccount[]>([])
-  const [auditOffset, setAuditOffset] = useState(0)
+  const [auditHasMore, setAuditHasMore] = useState(false)
+  const [auditOlderLoading, setAuditOlderLoading] = useState(false)
+  const [auditOlderError, setAuditOlderError] = useState('')
+  const auditLoadGenerationRef = useRef(0)
   const [auditProjectFilter, setAuditProjectFilter] = useState('')
   const [auditAfter, setAuditAfter] = useState('')
   const [auditBefore, setAuditBefore] = useState('')
@@ -826,28 +829,37 @@ export default function SettingsPage({
     }
   }, [api])
 
+  const fetchAuditBatch = useCallback((offset: number) => api.listAuthAuditEvents({
+    limit: AUDIT_BATCH_SIZE,
+    offset,
+    project_id: auditProjectFilter || undefined,
+    created_after: auditAfter ? new Date(auditAfter).toISOString() : undefined,
+    created_before: auditBefore ? new Date(auditBefore).toISOString() : undefined,
+    action: auditActionFilter.trim() || undefined,
+    actor_type: auditActorTypeFilter.trim() || undefined,
+    status: auditStatusFilter.trim() || undefined,
+  }), [api, auditActionFilter, auditActorTypeFilter, auditStatusFilter, auditProjectFilter, auditAfter, auditBefore])
+
+  // Filters reload the first batch; it supersedes any older-events load in flight.
   useEffect(() => {
     let cancelled = false
+    auditLoadGenerationRef.current += 1
     const loadAuditEvents = async () => {
       setAuditLoading(true)
       setAuditLoadError('')
+      setAuditOlderLoading(false)
+      setAuditOlderError('')
       try {
-        const response = await api.listAuthAuditEvents({
-          limit: 20,
-          offset: auditOffset,
-          project_id: auditProjectFilter || undefined,
-          created_after: auditAfter ? new Date(auditAfter).toISOString() : undefined,
-          created_before: auditBefore ? new Date(auditBefore).toISOString() : undefined,
-          action: auditActionFilter.trim() || undefined,
-          actor_type: auditActorTypeFilter.trim() || undefined,
-          status: auditStatusFilter.trim() || undefined,
-        })
+        const response = await fetchAuditBatch(0)
         if (!cancelled) {
-          setAuditEvents(response.events || [])
+          const events = response.events || []
+          setAuditEvents(events)
+          setAuditHasMore(events.length === AUDIT_BATCH_SIZE)
         }
       } catch {
         if (!cancelled) {
           setAuditEvents([])
+          setAuditHasMore(false)
           setAuditLoadError('Unable to load audit history. Retry or check your access.')
         }
       } finally { if (!cancelled) setAuditLoading(false) }
@@ -857,7 +869,28 @@ export default function SettingsPage({
     return () => {
       cancelled = true
     }
-  }, [api, auditActionFilter, auditActorTypeFilter, auditStatusFilter, auditOffset, auditProjectFilter, auditAfter, auditBefore])
+  }, [fetchAuditBatch])
+
+  // Older events append to the loaded rows. The next offset is the number of
+  // rows already loaded (duplicates from newly recorded events are dropped),
+  // so a failed load retries the same batch and nothing is skipped.
+  const loadOlderAuditEvents = async () => {
+    const generation = auditLoadGenerationRef.current
+    const isCurrent = () => auditLoadGenerationRef.current === generation
+    setAuditOlderLoading(true)
+    setAuditOlderError('')
+    try {
+      const response = await fetchAuditBatch(auditEvents.length)
+      if (!isCurrent()) return
+      const older = response.events || []
+      setAuditEvents(current => appendNewEvents(current, older))
+      setAuditHasMore(older.length === AUDIT_BATCH_SIZE)
+    } catch {
+      if (isCurrent()) setAuditOlderError('Unable to load older audit events. Try again.')
+    } finally {
+      if (isCurrent()) setAuditOlderLoading(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -1155,7 +1188,6 @@ export default function SettingsPage({
   const integrationSubsectionSummaries = useMemo<Record<IntegrationSettingsSubsectionId, string>>(() => ({
     'elk-capture': activeProject?.name || 'Project scoped',
     'dynatrace-capture': activeProject?.name || 'Project scoped',
-    'appdynamics-capture': activeProject?.name || 'Project scoped',
     'prometheus-capture': activeProject?.name || 'Project scoped',
     library: activeProject?.name || 'Project scoped',
     github: settings.github.enabled ? 'Enabled' : 'Disabled',
@@ -3164,9 +3196,8 @@ export default function SettingsPage({
   }, [saveMessage, requestError, domainActionMessage, domainActionError, applicationActionError, projectActionMessage, projectActionError, dataPoolActionError, activeSection])
 
   const currentDestination = destination || SETTINGS_DESTINATIONS.find(item => item.section === activeSection && !item.resource && (!item.subsection || item.subsection === ({ general: activeGeneralSubsection, capacity: activeCapacitySubsection, projects: activeProjectSubsection, integrations: activeIntegrationSubsection } as Record<string, string>)[activeSection]) && (!item.governance || item.governance === activeGovernanceSubsection)) || SETTINGS_DESTINATIONS[0]
-  useEffect(() => {
-    if (window.innerWidth <= 1100) setNavigationOpen(false)
-  }, [currentDestination.id])
+  // Shown in the top bar; pages start with their cards rather than a heading block.
+  const destinationScopeLabel = currentDestination.scope === 'browser' ? 'This browser only' : currentDestination.scope === 'deployment' ? 'Entire deployment' : currentDestination.scope === 'domain' ? `Domain: ${activeDomain?.name || 'Select a domain'}` : `Project: ${(currentDestination.section === 'projects' ? selectedProject?.name : activeProject?.name) || 'Select a project'}`
   const [searchFocusTarget, setSearchFocusTarget] = useState<{ destination: string; control: string } | null>(null)
   useEffect(() => {
     const target = focusRequest || searchFocusTarget
@@ -3185,7 +3216,6 @@ export default function SettingsPage({
   const selectDestination = (id: string) => {
     const control = settingsSearchControl(id, navigationSearch)
     if (!onDestinationChange) setSearchFocusTarget({ destination: id, control: control || 'settings-destination-title' })
-    if (control && window.innerWidth <= 1100) setNavigationOpen(false)
     if (onDestinationChange) onDestinationChange(id, control)
     else {
       const item = settingsDestination(id)
@@ -3202,7 +3232,11 @@ export default function SettingsPage({
   const settingsTopbarContribution = useMemo(() => ({
     id: 'settings-page',
     title: settingsOwner(currentDestination.id) === 'access' ? 'Access & Security' : settingsOwner(currentDestination.id) === 'repository' ? 'Test Data' : 'Settings',
-    controls: !hasAnyUnsavedChanges ? <span className="ux-save-status" role="status">{currentDestination.id.endsWith('-capture') ? 'Connection forms save independently' : 'No pending changes'}</span> : undefined,
+    controls: <>
+      {repositorySettings && <RepositorySectionTabs current="test-data" />}
+      <span className="ux-save-status settings-scope-status">Applies to: {destinationScopeLabel}</span>
+      {!hasAnyUnsavedChanges && <span className="ux-save-status" role="status">{currentDestination.id.endsWith('-capture') ? 'Connection forms save independently' : 'No pending changes'}</span>}
+    </>,
     primaryActions: [
       {
         id: 'save-settings',
@@ -3227,26 +3261,12 @@ export default function SettingsPage({
       },
     ],
     priority: 20,
-  }), [currentDestination.id, canSaveAllSettingsChanges, hasAnyUnsavedChanges, settingsMutationBusy])
+  }), [currentDestination.id, canSaveAllSettingsChanges, destinationScopeLabel, hasAnyUnsavedChanges, repositorySettings, settingsMutationBusy])
 
   useTopbarContribution(settingsTopbarContribution)
 
   return (
     <div className={`page settings-page ${onDestinationChange ? 'settings-workspace' : ''}`}>
-      {['domains', 'projects', 'applications'].includes(currentDestination.id) && <WorkspaceSetupGuide storageKey="apexload.workspaceSetup.step" steps={[
-        {label: 'Domain', description: 'A domain groups teams and their projects.', choices: domains, selectedId: activeDomain?.id, canCreate: canManageDomains,
-          select: id => { const domain = domains.find(item => item.id === id); if (domain) onDomainChange?.(domain) },
-          create: async name => { const result = await repositoryApi.createDomain({name}); onDomainChange?.(result.domain); void onDomainsRefresh?.(result.domain.id, {preserveDomain:result.domain}).catch(() => undefined); return result.domain }},
-        {label: 'Project', description: 'A project owns scripts, scenarios, test data, and permissions.', choices: scopedProjects, selectedId: activeProject?.id, canCreate: canManageProjects,
-          select: id => {const project = scopedProjects.find(item => item.id === id); if (project) setActiveProject(project)},
-          create: name => createAndSelectProject({name, domain_id: activeDomain?.id})},
-        {label: 'Application', description: 'Choose the application whose performance you are evaluating.', choices: applications, selectedId: activeApplication?.id, canCreate: canManageProjects && !!activeProject,
-          select: id => {const application = applications.find(item => item.id === id); if(application) setActiveApplication(application)},
-          create: name => createAndSelectApplication(name, activeProject?.id)},
-        {label: 'Release', description: 'A release groups runs for comparison and acceptance review.', choices: releases, selectedId: activeRelease?.id, canCreate: canManageProjects && !!activeApplication,
-          select: id => {const release = releases.find(item => item.id === id); if(release) setActiveRelease(release)},
-          create: async name => {const release = await createAndSelectRelease(name); if (!release) throw new Error('Choose an application before creating a release.'); return release}},
-      ]} />}
       <div className="page-header">
         <div>
           <h2>Settings</h2>
@@ -3268,10 +3288,10 @@ export default function SettingsPage({
         )}
       </div>
 
-      {accessSettings && <AccessNavigation currentSetting={destinationId} />}
-      <div className={`settings-tabbed-layout ${navigationOpen && !accessSettings ? "" : "navigation-collapsed"}`}>
-        {!accessSettings && <PanelToggle className="settings-browse-button" expanded={navigationOpen} panelName="Settings navigation" controls="settings-task-navigation" onToggle={() => setNavigationOpen(value => !value)} />}
-        <nav hidden={accessSettings} id="settings-task-navigation" className={`settings-task-navigation ${navigationOpen ? 'is-open' : ''}`} aria-label="Settings sections">
+      {/* The section list is always shown, like every page's section list; it is not collapsible. */}
+      <div className={`settings-tabbed-layout ${repositorySettings ? "navigation-collapsed" : ""}`}>
+        {accessSettings && <AccessNavigation currentSetting={destinationId} />}
+        <nav hidden={accessSettings || repositorySettings} id="settings-task-navigation" className="settings-task-navigation is-open" aria-label="Settings sections">
           <label className="settings-navigation-search">Find settings<input className="settings-input" type="search" value={navigationSearch} onChange={event => setNavigationSearch(event.target.value)} placeholder="Search connections, policies…" /></label>
           {Array.from(new Set(SETTINGS_DESTINATIONS.map(item => item.group))).map(group => {
             const entries = SETTINGS_DESTINATIONS.filter(item => item.group === group && (item.id !== 'features' || canManageSystem) && matchesSettingsSearch(item, navigationSearch))
@@ -3281,7 +3301,7 @@ export default function SettingsPage({
           <button type="button" onClick={() => onNavigate?.('access')}>Manage users & service accounts</button>
         </nav>
         <div className="settings-main">
-          <header className="settings-task-heading"><p>{currentDestination.group}</p><h2 id="settings-destination-title" tabIndex={-1}>{currentDestination.title}</h2><p>Applies to: {currentDestination.scope === 'browser' ? 'This browser only' : currentDestination.scope === 'deployment' ? 'Entire deployment' : currentDestination.scope === 'domain' ? `Domain: ${activeDomain?.name || 'Select a domain'}` : `Project: ${(currentDestination.section === 'projects' ? selectedProject?.name : activeProject?.name) || 'Select a project'}`}</p><p className="setting-desc">{currentDestination.scope === 'browser' ? 'Preferences apply immediately in this browser.' : currentDestination.resource ? 'Changes are saved by the resource editor below.' : 'Save pending settings commits pending configuration and policy edits listed below. Resource actions have their own Save controls.'}</p>{hasAnyUnsavedChanges && <p role="status">Pending: {[
+          <header className="settings-task-heading"><p>{currentDestination.group}</p><h2 id="settings-destination-title" tabIndex={-1}>{currentDestination.title}</h2><p>Applies to: {destinationScopeLabel}</p><p className="setting-desc">{currentDestination.scope === 'browser' ? 'Preferences apply immediately in this browser.' : currentDestination.resource ? 'Changes are saved by the resource editor below.' : 'Save pending settings commits pending configuration and policy edits listed below. Resource actions have their own Save controls.'}</p>{hasAnyUnsavedChanges && <p role="status">Pending: {[
         hasUnsavedChanges ? 'deployment configuration' : '',
         projectHasUnsavedChanges ? `governance for ${selectedProject?.name || 'selected project'}` : '',
       ].filter(Boolean).join('; ') || 'resource edits — review the editor’s save controls'}</p>}</header>
@@ -4454,29 +4474,28 @@ export default function SettingsPage({
                           <span className="setting-desc">Narrow the recent audit feed and CSV export by action, actor type, or status.</span>
                         </div>
                         <div className="settings-inline-actions">
-                          <label className="settings-filter-field">Audit action<input aria-label="Audit action" className="settings-input cell-mono" value={auditActionFilter} onChange={(e) => { setAuditActionFilter(e.target.value); setAuditOffset(0) }} placeholder="action" /></label>
-                          <label className="settings-filter-field">Audit actor type<input aria-label="Audit actor type" className="settings-input cell-mono" value={auditActorTypeFilter} onChange={(e) => { setAuditActorTypeFilter(e.target.value); setAuditOffset(0) }} placeholder="actor_type" /></label>
-                          <label className="settings-filter-field">Audit status<input aria-label="Audit status" className="settings-input cell-mono" value={auditStatusFilter} onChange={(e) => { setAuditStatusFilter(e.target.value); setAuditOffset(0) }} placeholder="status" /></label>
+                          <label className="settings-filter-field">Audit action<input aria-label="Audit action" className="settings-input cell-mono" value={auditActionFilter} onChange={(e) => { setAuditActionFilter(e.target.value) }} placeholder="action" /></label>
+                          <label className="settings-filter-field">Audit actor type<input aria-label="Audit actor type" className="settings-input cell-mono" value={auditActorTypeFilter} onChange={(e) => { setAuditActorTypeFilter(e.target.value) }} placeholder="actor_type" /></label>
+                          <label className="settings-filter-field">Audit status<input aria-label="Audit status" className="settings-input cell-mono" value={auditStatusFilter} onChange={(e) => { setAuditStatusFilter(e.target.value) }} placeholder="status" /></label>
                           <button className="btn btn-secondary" type="button" onClick={exportAuditEvents} disabled={!canViewAudit}>
                             Export CSV
                           </button>
                         </div>
                       </div>
                       <div className="settings-inline-actions">
-                        <label className="settings-filter-field">Project scope<select className="settings-input" value={auditProjectFilter} onChange={e => { setAuditProjectFilter(e.target.value); setAuditOffset(0) }}><option value="">All authorized projects</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-                        <label className="settings-filter-field">From (local time)<input className="settings-input" type="datetime-local" value={auditAfter} onChange={e => { setAuditAfter(e.target.value); setAuditOffset(0) }} /></label>
-                        <label className="settings-filter-field">Until (local time)<input className="settings-input" type="datetime-local" value={auditBefore} onChange={e => { setAuditBefore(e.target.value); setAuditOffset(0) }} /></label>
+                        <label className="settings-filter-field">Project scope<select className="settings-input" value={auditProjectFilter} onChange={e => { setAuditProjectFilter(e.target.value) }}><option value="">All authorized projects</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+                        <label className="settings-filter-field">From (local time)<input className="settings-input" type="datetime-local" value={auditAfter} onChange={e => { setAuditAfter(e.target.value) }} /></label>
+                        <label className="settings-filter-field">Until (local time)<input className="settings-input" type="datetime-local" value={auditBefore} onChange={e => { setAuditBefore(e.target.value) }} /></label>
                       </div>
                       {auditLoading && <p role="status">Loading audit history…</p>}
                       {auditLoadError && <p role="alert">{auditLoadError}</p>}
-                      <p>Showing {auditEvents.length} events, starting at {auditOffset + 1}. Exports include up to 1,000 matching events.</p>
-                      <div className="settings-inline-actions"><button className="btn btn-secondary" disabled={auditLoading || auditOffset === 0} onClick={() => setAuditOffset(Math.max(0, auditOffset - 20))}>Previous audit page</button><button className="btn btn-secondary" disabled={auditLoading || auditEvents.length < 20} onClick={() => setAuditOffset(auditOffset + 20)}>Next audit page</button></div>
+                      <p>Exports include up to 1,000 matching events.</p>
                       {(auditActionMessage || auditActionError) && (
                         <div className={`settings-alert ${auditActionError ? 'error' : 'success'}`}>
                           {auditActionError || auditActionMessage}
                         </div>
                       )}
-                      <AuditEventTable paginated events={auditEvents} scopeLabel={event => projects.find(project => project.id === event.project_id)?.name || event.project_id || 'Deployment'} emptyMessage="No audit events yet" />
+                      <AuditEventTable paginated events={auditEvents} footer={<LoadOlderEvents loaded={auditEvents.length} hasMore={auditHasMore} loading={auditLoading || auditOlderLoading} error={auditOlderError} onLoad={() => { void loadOlderAuditEvents() }} />} scopeLabel={event => projects.find(project => project.id === event.project_id)?.name || event.project_id || 'Deployment'} emptyMessage="No audit events yet" />
                     </div>
                   </div>
                 </section>
@@ -5387,7 +5406,7 @@ export default function SettingsPage({
               <div className="settings-manager-summary">
                 <div>
                   <span className="setting-label">Releases</span>
-                  <span className="setting-desc">Release families belong to the project and are joined to every application. Use Create release in the workspace setup controls above.</span>
+                  <span className="setting-desc">Release families belong to the project and are joined to every application. Create releases from the Release menu in the sidebar workspace picker.</span>
                 </div>
                 <strong>{visibleManagedReleases.length}</strong>
               </div>
@@ -6256,10 +6275,9 @@ export default function SettingsPage({
               setActiveIntegrationSubsection,
               integrationSubsectionSummaries,
             )}
-            {activeSection === 'integrations' && activeIntegrationSubsection === 'elk-capture' && <section aria-label="Elastic test capture settings"><ELKConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
+            {activeSection === 'integrations' && activeIntegrationSubsection === 'elk-capture' && <section aria-label="Elastic test capture settings"><ELKConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} canApprovePrivateNetworks={canManageSystem} /></section>}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'dynatrace-capture' && <section aria-label="Dynatrace test capture settings"><DynatraceConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'prometheus-capture' && <section aria-label="Prometheus test monitoring settings"><PrometheusConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} canApprovePrivateNetworks={canManageSystem} /></section>}
-            {activeSection === 'integrations' && activeIntegrationSubsection === 'appdynamics-capture' && <section aria-label="AppDynamics test capture settings"><AppDynamicsConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} canApprovePrivateNetworks={canManageSystem} /></section>}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'confluence' && <section aria-label="Confluence publishing settings"><ConfluenceConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
             <fieldset className="settings-fieldset settings-integration-panels" disabled={formDisabled}>
             <section
