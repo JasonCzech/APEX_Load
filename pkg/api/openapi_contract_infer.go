@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1584,6 +1585,9 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 			if pkg.Name == "generatorrpc" && value.Sel.Name == "ProtocolRuntimeCapacity" {
 				return protocolRuntimeCapacityOpenAPISchema()
 			}
+			if pkg.Name == "generatorrpc" && value.Sel.Name == "ClockQuality" {
+				return clockQualityOpenAPISchema()
+			}
 			definitionKey := pkg.Name + "." + value.Sel.Name
 			if definition := typeDefinitions[definitionKey]; definition != nil && !visiting[definitionKey] {
 				visiting[definitionKey] = true
@@ -1700,6 +1704,23 @@ func anonymousJSONFieldPromotesMembers(field *ast.Field) bool {
 	return true
 }
 
+// clockQualityOpenAPISchema is the contract of a cross-host duration's
+// clock qualification (generatorrpc.ClockQuality), which the inference
+// cannot load from its package.
+func clockQualityOpenAPISchema() oasSchema {
+	return oasSchema{
+		Type:        "object",
+		Description: "Clock qualification of a duration measured across a generator's clock and the controller's.",
+		Properties: map[string]oasSchema{
+			"qualified":      {Type: "boolean", Description: "A current offset calibration corrected the figure."},
+			"uncertainty_ms": {Type: "number", Description: "Uncertainty of the corrected figure, in milliseconds."},
+			"reason":         {Type: "string", Description: "Why the figure is not qualified: uncalibrated, expired, clock_jump, clock_step or implausible."},
+			"lower_bound_ms": {Type: "number", Nullable: true, Description: "On a figure drawn from several generators, the largest value the qualified ones prove."},
+		},
+		Required: []string{"qualified"},
+	}
+}
+
 func protocolRuntimeCapacityOpenAPISchema() oasSchema {
 	stringItem := oasSchema{Type: "string"}
 	return oasSchema{
@@ -1740,6 +1761,11 @@ func jsonFieldName(field *ast.Field) (string, bool, bool) {
 	if field.Tag != nil {
 		tagValue, err := strconv.Unquote(field.Tag.Value)
 		if err == nil {
+			// openapi:"-" keeps a serialized field out of the public
+			// contract (an internal protocol field the server sets).
+			if slices.Contains(strings.Fields(tagValue), `openapi:"-"`) {
+				return "", false, false
+			}
 			for _, tag := range strings.Fields(tagValue) {
 				if !strings.HasPrefix(tag, "json:") {
 					continue

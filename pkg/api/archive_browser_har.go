@@ -157,7 +157,9 @@ func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, 
 			omitted[harOmittedTransfer]++
 			continue
 		}
-		copied, err := fetchRemoteArchiveArtifactFileForSource(ctx, client, testID, entry.Name, sourceIdentity, path, entry.Bytes, artifact)
+		fetchCtx, cancel := context.WithTimeout(ctx, optionalEvidenceFetchTimeout(entry.Bytes))
+		copied, err := fetchRemoteArchiveArtifactFileForSource(fetchCtx, client, testID, entry.Name, sourceIdentity, path, entry.Bytes, artifact)
+		cancel()
 		if err == nil && copied != entry.Bytes {
 			err = io.ErrUnexpectedEOF
 		}
@@ -175,6 +177,13 @@ func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, 
 		staged = append(staged, stagedRemoteHAR{entry: entry, path: path})
 	}
 	return staged, omitted
+}
+
+// optionalEvidenceFetchTimeout bounds one optional artifact's fetch by its
+// declared size (30 s plus 1 MiB/s), so a stalled stream is omitted rather
+// than holding a fetch slot until the attempt's deadline.
+func optionalEvidenceFetchTimeout(bytes int64) time.Duration {
+	return 30*time.Second + time.Duration(max(bytes, 0)>>20)*time.Second
 }
 
 // verifyHARFile checks a file's size and SHA-256 against its entry.
@@ -350,8 +359,12 @@ func (tr *TestRunner) acceptRemoteHARReceipt(test *ManagedTest, targets map[stri
 	tr.mu.RLock()
 	generation := test.executionGeneration
 	tr.mu.RUnlock()
-	return func(entry RunArchiveEvidenceArtifact) (string, error) {
-		return store.AcceptRunEvidenceReceipt(storage.RunEvidenceReceipt{TestID: test.ID, ExecutionGeneration: generation, SourceIdentity: entry.SourceIdentity, Target: targets[entry.SourceIdentity], SourceGeneration: entry.SourceGeneration, Sequence: entry.Sequence, Kind: entry.Kind, Name: entry.Name, SHA256: entry.SHA256, Bytes: entry.Bytes})
+	return func(entry RunArchiveEvidenceArtifact) (state string, err error) {
+		err = tr.trackDurableWrite(func() error {
+			state, err = store.AcceptRunEvidenceReceipt(storage.RunEvidenceReceipt{TestID: test.ID, ExecutionGeneration: generation, SourceIdentity: entry.SourceIdentity, Target: targets[entry.SourceIdentity], SourceGeneration: entry.SourceGeneration, Sequence: entry.Sequence, Kind: entry.Kind, Name: entry.Name, SHA256: entry.SHA256, Bytes: entry.Bytes})
+			return err
+		})
+		return state, err
 	}
 }
 
@@ -382,7 +395,10 @@ func (tr *TestRunner) publishRunEvidence(testID string) {
 	if !ok {
 		return
 	}
-	if _, err := store.PublishRunEvidenceReceipts(testID); err != nil {
+	if err := tr.trackDurableWrite(func() error {
+		_, err := store.PublishRunEvidenceReceipts(testID)
+		return err
+	}); err != nil {
 		slog.Warn("run evidence receipts were not published", "test_id", testID, "err", err)
 		return
 	}
@@ -391,9 +407,12 @@ func (tr *TestRunner) publishRunEvidence(testID string) {
 		slog.Warn("run evidence receipts were not read for acknowledgement", "test_id", testID, "err", err)
 		return
 	}
+	// Only evidence no generator confirmed yet in this process: a later
+	// commit of the run (a refresh, a note edit) acknowledges nothing again,
+	// while after a restart it re-drives what was never confirmed.
 	bySource := map[string][]storage.RunEvidenceReceipt{}
 	for _, receipt := range receipts {
-		if receipt.State == storage.EvidenceReceiptPublished {
+		if receipt.State == storage.EvidenceReceiptPublished && !tr.acknowledgedEvidence.has(acknowledgedEvidenceKey(testID, receipt.SourceIdentity, receipt.Name, receipt.SHA256)) {
 			bySource[receipt.SourceIdentity] = append(bySource[receipt.SourceIdentity], receipt)
 		}
 	}
@@ -416,8 +435,48 @@ func (tr *TestRunner) publishRunEvidence(testID string) {
 	tr.evidenceAcknowledgements.Add(1)
 	go func() {
 		defer tr.evidenceAcknowledgements.Done()
-		acknowledgeRunEvidence(testID, acks, clients, backend)
+		acknowledgeRunEvidence(testID, acks, clients, backend, &tr.acknowledgedEvidence)
 	}()
+}
+
+// acknowledgedEvidenceKey names one published artifact of one source.
+func acknowledgedEvidenceKey(testID, source, name, sha string) string {
+	return testID + "\x00" + source + "\x00" + name + "\x00" + sha
+}
+
+// maxAcknowledgedEvidence bounds the remembered confirmations; the oldest
+// are forgotten first (a forgotten one is at most acknowledged again).
+const maxAcknowledgedEvidence = 1 << 16
+
+// acknowledgedEvidenceSet is a bounded set of confirmed acknowledgements.
+type acknowledgedEvidenceSet struct {
+	mu    sync.Mutex
+	keys  map[string]struct{}
+	order []string
+}
+
+func (a *acknowledgedEvidenceSet) has(key string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	_, ok := a.keys[key]
+	return ok
+}
+
+func (a *acknowledgedEvidenceSet) add(key string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.keys == nil {
+		a.keys = map[string]struct{}{}
+	}
+	if _, ok := a.keys[key]; ok {
+		return
+	}
+	a.keys[key] = struct{}{}
+	a.order = append(a.order, key)
+	if len(a.order) > maxAcknowledgedEvidence {
+		delete(a.keys, a.order[0])
+		a.order = a.order[1:]
+	}
 }
 
 // evidenceAcknowledgementTarget is one source's published evidence and the
@@ -429,7 +488,7 @@ type evidenceAcknowledgementTarget struct {
 
 // acknowledgeRunEvidence tells each generator which of its copies the
 // published archive now holds, through a retained client or a fresh dial.
-func acknowledgeRunEvidence(testID string, acks []evidenceAcknowledgementTarget, clients map[string]generatorClient, backend *distributedExecutionBackend) {
+func acknowledgeRunEvidence(testID string, acks []evidenceAcknowledgementTarget, clients map[string]generatorClient, backend *distributedExecutionBackend, confirmed *acknowledgedEvidenceSet) {
 	for _, ack := range acks {
 		ctx, cancel := context.WithTimeout(context.Background(), evidenceAcknowledgementTimeout)
 		client, ok := clients[ack.target].(evidenceAcknowledgingClient)
@@ -444,6 +503,11 @@ func acknowledgeRunEvidence(testID string, acks []evidenceAcknowledgementTarget,
 			slog.Warn("no generator client to acknowledge published evidence; its copy stays until retention", "test_id", testID, "target", ack.target, "source", ack.request.SourceIdentity)
 		} else if result, err := client.AcknowledgeEvidence(ctx, ack.request); err != nil || len(result.Retained) > 0 {
 			slog.Warn("generator kept acknowledged evidence", "test_id", testID, "source", ack.request.SourceIdentity, "retained", len(result.Retained), "err", err)
+			if err == nil {
+				confirmAcknowledged(confirmed, testID, ack.request, result.Deleted)
+			}
+		} else {
+			confirmAcknowledged(confirmed, testID, ack.request, result.Deleted)
 		}
 		if dialed != nil {
 			_ = dialed.Close()
@@ -452,10 +516,42 @@ func acknowledgeRunEvidence(testID string, acks []evidenceAcknowledgementTarget,
 	}
 }
 
+// confirmAcknowledged remembers the artifacts a generator deleted (or no
+// longer had).
+func confirmAcknowledged(confirmed *acknowledgedEvidenceSet, testID string, request generatorrpc.EvidenceAcknowledgement, deleted []string) {
+	if confirmed == nil {
+		return
+	}
+	gone := map[string]bool{}
+	for _, name := range deleted {
+		gone[name] = true
+	}
+	for _, artifact := range request.Artifacts {
+		if gone[artifact.Name] {
+			confirmed.add(acknowledgedEvidenceKey(testID, request.SourceIdentity, artifact.Name, artifact.SHA256))
+		}
+	}
+}
+
 // waitEvidenceAcknowledgements waits for the background acknowledgements
-// started so far (tests and shutdown).
+// started so far (tests).
 func (tr *TestRunner) waitEvidenceAcknowledgements() {
 	tr.evidenceAcknowledgements.Wait()
+}
+
+// waitEvidenceAcknowledgementsUntil waits for the background
+// acknowledgements until ctx ends, at shutdown; one not finished leaves its
+// generator's copy to retention.
+func (tr *TestRunner) waitEvidenceAcknowledgementsUntil(ctx context.Context) {
+	done := make(chan struct{})
+	go func() {
+		tr.evidenceAcknowledgements.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
 }
 
 // evidenceClients are the run's generator clients by target, live or
@@ -540,6 +636,7 @@ func (w *runArchiveWriter) RecordBrowserHARArtifact(artifact protocol.BrowserHAR
 	// copy (retirement, a namespace error) must neither lose the HAR nor
 	// leave an undeclared copy in the archive.
 	created := false
+	admitted := int64(0)
 	identity, err := browser.ReadRuntimeHARArtifact(ctx, artifact.Path, func(r io.Reader, length int64) (err error) {
 		switch {
 		case length > maxRunArchiveHARBytes:
@@ -548,7 +645,13 @@ func (w *runArchiveWriter) RecordBrowserHARArtifact(artifact protocol.BrowserHAR
 		case length > maxRunArchiveHARRunBytes-runBytes:
 			reason = harOmittedRunBytes
 			return errors.New("run HAR byte limit reached")
+		case !w.captureBudget.admitOptional(length):
+			// Optional evidence keeps within its share of the capture
+			// budget and the volume, so required capture keeps the rest.
+			reason = harOmittedArchiveQuota
+			return errors.New("archive capture has no room for optional evidence")
 		}
+		admitted = length
 		file, err := createArchiveArtifactExclusive(rootDir, name, 0o644, false)
 		if err != nil {
 			return err
@@ -586,6 +689,7 @@ func (w *runArchiveWriter) RecordBrowserHARArtifact(artifact protocol.BrowserHAR
 		if created {
 			_ = os.Remove(filepath.Join(rootDir, name))
 		}
+		w.captureBudget.releaseOptional(admitted)
 		return errors.Join(omit(reason), err)
 	}
 	w.mu.Lock()

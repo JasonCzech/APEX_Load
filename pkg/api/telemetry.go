@@ -581,12 +581,15 @@ func updateTelemetryRunHealth(state *telemetryDiagnosticState, diagnostic *Telem
 		}
 	}
 
-	recovered := status == "healthy" && state.alerting
+	recovered := status == "healthy" && state.announced != ""
+	announce := false
 	switch status {
 	case "degraded", "breached":
-		state.alerting = true
+		// A spell interrupted by an unscored stretch is not announced again.
+		announce = state.announced != status
+		state.announced = status
 	case "healthy":
-		state.alerting = false
+		state.announced = ""
 	}
 	lastTransitionAt := now
 	if state.Health != nil && state.Health.Status == status && !state.Health.LastTransitionAt.IsZero() {
@@ -605,6 +608,7 @@ func updateTelemetryRunHealth(state *telemetryDiagnosticState, diagnostic *Telem
 		LastObservedAt:    now,
 		LastTransitionAt:  lastTransitionAt,
 		recovered:         recovered,
+		announce:          announce,
 	}
 	if state.BreachStartedAt != nil {
 		startedAt := *state.BreachStartedAt
@@ -972,9 +976,13 @@ func telemetryHealthEvent(previous, current *TelemetryRunHealth) string {
 	}
 	switch current.Status {
 	case "degraded":
-		return "telemetry_degraded"
+		if current.announce {
+			return "telemetry_degraded"
+		}
 	case "breached":
-		return "telemetry_breached"
+		if current.announce {
+			return "telemetry_breached"
+		}
 	case "healthy":
 		if current.recovered {
 			return "telemetry_recovered"

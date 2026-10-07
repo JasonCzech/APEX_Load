@@ -71,7 +71,11 @@ func applyNativeEvidenceDerivation(project string, q storage.AnalyticsQuery, out
 		series := &out.Series[i]
 		buckets := make([]analysis.DerivationBucket, len(series.Points))
 		for j, p := range series.Points {
-			buckets[j] = analysis.DerivationBucket{From: p.From, To: p.To, Value: p.Value, Count: p.Count, Subset: p.failures, Complete: p.complete}
+			count := p.Count
+			if p.samples > 0 {
+				count = p.samples
+			}
+			buckets[j] = analysis.DerivationBucket{From: p.From, To: p.To, Value: p.Value, Count: count, Subset: p.failures, Complete: p.complete}
 		}
 		derived, err := applyNativeDerivation(project, q, buckets, nil)
 		if err != nil {

@@ -475,7 +475,7 @@ function buildArchiveCompactPanels(
         {
           label: 'Intervals',
           value: telemetry
-            ? `${compactValue(telemetry.healthy_intervals)} healthy · ${compactValue(telemetry.degraded_intervals)} degraded · ${compactValue(telemetry.breached_intervals)} breached`
+            ? `${compactValue(telemetry.healthy_intervals)} healthy · ${compactValue(telemetry.degraded_intervals)} degraded · ${compactValue(telemetry.breached_intervals)} breached${telemetry.unscored_intervals ? ` · ${compactValue(telemetry.unscored_intervals)} unscored` : ''}`
             : 'n/a',
         },
         { label: 'Max Sample Age', value: compactDurationMs(telemetry?.max_sample_age_ms) },

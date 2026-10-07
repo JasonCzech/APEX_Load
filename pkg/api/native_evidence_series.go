@@ -21,8 +21,11 @@ type NativeEvidencePoint struct {
 	Value         *float64  `json:"value"`
 	// Reason says why a derived value is unscored.
 	Reason string `json:"reason,omitempty"`
-	// failures and complete are the bucket's derivation inputs.
+	// failures and complete are the bucket's derivation inputs; samples, when
+	// set, is the bucket's observation count for a ratio even where its
+	// displayed value (a rate needing whole-window coverage) is withheld.
 	failures int64
+	samples  int64
 	complete bool
 }
 type NativeEvidenceSeries struct {

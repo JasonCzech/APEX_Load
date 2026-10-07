@@ -242,6 +242,9 @@ func TestArchiveRecorderInteractionBudgetCountsDrops(t *testing.T) {
 // whenever it arrives, and an admitted length that was not written is
 // returned.
 func TestOptionalEvidenceKeepsThreeQuartersForRequiredEvidence(t *testing.T) {
+	original := optionalEvidenceFreeBytes
+	t.Cleanup(func() { optionalEvidenceFreeBytes = original })
+	optionalEvidenceFreeBytes = func(string) (int64, error) { return 1 << 40, nil }
 	budget := &generatorArchiveByteBudget{maxBytes: 100}
 	if !budget.admitOptional(20) || budget.admitOptional(6) {
 		t.Fatal("optional evidence passed a quarter of the limit")

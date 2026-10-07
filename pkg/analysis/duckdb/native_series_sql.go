@@ -118,15 +118,16 @@ func nativeSummaryAggregationSQL(table string, q SeriesQuery, statistic string, 
 }
 
 // nativeCounterReadingsSQL reads a counter as each bucket's closing reading,
-// with a missing reason as its third column. One instant with two different
+// with a missing reason as its third column and the closing reading's instant
+// as its fourth. One instant with two different
 // readings is a duplicate; a reading below the series' previous known reading
 // (in this bucket or an earlier one, past missing readings) is a reset, and
 // either makes its bucket missing. Without a fall the closing reading is the
 // bucket's highest.
 func nativeCounterReadingsSQL(table, filter, bucket string) string {
 	instants := "SELECT timestamp_utc, CASE WHEN count(*)=count(value) AND min(value)=max(value) THEN min(value) ELSE NULL END AS value, min(value) AS low, max(value) AS high, coalesce(min(value)<>max(value),false) AS dup FROM " + table + " WHERE " + filter + " GROUP BY timestamp_utc"
-	readings := "SELECT " + bucket + " AS bucket, value, dup, coalesce(low < lag(high IGNORE NULLS) OVER (ORDER BY timestamp_utc),false) AS fell FROM (" + instants + ")"
-	return "SELECT bucket, CASE WHEN count(value)<count(*) OR bool_or(fell) THEN NULL ELSE max(value) END, CASE WHEN bool_or(dup) THEN " + literal(analysis.MissingDuplicateCounterInstant) + " WHEN count(value)<count(*) THEN '' WHEN bool_or(fell) THEN " + literal(analysis.MissingCounterReset) + " ELSE '' END FROM (" + readings + ") GROUP BY bucket ORDER BY bucket LIMIT 10001"
+	readings := "SELECT " + bucket + " AS bucket, timestamp_utc, value, dup, coalesce(low < lag(high IGNORE NULLS) OVER (ORDER BY timestamp_utc),false) AS fell FROM (" + instants + ")"
+	return "SELECT bucket, CASE WHEN count(value)<count(*) OR bool_or(fell) THEN NULL ELSE max(value) END, CASE WHEN bool_or(dup) THEN " + literal(analysis.MissingDuplicateCounterInstant) + " WHEN count(value)<count(*) THEN '' WHEN bool_or(fell) THEN " + literal(analysis.MissingCounterReset) + " ELSE '' END, max(timestamp_utc) FROM (" + readings + ") GROUP BY bucket ORDER BY bucket LIMIT 10001"
 }
 
 // validateNativeScalarAggregation is the scalar aggregation contract, with

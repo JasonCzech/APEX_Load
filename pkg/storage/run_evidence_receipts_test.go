@@ -46,8 +46,9 @@ func testRunEvidenceReceipts(t *testing.T, s *SQLiteStore) {
 	}
 	// A published receipt is final.
 	accept(first, EvidenceReceiptPublished)
+	// The stale generation's upload was refused without a row.
 	receipts, err := s.ListRunEvidenceReceipts("evidence-run")
-	if err != nil || len(receipts) != 3 {
+	if err != nil || len(receipts) != 2 {
 		t.Fatalf("receipts %+v %v", receipts, err)
 	}
 	states := map[string]string{}
@@ -57,7 +58,7 @@ func testRunEvidenceReceipts(t *testing.T, s *SQLiteStore) {
 			t.Fatalf("receipt lost its fields: %+v", r)
 		}
 	}
-	if states["g1"] != EvidenceReceiptPublished || states["g2"] != EvidenceReceiptTombstoned || states["g3"] != EvidenceReceiptPublished {
+	if _, recorded := states["g2"]; recorded || states["g1"] != EvidenceReceiptPublished || states["g3"] != EvidenceReceiptPublished {
 		t.Fatalf("states %v", states)
 	}
 	// After the archive is published an upload is tombstoned, and deleting
@@ -108,7 +109,18 @@ func testRunEvidenceReceipts(t *testing.T, s *SQLiteStore) {
 	if receipts, _ := s.ListRunEvidenceReceipts("retry-run"); len(receipts) != 2 || receipts[1].ExecutionGeneration != 3 {
 		t.Fatalf("unfenced retry receipts %+v", receipts)
 	}
-	if n, err := s.ResetAcceptedRunEvidenceReceipts("retry-run"); err != nil || n != 2 {
+	// An older generation's attempt (a deposed controller) neither forgets a
+	// newer generation's claims nor changes them.
+	if n, err := s.ResetAcceptedRunEvidenceReceipts("retry-run", 2); err != nil || n != 0 {
+		t.Fatalf("stale reset %d: %v", n, err)
+	}
+	if state, err := s.AcceptRunEvidenceReceipt(evidenceReceiptFixture("retry-run", "source-a", "g10", 2)); err != nil || state != EvidenceReceiptTombstoned {
+		t.Fatalf("stale accept %q %v", state, err)
+	}
+	if receipts, _ := s.ListRunEvidenceReceipts("retry-run"); len(receipts) != 2 || receipts[0].State != EvidenceReceiptAccepted || receipts[0].ExecutionGeneration != 3 {
+		t.Fatalf("a stale attempt changed newer claims: %+v", receipts)
+	}
+	if n, err := s.ResetAcceptedRunEvidenceReceipts("retry-run", 0); err != nil || n != 2 {
 		t.Fatalf("reset %d: %v", n, err)
 	}
 	if receipts, _ := s.ListRunEvidenceReceipts("retry-run"); len(receipts) != 0 {
@@ -156,7 +168,11 @@ func TestRunEvidenceReceiptsSQLite(t *testing.T) {
 // Completing an archive finalization publishes the receipts accepted for it
 // in the same transaction, without a separate publish call.
 func TestArchiveFinalizationCompletionPublishesAcceptedReceipts(t *testing.T) {
-	s := newHAFencingStore(t)
+	testArchiveFinalizationPublishesReceipts(t, newHAFencingStore(t))
+}
+
+func testArchiveFinalizationPublishesReceipts(t *testing.T, s *SQLiteStore) {
+	t.Helper()
 	f := seedArchiveFailureRun(t, s)
 	if state, err := s.AcceptRunEvidenceReceipt(evidenceReceiptFixture(f.TestID, "source-a", "g1", 1)); err != nil || state != EvidenceReceiptAccepted {
 		t.Fatalf("accept: %q %v", state, err)

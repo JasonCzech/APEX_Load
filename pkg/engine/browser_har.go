@@ -2,6 +2,7 @@ package engine
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -49,8 +50,9 @@ type BrowserInteractionEvidenceSink interface {
 }
 
 // handOffBrowserInteractions gives a sink the interactions a protocol
-// recorded since the last handoff. Without such a sink they are dropped.
-func handOffBrowserInteractions(p protocol.Protocol, sink ResultSink) {
+// recorded since the last handoff, their routes scrubbed like any other run
+// evidence. Without such a sink they are dropped.
+func handOffBrowserInteractions(p protocol.Protocol, sink ResultSink, config *RedactionConfig) {
 	provider, ok := p.(protocol.BrowserInteractionEvidenceProvider)
 	if !ok {
 		return
@@ -66,6 +68,14 @@ func handOffBrowserInteractions(p protocol.Protocol, sink ResultSink) {
 	for _, record := range evidence {
 		if record == nil {
 			continue
+		}
+		for i := range record.Interactions {
+			route := scrubSensitiveTextWithConfig(record.Interactions[i].Route, config)
+			if route != "" && (!strings.HasPrefix(route, "/") || strings.ContainsAny(route, "?#")) {
+				// Scrubbing left no path (detail withheld): record none.
+				route = ""
+			}
+			record.Interactions[i].Route = route
 		}
 		if err := interactionSink.RecordBrowserInteractionEvidence(record); err != nil {
 			slog.Warn("browser interaction evidence was not retained in the run archive", "generation", record.SourceGeneration, "err", err)
@@ -84,7 +94,7 @@ func takeBrowserInteractions(provider protocol.BrowserInteractionEvidenceProvide
 
 // handOffBrowserSessionEvidence hands over everything a closed browser
 // session produced: its HARs and its interactions.
-func handOffBrowserSessionEvidence(p protocol.Protocol, sink ResultSink) {
+func handOffBrowserSessionEvidence(p protocol.Protocol, sink ResultSink, config *RedactionConfig) {
 	handOffBrowserHARArtifacts(p, sink)
-	handOffBrowserInteractions(p, sink)
+	handOffBrowserInteractions(p, sink, config)
 }

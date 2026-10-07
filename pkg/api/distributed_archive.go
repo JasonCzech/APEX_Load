@@ -111,7 +111,13 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 	// A failed earlier attempt's receipt claims describe an archive that
 	// was never published: forget them before this attempt claims its own.
 	if store, ok := tr.receiptStore(); ok {
-		if _, err := store.ResetAcceptedRunEvidenceReceipts(test.ID); err != nil {
+		tr.mu.RLock()
+		generation := test.executionGeneration
+		tr.mu.RUnlock()
+		if err := tr.trackDurableWrite(func() error {
+			_, err := store.ResetAcceptedRunEvidenceReceipts(test.ID, generation)
+			return err
+		}); err != nil {
 			return nil, fmt.Errorf("reset evidence receipts: %w", err)
 		}
 	}
@@ -185,6 +191,17 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 		}
 	}
 	acceptor := tr.acceptRemoteHARReceipt(test, evidenceTargets)
+	if sourceCtx != nil {
+		// A controller that lost the run's lease mid-merge records no
+		// further receipts.
+		accept := acceptor
+		acceptor = func(entry RunArchiveEvidenceArtifact) (string, error) {
+			if err := sourceCtx.Err(); err != nil {
+				return "", err
+			}
+			return accept(entry)
+		}
+	}
 	if err := mergeRemoteHARArtifacts(workingDir, &manifest, bundles, acceptor, mergeOutput); err != nil {
 		return nil, err
 	}

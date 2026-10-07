@@ -1441,7 +1441,11 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			compatibleFeatures = append(compatibleFeatures, FeatureJavaHostBrokerV1, FeatureJavaHostPreparedPopulationV1)
 		}
 		lastSafetyExit, safetyExits := s.safetyExitEvidenceProto()
-		generatorNow := time.Now()
+		// Pongs and telemetry share the published clock; a heartbeat is
+		// where it may re-anchor, so a jump shows at this probe.
+		wallNow := time.Now()
+		generatorPublishedClock.reanchor(wallNow)
+		generatorNow := generatorPublishedClock.at(wallNow)
 		if err := stream.Send(&pb.HeartbeatPong{
 			GeneratorId:                    s.generatorID,
 			JavaHost:                       javaHosts,
@@ -2695,10 +2699,10 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 		idle.aggregates = metricsAggregateSet{MessagingProgress: previous.aggregates.MessagingProgress.Clone()}
 		idle.telemetry.WindowMs = s.publishInterval.Milliseconds()
 		now := time.Now()
-		idle.telemetry.PublishedAtUnixMs = now.UnixMilli()
+		idle.telemetry.PublishedAtUnixMs = generatorPublishedClock.at(now).UnixMilli()
 		idle.telemetry.DroppedSubscriberBatches = droppedSubscriberBatches
 		if snapshotOK {
-			idle.telemetry.CollectedAtUnixMs = snapshot.Timestamp.UnixMilli()
+			idle.telemetry.CollectedAtUnixMs = generatorPublishedClock.at(snapshot.Timestamp).UnixMilli()
 			idle.telemetry.SampleAgeMs = float64(now.Sub(snapshot.Timestamp).Microseconds()) / 1000.0
 			idle.telemetry.GeneratorProcessingLagMs = idle.telemetry.SampleAgeMs
 			if snapshot.Telemetry != nil {
@@ -2735,9 +2739,9 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 		aggregates.MessagingProgress = previous.aggregates.MessagingProgress.Clone()
 	}
 	if snapshotOK {
-		telemetry.CollectedAtUnixMs = snapshot.Timestamp.UnixMilli()
+		telemetry.CollectedAtUnixMs = generatorPublishedClock.at(snapshot.Timestamp).UnixMilli()
 		now := time.Now()
-		telemetry.PublishedAtUnixMs = now.UnixMilli()
+		telemetry.PublishedAtUnixMs = generatorPublishedClock.at(now).UnixMilli()
 		telemetry.SampleAgeMs = float64(now.Sub(snapshot.Timestamp).Microseconds()) / 1000.0
 		telemetry.GeneratorProcessingLagMs = telemetry.SampleAgeMs
 		if snapshot.Telemetry != nil {

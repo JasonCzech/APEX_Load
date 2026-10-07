@@ -472,9 +472,12 @@ type generatorArchiveByteBudget struct {
 	minFreeBytes int64
 	written      int64
 	// optional is the optional evidence (HARs, interaction records)
-	// admitted so far: at most a quarter of maxBytes, so required evidence
-	// always keeps the rest.
+	// admitted so far, within optionalCap: a quarter of the byte limit and
+	// of the free space above the floor, fixed at the first optional
+	// admission, so required evidence always keeps the rest.
 	optional      int64
+	optionalCap   int64
+	optionalSet   bool
 	nextFreeCheck int64
 	knownFree     int64
 	freeKnown     bool

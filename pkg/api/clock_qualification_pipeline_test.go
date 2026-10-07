@@ -209,6 +209,18 @@ func TestTelemetryRecoveryFollowsOnlyAnAnnouncedDegradation(t *testing.T) {
 	if strings.Join(events, ",") != "telemetry_degraded,telemetry_recovered" {
 		t.Fatalf("events %v", events)
 	}
+	// A degradation interrupted by an unscored stretch is announced once.
+	state, previous, events = &telemetryDiagnosticState{}, nil, nil
+	for i, diagnostic := range []*TelemetryDiagnostic{degraded, unscored, degraded, unscored, degraded, nil} {
+		current := updateTelemetryRunHealth(state, diagnostic, "", now.Add(time.Duration(i)*time.Second))
+		if event := telemetryHealthEvent(previous, current); event != "" {
+			events = append(events, event)
+		}
+		state.Health, previous = current, current
+	}
+	if strings.Join(events, ",") != "telemetry_degraded,telemetry_recovered" {
+		t.Fatalf("interrupted spell events %v", events)
+	}
 }
 
 // A sub-second step is still a step: below the smallest cross-host budget.
@@ -226,6 +238,21 @@ func TestClockStepToleranceBelowTheTransportBudget(t *testing.T) {
 func TestRootCauseTelemetryUnscoredIsUnknown(t *testing.T) {
 	if telemetrySeverity("unscored") != "unknown" || telemetryScore("unscored") != 0 || telemetrySeverity("healthy") != "healthy" {
 		t.Fatalf("unscored telemetry: %s %v", telemetrySeverity("unscored"), telemetryScore("unscored"))
+	}
+	// A run whose only open question is unscored telemetry is unknown, and
+	// its completeness says why.
+	report := &RunArchiveReport{}
+	report.Overview.Telemetry = &RunArchiveTelemetrySummary{Status: "unscored", Samples: 10, HealthyIntervals: 6, UnscoredIntervals: 4}
+	if summary := buildRunRootCauseSummary("run", report); summary.Status != "unknown" {
+		t.Fatalf("root-cause status %q", summary.Status)
+	}
+	score := buildRunArchiveCompletenessScoreFromCounts(&RunArchiveManifest{}, report, 1, 1, 10)
+	found := false
+	for _, finding := range score.Findings {
+		found = found || strings.Contains(finding.Message, "could not be scored")
+	}
+	if !found {
+		t.Fatalf("completeness findings %+v", score.Findings)
 	}
 }
 

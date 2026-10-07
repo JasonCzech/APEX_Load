@@ -75,7 +75,7 @@ type SeriesQuery struct {
 	// (aggregation max; a bucket whose readings fall is missing with
 	// counter_reset) for a controller-side counter derivation. The
 	// controller sets it; a display query converts counters to rates.
-	CounterReadings bool `json:"counter_readings,omitempty"`
+	CounterReadings bool `json:"counter_readings,omitempty" openapi:"-"`
 }
 type Preview struct {
 	Schema  analysis.ParquetSchemaPreview `json:"schema"`

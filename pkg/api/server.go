@@ -2271,6 +2271,9 @@ func (s *Server) shutdown(ctx context.Context) error {
 	}
 	if s.runner != nil {
 		shutdownErr = errors.Join(shutdownErr, s.runner.waitRuntimeOverrideSecretAttemptReconciliation(ctx))
+		// Let published evidence acknowledgements finish while generators
+		// may still be reached; bounded by the shutdown deadline.
+		s.runner.waitEvidenceAcknowledgementsUntil(ctx)
 	}
 
 	if s.runner != nil && s.runner.thresholdJournal != nil {

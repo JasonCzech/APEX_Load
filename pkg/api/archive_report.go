@@ -1162,6 +1162,8 @@ func buildRunArchiveCompletenessScoreFromCounts(manifest *RunArchiveManifest, re
 			addFinding("telemetry_gaps", "critical", 15, "Telemetry SLA breaches were archived for one or more intervals.")
 		} else if telemetry.DegradedIntervals > 0 {
 			addFinding("telemetry_gaps", "warning", 8, "Telemetry was degraded for one or more archived intervals.")
+		} else if telemetry.UnscoredIntervals > 0 {
+			addFinding("telemetry_gaps", "warning", 5, "Telemetry budget decisions could not be scored (generator clock quality) for one or more archived intervals.")
 		}
 	}
 	if report != nil {

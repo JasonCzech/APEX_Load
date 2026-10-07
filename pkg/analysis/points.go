@@ -67,6 +67,10 @@ type MetricPoint struct {
 	Quality         string               `json:"quality"`
 	MissingReason   string               `json:"missing_reason,omitempty"` // Why a derived summary or histogram bucket is missing although its input existed.
 	EstimateBin     *EstimateBin         `json:"estimate_bin,omitempty"`   // Histogram bin holding an interpolated percentile.
+	// ReadingAt is, for a counter-readings bucket, the instant of the
+	// closing reading it reports (inside the bucket), so a rate divides by
+	// the time between readings rather than the bucket width.
+	ReadingAt *time.Time `json:"reading_at,omitempty"`
 	Provider        *ProviderMeasurement `json:"provider,omitempty"`
 	// Timing is the controller's account of the point's clock; optional and
 	// additive within metric_point.v1.
@@ -205,6 +209,9 @@ func (p MetricPoint) Validate() error {
 	}
 	if p.MissingReason != "" && (p.Quality != QualityMissing || !validPointMissingReason(p.InputKind, p.MissingReason)) {
 		return errors.New("a missing reason applies only to a missing derived summary, histogram or counter-reading bucket")
+	}
+	if p.ReadingAt != nil && (p.InputKind != KindCounter || p.Value == nil || p.ReadingAt.Before(p.TimestampUTC)) {
+		return errors.New("a reading instant applies only to a measured counter-readings bucket it falls in")
 	}
 	if b := p.EstimateBin; b != nil && (p.InputKind != KindHistogram || p.Value == nil || math.IsNaN(b.Lower) || math.IsInf(b.Lower, 0) || math.IsNaN(b.Upper) || math.IsInf(b.Upper, 0) || b.Lower > *p.Value || *p.Value > b.Upper) {
 		return errors.New("an estimate bin applies only to a measured histogram percentile it contains")

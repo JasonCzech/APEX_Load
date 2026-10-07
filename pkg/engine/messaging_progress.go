@@ -215,7 +215,7 @@ func runProtocolTeardownWithMessagingProgress(p protocol.Protocol, entry *messag
 		entry.mu.Lock()
 		sink := entry.harSink
 		entry.mu.Unlock()
-		handOffBrowserSessionEvidence(entry.har, sink)
+		handOffBrowserSessionEvidence(entry.har, sink, currentRedactionConfig(providers...))
 	}
 	if entry != nil && entry.browser != nil {
 		var redaction *RedactionConfig

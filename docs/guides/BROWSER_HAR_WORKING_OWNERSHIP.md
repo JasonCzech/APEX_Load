@@ -145,7 +145,8 @@ fails part-way is removed from the archive. A HAR that cannot be
 retained stays in its HAR directory under its retention, is counted in
 `browser_har_omitted` by reason (`artifact_limit`, `artifact_too_large`,
 `run_byte_limit`, `archive_quota`, `transfer_failed`, `invalid_artifact`,
-`duplicate`, `source_unavailable`, `receipt_refused`) and marks the archive
+`duplicate`, `source_unavailable`, `receipt_refused`, and `safe_export` in a
+safe archive export, which leaves HARs out) and marks the archive
 `browser_har_incomplete`. HAR is optional evidence and never fails a run. A
 run keeps at most 128 HARs and 1 GiB of them, each at most 100 MiB; on a
 generator, optional evidence (HARs and interaction records together) is
@@ -190,8 +191,14 @@ retained, a repeated acknowledgement is harmless, and a failed
 acknowledgement leaves the copy to the generator's archive retention, as
 does a tombstoned receipt, which is never acknowledged.
 Deleting a run archive (including retention) or its project tombstones its
-receipts. On PostgreSQL, receipt admission is a read-then-write without a
-row lock; two stagers of one run are already excluded by the source fence.
+receipts. Receipt rows are kept, at most one per HAR (128 per run) and one per
+source's interactions sidecar: they outlive the run so that tombstones keep
+refusing late uploads. On PostgreSQL, receipt admission is a read-then-write without a
+row lock. Two stagers of one run are excluded by the execution lease (one
+controller holds a run), and receipts are fenced by execution generation: an
+older generation's staging attempt (a deposed controller still merging)
+neither forgets nor changes a newer generation's claims, and a controller
+that has lost the lease records no further receipts.
 
 The archive manifest's artifact inventory lists each HAR (format `har`,
 record type `browser_har_native`) with its SHA-256, so object-store
@@ -200,7 +207,13 @@ whose bytes differ from its manifest entry. Safe archive exports omit HARs
 until HARs have their own download and export contract. The transfer is
 pulled by the controller, as the run's other archive artifacts are, rather
 than pushed by the generator: generators host the gRPC server in both
-connectivity modes.
+connectivity modes. The transfer advertises no capability of its own, so
+mixed versions degrade silently: a generator older than this declares no
+HARs and its run archive does not record that HARs were captured, and a
+controller older than this never fetches or acknowledges a newer generator's
+HARs, which then remain only in that generator's own archive until its
+retention. Run controllers and generators of the same release when HARs
+matter.
 
 ## Bounds and compatibility
 
@@ -218,10 +231,10 @@ connectivity modes.
 | Completed retention | 128 artifacts; 1 GiB |
 | Completed-retention error details | 16 plus a count of further failures |
 
-The 2 GiB check measures existing staging bytes at admission. It does not
-reserve future native writes, enforce an aggregate active-writer quota, or
-bound total process RSS. The existing per-HAR limiter cannot observe all
-native in-memory buffering. Those resource guarantees remain separate work.
+The 2 GiB check measures existing staging bytes at admission. The
+aggregate active-writer reservation and the memory bound are the
+generator-wide evidence budget (Feature completion Wave 1, D3); the per-HAR
+limiter still cannot observe all native in-memory buffering.
 
 This implementation uses Linux/macOS owner identity checks and Go's secure
 os.Root operations. Other platforms reject native HAR ownership until their

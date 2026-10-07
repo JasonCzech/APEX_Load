@@ -305,7 +305,9 @@ func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protoco
 	if len(state.Layout) == 16 {
 		interaction.LayoutRevision = state.Layout
 	}
-	interaction.Route = sanitizeBrowserRoute(state.Path)
+	// A path can carry a runtime secret (a signed or magic-link path): it is
+	// redacted before ID-like segments are collapsed.
+	interaction.Route = sanitizeBrowserRoute(b.redactRuntimeText(state.Path))
 	if protocol.BrowserInteractionPointerKind(kind) {
 		switch {
 		case framed:

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -67,8 +69,18 @@ func prepareSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArch
 	maskedManifest.Artifacts = make([]RunArchiveArtifact, 0, len(manifest.Artifacts))
 	foundTransactions := false
 	// Native HARs are not part of safe exports until their own download and
-	// export contract exists; the masked manifest does not list them.
+	// export contract exists; the masked manifest does not list them and
+	// says they were omitted, so an imported export never claims complete
+	// HAR evidence it does not hold.
 	var harNames []string
+	if omitted := int64(len(manifest.BrowserHARArtifacts)); omitted > 0 {
+		reasons := maps.Clone(manifest.BrowserHAROmitted)
+		if reasons == nil {
+			reasons = map[string]int64{}
+		}
+		reasons[protocol.BrowserHAROmittedSafeExport] += omitted
+		maskedManifest.BrowserHAROmitted, maskedManifest.BrowserHARIncomplete = reasons, true
+	}
 	maskedManifest.BrowserHARArtifacts = nil
 	for _, artifact := range manifest.Artifacts {
 		if artifact.Name == strings.TrimSpace(manifest.TransactionsParquetFile) && artifact.Name != "" {

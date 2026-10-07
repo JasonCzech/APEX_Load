@@ -5,7 +5,7 @@ import "time"
 // DetectParamsVersion identifies the onset-detection parameters an assessment
 // used. Change it whenever a value below changes; WP3.9 recalibrates them on
 // the calibration split only.
-const DetectParamsVersion = "detect.v1"
+const DetectParamsVersion = "detect.v2"
 
 // DetectParams are onset detection's starting values.
 type DetectParams struct {
@@ -23,6 +23,9 @@ type DetectParams struct {
 	ErrorRateFloorPct float64 `json:"error_rate_floor_pct"`
 	ThroughputFloor   float64 `json:"throughput_floor_per_s"`
 	UnitFloor         float64 `json:"unit_floor"`
+	// ScoreFloor is the robust scale's floor for unitless scores (layout
+	// shift): a change well below it builds no onset.
+	ScoreFloor float64 `json:"score_floor"`
 	// Two-sided CUSUM on robust z-scores: K is the allowance, H the alarm.
 	K float64 `json:"cusum_k"`
 	H float64 `json:"cusum_h"`
@@ -54,7 +57,7 @@ type DetectParams struct {
 // DefaultDetectParams are the plan's starting values.
 var DefaultDetectParams = DetectParams{
 	Version:  DetectParamsVersion,
-	MADScale: 1.4826, RelativeFloor: 0.05, LatencyFloorMs: 5, ErrorRateFloorPct: 0.5, ThroughputFloor: 0.1, UnitFloor: 1,
+	MADScale: 1.4826, RelativeFloor: 0.05, LatencyFloorMs: 5, ErrorRateFloorPct: 0.5, ThroughputFloor: 0.1, UnitFloor: 1, ScoreFloor: 0.01,
 	K: 0.5, H: 5,
 	MinBaselineBuckets: 10, MaxBaselineBuckets: 120,
 	ConfirmBuckets: 3, RecoveryBuckets: 3,

@@ -59,3 +59,22 @@ it('renders a browser document panel in its own unit and without the transaction
   expect(container.textContent).toContain('Final documents')
   expect([...container.querySelectorAll('button')].some(node => node.textContent?.startsWith('Inspect current bucket'))).toBe(false)
 })
+
+it('renders a derived series in its own unit with its unscored reasons and no raw baseline', async () => {
+  const derivedPanel: DashboardDefinitionPanel = { ...panel, query: { ...panel.query!, comparison_run_id: 'base', derivation: { operation: 'baseline_percent_delta' } } as DashboardDefinitionPanel['query'] }
+  const derived = { ...response, derivation: { operation: 'baseline_percent_delta' }, current: { ...response.current, unit: 'percent', buckets: [{ ...response.current.buckets[0], value: 12.5 }, { ...response.current.buckets[1], reason: 'missing_baseline_bucket' }] }, baseline: response.current }
+  request.mockResolvedValue(derived)
+  await act(async () => root.render(<ArchivedNativePanel panel={derivedPanel} testId="run" />))
+  expect(container.textContent).toContain('baseline percent delta (percent)')
+  expect(container.textContent).toContain('Missing (missing baseline bucket)')
+  expect(container.textContent).not.toContain('Baseline (')
+})
+
+it('frames a message panel as received messages without the transaction inspector', async () => {
+  const messagePanel: DashboardDefinitionPanel = { ...panel, query: { metric: 'message_count', aggregation: 'count', population: 'message', end_seconds: 20, bucket_seconds: 10 } as DashboardDefinitionPanel['query'] }
+  request.mockResolvedValue(response)
+  await act(async () => root.render(<ArchivedNativePanel panel={messagePanel} testId="run" />))
+  expect(container.textContent).toContain('received messages · message_count')
+  expect(container.textContent).not.toContain('nearest-rank')
+  expect([...container.querySelectorAll('button')].some(node => node.textContent?.startsWith('Inspect current bucket'))).toBe(false)
+})

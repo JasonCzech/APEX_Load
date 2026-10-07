@@ -131,6 +131,16 @@ func (r workerResult) validate(b workerBootstrap, request workerRequest) error {
 			if err != nil || !slices.Equal(lineage, point.Derivation) || !slices.Equal(firstLineage, point.Derivation) || point.InputKind != inputKind || point.Unit != unit || point.Population != "" || point.MetricVersion != "" || point.Provider != nil || !point.ReceivedAt.IsZero() || point.Quality != analysis.QualityValid && point.Quality != analysis.QualityMissing || point.Kind != analysis.KindGauge || !nativeSeriesIdentityMatches(q, point) || !sameNativeSeriesIdentity(identityPoint, point) || point.RunID != "" || point.ScenarioID != "" || point.RelativeTimeMS != nil || point.ActiveRuntimeMS != nil || point.Validate() != nil || point.ProjectID != q.ProjectID || point.DatasetID != q.DatasetID || point.MetricName != q.Metric || point.TimestampUTC.Before(bounds.From) || !point.TimestampUTC.Before(bounds.To) || !previous.IsZero() && !point.TimestampUTC.After(previous) || point.TimestampUTC.Sub(bounds.From)%(time.Duration(q.BucketSeconds)*time.Second) != 0 {
 				return errWorkerProtocol
 			}
+			// Only a measured counter-readings bucket names its reading's
+			// instant, and that instant lies inside the bucket.
+			step := time.Duration(q.BucketSeconds) * time.Second
+			if q.CounterReadings && point.Value != nil {
+				if point.ReadingAt == nil || point.ReadingAt.Before(point.TimestampUTC) || !point.ReadingAt.Before(point.TimestampUTC.Add(step)) {
+					return errWorkerProtocol
+				}
+			} else if point.ReadingAt != nil {
+				return errWorkerProtocol
+			}
 			previous = point.TimestampUTC
 		}
 		return nil

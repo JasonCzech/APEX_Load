@@ -25,9 +25,6 @@ const (
 	SeriesBrowserDocument = "browser_document"
 )
 
-// browserScoreFloor is the smallest layout-shift score change judged.
-const browserScoreFloor = 0.01
-
 // SeriesJointPrefix starts the ID of a series measured on an exact action
 // dimension tuple (joint interval evidence), never one synthesized from
 // marginals.
@@ -479,7 +476,7 @@ func unitFloor(s Series, p DetectParams) float64 {
 	case "%", "percent":
 		return p.ErrorRateFloorPct
 	case "score":
-		return browserScoreFloor
+		return p.ScoreFloor
 	}
 	return 0
 }

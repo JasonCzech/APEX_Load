@@ -41,9 +41,11 @@ const (
 // beside automatic per-iteration transactions.
 // archive.3: provider series are keyed by their measurement series identity,
 // every series carries one, joint (version 3) interval evidence becomes series
-// on its exact action-dimension tuple, and associated analysis datasets
-// contribute imported series (joint slices ranking last for series and
-// anomalies). It has not been released, so its review fixes keep the name.
+// on its exact action-dimension tuple, associated analysis datasets
+// contribute imported series and browser document measurement tuples
+// contribute document series (joint slices ranking last for series and
+// anomalies), and unscored telemetry reads as unknown. It has not been
+// released, so its review fixes keep the name.
 const rcaArchiveAdapterVersion = "archive.3"
 
 // rcaEngineVersion changes whenever the engine's output for the same frozen

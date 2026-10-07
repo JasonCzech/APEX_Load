@@ -530,7 +530,10 @@ source ledger, clients or a durable generator placement (a local run's
 runtime-resource placement, which names the controller's own process, is
 not one), so one finalized
 after a restart or adoption without this controller's ledger is unknown
-throughout, never observed throughout. Past 1,024 disjoint spans per
+throughout, never observed throughout. Spans are timed by the controller's
+wall clock at receipt, so a backward step of that clock during a run can
+overlap later spans with earlier ones and hide a gap (coverage overstated by
+at most the step). Past 1,024 disjoint spans per
 generator the shortest is dropped to admit a longer one (`truncated`, a lower
 bound). Coverage is read from the interval rows' timestamps, windows and
 statuses only, and the run's cumulative coverage is not copied into archived

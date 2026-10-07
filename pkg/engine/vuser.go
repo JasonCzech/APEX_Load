@@ -516,7 +516,7 @@ func (vu *VUser) Run(ctx context.Context) {
 			}
 			_ = vu.refreshImportedCredentialRuntimeValues()
 			// A long browser session hands over each iteration's interactions.
-			handOffBrowserInteractions(vu.Proto, vu.ResultSink)
+			handOffBrowserInteractions(vu.Proto, vu.ResultSink, vu.RedactionConfig)
 			if vu.Script.Protocol == "browser" && cfg.Browser.NewUserPerIter != nil && *cfg.Browser.NewUserPerIter {
 				if err := vu.resetProtocolForIteration(iterationBoundaryCtx); err != nil {
 					logger.Error("iteration protocol reset failed", "iteration", iteration+1, "err", scrubSensitiveError(err, vu.RedactionConfig))
@@ -1741,7 +1741,7 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 		return err
 	}
 	vu.Metrics.captureBrowserProvider(vu.Proto, vu.ResultSink, vu.Group, vu.Region, vu.resultPublicationRedactionConfig())
-	handOffBrowserSessionEvidence(vu.Proto, vu.ResultSink)
+	handOffBrowserSessionEvidence(vu.Proto, vu.ResultSink, vu.RedactionConfig)
 	vu.bindRuntimeTextRedactor()
 	config := buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", vu.secretResolver())
 	if vu.sourceSamplers != nil {

@@ -414,15 +414,19 @@ func (b *Browser) TakeBrowserHARArtifacts() []protocol.BrowserHARArtifact {
 }
 
 // ReadRuntimeHARArtifact streams a published scrubbed HAR artifact to
-// consume under the namespace lease and returns the file's identity, so a
-// caller that copies it can retire it later (RetireRuntimeHARArtifact) once
-// the copy is final. Nothing in the directory is changed.
+// consume and returns the file's identity, so a caller that copies it can
+// retire it later (RetireRuntimeHARArtifact) once the copy is final. Nothing
+// in the directory is changed. The namespace lease is held only to open the
+// file and prove it is the published artifact: a published HAR never
+// changes, so the copy streams from the open descriptor without holding up
+// the directory's other sessions (whose closes wait on the lease).
 func ReadRuntimeHARArtifact(ctx context.Context, path string, consume func(r io.Reader, size int64) error) (os.FileInfo, error) {
 	name := filepath.Base(path)
 	if consume == nil || !isRetainedRuntimeHARArtifact(name) || name != filepath.Base(filepath.Clean(path)) {
 		return nil, errHAROwnershipUnproven
 	}
 	var identity os.FileInfo
+	var file *os.File
 	err := WithRuntimeHARArtifactNamespace(ctx, filepath.Dir(path), func(root *os.Root) error {
 		info, err := root.Lstat(name)
 		if err != nil {
@@ -431,22 +435,25 @@ func ReadRuntimeHARArtifact(ctx context.Context, path string, consume func(r io.
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			return errHAROwnershipUnproven
 		}
-		file, err := root.Open(name)
+		opened, err := root.Open(name)
 		if err != nil {
 			return err
 		}
-		opened, statErr := file.Stat()
-		if statErr != nil || !os.SameFile(info, opened) {
-			_ = file.Close()
+		stat, statErr := opened.Stat()
+		if statErr != nil || !os.SameFile(info, stat) {
+			_ = opened.Close()
 			return errors.Join(statErr, errHAROwnershipUnproven)
 		}
-		if err := errors.Join(consume(file, info.Size()), file.Close()); err != nil {
-			return err
-		}
-		identity = info
+		file, identity = opened, info
 		return nil
 	})
-	return identity, err
+	if err != nil {
+		return nil, err
+	}
+	if err := errors.Join(consume(file, identity.Size()), file.Close()); err != nil {
+		return nil, err
+	}
+	return identity, nil
 }
 
 // RetireRuntimeHARArtifact retires a published HAR artifact read earlier,

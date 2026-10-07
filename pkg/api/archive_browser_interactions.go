@@ -55,7 +55,9 @@ func fetchRemoteInteractions(ctx context.Context, client archiveArtifactClient, 
 	if err != nil {
 		return nil, interactionsUnavailableTransfer
 	}
-	copied, err := fetchRemoteArchiveArtifactFileForSource(ctx, client, testID, declared.Name, sourceIdentity, path, declared.Bytes, artifact)
+	fetchCtx, cancel := context.WithTimeout(ctx, optionalEvidenceFetchTimeout(declared.Bytes))
+	copied, err := fetchRemoteArchiveArtifactFileForSource(fetchCtx, client, testID, declared.Name, sourceIdentity, path, declared.Bytes, artifact)
+	cancel()
 	if err == nil && copied != declared.Bytes {
 		err = io.ErrUnexpectedEOF
 	}
@@ -209,6 +211,15 @@ func (w *runArchiveWriter) RecordBrowserInteractionEvidence(evidence *protocol.B
 	if w.interactionsBroken || int64(len(record)) > maxRunArchiveInteractionsBytes-w.interactionBytes || w.manifest.BrowserInteractionRecordCount >= maxRunArchiveInteractionsRecords {
 		return drop("browser interaction evidence exceeds the run's sidecar budget")
 	}
+	if !w.captureBudget.admitOptional(int64(len(record))) {
+		return drop("browser interaction evidence exceeds the optional-evidence share of the archive")
+	}
+	written := false
+	defer func() {
+		if !written {
+			w.captureBudget.releaseOptional(int64(len(record)))
+		}
+	}()
 	if w.interactionsFile == nil {
 		file, err := createArchiveArtifactExclusive(w.rootDir, browserInteractionsFileName, 0o644, false)
 		if err != nil {
@@ -235,6 +246,7 @@ func (w *runArchiveWriter) RecordBrowserInteractionEvidence(evidence *protocol.B
 		w.interactionsBroken = true
 		return errors.Join(drop("browser interaction evidence sidecar was torn"), err, io.ErrShortWrite)
 	}
+	written = true
 	w.interactionCount += int64(len(evidence.Interactions))
 	w.interactionBytes += int64(len(record))
 	w.manifest.BrowserInteractionRecordCount++

@@ -219,7 +219,9 @@ func buildRunRootCauseSummary(testID string, report *RunArchiveReport) RunRootCa
 		summary.Status = "breached"
 	case warning:
 		summary.Status = "degraded"
-	case browserUnqualified:
+	case browserUnqualified, report.Overview.Telemetry != nil && report.Overview.Telemetry.Status == "unscored":
+		// Telemetry whose budget decisions could not be scored is unknown,
+		// never healthy.
 		summary.Status = "unknown"
 	default:
 		summary.Status = "healthy"

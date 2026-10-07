@@ -179,17 +179,30 @@ func (w *archiveRecorder) RecordBrowserHARArtifact(artifact protocol.BrowserHARA
 	return nil
 }
 
+// optionalEvidenceFreeBytes reads the free space the optional-evidence
+// allowance is fixed against (tests replace it).
+var optionalEvidenceFreeBytes = generatorArchiveFreeBytes
+
 // admitOptional admits optional evidence of length bytes while all optional
-// evidence stays within a quarter of the run's byte limit and fits what is
-// left, so required evidence written later always keeps three quarters of
-// the limit. An admitted length that is then not written is released.
+// evidence stays within one allowance, fixed at the first admission: a
+// quarter of the run's byte limit and of the free space then above the
+// floor. Required evidence written later therefore keeps three quarters of
+// both, on a volume the byte limit alone does not bound. An admitted length
+// that is then not written is released.
 func (b *generatorArchiveByteBudget) admitOptional(length int64) bool {
 	if b == nil || length < 0 {
 		return false
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if length > b.maxBytes/4-b.optional || length > b.maxBytes-b.written {
+	if !b.optionalSet {
+		free, err := optionalEvidenceFreeBytes(b.root)
+		if err != nil {
+			return false
+		}
+		b.optionalCap, b.optionalSet = min(b.maxBytes, max(free-b.minFreeBytes, 0))/4, true
+	}
+	if length > b.optionalCap-b.optional || length > b.maxBytes-b.written {
 		return false
 	}
 	b.optional += length

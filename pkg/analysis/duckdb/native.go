@@ -563,9 +563,13 @@ func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q 
 			var at time.Time
 			var value sql.NullFloat64
 			var reason string
+			var readingAt sql.NullTime
 			targets := []any{&at, &value}
 			if kind == analysis.KindSummary || q.CounterReadings {
 				targets = append(targets, &reason)
+			}
+			if q.CounterReadings {
+				targets = append(targets, &readingAt)
 			}
 			if err := rows.Scan(targets...); err != nil {
 				return err
@@ -578,6 +582,10 @@ func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q 
 				v := value.Float64
 				p.Value = &v
 				p.Quality = analysis.QualityValid
+				if q.CounterReadings && readingAt.Valid {
+					reading := readingAt.Time.UTC()
+					p.ReadingAt = &reading
+				}
 			} else {
 				p.MissingReason = reason
 			}

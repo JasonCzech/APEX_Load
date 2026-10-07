@@ -462,7 +462,7 @@ Rerun with `go test ./pkg/rca -run '^$' -bench BenchmarkRCA -benchtime 5x`.
 
 ## Root-cause onset detection
 
-Onset detection (`pkg/rca/detect.go`, parameters `detect.v1` in
+Onset detection (`pkg/rca/detect.go`, parameters `detect.v2` in
 `detect_params.go`, recorded in each assessment's `detection` block) finds
 where a series changed and whether it recovered. It reads only frozen
 evidence.
@@ -541,8 +541,9 @@ evidence.
   grid. Each measurement counts once, at its latest retained state;
   provisional and censored measurements never enter, and a bucket without a
   final document is a gap. The tuple is part of the measurement identity, so
-  a baseline-run judgment pairs only the same tuple. Layout-shift (`score`)
-  changes below 0.01 are not judged. Incomplete document evidence is
+  a baseline-run judgment pairs only the same tuple. Layout shift (`score`)
+  is judged on a robust scale never below 0.01 (`score_floor`), so changes
+  well below it build no onset. Incomplete document evidence is
   `detection_evidence_cut`.
 - **Levels.** Only buckets inside a steady load level are judged: the same
   settled spans validity and baseline comparison use, which skip each level's
@@ -576,8 +577,8 @@ evidence.
   `spikes_truncated`).
 - **Evidence limits.** A sidecar that cannot be read costs its series, not
   the analysis (`detection_evidence_unreadable`). Transaction series take the
-  series budget first, provider series then, joint action-dimension slices
-  and imported series what remains; what the budget or the analysis budget
+  series budget first, provider series then, imported and browser document
+  series and joint action-dimension slices what remains (joint slices last); what the budget or the analysis budget
   leaves out is `detection_evidence_cut`. A baseline run
   none of whose series matches one of the run's is `baseline_series_unmatched`,
   and the limits of the baseline's own evidence are listed in its `baseline`
@@ -1071,7 +1072,7 @@ A native query (live or archive evidence, the archive panel and the imported dat
 | `acknowledgement_ratio`, `settlement_ratio` | the `message` population | — (every bucket is `evidence_unavailable`: the engine records no acknowledgement or settlement counters yet) |
 | `baseline_delta`, `baseline_percent_delta` | archive panels with `comparison_run_id` | — |
 | `moving_mean`, `moving_stddev` | scalar series on an aligned grid (archive, merged live, imported) | `window_buckets` 2–1,000, `minimum_coverage` in (0, 1] |
-| `delta`, `rate` | imported counter series queried with `aggregation: max` (the controller then reads each bucket's closing counter reading; a display query still converts counters to rates) | — |
+| `delta`, `rate` | imported counter series queried with `aggregation: max` (the controller then reads each bucket's closing counter reading and its instant, `reading_at`, so a rate divides by the time between readings; a display query still converts counters to rates; the dataset-series response returns the derived values in `derived`, beside the raw `points`) | — |
 
 Only a baseline derivation takes a `comparison_run_id`; any other derivation
 with one is refused, so a comparison panel never mixes a derived current
@@ -1082,9 +1083,11 @@ also needs the bucket's whole window covered by publications inside it,
 except under a ratio derivation, which reads the counts as a sample. Ratios
 therefore score in merged live mode; moving statistics over a count panel
 score only where publications cover whole buckets. An archive whose source coverage lists an uncollected
-generator, or whose CSV export is incomplete, makes every derived bucket
-`incomplete_evidence`. Evidence queries (`/native/evidence`) select the action
-or transaction population only; message and browser document populations are
+generator, or whose CSV export is incomplete, leaves every bucket incomplete:
+a ratio or counter derivation reports `incomplete_evidence`, a moving one
+`insufficient_coverage` or `insufficient_valid_buckets`. Evidence queries
+(`POST /api/v1/tests/{id}/native-series`) select the action or transaction
+population only; message and browser document populations are
 archive panels. Responses name the catalog operation even when an alias was
 asked for. A controller that predates derivations ignores the field: during a
 rolling upgrade a saved derivation can be dropped by an older peer that

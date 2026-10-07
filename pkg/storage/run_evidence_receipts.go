@@ -47,7 +47,7 @@ type RunEvidenceReceiptStore interface {
 	AcceptRunEvidenceReceipt(receipt RunEvidenceReceipt) (string, error)
 	PublishRunEvidenceReceipts(testID string) (int64, error)
 	ListRunEvidenceReceipts(testID string) ([]RunEvidenceReceipt, error)
-	ResetAcceptedRunEvidenceReceipts(testID string) (int64, error)
+	ResetAcceptedRunEvidenceReceipts(testID string, executionGeneration uint64) (int64, error)
 }
 
 var _ RunEvidenceReceiptStore = (*SQLiteStore)(nil)
@@ -119,8 +119,13 @@ func (s *SQLiteStore) AcceptRunEvidenceReceipt(r RunEvidenceReceipt) (string, er
 	case found && existing.State != EvidenceReceiptAccepted:
 		// A published or tombstoned receipt is final.
 		return existing.State, nil
-	case archived > 0 || tests == 0 || r.ExecutionGeneration > 0 && newest.Valid && uint64(newest.Int64) > r.ExecutionGeneration:
+	case archived > 0 || tests == 0:
 		state = EvidenceReceiptTombstoned
+	case r.ExecutionGeneration > 0 && newest.Valid && uint64(newest.Int64) > r.ExecutionGeneration:
+		// A staging attempt of an older execution generation (a deposed
+		// controller still merging) is refused and changes nothing a newer
+		// generation recorded.
+		return EvidenceReceiptTombstoned, nil
 	case r.ExecutionGeneration == 0 && newest.Valid && newest.Int64 > 0:
 		// A collection retry runs without the execution fence (generation
 		// 0): it inherits the newest generation rather than tombstoning the
@@ -159,13 +164,20 @@ func (s *SQLiteStore) PublishRunEvidenceReceipts(testID string) (int64, error) {
 // ResetAcceptedRunEvidenceReceipts forgets a run's accepted receipts at the
 // start of a staging attempt: an accepted receipt is only a staging
 // attempt's claim (never acknowledged to a generator), so a failed attempt's
-// claims must not be published with an archive that does not hold them.
-// Published and tombstoned receipts stay final.
-func (s *SQLiteStore) ResetAcceptedRunEvidenceReceipts(testID string) (int64, error) {
+// claims must not be published with an archive that does not hold them. An
+// attempt of an execution generation forgets only claims of that generation
+// or older, never a newer controller's; a collection retry (generation 0)
+// forgets them all. Published and tombstoned receipts stay final.
+func (s *SQLiteStore) ResetAcceptedRunEvidenceReceipts(testID string, executionGeneration uint64) (int64, error) {
 	if strings.TrimSpace(testID) == "" {
 		return 0, errors.New("test id is required")
 	}
-	result, err := s.db.Exec(`DELETE FROM run_evidence_receipts WHERE test_id = ? AND state = ?`, testID, EvidenceReceiptAccepted)
+	query, args := `DELETE FROM run_evidence_receipts WHERE test_id = ? AND state = ?`, []any{testID, EvidenceReceiptAccepted}
+	if executionGeneration > 0 {
+		query += ` AND execution_generation <= ?`
+		args = append(args, int64(executionGeneration))
+	}
+	result, err := s.db.Exec(query, args...)
 	if err != nil {
 		return 0, err
 	}

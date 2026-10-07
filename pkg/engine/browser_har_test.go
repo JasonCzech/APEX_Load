@@ -104,9 +104,29 @@ func TestBrowserSessionEvidenceHandsOverInteractionsAndHARs(t *testing.T) {
 	p := &interactionUnitProtocol{harUnitProtocol: harUnitProtocol{published: []protocol.BrowserHARArtifact{{Path: "/a.har", Generation: gen}}},
 		evidence: []*protocol.BrowserInteractionEvidence{{Version: protocol.BrowserInteractionVersion, SourceGeneration: gen}, nil}}
 	sink := &interactionUnitSink{}
-	handOffBrowserSessionEvidence(p, sink)
-	handOffBrowserSessionEvidence(p, sink)
+	handOffBrowserSessionEvidence(p, sink, nil)
+	handOffBrowserSessionEvidence(p, sink, nil)
 	if len(sink.recorded) != 1 || len(sink.interactions) != 1 || sink.interactions[0].SourceGeneration != gen {
 		t.Fatalf("handoff HARs %d interactions %d", len(sink.recorded), len(sink.interactions))
+	}
+}
+
+// A runtime secret in an interaction's route (a signed or magic-link path) is
+// redacted at handoff, as every other run evidence path is, and the route
+// stays a path.
+func TestBrowserInteractionRoutesAreScrubbedAtHandoff(t *testing.T) {
+	gen := strings.Repeat("b", 32)
+	secret := "tok3nVa1ueQx9ZrT5mW2pL"
+	config := WithSecretValueRedaction(nil, []string{secret})
+	p := &interactionUnitProtocol{evidence: []*protocol.BrowserInteractionEvidence{{Version: protocol.BrowserInteractionVersion, SourceGeneration: gen,
+		Interactions: []protocol.BrowserInteraction{{Version: protocol.BrowserInteractionVersion, SourceGeneration: gen, Kind: "click", Route: "/share/" + secret}}}}}
+	sink := &interactionUnitSink{}
+	handOffBrowserInteractions(p, sink, config)
+	if len(sink.interactions) != 1 {
+		t.Fatalf("interactions %d", len(sink.interactions))
+	}
+	route := sink.interactions[0].Interactions[0].Route
+	if strings.Contains(route, secret) || !strings.HasPrefix(route, "/share/") {
+		t.Fatalf("route %q", route)
 	}
 }

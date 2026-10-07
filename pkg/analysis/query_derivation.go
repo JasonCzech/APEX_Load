@@ -35,6 +35,9 @@ type DerivationBucket struct {
 	// Reason says why a bucket without a value is missing when its input
 	// existed (a counter reading that fell inside it).
 	Reason string
+	// At is the instant of a counter bucket's reading when it is not the
+	// bucket's end (an imported closing reading).
+	At time.Time
 }
 
 // DerivationSeries is a bucketed series with the measurement it carries.
@@ -314,6 +317,10 @@ func (s DerivationSeries) point(b DerivationBucket, shape *DerivationSeries) Met
 // counterSample is a counter bucket's reading at its end.
 func (s DerivationSeries) counterSample(b DerivationBucket) CounterSample {
 	value := *b.Value
+	at := b.To.UTC()
+	if !b.At.IsZero() {
+		at = b.At.UTC()
+	}
 	return CounterSample{Point: MetricPoint{SchemaVersion: SchemaVersion, ProjectID: s.ProjectID, Source: s.Source, MetricName: s.MetricName, MetricVersion: s.MetricVersion, Population: s.Population,
-		Kind: KindCounter, Unit: s.Unit, TimestampUTC: b.To.UTC(), Quality: QualityValid, Value: &value}, Epoch: s.CounterEpoch, Complete: b.Complete}
+		Kind: KindCounter, Unit: s.Unit, TimestampUTC: at, Quality: QualityValid, Value: &value}, Epoch: s.CounterEpoch, Complete: b.Complete}
 }

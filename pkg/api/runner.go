@@ -193,18 +193,21 @@ type TestRunner struct {
 	// evidenceAcknowledgements tracks background acknowledgements of
 	// published run evidence to generators.
 	evidenceAcknowledgements sync.WaitGroup
-	appDynamicsPrepare       func(context.Context, storage.MonitorSource, *storage.AppDynamicsConnectionSnapshot) error
-	prometheusPrepare        func(context.Context, storage.MonitorSource, *storage.PrometheusConnectionSnapshot, []analysis.MonitorRule) error
-	dynatracePrepare         func(context.Context, storage.MonitorSource, *storage.DynatraceConnectionSnapshot) error
-	thresholdJournal         *thresholdJournalWriter
-	tests                    map[string]*ManagedTest
-	scripts                  map[string]*StoredScript
-	privateCISnapshots       map[string]int
-	scenarios                map[string]*StoredScenario
-	archives                 map[string]*storage.RunArchiveRecord
-	deletingProjects         map[string]struct{}
-	projectDeletionGates     projectMutationCoordinator
-	projectDeletionUnlock    map[string]func()
+	// acknowledgedEvidence remembers which published evidence generators
+	// confirmed, so later commits of a run do not acknowledge it again.
+	acknowledgedEvidence  acknowledgedEvidenceSet
+	appDynamicsPrepare    func(context.Context, storage.MonitorSource, *storage.AppDynamicsConnectionSnapshot) error
+	prometheusPrepare     func(context.Context, storage.MonitorSource, *storage.PrometheusConnectionSnapshot, []analysis.MonitorRule) error
+	dynatracePrepare      func(context.Context, storage.MonitorSource, *storage.DynatraceConnectionSnapshot) error
+	thresholdJournal      *thresholdJournalWriter
+	tests                 map[string]*ManagedTest
+	scripts               map[string]*StoredScript
+	privateCISnapshots    map[string]int
+	scenarios             map[string]*StoredScenario
+	archives              map[string]*storage.RunArchiveRecord
+	deletingProjects      map[string]struct{}
+	projectDeletionGates  projectMutationCoordinator
+	projectDeletionUnlock map[string]func()
 	// secretReferenceMutations is shared with Server so every durable script
 	// mutation path fences the usage snapshots used by secret create/rotation.
 	secretReferenceMutations *projectMutationCoordinator
@@ -1118,8 +1121,9 @@ type TelemetryRunHealth struct {
 	LastObservedAt    time.Time  `json:"last_observed_at"`
 	LastTransitionAt  time.Time  `json:"last_transition_at,omitempty"`
 	// recovered: this healthy status ends a degraded or breached spell that
-	// was announced (an unscored stretch in between does not end it).
-	recovered bool
+	// was announced (an unscored stretch in between does not end it);
+	// announce: this degraded or breached status is not the one announced.
+	recovered, announce bool
 }
 
 type NetworkLatency struct {
@@ -1241,9 +1245,9 @@ type telemetryDiagnosticState struct {
 	LastPublishedAt time.Time
 	Health          *TelemetryRunHealth
 	BreachStartedAt *time.Time
-	// alerting: a degraded or breached status was announced and no healthy
-	// status has ended it yet.
-	alerting bool
+	// announced is the degraded or breached status last announced, until a
+	// healthy status ends the spell (an unscored stretch does not).
+	announced string
 }
 
 type goalControllerUpdate struct {

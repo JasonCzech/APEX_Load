@@ -40,6 +40,7 @@ describe('rcaModel', () => {
     expect(rcaSeriesLabel('dependency/http:api.shop.local/dns_ms')).toBe('http:api.shop.local · DNS time')
     expect(rcaSeriesLabel('imported/0f3c2a9e-1111-2222-3333-444455556666/host.cpu.usage/abcdef012345')).toBe('host.cpu.usage · imported dataset 0f3c2a9e')
     expect(rcaSeriesLabel('action_dimensions/["Login","fast-3g","","action"]/p95_ms')).toBe('Login · fast-3g · action · p95 latency')
+    expect(rcaSeriesLabel('browser_document/lcp/3fa9c1e0b2d4/p75')).toBe('LCP p75 · document cohort 3fa9c1e0')
     expect(rcaSeriesLabel('monitor/dynatrace/dt-src/builtin:service.cpu.time/abcdef012345')).toBe('builtin:service.cpu.time · Dynatrace')
     expect(rcaSeriesLabel('odd')).toBe('odd')
     expect(rcaSeriesPopulation('transaction/Checkout/p95_ms')).toEqual({ population: 'transaction', name: 'Checkout' })

@@ -170,7 +170,7 @@ func (b *archiveOutputBudget) admitOptional(n int64) bool {
 		return false
 	}
 	defer release()
-	available, err := diskspace.AvailablePath(b.root)
+	available, err := optionalEvidenceFreeBytes(b.root)
 	if err != nil || available < b.minFree || n > available-b.minFree {
 		return false
 	}

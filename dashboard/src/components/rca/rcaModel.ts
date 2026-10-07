@@ -151,6 +151,13 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 export const rcaProviderLabel = (provider: string) => PROVIDER_LABELS[provider] || provider
 
+const DOCUMENT_METRIC_LABELS: Record<string, string> = {
+  fcp: 'FCP',
+  lcp: 'LCP',
+  cls: 'CLS',
+  inp: 'INP',
+}
+
 // jointTupleLabel reads an action-dimension tuple ([action, network
 // profile, hierarchy, phase]) as its non-empty parts.
 function jointTupleLabel(name: string): string {
@@ -167,6 +174,12 @@ export function rcaSeriesLabel(id: string): string {
   if (s.dimension === 'imported') return `${s.name} · imported dataset ${(s.provider || '').slice(0, 8)}`
   if (!s.metric) return id
   if (s.dimension === 'action_dimensions') return `${jointTupleLabel(s.name)} · ${METRIC_LABELS[s.metric] || s.metric.replace(/_/g, ' ')}`
+  if (s.dimension === 'browser_document') {
+    // browser_document/<metric>/<tuple digest>/<statistic>: one measurement
+    // tuple (engine, device profile, cohort, phase, group) of a document metric.
+    const [metric, digest] = s.name.split('/')
+    return `${DOCUMENT_METRIC_LABELS[metric] || metric} ${s.metric} · document cohort ${(digest || '').slice(0, 8)}`
+  }
   return `${s.name} · ${METRIC_LABELS[s.metric] || s.metric.replace(/_/g, ' ')}`
 }
 

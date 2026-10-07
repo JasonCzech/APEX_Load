@@ -262,6 +262,10 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 				// source did so with valid evidence. A bucket nobody published
 				// into is not an observed zero.
 				complete: len(expected[i]) > 0 && !invalid[i] && !b.invalid && (!counted || coverage >= 1 && !rateUnsafe[i])}
+			if b.count > 0 && !invalid[i] && !b.invalid {
+				// A ratio reads the counts as a sample, whatever the panel.
+				p.samples = b.count
+			}
 			if b.count > 0 && !invalid[i] && !b.invalid && (!storage.IsNativeObservationRate(q.Metric) || coverage >= 1 && !rateUnsafe[i]) {
 				value := b.sum / float64(b.count)
 				switch q.Metric {

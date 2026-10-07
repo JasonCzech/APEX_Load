@@ -890,6 +890,11 @@ func importedDerivation(in *storage.AnalysisImport, query analytics.SeriesQuery,
 		if p, ok := byStart[at]; ok && p.Value != nil && p.Quality == analysis.QualityValid {
 			value := *p.Value
 			bucket.Value, bucket.Complete = &value, true
+			// A counter's rate divides by the time between its readings,
+			// not by the bucket width.
+			if p.ReadingAt != nil {
+				bucket.At = p.ReadingAt.UTC()
+			}
 		} else if ok {
 			bucket.Reason = p.MissingReason
 		}

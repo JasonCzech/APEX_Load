@@ -33,7 +33,7 @@ const LimitationStageSkipped = "stage_skipped"
 
 // EngineVersionBase names the engine's generation; EngineVersion appends the
 // versions and a fingerprint of every value that shapes an assessment.
-const EngineVersionBase = "apexload.rca.engine.v2"
+const EngineVersionBase = "apexload.rca.engine.v3"
 
 // EngineVersion identifies everything that decides an assessment from frozen
 // inputs: the rules' and parameters' versions, a fingerprint of every value

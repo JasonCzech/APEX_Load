@@ -12,7 +12,8 @@ import (
 func completeBoundedEvidenceModel(pkg, name string) bool {
 	if pkg == "" || pkg == "api" {
 		switch name {
-		case "TelemetryPolicyEvidence", "TelemetryBudgetPolicy", "TelemetryStageBudget", "BrowserResourcePage", "BrowserResourcePageItem", "BrowserResourcePageLocator", "BrowserResourcePagePopulation", "BrowserResourcePageCoverage":
+		case "TelemetryPolicyEvidence", "TelemetryBudgetPolicy", "TelemetryStageBudget", "BrowserResourcePage", "BrowserResourcePageItem", "BrowserResourcePageLocator", "BrowserResourcePagePopulation", "BrowserResourcePageCoverage",
+			"TelemetryCoverage", "TelemetrySourceCoverage", "TelemetrySourceSummary", "TelemetryCounterTotal", "TelemetryCoverageRecord", "TelemetryPolicySegment":
 			return true
 		}
 	}

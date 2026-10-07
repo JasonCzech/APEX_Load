@@ -1616,11 +1616,13 @@ export interface RunArchiveGoalCompletion {
 }
 
 export interface RunArchiveTelemetrySummary {
-  status: 'healthy' | 'degraded' | 'breached'
+  status: 'healthy' | 'degraded' | 'breached' | 'unscored'
   samples: number
   healthy_intervals?: number
   degraded_intervals?: number
   breached_intervals?: number
+  // Intervals whose cross-host budget decision could not be scored.
+  unscored_intervals?: number
   sustained_breach_intervals?: number
   dropped_results?: number
   websocket_dropped_messages?: number
@@ -2243,11 +2245,13 @@ export interface TelemetryHealth {
 }
 
 export interface TelemetryRunHealth {
-  status: 'healthy' | 'degraded' | 'breached'
+  status: 'healthy' | 'degraded' | 'breached' | 'unscored'
   severity: 'healthy' | 'warning' | 'danger'
   summary?: string
   current_signature?: string
   conditions?: string[]
+  // Budget decisions that could not be scored, as "condition:reason".
+  unscored?: string[]
   breach_active?: boolean
   sustained_breach?: boolean
   breach_duration_sec?: number

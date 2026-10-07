@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestRunEvidenceReceiptsPostgres(t *testing.T) {
+func TestPostgresRunEvidenceReceipts(t *testing.T) {
 	url := os.Getenv("APEXLOAD_TEST_POSTGRES_URL")
 	if url == "" {
 		t.Skip("APEXLOAD_TEST_POSTGRES_URL is not set")
@@ -41,4 +41,5 @@ func TestRunEvidenceReceiptsPostgres(t *testing.T) {
 	}
 	defer s.Close()
 	testRunEvidenceReceipts(t, s.SQLiteStore)
+	testArchiveFinalizationPublishesReceipts(t, s.SQLiteStore)
 }

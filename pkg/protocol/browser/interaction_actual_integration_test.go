@@ -253,6 +253,28 @@ func TestBrowserActualKeyboardTargetsAfterTheGesture(t *testing.T) {
 	}
 }
 
+// A runtime secret in the page's path never reaches the recorded route.
+func TestBrowserActualInteractionRouteIsRuntimeRedacted(t *testing.T) {
+	server, _ := interactionFixtureServer(t)
+	b, ctx := interactionFixtureBrowser(t, "chromium", server.URL, true)
+	// No digits and no long hex run: route sanitization alone would keep it.
+	secret := "magicLinkTokenQxZrTmWpLk"
+	b.SetRuntimeTextRedactor(func(value string) string { return strings.ReplaceAll(value, secret, "[redacted]") })
+	if _, err := b.Execute(ctx, &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/share/" + secret}); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := b.Execute(ctx, &protocol.Action{Name: "go", Type: "browser_click", Selector: "#go"}); err != nil || !result.Success {
+		t.Fatalf("click %v %+v", err, result)
+	}
+	taken := b.TakeBrowserInteractionEvidence()
+	if len(taken) != 1 || len(taken[0].Interactions) != 1 {
+		t.Fatalf("interactions %+v", taken)
+	}
+	if route := taken[0].Interactions[0].Route; strings.Contains(route, secret) || !strings.HasPrefix(route, "/share/") || !taken[0].Interactions[0].Valid() {
+		t.Fatalf("route %q", route)
+	}
+}
+
 // A touch session's gestures are dispatched as synthetic events, which the
 // observer ignores: they are recorded without points, saying so.
 func TestBrowserActualTouchGesturesSaySyntheticDispatch(t *testing.T) {

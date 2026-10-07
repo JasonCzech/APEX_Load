@@ -15,6 +15,8 @@ const (
 	BrowserHAROmittedInvalid           = "invalid_artifact"
 	BrowserHAROmittedDuplicate         = "duplicate"
 	BrowserHAROmittedSourceUnavailable = "source_unavailable"
+	// BrowserHAROmittedSafeExport: a safe archive export leaves HARs out.
+	BrowserHAROmittedSafeExport = "safe_export"
 	BrowserHAROmittedReceipt           = "receipt_refused"
 )
 

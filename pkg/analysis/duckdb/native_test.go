@@ -397,6 +397,11 @@ func TestNativeCounterReadingsForDerivations(t *testing.T) {
 	if err != nil || len(points) != 3 || points[0].Value == nil || *points[0].Value != 40 || points[2].Value == nil || *points[2].Value != 105 {
 		t.Fatalf("counter readings=%+v error=%v", points, err)
 	}
+	// Each reading names its own instant, so a rate divides by the time
+	// between readings rather than the bucket width.
+	if points[0].ReadingAt == nil || !points[0].ReadingAt.Equal(time.UnixMilli(1700000000500).UTC()) || points[2].ReadingAt == nil || !points[2].ReadingAt.Equal(time.UnixMilli(1700000002000).UTC()) {
+		t.Fatalf("reading instants %v %v", points[0].ReadingAt, points[2].ReadingAt)
+	}
 	for _, point := range points {
 		if point.Kind != analysis.KindGauge || point.InputKind != analysis.KindCounter || point.Unit != "count" || point.Derivation[len(point.Derivation)-1].Algorithm != "counter_bucket_reading.v2" {
 			t.Fatalf("counter reading point %+v", point)

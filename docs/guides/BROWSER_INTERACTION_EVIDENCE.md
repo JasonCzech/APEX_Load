@@ -101,7 +101,9 @@ and inventory entry `browser_interactions_v1`) and acknowledges the
 generator after publication, exactly as for
 [native HARs](BROWSER_HAR_WORKING_OWNERSHIP.md#run-archive-transfer-and-receipts).
 A source that cannot be transferred, or whose records differ from its
-declaration, marks `browser_interactions_incomplete`, and so does one the
+declaration, marks `browser_interactions_incomplete` (its interactions are not
+counted in `browser_interactions_dropped`, since the controller never read
+them), and so does one the
 archive's optional-evidence allowance (shared with HAR copies; see the
 [HAR guide](BROWSER_HAR_WORKING_OWNERSHIP.md#run-archive-transfer-and-receipts))
 cannot hold: it is never receipted, and its interactions count as dropped.

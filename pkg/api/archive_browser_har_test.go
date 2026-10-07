@@ -178,6 +178,13 @@ func TestDistributedArchiveTransfersHARsWithReceipts(t *testing.T) {
 	if len(a.acks) != 1 || a.acks[0].SourceIdentity != identity || len(a.acks[0].Artifacts) != 1 || a.acks[0].Artifacts[0].Name != "browser_har_"+first+".har" {
 		t.Fatalf("acknowledgements %+v", a.acks)
 	}
+	// A later commit of the same run (a refresh, a note edit) does not
+	// acknowledge the confirmed evidence again.
+	restarted.publishRunEvidence(run.ID)
+	restarted.waitEvidenceAcknowledgements()
+	if len(a.acks) != 1 {
+		t.Fatalf("confirmed evidence acknowledged again: %+v", a.acks)
+	}
 
 	// An upload after publication is tombstoned and its copy removed.
 	staged := filepath.Join(t.TempDir(), "browser_har_"+strings.Repeat("4", 32)+".har")
@@ -300,6 +307,9 @@ func TestLocalRunArchiveRetainsBrowserHARs(t *testing.T) {
 		}
 		if _, omitted := plan.omit[name]; !omitted || len(plan.manifest.BrowserHARArtifacts) != 0 {
 			t.Fatal("a safe export includes the HAR")
+		}
+		if !plan.manifest.BrowserHARIncomplete || plan.manifest.BrowserHAROmitted[protocol.BrowserHAROmittedSafeExport] != 1 {
+			t.Fatalf("a safe export claims complete HAR evidence: %+v", plan.manifest.BrowserHAROmitted)
 		}
 		for _, artifact := range plan.manifest.Artifacts {
 			if artifact.Name == name {

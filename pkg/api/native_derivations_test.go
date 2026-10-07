@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -254,6 +255,23 @@ func TestMergedLiveDerivationScoresUnalignedPublications(t *testing.T) {
 	if points := countOut.Series[0].Points; len(points) != 2 || points[0].Value == nil || *points[0].Value != .25 || points[1].Value == nil || *points[1].Value != 0.5 {
 		t.Fatalf("merged live ratio over a count panel %+v", points)
 	}
+	// And over a rate panel, whose displayed rate needs whole-window
+	// coverage these unaligned publications lack.
+	rated := q
+	rated.Metric, rated.Aggregation = "observation_rate", "rate"
+	if err := storage.ValidateNativeEvidenceQuery(rated); err != nil {
+		t.Fatal(err)
+	}
+	rateOut, err := buildMergedNativeLiveEvidence(context.Background(), start, history, rated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyNativeEvidenceDerivation("p", rated, &rateOut); err != nil {
+		t.Fatal(err)
+	}
+	if points := rateOut.Series[0].Points; len(points) != 2 || points[0].Value == nil || *points[0].Value != .25 || points[1].Value == nil || *points[1].Value != 0.5 {
+		t.Fatalf("merged live ratio over a rate panel %+v", points)
+	}
 	// A moving derivation needs one bucket grid, which per-source intervals
 	// are not.
 	source := q
@@ -468,5 +486,39 @@ func TestDashboardDefinitionsValidateDerivationsAndLegacyPanels(t *testing.T) {
 		if err := store.SaveDashboardDefinition(definition(query)); err == nil {
 			t.Fatalf("%s saved", name)
 		}
+	}
+}
+
+// An imported counter scraped every 15 s and queried on 10 s buckets: the
+// rate divides each delta by the time between its two closing readings, never
+// by the bucket width.
+func TestImportedCounterRateUsesReadingInstants(t *testing.T) {
+	start := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	in := &storage.AnalysisImport{ID: "ds", ProjectID: "p", Revision: 1}
+	// Readings 0, 150, 300, 450 at 0 s, 15 s, 30 s and 45 s: 10/s.
+	var points []analysis.MetricPoint
+	for i, reading := range []float64{0, 150, 300, 450} {
+		at := start.Add(time.Duration(15*i) * time.Second)
+		bucket := at.Truncate(10 * time.Second)
+		value := reading
+		points = append(points, analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: "p", Source: "src", MetricName: "requests_total", Kind: analysis.KindGauge, InputKind: analysis.KindCounter, Unit: "count",
+			TimestampUTC: bucket, Quality: analysis.QualityValid, Value: &value, ReadingAt: &at})
+	}
+	query := analytics.SeriesQuery{Metric: "requests_total", From: start, To: start.Add(50 * time.Second), BucketSeconds: 10, Aggregation: "max", CounterReadings: true}
+	rate, err := importedDerivation(in, query, points, analysis.QueryDerivation{Operation: "rate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scored := 0
+	for _, b := range rate.Buckets {
+		if b.Value != nil {
+			scored++
+			if math.Abs(*b.Value-10) > 1e-9 {
+				t.Fatalf("rate %v at %s, want 10/s: %+v", *b.Value, b.From, rate.Buckets)
+			}
+		}
+	}
+	if scored == 0 {
+		t.Fatalf("no rate scored: %+v", rate.Buckets)
 	}
 }

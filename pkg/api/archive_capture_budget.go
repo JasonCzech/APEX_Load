@@ -29,6 +29,51 @@ type archiveCaptureBudget struct {
 	remaining int64
 	minFree   int64
 	root      string
+	// optional is the optional evidence (HARs, interaction records)
+	// admitted so far, within optionalCap: a quarter of the capture limit
+	// and of the free space above the floor, fixed at the first optional
+	// admission, so required capture always keeps the rest.
+	optional, optionalCap int64
+	optionalSet           bool
+}
+
+// optionalEvidenceFreeBytes reads the free space an optional-evidence
+// allowance is fixed against (tests replace it).
+var optionalEvidenceFreeBytes = diskspace.AvailablePath
+
+// admitOptional admits n bytes of optional evidence within the run's
+// optional allowance. A refusal omits the evidence; it never fails capture.
+func (b *archiveCaptureBudget) admitOptional(n int64) bool {
+	if b == nil {
+		return true
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if n < 0 || n > b.remaining {
+		return false
+	}
+	if !b.optionalSet {
+		free, err := optionalEvidenceFreeBytes(b.root)
+		if err != nil {
+			return false
+		}
+		b.optionalCap, b.optionalSet = min(b.remaining, max(free-b.minFree, 0))/4, true
+	}
+	if n > b.optionalCap-b.optional {
+		return false
+	}
+	b.optional += n
+	return true
+}
+
+// releaseOptional returns an admitted optional length that was not written.
+func (b *archiveCaptureBudget) releaseOptional(n int64) {
+	if b == nil || n <= 0 {
+		return
+	}
+	b.mu.Lock()
+	b.optional = max(b.optional-n, 0)
+	b.mu.Unlock()
 }
 
 func newArchiveCaptureBudget(root string) (*archiveCaptureBudget, error) {
