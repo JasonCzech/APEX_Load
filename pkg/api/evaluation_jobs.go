@@ -201,6 +201,7 @@ func (s *Server) handleGetEvaluationJob(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, evaluationJobResponse(job))
 }
 
+// OpenAPI-Responses: 409
 func (s *Server) handleCreateEvaluationJob(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.evaluationJobStore(w)
 	if !ok {

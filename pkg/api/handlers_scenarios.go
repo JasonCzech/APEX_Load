@@ -56,6 +56,21 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 	var scenario *StoredScenario
 	var committed *storage.ScenarioAuthoringSnapshot
 	var err error
+	if receipt != nil && receipt.adoptsExisting() {
+		// A resumed attempt whose scenario committed replays it before the
+		// create runs again: a second create would provision the request's
+		// runtime credentials again, which the first attempt's pending
+		// provisioning journal refuses.
+		exists, readErr := s.durableScenarioExists(receipt.resourceID())
+		if readErr != nil {
+			writeAuthoringIdempotencyError(w, http.StatusServiceUnavailable, "idempotency_unavailable", "the original scenario could not be read; retry later")
+			return
+		}
+		if exists {
+			s.replayScenarioCreate(w, r, receipt)
+			return
+		}
+	}
 	if receipt != nil {
 		// The receipt fixes the scenario ID, so a retry after a lost response
 		// finds the scenario this request created instead of making another.
@@ -431,6 +446,10 @@ func (s *Server) handleDeleteScenario(w http.ResponseWriter, r *http.Request) {
 	if err != nil && !errors.Is(err, storage.ErrScenarioAuthoringOutcomeUnknown) && writeScenarioWriterError(w, err) {
 		restoreReceipts()
 		return
+	}
+	if err != nil {
+		// The delete may have committed: keep its tombstone current.
+		s.retombstoneAuthoringReceipts("scenario", id)
 	}
 	if err != nil && writeScenarioWriterError(w, err) {
 		return

@@ -82,6 +82,7 @@ type AuthoringMutationReceiptStore interface {
 	ReleaseAuthoringMutationReceiptLease(id, ownerToken string) (bool, error)
 	TombstoneAuthoringMutationReceipts(resourceType, resourceID, reason string, now time.Time) error
 	RestoreAuthoringMutationReceiptTombstones(resourceType, resourceID, reason string, at time.Time) error
+	RenewAuthoringMutationReceiptTombstones(resourceType, resourceID, reason string, now time.Time) error
 }
 
 var _ AuthoringMutationReceiptStore = (*SQLiteStore)(nil)
@@ -267,6 +268,32 @@ func (s *SQLiteStore) RestoreAuthoringMutationReceiptTombstones(resourceType, re
 		time.Now().UTC(), resourceType, resourceID, at.UTC(), strings.TrimSpace(reason), resourceID)
 	if err != nil {
 		return fmt.Errorf("restore authoring receipt tombstones: %w", err)
+	}
+	return nil
+}
+
+// RenewAuthoringMutationReceiptTombstones tombstones every receipt of a
+// resource whose delete committed, at a fresh time, whether or not it is
+// already tombstoned. A refused delete's restore matches only its own
+// tombstone time, so once this runs that restore matches nothing; one already
+// waiting on the row re-checks its condition after this commits (PostgreSQL
+// READ COMMITTED) and skips it too, and one that ran before is overwritten.
+func (s *SQLiteStore) RenewAuthoringMutationReceiptTombstones(resourceType, resourceID, reason string, now time.Time) error {
+	return renewAuthoringMutationReceiptTombstones(s.db, resourceType, resourceID, reason, now)
+}
+
+func renewAuthoringMutationReceiptTombstones(db interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}, resourceType, resourceID, reason string, now time.Time) error {
+	resourceType, resourceID = strings.TrimSpace(resourceType), strings.TrimSpace(resourceID)
+	if resourceType == "" || resourceID == "" {
+		return errors.New("authoring receipt tombstone renewal requires resource type and id")
+	}
+	_, err := db.Exec(`UPDATE authoring_mutation_receipts SET tombstoned_at = ?, tombstone_reason = ?, owner_token = '', lease_expires_at = NULL, updated_at = ?
+		WHERE resource_type = ? AND resource_id = ?`,
+		now.UTC(), strings.TrimSpace(reason), now.UTC(), resourceType, resourceID)
+	if err != nil {
+		return fmt.Errorf("renew authoring receipt tombstones: %w", err)
 	}
 	return nil
 }

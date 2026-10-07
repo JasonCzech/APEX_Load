@@ -1495,3 +1495,76 @@ func TestRuntimeCredentialRecoveryRejectsSameIDWithoutMatchingOwnership(t *testi
 		t.Fatalf("collision recovery journals = %#v, %v", attempts, err)
 	}
 }
+
+// A scenario saved again after its credential create committed no longer
+// matches the journal's fingerprint, but recovery keeps the credentials it
+// still references; an attempt whose names it does not reference is undone.
+func TestScenarioCredentialRecoveryKeepsCredentialsAnEditedScenarioStillUses(t *testing.T) {
+	records, err := storage.NewSQLiteStore(t.TempDir() + "/apexload.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = records.Close() })
+	secrets := &runtimeProjectionSecretStore{values: make(map[string]string), attemptStore: records}
+	server := NewServer(ServerConfig{Store: records, MaxConcurrent: 2, ProjectSecretStore: secrets})
+	t.Cleanup(server.runner.beginShutdown)
+	script := httpScript("edited-scenario-runtime-script", "Edited scenario runtime")
+	script.Actions[0].Target = "/resource?token={{env.API_TOKEN}}"
+	if _, err := server.runner.StoreScriptDurable(script); err != nil {
+		t.Fatal(err)
+	}
+	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
+		Name: "Edited scenario", Duration: "1m",
+		RuntimeSettings: &RuntimeSettingsOverride{Env: map[string]string{"API_TOKEN": "edited-scenario-secret"}},
+		Groups:          []CreateGroupEntry{{ScriptID: script.ID, VUsers: 1}},
+		creationActor:   testCreationActor{Type: "user", Subject: "scenario-editor", DisplayName: "Scenario Editor"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := runtimeOverrideSecretName(scenario.ID, -1, "env.API_TOKEN")
+	key := storage.DefaultProjectID + "/" + name
+	secrets.mu.Lock()
+	creator := secrets.creators[key]
+	secrets.mu.Unlock()
+	if creator == "" {
+		t.Fatal("fixture: the credential was not created")
+	}
+	journal := func(id string, names ...string) *storage.RuntimeSecretProvisioningAttempt {
+		record := &storage.RuntimeSecretProvisioningAttempt{
+			ID: id, ProjectID: storage.DefaultProjectID, TestID: scenario.ID, ResourceType: "scenario",
+			CommitFingerprint: "sha256:the-scenario-was-saved-again", Actor: creator, SecretNames: names,
+			LeaseExpiresAt: time.Now().Add(-time.Minute), CreatedAt: time.Now().Add(-2 * time.Minute),
+		}
+		if created, err := records.CreateRuntimeSecretProvisioningAttempt(record); err != nil || !created {
+			t.Fatalf("CreateRuntimeSecretProvisioningAttempt = %v, %v", created, err)
+		}
+		return record
+	}
+	if err := server.runner.reconcileRuntimeOverrideSecretAttempt(journal("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name)); err != nil {
+		t.Fatal(err)
+	}
+	secrets.mu.Lock()
+	_, retained := secrets.values[key]
+	rollbacks := secrets.rollbackCalls
+	secrets.mu.Unlock()
+	if !retained || rollbacks != 0 {
+		t.Fatalf("a credential the scenario still references was rolled back: retained=%v rollback_calls=%d", retained, rollbacks)
+	}
+	if attempts, err := records.ListRuntimeSecretProvisioningAttempts(); err != nil || len(attempts) != 0 {
+		t.Fatalf("the kept attempt's journal was not completed: %#v, %v", attempts, err)
+	}
+	unused := runtimeOverrideSecretName(scenario.ID, -1, "env.UNUSED")
+	secrets.mu.Lock()
+	secrets.values[storage.DefaultProjectID+"/"+unused], secrets.creators[storage.DefaultProjectID+"/"+unused] = "orphan", creator
+	secrets.mu.Unlock()
+	if err := server.runner.reconcileRuntimeOverrideSecretAttempt(journal("cccccccc-cccc-4ccc-8ccc-cccccccccccc", unused)); err != nil {
+		t.Fatal(err)
+	}
+	secrets.mu.Lock()
+	_, orphanRetained := secrets.values[storage.DefaultProjectID+"/"+unused]
+	secrets.mu.Unlock()
+	if orphanRetained {
+		t.Fatal("a credential no stored scenario references was kept")
+	}
+}

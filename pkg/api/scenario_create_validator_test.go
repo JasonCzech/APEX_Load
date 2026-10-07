@@ -218,3 +218,22 @@ func TestDeleteOfAnUnknownScenarioIsNotFoundBeforeItsValidator(t *testing.T) {
 		t.Fatalf("unknown scenario with a malformed If-Match: %d %s", response.Code, response.Body.String())
 	}
 }
+
+// A lost-ack create carrying runtime credentials is adopted on retry too:
+// the retry replays the committed scenario instead of provisioning the
+// credentials again against the first attempt's pending journal.
+func TestScenarioCreateWithCredentialsAndALostCommitAckIsAdoptedOnRetry(t *testing.T) {
+	server, store, _, _ := newScenarioPolicyAvailabilityFixture(t)
+	body := scenarioSaveRequest("Lost ack credentials", 1)
+	body.RuntimeSettings = &RuntimeSettingsOverride{Env: map[string]string{"API_TOKEN": "lost-ack-runtime-value"}}
+	server.runner.scenarioStore = &scenarioCreateLostAckStore{SQLiteStore: store}
+	first := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
+	server.runner.scenarioStore = store
+	if first.Code != http.StatusServiceUnavailable {
+		t.Fatalf("lost acknowledgement: %d %s", first.Code, first.Body.String())
+	}
+	retry := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
+	if retry.Code != http.StatusCreated || retry.Header().Get("Idempotent-Replayed") != "true" || countScenariosNamed(server, "Lost ack credentials") != 1 {
+		t.Fatalf("retry after a lost acknowledgement: %d %s", retry.Code, retry.Body.String())
+	}
+}

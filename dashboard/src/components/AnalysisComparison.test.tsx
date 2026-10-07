@@ -318,3 +318,23 @@ it('restores a saved histogram statistic and widens buckets to whole source wind
   expect(onGrid(executed!.from)).toBe(0)
   expect(onGrid(executed!.to)).toBe(0)
 })
+
+it('aligns the range to the window grid of the series its identity filters select', async () => {
+  let executed: { from: string; to: string; left: { host?: string } } | undefined
+  // Host a's windows start two minutes past each five-minute mark, host b's four minutes past.
+  const hostB = Date.parse('2026-01-01T00:04:00Z')
+  const series = (host: string, iso: string) => ({ stats: { kind: 'summary', metric: 'latency', min_time: iso, identity: { source: 's', host, service: '', dimensions: {} } } })
+  const summaryDataset: AnalysisImport = { ...dataset, mapping: { version: 2, timestamp: ['ts'], timestamp_encoding: 'unix_s', timezone: 'UTC', measures: [{ value: ['p90'], name: 'latency', kind: 'summary', unit: 'ms', statistic: 'p90', window_seconds: 300 }] }, partition_manifest: { partitions: [series('a', '2026-01-01T00:02:00Z'), series('b', '2026-01-01T00:04:00Z')] } } as AnalysisImport
+  const p90 = { ...saved, definition: { ...definition, left: { dataset_id: 'a', host: 'b', metric: 'latency', aggregation: 'p90' }, mode: 'overlay', max_lag_seconds: 0 } }
+  request.mockImplementation(async (path: string, opts?: RequestInit) => {
+    if (path.startsWith('/analysis/compare?')) { executed = JSON.parse(String(opts?.body)); return { request: executed, left: [], right: [] } }
+    return [p90]
+  })
+  await act(async () => root.render(<AnalysisComparison importedIdentityVersion={2} projectId="p" dataset={summaryDataset} datasets={[summaryDataset, { ...dataset, id: 'b', name: 'B' }]} canEdit onAssociated={() => {}} />))
+  await change('Saved comparison', 'saved')
+  await act(async () => [...container.querySelectorAll('button')].find(x => x.textContent === 'Analyze comparison')!.click())
+  expect(executed?.left.host).toBe('b')
+  const onGrid = (iso: string) => (((Date.parse(iso) - hostB) % 300000) + 300000) % 300000
+  expect(onGrid(executed!.from)).toBe(0)
+  expect(onGrid(executed!.to)).toBe(0)
+})

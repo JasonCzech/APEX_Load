@@ -561,6 +561,7 @@ func (s *Server) handleGetAnalysisPolicy(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, in)
 }
 
+// OpenAPI-Responses: 409, 500
 func (s *Server) handleDeleteAnalysisPolicy(w http.ResponseWriter, r *http.Request) {
 	store, project, ok := s.analysisPolicyStore(w, r)
 	if !ok {
@@ -602,6 +603,8 @@ func (s *Server) handleUpdateAnalysisPolicy(w http.ResponseWriter, r *http.Reque
 // readAnalysisPolicySave reads, validates and saves a policy: a new one when
 // id is empty, otherwise the next revision of id. It writes every failure
 // and leaves the success response to the caller.
+//
+// OpenAPI-Responses: 409, 500
 func (s *Server) readAnalysisPolicySave(w http.ResponseWriter, r *http.Request, id string) (*storage.AnalysisDefinition, bool) {
 	store, project, ok := s.analysisPolicyStore(w, r)
 	if !ok {

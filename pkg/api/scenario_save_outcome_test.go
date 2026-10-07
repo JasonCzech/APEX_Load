@@ -123,11 +123,20 @@ func TestScenarioRuntimeCommitFingerprintSurvivesStorage(t *testing.T) {
 	if _, err := server.runner.StoreScriptDurable(script); err != nil {
 		t.Fatal(err)
 	}
+	exerciseScenarioRuntimeCommitFingerprint(t, server, store, script.ID)
+}
+
+// exerciseScenarioRuntimeCommitFingerprint creates a scenario with typed
+// settings and a group SLA no 4-byte float holds exactly, then recomputes
+// the fingerprint from what the store returns.
+func exerciseScenarioRuntimeCommitFingerprint(t *testing.T, server *Server, store *storage.SQLiteStore, scriptID string) {
+	t.Helper()
 	recorder := &fingerprintAtCommitStore{SQLiteStore: store}
 	server.runner.scenarioStore = recorder
 	thinkTime := &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 250, MinPercent: 50, MaxPercent: 150}
+	sla := 250.1
 	created, _, err := server.runner.CreateScenarioAuthoringDurable("", CreateScenarioRequest{
-		Name: "Fingerprint", Duration: "1m", Groups: []CreateGroupEntry{{ScriptID: script.ID, VUsers: 1, RuntimeSettings: &RuntimeSettingsOverride{ThinkTime: thinkTime}}},
+		Name: "Fingerprint", Duration: "1m", Groups: []CreateGroupEntry{{ScriptID: scriptID, VUsers: 1, RuntimeSettings: &RuntimeSettingsOverride{ThinkTime: thinkTime}, TransactionResponseTimeSLAMs: &sla}},
 		RuntimeSettings: &RuntimeSettingsOverride{ThinkTime: thinkTime},
 	})
 	server.runner.scenarioStore = store
@@ -138,7 +147,10 @@ func TestScenarioRuntimeCommitFingerprintSurvivesStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(scripts) != 1 || scripts[0].TransactionResponseTimeSLAMs == nil {
+		t.Fatalf("stored groups %+v", scripts)
+	}
 	if recorder.committed == "" || scenarioRuntimeCommitFingerprint(stored, scripts) != recorder.committed {
-		t.Fatalf("recovered fingerprint %s, committed %s", scenarioRuntimeCommitFingerprint(stored, scripts), recorder.committed)
+		t.Fatalf("recovered fingerprint %s, committed %s (stored SLA %v)", scenarioRuntimeCommitFingerprint(stored, scripts), recorder.committed, *scripts[0].TransactionResponseTimeSLAMs)
 	}
 }

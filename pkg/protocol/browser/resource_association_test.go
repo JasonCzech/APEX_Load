@@ -117,6 +117,9 @@ func TestCDPJoinAssociatesDocumentsCacheAndInitiators(t *testing.T) {
 	}
 	gen := b.evidence.generation
 	css := b.associateResourceEvidence(associationEvidence(t, b, origin+10.4), join(main, "GET", "http://a.test/app.css", 1), gen)
+	if css.Version != protocol.BrowserResourceEvidenceVersion {
+		t.Fatalf("an associated record kept version %d", css.Version)
+	}
 	if css.DocumentID != mainDoc || css.DocumentAssociation != "cdp_loader_join" || css.DocumentOffsetMS == nil || math.Abs(*css.DocumentOffsetMS-10.4) > 1e-3 || css.Cache == nil || !*css.Cache || css.InitiatorType != "parser" || css.InitiatorOrigin != "http://a.test" || css.IdentityUnavailableReason != "" {
 		t.Fatalf("stylesheet %+v", css)
 	}
@@ -485,6 +488,10 @@ func TestLoaderReportsNeedAContextCreatedAfterTheBinding(t *testing.T) {
 	state := newCDPEvidencePage()
 	commitFrame(b, state, "F", "L1")
 	createContext(b, state, 1, "F")
+	reportDocument(b, state, 1, documentToken(1))
+	if _, reported := state.loaderTokens["L1"]; reported {
+		t.Fatal("a report before the binding was installed proved a document")
+	}
 	bindingInstalled(b, state)
 	reportDocument(b, state, 1, documentToken(1))
 	if _, reported := state.loaderTokens["L1"]; reported {
@@ -501,6 +508,93 @@ func TestLoaderReportsNeedAContextCreatedAfterTheBinding(t *testing.T) {
 	reportDocument(b, state, 3, documentToken(3))
 	if state.loaderTokens["L2"] != documentToken(3) {
 		t.Fatalf("a context created after the binding was not admitted: %v", state.loaderTokens)
+	}
+}
+
+// A loader's token proves only a document of the loader's own frame: a
+// token whose document began in another frame leaves the request unproven.
+func TestLoaderTokenFromAnotherFrameProvesNothing(t *testing.T) {
+	b, state, page, main, child := associationBrowser(t)
+	origin := 1_800_000_000_000.0
+	cdpRequest(b, state, "R1", "L1", "F", "GET", "http://a.test/app.js", origin+5, nil)
+	commitFrame(b, state, "F", "L1")
+	createContext(b, state, 1, "F")
+	reportDocument(b, state, 1, documentToken(1))
+	beginDocument(b, child, page, origin, documentToken(1))
+	join := resourceJoin{page: page, frame: main, key: resourceKey("GET", "http://a.test/app.js"), ordinal: 1}
+	got := b.associateResourceEvidence(associationEvidence(t, b, origin+5), join, b.evidence.generation)
+	if got.DocumentID != "" || got.IdentityUnavailableReason != "document_not_observed" {
+		t.Fatalf("a token from another frame associated a document: %+v", got)
+	}
+}
+
+// handlerCDPSession keeps the evidence session's handlers and lets a test
+// deliver events while a command is in flight, as Playwright does.
+type handlerCDPSession struct {
+	playwright.CDPSession
+	handlers map[string]func(map[string]any)
+	during   map[string]func()
+}
+
+func (s *handlerCDPSession) On(event string, handler interface{}) {
+	s.handlers[event] = handler.(func(map[string]any))
+}
+
+func (s *handlerCDPSession) Send(method string, _ map[string]interface{}) (interface{}, error) {
+	if during := s.during[method]; during != nil {
+		during()
+	}
+	return nil, nil
+}
+
+func (s *handlerCDPSession) Detach() error { return nil }
+
+func (s *handlerCDPSession) emit(event string, params map[string]any) { s.handlers[event](params) }
+
+// Contexts the session reports before the addBinding reply cannot prove a
+// document, however the install interleaves with them; later ones can.
+func TestInstallAdmitsOnlyContextsCreatedAfterTheBindingReply(t *testing.T) {
+	session := &handlerCDPSession{handlers: map[string]func(map[string]any){}}
+	b := &Browser{engine: "chromium", documentMetricsEnabled: true, createCDPSession: func(playwright.BrowserContext, playwright.Page) (playwright.CDPSession, error) { return session, nil }}
+	if err := b.resetBrowserEvidence("test"); err != nil {
+		t.Fatal(err)
+	}
+	context := func(id int) map[string]any {
+		return map[string]any{"context": map[string]any{"id": float64(id), "auxData": map[string]any{"frameId": "F", "isDefault": true, "type": "default"}}}
+	}
+	report := func(id, token int) {
+		session.emit("Runtime.bindingCalled", map[string]any{"name": b.evidence.loaderBinding, "payload": documentToken(token), "executionContextId": float64(id)})
+	}
+	session.during = map[string]func(){
+		// Runtime.enable replays the existing context.
+		"Runtime.enable": func() {
+			session.emit("Page.frameNavigated", map[string]any{"frame": map[string]any{"id": "F", "loaderId": "L1"}})
+			session.emit("Runtime.executionContextCreated", context(1))
+		},
+		// A document committing while the binding is being added.
+		"Runtime.addBinding": func() {
+			report(1, 1)
+			session.emit("Page.frameNavigated", map[string]any{"frame": map[string]any{"id": "F", "loaderId": "L2"}})
+			session.emit("Runtime.executionContextCreated", context(2))
+			report(2, 2)
+		},
+	}
+	page := &browserFinalityCurrentPage{}
+	b.installResourceAssociation(&cdpTestContext{}, page, b.evidence.generation)
+	state := b.evidence.cdpPages[page]
+	if state == nil {
+		t.Fatal("the evidence session was not kept")
+	}
+	report(1, 1)
+	report(2, 2)
+	if len(state.loaderTokens) != 0 {
+		t.Fatalf("a context from before the binding reply proved a document: %v", state.loaderTokens)
+	}
+	session.emit("Page.frameNavigated", map[string]any{"frame": map[string]any{"id": "F", "loaderId": "L3"}})
+	session.emit("Runtime.executionContextCreated", context(3))
+	report(3, 3)
+	if state.loaderTokens["L3"] != documentToken(3) || len(state.loaderTokens) != 1 {
+		t.Fatalf("a context created after the binding reply was not admitted: %v", state.loaderTokens)
 	}
 }
 

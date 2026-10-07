@@ -101,17 +101,21 @@ export default function AnalysisComparison({ projectId, dataset, datasets, canEd
   const rightAggregations = target && target !== 'run' ? analysisMetricAggregations(datasets.find(item => item.id === target)?.mapping, rightMetric) : { options: defaultAnalysisAggregations }
   const rightDataset = target && target !== 'run' ? datasets.find(item => item.id === target) : undefined
   const windowSides = [
-    { windowSeconds: leftAggregations.windowSeconds?.(aggregation), dataset: dataset as AnalysisImport | undefined, metric: leftMetric },
-    { windowSeconds: rightAggregations.windowSeconds?.(rightAggregation), dataset: rightDataset, metric: rightMetric },
-  ].flatMap(side => side.windowSeconds ? [{ windowSeconds: side.windowSeconds, anchorMs: analysisWindowAnchor(side.dataset, side.metric, side.windowSeconds) }] : [])
+    { windowSeconds: leftAggregations.windowSeconds?.(aggregation), dataset: dataset as AnalysisImport | undefined, metric: leftMetric, filters: leftFilters },
+    { windowSeconds: rightAggregations.windowSeconds?.(rightAggregation), dataset: rightDataset, metric: rightMetric, filters: rightFilters },
+  ].flatMap(side => side.windowSeconds ? [{ ...side, windowSeconds: side.windowSeconds }] : [])
   // One bucket must cover whole source windows on both sides, starting where both grids start.
   const sourceWindow = analysisCommonWindow(windowSides.map(side => side.windowSeconds))
   const effectiveBucket = sourceWindow ? Math.ceil(bucket / sourceWindow) * sourceWindow : bucket
   const definition = (): Definition => {
-    const range = analysisWindowAlignedRange(Date.parse(`${from}Z`), Date.parse(`${to}Z`), sourceWindow, sourceWindow ? analysisCommonWindowAnchor(windowSides, sourceWindow) : undefined)
+    const leftSelection = buildAnalysisIdentitySelection(leftFilters)
+    const rightSelection = target === 'run' ? undefined : buildAnalysisIdentitySelection(rightFilters)
+    // Each side's grid is read from the series its own filters select.
+    const anchors = windowSides.map(side => ({ windowSeconds: side.windowSeconds, anchorMs: analysisWindowAnchor(side.dataset, side.metric, side.windowSeconds, buildAnalysisIdentitySelection(side.filters)) }))
+    const range = analysisWindowAlignedRange(Date.parse(`${from}Z`), Date.parse(`${to}Z`), sourceWindow, sourceWindow ? analysisCommonWindowAnchor(anchors, sourceWindow) : undefined)
     return {
-      left: { dataset_id: dataset.id, ...buildAnalysisIdentitySelection(leftFilters), metric: leftMetric, aggregation },
-      right: target === 'run' ? { run_id: runId, source_id: sourceId, transaction, host, service, dimensions: JSON.parse(dimensions), ...(!sourceId ? { protocol, group } : {}), metric: sourceId ? rightMetric : 'transaction.duration', aggregation: rightAggregation } : { dataset_id: target, ...buildAnalysisIdentitySelection(rightFilters), metric: rightMetric, aggregation: rightAggregation },
+      left: { dataset_id: dataset.id, ...leftSelection, metric: leftMetric, aggregation },
+      right: target === 'run' ? { run_id: runId, source_id: sourceId, transaction, host, service, dimensions: JSON.parse(dimensions), ...(!sourceId ? { protocol, group } : {}), metric: sourceId ? rightMetric : 'transaction.duration', aggregation: rightAggregation } : { dataset_id: target, ...rightSelection, metric: rightMetric, aggregation: rightAggregation },
       from: new Date(range.fromMs).toISOString(), to: new Date(range.toMs).toISOString(), bucket_seconds: effectiveBucket, max_lag_seconds: mode === 'correlation' ? Math.ceil(lag / effectiveBucket) * effectiveBucket : 0, mode,
     }
   }

@@ -1,9 +1,12 @@
 package browser
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -392,6 +395,7 @@ func shortenReadmissionBackoff(t *testing.T, backoff time.Duration) {
 func TestRefusedContextRetriesAdmissionAtIterationBoundaries(t *testing.T) {
 	budget := useTestEvidenceBudget(t, 64<<30, func() (int64, error) { return 2 << 30, nil }, 1<<30)
 	shortenReadmissionBackoff(t, 60*time.Millisecond)
+	logs := captureEvidenceLogs(t)
 	b := &Browser{}
 	if err := b.openBrowserContext(); err != nil {
 		t.Fatal(err)
@@ -416,8 +420,8 @@ func TestRefusedContextRetriesAdmissionAtIterationBoundaries(t *testing.T) {
 	b.mu.Lock()
 	logged := b.admissionRefusalLogged
 	b.mu.Unlock()
-	if !logged {
-		t.Fatal("the refusal run was not logged")
+	if !logged || logs.count(refusalLogMessage) != 1 {
+		t.Fatalf("a run of 3 refusals logged %d lines, want 1", logs.count(refusalLogMessage))
 	}
 	// A cancelled boundary does not wait out the backoff or try again.
 	shortenReadmissionBackoff(t, time.Hour)
@@ -433,6 +437,55 @@ func TestRefusedContextRetriesAdmissionAtIterationBoundaries(t *testing.T) {
 	if err := (&Browser{}).BeginIteration(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// A context admitted at the boundary that cannot open fails the iteration
+// setup and gives its admission back.
+func TestAdmittedContextThatCannotOpenFailsTheIterationSetup(t *testing.T) {
+	budget := useTestEvidenceBudget(t, 64<<30, func() (int64, error) { return 100 << 20, nil }, 1<<30)
+	shortenReadmissionBackoff(t, 0)
+	// A previous recording whose retirement was never proven blocks the
+	// next HAR writer before any browser is launched.
+	b := &Browser{harCapturePolicy: HARCaptureAlways, harOwner: &harCaptureOwner{}}
+	b.resourceLimit = resourceLimitAdmission
+	b.admissionRefusalLogged = true
+	if err := b.BeginIteration(context.Background()); !errors.Is(err, errHAROwnershipUnproven) {
+		t.Fatalf("BeginIteration = %v, want the open failure", err)
+	}
+	budget.mu.Lock()
+	_, held := budget.live[b]
+	budget.mu.Unlock()
+	if held {
+		t.Fatal("a context that failed to open kept its admission")
+	}
+}
+
+const refusalLogMessage = "browser context refused to protect the generator"
+
+type evidenceLogCapture struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (c *evidenceLogCapture) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.buf.Write(p)
+}
+
+func (c *evidenceLogCapture) count(message string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return strings.Count(c.buf.String(), message)
+}
+
+func captureEvidenceLogs(t *testing.T) *evidenceLogCapture {
+	t.Helper()
+	capture := &evidenceLogCapture{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(capture, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return capture
 }
 
 // Without a usable measurement the live-context floor still applies.

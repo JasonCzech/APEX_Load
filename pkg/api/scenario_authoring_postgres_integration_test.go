@@ -137,3 +137,10 @@ func TestPostgresScenarioStrictPolicyFlipIsFencedInTransaction(t *testing.T) {
 		t.Fatalf("fenced writes mutated the scenario: %v", err)
 	}
 }
+
+// PostgreSQL returns a group SLA from its 4-byte REAL column; the commit
+// fingerprint recovery recomputes from it still matches.
+func TestPostgresScenarioRuntimeCommitFingerprintSurvivesStorage(t *testing.T) {
+	owner, _, ownerStore, _, _, request := newPostgresScenarioAuthoringReplicas(t)
+	exerciseScenarioRuntimeCommitFingerprint(t, owner, ownerStore.SQLiteStore, request("unused", 1).Groups[0].ScriptID)
+}

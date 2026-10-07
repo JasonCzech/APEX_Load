@@ -210,3 +210,53 @@ func exerciseAuthoringReceiptTombstoneRestore(t *testing.T, store *SQLiteStore) 
 func TestAuthoringReceiptTombstoneRestore(t *testing.T) {
 	exerciseAuthoringReceiptTombstoneRestore(t, newAuthoringReceiptTestStore(t))
 }
+
+// exerciseAuthoringReceiptTombstoneRenewal replays a refused delete racing
+// one that commits: whether the refused delete's restore runs before the
+// winner commits or after the winner renewed its tombstone, the deleted
+// resource's create key stays tombstoned.
+func exerciseAuthoringReceiptTombstoneRenewal(t *testing.T, store *SQLiteStore) {
+	if err := store.SaveScript(&dsl.Script{ID: "derived-script-id", Name: "Derived", Version: "1.0.0", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "request", Type: "request", Method: "GET", Target: "/"}}}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	claim, err := store.ClaimAuthoringMutationReceipt(authoringReceiptInput("owner-1"), now, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteAuthoringMutationReceipt(claim.Receipt.ID, "owner-1", "rev-1", now); err != nil {
+		t.Fatal(err)
+	}
+	loser := now.Add(time.Second)
+	if err := store.TombstoneAuthoringMutationReceipts("script", "derived-script-id", "deleted", loser); err != nil {
+		t.Fatal(err)
+	}
+	// The winner's own tombstone finds the row already tombstoned; the loser
+	// is refused and restores while the resource still exists.
+	if err := store.TombstoneAuthoringMutationReceipts("script", "derived-script-id", "deleted", loser.Add(time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RestoreAuthoringMutationReceiptTombstones("script", "derived-script-id", "deleted", loser); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteScript("derived-script-id"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RenewAuthoringMutationReceiptTombstones("script", "derived-script-id", "deleted", loser.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimAuthoringMutationReceipt(authoringReceiptInput("owner-2"), now, time.Minute); !errors.Is(err, ErrAuthoringReceiptTombstoned) {
+		t.Fatalf("the winner's renewal did not tombstone the deleted resource: %v", err)
+	}
+	// A restore keyed on the loser's time no longer matches the renewed row.
+	if err := store.RestoreAuthoringMutationReceiptTombstones("script", "derived-script-id", "deleted", loser); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimAuthoringMutationReceipt(authoringReceiptInput("owner-3"), now, time.Minute); !errors.Is(err, ErrAuthoringReceiptTombstoned) {
+		t.Fatalf("a stale restore withdrew the renewed tombstone: %v", err)
+	}
+}
+
+func TestAuthoringReceiptTombstoneRenewal(t *testing.T) {
+	exerciseAuthoringReceiptTombstoneRenewal(t, newAuthoringReceiptTestStore(t))
+}

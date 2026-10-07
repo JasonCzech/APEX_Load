@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -210,10 +211,17 @@ func (tr *TestRunner) reconcileRuntimeOverrideSecretAttempt(record *storage.Runt
 			tr.mu.RLock()
 			projectID, singleProject := tr.scenarioProjectIDFromScriptsLocked(scripts)
 			tr.mu.RUnlock()
-			if singleProject &&
-				normalizeProjectID(projectID) == normalizeProjectID(record.ProjectID) &&
-				scenarioRuntimeCommitFingerprint(scenario, scripts) == strings.TrimSpace(record.CommitFingerprint) {
-				return tr.completeRuntimeOverrideSecretAttempt(attempt)
+			if singleProject && normalizeProjectID(projectID) == normalizeProjectID(record.ProjectID) {
+				if scenarioRuntimeCommitFingerprint(scenario, scripts) == strings.TrimSpace(record.CommitFingerprint) {
+					return tr.completeRuntimeOverrideSecretAttempt(attempt)
+				}
+				// A scenario saved again since (an edit echoing the masked
+				// values inside the journal's lease) no longer matches the
+				// fingerprint but may still use these credentials; rolling
+				// them back would leave its references dangling.
+				if scenarioReferencesRuntimeSecrets(scenario, scripts, record.SecretNames) {
+					return tr.completeRuntimeOverrideSecretAttempt(attempt)
+				}
 			}
 		}
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -300,4 +308,22 @@ func (tr *TestRunner) waitRuntimeOverrideSecretAttemptReconciliation(ctx context
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// scenarioReferencesRuntimeSecrets reports whether the stored scenario still
+// references any of the named governed runtime credentials.
+func scenarioReferencesRuntimeSecrets(scenario *storage.Scenario, scripts []storage.ScenarioScript, names []string) bool {
+	payload, err := json.Marshal(struct {
+		Scenario *storage.Scenario
+		Scripts  []storage.ScenarioScript
+	}{scenario, scripts})
+	if err != nil {
+		return false
+	}
+	for _, name := range names {
+		if name = strings.TrimSpace(name); name != "" && strings.Contains(string(payload), "{{secret."+name+"}}") {
+			return true
+		}
+	}
+	return false
 }

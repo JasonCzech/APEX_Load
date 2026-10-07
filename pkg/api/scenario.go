@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -567,6 +568,15 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 	if scenario == nil {
 		return ""
 	}
+	// PostgreSQL keeps a group's SLA in a 4-byte REAL, so recovery reads back
+	// the nearest float32; both sides hash that value.
+	canonicalScripts := slices.Clone(scripts)
+	for i := range canonicalScripts {
+		if sla := canonicalScripts[i].TransactionResponseTimeSLAMs; sla != nil {
+			stored := float64(float32(*sla))
+			canonicalScripts[i].TransactionResponseTimeSLAMs = &stored
+		}
+	}
 	return hashCanonical(canonicalJSONValue(struct {
 		ID               string
 		RefKey           string
@@ -598,7 +608,7 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 		GoalConfig:       scenario.GoalConfig,
 		TrafficProfile:   scenario.TrafficProfile,
 		RuntimeSettings:  scenario.RuntimeSettings,
-		Scripts:          scripts,
+		Scripts:          canonicalScripts,
 	}))
 }
 

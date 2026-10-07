@@ -164,3 +164,44 @@ it('starts buckets on the metric\'s own window grid and honours an explicit buck
   // 700 seconds widen to whole 300-second windows.
   expect(body.bucket_seconds).toBe(900)
 })
+
+it('reads the window grid of the series the identity filters select', async () => {
+  // Host a's windows start two minutes past each five-minute mark, host b's four minutes past.
+  const series = (host: string, iso: string) => ({ stats: { kind: 'histogram', metric: 'latency', min_time: iso, identity: { source: 's', host, service: '', dimensions: {} } } })
+  const ready = { ...draft, state: 'ready', partition_manifest: { partitions: [series('a', '2026-01-01T00:02:00Z'), series('b', '2026-01-01T00:04:00Z')] }, mapping: { ...draft.mapping, version: 2, measures: [
+    { value: ['p95'], name: 'latency', kind: 'histogram', unit: 'ms', histogram: { bounds: ['10', '+Inf'], bucket_counts: 'per_bin', temporality: 'delta', window_seconds: 300, count_columns: [['b10']] } },
+  ] } }
+  await openDraft(caps, ready)
+  const query = [...container.querySelectorAll('fieldset')].find(f => f.querySelector('legend')?.textContent === 'Query dataset')!
+  const dates = query.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]')
+  await choose(dates[0], '2026-01-01T00:10:00')
+  await choose(dates[1], '2026-01-01T01:00:00')
+  // Without a filter the two grids disagree and the range stays as entered.
+  await act(async () => button('Show series').click())
+  const last = () => { const calls = request.mock.calls.filter(([path]) => String(path).endsWith('/series')); return JSON.parse(String(calls[calls.length - 1][1].body)) }
+  expect(last()).toMatchObject({ from: '2026-01-01T00:10:00.000Z', to: '2026-01-01T01:00:00.000Z' })
+  const host = [...query.querySelectorAll('fieldset[aria-label="Dataset identity filters"] label')].find(l => l.textContent?.startsWith('Host'))!.querySelector('input')!
+  await choose(host, 'b')
+  await act(async () => button('Show series').click())
+  expect(last()).toMatchObject({ host: 'b', from: '2026-01-01T00:09:00.000Z', to: '2026-01-01T01:04:00.000Z' })
+})
+
+it('passes a cumulative histogram\'s explicit bucket through and refuses one out of range', async () => {
+  const ready = { ...draft, state: 'ready', mapping: { ...draft.mapping, measures: [
+    { value: ['p95'], name: 'latency', kind: 'histogram', unit: 'ms', histogram: { bounds: ['10', '+Inf'], bucket_counts: 'cumulative', temporality: 'cumulative', count_columns: [['b10']] } },
+  ] } }
+  await openDraft(caps, ready)
+  const query = [...container.querySelectorAll('fieldset')].find(f => f.querySelector('legend')?.textContent === 'Query dataset')!
+  const dates = query.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]')
+  await choose(dates[0], '2026-01-01T00:00:00')
+  await choose(dates[1], '2026-01-01T01:00:00')
+  const bucket = labelled<HTMLInputElement>('Bucket (seconds, optional)')!
+  await choose(bucket, '45')
+  await act(async () => button('Show series').click())
+  const seriesCalls = () => request.mock.calls.filter(([path]) => String(path).endsWith('/series'))
+  expect(JSON.parse(String(seriesCalls()[0][1].body)).bucket_seconds).toBe(45)
+  await choose(bucket, '86401')
+  await act(async () => button('Show series').click())
+  expect(seriesCalls()).toHaveLength(1)
+  expect(container.textContent).toContain('The bucket must be 1-86400 whole seconds.')
+})

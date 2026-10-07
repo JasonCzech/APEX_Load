@@ -277,8 +277,9 @@ func (s *Server) tombstoneAuthoringReceipts(resourceType, resourceID string) (fu
 	}
 	return func() {
 		// The store restores only while the resource still exists, in the
-		// same statement, so a refused delete never strips the tombstone of
-		// a resource a concurrent delete removed.
+		// same statement, and only its own tombstone time; the delete that
+		// wins renews its tombstone at a fresh time once it commits, so a
+		// refused delete racing it cannot leave the resource untombstoned.
 		if err := store.RestoreAuthoringMutationReceiptTombstones(resourceType, resourceID, "deleted", at); err != nil {
 			slog.Warn("authoring receipt tombstone not withdrawn after a refused delete", "resource_type", resourceType, "resource_id", resourceID, "error", err)
 		}
@@ -365,15 +366,17 @@ func (s *Server) durableScenarioExists(id string) (bool, error) {
 	}
 }
 
-// retombstoneAuthoringReceipts tombstones a deleted resource's receipts again
-// after its delete committed. A concurrent refused delete may have withdrawn
-// the tombstone this delete relied on before the delete committed.
+// retombstoneAuthoringReceipts tombstones a deleted resource's receipts again,
+// at a fresh time, after its delete committed or when its outcome is unknown.
+// A concurrent refused delete may have withdrawn the tombstone this delete
+// relied on, or may still be withdrawing it: its restore matches only its own
+// tombstone time, so the fresh one survives it.
 func (s *Server) retombstoneAuthoringReceipts(resourceType, resourceID string) {
 	store, supported := s.store.(storage.AuthoringMutationReceiptStore)
 	if s.store == nil || !supported {
 		return
 	}
-	if err := store.TombstoneAuthoringMutationReceipts(resourceType, resourceID, "deleted", time.Now().UTC().Truncate(time.Microsecond)); err != nil {
+	if err := store.RenewAuthoringMutationReceiptTombstones(resourceType, resourceID, "deleted", time.Now().UTC().Truncate(time.Microsecond)); err != nil {
 		slog.Warn("authoring receipt tombstone not renewed after a delete", "resource_type", resourceType, "resource_id", resourceID, "error", err)
 	}
 }

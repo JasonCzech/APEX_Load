@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http/httptest"
 	"os"
@@ -23,20 +24,34 @@ import (
 // import, returning the import and its import and dataset paths.
 func uploadNativeAnalysisFixture(t *testing.T, server *Server, query string) (storage.AnalysisImport, string, string) {
 	t.Helper()
+	return uploadNativeAnalysisFiles(t, server, query)
+}
+
+// uploadNativeAnalysisFiles uploads one Parquet file per query as a new
+// import; each file normalizes into its own partitions.
+func uploadNativeAnalysisFiles(t *testing.T, server *Server, queries ...string) (storage.AnalysisImport, string, string) {
+	t.Helper()
 	db, err := sql.Open("duckdb", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	fixture := filepath.Join(t.TempDir(), "fixture.parquet")
-	if _, err := db.Exec("COPY (" + query + ") TO '" + fixture + "' (FORMAT PARQUET)"); err != nil {
-		t.Fatal(err)
+	var files []any
+	var contents [][]byte
+	for i, query := range queries {
+		name := fmt.Sprintf("fixture-%d.parquet", i)
+		fixture := filepath.Join(t.TempDir(), name)
+		if _, err := db.Exec("COPY (" + query + ") TO '" + fixture + "' (FORMAT PARQUET)"); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(fixture)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, map[string]any{"relative_path": name, "size": len(data)})
+		contents = append(contents, data)
 	}
-	data, err := os.ReadFile(fixture)
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := timeslotRequest(t, server, "POST", "/api/v1/analysis/imports?project_id=proj-a", map[string]any{"name": "fixture", "files": []any{map[string]any{"relative_path": "fixture.parquet", "size": len(data)}}})
+	r := timeslotRequest(t, server, "POST", "/api/v1/analysis/imports?project_id=proj-a", map[string]any{"name": "fixture", "files": files})
 	if r.Code != 201 {
 		t.Fatalf("create: %d %s", r.Code, r.Body.String())
 	}
@@ -45,12 +60,14 @@ func uploadNativeAnalysisFixture(t *testing.T, server *Server, query string) (st
 		t.Fatal(err)
 	}
 	path := "/api/v1/analysis/imports/" + in.ID
-	req := httptest.NewRequest("PUT", path+"/files/"+in.Files[0].ID+"?offset=0", bytes.NewReader(data))
-	req.Header.Set("Content-Type", "application/octet-stream")
-	response := httptest.NewRecorder()
-	server.mux.ServeHTTP(response, req)
-	if response.Code != 200 {
-		t.Fatalf("upload: %d", response.Code)
+	for i, file := range in.Files {
+		req := httptest.NewRequest("PUT", path+"/files/"+file.ID+"?offset=0", bytes.NewReader(contents[i]))
+		req.Header.Set("Content-Type", "application/octet-stream")
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, req)
+		if response.Code != 200 {
+			t.Fatalf("upload %s: %d", file.RelativePath, response.Code)
+		}
 	}
 	return in, path, "/api/v1/analysis/datasets/" + in.ID
 }
@@ -132,5 +149,44 @@ func TestAnalysisHistogramImportCommitQueryReconcile(t *testing.T) {
 	}
 	if _, code, body = series("avg", 120, 2); code != 422 || !strings.Contains(body, "interpolated percentile") {
 		t.Fatalf("average from a histogram: %d %s", code, body)
+	}
+}
+
+// An earlier file's histogram partition is read while one of its windows
+// crosses the query start, so the first bucket is partial; once its windows
+// end at the start, the bucket holds only the later window, whole.
+func TestAnalysisHistogramEarlierPartitionCrossingTheQueryStart(t *testing.T) {
+	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "proj-a")
+	server, store := newTimeslotServer(t)
+	const t0 = 1700000100 // On the five-minute grid.
+	// The early file holds windows [t0, t0+300) and [t0+300, t0+600); the
+	// late file one window [t0+600, t0+900).
+	early := fmt.Sprintf("SELECT %d+i*300 AS ts, 1.0::DOUBLE AS fast, 0.0::DOUBLE AS overflow FROM range(2) t(i)", t0)
+	late := fmt.Sprintf("SELECT %d AS ts, 2.0::DOUBLE AS fast, 0.0::DOUBLE AS overflow", t0+600)
+	in, path, dataset := uploadNativeAnalysisFiles(t, server, early, late)
+	mapping := analysis.ParquetMapping{Version: 1, Timestamp: []string{"ts"}, TimestampEncoding: "unix_s", Timezone: "UTC", Measures: []analysis.ParquetMeasure{{
+		Value: []string{"overflow"}, Name: "latency", Kind: analysis.KindHistogram, Unit: "ms",
+		Histogram: &analysis.ParquetHistogram{Bounds: []string{"10", "+Inf"}, BucketCounts: analysis.HistogramPerBin, Temporality: analysis.HistogramDelta, WindowSeconds: 300, CountColumns: []analysis.ParquetColumnPath{{"fast"}}},
+	}}}
+	current := commitNativeAnalysisMapping(t, server, store, in, path, mapping)
+	if current.PartitionManifest == nil || len(current.PartitionManifest.Partitions) != 2 {
+		t.Fatalf("committed %+v", current)
+	}
+	count := func(from int64) analysis.MetricPoint {
+		start := time.Unix(from, 0).UTC()
+		r := timeslotRequest(t, server, "POST", dataset+"/series", analytics.SeriesQuery{Metric: "latency", From: start, To: start.Add(600 * time.Second), BucketSeconds: 600, Aggregation: "count"})
+		var out struct {
+			Points []analysis.MetricPoint `json:"points"`
+		}
+		if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &out) != nil || len(out.Points) != 1 {
+			t.Fatalf("series from %d: %d %s", from, r.Code, r.Body.String())
+		}
+		return out.Points[0]
+	}
+	if p := count(t0 + 500); p.Value != nil || p.MissingReason != analysis.MissingPartialHistogramWindow {
+		t.Fatalf("a window crossing the start from an earlier file: %+v", p)
+	}
+	if p := count(t0 + 600); p.Value == nil || *p.Value != 2 || p.MissingReason != "" {
+		t.Fatalf("an earlier file whose windows end at the start: %+v", p)
 	}
 }

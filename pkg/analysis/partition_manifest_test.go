@@ -97,6 +97,44 @@ func TestPartitionManifestConservativeSelection(t *testing.T) {
 	if got, err := ends(at.Add(90 * time.Second)).Select(later); err != nil || len(got) != 1 {
 		t.Fatal("a histogram partition whose window crosses From was pruned", got, err)
 	}
+	// A window ending exactly at From does not reach into the range.
+	if got, err := ends(later.From).Select(later); err != nil || len(got) != 0 {
+		t.Fatal("a histogram partition whose windows end at From was kept", got, err)
+	}
+	// The window end survives the strict decode and still prunes.
+	body, err := json.Marshal(ends(at.Add(30 * time.Second)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeNormalizedPartitionManifest(body)
+	if err != nil || decoded.Partitions[0].Stats.MaxWindowEnd == nil || !decoded.Partitions[0].Stats.MaxWindowEnd.Equal(at.Add(30*time.Second)) {
+		t.Fatal("the window end did not round-trip", err)
+	}
+	if got, err := decoded.Select(later); err != nil || len(got) != 0 {
+		t.Fatal("a decoded window end did not prune", got, err)
+	}
+	for name, change := range map[string]func(*NormalizedPartitionStats){
+		"at-max-time":     func(s *NormalizedPartitionStats) { end := *s.MaxTime; s.MaxWindowEnd = &end },
+		"before-max-time": func(s *NormalizedPartitionStats) { end := s.MaxTime.Add(-time.Second); s.MaxWindowEnd = &end },
+		"non-utc": func(s *NormalizedPartitionStats) {
+			end := s.MaxTime.Add(time.Minute).In(time.FixedZone("x", 3600))
+			s.MaxWindowEnd = &end
+		},
+		"sub-microsecond": func(s *NormalizedPartitionStats) {
+			end := s.MaxTime.Add(time.Minute + time.Nanosecond)
+			s.MaxWindowEnd = &end
+		},
+		"no-rows-with-end": func(s *NormalizedPartitionStats) {
+			end := s.MaxTime.Add(time.Minute)
+			*s = NormalizedPartitionStats{Version: s.Version, SchemaVersion: s.SchemaVersion, IdentityVersion: s.IdentityVersion, Kind: s.Kind, Unit: s.Unit, MaxWindowEnd: &end}
+		},
+	} {
+		stats := histogram.Partitions[0].Stats.Clone()
+		change(&stats)
+		if stats.Validate() == nil {
+			t.Fatalf("%s: an invalid window end was accepted", name)
+		}
+	}
 	invalid := m.Clone()
 	end := at.Add(time.Minute)
 	invalid.Partitions[0].Stats.MaxWindowEnd = &end
@@ -203,6 +241,14 @@ func TestPartitionManifestTotalEscapedBudget(t *testing.T) {
 	}
 	if _, err := MarshalBoundedAnalysisJSON(parts, MaxPartitionManifestBytes); err == nil {
 		t.Fatal("individually bounded labels bypassed total budget")
+	}
+	// An omitted optional field costs nothing, so adding one cannot push a
+	// manifest that fit before over its limit.
+	if body, err := MarshalBoundedAnalysisJSON(struct {
+		End  *time.Time `json:"end,omitempty"`
+		Rows int64      `json:"rows,omitempty"`
+	}{}, 2); err != nil || string(body) != "{}" {
+		t.Fatal("omitted optional fields were charged", string(body), err)
 	}
 	cycle := map[string]any{}
 	cycle["self"] = cycle

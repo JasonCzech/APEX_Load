@@ -597,6 +597,8 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		outcomeUnknown = true
+		// The delete may have committed: keep its tombstone current.
+		s.retombstoneAuthoringReceipts("script", stored.ID)
 		writeError(w, http.StatusInternalServerError, "failed to delete script: "+err.Error())
 		return
 	}

@@ -10,6 +10,7 @@ import (
 	"maps"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -473,9 +474,21 @@ func preflightPartitionJSON(d *json.Decoder, t reflect.Type, depth int, nodes *i
 	return nil
 }
 
+// analysisJSONOmitted reports whether encoding/json omits an omitempty field.
+func analysisJSONOmitted(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
+		return v.Len() == 0
+	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Float32, reflect.Float64, reflect.Interface, reflect.Pointer:
+		return v.IsZero()
+	}
+	return false
+}
+
 // All metadata owners use a total escaped-JSON preflight before cloning/encoding.
-// The bound is conservative (omitempty fields also charge) and cannot turn a
-// product of individually bounded labels into an unbounded allocation.
+// The bound is conservative (it charges every written field its worst-case
+// escaping) and cannot turn a product of individually bounded labels into an
+// unbounded allocation.
 func MarshalBoundedAnalysisJSON(v any, limit int) ([]byte, error) {
 	if limit < 1 || limit > 8<<20 {
 		return nil, ErrPartitionManifest
@@ -551,8 +564,15 @@ func analysisJSONCharge(v reflect.Value, depth int, left *int64) error {
 			if f.PkgPath != "" {
 				continue
 			}
-			name := strings.Split(f.Tag.Get("json"), ",")[0]
+			tag := strings.Split(f.Tag.Get("json"), ",")
+			name := tag[0]
 			if name == "-" {
+				continue
+			}
+			// encoding/json writes nothing for an empty omitempty field, so
+			// it costs nothing: an optional field added later does not push
+			// a stored manifest that fit before over its limit.
+			if slices.Contains(tag[1:], "omitempty") && analysisJSONOmitted(v.Field(i)) {
 				continue
 			}
 			if name == "" {
