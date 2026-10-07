@@ -135,7 +135,7 @@ jobs:
           CGO_ENABLED: '1'
         run: |
           set -euo pipefail
-          go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries)'
+          go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
           go test -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'
           python3 -m unittest discover -s scripts -p 'test_native_worker_startup_test.py'
           controller="native-controller"
@@ -603,7 +603,7 @@ jobs:
           CGO_ENABLED: '1'
         run: |
           set -euo pipefail
-          go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries)'
+          go test -tags analytics_duckdb ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Worker|Parquet|Lagged|BucketSeries|RCAImported)'
           go test -race -tags analytics_duckdb ./pkg/analysis/duckdb -run 'Test(Worker|Native)'
           python3 -m unittest discover -s scripts -p 'test_native_worker_startup_test.py'
           controller="native-controller"

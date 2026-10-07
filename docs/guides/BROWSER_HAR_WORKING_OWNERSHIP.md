@@ -98,8 +98,8 @@ machine-id alone is shared by container images and cloned VMs) and
 pair: a VM cloned from a template must have its `/etc/machine-id` regenerated
 or a host name of its own, and a host that still reports `localhost` must not
 share the directory, or one host's reboot could be taken as proof that the
-other's live writer exited; on macOS the boot session UUID and the kernel process
-table, with no machine identity (macOS offers none without IOKit, and
+other's live writer exited. On macOS an identity is the boot session UUID and
+the kernel process table, with no machine identity (macOS offers none without IOKit, and
 `kern.uuid` names the kernel build), so an earlier boot never proves an exit
 there. A writer record is completed before the path is handed out: one that
 cannot be written leaves no writer entered (and is removed), and one a crash
@@ -161,9 +161,11 @@ the controller's free-space floor, with its own allowance (a refused HAR is
 concurrent fetches. It checks size and SHA-256 and moves the verified file
 into the run archive. Across filesystems (the shipped compose and
 Kubernetes layouts keep transfers on another volume) it is copied and
-checked again, within the archive merge budget and at most a quarter of the
-archive volume's free space above its floor, so the required archive's
-remaining steps keep the rest; a refused copy is `archive_quota`. The
+checked again within one optional-evidence allowance for the whole merge
+(shared with the interactions sidecar): a quarter of the merge byte budget
+and of the archive volume's free space above its floor, both as they stood at
+the first optional copy, so the required outputs written after it keep the
+rest; a refused copy is `archive_quota`. The
 archived HAR is listed in the manifest with its source identity, and the
 controller records an accepted receipt in `run_evidence_receipts` (schema release 49):
 run, execution generation, source identity and generation, sequence, kind,
@@ -171,8 +173,9 @@ SHA-256, bytes and state. All of this happens before the manifest is
 written, so nothing is in flight when it is. Each staging attempt first
 forgets an earlier attempt's accepted receipts, so a HAR that attempt held
 but this one could not fetch is never published or acknowledged. Receipts are idempotent by source artifact: refetching
-the same HAR after a controller restart (including one mid-transfer, whose
-partial fetch is discarded with its staging attempt) keeps one receipt, and different
+the same HAR after a controller restart keeps one receipt (a partial fetch
+left by a crash is never receipted; it stays in the transfer directory until
+cleaned up, as [archive retention](../ARCHIVE_SOURCE_RETENTION.md) describes), and different
 content for the same artifact is refused. A HAR received after the run's
 archive was published, after the run was deleted, or under an older
 execution generation than one already recorded is tombstoned and its copy

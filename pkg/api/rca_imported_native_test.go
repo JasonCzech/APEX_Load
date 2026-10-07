@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -306,13 +307,26 @@ func TestRCAImportedReadsFailOnlyWhenBusyAndUnread(t *testing.T) {
 		return server.rcaImportedSeries(context.Background(), "proj-a", "rca-imported", frozen, summaries, -1, rca.NewBudgeter(rca.DefaultBudget, nil, nil), budget)
 	}
 
-	// A bad resource configuration is not a busy slot.
+	// A bad resource configuration is not a busy slot: it is said once, for
+	// every dataset, without the cause's text.
 	t.Setenv("APEXLOAD_ANALYSIS_MEMORY_LIMIT", "not-a-size")
 	series, limitations, err := read(time.Second)
-	if err != nil || len(series) != 0 || !strings.Contains(limitationCodes(limitations), limitationImportedDatasetUnavailable) {
+	if err != nil || len(series) != 0 || strings.Count(limitationCodes(limitations), limitationImportedDatasetUnavailable) != 1 || strings.Contains(fmt.Sprint(limitations), "not-a-size") {
 		t.Fatalf("misconfigured: %+v %+v %v", series, limitations, err)
 	}
 	t.Setenv("APEXLOAD_ANALYSIS_MEMORY_LIMIT", "")
+
+	// A slot another analytics job really holds is busy, and fails an
+	// analysis that has read nothing yet.
+	_, held, heldDir, err := beginNativeAnalysisPipeline(context.Background(), 12, 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := read(300 * time.Millisecond); !errors.Is(err, errRCAImportedEvidenceBusy) {
+		closeNativeAnalysisPipeline(held, heldDir)
+		t.Fatalf("held native slot: %v", err)
+	}
+	closeNativeAnalysisPipeline(held, heldDir)
 
 	original := rcaQueryImportedDataset
 	t.Cleanup(func() { rcaQueryImportedDataset = original })
@@ -349,5 +363,54 @@ func TestRCAImportedReadsFailOnlyWhenBusyAndUnread(t *testing.T) {
 	series, limitations, err = read(5 * time.Second)
 	if err != nil || len(series) != 1 || !strings.Contains(limitationCodes(limitations), limitationDetectionEvidenceCut) || time.Since(began) > 15*time.Second {
 		t.Fatalf("slow read: %+v %+v %v after %s", series, limitations, err, time.Since(began))
+	}
+}
+
+// Concurrent analyses queue their imported reads one query at a time.
+func TestRCAImportedReadsOfConcurrentAnalysesQueue(t *testing.T) {
+	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "proj-a")
+	server, store := newTimeslotServer(t)
+	start := time.Unix(1700000000, 0).UTC()
+	if err := store.SaveTest(&storage.TestRecord{ID: "rca-imported", ProjectID: "proj-a", Name: "rca-imported", Status: "COMPLETE", StartTime: start}); err != nil {
+		t.Fatal(err)
+	}
+	cpu := func(time.Time) float64 { return 40 }
+	importRCACPUDataset(t, server, store, "proj-a", "rca-imported", "10.0.0.7", start, start.Add(2*time.Minute), 5*time.Second, cpu)
+	importRCACPUDataset(t, server, store, "proj-a", "rca-imported", "10.0.0.8", start, start.Add(2*time.Minute), 5*time.Second, cpu)
+	frozen, _, err := loadRCADatasets(store, "proj-a", "rca-imported")
+	if err != nil || len(frozen) != 2 {
+		t.Fatalf("frozen %+v %v", frozen, err)
+	}
+	var summaries []IntervalSummaryRecord
+	for i := 1; i <= 12; i++ {
+		summaries = append(summaries, IntervalSummaryRecord{Timestamp: start.Add(time.Duration(i) * 10 * time.Second)})
+	}
+	original := rcaQueryImportedDataset
+	t.Cleanup(func() { rcaQueryImportedDataset = original })
+	var mu sync.Mutex
+	inFlight, most := 0, 0
+	rcaQueryImportedDataset = func(context.Context, *storage.AnalysisImport, analytics.SeriesQuery) ([]analysis.MetricPoint, error) {
+		mu.Lock()
+		inFlight++
+		most = max(most, inFlight)
+		mu.Unlock()
+		time.Sleep(50 * time.Millisecond)
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+		return nil, nil
+	}
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := range errs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _, errs[i] = server.rcaImportedSeries(context.Background(), "proj-a", "rca-imported", frozen, summaries, -1, rca.NewBudgeter(rca.DefaultBudget, nil, nil), 10*time.Second)
+		}(i)
+	}
+	wg.Wait()
+	if errs[0] != nil || errs[1] != nil || most != 1 {
+		t.Fatalf("concurrent imported reads: errors %v, at most %d in flight", errs, most)
 	}
 }

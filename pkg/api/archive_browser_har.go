@@ -112,6 +112,14 @@ func (b *remoteHARBudget) reserve(bytes int64) string {
 	return ""
 }
 
+// release returns a reservation whose HAR was not kept.
+func (b *remoteHARBudget) release(bytes int64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.artifacts++
+	b.remaining += bytes
+}
+
 // stagedRemoteHAR is a fetched, verified HAR awaiting the archive merge.
 type stagedRemoteHAR struct {
 	entry RunArchiveEvidenceArtifact
@@ -145,6 +153,7 @@ func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, 
 		path := filepath.Join(dir, entry.Name)
 		artifact, err := transfer.reserveOptional(entry.Bytes)
 		if err != nil {
+			budget.release(entry.Bytes)
 			omitted[harOmittedTransfer]++
 			continue
 		}
@@ -158,6 +167,7 @@ func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, 
 		if err != nil {
 			_ = os.Remove(path)
 			transfer.release(entry.Bytes)
+			budget.release(entry.Bytes)
 			omitted[harOmittedTransfer]++
 			continue
 		}

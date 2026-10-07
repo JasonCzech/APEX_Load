@@ -188,7 +188,7 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 	if err := mergeRemoteHARArtifacts(workingDir, &manifest, bundles, acceptor, mergeOutput); err != nil {
 		return nil, err
 	}
-	if err := mergeRemoteInteractions(workingDir, &manifest, bundles, acceptor); err != nil {
+	if err := mergeRemoteInteractions(workingDir, &manifest, bundles, acceptor, mergeOutput); err != nil {
 		return nil, err
 	}
 	if err := writeDistributedELKEvidence(workingDir, &manifest, tr, test, completedAt, mergeOutput); err != nil {

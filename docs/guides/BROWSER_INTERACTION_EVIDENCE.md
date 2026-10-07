@@ -67,8 +67,9 @@ Each gesture action (`browser_click`, `browser_dblclick`, `browser_tap`,
 
 The page state is read by a script installed in every document of the
 context: once as the gesture starts (its document, focus, viewport and
-route, without the layout fingerprint, and outside the action's measured
-duration), and once after it and its wait. Each read is bounded to two seconds, so a busy page never
+route, without the layout fingerprint; the read's own round trip, at most
+25 ms, is left out of the action's measured duration, but a busy page's wait
+behind it stays in), and once after it and its wait. Each read is bounded to two seconds, so a busy page never
 stalls the VUser. A record the page could not supply is kept with
 `page_state_unavailable`.
 
@@ -100,7 +101,10 @@ and inventory entry `browser_interactions_v1`) and acknowledges the
 generator after publication, exactly as for
 [native HARs](BROWSER_HAR_WORKING_OWNERSHIP.md#run-archive-transfer-and-receipts).
 A source that cannot be transferred, or whose records differ from its
-declaration, marks `browser_interactions_incomplete`.
+declaration, marks `browser_interactions_incomplete`, and so does one the
+archive's optional-evidence allowance (shared with HAR copies; see the
+[HAR guide](BROWSER_HAR_WORKING_OWNERSHIP.md#run-archive-transfer-and-receipts))
+cannot hold: it is never receipted, and its interactions count as dropped.
 
 ## Qualification
 

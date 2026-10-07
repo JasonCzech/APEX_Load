@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -508,6 +509,13 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	live.Telemetry.PublishedAt = now
 	if !live.Telemetry.ControllerReceivedAt.IsZero() {
 		live.Telemetry.ControllerFanoutLagMs = float64(now.Sub(live.Telemetry.ControllerReceivedAt).Microseconds()) / 1000.0
+	}
+	if wallClockSteppedSince(live.Telemetry.qualifiedAt, live.Telemetry.qualifiedMonotonic, now) {
+		// The controller's clock stepped after the collection time was
+		// qualified (a publication that waited): its age now includes the
+		// step.
+		live.Telemetry.collectedAtQuality = &generatorrpc.ClockQuality{Reason: clockReasonStep}
+		live.Telemetry.collectedAtOffsetMs, live.Telemetry.collectedAtBoundUnixMs = 0, 0
 	}
 	if !live.Telemetry.CollectedAt.IsZero() {
 		live.Telemetry.SampleAgeMs = float64(now.Sub(live.Telemetry.CollectedAt).Microseconds()) / 1000.0

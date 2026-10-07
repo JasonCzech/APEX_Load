@@ -261,7 +261,6 @@ func TestOptionalEvidenceKeepsThreeQuartersForRequiredEvidence(t *testing.T) {
 // registered.
 func TestArchiveHARsStayWhenRegistrationFails(t *testing.T) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
-	service := NewService("har-generator", 10)
 	writer, err := newArchiveRecorder("har-generator", "har-unregistered", "har")
 	if err != nil {
 		t.Fatal(err)
@@ -270,14 +269,15 @@ func TestArchiveHARsStayWhenRegistrationFails(t *testing.T) {
 	if err := writer.RecordBrowserHARArtifact(artifact); err != nil {
 		t.Fatal(err)
 	}
-	// The run directory registration expects is not the one finalized.
-	other, err := os.Stat(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	writer.runIdentity = other
+	// The archive finalizes in its own run directory, but the service
+	// registers runs under another archive root, where it is not found.
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	service := NewService("har-generator", 10)
 	if err := service.finalizeArchiveWriter(writer, "COMPLETE", time.Now().UTC(), ""); err == nil {
-		t.Fatal("a replaced run directory was registered")
+		t.Fatal("a run outside the service's archive root was registered")
+	}
+	if !writer.closed {
+		t.Fatal("finalize itself failed; the test must fail registration only")
 	}
 	if _, err := os.Stat(artifact.Path); err != nil {
 		t.Fatal("an unregistered archive retired its HAR's only other copy", err)

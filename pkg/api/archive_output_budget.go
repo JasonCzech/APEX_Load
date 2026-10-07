@@ -26,6 +26,10 @@ type archiveOutputBudget struct {
 	err                    error
 	limitErr, freeSpaceErr error
 	ctx                    context.Context
+	// optional is what optional evidence may still take from this budget;
+	// it is fixed at the first optional admission (optionalSet).
+	optional    int64
+	optionalSet bool
 }
 
 // Admission rejection is an archive-availability failure, distinct from an
@@ -140,17 +144,19 @@ func (w *archiveOutputFile) Create(string) (source.ParquetFile, error) {
 }
 
 // admitOptional charges n bytes of optional evidence written into the
-// archive root (a HAR copied across filesystems) when they fit the byte
-// allowance and at most a quarter of the free space above the floor, so the
-// required archive keeps the rest. A refusal is not latched: optional
-// evidence is omitted, never fatal to the archive.
+// archive root (HARs copied across filesystems, the merged interactions
+// sidecar). All optional evidence of one budget shares one allowance, fixed
+// at its first admission: a quarter of the byte allowance and of the free
+// space above the floor then left, so the required outputs written later
+// (provider evidence, conversion, the manifest) keep the rest. A refusal is
+// not latched: optional evidence is omitted, never fatal to the archive.
 func (b *archiveOutputBudget) admitOptional(n int64) bool {
 	if b == nil {
 		return true
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.err != nil || n < 0 || n > b.remaining {
+	if b.err != nil || n < 0 || n > b.remaining || b.optionalSet && n > b.optional {
 		return false
 	}
 	parent := b.ctx
@@ -165,9 +171,16 @@ func (b *archiveOutputBudget) admitOptional(n int64) bool {
 	}
 	defer release()
 	available, err := diskspace.AvailablePath(b.root)
-	if err != nil || available < b.minFree || n > (available-b.minFree)/4 {
+	if err != nil || available < b.minFree || n > available-b.minFree {
 		return false
 	}
+	if !b.optionalSet {
+		b.optional, b.optionalSet = min(b.remaining, available-b.minFree)/4, true
+	}
+	if n > b.optional {
+		return false
+	}
+	b.optional -= n
 	b.remaining -= n
 	return true
 }

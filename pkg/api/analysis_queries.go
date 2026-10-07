@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"os"
@@ -462,6 +463,15 @@ func (w *analysisStagingWriter) Write(p []byte) (int, error) {
 // by another job; the read may be retried.
 var errAnalyticalAdmissionUnavailable = errors.New("analytical admission unavailable")
 
+// analyticalAdmissionError is any other admission refusal (a build without
+// native analysis, resource limits, an invalid resource configuration):
+// retrying does not help. Its text is fixed, since the cause can name server
+// paths and configuration; the cause is logged.
+type analyticalAdmissionError struct{ cause error }
+
+func (e *analyticalAdmissionError) Error() string { return "analytical admission unavailable" }
+func (e *analyticalAdmissionError) Unwrap() error { return e.cause }
+
 func queryAnalysisDataset(ctx context.Context, in *storage.AnalysisImport, query analytics.SeriesQuery) ([]analysis.MetricPoint, error) {
 	if !analysisQueryContextLive(ctx) {
 		return nil, errors.New("analysis deadline or cancellation reached")
@@ -508,9 +518,8 @@ func queryAnalysisDataset(ctx context.Context, in *storage.AnalysisImport, query
 			return nil, errAnalyticalAdmissionUnavailable
 		}
 		if err != nil {
-			// Unavailable builds, resource limits and configuration are not
-			// a busy slot: retrying does not help.
-			return nil, fmt.Errorf("analytical admission unavailable: %w", err)
+			slog.Warn("native analysis admission refused", "dataset_id", in.ID, "error", err)
+			return nil, &analyticalAdmissionError{cause: err}
 		}
 		defer closeNativeAnalysisPipeline(pipeline, dir)
 		selected, total, err = selectAnalysisDatasetParts(ctx, in, query)

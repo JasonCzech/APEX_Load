@@ -231,7 +231,9 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		}
 		if batch.Telemetry != nil {
 			if combined.Telemetry == nil {
-				combined.Telemetry = &generatorrpc.MetricsTelemetry{}
+				// The aggregate's qualification is judged now: publication
+				// re-checks for a step since this instant.
+				combined.Telemetry = &generatorrpc.MetricsTelemetry{ReceivedAt: publishedAt.Round(0), ReceivedMonotonic: publishedAt.Sub(clockProcessStart)}
 			}
 			var validDrops bool
 			combined.Telemetry.DroppedResults, validDrops = mergeRetainedDropCounters(combined.Telemetry.DroppedResults, batch.Telemetry.DroppedResults)
@@ -646,6 +648,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		live.Telemetry.TransportLagQuality = batch.Telemetry.TransportLagQuality
 		live.Telemetry.collectedAtQuality, live.Telemetry.collectedAtOffsetMs = batch.Telemetry.CollectedAtQuality, batch.Telemetry.CollectedAtOffsetMs
 		live.Telemetry.collectedAtBoundUnixMs = batch.Telemetry.CollectedAtBoundUnixMs
+		live.Telemetry.qualifiedAt, live.Telemetry.qualifiedMonotonic = batch.Telemetry.ReceivedAt, batch.Telemetry.ReceivedMonotonic
 		if batch.Telemetry.TransportLagMs > 0 || batch.Telemetry.TransportLagQuality != nil {
 			// A qualified lag is already corrected; an implausible one stays
 			// unavailable rather than recomputed from the raw clocks.

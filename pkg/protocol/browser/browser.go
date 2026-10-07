@@ -321,9 +321,10 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	preRead := time.Now()
 	interactionStart := b.beginBrowserInteraction(actionCtx, action)
 	if interactionStart != nil {
-		// The gesture begins after the evidence read: its duration and start
-		// leave the read out.
-		result.StartTime = result.StartTime.Add(time.Since(preRead))
+		// The gesture begins after the evidence read: its duration leaves out
+		// the read's own round trip, but not a busy page's wait behind it,
+		// which the gesture's own actionability checks would have waited for.
+		result.StartTime = result.StartTime.Add(min(time.Since(preRead), interactionReadOverhead))
 	}
 	actionErr, terminal := b.dispatchAction(actionCtx, action, result)
 	if terminal {

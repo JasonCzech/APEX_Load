@@ -263,6 +263,10 @@ func allowedHARWorkingName(name string) bool {
 	return false
 }
 
+// syncHARWriterRecord makes the writer record's directory entry durable
+// (tests replace it to fail after the record exists).
+var syncHARWriterRecord = syncHARRoot
+
 // beginWriter durably records the native writer about to receive the
 // working path before it may write there; an identity it cannot record keeps
 // the generation until the writer joins.
@@ -271,10 +275,6 @@ func allowedHARWorkingName(name string) bool {
 // fails leaves no writer (the caller never opens the context) and removes
 // what it wrote, so neither this owner nor a later cleaner waits for a writer
 // that never received the path.
-// syncHARWriterRecord makes the writer record's directory entry durable
-// (tests replace it to fail after the record exists).
-var syncHARWriterRecord = syncHARRoot
-
 func (o *harCaptureOwner) beginWriter() error {
 	if o.root == nil {
 		// An owner without a generation has nowhere to record its writer.

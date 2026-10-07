@@ -234,6 +234,7 @@ func (s *Server) rcaImportedSeries(ctx context.Context, project, testID string, 
 	}
 	var series []rca.Series
 	dropped, longest, queries, unread := 0, 0, 0, 0
+datasets:
 	for _, want := range frozen {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
@@ -285,14 +286,23 @@ func (s *Server) rcaImportedSeries(ctx context.Context, project, testID string, 
 				queries++
 			}
 			if errors.Is(err, errRCAImportedEvidenceBusy) || expired {
-				// The read budget ran out waiting for the slot or inside a
-				// read. With nothing imported read yet the analysis fails
-				// and can be retried; otherwise the rest is a budget cut.
+				// A slot still busy at the read budget before any imported
+				// series was read fails the analysis, which can be retried.
+				// A busy slot after some were read, or a read still running
+				// at the budget, is a budget cut: retrying cannot make a slow
+				// read faster.
 				if len(series) == 0 && len(datasetSeries) == 0 && errors.Is(err, errRCAImportedEvidenceBusy) {
 					return nil, nil, errRCAImportedEvidenceBusy
 				}
 				dropped++
 				continue
+			}
+			var refused *analyticalAdmissionError
+			if errors.As(err, &refused) {
+				// Native analysis cannot admit any read here: say so once
+				// and stop, rather than probing for every key.
+				note(limitationImportedDatasetUnavailable, "native analysis could not admit reads of associated datasets (resource limits or configuration), so the remaining imported series were not judged")
+				break datasets
 			}
 			if err != nil {
 				note(limitationImportedDatasetUnavailable, fmt.Sprintf("a series of dataset %s could not be read: %v", want.DatasetID, err))

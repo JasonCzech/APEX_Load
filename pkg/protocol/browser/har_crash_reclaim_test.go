@@ -472,8 +472,8 @@ func TestHARBeginWriterFailureEntersNoWriter(t *testing.T) {
 	}
 }
 
-// A writer record written but not made durable is removed again, and the
-// owner then closes and retires its generation as one no writer entered.
+// A writer record written but not made durable is removed again, leaving the
+// owner as one no writer entered.
 func TestHARBeginWriterRemovesARecordItCouldNotSync(t *testing.T) {
 	o := fixtureHAROwner(t, t.TempDir())
 	generationDir := filepath.Dir(o.path)

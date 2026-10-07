@@ -204,7 +204,7 @@ func (p MetricPoint) Validate() error {
 		return fmt.Errorf("unsupported metric quality %q", p.Quality)
 	}
 	if p.MissingReason != "" && (p.Quality != QualityMissing || !validPointMissingReason(p.InputKind, p.MissingReason)) {
-		return errors.New("a missing reason applies only to a missing derived summary or histogram bucket")
+		return errors.New("a missing reason applies only to a missing derived summary, histogram or counter-reading bucket")
 	}
 	if b := p.EstimateBin; b != nil && (p.InputKind != KindHistogram || p.Value == nil || math.IsNaN(b.Lower) || math.IsInf(b.Lower, 0) || math.IsNaN(b.Upper) || math.IsInf(b.Upper, 0) || b.Lower > *p.Value || *p.Value > b.Upper) {
 		return errors.New("an estimate bin applies only to a measured histogram percentile it contains")

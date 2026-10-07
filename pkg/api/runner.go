@@ -1095,6 +1095,11 @@ type TelemetryHealth struct {
 	// sampleAgeUnavailable: no generator reported a sample, so no sample-age
 	// budget decision is made.
 	sampleAgeUnavailable bool
+	// qualifiedAt and qualifiedMonotonic are the controller's wall time and
+	// monotonic reading when collectedAtQuality was judged; a step between
+	// then and publication voids it.
+	qualifiedAt        time.Time
+	qualifiedMonotonic time.Duration
 }
 
 type TelemetryRunHealth struct {

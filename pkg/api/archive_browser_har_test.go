@@ -423,7 +423,7 @@ func TestDistributedArchiveMergesInteractionEvidenceWithReceipts(t *testing.T) {
 	entry := RunArchiveEvidenceArtifact{Name: browserInteractionsFileName, Kind: storage.EvidenceKindInteraction, Fidelity: "native", SourceIdentity: identity, SourceGeneration: "late-interactions", Sequence: 1, SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(data) + 1)}
 	var lateManifest RunArchiveManifest
 	working := t.TempDir()
-	if err := mergeRemoteInteractions(working, &lateManifest, []remoteArchiveBundle{{target: "b", interactions: &stagedRemoteHAR{entry: entry, path: late}}}, tr.acceptRemoteHARReceipt(run, map[string]string{identity: "b"})); err != nil {
+	if err := mergeRemoteInteractions(working, &lateManifest, []remoteArchiveBundle{{target: "b", interactions: &stagedRemoteHAR{entry: entry, path: late}}}, tr.acceptRemoteHARReceipt(run, map[string]string{identity: "b"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	if lateManifest.BrowserInteractionsFile != "" || !lateManifest.BrowserInteractionsIncomplete {
@@ -528,13 +528,91 @@ func TestOptionalEvidenceAllowanceIsRefundedOnAFailedFetch(t *testing.T) {
 	broken, whole := []byte(strings.Repeat("a", 80)), []byte(strings.Repeat("b", 60))
 	first, second := declare(strings.Repeat("1", 32), broken), declare(strings.Repeat("2", 32), whole)
 	client := &partialArchiveClient{content: map[string][]byte{first.Name: broken, second.Name: whole}, failAfter: map[string]int{first.Name: 70}}
+	// Both the transfer allowance and the run's HAR budget (bytes and
+	// artifact count) are shared by every source.
 	allowance := &remoteArchiveTransferBudget{remaining: 100}
-	staged, omitted := fetchRemoteHARArtifacts(context.Background(), client, "run", "source-a", t.TempDir(), []RunArchiveEvidenceArtifact{first}, newRemoteHARBudget(), allowance)
+	harBudget := &remoteHARBudget{remaining: 100, artifacts: 1}
+	staged, omitted := fetchRemoteHARArtifacts(context.Background(), client, "run", "source-a", t.TempDir(), []RunArchiveEvidenceArtifact{first}, harBudget, allowance)
 	if len(staged) != 0 || omitted[harOmittedTransfer] != 1 {
 		t.Fatalf("broken fetch staged %+v omitted %v", staged, omitted)
 	}
-	staged, omitted = fetchRemoteHARArtifacts(context.Background(), client, "run", "source-b", t.TempDir(), []RunArchiveEvidenceArtifact{second}, newRemoteHARBudget(), allowance)
-	if len(staged) != 1 || len(omitted) != 0 || allowance.remaining != 40 {
-		t.Fatalf("a fitting source was refused after another failed: staged %+v omitted %v remaining %d", staged, omitted, allowance.remaining)
+	staged, omitted = fetchRemoteHARArtifacts(context.Background(), client, "run", "source-b", t.TempDir(), []RunArchiveEvidenceArtifact{second}, harBudget, allowance)
+	if len(staged) != 1 || len(omitted) != 0 || allowance.remaining != 40 || harBudget.remaining != 40 || harBudget.artifacts != 0 {
+		t.Fatalf("a fitting source was refused after another failed: staged %+v omitted %v remaining %d/%d artifacts %d", staged, omitted, allowance.remaining, harBudget.remaining, harBudget.artifacts)
+	}
+}
+
+// All optional HAR copies of one merge share one allowance, fixed at the
+// first admission: a quarter of what the merge budget then had left.
+func TestStagedHARCopiesShareOneOptionalAllowance(t *testing.T) {
+	staging, working := t.TempDir(), t.TempDir()
+	original := renameStagedHAR
+	t.Cleanup(func() { renameStagedHAR = original })
+	renameStagedHAR = func(string, string) error { return &os.LinkError{Op: "rename", Err: os.ErrInvalid} }
+	var hars []stagedRemoteHAR
+	for _, generation := range []string{strings.Repeat("5", 32), strings.Repeat("6", 32)} {
+		content := []byte(strings.Repeat("h", 60))
+		path := filepath.Join(staging, generation+".har")
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(content)
+		hars = append(hars, stagedRemoteHAR{entry: RunArchiveEvidenceArtifact{Name: "browser_har_" + generation + ".har", Kind: storage.EvidenceKindHARNative, Fidelity: "native", SourceIdentity: "source-a", SourceGeneration: generation, Sequence: 1, Bytes: int64(len(content)), SHA256: hex.EncodeToString(sum[:])}, path: path})
+	}
+	accept := func(RunArchiveEvidenceArtifact) (string, error) { return storage.EvidenceReceiptAccepted, nil }
+	budget := &archiveOutputBudget{root: working, remaining: 400}
+	var manifest RunArchiveManifest
+	if err := mergeRemoteHARArtifacts(working, &manifest, []remoteArchiveBundle{{target: "a", hars: hars}}, accept, budget); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.BrowserHARArtifacts) != 1 || manifest.BrowserHAROmitted[harOmittedArchiveQuota] != 1 || !manifest.BrowserHARIncomplete || budget.remaining != 340 {
+		t.Fatalf("shared optional allowance: artifacts %+v omitted %v remaining %d", manifest.BrowserHARArtifacts, manifest.BrowserHAROmitted, budget.remaining)
+	}
+}
+
+// An interactions sidecar that breaks part-way returns its reservation of the
+// run-wide allowance, so a later source that fits is still fetched; a source
+// the merge's optional allowance cannot hold is dropped before it is
+// receipted.
+func TestInteractionsAllowanceRefundAndMergeAdmission(t *testing.T) {
+	record := func(gen string) []byte {
+		data, err := json.Marshal(fakeInteractionEvidence(gen, 1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return append(data, '\n')
+	}
+	declare := func(content []byte) *RunArchiveEvidenceArtifact {
+		sum := sha256.Sum256(content)
+		return &RunArchiveEvidenceArtifact{Name: browserInteractionsFileName, Kind: storage.EvidenceKindInteraction, Fidelity: "native", SourceGeneration: interactionsEvidenceSource, Sequence: 1, Bytes: int64(len(content)), SHA256: hex.EncodeToString(sum[:])}
+	}
+	a, b := record(strings.Repeat("a", 32)), record(strings.Repeat("b", 32))
+	broken := &partialArchiveClient{content: map[string][]byte{browserInteractionsFileName: a}, failAfter: map[string]int{browserInteractionsFileName: len(a) / 2}}
+	whole := &partialArchiveClient{content: map[string][]byte{browserInteractionsFileName: b}}
+	allowance := &remoteArchiveTransferBudget{remaining: int64(len(a) + len(b) - 1)}
+	if staged, reason := fetchRemoteInteractions(context.Background(), broken, "run", "source-a", t.TempDir(), declare(a), 1, allowance); staged != nil || reason != interactionsUnavailableTransfer {
+		t.Fatalf("broken sidecar staged %+v reason %q", staged, reason)
+	}
+	staged, reason := fetchRemoteInteractions(context.Background(), whole, "run", "source-b", t.TempDir(), declare(b), 1, allowance)
+	if staged == nil || reason != "" || allowance.remaining != int64(len(a)-1) {
+		t.Fatalf("a fitting sidecar was refused after another failed: %q remaining %d", reason, allowance.remaining)
+	}
+
+	working := t.TempDir()
+	accepted := 0
+	accept := func(RunArchiveEvidenceArtifact) (string, error) {
+		accepted++
+		return storage.EvidenceReceiptAccepted, nil
+	}
+	var manifest RunArchiveManifest
+	tight := &archiveOutputBudget{root: working, remaining: 4}
+	if err := mergeRemoteInteractions(working, &manifest, []remoteArchiveBundle{{target: "b", interactions: staged}}, accept, tight); err != nil {
+		t.Fatal(err)
+	}
+	if accepted != 0 || !manifest.BrowserInteractionsIncomplete || manifest.BrowserInteractionsDropped != 1 || manifest.BrowserInteractionsFile != "" {
+		t.Fatalf("unadmitted sidecar: accepted %d manifest %+v", accepted, manifest)
+	}
+	if _, err := os.Stat(filepath.Join(working, browserInteractionsFileName)); !os.IsNotExist(err) {
+		t.Fatal("an unadmitted sidecar reached the archive", err)
 	}
 }

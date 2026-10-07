@@ -526,7 +526,9 @@ before an HA adoption — and a placed generator this controller has no record
 of for the whole window. Time no observation covers, time no generator was
 required for, an unclassified or `unscored` interval, and time before an HA
 adoption are unknown, never healthy. A run is distributed when it has a
-source ledger, clients or a durable generator placement, so one finalized
+source ledger, clients or a durable generator placement (a local run's
+runtime-resource placement, which names the controller's own process, is
+not one), so one finalized
 after a restart or adoption without this controller's ledger is unknown
 throughout, never observed throughout. Past 1,024 disjoint spans per
 generator the shortest is dropped to admit a longer one (`truncated`, a lower

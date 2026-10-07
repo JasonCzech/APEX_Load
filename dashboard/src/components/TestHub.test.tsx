@@ -3871,6 +3871,20 @@ describe('TestHub', () => {
       expect(panel()?.textContent).toContain('changed after this draft was saved')
     })
 
+    it('checkpoints the update time of the body an untagged edit was built from, not the list row', async () => {
+      const listed = await apiMock.listScripts()
+      apiMock.listScripts.mockResolvedValue({ ...listed, scripts: listed.scripts.map((script: StoredScript) => ({ ...script, authoring_health: { status: 'blocked', inputs: [] } })) })
+      // The read carries no validator, and the list already shows a newer row.
+      apiMock.getScenario.mockResolvedValueOnce({ ...conflictScenario })
+      await openConflictScenario({ ...conflictScenario, updated_at: '2026-05-13T00:00:00Z' })
+      await act(async () => setInputValue(nameInput(), 'Local name'))
+      await clickButton('Save draft')
+      expect(container.textContent).toContain('Draft progress saved in this browser')
+      const draft = JSON.parse(window.localStorage.getItem('apexload.scenario.authoring.v1.project-1')!)
+      expect(draft.baselineTag).toBeUndefined()
+      expect(draft.editingUpdatedAt).toBe(conflictScenario.updated_at)
+    })
+
     it('adopts the durable baseline for a resumed edit whose revision is unchanged', async () => {
       const { key, draft } = await checkpointBlockedEdit()
       // The listed time moved (an unauthored change) but the revision did not.

@@ -16,6 +16,17 @@ import (
 // with no events is a measured zero, not a gap.
 var nativeCountMetrics = []string{"observation_count", "observation_rate", "error_observation_rate", "success_observation_rate", "message_count"}
 
+// nativeRatioDerivation reports whether q derives a ratio: a ratio reads a
+// bucket's counts as a sample, so it needs a complete set of sources but not
+// the whole bucket window collected, whatever the panel metric.
+func nativeRatioDerivation(q storage.AnalyticsQuery) bool {
+	if q.Derivation == nil {
+		return false
+	}
+	operation, found := analysis.LookupOperation(analysis.CanonicalDerivation(q.Derivation.Operation))
+	return found && operation.UnitRule == "ratio"
+}
+
 // nativeDerivationBucket is one native bucket's derivation input.
 func nativeDerivationBucket(q storage.AnalyticsQuery, b analysis.DerivationBucket) analysis.DerivationBucket {
 	if b.Value == nil && b.Complete && b.Count == 0 && slices.Contains(nativeCountMetrics, q.Metric) {

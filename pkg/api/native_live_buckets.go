@@ -254,8 +254,9 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 			}
 			// A count (or a rate of one) also needs the bucket's whole window
 			// covered by publications that do not straddle its edges: a
-			// partly collected bucket undercounts.
-			counted := slices.Contains(nativeCountMetrics, q.Metric)
+			// partly collected bucket undercounts. A ratio derivation reads
+			// the counts as a sample and needs no more than other metrics.
+			counted := slices.Contains(nativeCountMetrics, q.Metric) && !nativeRatioDerivation(q)
 			p := NativeEvidencePoint{From: from, To: to, OffsetSeconds: from.Sub(start).Seconds(), Coverage: &coverage, failures: b.errors,
 				// Some source published into the bucket, and every expected
 				// source did so with valid evidence. A bucket nobody published

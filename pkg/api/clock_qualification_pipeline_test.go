@@ -228,3 +228,29 @@ func TestRootCauseTelemetryUnscoredIsUnknown(t *testing.T) {
 		t.Fatalf("unscored telemetry: %s %v", telemetrySeverity("unscored"), telemetryScore("unscored"))
 	}
 }
+
+// A controller clock step between aggregation and publication (a publication
+// that waited on the previous one) voids the aggregate's qualification too.
+func TestClockPipelineStepBeforePublicationIsNotABreach(t *testing.T) {
+	runner, backend, run := clockPipelineRun(t, func(c *clockCalibrations, now time.Time) {
+		c.observe("gen-a", 0, time.Millisecond, now)
+	})
+	batch := generatorTelemetry(time.Now(), 0, 100, 500)
+	qualifyRemoteMetricsReceipt(runner, run, "gen-a", &batch, time.Now())
+	live, _, _ := backend.applyRemoteMetricsBatch(runner, run, "gen-a", batch)
+	if live == nil || live.Telemetry.qualifiedAt.IsZero() {
+		t.Fatalf("aggregate carries no qualification instant: %+v", live)
+	}
+	// The wall clock stepped 3 s forward after aggregation.
+	const step = 3 * time.Second
+	live.Telemetry.CollectedAt = live.Telemetry.CollectedAt.Add(-step)
+	live.Telemetry.collectedAtBoundUnixMs -= float64(step / time.Millisecond)
+	live.Telemetry.qualifiedAt = live.Telemetry.qualifiedAt.Add(-step)
+	if !runner.publishLiveMetrics(run, live, nil) {
+		t.Fatal("publication rejected")
+	}
+	health := run.TelemetryHealth
+	if health == nil || slices.Contains(health.Conditions, "stale_sample") || !slices.Contains(health.Unscored, "stale_sample:"+clockReasonStep) {
+		t.Fatalf("a step before publication scored the aggregate: health %+v telemetry %+v", health, live.Telemetry)
+	}
+}

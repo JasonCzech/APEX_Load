@@ -203,6 +203,11 @@ type browserInteractionSync struct {
 // interactionReadTimeout bounds each page evaluation of interaction capture.
 const interactionReadTimeout = 2 * time.Second
 
+// interactionReadOverhead is the most of a gesture's start read left out of
+// its measured duration: the read's own round trip. Time the read waited for
+// a busy page stays in the gesture.
+const interactionReadOverhead = 25 * time.Millisecond
+
 // beginBrowserInteraction discards events earlier actions left and notes
 // the document a gesture starts in.
 func (b *Browser) beginBrowserInteraction(ctx context.Context, action *protocol.Action) *browserInteractionStart {

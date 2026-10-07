@@ -237,6 +237,23 @@ func TestMergedLiveDerivationScoresUnalignedPublications(t *testing.T) {
 	if len(points) != 2 || points[0].Value == nil || *points[0].Value != .25 || points[1].Value == nil || *points[1].Value != 0.5 {
 		t.Fatalf("merged live ratio %+v", points)
 	}
+	// The same ratio over a count panel reads the same sample: the count
+	// metric's whole-window rule does not apply to a ratio.
+	counted := q
+	counted.Metric, counted.Aggregation = "observation_count", "count"
+	if err := storage.ValidateNativeEvidenceQuery(counted); err != nil {
+		t.Fatal(err)
+	}
+	countOut, err := buildMergedNativeLiveEvidence(context.Background(), start, history, counted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyNativeEvidenceDerivation("p", counted, &countOut); err != nil {
+		t.Fatal(err)
+	}
+	if points := countOut.Series[0].Points; len(points) != 2 || points[0].Value == nil || *points[0].Value != .25 || points[1].Value == nil || *points[1].Value != 0.5 {
+		t.Fatalf("merged live ratio over a count panel %+v", points)
+	}
 	// A moving derivation needs one bucket grid, which per-source intervals
 	// are not.
 	source := q

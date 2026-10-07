@@ -107,8 +107,11 @@ func forEachBrowserInteractionRecord(path string, visit func(*protocol.BrowserIn
 }
 
 // mergeRemoteInteractions appends each receipted source's records to the
-// run archive's sidecar and describes it in the manifest.
-func mergeRemoteInteractions(workingDir string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, accept harReceiptAcceptor) (err error) {
+// run archive's sidecar and describes it in the manifest. Each source is
+// admitted against the merge's optional-evidence allowance before it is
+// receipted; one that does not fit is dropped (never receipted) and marks the
+// evidence incomplete.
+func mergeRemoteInteractions(workingDir string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, accept harReceiptAcceptor, budget *archiveOutputBudget) (err error) {
 	var file *os.File
 	var writer *bufio.Writer
 	var records int64
@@ -127,6 +130,14 @@ func mergeRemoteInteractions(workingDir string, manifest *RunArchiveManifest, bu
 			continue
 		}
 		if bundle.interactions == nil {
+			continue
+		}
+		if !budget.admitOptional(bundle.interactions.entry.Bytes) {
+			manifest.BrowserInteractionsIncomplete = true
+			_, _ = forEachBrowserInteractionRecord(bundle.interactions.path, func(evidence *protocol.BrowserInteractionEvidence) error {
+				manifest.BrowserInteractionsDropped += int64(len(evidence.Interactions))
+				return nil
+			})
 			continue
 		}
 		if state, acceptErr := accept(bundle.interactions.entry); acceptErr != nil || state != storage.EvidenceReceiptAccepted {

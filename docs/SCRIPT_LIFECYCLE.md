@@ -598,8 +598,10 @@ A read that carries no supported revision opens the same panel at once. A
 browser checkpoint of an edit records the revision, form and workload shape it
 was loaded from: resuming it adopts the durable baseline only for that same
 revision and otherwise opens the panel against the draft's own original (a
-checkpoint from before this was recorded resumes as an edit only while the
-listed scenario is unchanged, else as a new scenario). A plain read on a
+checkpoint without a revision, from an older dashboard or of an edit whose
+read carried none, records the update time of the body its form was built
+from, and resumes as an edit only while the listed scenario still has that
+time, else as a new scenario). A plain read on a
 replica whose cached copy another controller has since saved refreshes once,
 so Load current baseline recovers there too. The other dashboard
 scenario writers also send a tag: a library delete re-reads the scenario and
