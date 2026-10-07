@@ -142,3 +142,35 @@ func TestLockContextAcrossProcesses(t *testing.T) {
 		}
 	}
 }
+
+func TestTryLockNeverWaitsForAnotherHolder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lock")
+	holder, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Close()
+	other, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	release, acquired, err := TryLock(holder)
+	if err != nil || !acquired || release == nil {
+		t.Fatalf("free lock not acquired: %v %v", acquired, err)
+	}
+	if again, held, err := TryLock(other); err != nil || held || again != nil {
+		t.Fatalf("another descriptor's lock acquired: %v %v", held, err)
+	}
+	if err := release(); err != nil {
+		t.Fatal(err)
+	}
+	if again, held, err := TryLock(other); err != nil || !held {
+		t.Fatalf("released lock not acquired: %v %v", held, err)
+	} else if err := again(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := TryLock(nil); err == nil {
+		t.Fatal("nil file accepted")
+	}
+}

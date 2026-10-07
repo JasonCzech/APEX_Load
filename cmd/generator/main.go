@@ -20,6 +20,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/importartifact"
+	"github.com/jasonczech/apexload/pkg/protocol/browser"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
 	"github.com/jasonczech/apexload/pkg/protocol/java_vuser"
 	"github.com/jasonczech/apexload/pkg/runtimetuning"
@@ -95,6 +96,7 @@ func main() {
 	}
 
 	cfg := config.LoadGeneratorConfigFromEnv(os.Getenv)
+	reclaimAbandonedBrowserHAR()
 	restoreBrunoResolver, err := configureBrunoResolver()
 	if err != nil {
 		slog.Error("invalid Bruno distributed artifact configuration", "err", err)
@@ -405,5 +407,19 @@ func loadLocalDotEnv() {
 			return
 		}
 		slog.Warn("failed to load local .env", "err", err)
+	}
+}
+
+// reclaimAbandonedBrowserHAR retires the default HAR directory's working
+// generations a killed generator left behind; each new browser context
+// sweeps its own directory too.
+func reclaimAbandonedBrowserHAR() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	reclaimed, err := browser.ReclaimRuntimeHARWorking(ctx, "", 128)
+	if err != nil {
+		slog.Warn("browser HAR working cleanup incomplete", "reclaimed", reclaimed, "err", err)
+	} else if reclaimed > 0 {
+		slog.Info("reclaimed browser HAR working generations", "reclaimed", reclaimed)
 	}
 }

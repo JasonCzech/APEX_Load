@@ -80,9 +80,41 @@ durable identity-bound joined retirement record under the namespace lease.
 Malformed, replaced, full or unsupported ledger state fails admission or
 maintenance explicitly and preserves the existing state. Changed payloads,
 unexpected same-name replacements, unknown tombstones and unproven legacy
-*.har.tmp files are preserved. Age, PID state and an unlocked lease do not
-establish that another process's native writer has died. This is qualified
-terminal-retirement recovery, not general crash cleanup.
+*.har.tmp files are preserved. Age, PID state and an unlocked lease alone do
+not establish that another process's native writer has died; crash
+reclamation below needs exact recorded process identities.
+
+## Crash reclamation
+
+A generation whose generator was killed never writes its writer-joined
+receipt. Its sealed manifest (version 2) records the exact identity of the
+generator holding the lease, and `writer-entered.json`, written and synced
+before the native HAR writer (the Playwright driver) is given the working
+path, records that writer. An identity is the machine, the kernel boot, the
+PID namespace, the PID and the process start time: on Linux the boot ID,
+`/proc/self/ns/pid`, `/etc/machine-id` when present and `/proc/<pid>/stat`;
+on macOS the boot session UUID, the hardware UUID and the kernel process
+table.
+
+Cleanup reclaims such a generation through the same retirement ledger only
+when its owner lease is free and every recorded process provably no longer
+exists: the same identified machine has booted again since, or, within this
+boot and PID namespace, no process has that PID with that start time. Without
+`writer-entered.json` no native writer ever had the working path, so the
+generator's exit is enough. A live process, a reused PID with a different
+start time, a lookup error, an identity recorded on another machine, an
+unidentified machine's earlier boot or another PID namespace (another
+container sharing the volume) never proves an exit, and neither does a
+writer that entered with no recorded identity; those generations keep the
+writer-joined rule. Pruning re-checks the identities while it holds the lease.
+
+Every new browser context sweeps its HAR directory, and a generator sweeps
+the default directory (the system temporary directory) once at start. A
+generator restarted inside the same container reclaims its killed
+generations. A replacement container has a new PID namespace, so it
+preserves them; they stay until a later boot of the same identified machine
+or manual removal. Run and project deletion fencing of late writers arrives
+with managed generator transfer receipts.
 
 ## Bounds and compatibility
 
@@ -93,7 +125,8 @@ terminal-retirement recovery, not general crash cleanup.
 | Existing private generation entries at admission | Fewer than 128 |
 | Working admission bytes | 2 GiB at the admission check |
 | Retirement ledger | 128 records; 64 KiB |
-| Ownership manifest | 4 KiB |
+| Ownership manifest, writer-entered record | 4 KiB each |
+| Files in one generation | 6 |
 | Ledger auxiliary entries | 128, each at most 64 KiB |
 | Private staging, working-plan and runtime-retention scans | 1,024 entries |
 | Completed retention | 128 artifacts; 1 GiB |
@@ -106,9 +139,13 @@ native in-memory buffering. Those resource guarantees remain separate work.
 
 This implementation uses Linux/macOS owner identity checks and Go's secure
 os.Root operations. Other platforms reject native HAR ownership until their
-private ACL, lock and durable publication behavior is qualified. The coordinated
-local runtime acceptance host is macOS; results are recorded separately in
-the QA bundle. Linux/Windows runtime acceptance must not be inferred from it. The filesystems and peer processes must honor the
+private ACL, lock and durable publication behavior is qualified; Windows stays
+rejected. The coordinated local runtime acceptance host is macOS, where the
+ownership, crash-reclamation and real-driver tests run; results are recorded
+separately in the QA bundle. The same ownership and crash-reclamation tests
+also pass as a static Linux binary in a container without browsers, so the
+real-driver crash test has not run on Linux. Windows acceptance must not be
+inferred from either. The filesystems and peer processes must honor the
 existing descriptor-lock contract. The implementation neither coordinates
 remote object-store writers nor transfers raw files into managed archives.
 

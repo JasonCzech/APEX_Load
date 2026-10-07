@@ -35,7 +35,14 @@ type harOwnershipManifest struct {
 	Version    int    `json:"version"`
 	Generation string `json:"generation"`
 	State      string `json:"state"`
+	// Processes (version 2 of a sealed or writer_entered manifest) is the
+	// exact identity of the generator or of the native writer.
+	Processes []harProcessIdentity `json:"processes,omitempty"`
 }
+
+// harFinalizeCheckpoint lets crash tests stop finalization at a stage; it is
+// nil outside tests.
+var harFinalizeCheckpoint func(stage string)
 
 type harCaptureOwner struct {
 	mu                             sync.Mutex
@@ -142,7 +149,11 @@ func newHARCaptureOwner(ctx context.Context, dir string) (_ *harCaptureOwner, er
 		err = verifyHARLease(o.root, "owner.lock", o.lease)
 	}
 	if err == nil {
-		data, _ := json.Marshal(harOwnershipManifest{1, o.generation, "sealed"})
+		manifest := harOwnershipManifest{Version: 1, Generation: o.generation, State: "sealed"}
+		if processes := harGeneratorProcesses(); len(processes) > 0 {
+			manifest.Version, manifest.Processes = 2, processes
+		}
+		data, _ := json.Marshal(manifest)
 		err = writeHARPrivateDurable(o.root, "manifest.json", data)
 	}
 	if err == nil {
@@ -207,9 +218,9 @@ func checkHARWorkingAdmission(work *os.Root) error {
 				_ = child.Close()
 				return childErr
 			}
-			files, childErr := children.ReadDir(6)
+			files, childErr := children.ReadDir(harWorkingGenerationEntries + 1)
 			_ = children.Close()
-			if childErr != nil && childErr != io.EOF || len(files) > 5 {
+			if childErr != nil && childErr != io.EOF || len(files) > harWorkingGenerationEntries {
 				_ = child.Close()
 				return fmt.Errorf("browser HAR staging contains unexpected children")
 			}
@@ -240,15 +251,39 @@ func checkHARWorkingAdmission(work *os.Root) error {
 	}
 }
 
+// harWorkingGenerationEntries is how many files a generation may hold: the
+// names allowedHARWorkingName admits.
+const harWorkingGenerationEntries = 6
+
 func allowedHARWorkingName(name string) bool {
 	switch name {
-	case "owner.lock", "manifest.json", "writer-joined.json", "working.har", "scrubbed.part":
+	case "owner.lock", "manifest.json", "writer-entered.json", "writer-joined.json", "working.har", "scrubbed.part":
 		return true
 	}
 	return false
 }
 
-func (o *harCaptureOwner) beginWriter() { o.mu.Lock(); o.writerEntered = true; o.mu.Unlock() }
+// beginWriter durably records the native writer about to receive the
+// working path before it may write there; an identity it cannot record keeps
+// the generation until the writer joins.
+func (o *harCaptureOwner) beginWriter() error {
+	o.mu.Lock()
+	o.writerEntered = true
+	o.mu.Unlock()
+	if o.root == nil {
+		// An owner without a generation has nowhere to record its writer.
+		return errHAROwnershipUnproven
+	}
+	manifest := harOwnershipManifest{Version: 1, Generation: o.generation, State: "writer_entered"}
+	if processes := harWriterProcesses(); len(processes) > 0 {
+		manifest.Version, manifest.Processes = 2, processes
+	}
+	data, _ := json.Marshal(manifest)
+	if err := writeHARPrivateDurable(o.root, "writer-entered.json", data); err != nil {
+		return err
+	}
+	return syncHARRoot(o.root)
+}
 func (o *harCaptureOwner) bindWriter(closer func() error) {
 	o.mu.Lock()
 	o.closer = closer
@@ -299,7 +334,7 @@ func (o *harCaptureOwner) startClose() {
 				err = errHAROwnershipUnproven
 			}
 			if err == nil {
-				data, _ := json.Marshal(harOwnershipManifest{1, o.generation, "writer_joined"})
+				data, _ := json.Marshal(harOwnershipManifest{Version: 1, Generation: o.generation, State: "writer_joined"})
 				err = writeHARPrivateDurable(o.root, "writer-joined.json", data)
 				if err == nil {
 					err = syncHARRoot(o.root)
@@ -476,6 +511,9 @@ func (o *harCaptureOwner) finalizeJoined(keep bool, redactor protocol.TextRedact
 	if err := verifyHARLease(o.root, "owner.lock", o.lease); err != nil {
 		return err
 	}
+	if harFinalizeCheckpoint != nil {
+		harFinalizeCheckpoint("scrub")
+	}
 	var publicationErr error
 	if keep {
 		f, openErr := openHARRegular(o.root, "working.har", false)
@@ -501,7 +539,7 @@ func (o *harCaptureOwner) finalizeJoined(keep bool, redactor protocol.TextRedact
 	}
 	// A publication failure is observable, but a proven joined raw writer can
 	// still be retired. Unproven close never enters this function.
-	err = retireHARGeneration(n.work, o.root, o.generation, o.identity)
+	err = retireHARGeneration(n.work, o.root, o.generation, o.identity, false)
 	if err == nil {
 		err = o.closeDescriptors()
 		retirementProven = err == nil
@@ -522,6 +560,9 @@ func (o *harCaptureOwner) publishScrubbed(ctx context.Context, parent *os.Root, 
 	}
 	if err := syncHARRoot(parent); err != nil {
 		return err
+	}
+	if harFinalizeCheckpoint != nil {
+		harFinalizeCheckpoint("publish")
 	}
 	if err := o.root.Remove("scrubbed.part"); err != nil {
 		return err
@@ -586,9 +627,9 @@ func harWorkingGenerationSize(root *os.Root) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	entries, readErr := directory.ReadDir(6)
+	entries, readErr := directory.ReadDir(harWorkingGenerationEntries + 1)
 	closeErr := directory.Close()
-	if readErr != nil && readErr != io.EOF || closeErr != nil || len(entries) > 5 {
+	if readErr != nil && readErr != io.EOF || closeErr != nil || len(entries) > harWorkingGenerationEntries {
 		return 0, errHAROwnershipUnproven
 	}
 	var size int64
@@ -608,7 +649,10 @@ func harWorkingGenerationSize(root *os.Root) (int64, error) {
 	return size, nil
 }
 
-func retireHARGeneration(work, root *os.Root, directoryName string, identity os.FileInfo) error {
+// retireHARGeneration retires a writer-joined generation or, when abandoned,
+// one whose recorded processes provably no longer exist (checked while the
+// caller holds its lease).
+func retireHARGeneration(work, root *os.Root, directoryName string, identity os.FileInfo, abandoned bool) error {
 	generation, recognized := harGenerationFromDirectory(directoryName)
 	if !recognized {
 		return errHAROwnershipUnproven
@@ -631,11 +675,17 @@ func retireHARGeneration(work, root *os.Root, directoryName string, identity os.
 			return errHAROwnershipUnproven
 		}
 	} else {
-		if err := readHARManifest(root, "manifest.json", generation, "sealed"); err != nil {
-			return err
-		}
-		if err := readHARManifest(root, "writer-joined.json", generation, "writer_joined"); err != nil {
-			return err
+		if abandoned {
+			if !harAbandonmentProven(root, generation) {
+				return errHAROwnershipUnproven
+			}
+		} else {
+			if err := readHARManifest(root, "manifest.json", generation, "sealed"); err != nil {
+				return err
+			}
+			if err := readHARManifest(root, "writer-joined.json", generation, "writer_joined"); err != nil {
+				return err
+			}
 		}
 		if err := registerHARRetirement(work, r); err != nil {
 			return err
@@ -662,7 +712,7 @@ func retireHARGeneration(work, root *os.Root, directoryName string, identity os.
 	}
 	// The synced namespace ledger preserves joined proof through every unlink,
 	// including a crash after removal of all generation control files.
-	for _, name := range []string{"working.har", "scrubbed.part", "owner.lock", "writer-joined.json", "manifest.json"} {
+	for _, name := range []string{"working.har", "scrubbed.part", "owner.lock", "writer-entered.json", "writer-joined.json", "manifest.json"} {
 		if err := root.Remove(name); err != nil && !os.IsNotExist(err) {
 			return err
 		}
@@ -682,10 +732,13 @@ func retireHARGeneration(work, root *os.Root, directoryName string, identity os.
 // RuntimeHARWorkingPruneCandidate is an opaque, process-local retention plan.
 // Its identities are revalidated and its lease is reacquired when applied.
 type RuntimeHARWorkingPruneCandidate struct {
-	Path                     string
-	SizeBytes                int64
-	ModifiedAt               time.Time
-	Completed                bool
+	Path       string
+	SizeBytes  int64
+	ModifiedAt time.Time
+	Completed  bool
+	// Abandoned marks a generation without writer-joined proof whose lease
+	// was free and whose recorded processes provably no longer exist.
+	Abandoned                bool
 	terminal                 *harRetirementRecord
 	planCursor               *harRetirementPlanCursor
 	generation               string
@@ -701,27 +754,82 @@ func (c RuntimeHARWorkingPruneCandidate) MatchesFileIdentity(info os.FileInfo) b
 }
 
 func readHARManifest(root *os.Root, name, generation, state string) error {
+	_, err := readHARManifestFile(root, name, generation, state)
+	return err
+}
+
+// readHARManifestFile reads an ownership manifest. Only a sealed manifest
+// may be version 2, which records process identities.
+func readHARManifestFile(root *os.Root, name, generation, state string) (harOwnershipManifest, error) {
 	f, err := openHARRegular(root, name, false)
 	if err != nil {
-		return err
+		return harOwnershipManifest{}, err
 	}
 	data, err := io.ReadAll(io.LimitReader(f, maxRuntimeHARManifestBytes+1))
 	err = errors.Join(err, f.Close())
 	if err != nil || len(data) > maxRuntimeHARManifestBytes {
-		return errHAROwnershipUnproven
+		return harOwnershipManifest{}, errHAROwnershipUnproven
 	}
 	var m harOwnershipManifest
 	if err := strictHARJSON(data, &m); err != nil {
-		return err
+		return harOwnershipManifest{}, err
 	}
-	if m.Version != 1 || m.Generation != generation || m.State != state {
-		return errHAROwnershipUnproven
+	versioned := m.Version == 1 && len(m.Processes) == 0 || m.Version == 2 && (state == "sealed" || state == "writer_entered") && len(m.Processes) == 1
+	if !versioned || m.Generation != generation || m.State != state {
+		return harOwnershipManifest{}, errHAROwnershipUnproven
 	}
-	return nil
+	return m, nil
 }
 
-// PlanRuntimeHARWorkingCleanup only recognizes a durable writer-joined proof;
-// an unlocked lease, old timestamp or missing PID never authorizes deletion.
+// harAbandonmentProven reports whether an unjoined generation's recorded
+// generator and any entered native writer provably no longer exist.
+func harAbandonmentProven(root *os.Root, generation string) bool {
+	sealed, err := readHARManifestFile(root, "manifest.json", generation, "sealed")
+	if err != nil || len(sealed.Processes) != 1 || sealed.Processes[0].Role != harProcessGenerator {
+		return false
+	}
+	processes := sealed.Processes
+	entered, err := readHARManifestFile(root, "writer-entered.json", generation, "writer_entered")
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		// No native writer was ever given the working path.
+	case err != nil || len(entered.Processes) != 1 || entered.Processes[0].Role != harProcessWriter:
+		return false
+	default:
+		processes = append(processes, entered.Processes[0])
+	}
+	return harProcessesGone(processes)
+}
+
+// harGenerationAbandoned reports whether an unjoined generation's lease is
+// free and its abandonment is proven.
+func harGenerationAbandoned(root *os.Root, generation string) bool {
+	if _, err := readHARManifestFile(root, "manifest.json", generation, "sealed"); err != nil {
+		return false
+	}
+	lease, err := openHARRegular(root, "owner.lock", false)
+	if err != nil {
+		return false
+	}
+	defer lease.Close()
+	release, acquired, err := filelock.TryLock(lease)
+	if !acquired || err != nil {
+		if release != nil {
+			_ = release()
+		}
+		return false
+	}
+	free := verifyHARLease(root, "owner.lock", lease) == nil
+	if release() != nil || !free {
+		return false
+	}
+	return harAbandonmentProven(root, generation)
+}
+
+// PlanRuntimeHARWorkingCleanup recognizes a durable writer-joined proof, or
+// an abandoned generation: a free lease and recorded processes that provably
+// no longer exist. An unlocked lease, old timestamp or missing PID alone never
+// authorizes deletion.
 func PlanRuntimeHARWorkingCleanup(dir string, limit int) []RuntimeHARWorkingPruneCandidate {
 	out, _ := PlanRuntimeHARWorkingCleanupContext(context.Background(), dir, limit)
 	return out
@@ -785,11 +893,13 @@ func PlanRuntimeHARWorkingCleanupContext(ctx context.Context, dir string, limit 
 			if openErr != nil {
 				continue
 			}
-			if readHARManifest(root, "manifest.json", generation, "sealed") == nil && readHARManifest(root, "writer-joined.json", generation, "writer_joined") == nil {
+			joined := readHARManifest(root, "manifest.json", generation, "sealed") == nil && readHARManifest(root, "writer-joined.json", generation, "writer_joined") == nil
+			abandoned := !joined && harGenerationAbandoned(root, generation)
+			if joined || abandoned {
 				info, statErr := root.Stat(".")
 				size, sizeErr := harWorkingGenerationSize(root)
 				if statErr == nil && sizeErr == nil {
-					out = append(out, RuntimeHARWorkingPruneCandidate{Path: filepath.Join(path, runtimeHARWorkingDirectory, e.Name()), SizeBytes: size, ModifiedAt: info.ModTime().UTC(), generation: generation, directoryName: e.Name(), identity: info, parentIdentity: parentInfo, planCursor: cursor})
+					out = append(out, RuntimeHARWorkingPruneCandidate{Path: filepath.Join(path, runtimeHARWorkingDirectory, e.Name()), SizeBytes: size, ModifiedAt: info.ModTime().UTC(), Abandoned: abandoned, generation: generation, directoryName: e.Name(), identity: info, parentIdentity: parentInfo, planCursor: cursor})
 				}
 			}
 			_ = root.Close()
@@ -924,5 +1034,5 @@ func PruneRuntimeHARWorkingCandidate(ctx context.Context, c RuntimeHARWorkingPru
 	}
 	// A missing generation lease is accepted only with the prior synced,
 	// identity-bound writer-joined ledger record under the namespace lease.
-	return retireHARGeneration(n.work, root, c.directoryName, c.identity)
+	return retireHARGeneration(n.work, root, c.directoryName, c.identity, c.Abandoned)
 }

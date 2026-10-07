@@ -148,7 +148,10 @@ func (b *Browser) openAdmittedBrowserContext() error {
 	owner := b.harOwner
 	b.mu.Unlock()
 	if owner != nil {
-		owner.beginWriter()
+		if err := owner.beginWriter(); err != nil {
+			owner.abandonWriter()
+			return errors.Join(err, b.discardHARWorkingFile())
+		}
 	}
 	browserContext, err := pwBrowser.NewContext(options)
 	if err != nil {

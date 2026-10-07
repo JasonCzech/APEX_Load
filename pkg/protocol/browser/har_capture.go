@@ -58,12 +58,27 @@ func unregisterRuntimeHARWorkingPath(path string) {
 func purgeInactiveRuntimeHARWorkingFiles(dir string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	for _, c := range PlanRuntimeHARWorkingCleanup(dir, 32) {
+	_, _ = ReclaimRuntimeHARWorking(ctx, dir, 32)
+}
+
+// ReclaimRuntimeHARWorking retires a HAR directory's working generations
+// that are writer-joined or provably abandoned by a killed generator (see
+// harAbandonmentProven), at most limit of them, and returns how many it
+// retired. Everything else is preserved.
+func ReclaimRuntimeHARWorking(ctx context.Context, dir string, limit int) (int, error) {
+	plans, err := PlanRuntimeHARWorkingCleanupContext(ctx, dir, limit)
+	reclaimed := 0
+	for _, c := range plans {
 		if ctx.Err() != nil {
-			return
+			return reclaimed, errors.Join(err, ctx.Err())
 		}
-		_ = PruneRuntimeHARWorkingCandidate(ctx, c)
+		if pruneErr := PruneRuntimeHARWorkingCandidate(ctx, c); pruneErr != nil {
+			err = errors.Join(err, pruneErr)
+			continue
+		}
+		reclaimed++
 	}
+	return reclaimed, err
 }
 
 func (b *Browser) discardHARWorkingFile() error {

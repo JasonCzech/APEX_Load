@@ -33,6 +33,30 @@ func LockContextOwned(ctx context.Context, file *os.File) (func() error, error) 
 	return lockContextOwned(ctx, file, tryLockFile)
 }
 
+// TryLock exclusively locks an already-open regular file without waiting;
+// acquired is false while another descriptor holds it. The caller keeps the
+// descriptor and must release a lock it acquired.
+func TryLock(file *os.File) (release func() error, acquired bool, err error) {
+	if file == nil {
+		return nil, false, fmt.Errorf("lock file is required")
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return nil, false, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, false, fmt.Errorf("lock file must be regular")
+	}
+	unlock, acquired, err := tryLockFile(file)
+	if acquired && unlock != nil {
+		return onceLockRelease(unlock), true, err
+	}
+	if err == nil && acquired {
+		return nil, false, fmt.Errorf("acquired lock omitted release authority")
+	}
+	return nil, false, err
+}
+
 type lockAttempt func(*os.File) (func() error, bool, error)
 
 func lockContextOwned(ctx context.Context, file *os.File, attempt lockAttempt) (func() error, error) {

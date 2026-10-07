@@ -198,15 +198,15 @@ func strictHARFields(data []byte, target any) error {
 			// encoding/json accepts null for integer and string destinations.
 			// Ownership contracts require actual typed scalars, including UID 0.
 			switch key {
-			case "version", "device", "inode", "uid":
+			case "version", "device", "inode", "uid", "pid":
 				if value[0] < '0' || value[0] > '9' {
 					return nil, errHAROwnershipUnproven
 				}
-			case "kind", "generation", "state", "name":
+			case "kind", "generation", "state", "name", "role", "machine", "boot", "namespace", "start":
 				if value[0] != '"' {
 					return nil, errHAROwnershipUnproven
 				}
-			case "records":
+			case "records", "processes":
 				if value[0] != '[' {
 					return nil, errHAROwnershipUnproven
 				}
@@ -220,8 +220,22 @@ func strictHARFields(data []byte, target any) error {
 	}
 	switch target.(type) {
 	case *harOwnershipManifest:
-		_, err := check(data, []string{"version", "generation", "state"}, nil)
-		return err
+		object, err := check(data, []string{"version", "generation", "state"}, []string{"processes"})
+		if err != nil {
+			return err
+		}
+		if raw, ok := object["processes"]; ok {
+			var processes []json.RawMessage
+			if json.Unmarshal(raw, &processes) != nil || processes == nil || len(processes) > 2 {
+				return errHAROwnershipUnproven
+			}
+			for _, process := range processes {
+				if _, err := check(process, []string{"role", "boot", "namespace", "pid", "start"}, []string{"machine"}); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	case *harRetirementLedger:
 		object, err := check(data, []string{"version", "records"}, nil)
 		if err != nil {
