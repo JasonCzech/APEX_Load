@@ -104,7 +104,7 @@ func TestNetworkPhaseSeriesFromArchiveTiming(t *testing.T) {
 func TestProviderSeriesMeasureAndNodes(t *testing.T) {
 	point := analysis.MetricPoint{Source: "prom", MetricName: "jvm_gc_seconds_rate", Kind: analysis.KindGauge, Dimensions: map[string]string{"pod": "cart-1", "instance": "10.0.0.9:9100"},
 		Provider: &analysis.ProviderMeasurement{Name: monitorprovider.ProviderPrometheus, Mode: "evaluation_point", EvaluationStepSeconds: 15}}
-	s, ok := monitorSeriesTemplate(point, monitorSeriesIdentity(point), "monitor_points.jsonl")
+	s, ok := monitorSeriesTemplate(point, "project-a", "monitor_points.jsonl")
 	if !ok || s.Measures != signatures.KindGC || len(s.Nodes) != 2 || s.Nodes[0] != rca.InfrastructureNodeID("host", "10.0.0.9") || s.Nodes[1] != rca.InfrastructureNodeID("pod", "cart-1") {
 		t.Fatalf("%+v", s)
 	}

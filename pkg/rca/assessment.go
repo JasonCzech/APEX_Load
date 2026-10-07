@@ -166,7 +166,8 @@ type ChainStep struct {
 }
 
 // EvidenceRef points at the evidence a claim rests on. Kind is archive_row,
-// interval, monitor_series, provider_diagnostic, exemplar or phase_event.
+// interval, monitor_series, imported_series, provider_diagnostic, exemplar or
+// phase_event.
 type EvidenceRef struct {
 	ID      string `json:"id"`
 	Kind    string `json:"kind"`

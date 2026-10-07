@@ -228,7 +228,7 @@ func Hypothesize(anomalies []Anomaly, series []Series, judged JudgedSeries, grap
 		}
 		for _, s := range series {
 			evidence := measures(s)
-			if evidence == "" || s.Kind != SeriesProvider && !strings.HasPrefix(s.ID, NodeDependency+"/") || !judged.Judged(symptom.Scope, s.ID) {
+			if evidence == "" || !s.External() && !strings.HasPrefix(s.ID, NodeDependency+"/") || !judged.Judged(symptom.Scope, s.ID) {
 				continue
 			}
 			available := ctx.Available[evidence]

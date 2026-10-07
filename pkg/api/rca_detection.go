@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +30,36 @@ const (
 	limitationActionsJudged                      = "actions_judged"
 	limitationDetectionEvidenceUnreadable        = "detection_evidence_unreadable"
 )
+
+// rcaJointDimension is the archive dimension of joint (version 3) interval
+// evidence, keyed by its exact [action, network profile, hierarchy, phase]
+// tuple; its series IDs start with rca.SeriesJointPrefix.
+const rcaJointDimension = "action_dimensions"
+
+// rcaIdentityScope is the run a series' measurement identity belongs to.
+type rcaIdentityScope struct {
+	project, scenario string
+}
+
+func archiveIdentityScope(manifest *RunArchiveManifest) rcaIdentityScope {
+	provenance := manifest.Provenance
+	if manifest.InitialProvenance != nil {
+		provenance = *manifest.InitialProvenance
+	}
+	return rcaIdentityScope{project: normalizeProjectID(provenance.ProjectID), scenario: provenance.ScenarioID}
+}
+
+// rcaRunSeriesIdentity is the measurement identity of a transaction, action or
+// joint series: the MetricPoint projection of what it measures in the run.
+func rcaRunSeriesIdentity(scope rcaIdentityScope, dimension, key, metric, unit, inputKind string, bucket time.Duration) string {
+	point := analysis.MetricPoint{ProjectID: scope.project, Source: "apexload", ScenarioID: scope.scenario, MetricName: dimension + "." + metric,
+		Kind: analysis.KindGauge, InputKind: inputKind, Unit: unit, Dimensions: map[string]string{dimension: key}}
+	identity, err := analysis.MeasurementSeriesIdentityOfRecorded(point, analysis.SeriesObservation{Mode: rca.ObservationInterval, BucketNanos: int64(bucket)})
+	if err != nil {
+		return ""
+	}
+	return identity.SHA256
+}
 
 // errRCADetectionStopped ends an archive read once the analysis budget is
 // spent; what was read so far is still analyzed.
@@ -158,13 +190,14 @@ func archiveDetectionInput(ctx context.Context, record *storage.RunArchiveRecord
 	if budget.MaxSeries > 0 {
 		limit = budget.MaxSeries
 	}
-	transactions, limitations, err := readTransactionSeries(ctx, record, manifest, budgeter, limit, budget.MaxSeriesPoints)
+	transactions, joint, limitations, err := readTransactionSeries(ctx, record, manifest, budgeter, limit, budget.MaxSeriesPoints)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return input, ctxErr
 	}
 	if err != nil {
 		unreadable("the interval distributions", err)
 		transactions = newRCASeriesReader(limit, budget.MaxSeriesPoints)
+		joint = newRCASeriesReader(limit, budget.MaxSeriesPoints)
 	}
 	input.Limitations = append(input.Limitations, limitations...)
 	if limit >= 0 {
@@ -172,6 +205,7 @@ func archiveDetectionInput(ctx context.Context, record *storage.RunArchiveRecord
 	}
 	monitors := newRCASeriesReader(limit, budget.MaxSeriesPoints)
 	cut, unknown, err := readMonitorSeries(ctx, record, manifest, monitors, budgeter, observe)
+	jointSeries := joint.list()
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return input, ctxErr
 	}
@@ -184,10 +218,21 @@ func archiveDetectionInput(ctx context.Context, record *storage.RunArchiveRecord
 	if cut || monitors.droppedSeries > 0 {
 		input.Limitations = append(input.Limitations, rca.Limitation{Code: limitationDetectionEvidenceCut, Detail: fmt.Sprintf("the series budget or analysis budget left out monitor evidence (%d series)", monitors.droppedSeries)})
 	}
-	// One record of what the budget cut, across both kinds of series.
-	budgeter.Series(len(transactions.series) + transactions.droppedSeries + len(monitors.series) + monitors.droppedSeries)
-	budgeter.SeriesPoints(max(transactions.maxOffered, monitors.maxOffered))
-	input.Series = append(transactions.list(), monitors.list()...)
+	// Joint action-dimension slices take what the series budget leaves.
+	jointDropped := joint.droppedSeries
+	if limit >= 0 {
+		if remaining := max(0, limit-len(monitors.series)); len(jointSeries) > remaining {
+			jointDropped += len(jointSeries) - remaining
+			jointSeries = jointSeries[:remaining]
+		}
+	}
+	if jointDropped > 0 {
+		input.Limitations = append(input.Limitations, rca.Limitation{Code: limitationDetectionEvidenceCut, Detail: fmt.Sprintf("the series budget left out %d joint action-dimension series", jointDropped)})
+	}
+	// One record of what the budget cut, across every kind of series.
+	budgeter.Series(len(transactions.series) + transactions.droppedSeries + len(monitors.series) + monitors.droppedSeries + len(jointSeries) + jointDropped)
+	budgeter.SeriesPoints(max(transactions.maxOffered, monitors.maxOffered, joint.maxOffered))
+	input.Series = append(append(transactions.list(), monitors.list()...), jointSeries...)
 	return input, nil
 }
 
@@ -195,6 +240,7 @@ func archiveDetectionInput(ctx context.Context, record *storage.RunArchiveRecord
 // distributions: a p95, error-rate and throughput point per key and interval.
 type transactionSeries struct {
 	dimension string
+	scope     rcaIdentityScope
 	reader    *rcaSeriesReader
 	// names is the sorted list of keys seen so far.
 	names     []string
@@ -210,8 +256,8 @@ type distributionInterval struct {
 	complete bool
 }
 
-func newTransactionSeries(dimension string, limit, maxPoints int) *transactionSeries {
-	return &transactionSeries{dimension: dimension, reader: newRCASeriesReader(limit, maxPoints), templates: map[string]*transactionTemplates{}}
+func newTransactionSeries(dimension string, scope rcaIdentityScope, limit, maxPoints int) *transactionSeries {
+	return &transactionSeries{dimension: dimension, scope: scope, reader: newRCASeriesReader(limit, maxPoints), templates: map[string]*transactionTemplates{}}
 }
 
 // templatesFor returns a key's series templates, created on first sight.
@@ -220,10 +266,20 @@ func (t *transactionSeries) templatesFor(name string, bucket time.Duration) (*tr
 		return found, false
 	}
 	evidence := rca.EvidenceRef{Kind: "interval", Locator: intervalDistributionsArchiveFileName + "#" + t.dimension + "=" + name}
-	series := func(suffix, kind, unit string) rca.Series {
-		return rca.Series{ID: t.dimension + "/" + name + "/" + suffix, Kind: kind, Unit: unit, Observation: rca.ObservationInterval, Bucket: bucket, Evidence: evidence}
+	// A joint slice measures its action; transaction and action series
+	// default to their own node.
+	var nodes []string
+	if t.dimension == rcaJointDimension {
+		var labels []string
+		if json.Unmarshal([]byte(name), &labels) == nil && len(labels) == 4 && labels[0] != "" {
+			nodes = []string{rca.ActionNodeID(labels[0])}
+		}
 	}
-	created := &transactionTemplates{latency: series("p95_ms", rca.SeriesLatency, "ms"), errorRate: series("error_rate", rca.SeriesErrorRate, "%"), throughput: series("throughput", rca.SeriesThroughput, "1/s")}
+	series := func(suffix, kind, unit, inputKind string) rca.Series {
+		return rca.Series{ID: t.dimension + "/" + name + "/" + suffix, Kind: kind, Unit: unit, Observation: rca.ObservationInterval, Bucket: bucket, Evidence: evidence,
+			Nodes: slices.Clone(nodes), Identity: rcaRunSeriesIdentity(t.scope, t.dimension, name, suffix, unit, inputKind, bucket)}
+	}
+	created := &transactionTemplates{latency: series("p95_ms", rca.SeriesLatency, "ms", analysis.KindObservation), errorRate: series("error_rate", rca.SeriesErrorRate, "%", analysis.KindCounter), throughput: series("throughput", rca.SeriesThroughput, "1/s", analysis.KindCounter)}
 	t.templates[name] = created
 	index, _ := slices.BinarySearch(t.names, name)
 	t.names = slices.Insert(t.names, index, name)
@@ -286,10 +342,16 @@ func automaticIterationTransactions(manifest *RunArchiveManifest) map[string]boo
 // an authored transaction appears, actions are no longer collected. Runs
 // archived without the distributions sidecar are rebuilt from their rows,
 // within bounds.
-func readTransactionSeries(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, budgeter *rca.Budgeter, limit, maxPoints int) (*rcaSeriesReader, []rca.Limitation, error) {
+// Joint interval evidence (version 3) also becomes series, one per exact
+// [action, network profile, hierarchy, phase] tuple it recorded, returned
+// separately; absence from a record of another version is not a zero.
+func readTransactionSeries(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, budgeter *rca.Budgeter, limit, maxPoints int) (*rcaSeriesReader, *rcaSeriesReader, []rca.Limitation, error) {
 	var limitations []rca.Limitation
-	transactions := newTransactionSeries("transaction", limit, maxPoints)
-	actions := newTransactionSeries("action", limit, maxPoints)
+	scope := archiveIdentityScope(manifest)
+	transactions := newTransactionSeries("transaction", scope, limit, maxPoints)
+	actions := newTransactionSeries("action", scope, limit, maxPoints)
+	joint := newTransactionSeries(rcaJointDimension, scope, limit, maxPoints)
+	var jointIntervals []distributionInterval
 	automatic := automaticIterationTransactions(manifest)
 	authored := func() bool {
 		for _, name := range transactions.names {
@@ -310,6 +372,10 @@ func readTransactionSeries(ctx context.Context, record *storage.RunArchiveRecord
 		bucket := time.Duration(r.WindowSeconds * float64(time.Second))
 		current := distributionInterval{start: r.Timestamp.UTC().Add(-bucket), complete: !r.Incomplete}
 		transactions.add(r, current, intervals, bucket)
+		if r.EvidenceVersion >= 3 {
+			joint.add(r, current, jointIntervals, bucket)
+			jointIntervals = append(jointIntervals, current)
+		}
 		if actions != nil && authored() {
 			actions = nil
 		} else if actions != nil {
@@ -338,7 +404,7 @@ func readTransactionSeries(ctx context.Context, record *storage.RunArchiveRecord
 		err = nil
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	chosen := transactions
 	switch {
@@ -366,7 +432,7 @@ func readTransactionSeries(ctx context.Context, record *storage.RunArchiveRecord
 	if chosen.reader.droppedSeries > 0 {
 		limitations = append(limitations, rca.Limitation{Code: limitationDetectionEvidenceCut, Detail: fmt.Sprintf("the series budget left out %d %s series", chosen.reader.droppedSeries, chosen.dimension)})
 	}
-	return chosen.reader, limitations, nil
+	return chosen.reader, joint.reader, limitations, nil
 }
 
 func finiteNonNegative(value float64) bool {
@@ -381,6 +447,7 @@ func readMonitorSeries(ctx context.Context, record *storage.RunArchiveRecord, ma
 		return false, 0, nil
 	}
 	read, unknown := 0, 0
+	project := archiveIdentityScope(manifest).project
 	// Series identities repeat for every bucket; derive each series once.
 	templates := map[string]*rca.Series{}
 	err := forEachArchiveRecordContext(ctx, record, func(m *RunArchiveManifest) string { return m.MonitorEvidenceFile }, func(point *analysis.MetricPoint) error {
@@ -400,14 +467,14 @@ func readMonitorSeries(ctx context.Context, record *storage.RunArchiveRecord, ma
 		if observe != nil {
 			observe(*point)
 		}
-		identity := monitorSeriesIdentity(*point)
-		template, cached := templates[identity]
+		key := monitorSeriesKey(*point)
+		template, cached := templates[key]
 		if !cached {
-			built, ok := monitorSeriesTemplate(*point, identity, manifest.MonitorEvidenceFile)
+			built, ok := monitorSeriesTemplate(*point, project, manifest.MonitorEvidenceFile)
 			if ok {
 				template = &built
 			}
-			templates[identity] = template
+			templates[key] = template
 		}
 		if template == nil {
 			unknown++
@@ -444,20 +511,30 @@ func readMonitorSeries(ctx context.Context, record *storage.RunArchiveRecord, ma
 	return false, unknown, err
 }
 
-// monitorSeriesIdentity is everything that tells one provider series from
-// another, including whether its points count up.
-func monitorSeriesIdentity(point analysis.MetricPoint) string {
+// monitorSeriesKey is a cheap key over every field a point's measurement
+// identity encodes, except provider entity IDs, which a series accumulates as
+// nodes. Points with equal keys have equal identities.
+func monitorSeriesKey(point analysis.MetricPoint) string {
 	m := point.Provider
-	identity := []string{m.Name, point.Source, point.MetricName, m.QueryID, m.Statistic, point.Kind}
+	parts := []string{point.ProjectID, point.Source, point.ScenarioID, point.Host, point.Service, point.MetricName, point.Population, point.MetricVersion, point.Kind, point.InputKind, point.Unit,
+		m.Name, m.Backend, strconv.FormatBool(m.Synthetic), m.MetricID, strconv.Itoa(m.ResolutionSeconds), m.Statistic, strconv.FormatBool(m.QueryWindow),
+		m.QueryID, m.DefinitionHash, m.BackendProfile, m.Mode, m.AnalysisStatistic, strconv.Itoa(m.EvaluationStepSeconds)}
 	for _, key := range slices.Sorted(maps.Keys(point.Dimensions)) {
-		identity = append(identity, key+"="+point.Dimensions[key])
+		parts = append(parts, key+"="+point.Dimensions[key])
 	}
-	return strings.Join(identity, "\x00")
+	for _, step := range point.Derivation {
+		parts = append(parts, fmt.Sprintf("%+v", step))
+	}
+	return strings.Join(parts, "\x00")
 }
 
-// monitorSeriesTemplate builds the series a provider point belongs to.
-// Counters, and providers whose values accumulate, are cumulative.
-func monitorSeriesTemplate(point analysis.MetricPoint, identity, file string) (rca.Series, bool) {
+// monitorSeriesTemplate builds the series a provider point belongs to. Its
+// identity is the point's measurement series identity without entity IDs,
+// on the observation its provider declares (counters, and providers whose
+// values accumulate, are cumulative); a point recorded without a project
+// belongs to the run's. A point whose identity fields are incomplete keeps
+// the archive.2 key and no identity.
+func monitorSeriesTemplate(point analysis.MetricPoint, project, file string) (rca.Series, bool) {
 	m := point.Provider
 	descriptor, known := monitorprovider.ByProviderName(m.Name)
 	if !known {
@@ -468,13 +545,31 @@ func monitorSeriesTemplate(point analysis.MetricPoint, identity, file string) (r
 		observation = rca.ObservationCumulative
 	}
 	seconds := m.ResolutionSeconds
-	if observation == rca.ObservationSnapshot && m.EvaluationStepSeconds > 0 {
+	if (observation == rca.ObservationSnapshot || seconds <= 0) && m.EvaluationStepSeconds > 0 {
 		seconds = m.EvaluationStepSeconds
 	}
-	digest := sha256.Sum256([]byte(identity))
-	id := fmt.Sprintf("monitor/%s/%s/%s/%s", m.Name, point.Source, point.MetricName, hex.EncodeToString(digest[:6]))
+	measured := point
+	if strings.TrimSpace(measured.ProjectID) == "" {
+		measured.ProjectID = project
+	}
+	provider := *m
+	provider.EntityIDs = nil
+	measured.Provider = &provider
+	digestOf := ""
+	identity, err := analysis.MeasurementSeriesIdentityOfRecorded(measured, analysis.SeriesObservation{Mode: observation, BucketNanos: int64(seconds) * int64(time.Second)})
+	if err == nil {
+		digestOf = identity.SHA256
+	} else {
+		legacy := []string{m.Name, point.Source, point.MetricName, m.QueryID, m.Statistic, point.Kind}
+		for _, key := range slices.Sorted(maps.Keys(point.Dimensions)) {
+			legacy = append(legacy, key+"="+point.Dimensions[key])
+		}
+		digest := sha256.Sum256([]byte(strings.Join(legacy, "\x00")))
+		digestOf = hex.EncodeToString(digest[:])
+	}
+	id := fmt.Sprintf("monitor/%s/%s/%s/%s", m.Name, point.Source, point.MetricName, digestOf[:12])
 	return rca.Series{
-		ID: id, Kind: rca.SeriesProvider, Unit: point.Unit, Observation: observation,
+		ID: id, Kind: rca.SeriesProvider, Unit: point.Unit, Observation: observation, Identity: identity.SHA256,
 		Bucket: time.Duration(seconds) * time.Second, ClockUncertainty: pointClockUncertainty(point),
 		Evidence: rca.EvidenceRef{Kind: "monitor_series", Locator: file + "#" + id},
 		Measures: signatures.Classify(point.MetricName + " " + m.MetricID), Nodes: pointNodes(point),

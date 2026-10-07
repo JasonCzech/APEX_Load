@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -44,6 +45,38 @@ func MeasurementSeriesIdentity(point MetricPoint, observation SeriesObservation)
 	if err := point.Validate(); err != nil {
 		return SeriesIdentity{}, err
 	}
+	return measurementSeriesIdentity(point, observation)
+}
+
+// MeasurementSeriesIdentityOfRecorded is MeasurementSeriesIdentity for a point
+// that was admitted when it was recorded, such as an archived monitor point:
+// it checks only the fields the identity encodes (project, source and metric
+// present and bounded, a known kind, valid UTF-8), not values or clocks, which
+// the identity excludes. For a point that passes Validate both return the
+// same identity.
+func MeasurementSeriesIdentityOfRecorded(point MetricPoint, observation SeriesObservation) (SeriesIdentity, error) {
+	for _, value := range []string{point.ProjectID, point.Source, point.MetricName} {
+		if strings.TrimSpace(value) == "" || len(value) > maxMetricIdentityBytes {
+			return SeriesIdentity{}, errors.New("recorded measurement identity requires project, source and metric")
+		}
+	}
+	for _, value := range []string{point.ScenarioID, point.Host, point.Service, point.Unit, point.Population, point.MetricVersion, point.InputKind} {
+		if len(value) > maxMetricIdentityBytes {
+			return SeriesIdentity{}, errors.New("recorded measurement identity field exceeds bounds")
+		}
+	}
+	switch point.Kind {
+	case KindUnknown, KindGauge, KindCounter, KindObservation, KindHistogram, KindSummary:
+	default:
+		return SeriesIdentity{}, fmt.Errorf("unsupported metric kind %q", point.Kind)
+	}
+	if len(point.Dimensions) > maxDimensions || point.Provider != nil && len(point.Provider.EntityIDs) > 16 {
+		return SeriesIdentity{}, errors.New("recorded measurement identity labels exceed bounds")
+	}
+	return measurementSeriesIdentity(point, observation)
+}
+
+func measurementSeriesIdentity(point MetricPoint, observation SeriesObservation) (SeriesIdentity, error) {
 	if observation.BucketNanos < 0 || observation.BucketNanos > int64(24*time.Hour) {
 		return SeriesIdentity{}, errors.New("series observation grid must be within 24 hours")
 	}

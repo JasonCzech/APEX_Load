@@ -475,3 +475,45 @@ func TestMeasurementSeriesIdentityPreservesPermittedNUL(t *testing.T) {
 		})
 	}
 }
+
+func TestMeasurementSeriesIdentityOfRecordedMatchesAndChecksOnlyIdentity(t *testing.T) {
+	observation := SeriesObservation{Mode: "interval", BucketNanos: int64(time.Minute)}
+	point := seriesIdentityPoint()
+	validated, err := MeasurementSeriesIdentity(point, observation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded, err := MeasurementSeriesIdentityOfRecorded(point, observation)
+	if err != nil || recorded != validated {
+		t.Fatalf("recorded identity %+v (%v) differs from validated %+v", recorded, err, validated)
+	}
+	// Values and clocks are not part of the identity and are not checked.
+	clockless := point
+	clockless.SchemaVersion, clockless.TimestampUTC, clockless.Value, clockless.Quality = "", time.Time{}, nil, "bogus"
+	if again, err := MeasurementSeriesIdentityOfRecorded(clockless, observation); err != nil || again != validated {
+		t.Fatalf("clockless identity %+v (%v)", again, err)
+	}
+	if _, err := MeasurementSeriesIdentity(clockless, observation); err == nil {
+		t.Fatal("validated identity accepted an invalid point")
+	}
+	for name, mutate := range map[string]func(*MetricPoint){
+		"project": func(p *MetricPoint) { p.ProjectID = " " },
+		"source":  func(p *MetricPoint) { p.Source = "" },
+		"metric":  func(p *MetricPoint) { p.MetricName = "" },
+		"kind":    func(p *MetricPoint) { p.Kind = "volume" },
+		"host":    func(p *MetricPoint) { p.Host = strings.Repeat("h", 257) },
+		"utf8":    func(p *MetricPoint) { p.Service = "\xff" },
+		"grid":    func(p *MetricPoint) {},
+	} {
+		bad := point
+		bad.Dimensions = maps.Clone(point.Dimensions)
+		mutate(&bad)
+		grid := observation
+		if name == "grid" {
+			grid.BucketNanos = 0
+		}
+		if _, err := MeasurementSeriesIdentityOfRecorded(bad, grid); err == nil {
+			t.Fatalf("%s: accepted", name)
+		}
+	}
+}

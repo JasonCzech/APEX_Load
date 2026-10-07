@@ -12,13 +12,20 @@ import (
 )
 
 // Series kinds. Transaction series come from the archived interval
-// distributions; provider series from archived monitor points.
+// distributions; provider series from archived monitor points; imported
+// series from analysis datasets associated with the run.
 const (
 	SeriesLatency    = "latency"
 	SeriesErrorRate  = "error_rate"
 	SeriesThroughput = "throughput"
 	SeriesProvider   = "provider"
+	SeriesImported   = "imported"
 )
+
+// SeriesJointPrefix starts the ID of a series measured on an exact action
+// dimension tuple (joint interval evidence), never one synthesized from
+// marginals.
+const SeriesJointPrefix = "action_dimensions/"
 
 // Series observations. Interval and snapshot values can be compared bucket to
 // bucket; cumulative values accumulate from an origin and cannot.
@@ -91,6 +98,17 @@ type Series struct {
 	// Nodes are the graph nodes the series measures. Transaction, action
 	// and dependency series default to their own node.
 	Nodes []string
+	// Identity is the versioned measurement identity (analysis
+	// SeriesIdentity SHA-256) of what the series measures, when known.
+	// Equal identities name the same measurement; they never by themselves
+	// authorize a baseline comparison.
+	Identity string
+}
+
+// External reports whether a series measures the system under test from
+// outside the run's own results: a provider or an imported dataset.
+func (s Series) External() bool {
+	return s.Kind == SeriesProvider || s.Kind == SeriesImported
 }
 
 // LoadLevel is one steady span of offered load, after its settle period.
@@ -302,10 +320,13 @@ func comparableSeries(series []Series) ([]Series, int) {
 }
 
 // seriesRank orders series for the budget: transactions and actions, then
-// the run's own dependency timing, then providers.
+// the run's own dependency timing, then providers and imported datasets,
+// then joint action-dimension slices.
 func seriesRank(s Series) int {
 	switch {
-	case s.Kind == SeriesProvider:
+	case strings.HasPrefix(s.ID, SeriesJointPrefix):
+		return 3
+	case s.External():
 		return 2
 	case strings.HasPrefix(s.ID, NodeDependency+"/"):
 		return 1

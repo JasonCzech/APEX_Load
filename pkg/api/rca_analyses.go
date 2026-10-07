@@ -39,7 +39,11 @@ const (
 //
 // archive.2: plateaus tolerate timestamp jitter, and actions are judged
 // beside automatic per-iteration transactions.
-const rcaArchiveAdapterVersion = "archive.2"
+// archive.3: provider series are keyed by their measurement series identity,
+// every series carries one, joint (version 3) interval evidence becomes series
+// on its exact action-dimension tuple, and associated analysis datasets
+// contribute imported series.
+const rcaArchiveAdapterVersion = "archive.3"
 
 // rcaEngineVersion changes whenever the engine's output for the same frozen
 // inputs could change, so it is part of every input digest.
@@ -93,6 +97,11 @@ type rcaEvidence struct {
 	// evidence was captured; MappingDigest identifies them.
 	Mappings      []rca.GraphMapping `json:"mappings"`
 	MappingDigest string             `json:"mapping_digest,omitempty"`
+	// Datasets are the project's ready analysis datasets associated with the
+	// run when the evidence was captured, each at the revision, mapping and
+	// partition digest an analysis reads; DatasetsTruncated says more existed.
+	Datasets          []rcaEvidenceDataset `json:"datasets,omitempty"`
+	DatasetsTruncated bool                 `json:"datasets_truncated,omitempty"`
 }
 
 type rcaEvidenceSource struct {
@@ -219,6 +228,9 @@ func captureRCAEvidence(store any, project, testID string, record *storage.RunAr
 	if evidence.Mappings, evidence.MappingDigest, err = loadRCAMappings(store, project); err != nil {
 		return nil, err
 	}
+	if evidence.Datasets, evidence.DatasetsTruncated, err = loadRCADatasets(store, project, testID); err != nil {
+		return nil, err
+	}
 	payload, err := json.Marshal(evidence)
 	if err != nil {
 		return nil, err
@@ -234,9 +246,10 @@ func captureRCAEvidence(store any, project, testID string, record *storage.RunAr
 }
 
 // sameEvidence reuses a revision captured from the same archive under the
-// same mapping decisions.
+// same mapping decisions and associated dataset revisions.
 func sameEvidence(latest, current rcaEvidence) bool {
-	return latest.ArchiveDigest == current.ArchiveDigest && latest.MappingDigest == current.MappingDigest
+	return latest.ArchiveDigest == current.ArchiveDigest && latest.MappingDigest == current.MappingDigest &&
+		rcaDatasetsDigest(latest.Datasets) == rcaDatasetsDigest(current.Datasets) && latest.DatasetsTruncated == current.DatasetsTruncated
 }
 
 // autoEnrichRCAEvidence captures an enriched evidence revision when a
@@ -723,6 +736,23 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 	if phases.truncated {
 		input.Detection.Limitations = append(input.Detection.Limitations, rca.Limitation{Code: limitationPhaseEvidence, Detail: fmt.Sprintf("network timing was kept for the first %d dependencies", maxPhaseDependencies)})
 	}
+	// Associated analysis datasets join as imported series, at the revisions
+	// the evidence froze, within what the series budget leaves.
+	if frozen && len(evidence.Datasets) > 0 {
+		limit := -1
+		if budget.MaxSeries > 0 {
+			limit = max(0, budget.MaxSeries-len(input.Detection.Series))
+		}
+		imported, limitations, err := s.rcaImportedSeries(ctx, normalizeProjectID(analysis.ProjectID), analysis.TestID, evidence.Datasets, summaries, limit, budgeter)
+		if err != nil {
+			return nil, nil, err
+		}
+		input.Detection.Series = append(input.Detection.Series, imported...)
+		input.Detection.Limitations = append(input.Detection.Limitations, limitations...)
+	}
+	if frozen && evidence.DatasetsTruncated {
+		input.Detection.Limitations = append(input.Detection.Limitations, rca.Limitation{Code: limitationImportedDatasetsCut, Detail: fmt.Sprintf("more than %d analysis datasets are associated with the run; the first %d by ID were judged", rcaMaxImportedDatasets, rcaMaxImportedDatasets)})
+	}
 	input.Graph = archiveGraphInput(manifest, calls, observations, evidence.Mappings)
 	input.Coverage, input.Detection.Baseline = s.rcaCoverage(ctx, payload, manifest, input, evidence, frozen, budgeter, budget)
 	if err := ctx.Err(); err != nil {
@@ -782,11 +812,15 @@ func (s *Server) rcaCoverage(ctx context.Context, payload rcaAnalysisPayload, ma
 		intervalStatus = rca.CoverageMissing
 	}
 	coverage = append(coverage, rca.Coverage{Evidence: "intervals", Status: intervalStatus, Detail: fmt.Sprintf("%d intervals", len(validity.Intervals))})
-	transactions, timing, providers := 0, 0, 0
+	transactions, timing, providers, imported, joint := 0, 0, 0, 0, 0
 	for _, series := range detection.Series {
 		switch {
 		case series.Kind == rca.SeriesProvider:
 			providers++
+		case series.Kind == rca.SeriesImported:
+			imported++
+		case strings.HasPrefix(series.ID, rca.SeriesJointPrefix):
+			joint++
 		case strings.HasPrefix(series.ID, rca.NodeDependency+"/"):
 			timing++
 		default:
@@ -800,7 +834,11 @@ func (s *Server) rcaCoverage(ctx context.Context, payload rcaAnalysisPayload, ma
 	case len(detection.Limitations) > 0:
 		seriesStatus = rca.CoveragePartial
 	}
-	coverage = append(coverage, rca.Coverage{Evidence: "detection_series", Status: seriesStatus, Detail: fmt.Sprintf("%d transaction series, %d dependency timing series, %d provider series, %d load levels", transactions, timing, providers, len(detection.Levels))})
+	seriesDetail := fmt.Sprintf("%d transaction series, %d dependency timing series, %d provider series, %d load levels", transactions, timing, providers, len(detection.Levels))
+	if imported > 0 || joint > 0 {
+		seriesDetail += fmt.Sprintf(", %d imported series, %d joint action-dimension series", imported, joint)
+	}
+	coverage = append(coverage, rca.Coverage{Evidence: "detection_series", Status: seriesStatus, Detail: seriesDetail})
 	topology := rca.CoverageComplete
 	switch {
 	case len(graph.Entities)+len(graph.Relations) == 0:

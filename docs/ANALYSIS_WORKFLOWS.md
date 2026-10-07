@@ -476,11 +476,36 @@ evidence.
   is named rather than only a slow iteration; an authored transaction takes
   precedence. A transaction absent from a complete interval completed
   nothing in it, so its throughput there is zero. Provider series come from the
-  archived monitor points, one per provider, source, metric, query, statistic
-  and dimension set. Interval and snapshot providers are compared bucket to
-  bucket. Counters and cumulative providers are excluded
+  archived monitor points, one per measurement series identity
+  (`analysis.MeasurementSeriesIdentity`, `apexload.series_identity.v1`) on the
+  observation mode and grid the provider declares. Entity IDs are not part of
+  the identity; a series collects them as graph nodes. A point recorded
+  without a project belongs to the run's, and a point whose identity fields
+  are incomplete keeps the earlier provider/source/metric/query/statistic/
+  dimension key with no identity. Interval and snapshot providers are compared
+  bucket to bucket. Counters and cumulative providers are excluded
   (`cumulative_series_excluded`), and points from providers that declare no
-  observation semantics are skipped (`monitor_semantics_unknown`).
+  observation semantics are skipped (`monitor_semantics_unknown`). Every
+  transaction and action series also carries the identity of its MetricPoint
+  projection; its readable ID is unchanged. Equal identities name the same
+  measurement but never by themselves authorize a baseline comparison, which
+  still needs a qualified baseline run.
+- **Joint and imported series.** Joint interval evidence (version 3) becomes
+  series on its exact `[action, network profile, hierarchy, phase]` tuple
+  (`action_dimensions/<tuple>/p95_ms`, `error_rate`, `throughput`), measuring
+  the tuple's action; intervals recorded without joint evidence are not zeros,
+  and no slice is synthesized from marginals. A ready analysis dataset of the
+  run's project whose run association names the run contributes `imported`
+  series, one per metric and identity its partition manifest records over the
+  run's span, read through one bounded native query each (at most 10,000
+  points, the mean per bucket, a counter as its rate; histograms and
+  summaries are not read). A dataset sampled more coarsely than the run's
+  interval grid is regridded to its own interval, so detection still needs
+  ten of those buckets before an onset. Imported series count as external
+  evidence for hypotheses, like providers, and name their host as a node.
+  Partitions that mix metrics or identities are not enumerated
+  (`imported_series_unenumerated`); native analysis that is off or
+  unavailable for the project is `imported_dataset_unavailable`.
 - **Levels.** Only buckets inside a steady load level are judged: the same
   settled spans validity and baseline comparison use, which skip each level's
   first 30 s. Ramps and pauses are never judged; a run with no steady level
@@ -513,8 +538,9 @@ evidence.
   `spikes_truncated`).
 - **Evidence limits.** A sidecar that cannot be read costs its series, not
   the analysis (`detection_evidence_unreadable`). Transaction series take the
-  series budget first and provider series get the rest; what the budget or
-  the analysis budget leaves out is `detection_evidence_cut`. A baseline run
+  series budget first, provider series then, joint action-dimension slices
+  and imported series what remains; what the budget or the analysis budget
+  leaves out is `detection_evidence_cut`. A baseline run
   none of whose series matches one of the run's is `baseline_series_unmatched`,
   and the limits of the baseline's own evidence are listed in its `baseline`
   coverage.
@@ -715,16 +741,22 @@ MCP tools keep returning v1.
   budget, detection parameters, validity rules, hypothesis, graph and
   capacity bounds, signature weights and the classifier, followed by the
   archive adapter's version (how the archive is read into series, levels and
-  evidence; `archive.2`). Changing a value makes a new analysis; a change to
+  evidence; `archive.3` keys provider series by measurement identity, gives
+  every series an identity and adds joint and imported series). Changing a value makes a new analysis; a change to
   a stage's logic bumps the engine's base version, and a change to how the
   archive is read bumps the adapter's. A POST
   whose digest matches a queued, running or completed analysis returns it;
   a failed or cancelled one can be retried. A run keeps at most 50
   analyses and 50 evidence revisions.
 - **Evidence revisions** freeze the archive's evidence sidecars, the run's
-  monitor sources with their outcomes and the project's mapping decisions. A
-  POST captures one when the run has none, when the archive or the mapping
-  decisions changed since the latest, or when `enrich` is true.
+  monitor sources with their outcomes, the project's mapping decisions and the
+  associated analysis datasets (at most eight, by ID; `imported_datasets_truncated`
+  beyond that), each with its revision, mapping SHA-256 and partition-manifest
+  digest. An analysis reads a dataset only while all three still match; one
+  that changed or lost its association afterwards is
+  `imported_dataset_changed` and is not read. A POST captures a revision when
+  the run has none, when the archive, the mapping decisions or the associated
+  datasets changed since the latest, or when `enrich` is true.
   `APEXLOAD_RCA_AUTO_ENRICH_PROJECTS` captures an enriched revision at archive
   finalize. Provider evidence pulls (topology and diagnostics) arrive with the
   per-run graph and signatures (WP3.7–WP3.8); until then enrichment records

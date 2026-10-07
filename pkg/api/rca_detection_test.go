@@ -299,7 +299,7 @@ func TestRCAJudgesActionsBesideAutomaticIterationTransactions(t *testing.T) {
 	manifest, _ := loadRunArchiveManifestFromRecord(record)
 	read := func(manifest *RunArchiveManifest) (map[string]bool, string) {
 		t.Helper()
-		reader, limitations, err := readTransactionSeries(context.Background(), record, manifest, rca.NewBudgeter(rca.DefaultBudget, nil, nil), -1, rca.MaxSeriesPoints)
+		reader, _, limitations, err := readTransactionSeries(context.Background(), record, manifest, rca.NewBudgeter(rca.DefaultBudget, nil, nil), -1, rca.MaxSeriesPoints)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -335,17 +335,17 @@ func TestRCAMonitorSeriesIdentity(t *testing.T) {
 	point := analysis.MetricPoint{Source: "dt-1", MetricName: "builtin:service.response.time", Kind: analysis.KindGauge, Unit: "ms",
 		Dimensions: map[string]string{"service": "checkout", "region": "eu"}, Timing: &analysis.PointTiming{ClockUncertaintyMs: &uncertainty},
 		Provider: &analysis.ProviderMeasurement{Name: monitorprovider.ProviderDynatrace, ResolutionSeconds: 60, Statistic: "avg"}}
-	first, ok := monitorSeriesTemplate(point, monitorSeriesIdentity(point), "monitor_points.jsonl")
+	first, ok := monitorSeriesTemplate(point, "project-a", "monitor_points.jsonl")
 	if !ok || first.Observation != rca.ObservationInterval || first.Bucket != time.Minute || first.ClockUncertainty != 250*time.Millisecond {
 		t.Fatalf("%+v", first)
 	}
 	// Dimension order does not change the series; a dimension value does.
 	point.Dimensions = map[string]string{"region": "eu", "service": "checkout"}
-	if again, _ := monitorSeriesTemplate(point, monitorSeriesIdentity(point), "monitor_points.jsonl"); again.ID != first.ID {
+	if again, _ := monitorSeriesTemplate(point, "project-a", "monitor_points.jsonl"); again.ID != first.ID {
 		t.Fatalf("%s != %s", again.ID, first.ID)
 	}
 	point.Dimensions["service"] = "cart"
-	if other, _ := monitorSeriesTemplate(point, monitorSeriesIdentity(point), "monitor_points.jsonl"); other.ID == first.ID {
+	if other, _ := monitorSeriesTemplate(point, "project-a", "monitor_points.jsonl"); other.ID == first.ID {
 		t.Fatal("different dimensions share a series")
 	}
 }
