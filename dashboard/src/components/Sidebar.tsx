@@ -663,7 +663,6 @@ export default function Sidebar({
           <TooltipButton
             className={`nav-item nav-item-primary ${active === 'new-test' ? 'active' : ''}`}
             onClick={() => onNavigate('new-test')}
-            title="New Test"
             aria-label="New Test"
             aria-current={active === 'new-test' ? 'page' : undefined}
             data-nav-label="New Test"
@@ -685,7 +684,6 @@ export default function Sidebar({
                   key={item.id}
                   className={`nav-item ${active === item.id ? 'active' : ''}`}
                   onClick={() => onNavigate(item.id)}
-                  title={item.label}
                   aria-label={item.label}
                   aria-current={active === item.id ? 'page' : undefined}
                   data-nav-label={item.label}
