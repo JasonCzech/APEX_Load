@@ -511,6 +511,8 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	}
 	if !live.Telemetry.CollectedAt.IsZero() {
 		live.Telemetry.SampleAgeMs = float64(now.Sub(live.Telemetry.CollectedAt).Microseconds()) / 1000.0
+		// A generator's sample was collected on its own clock.
+		live.Telemetry.SampleAgeMs, live.Telemetry.SampleAgeQuality = sampleAgeQualified(live.Telemetry.SampleAgeMs, live.Telemetry.collectedAtOffsetMs, live.Telemetry.collectedAtQuality)
 	}
 	live.Telemetry.WebsocketClients = hubStats.ConnectedClients
 	live.Telemetry.WebsocketDroppedMessages = hubStats.DroppedClientMessages

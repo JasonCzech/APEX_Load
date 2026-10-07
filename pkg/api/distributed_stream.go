@@ -700,6 +700,11 @@ receiveLoop:
 			return
 		}
 		recordDistributedMetricsReceipt(&batch, time.Now().UnixMilli())
+		tr.mu.RLock()
+		calibrations := test.clockCalibrations
+		tr.mu.RUnlock()
+		offset, clockQuality := calibrations.quality(target, time.Now())
+		qualifyCrossHostTelemetry(batch.Telemetry, offset, clockQuality)
 		// Source coverage counts each received publication once, including
 		// duplicates and late arrivals the live view rejects, and never the
 		// controller's own retries of the same publication below.

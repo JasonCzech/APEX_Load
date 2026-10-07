@@ -30,9 +30,9 @@ func TestClockObservationLogKeepsOnePerSourcePerWindow(t *testing.T) {
 		want   bool
 	}{
 		{"gen-a", 0, true},
-		{"gen-a", 30 * time.Second, false}, // same minute
-		{"gen-b", 30 * time.Second, true},  // another source
-		{"gen-a", 50 * time.Second, true},  // next minute
+		{"gen-a", 15 * time.Second, false}, // same 30-second window
+		{"gen-b", 15 * time.Second, true},  // another source
+		{"gen-a", 25 * time.Second, true},  // next window
 		{"gen-a", -2 * time.Minute, false}, // never backwards
 	} {
 		if got := log.record(observation(tc.source, tc.offset)); got != tc.want {

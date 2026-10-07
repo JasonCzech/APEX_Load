@@ -236,6 +236,8 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			combined.Telemetry.SheddedArrivals += batch.Telemetry.SheddedArrivals
 			if batch.Telemetry.CollectedAtUnixMs > 0 && (!hasCollectedAt || batch.Telemetry.CollectedAtUnixMs < combined.Telemetry.CollectedAtUnixMs) {
 				combined.Telemetry.CollectedAtUnixMs = batch.Telemetry.CollectedAtUnixMs
+				// The oldest sample's age is measured across its own clock.
+				combined.Telemetry.CollectedAtQuality, combined.Telemetry.CollectedAtOffsetMs = batch.Telemetry.CollectedAtQuality, batch.Telemetry.CollectedAtOffsetMs
 				hasCollectedAt = true
 			}
 			if batch.Telemetry.PublishedAtUnixMs > 0 && (!hasPublishedAt || batch.Telemetry.PublishedAtUnixMs > combined.Telemetry.PublishedAtUnixMs) {
@@ -252,6 +254,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			if batch.Telemetry.GeneratorProcessingLagMs > combined.Telemetry.GeneratorProcessingLagMs {
 				combined.Telemetry.GeneratorProcessingLagMs = batch.Telemetry.GeneratorProcessingLagMs
 			}
+			combined.Telemetry.TransportLagQuality = combineClockQuality(combined.Telemetry.TransportLagQuality, batch.Telemetry.TransportLagQuality)
 			if batch.Telemetry.TransportLagMs > combined.Telemetry.TransportLagMs {
 				combined.Telemetry.TransportLagMs = batch.Telemetry.TransportLagMs
 			}
@@ -606,7 +609,11 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		} else if !live.Telemetry.CollectedAt.IsZero() && !live.Telemetry.GeneratorPublishedAt.IsZero() {
 			live.Telemetry.GeneratorProcessingLagMs = float64(live.Telemetry.GeneratorPublishedAt.Sub(live.Telemetry.CollectedAt).Microseconds()) / 1000.0
 		}
-		if batch.Telemetry.TransportLagMs > 0 {
+		live.Telemetry.TransportLagQuality = batch.Telemetry.TransportLagQuality
+		live.Telemetry.collectedAtQuality, live.Telemetry.collectedAtOffsetMs = batch.Telemetry.CollectedAtQuality, batch.Telemetry.CollectedAtOffsetMs
+		if batch.Telemetry.TransportLagMs > 0 || batch.Telemetry.TransportLagQuality != nil {
+			// A qualified lag is already corrected; an implausible one stays
+			// unavailable rather than recomputed from the raw clocks.
 			live.Telemetry.TransportLagMs = batch.Telemetry.TransportLagMs
 		} else if !live.Telemetry.GeneratorPublishedAt.IsZero() && !live.Telemetry.ControllerReceivedAt.IsZero() {
 			live.Telemetry.TransportLagMs = float64(live.Telemetry.ControllerReceivedAt.Sub(live.Telemetry.GeneratorPublishedAt).Microseconds()) / 1000.0

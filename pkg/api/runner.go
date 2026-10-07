@@ -530,6 +530,7 @@ type ManagedTest struct {
 	dynatraceArtifacts    *runArtifacts
 	clockObservations     *clockObservationLog                     // measured source clocks; created on first observation
 	telemetrySources      *telemetrySourceLedger                   // source-epoch publication coverage; created on first publication
+	clockCalibrations     *clockCalibrations                       // current generator clock offsets; created on first probe
 	TotalVUsers           int                                      `json:"total_vusers"`
 	GeneratorShards       []GeneratorShardSummary                  `json:"generator_shards,omitempty"`
 	Duration              time.Duration                            `json:"duration_ns"`
@@ -1075,6 +1076,16 @@ type TelemetryHealth struct {
 	// Coverage is the run's wall-time observation coverage so far: the
 	// time every required generator was observed, and the unknown rest.
 	Coverage *TelemetryCoverage `json:"coverage,omitempty"`
+	// TransportLagQuality and SampleAgeQuality qualify the stages measured
+	// across a generator's clock and the controller's: qualified when a
+	// current offset calibration corrected them. Absent for a run executed
+	// in the controller's own process.
+	TransportLagQuality *generatorrpc.ClockQuality `json:"transport_lag_quality,omitempty"`
+	SampleAgeQuality    *generatorrpc.ClockQuality `json:"sample_age_quality,omitempty"`
+	// collectedAtQuality and collectedAtOffsetMs map the oldest sample's
+	// collection time to the controller's clock when the age is computed.
+	collectedAtQuality  *generatorrpc.ClockQuality
+	collectedAtOffsetMs float64
 }
 
 type TelemetryRunHealth struct {
@@ -1164,11 +1175,15 @@ type RunComparisonBaseline struct {
 }
 
 type TelemetryDiagnostic struct {
-	Severity   string             `json:"severity"`
-	Summary    string             `json:"summary"`
-	Conditions []string           `json:"conditions,omitempty"`
-	Samples    []DiagnosticSample `json:"samples,omitempty"`
-	Telemetry  *TelemetryHealth   `json:"telemetry,omitempty"`
+	Severity   string   `json:"severity"`
+	Summary    string   `json:"summary"`
+	Conditions []string `json:"conditions,omitempty"`
+	// Unscored lists budget decisions on cross-host durations that could not
+	// be made, with the reason (an unqualified clock, or an uncertainty that
+	// straddles the threshold): neither a breach nor a pass.
+	Unscored  []string           `json:"unscored,omitempty"`
+	Samples   []DiagnosticSample `json:"samples,omitempty"`
+	Telemetry *TelemetryHealth   `json:"telemetry,omitempty"`
 }
 
 type DiagnosticSample struct {

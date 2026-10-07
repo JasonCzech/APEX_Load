@@ -22,6 +22,7 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 	conditions := make([]string, 0, 5)
 	summaries := make([]string, 0, 5)
 	signatureParts := make([]string, 0, 8)
+	var unscored []string
 	severity := "healthy"
 
 	if live.Telemetry != nil {
@@ -49,9 +50,17 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 			signatureParts = append(signatureParts, "websocket_drops")
 			severity = maxDiagnosticSeverity(severity, "danger")
 		}
-		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "stale_sample", "sample age", live.Telemetry.SampleAgeMs, thresholds.MaxTelemetrySampleAgeMs)
+		if reason := clockBudgetUnscored(live.Telemetry.SampleAgeMs, thresholds.MaxTelemetrySampleAgeMs, live.Telemetry.SampleAgeQuality); reason != "" {
+			unscored = append(unscored, "stale_sample:"+reason)
+		} else {
+			appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "stale_sample", "sample age", live.Telemetry.SampleAgeMs, thresholds.MaxTelemetrySampleAgeMs)
+		}
 		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "generator_lag", "generator processing lag", live.Telemetry.GeneratorProcessingLagMs, thresholds.MaxTelemetryGeneratorLagMs)
-		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "transport_lag", "transport lag", live.Telemetry.TransportLagMs, thresholds.MaxTelemetryTransportLagMs)
+		if reason := clockBudgetUnscored(live.Telemetry.TransportLagMs, thresholds.MaxTelemetryTransportLagMs, live.Telemetry.TransportLagQuality); reason != "" {
+			unscored = append(unscored, "transport_lag:"+reason)
+		} else {
+			appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "transport_lag", "transport lag", live.Telemetry.TransportLagMs, thresholds.MaxTelemetryTransportLagMs)
+		}
 		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "controller_fanout_lag", "controller fan-out lag", live.Telemetry.ControllerFanoutLagMs, thresholds.MaxTelemetryControllerFanoutMs)
 		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "browser_render_lag", "browser render lag", live.Telemetry.BrowserRenderLagMs, thresholds.MaxTelemetryBrowserRenderLagMs)
 	}
@@ -95,6 +104,7 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 		return &TelemetryDiagnostic{
 			Severity:  "healthy",
 			Summary:   "live telemetry healthy",
+			Unscored:  unscored,
 			Samples:   nil,
 			Telemetry: live.Telemetry,
 		}, "healthy"
@@ -105,6 +115,7 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 		Severity:   severity,
 		Summary:    strings.Join(summaries, "; "),
 		Conditions: conditions,
+		Unscored:   unscored,
 		Samples:    samples,
 		Telemetry:  live.Telemetry,
 	}, signature

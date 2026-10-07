@@ -34325,9 +34325,11 @@ export interface operations {
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
+                  "sample_age_quality"?: (Record<string, unknown>) | null;
                   "shedded_arrivals"?: number;
                   "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
+                  "transport_lag_quality"?: (Record<string, unknown>) | null;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -34809,9 +34811,11 @@ export interface operations {
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
+                  "sample_age_quality"?: (Record<string, unknown>) | null;
                   "shedded_arrivals"?: number;
                   "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
+                  "transport_lag_quality"?: (Record<string, unknown>) | null;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -41957,6 +41961,7 @@ export interface operations {
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
+                "sample_age_quality"?: (Record<string, unknown>) | null;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -41968,6 +41973,7 @@ export interface operations {
                   "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
+                "transport_lag_quality"?: (Record<string, unknown>) | null;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -43513,6 +43519,7 @@ export interface operations {
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
+                "sample_age_quality"?: (Record<string, unknown>) | null;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -43524,6 +43531,7 @@ export interface operations {
                   "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
+                "transport_lag_quality"?: (Record<string, unknown>) | null;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -58848,6 +58856,7 @@ export interface operations {
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
+                "sample_age_quality"?: (Record<string, unknown>) | null;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -58859,6 +58868,7 @@ export interface operations {
                   "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
+                "transport_lag_quality"?: (Record<string, unknown>) | null;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -60404,6 +60414,7 @@ export interface operations {
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
+                "sample_age_quality"?: (Record<string, unknown>) | null;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -60415,6 +60426,7 @@ export interface operations {
                   "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
+                "transport_lag_quality"?: (Record<string, unknown>) | null;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -62538,9 +62550,11 @@ export interface operations {
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
+                  "sample_age_quality"?: (Record<string, unknown>) | null;
                   "shedded_arrivals"?: number;
                   "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
+                  "transport_lag_quality"?: (Record<string, unknown>) | null;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -63022,9 +63036,11 @@ export interface operations {
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
+                  "sample_age_quality"?: (Record<string, unknown>) | null;
                   "shedded_arrivals"?: number;
                   "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
+                  "transport_lag_quality"?: (Record<string, unknown>) | null;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -76643,6 +76659,7 @@ export interface operations {
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
+                "sample_age_quality"?: (Record<string, unknown>) | null;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -76654,6 +76671,7 @@ export interface operations {
                   "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
+                "transport_lag_quality"?: (Record<string, unknown>) | null;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -78199,6 +78217,7 @@ export interface operations {
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
+                "sample_age_quality"?: (Record<string, unknown>) | null;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -78210,6 +78229,7 @@ export interface operations {
                   "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
+                "transport_lag_quality"?: (Record<string, unknown>) | null;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -96834,6 +96854,7 @@ export interface operations {
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
+                "sample_age_quality"?: (Record<string, unknown>) | null;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -96845,6 +96866,7 @@ export interface operations {
                   "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
+                "transport_lag_quality"?: (Record<string, unknown>) | null;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -98390,6 +98412,7 @@ export interface operations {
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
+                "sample_age_quality"?: (Record<string, unknown>) | null;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -98401,6 +98424,7 @@ export interface operations {
                   "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
+                "transport_lag_quality"?: (Record<string, unknown>) | null;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -111590,9 +111614,11 @@ export interface operations {
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
+                  "sample_age_quality"?: (Record<string, unknown>) | null;
                   "shedded_arrivals"?: number;
                   "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
+                  "transport_lag_quality"?: (Record<string, unknown>) | null;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -112074,9 +112100,11 @@ export interface operations {
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
+                  "sample_age_quality"?: (Record<string, unknown>) | null;
                   "shedded_arrivals"?: number;
                   "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
+                  "transport_lag_quality"?: (Record<string, unknown>) | null;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -113320,9 +113348,11 @@ export interface operations {
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
+                  "sample_age_quality"?: (Record<string, unknown>) | null;
                   "shedded_arrivals"?: number;
                   "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
+                  "transport_lag_quality"?: (Record<string, unknown>) | null;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -113804,9 +113834,11 @@ export interface operations {
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
+                  "sample_age_quality"?: (Record<string, unknown>) | null;
                   "shedded_arrivals"?: number;
                   "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
+                  "transport_lag_quality"?: (Record<string, unknown>) | null;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -115050,9 +115082,11 @@ export interface operations {
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
+                  "sample_age_quality"?: (Record<string, unknown>) | null;
                   "shedded_arrivals"?: number;
                   "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
+                  "transport_lag_quality"?: (Record<string, unknown>) | null;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -115534,9 +115568,11 @@ export interface operations {
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
+                  "sample_age_quality"?: (Record<string, unknown>) | null;
                   "shedded_arrivals"?: number;
                   "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
+                  "transport_lag_quality"?: (Record<string, unknown>) | null;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -116780,9 +116816,11 @@ export interface operations {
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
+                  "sample_age_quality"?: (Record<string, unknown>) | null;
                   "shedded_arrivals"?: number;
                   "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
+                  "transport_lag_quality"?: (Record<string, unknown>) | null;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -117264,9 +117302,11 @@ export interface operations {
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
+                  "sample_age_quality"?: (Record<string, unknown>) | null;
                   "shedded_arrivals"?: number;
                   "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
+                  "transport_lag_quality"?: (Record<string, unknown>) | null;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -118510,9 +118550,11 @@ export interface operations {
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
+                  "sample_age_quality"?: (Record<string, unknown>) | null;
                   "shedded_arrivals"?: number;
                   "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
+                  "transport_lag_quality"?: (Record<string, unknown>) | null;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -118994,9 +119036,11 @@ export interface operations {
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
+                  "sample_age_quality"?: (Record<string, unknown>) | null;
                   "shedded_arrivals"?: number;
                   "sources"?: (Record<string, unknown>) | null;
                   "transport_lag_ms"?: number;
+                  "transport_lag_quality"?: (Record<string, unknown>) | null;
                   "websocket_clients"?: number;
                   "websocket_dropped_events"?: number;
                   "websocket_dropped_messages"?: number;
@@ -143393,6 +143437,7 @@ export interface operations {
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
+                "sample_age_quality"?: (Record<string, unknown>) | null;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -143404,6 +143449,7 @@ export interface operations {
                   "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
+                "transport_lag_quality"?: (Record<string, unknown>) | null;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
@@ -144949,6 +144995,7 @@ export interface operations {
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
+                "sample_age_quality"?: (Record<string, unknown>) | null;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -144960,6 +145007,7 @@ export interface operations {
                   "unobserved_generations"?: number;
                 }) | null;
                 "transport_lag_ms"?: number;
+                "transport_lag_quality"?: (Record<string, unknown>) | null;
                 "websocket_clients"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;

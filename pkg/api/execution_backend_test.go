@@ -2666,6 +2666,18 @@ func TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion(t *testing.T
 	if !rolledUp {
 		t.Fatal("no archived interval carried the live telemetry source roll-up")
 	}
+	// Transport lag crossed the generator's clock and carries its quality.
+	qualified := false
+	for _, line := range bytes.Split(bytes.TrimSpace(intervals), []byte("\n")) {
+		var interval IntervalSummaryRecord
+		if json.Unmarshal(line, &interval) == nil && interval.Telemetry != nil && interval.Telemetry.TransportLagQuality != nil {
+			qualified = true
+			break
+		}
+	}
+	if !qualified {
+		t.Fatal("no archived interval carried the transport lag's clock quality")
+	}
 	// The manifest carries the run's wall-time telemetry account.
 	coverage := manifest.TelemetryCoverage
 	if coverage == nil || coverage.Algorithm != telemetryCoverageAlgorithm || coverage.Coverage.WindowMs <= 0 || len(coverage.Coverage.Sources) != 1 || coverage.Coverage.Sources[0].ObservedMs <= 0 || len(coverage.Segments) != 1 || coverage.RetainedIntervals == 0 ||

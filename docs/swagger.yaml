@@ -82634,6 +82634,11 @@ paths:
                                 sample_age_ms:
                                   type: number
                                   format: double
+                                sample_age_quality:
+                                  type: object
+                                  description: 'Go type: generatorrpc.ClockQuality'
+                                  additionalProperties: true
+                                  nullable: true
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
@@ -82645,6 +82650,11 @@ paths:
                                 transport_lag_ms:
                                   type: number
                                   format: double
+                                transport_lag_quality:
+                                  type: object
+                                  description: 'Go type: generatorrpc.ClockQuality'
+                                  additionalProperties: true
+                                  nullable: true
                                 websocket_clients:
                                   type: integer
                                   format: int64
@@ -84234,6 +84244,11 @@ paths:
                               sample_age_ms:
                                 type: number
                                 format: double
+                              sample_age_quality:
+                                type: object
+                                description: 'Go type: generatorrpc.ClockQuality'
+                                additionalProperties: true
+                                nullable: true
                               shedded_arrivals:
                                 type: integer
                                 format: int64
@@ -84244,6 +84259,11 @@ paths:
                               transport_lag_ms:
                                 type: number
                                 format: double
+                              transport_lag_quality:
+                                type: object
+                                description: 'Go type: generatorrpc.ClockQuality'
+                                additionalProperties: true
+                                nullable: true
                               websocket_clients:
                                 type: integer
                                 format: int64
@@ -87962,6 +87982,11 @@ paths:
                                 sample_age_ms:
                                   type: number
                                   format: double
+                                sample_age_quality:
+                                  type: object
+                                  description: 'Go type: generatorrpc.ClockQuality'
+                                  additionalProperties: true
+                                  nullable: true
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
@@ -87973,6 +87998,11 @@ paths:
                                 transport_lag_ms:
                                   type: number
                                   format: double
+                                transport_lag_quality:
+                                  type: object
+                                  description: 'Go type: generatorrpc.ClockQuality'
+                                  additionalProperties: true
+                                  nullable: true
                                 websocket_clients:
                                   type: integer
                                   format: int64
@@ -89562,6 +89592,11 @@ paths:
                               sample_age_ms:
                                 type: number
                                 format: double
+                              sample_age_quality:
+                                type: object
+                                description: 'Go type: generatorrpc.ClockQuality'
+                                additionalProperties: true
+                                nullable: true
                               shedded_arrivals:
                                 type: integer
                                 format: int64
@@ -89572,6 +89607,11 @@ paths:
                               transport_lag_ms:
                                 type: number
                                 format: double
+                              transport_lag_quality:
+                                type: object
+                                description: 'Go type: generatorrpc.ClockQuality'
+                                additionalProperties: true
+                                nullable: true
                               websocket_clients:
                                 type: integer
                                 format: int64
@@ -93291,6 +93331,11 @@ paths:
                                 sample_age_ms:
                                   type: number
                                   format: double
+                                sample_age_quality:
+                                  type: object
+                                  description: 'Go type: generatorrpc.ClockQuality'
+                                  additionalProperties: true
+                                  nullable: true
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
@@ -93302,6 +93347,11 @@ paths:
                                 transport_lag_ms:
                                   type: number
                                   format: double
+                                transport_lag_quality:
+                                  type: object
+                                  description: 'Go type: generatorrpc.ClockQuality'
+                                  additionalProperties: true
+                                  nullable: true
                                 websocket_clients:
                                   type: integer
                                   format: int64
@@ -94891,6 +94941,11 @@ paths:
                               sample_age_ms:
                                 type: number
                                 format: double
+                              sample_age_quality:
+                                type: object
+                                description: 'Go type: generatorrpc.ClockQuality'
+                                additionalProperties: true
+                                nullable: true
                               shedded_arrivals:
                                 type: integer
                                 format: int64
@@ -94901,6 +94956,11 @@ paths:
                               transport_lag_ms:
                                 type: number
                                 format: double
+                              transport_lag_quality:
+                                type: object
+                                description: 'Go type: generatorrpc.ClockQuality'
+                                additionalProperties: true
+                                nullable: true
                               websocket_clients:
                                 type: integer
                                 format: int64
@@ -98632,6 +98692,11 @@ paths:
                                 sample_age_ms:
                                   type: number
                                   format: double
+                                sample_age_quality:
+                                  type: object
+                                  description: 'Go type: generatorrpc.ClockQuality'
+                                  additionalProperties: true
+                                  nullable: true
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
@@ -98643,6 +98708,11 @@ paths:
                                 transport_lag_ms:
                                   type: number
                                   format: double
+                                transport_lag_quality:
+                                  type: object
+                                  description: 'Go type: generatorrpc.ClockQuality'
+                                  additionalProperties: true
+                                  nullable: true
                                 websocket_clients:
                                   type: integer
                                   format: int64
@@ -100232,6 +100302,11 @@ paths:
                               sample_age_ms:
                                 type: number
                                 format: double
+                              sample_age_quality:
+                                type: object
+                                description: 'Go type: generatorrpc.ClockQuality'
+                                additionalProperties: true
+                                nullable: true
                               shedded_arrivals:
                                 type: integer
                                 format: int64
@@ -100242,6 +100317,11 @@ paths:
                               transport_lag_ms:
                                 type: number
                                 format: double
+                              transport_lag_quality:
+                                type: object
+                                description: 'Go type: generatorrpc.ClockQuality'
+                                additionalProperties: true
+                                nullable: true
                               websocket_clients:
                                 type: integer
                                 format: int64
@@ -103973,6 +104053,11 @@ paths:
                                 sample_age_ms:
                                   type: number
                                   format: double
+                                sample_age_quality:
+                                  type: object
+                                  description: 'Go type: generatorrpc.ClockQuality'
+                                  additionalProperties: true
+                                  nullable: true
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
@@ -103984,6 +104069,11 @@ paths:
                                 transport_lag_ms:
                                   type: number
                                   format: double
+                                transport_lag_quality:
+                                  type: object
+                                  description: 'Go type: generatorrpc.ClockQuality'
+                                  additionalProperties: true
+                                  nullable: true
                                 websocket_clients:
                                   type: integer
                                   format: int64
@@ -105573,6 +105663,11 @@ paths:
                               sample_age_ms:
                                 type: number
                                 format: double
+                              sample_age_quality:
+                                type: object
+                                description: 'Go type: generatorrpc.ClockQuality'
+                                additionalProperties: true
+                                nullable: true
                               shedded_arrivals:
                                 type: integer
                                 format: int64
@@ -105583,6 +105678,11 @@ paths:
                               transport_lag_ms:
                                 type: number
                                 format: double
+                              transport_lag_quality:
+                                type: object
+                                description: 'Go type: generatorrpc.ClockQuality'
+                                additionalProperties: true
+                                nullable: true
                               websocket_clients:
                                 type: integer
                                 format: int64
@@ -109314,6 +109414,11 @@ paths:
                                 sample_age_ms:
                                   type: number
                                   format: double
+                                sample_age_quality:
+                                  type: object
+                                  description: 'Go type: generatorrpc.ClockQuality'
+                                  additionalProperties: true
+                                  nullable: true
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
@@ -109325,6 +109430,11 @@ paths:
                                 transport_lag_ms:
                                   type: number
                                   format: double
+                                transport_lag_quality:
+                                  type: object
+                                  description: 'Go type: generatorrpc.ClockQuality'
+                                  additionalProperties: true
+                                  nullable: true
                                 websocket_clients:
                                   type: integer
                                   format: int64
@@ -110914,6 +111024,11 @@ paths:
                               sample_age_ms:
                                 type: number
                                 format: double
+                              sample_age_quality:
+                                type: object
+                                description: 'Go type: generatorrpc.ClockQuality'
+                                additionalProperties: true
+                                nullable: true
                               shedded_arrivals:
                                 type: integer
                                 format: int64
@@ -110924,6 +111039,11 @@ paths:
                               transport_lag_ms:
                                 type: number
                                 format: double
+                              transport_lag_quality:
+                                type: object
+                                description: 'Go type: generatorrpc.ClockQuality'
+                                additionalProperties: true
+                                nullable: true
                               websocket_clients:
                                 type: integer
                                 format: int64
@@ -114655,6 +114775,11 @@ paths:
                                 sample_age_ms:
                                   type: number
                                   format: double
+                                sample_age_quality:
+                                  type: object
+                                  description: 'Go type: generatorrpc.ClockQuality'
+                                  additionalProperties: true
+                                  nullable: true
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
@@ -114666,6 +114791,11 @@ paths:
                                 transport_lag_ms:
                                   type: number
                                   format: double
+                                transport_lag_quality:
+                                  type: object
+                                  description: 'Go type: generatorrpc.ClockQuality'
+                                  additionalProperties: true
+                                  nullable: true
                                 websocket_clients:
                                   type: integer
                                   format: int64
@@ -116255,6 +116385,11 @@ paths:
                               sample_age_ms:
                                 type: number
                                 format: double
+                              sample_age_quality:
+                                type: object
+                                description: 'Go type: generatorrpc.ClockQuality'
+                                additionalProperties: true
+                                nullable: true
                               shedded_arrivals:
                                 type: integer
                                 format: int64
@@ -116265,6 +116400,11 @@ paths:
                               transport_lag_ms:
                                 type: number
                                 format: double
+                              transport_lag_quality:
+                                type: object
+                                description: 'Go type: generatorrpc.ClockQuality'
+                                additionalProperties: true
+                                nullable: true
                               websocket_clients:
                                 type: integer
                                 format: int64
@@ -321592,6 +321732,11 @@ paths:
                             sample_age_ms:
                               type: number
                               format: double
+                            sample_age_quality:
+                              type: object
+                              description: 'Go type: generatorrpc.ClockQuality'
+                              additionalProperties: true
+                              nullable: true
                             shedded_arrivals:
                               type: integer
                               format: int64
@@ -321626,6 +321771,11 @@ paths:
                             transport_lag_ms:
                               type: number
                               format: double
+                            transport_lag_quality:
+                              type: object
+                              description: 'Go type: generatorrpc.ClockQuality'
+                              additionalProperties: true
+                              nullable: true
                             websocket_clients:
                               type: integer
                               format: int64
@@ -326941,6 +327091,11 @@ paths:
                           sample_age_ms:
                             type: number
                             format: double
+                          sample_age_quality:
+                            type: object
+                            description: 'Go type: generatorrpc.ClockQuality'
+                            additionalProperties: true
+                            nullable: true
                           shedded_arrivals:
                             type: integer
                             format: int64
@@ -326975,6 +327130,11 @@ paths:
                           transport_lag_ms:
                             type: number
                             format: double
+                          transport_lag_quality:
+                            type: object
+                            description: 'Go type: generatorrpc.ClockQuality'
+                            additionalProperties: true
+                            nullable: true
                           websocket_clients:
                             type: integer
                             format: int64
@@ -333975,6 +334135,11 @@ paths:
                             sample_age_ms:
                               type: number
                               format: double
+                            sample_age_quality:
+                              type: object
+                              description: 'Go type: generatorrpc.ClockQuality'
+                              additionalProperties: true
+                              nullable: true
                             shedded_arrivals:
                               type: integer
                               format: int64
@@ -334009,6 +334174,11 @@ paths:
                             transport_lag_ms:
                               type: number
                               format: double
+                            transport_lag_quality:
+                              type: object
+                              description: 'Go type: generatorrpc.ClockQuality'
+                              additionalProperties: true
+                              nullable: true
                             websocket_clients:
                               type: integer
                               format: int64
@@ -339324,6 +339494,11 @@ paths:
                           sample_age_ms:
                             type: number
                             format: double
+                          sample_age_quality:
+                            type: object
+                            description: 'Go type: generatorrpc.ClockQuality'
+                            additionalProperties: true
+                            nullable: true
                           shedded_arrivals:
                             type: integer
                             format: int64
@@ -339358,6 +339533,11 @@ paths:
                           transport_lag_ms:
                             type: number
                             format: double
+                          transport_lag_quality:
+                            type: object
+                            description: 'Go type: generatorrpc.ClockQuality'
+                            additionalProperties: true
+                            nullable: true
                           websocket_clients:
                             type: integer
                             format: int64
@@ -371837,6 +372017,11 @@ paths:
                             sample_age_ms:
                               type: number
                               format: double
+                            sample_age_quality:
+                              type: object
+                              description: 'Go type: generatorrpc.ClockQuality'
+                              additionalProperties: true
+                              nullable: true
                             shedded_arrivals:
                               type: integer
                               format: int64
@@ -371871,6 +372056,11 @@ paths:
                             transport_lag_ms:
                               type: number
                               format: double
+                            transport_lag_quality:
+                              type: object
+                              description: 'Go type: generatorrpc.ClockQuality'
+                              additionalProperties: true
+                              nullable: true
                             websocket_clients:
                               type: integer
                               format: int64
@@ -377186,6 +377376,11 @@ paths:
                           sample_age_ms:
                             type: number
                             format: double
+                          sample_age_quality:
+                            type: object
+                            description: 'Go type: generatorrpc.ClockQuality'
+                            additionalProperties: true
+                            nullable: true
                           shedded_arrivals:
                             type: integer
                             format: int64
@@ -377220,6 +377415,11 @@ paths:
                           transport_lag_ms:
                             type: number
                             format: double
+                          transport_lag_quality:
+                            type: object
+                            description: 'Go type: generatorrpc.ClockQuality'
+                            additionalProperties: true
+                            nullable: true
                           websocket_clients:
                             type: integer
                             format: int64
@@ -384164,6 +384364,11 @@ paths:
                             sample_age_ms:
                               type: number
                               format: double
+                            sample_age_quality:
+                              type: object
+                              description: 'Go type: generatorrpc.ClockQuality'
+                              additionalProperties: true
+                              nullable: true
                             shedded_arrivals:
                               type: integer
                               format: int64
@@ -384198,6 +384403,11 @@ paths:
                             transport_lag_ms:
                               type: number
                               format: double
+                            transport_lag_quality:
+                              type: object
+                              description: 'Go type: generatorrpc.ClockQuality'
+                              additionalProperties: true
+                              nullable: true
                             websocket_clients:
                               type: integer
                               format: int64
@@ -389513,6 +389723,11 @@ paths:
                           sample_age_ms:
                             type: number
                             format: double
+                          sample_age_quality:
+                            type: object
+                            description: 'Go type: generatorrpc.ClockQuality'
+                            additionalProperties: true
+                            nullable: true
                           shedded_arrivals:
                             type: integer
                             format: int64
@@ -389547,6 +389762,11 @@ paths:
                           transport_lag_ms:
                             type: number
                             format: double
+                          transport_lag_quality:
+                            type: object
+                            description: 'Go type: generatorrpc.ClockQuality'
+                            additionalProperties: true
+                            nullable: true
                           websocket_clients:
                             type: integer
                             format: int64
@@ -403633,6 +403853,11 @@ paths:
                             sample_age_ms:
                               type: number
                               format: double
+                            sample_age_quality:
+                              type: object
+                              description: 'Go type: generatorrpc.ClockQuality'
+                              additionalProperties: true
+                              nullable: true
                             shedded_arrivals:
                               type: integer
                               format: int64
@@ -403667,6 +403892,11 @@ paths:
                             transport_lag_ms:
                               type: number
                               format: double
+                            transport_lag_quality:
+                              type: object
+                              description: 'Go type: generatorrpc.ClockQuality'
+                              additionalProperties: true
+                              nullable: true
                             websocket_clients:
                               type: integer
                               format: int64
@@ -408983,6 +409213,11 @@ paths:
                           sample_age_ms:
                             type: number
                             format: double
+                          sample_age_quality:
+                            type: object
+                            description: 'Go type: generatorrpc.ClockQuality'
+                            additionalProperties: true
+                            nullable: true
                           shedded_arrivals:
                             type: integer
                             format: int64
@@ -409017,6 +409252,11 @@ paths:
                           transport_lag_ms:
                             type: number
                             format: double
+                          transport_lag_quality:
+                            type: object
+                            description: 'Go type: generatorrpc.ClockQuality'
+                            additionalProperties: true
+                            nullable: true
                           websocket_clients:
                             type: integer
                             format: int64

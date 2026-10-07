@@ -230,6 +230,13 @@ type MetricsTelemetry struct {
 	// false for older generators that report only the process-wide count.
 	TestDroppedSubscriberBatches         int64
 	TestDroppedSubscriberBatchesReported bool
+	// The controller qualifies the cross-host stages on receipt:
+	// TransportLagMs is corrected by the generator's clock offset when
+	// TransportLagQuality is qualified, and CollectedAtOffsetMs is the offset
+	// that maps CollectedAtUnixMs (generator clock) to the controller's.
+	TransportLagQuality *ClockQuality `json:"transport_lag_quality,omitempty"`
+	CollectedAtQuality  *ClockQuality `json:"collected_at_quality,omitempty"`
+	CollectedAtOffsetMs float64       `json:"collected_at_offset_ms,omitempty"`
 	// MissingMetricWindows is controller-computed from gaps in BatchSequence.
 	// It is cumulative for the target stream and remains zero for older
 	// generators that do not publish a sequence.
@@ -599,6 +606,16 @@ type ClockSample struct {
 	RoundTrip   time.Duration
 	Uncertainty time.Duration
 	ObservedAt  time.Time
+}
+
+// ClockQuality qualifies a duration measured across two hosts' clocks. It is
+// qualified when a current calibration of the source's clock offset
+// corrected it; UncertaintyMs bounds the remaining error. Reason says why an
+// unqualified duration could not be corrected.
+type ClockQuality struct {
+	Qualified     bool    `json:"qualified"`
+	UncertaintyMs float64 `json:"uncertainty_ms,omitempty"`
+	Reason        string  `json:"reason,omitempty"`
 }
 
 // ClockProbeGeneratorID names the controller's clock-probe heartbeats.

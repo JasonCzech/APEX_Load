@@ -382,9 +382,10 @@ silent correction: a point more than 30 s ahead of its receipt keeps its
   (CloudWatch, Azure Monitor, OTLP) and samples that bring their own
   timestamp were timed by another clock and carry no collector timing. Older controllers
   send no stamps and older agents send no timing; both keep working.
-- **Generators** are re-measured once a minute while a distributed run is
-  live, by the same heartbeat exchange the start barrier uses, including after
-  HA adoption.
+- **Generators** are re-measured every 30 seconds while a distributed run is
+  live (`APEXLOAD_CLOCK_PROBE_INTERVAL`, a Go duration, shorter only; 30 s is
+  the maximum), by the same heartbeat exchange the start barrier uses,
+  including after HA adoption.
 - **Providers** (AppDynamics, Dynatrace, Prometheus queries, Elasticsearch
   query buckets) never exchange clocks with the controller, so their points say
   `unknown` with an uncertainty of half the bucket or evaluation step;
@@ -394,8 +395,8 @@ silent correction: a point more than 30 s ahead of its receipt keeps its
 
 Measured offsets are archived after finalization in `clock_observations.jsonl`
 (`apexload.clock_observation.v1`): source, clock source, observed time, offset,
-round trip and uncertainty, at most one per source per minute and 10,000 per
-run (`clock_observations_truncated`). The file is written only when the run
+round trip and uncertainty, at most one per source per 30 seconds and 10,000
+per run (`clock_observations_truncated`). The file is written only when the run
 measured a clock. Observations live with the controller holding the run, so a
 collector batch accepted by another replica, or a probe lost to a controller
 restart, is not archived. With HA, offsets are against the replica that
@@ -403,6 +404,21 @@ measured them: generator observations name the execution owner in
 `controller`, but a collector's offset is against whichever replica answered
 its heartbeat. The uncertainty does not include skew between replicas, so keep
 controller replicas NTP-synchronized.
+
+A generator's current offset also qualifies the telemetry stages measured
+across its clock and the controller's. Its transport lag is corrected by the
+offset and its oldest sample's collection time mapped to the controller's
+clock before the sample age is taken; `telemetry.transport_lag_quality` and
+`telemetry.sample_age_quality` then say `qualified` with the uncertainty.
+Without a current calibration the stages stay as measured and say why:
+`uncalibrated`, `calibration_expired` (three probes missed), `clock_jump` (an
+offset that moved more than twice its uncertainty, until a consistent probe
+confirms it) or `clock_step` (the controller's wall clock stepped); a
+corrected duration below zero by more than its uncertainty is
+`implausible` and unavailable. A budget decision on such a stage, or on a
+qualified one whose uncertainty straddles the budget, is listed under the
+diagnostic's `unscored` and is never a breach. The dashboard's own clock is
+not exchanged yet, so browser-side age is not qualified.
 
 ### Deep links
 
