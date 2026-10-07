@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"html/template"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 var baselineComparisonTemplate = template.Must(template.New("baseline-comparison").Funcs(template.FuncMap{
@@ -42,8 +44,16 @@ var baselineComparisonTemplate = template.Must(template.New("baseline-comparison
 		}
 		return fmt.Sprintf("mean %.3g · P50 %.3g · P90 %.3g · P95 %.3g · P99 %.3g · min/max %.3g/%.3g · n=%d (%d successful) · %.3g/s (%.3g successful/s) · errors %.2f%%", m.Mean, m.P50, m.P90, m.P95, m.P99, m.Min, m.Max, m.Samples, m.Successes, m.Throughput, m.SuccessfulThroughput, m.ErrorPct)
 	},
-	"join": strings.Join,
-	"cell": func(row BaselineComparisonRow, id string) BaselineComparisonCell { return row.Baselines[id] },
+	"join":      strings.Join,
+	"cell":      func(row BaselineComparisonRow, id string) BaselineComparisonCell { return row.Baselines[id] },
+	"documents": baselineBrowserDocumentRows,
+	"tuple":     baselineBrowserDocumentTuple,
+	"documentChange": func(row protocol.BrowserDocumentComparison) string {
+		if !row.Comparable || row.DeltaP75 == nil {
+			return "Not compared: " + row.Reason
+		}
+		return fmt.Sprintf("p75 change %+.3g %s", *row.DeltaP75, row.Unit)
+	},
 }).Parse(`<h2>Baseline comparison</h2>
 {{if .Report.BaselineComparison}}{{$c := .Report.BaselineComparison}}<p>Advisory comparison {{$c.ID}} · rule {{$c.RuleVersion}} · {{$c.CreatedAt}}</p>
 {{with $c.Verdict}}<p><strong>Regression verdict: {{.Status}}</strong> · {{.Evaluated}} evaluated · {{.Unavailable}} unavailable</p>{{range .Evidence}}<p>{{.Metric}}: {{.Status}} · row {{.RowID}} · baseline {{.BaselineID}} · current {{observed .Current}} / baseline {{observed .Baseline}} · {{.Reason}}</p>{{end}}{{end}}
@@ -62,6 +72,7 @@ var baselineComparisonTemplate = template.Must(template.New("baseline-comparison
 <h4>Transactions — successful latency in milliseconds</h4><table><thead><tr><th>Transaction / group / load window</th><th>Current</th><th>Baseline</th><th>Evidence</th></tr></thead><tbody>
 {{range $c.Transactions}}{{$b := cell . $id}}<tr><td>{{.Name}} / {{.Group}}{{with .Window}} / {{printf "%.0f" .Load}} VUsers, {{printf "%.0f–%.0f s" .StartSeconds .EndSeconds}}{{end}}</td><td>{{transaction .Current}}</td><td>{{transaction $b.Measurement}} · {{delta $b}}</td><td>{{join $b.Qualification "; "}}</td></tr>{{end}}</tbody></table>
 <h4>Resources — recorded means</h4><p>Prometheus means describe settled evaluations on the saved grid. Missing cells reduce coverage; evaluation levels do not reconstruct rates, totals or request percentiles.</p><table><thead><tr><th>Resource</th><th>Current</th><th>Baseline</th><th>Evidence</th></tr></thead><tbody>{{range $c.Resources}}{{$b := cell . $id}}<tr><td>{{.Name}} ({{.Source}}), {{.Unit}}{{with .Provider}} · query {{.QueryID}} · {{.BackendProfile}} · {{.Statistic}} · {{.EvaluationStepSeconds}}s grid · {{.Dimensions}}{{end}}</td><td>{{measurement .Current}}</td><td>{{measurement $b.Measurement}} · {{delta $b}}</td><td>{{join $b.Qualification "; "}}</td></tr>{{end}}</tbody></table>
+{{with documents $c $id}}<h4>Browser documents — p75 of qualified final document measurements</h4><p>Compared only when algorithm, unit, lifecycle phase, frame scope, engine, device profile and runtime cohort all match; otherwise the first difference is named. Soft navigations: {{$c.BrowserSoftNavigation}} (not measured as navigations). Legacy action summaries are not compared here.</p><table><thead><tr><th>Metric tuple</th><th>Current p75</th><th>Baseline p75</th><th>Comparison</th></tr></thead><tbody>{{range .}}<tr><td>{{tuple .}}</td><td>{{observed .CurrentP75}} · n={{.CurrentFinal}}</td><td>{{observed .BaselineP75}} · n={{.BaselineFinal}}</td><td>{{documentChange .}}</td></tr>{{end}}</tbody></table>{{end}}
 <h4>Setup differences</h4>{{range $c.Setup}}{{if eq .BaselineID $id}}<p><strong>{{.Field}}: {{.Status}}</strong> · current {{.Current}} · baseline {{.Baseline}}</p>{{end}}{{end}}</div>{{end}}
 {{end}}{{else}}<p>No saved baseline comparison selected.</p>{{end}}`))
 
@@ -89,6 +100,16 @@ func baselineComparisonReportRenderer() reportSectionRenderer {
 			}
 			for _, f := range c.Findings {
 				*lines = append(*lines, f.Status+": "+f.Message)
+			}
+			if len(c.BrowserDocuments) > 0 {
+				*lines = append(*lines, "Browser documents (p75 of qualified final document measurements; soft navigations "+c.BrowserSoftNavigation+")")
+				for _, row := range c.BrowserDocuments {
+					change := "not compared: " + row.Reason
+					if row.Comparable && row.DeltaP75 != nil {
+						change = fmt.Sprintf("p75 change %+.3g %s", *row.DeltaP75, row.Unit)
+					}
+					*lines = append(*lines, "Baseline "+row.BaselineID+" · "+baselineBrowserDocumentTuple(row)+" · "+change)
+				}
 			}
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
@@ -128,6 +149,12 @@ func baselineComparisonReportRenderer() reportSectionRenderer {
 					}
 				}
 			}
+			for _, row := range c.BrowserDocuments {
+				payload, _ := json.Marshal(row)
+				if err := write("baseline_browser_document", row.BaselineID+"/"+baselineBrowserDocumentTuple(row), "comparison", string(payload)); err != nil {
+					return err
+				}
+			}
 			for _, diff := range c.Setup {
 				if err := write("baseline_comparison", diff.BaselineID, diff.Field, diff.Status+": "+diff.Current+" / "+diff.Baseline); err != nil {
 					return err
@@ -136,4 +163,27 @@ func baselineComparisonReportRenderer() reportSectionRenderer {
 			return nil
 		},
 	}
+}
+
+// baselineBrowserDocumentRows are the document comparisons with one baseline.
+func baselineBrowserDocumentRows(c *BaselineComparisonSnapshot, baselineID string) []protocol.BrowserDocumentComparison {
+	var rows []protocol.BrowserDocumentComparison
+	for _, row := range c.BrowserDocuments {
+		if row.BaselineID == baselineID {
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
+
+// baselineBrowserDocumentTuple names a compared document metric tuple.
+func baselineBrowserDocumentTuple(row protocol.BrowserDocumentComparison) string {
+	parts := []string{strings.ToUpper(row.Metric) + " (" + row.Unit + ")", row.Engine, "profile " + row.DeviceProfile, row.FrameScope, row.LifecyclePhase}
+	if row.Group != "" {
+		parts = append(parts, "group "+row.Group)
+	}
+	if row.Region != "" {
+		parts = append(parts, "region "+row.Region)
+	}
+	return strings.Join(parts, " · ")
 }

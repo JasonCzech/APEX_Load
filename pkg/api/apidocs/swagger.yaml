@@ -4187,6 +4187,53 @@ paths:
                               vusers:
                                 type: integer
                                 format: int64
+                        browser_documents:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              baseline_final:
+                                type: integer
+                                format: int64
+                              baseline_id:
+                                type: string
+                              baseline_p75:
+                                type: number
+                                format: double
+                                nullable: true
+                              comparable:
+                                type: boolean
+                              current_final:
+                                type: integer
+                                format: int64
+                              current_p75:
+                                type: number
+                                format: double
+                                nullable: true
+                              delta_p75:
+                                type: number
+                                format: double
+                                nullable: true
+                              device_profile:
+                                type: string
+                              engine:
+                                type: string
+                              frame_scope:
+                                type: string
+                              group:
+                                type: string
+                              lifecycle_phase:
+                                type: string
+                              metric:
+                                type: string
+                              reason:
+                                type: string
+                              region:
+                                type: string
+                              unit:
+                                type: string
+                        browser_soft_navigation:
+                          type: string
                         created_at:
                           type: string
                           format: date-time
@@ -5021,6 +5068,8 @@ paths:
                             format: date-time
                           url:
                             type: string
+                    browser_soft_navigation:
+                      type: string
                     by_action:
                       type: object
                       additionalProperties:
@@ -349080,6 +349129,11 @@ paths:
                             - offset_seconds
                             - to
                             - value
+                      excluded:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
                       identities:
                         type: array
                         items:
@@ -349132,6 +349186,11 @@ paths:
                             - offset_seconds
                             - to
                             - value
+                      excluded:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
                       identities:
                         type: array
                         items:
@@ -349306,6 +349365,63 @@ paths:
                             - scenario_id
                             - status
                             - vusers
+                      browser_documents:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            baseline_final:
+                              type: integer
+                              format: int64
+                            baseline_id:
+                              type: string
+                            baseline_p75:
+                              type: number
+                              format: double
+                              nullable: true
+                            comparable:
+                              type: boolean
+                            current_final:
+                              type: integer
+                              format: int64
+                            current_p75:
+                              type: number
+                              format: double
+                              nullable: true
+                            delta_p75:
+                              type: number
+                              format: double
+                              nullable: true
+                            device_profile:
+                              type: string
+                            engine:
+                              type: string
+                            frame_scope:
+                              type: string
+                            group:
+                              type: string
+                            lifecycle_phase:
+                              type: string
+                            metric:
+                              type: string
+                            reason:
+                              type: string
+                            region:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - baseline_final
+                            - comparable
+                            - current_final
+                            - device_profile
+                            - engine
+                            - frame_scope
+                            - lifecycle_phase
+                            - metric
+                            - unit
+                      browser_soft_navigation:
+                        type: string
                       created_at:
                         type: string
                         format: date-time
@@ -351638,6 +351754,8 @@ paths:
                           type: string
                       required:
                         - timestamp
+                  browser_soft_navigation:
+                    type: string
                   by_action:
                     type: object
                     additionalProperties:
@@ -363666,6 +363784,63 @@ paths:
                         - scenario_id
                         - status
                         - vusers
+                  browser_documents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baseline_final:
+                          type: integer
+                          format: int64
+                        baseline_id:
+                          type: string
+                        baseline_p75:
+                          type: number
+                          format: double
+                          nullable: true
+                        comparable:
+                          type: boolean
+                        current_final:
+                          type: integer
+                          format: int64
+                        current_p75:
+                          type: number
+                          format: double
+                          nullable: true
+                        delta_p75:
+                          type: number
+                          format: double
+                          nullable: true
+                        device_profile:
+                          type: string
+                        engine:
+                          type: string
+                        frame_scope:
+                          type: string
+                        group:
+                          type: string
+                        lifecycle_phase:
+                          type: string
+                        metric:
+                          type: string
+                        reason:
+                          type: string
+                        region:
+                          type: string
+                        unit:
+                          type: string
+                      required:
+                        - baseline_final
+                        - comparable
+                        - current_final
+                        - device_profile
+                        - engine
+                        - frame_scope
+                        - lifecycle_phase
+                        - metric
+                        - unit
+                  browser_soft_navigation:
+                    type: string
                   created_at:
                     type: string
                     format: date-time
@@ -365598,6 +365773,63 @@ paths:
                         - scenario_id
                         - status
                         - vusers
+                  browser_documents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baseline_final:
+                          type: integer
+                          format: int64
+                        baseline_id:
+                          type: string
+                        baseline_p75:
+                          type: number
+                          format: double
+                          nullable: true
+                        comparable:
+                          type: boolean
+                        current_final:
+                          type: integer
+                          format: int64
+                        current_p75:
+                          type: number
+                          format: double
+                          nullable: true
+                        delta_p75:
+                          type: number
+                          format: double
+                          nullable: true
+                        device_profile:
+                          type: string
+                        engine:
+                          type: string
+                        frame_scope:
+                          type: string
+                        group:
+                          type: string
+                        lifecycle_phase:
+                          type: string
+                        metric:
+                          type: string
+                        reason:
+                          type: string
+                        region:
+                          type: string
+                        unit:
+                          type: string
+                      required:
+                        - baseline_final
+                        - comparable
+                        - current_final
+                        - device_profile
+                        - engine
+                        - frame_scope
+                        - lifecycle_phase
+                        - metric
+                        - unit
+                  browser_soft_navigation:
+                    type: string
                   created_at:
                     type: string
                     format: date-time

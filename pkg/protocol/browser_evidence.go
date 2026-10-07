@@ -318,6 +318,12 @@ type BrowserDocumentSummary struct {
 	Incomplete          bool                           `json:"incomplete"`
 }
 
+// BrowserSoftNavigationUnsupported is the soft-navigation contract API views
+// state beside every document summary: soft (same-document) navigations are
+// not measured as ordinary navigations, and no separate soft-navigation
+// metrics exist yet. It is not part of the summary's strict wire shape.
+const BrowserSoftNavigationUnsupported = "unsupported"
+
 func browserFinite(v, maxValue float64) bool {
 	return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 && v <= maxValue
 }
@@ -677,7 +683,7 @@ func SummarizeBrowserDocumentObservations(observations []BrowserDocumentObservat
 			continue
 		}
 		seen[o.MeasurementID] = true
-		m := BrowserDocumentMetricSummary{Metric: o.Metric, Algorithm: o.Algorithm, AlgorithmSHA256: o.AlgorithmSHA256, Unit: o.Unit, Engine: o.Engine, DeviceProfile: o.DeviceProfile, Cohort: o.Cohort.Clone(), Group: o.Group, Region: o.Region, FrameScope: o.FrameScope, LifecyclePhase: o.LifecyclePhase}
+		m := BrowserDocumentObservationTuple(o)
 		key := BrowserDocumentMetricKey(m)
 		tuple := tuples[key]
 		if tuple == nil {

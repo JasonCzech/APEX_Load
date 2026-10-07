@@ -23,7 +23,7 @@ func browserDocumentBootstrap(binding, finalizer, loader string, metrics, resour
  const binding=%s, finalizer=%s, loader=%s, enabled=%t, resources=%t;
  const token=()=>{const a=new Uint8Array(16);crypto.getRandomValues(a);return Array.from(a,x=>x.toString(16).padStart(2,'0')).join('')};
  const documentToken=token(); let lifecycleToken=token(), restored=false, terminal=false, boundary='progress', beginReceipt=null, finishReceipt=null;
- const values=new Map(), observers=new Set(), idle=new Set(); let firstInput=false;
+ const values=new Map(), observers=new Set(), idle=new Set(); let firstInput=false, lcpFinal=false;
  const supported=new Set(globalThis.PerformanceObserver?.supportedEntryTypes||[]);
  let minInteraction=Infinity,maxInteraction=0,baseInteraction=0;
  const interactionCount=()=>Math.max(0, ('interactionCount' in performance ? performance.interactionCount : maxInteraction ? (maxInteraction-minInteraction)/7+1 : 0)-baseInteraction);
@@ -36,9 +36,9 @@ func browserDocumentBootstrap(binding, finalizer, loader string, metrics, resour
   const expectedLife=lifecycleToken, admission=beginReceipt;
   return Promise.resolve(admission).then(accepted=>accepted===true&&expectedLife===lifecycleToken?deliver():false);
  };
- const report=(metric,native)=>{if(terminal)return;values.set(metric,native.value);let state='provisional';
+ const report=(metric,native)=>{if(terminal||metric==='lcp'&&lcpFinal)return;values.set(metric,native.value);let state='provisional';
   if(metric==='fcp'||metric==='ttfb'){state='final';boundary='metric_observed'}
-  if(metric==='lcp'&&(firstInput||document.visibilityState==='hidden')){state='final';boundary=firstInput?'first_input':'hidden'}
+  if(metric==='lcp'&&(firstInput||document.visibilityState==='hidden')){state='final';boundary=firstInput?'first_input':'hidden';lcpFinal=true}
   send('metric',metric,state);
  };
  beginReceipt=send('begin','','provisional');
@@ -55,7 +55,7 @@ func browserDocumentBootstrap(binding, finalizer, loader string, metrics, resour
  }
  // Establish restored identity before the official library's synchronous
  // BFCache callbacks report the restored TTFB and other observations.
- addEventListener('pageshow',event=>{if(event.persisted){lifecycleToken=token();restored=true;terminal=false;finishReceipt=null;firstInput=false;boundary='bfcache_restore';values.clear();baseInteraction=('interactionCount' in performance?performance.interactionCount:maxInteraction?(maxInteraction-minInteraction)/7+1:0);beginReceipt=send('begin','','provisional')}},{capture:true});
+ addEventListener('pageshow',event=>{if(event.persisted){lifecycleToken=token();restored=true;terminal=false;finishReceipt=null;firstInput=false;lcpFinal=false;boundary='bfcache_restore';values.clear();baseInteraction=('interactionCount' in performance?performance.interactionCount:maxInteraction?(maxInteraction-minInteraction)/7+1:0);beginReceipt=send('begin','','provisional')}},{capture:true});
  if(enabled&&window.PerformanceObserver){
   const NativeObserver=window.PerformanceObserver;
   class PerformanceObserver {
@@ -90,6 +90,10 @@ func browserDocumentBootstrap(binding, finalizer, loader string, metrics, resour
  // rank when the native interaction counter settled after its last callback.
  // They supply no synthetic event or value.
  const drain=async()=>{for(const observer of observers){const entries=observer.native.takeRecords();observer.callback({getEntries:()=>entries})}await Promise.resolve();for(const callback of Array.from(idle))callback();await Promise.resolve()};
+ // The library reports LCP at its first-input or hidden boundary only when
+ // the value changed there; once its pending work is drained, an unchanged
+ // value is final at that boundary too.
+ const finalizeLCP=async reason=>{const expectedLife=lifecycleToken;if(lcpFinal||terminal||!values.has('lcp'))return;await drain();if(lcpFinal||terminal||expectedLife!==lifecycleToken||!values.has('lcp'))return;lcpFinal=true;await send('metric','lcp','final','',reason)};
  // Every invocation joins this lifecycle's complete binding receipt chain.
  // A restored lifecycle has its own admission/promise; old continuations may
  // finish awaiting transport but cannot emit under or terminalize the new token.
@@ -107,9 +111,9 @@ func browserDocumentBootstrap(binding, finalizer, loader string, metrics, resour
   })();return finishReceipt;
  };
  Object.defineProperty(globalThis,finalizer,{value:finish,configurable:false});
- addEventListener('keydown',event=>{if(event.isTrusted){firstInput=true;boundary='first_input'}},{capture:true});
- addEventListener('click',event=>{if(event.isTrusted){firstInput=true;boundary='first_input'}},{capture:true});
- addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){boundary='hidden';queueMicrotask(()=>{if(!terminal&&enabled)for(const metric of ['cls','inp'])if(values.has(metric))send('metric',metric,'provisional')})}else boundary='progress'},{capture:true});
+ addEventListener('keydown',event=>{if(event.isTrusted){firstInput=true;boundary='first_input';if(enabled)queueMicrotask(()=>void finalizeLCP('first_input'))}},{capture:true});
+ addEventListener('click',event=>{if(event.isTrusted){firstInput=true;boundary='first_input';if(enabled)queueMicrotask(()=>void finalizeLCP('first_input'))}},{capture:true});
+ addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){boundary='hidden';queueMicrotask(()=>{if(!terminal&&enabled){for(const metric of ['cls','inp'])if(values.has(metric))send('metric',metric,'provisional');void finalizeLCP('hidden')}})}else boundary='progress'},{capture:true});
  addEventListener('pagehide',()=>{void finish('pagehide')},{capture:true});
 })()`, strconv.Quote(binding), strconv.Quote(finalizer), strconv.Quote(loader), metrics, resources, browserVitalsLibrary)
 }

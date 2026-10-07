@@ -81,6 +81,9 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	if err != nil {
 		return nil, err
 	}
+	if report.BrowserDocuments != nil {
+		report.BrowserSoftNavigation = protocol.BrowserSoftNavigationUnsupported
+	}
 	if diagnosticsProjectEnabled(manifest.Provenance.ProjectID) {
 		report.StatisticalFindings = archiveStatisticalFindings(manifest.Provenance.ProjectID, record.TestID, summaries)
 	}

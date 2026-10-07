@@ -750,6 +750,18 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 		input.Detection.Series = append(input.Detection.Series, imported...)
 		input.Detection.Limitations = append(input.Detection.Limitations, limitations...)
 	}
+	// Browser document metrics join as their measurement tuples' final
+	// document p75 series, within what the series budget leaves.
+	documentLimit := -1
+	if budget.MaxSeries > 0 {
+		documentLimit = max(0, budget.MaxSeries-len(input.Detection.Series))
+	}
+	documents, limitations, err := rcaBrowserDocumentSeries(ctx, record, manifest, summaries, documentLimit, budget.MaxSeriesPoints)
+	if err != nil {
+		return nil, nil, err
+	}
+	input.Detection.Series = append(input.Detection.Series, documents...)
+	input.Detection.Limitations = append(input.Detection.Limitations, limitations...)
 	if frozen && evidence.DatasetsTruncated {
 		input.Detection.Limitations = append(input.Detection.Limitations, rca.Limitation{Code: limitationImportedDatasetsCut, Detail: fmt.Sprintf("more than %d analysis datasets are associated with the run; the first %d by ID were judged", rcaMaxImportedDatasets, rcaMaxImportedDatasets)})
 	}
@@ -812,13 +824,15 @@ func (s *Server) rcaCoverage(ctx context.Context, payload rcaAnalysisPayload, ma
 		intervalStatus = rca.CoverageMissing
 	}
 	coverage = append(coverage, rca.Coverage{Evidence: "intervals", Status: intervalStatus, Detail: fmt.Sprintf("%d intervals", len(validity.Intervals))})
-	transactions, timing, providers, imported, joint := 0, 0, 0, 0, 0
+	transactions, timing, providers, imported, joint, documents := 0, 0, 0, 0, 0, 0
 	for _, series := range detection.Series {
 		switch {
 		case series.Kind == rca.SeriesProvider:
 			providers++
 		case series.Kind == rca.SeriesImported:
 			imported++
+		case series.Kind == rca.SeriesBrowserDocument:
+			documents++
 		case strings.HasPrefix(series.ID, rca.SeriesJointPrefix):
 			joint++
 		case strings.HasPrefix(series.ID, rca.NodeDependency+"/"):
@@ -837,6 +851,9 @@ func (s *Server) rcaCoverage(ctx context.Context, payload rcaAnalysisPayload, ma
 	seriesDetail := fmt.Sprintf("%d transaction series, %d dependency timing series, %d provider series, %d load levels", transactions, timing, providers, len(detection.Levels))
 	if imported > 0 || joint > 0 {
 		seriesDetail += fmt.Sprintf(", %d imported series, %d joint action-dimension series", imported, joint)
+	}
+	if documents > 0 {
+		seriesDetail += fmt.Sprintf(", %d browser document series", documents)
 	}
 	coverage = append(coverage, rca.Coverage{Evidence: "detection_series", Status: seriesStatus, Detail: seriesDetail})
 	topology := rca.CoverageComplete

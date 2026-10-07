@@ -13,14 +13,20 @@ import (
 
 // Series kinds. Transaction series come from the archived interval
 // distributions; provider series from archived monitor points; imported
-// series from analysis datasets associated with the run.
+// series from analysis datasets associated with the run; browser document
+// series from the run's final document measurements (a document metric's
+// p75 per measurement tuple).
 const (
-	SeriesLatency    = "latency"
-	SeriesErrorRate  = "error_rate"
-	SeriesThroughput = "throughput"
-	SeriesProvider   = "provider"
-	SeriesImported   = "imported"
+	SeriesLatency         = "latency"
+	SeriesErrorRate       = "error_rate"
+	SeriesThroughput      = "throughput"
+	SeriesProvider        = "provider"
+	SeriesImported        = "imported"
+	SeriesBrowserDocument = "browser_document"
 )
+
+// browserScoreFloor is the smallest layout-shift score change judged.
+const browserScoreFloor = 0.01
 
 // SeriesJointPrefix starts the ID of a series measured on an exact action
 // dimension tuple (joint interval evidence), never one synthesized from
@@ -446,6 +452,8 @@ func unitFloor(s Series, p DetectParams) float64 {
 		return p.LatencyFloorMs * 1e6
 	case "%", "percent":
 		return p.ErrorRateFloorPct
+	case "score":
+		return browserScoreFloor
 	}
 	return 0
 }

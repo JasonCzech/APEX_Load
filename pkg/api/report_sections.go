@@ -1058,6 +1058,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				*lines = append(*lines, "No browser metrics were captured for this run.", "")
 				return
 			}
+			*lines = append(*lines, legacyBrowserSummaryNote)
 			*lines = append(*lines,
 				fmt.Sprintf("Samples: %s", formatPDFInt(browser.Samples)),
 				fmt.Sprintf("Average FCP: %.1f ms", browser.AvgFCPMs),
@@ -1072,6 +1073,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				return csvNote(write, "browser", "No browser metrics were captured for this run.")
 			}
 			rows := [][2]string{
+				{"metric_basis", "legacy_action_summary"},
 				{"samples", formatCSVInt(browser.Samples)},
 				{"avg_fcp_ms", formatCSVFloat(browser.AvgFCPMs)},
 				{"avg_lcp_ms", formatCSVFloat(browser.AvgLCPMs)},
@@ -1542,3 +1544,8 @@ func reportPopulationLabel(key string) string {
 		return "Unclassified legacy records"
 	}
 }
+
+// legacyBrowserSummaryNote labels the browser section's action-summary
+// averages: they stay for continuity, and are never qualified final document
+// measurements.
+const legacyBrowserSummaryNote = "Legacy action summaries: averages over browser actions, not qualified final document measurements. Compare document metrics through browser document evidence and baseline comparison."

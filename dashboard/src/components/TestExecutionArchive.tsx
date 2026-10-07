@@ -639,7 +639,7 @@ function renderBrowserSummary(
       <div className="archive-section-header archive-section-header-stack">
         <div>
           <h3 className="chart-title">Browser Metrics</h3>
-          <p className="archive-section-copy">Client-side rendering and interaction timings captured during browser actions.</p>
+          <p className="archive-section-copy">Legacy action summaries: client-side rendering and interaction timings averaged over browser actions. They are not qualified final document measurements; compare document metrics through browser document lifecycle evidence and Baseline Comparison.</p>
         </div>
         <span className="archive-chip">{formatBrowserSampleCount(summary?.samples)}</span>
       </div>
@@ -1240,7 +1240,7 @@ export default function TestExecutionArchive({
             ) : null}
             {(archiveReport.browser_documents != null || archiveReport.browser_document_evidence !== undefined || archiveReport.overview.browser || showStandaloneReportSection) &&
               <BrowserDocumentEvidencePanel summary={archiveReport.browser_documents} observations={archiveReport.browser_document_evidence}
-                summaryMode="archive-latest" observationsTruncated={archiveReport.browser_document_evidence_truncated} />}
+                summaryMode="archive-latest" observationsTruncated={archiveReport.browser_document_evidence_truncated} softNavigation={archiveReport.browser_soft_navigation} />}
             </>
           )}
 

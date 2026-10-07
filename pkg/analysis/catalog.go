@@ -108,7 +108,9 @@ func buildCatalog() MetricCatalog {
 		metrics[i].Populations = slices.Clone(populations)
 		metrics[i].Derivations = []string{"baseline_delta", "baseline_percent_delta", "moving_mean", "moving_stddev"}
 		for _, profile := range profiles {
-			metrics[i].QueryProfiles = append(metrics[i].QueryProfiles, profile.ID)
+			if slices.Contains(populations, profile.Population) {
+				metrics[i].QueryProfiles = append(metrics[i].QueryProfiles, profile.ID)
+			}
 		}
 		metrics[i].MissingRule = MissingUnscored
 		metrics[i].ResetRule = ResetNotApplicable
@@ -130,6 +132,23 @@ func buildCatalog() MetricCatalog {
 		extra.Baseline, extra.Correlation = true, true
 		metrics = append(metrics, extra)
 	}
+	// Browser document metrics read the final eligible document measurements
+	// of one measurement tuple (algorithm, unit, lifecycle phase, frame scope,
+	// engine, device profile and runtime cohort) as merged 192-bucket
+	// distributions; progress snapshots never enter them.
+	for _, name := range BrowserDocumentMetricNames() {
+		unit := "ms"
+		if name == "document_cls" {
+			unit = "score"
+		}
+		definition := MetricDefinition{Name: name, Version: CatalogVersion, InputKinds: []string{KindObservation}, Populations: []string{PopulationBrowserDocument}, Unit: unit, NativeWireUnit: unit, Aggregations: []string{"p50", "p75", "p90", "p95", "p99"}, Derivations: []string{"baseline_delta", "baseline_percent_delta", "moving_mean", "moving_stddev"}, QueryProfiles: []string{}, RequiredEvidence: []string{"browser_document_evidence.v2_final_qualified_distribution"}, MissingRule: MissingUnscored, ResetRule: ResetNotApplicable, Baseline: true, Correlation: true}
+		for _, profile := range profiles {
+			if profile.Population == PopulationBrowserDocument {
+				definition.QueryProfiles = append(definition.QueryProfiles, profile.ID)
+			}
+		}
+		metrics = append(metrics, definition)
+	}
 	operations := []OperationDefinition{}
 	for _, name := range []string{"avg", "min", "max", "sum", "count"} {
 		unit := "preserve"
@@ -141,6 +160,9 @@ func buildCatalog() MetricCatalog {
 	for _, name := range []string{"p50", "p90", "p95", "p99"} {
 		operations = append(operations, OperationDefinition{Name: name, InputKinds: []string{KindObservation}, UnitRule: "preserve", RequiredEvidence: []string{"raw_observations_or_native_transaction_distribution"}, RawScalar: name != "p90"})
 	}
+	// p75 is the browser document percentile; only a final document
+	// distribution supplies it.
+	operations = append(operations, OperationDefinition{Name: "p75", InputKinds: []string{KindObservation}, Populations: []string{PopulationBrowserDocument}, UnitRule: "preserve", RequiredEvidence: []string{"browser_document_evidence.v2_final_qualified_distribution"}})
 	operations = append(operations,
 		OperationDefinition{Name: "rate", InputKinds: []string{KindCounter, KindObservation}, UnitRule: "per_second", RequiredEvidence: []string{"qualified_observation_counts_or_same_counter_epoch", "positive_elapsed_window", "declared_rate_unit"}, RawScalar: true},
 		OperationDefinition{Name: "delta", InputKinds: []string{KindCounter}, UnitRule: "preserve", RequiredEvidence: []string{"same_counter_epoch", "positive_elapsed_window"}},
@@ -362,6 +384,27 @@ var dashboardMetricAliases = map[string]string{
 // no typed operation for; they render as before.
 var dashboardAggregationAliases = map[string]bool{"stddev": true}
 
+// BrowserDocumentMetricNames are the catalog's browser document metrics.
+func BrowserDocumentMetricNames() []string {
+	return []string{"document_fcp", "document_lcp", "document_cls", "document_inp"}
+}
+
+// BrowserDocumentMetric is the document evidence metric (fcp, lcp, cls or
+// inp) a browser document catalog metric reads.
+func BrowserDocumentMetric(name string) (string, bool) {
+	if !slices.Contains(BrowserDocumentMetricNames(), name) {
+		return "", false
+	}
+	return strings.TrimPrefix(name, "document_"), true
+}
+
+// BrowserDocumentFilters select one browser document measurement tuple:
+// each names a field of the tuple, and cohort is the runtime cohort's digest.
+// They filter browser document metrics only and never group.
+func BrowserDocumentFilters() []string {
+	return []string{"engine", "device_profile", "frame_scope", "lifecycle_phase", "group", "region", "cohort"}
+}
+
 // dashboardDimensions are the grouping and filter dimensions retained
 // evidence carries (the native query profiles' groupings and filters, plus
 // the transaction and page identities of live cards).
@@ -401,8 +444,9 @@ func ValidateDashboardQuery(metric, aggregation string, dimensions []string, fil
 			return fmt.Errorf("unsupported dimension %q", dimension)
 		}
 	}
+	_, document := BrowserDocumentMetric(metric)
 	for name := range filters {
-		if !slices.Contains(dashboardDimensions, name) {
+		if !slices.Contains(dashboardDimensions, name) && !(document && slices.Contains(BrowserDocumentFilters(), name)) {
 			return fmt.Errorf("unsupported filter %q", name)
 		}
 	}

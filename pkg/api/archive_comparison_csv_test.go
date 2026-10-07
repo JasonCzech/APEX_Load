@@ -56,6 +56,11 @@ func TestWriteArchiveComparisonCSVIncludesThroughputGapEvidence(t *testing.T) {
 	if rows[1][index["throughput_missed_intervals"]] != "2" || rows[1][index["throughput_target_missed"]] != "true" {
 		t.Fatalf("baseline miss columns = %#v", rows[1])
 	}
+	for _, row := range rows[1:] {
+		if len(row) != len(rows[0]) || row[index["browser_metric_basis"]] != "legacy_action_summary" {
+			t.Fatalf("browser columns not labelled legacy: %#v", row)
+		}
+	}
 	if rows[2][index["throughput_target_missed"]] != "false" {
 		t.Fatalf("candidate miss column = %q, want false", rows[2][index["throughput_target_missed"]])
 	}

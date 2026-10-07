@@ -1480,6 +1480,25 @@ export interface operations {
                 "status"?: string;
                 "vusers"?: number;
               }>;
+              "browser_documents"?: Array<{
+                "baseline_final"?: number;
+                "baseline_id"?: string;
+                "baseline_p75"?: (number) | null;
+                "comparable"?: boolean;
+                "current_final"?: number;
+                "current_p75"?: (number) | null;
+                "delta_p75"?: (number) | null;
+                "device_profile"?: string;
+                "engine"?: string;
+                "frame_scope"?: string;
+                "group"?: string;
+                "lifecycle_phase"?: string;
+                "metric"?: string;
+                "reason"?: string;
+                "region"?: string;
+                "unit"?: string;
+              }>;
+              "browser_soft_navigation"?: string;
               "created_at"?: string;
               "current"?: {
                 "archive_available"?: boolean;
@@ -1790,6 +1809,7 @@ export interface operations {
               "timestamp"?: string;
               "url"?: string;
             }>;
+            "browser_soft_navigation"?: string;
             "by_action"?: Record<string, {
               "avg_response_ms"?: number;
               "diagnostic_findings"?: Array<Record<string, unknown>>;
@@ -29165,6 +29185,25 @@ export interface operations {
               "status": string;
               "vusers": number;
             }>;
+            "browser_documents"?: Array<{
+              "baseline_final": number;
+              "baseline_id"?: string;
+              "baseline_p75"?: (number) | null;
+              "comparable": boolean;
+              "current_final": number;
+              "current_p75"?: (number) | null;
+              "delta_p75"?: (number) | null;
+              "device_profile": string;
+              "engine": string;
+              "frame_scope": string;
+              "group"?: string;
+              "lifecycle_phase": string;
+              "metric": string;
+              "reason"?: string;
+              "region"?: string;
+              "unit": string;
+            }>;
+            "browser_soft_navigation"?: string;
             "created_at": string;
             "current": {
               "archive_available": boolean;
@@ -55041,6 +55080,25 @@ export interface operations {
               "status": string;
               "vusers": number;
             }>;
+            "browser_documents"?: Array<{
+              "baseline_final": number;
+              "baseline_id"?: string;
+              "baseline_p75"?: (number) | null;
+              "comparable": boolean;
+              "current_final": number;
+              "current_p75"?: (number) | null;
+              "delta_p75"?: (number) | null;
+              "device_profile": string;
+              "engine": string;
+              "frame_scope": string;
+              "group"?: string;
+              "lifecycle_phase": string;
+              "metric": string;
+              "reason"?: string;
+              "region"?: string;
+              "unit": string;
+            }>;
+            "browser_soft_navigation"?: string;
             "created_at": string;
             "current": {
               "archive_available": boolean;
@@ -65937,6 +65995,25 @@ export interface operations {
                 "status": string;
                 "vusers": number;
               }>;
+              "browser_documents"?: Array<{
+                "baseline_final": number;
+                "baseline_id"?: string;
+                "baseline_p75"?: (number) | null;
+                "comparable": boolean;
+                "current_final": number;
+                "current_p75"?: (number) | null;
+                "delta_p75"?: (number) | null;
+                "device_profile": string;
+                "engine": string;
+                "frame_scope": string;
+                "group"?: string;
+                "lifecycle_phase": string;
+                "metric": string;
+                "reason"?: string;
+                "region"?: string;
+                "unit": string;
+              }>;
+              "browser_soft_navigation"?: string;
               "created_at": string;
               "current": {
                 "archive_available": boolean;
@@ -66608,6 +66685,7 @@ export interface operations {
               "timestamp": string;
               "url"?: string;
             }>;
+            "browser_soft_navigation"?: string;
             "by_action": Record<string, {
               "avg_response_ms": number;
               "diagnostic_findings"?: Array<{
@@ -92091,6 +92169,7 @@ export interface operations {
                 "to": string;
                 "value": (number) | null;
               }>;
+              "excluded"?: Record<string, number>;
               "identities": Array<string>;
               "run_id": string;
               "unit"?: string;
@@ -92106,6 +92185,7 @@ export interface operations {
                 "to": string;
                 "value": (number) | null;
               }>;
+              "excluded"?: Record<string, number>;
               "identities": Array<string>;
               "run_id": string;
               "unit"?: string;

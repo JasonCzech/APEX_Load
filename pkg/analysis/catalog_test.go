@@ -208,6 +208,18 @@ func TestCatalogOperationsHaveExecutableTypedEntryPoint(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
+			case "p75":
+				// The native browser document query evaluates it over the
+				// tuple's merged final distribution.
+				if operation.RawScalar || !slices.Equal(operation.Populations, []string{PopulationBrowserDocument}) {
+					t.Fatal("p75 advertised beyond final document distributions")
+				}
+				for _, name := range BrowserDocumentMetricNames() {
+					metric, _ := LookupMetric(name)
+					if len(metric.QueryProfiles) != 1 || ValidateMetricAggregation(name, PopulationBrowserDocument, "p75") != nil || ValidateMetricAggregation(name, PopulationAction, "p75") == nil {
+						t.Fatalf("p75 has no native document query for %s", name)
+					}
+				}
 			case "rate", "delta":
 				before, after := qualifiedPoint(start, 2), qualifiedPoint(start.Add(time.Second), 4)
 				before.Kind, after.Kind, before.Unit, after.Unit = KindCounter, KindCounter, "count", "count"

@@ -87,6 +87,14 @@ type BaselineComparisonSnapshot struct {
 	Warnings     []string                    `json:"warnings"`
 	// Workload qualifies each baseline against the current run's offered load.
 	Workload *BaselineWorkloadQualification `json:"workload,omitempty"`
+	// BrowserDocuments compares each baseline's final document metric
+	// tuples with the current run's: values only where the algorithm, unit,
+	// lifecycle phase, frame scope, engine, device profile and runtime cohort
+	// all match, otherwise the reason they do not.
+	BrowserDocuments []protocol.BrowserDocumentComparison `json:"browser_documents,omitempty"`
+	// BrowserSoftNavigation states, beside document comparisons, that soft
+	// (same-document) navigations are not measured: "unsupported".
+	BrowserSoftNavigation string `json:"browser_soft_navigation,omitempty"`
 }
 
 type BaselineMeasurement struct {

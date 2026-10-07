@@ -254,20 +254,15 @@ func (a *archiveBrowserDocumentAccumulator) summary() *protocol.BrowserDocumentS
 	return protocol.SummarizeBrowserDocumentObservations(observations, a.dropped, a.incomplete)
 }
 func readArchiveBrowserDocumentSummary(record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (*protocol.BrowserDocumentSummary, []protocol.BrowserDocumentObservation, bool, error) {
-	if err := validateBrowserDocumentManifest(manifest, true); err != nil {
+	accumulator, captured, err := readArchiveBrowserDocumentMeasurements(context.Background(), record, manifest)
+	if err != nil {
 		return nil, nil, false, err
 	}
-	if manifest.BrowserDocumentsFile == "" {
-		if manifest.BrowserDocumentCaptureRequested {
+	if accumulator == nil {
+		if captured {
 			return &protocol.BrowserDocumentSummary{Version: protocol.BrowserEvidenceVersion, Incomplete: true}, nil, false, nil
 		}
 		return nil, nil, false, nil
-	}
-	var accumulator archiveBrowserDocumentAccumulator
-	accumulator.incomplete = manifest.BrowserDocumentCoverageIncomplete
-	err := forEachBrowserDocumentArtifact(context.Background(), record.ArchivePath, manifest.BrowserDocumentsFile, manifest.BrowserDocumentsSHA256, manifest.BrowserDocumentRecordCount, func(evidence *protocol.BrowserDocumentEvidence) error { accumulator.add(evidence); return nil })
-	if err != nil {
-		return nil, nil, false, err
 	}
 	keys := make([]string, 0, len(accumulator.measurements))
 	for key := range accumulator.measurements {
@@ -283,6 +278,25 @@ func readArchiveBrowserDocumentSummary(record *storage.RunArchiveRecord, manifes
 		observations = append(observations, accumulator.measurements[key].observation)
 	}
 	return accumulator.summary(), observations, truncated, nil
+}
+
+// readArchiveBrowserDocumentMeasurements reads the latest retained state of
+// every document measurement of an archive: each measurement once, however
+// many progress revisions it recorded. It is nil when the archive retained no
+// document evidence; captured says whether the run requested it.
+func readArchiveBrowserDocumentMeasurements(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (*archiveBrowserDocumentAccumulator, bool, error) {
+	if err := validateBrowserDocumentManifest(manifest, true); err != nil {
+		return nil, false, err
+	}
+	if manifest.BrowserDocumentsFile == "" {
+		return nil, manifest.BrowserDocumentCaptureRequested, nil
+	}
+	accumulator := &archiveBrowserDocumentAccumulator{incomplete: manifest.BrowserDocumentCoverageIncomplete}
+	err := forEachBrowserDocumentArtifact(ctx, record.ArchivePath, manifest.BrowserDocumentsFile, manifest.BrowserDocumentsSHA256, manifest.BrowserDocumentRecordCount, func(evidence *protocol.BrowserDocumentEvidence) error { accumulator.add(evidence); return nil })
+	if err != nil {
+		return nil, true, err
+	}
+	return accumulator, true, nil
 }
 
 func mergeRemoteBrowserDocuments(root string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, budget *archiveOutputBudget) (err error) {

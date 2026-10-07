@@ -599,6 +599,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('APEXLOAD_SAMPLE_FLAG=enabled')
     expect(container.textContent).toContain('generator-1 · healthy · 50 available')
     expect(container.textContent).toContain('Browser Metrics')
+    expect(container.textContent).toContain('Legacy action summaries')
     expect(container.textContent).toContain('UX Intelligence')
     expect(container.textContent).toContain('Unscored')
     expect(container.textContent).toContain('5/7 required fields available')

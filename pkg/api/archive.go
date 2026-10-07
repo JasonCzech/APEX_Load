@@ -524,10 +524,13 @@ type RunArchiveIdentityNames struct {
 }
 
 type RunArchiveReport struct {
-	TelemetryPolicy                   *TelemetryPolicyEvidence               `json:"telemetry_policy,omitempty"`
-	BrowserDocumentEvidence           []protocol.BrowserDocumentObservation  `json:"browser_document_evidence,omitempty"`
-	BrowserDocumentEvidenceTruncated  bool                                   `json:"browser_document_evidence_truncated,omitempty"`
-	BrowserDocuments                  *protocol.BrowserDocumentSummary       `json:"browser_documents,omitempty"`
+	TelemetryPolicy                  *TelemetryPolicyEvidence              `json:"telemetry_policy,omitempty"`
+	BrowserDocumentEvidence          []protocol.BrowserDocumentObservation `json:"browser_document_evidence,omitempty"`
+	BrowserDocumentEvidenceTruncated bool                                  `json:"browser_document_evidence_truncated,omitempty"`
+	BrowserDocuments                 *protocol.BrowserDocumentSummary      `json:"browser_documents,omitempty"`
+	// BrowserSoftNavigation states, beside a document summary, that soft
+	// (same-document) navigations are not measured: "unsupported".
+	BrowserSoftNavigation             string                                 `json:"browser_soft_navigation,omitempty"`
 	MessagingProgress                 *protocol.MessagingProgressSnapshot    `json:"messaging_progress,omitempty"`
 	MonitorDiagnostics                []RunMonitorDiagnostic                 `json:"monitor_diagnostics,omitempty"`
 	MonitorRuleResults                []analysis.MonitorRuleResult           `json:"monitor_rule_results,omitempty"`

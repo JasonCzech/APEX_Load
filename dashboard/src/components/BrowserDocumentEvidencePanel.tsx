@@ -8,6 +8,8 @@ interface Props {
   observations?: unknown
   summaryMode: BrowserDocumentSummaryMode
   observationsTruncated?: boolean
+  /** The API's soft-navigation state; soft navigations are never measured. */
+  softNavigation?: string
 }
 const observedBoolean = (value: boolean | undefined) => value === true ? 'Yes' : value === false ? 'No' : 'Unavailable'
 const label = (value: string | undefined) => value || 'Not recorded'
@@ -28,13 +30,14 @@ function RuntimeCohort({ cohort }: { cohort: BrowserRuntimeCohort | null | undef
   </dl>
 }
 
-export default function BrowserDocumentEvidencePanel({ summary, observations, summaryMode, observationsTruncated }: Props) {
+export default function BrowserDocumentEvidencePanel({ summary, observations, summaryMode, observationsTruncated, softNavigation }: Props) {
   const model = useMemo(() => buildBrowserDocumentPanelModel(summary, observations, summaryMode, observationsTruncated),
     [summary, observations, summaryMode, observationsTruncated])
   const provisionalLabel = model.mode === 'live-history' ? 'First seen provisional' : model.mode === 'archive-latest' ? 'Retained pending' : 'Provisional semantics unavailable'
   return <section className="browser-document-evidence tx-section archive-summary-section" aria-label="Browser document evidence">
     <h3 className="chart-title">Browser document lifecycle evidence</h3>
     <p>These distributions use qualified final document measurements. Action counts, legacy action summaries and browser process CPU/RSS do not supply their denominator. No score is calculated.</p>
+    <p>Soft (same-document) navigations: {softNavigation || 'unsupported'}. They are not measured as navigations.</p>
     {model.mode === 'live-history' && <p>Live intervals retain first-seen provisional history. A measurement can later reach a terminal state; these provisional counts overlap terminal history and are never added to a final population.</p>}
     {model.mode === 'archive-latest' && <p>Archived summaries retain the latest state per source and measurement identity. Pending or censored measurements do not enter qualified final distributions.</p>}
     {model.state === 'absent' && <p>Document summary unavailable for this peer or archive. Legacy action measurements do not substitute for it.</p>}

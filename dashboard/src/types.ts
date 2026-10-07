@@ -1706,6 +1706,8 @@ export interface RunArchiveReport {
   browser_documents?: BrowserDocumentSummary | null
   browser_document_evidence?: BrowserDocumentObservation[]
   browser_document_evidence_truncated?: boolean
+  /** Beside a document summary: soft (same-document) navigations are not measured. */
+  browser_soft_navigation?: 'unsupported'
   messaging_progress?: MessagingProgressSnapshot
   monitor_diagnostics?: import('./types/appdynamics').RunMonitorDiagnostic[]
   monitor_rule_results?: import('./types/appdynamics').MonitorRuleResult[]

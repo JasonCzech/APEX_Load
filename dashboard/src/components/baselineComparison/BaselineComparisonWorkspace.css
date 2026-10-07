@@ -7,3 +7,5 @@
 
 .bc-matrix .bc-provider{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:900px){.bc-matrix .bc-provider{max-width:150px}}
+
+.bc-document-tuple{display:block;margin-top:4px;color:var(--text-secondary);font-size:11px;font-weight:400}

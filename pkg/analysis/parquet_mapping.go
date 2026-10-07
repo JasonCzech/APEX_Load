@@ -227,7 +227,7 @@ func NormalizeUnit(unit string) (string, float64, error) {
 		return "ms", 0.001, nil
 	case "ns":
 		return "ms", 0.000001, nil
-	case "ms", "bytes", "count", "percent", "ratio", "bytes/s", "count/s", "cores":
+	case "ms", "bytes", "count", "percent", "ratio", "bytes/s", "count/s", "cores", "score":
 		return unit, 1, nil
 	case "KiB":
 		return "bytes", 1024, nil

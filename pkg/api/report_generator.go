@@ -78,12 +78,13 @@ type runArchiveHTMLReportData struct {
 }
 
 var profileHTMLFuncMap = template.FuncMap{
-	"reportRunName":     reportRunName,
-	"identityName":      identityName,
-	"reportEnvironment": reportEnvironment,
-	"populationRate":    reportPopulationRate,
-	"executionLabel":    reportExecutionLabel,
-	"elapsedDuration":   reportElapsedDuration,
+	"legacyBrowserSummaryNote": func() string { return legacyBrowserSummaryNote },
+	"reportRunName":            reportRunName,
+	"identityName":             identityName,
+	"reportEnvironment":        reportEnvironment,
+	"populationRate":           reportPopulationRate,
+	"executionLabel":           reportExecutionLabel,
+	"elapsedDuration":          reportElapsedDuration,
 	"formatTime": func(value any) string {
 		var t time.Time
 		switch typed := value.(type) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -333,6 +334,9 @@ func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
 	if q.Population == analysis.PopulationMessage {
 		return validateNativeMessageQuery(q)
 	}
+	if q.Population == analysis.PopulationBrowserDocument {
+		return validateNativeBrowserDocumentQuery(q)
+	}
 	if q.Population != "action" && q.Population != "transaction" {
 		return errors.New("select action or transaction population")
 	}
@@ -355,6 +359,34 @@ func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
 	}
 	if analysis.ValidateMetricAggregation(q.Metric, q.Population, q.Aggregation) != nil {
 		return errors.New("unsupported archive measurement or aggregation")
+	}
+	if q.Derivation != nil {
+		return analysis.ValidateQueryDerivation(q.Metric, q.Population, analysis.KindObservation, *q.Derivation, q.ComparisonRunID != "")
+	}
+	return nil
+}
+
+// validateNativeBrowserDocumentQuery admits an archive selection of browser
+// document metrics: no grouping or property, and filters only on the fields
+// of a document measurement tuple. Execution refuses a selection that still
+// spans more than one tuple.
+func validateNativeBrowserDocumentQuery(q AnalyticsQuery) error {
+	if len(q.Dimensions) != 0 || q.Overlay || q.PropertyName != "" || q.PropertyValue != "" || q.MaxSeries > 1 || q.MaxSeries < 0 {
+		return errors.New("browser document queries select one measurement tuple; they take no grouping or property")
+	}
+	for k, v := range q.Filters {
+		if !slices.Contains(analysis.BrowserDocumentFilters(), k) || v == "" || len(v) > 256 {
+			return errors.New("browser document queries filter only by engine, device_profile, frame_scope, lifecycle_phase, group, region or cohort")
+		}
+	}
+	if len(q.ComparisonRunID) > 128 {
+		return errors.New("comparison run id exceeds limit")
+	}
+	if q.StartSeconds < 0 || q.EndSeconds <= q.StartSeconds || q.EndSeconds > 86400 || q.BucketSeconds < 1 || q.BucketSeconds > 3600 || (q.EndSeconds-q.StartSeconds+q.BucketSeconds-1)/q.BucketSeconds > 1000 {
+		return errors.New("select a window within 24 hours and at most 1000 buckets")
+	}
+	if err := analysis.ValidateMetricAggregation(q.Metric, q.Population, q.Aggregation); err != nil {
+		return err
 	}
 	if q.Derivation != nil {
 		return analysis.ValidateQueryDerivation(q.Metric, q.Population, analysis.KindObservation, *q.Derivation, q.ComparisonRunID != "")

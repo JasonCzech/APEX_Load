@@ -90,5 +90,9 @@ func nativeQueryProfiles() []NativeQueryProfile {
 		add(PopulationAction, "live", "merged", group, "disabled", filters, required, "native_joint_evidence.v3")
 		profiles[before].ID += "/joint_v3"
 	}
+	// One archive selection of one browser document measurement tuple.
+	before := len(profiles)
+	add(PopulationBrowserDocument, "", "", "", "disabled", BrowserDocumentFilters(), nil, "browser_document_evidence.v2_final_qualified_distribution")
+	profiles[before].AllowedAggregations = []string{"p50", "p75", "p90", "p95", "p99"}
 	return profiles
 }

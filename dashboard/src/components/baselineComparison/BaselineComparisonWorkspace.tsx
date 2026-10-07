@@ -1,3 +1,4 @@
+import BaselineBrowserDocuments from './BaselineBrowserDocuments'
 import BaselineTelemetryEvidence from './BaselineTelemetryEvidence'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -159,6 +160,7 @@ export default function BaselineComparisonWorkspace({ test, initialBaseline, com
     {!snapshot && <section className="run-report-panel bc-empty"><h3>Compare the same workload across releases</h3><p>Select up to five pinned runs, then compare. You’ll see transaction changes, monitored resource differences, and setup inconsistencies together.</p></section>}
     {snapshot && <>
       <BaselineTelemetryEvidence evidence={snapshot.telemetry} />
+      <BaselineBrowserDocuments rows={snapshot.browser_documents} baselines={snapshot.baselines} softNavigation={snapshot.browser_soft_navigation} />
       <section className="run-report-panel" aria-label="Regression verdict"><h2>Regression verdict: {snapshot.verdict?.status || 'Unavailable'}</h2>{snapshot.verdict && <><p>{snapshot.verdict.evaluated} evaluated · {snapshot.verdict.unavailable} unavailable</p><details><summary>Acceptance evidence</summary><ul>{snapshot.verdict.evidence.map((e, i) => <li key={i}>{e.metric}: {e.status} · {e.baseline_id} / {e.row_id} {e.reason}</li>)}</ul></details></>}</section>
       <section className="run-report-panel" aria-label="Comparison findings"><header><div><p className="bc-eyebrow">Saved {new Date(snapshot.created_at).toLocaleString()}</p><h2>Findings to review</h2></div><div className="bc-findings-count"><strong>{snapshot.findings.filter(f => f.status === 'changed').length}</strong> threshold changes <span>· {snapshot.findings.filter(f => f.status !== 'changed').length} qualifications</span></div></header>
         <div className="bc-findings">{findings.map((finding, index) => <button type="button" className={`bc-finding bc-${finding.status}`} key={`${finding.row_id}/${finding.baseline_id}/${index}`} onClick={() => { if (finding.category === 'setup') setView('setup'); else { const row = [...snapshot.transactions, ...snapshot.resources].find(item => item.id === finding.row_id); if (row) setDetail(row) } }}><span>{finding.status === 'changed' ? 'Change detected' : finding.status === 'review' ? 'Setup review' : 'Unverified'} · {finding.category}</span><strong>{finding.message}</strong><small>{runNames.get(finding.baseline_id) || finding.baseline_id} → View evidence</small></button>)}</div>

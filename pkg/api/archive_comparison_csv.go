@@ -63,6 +63,9 @@ func writeArchiveComparisonCSV(writer io.Writer, breakdown string, action string
 		"throughput_target_missed",
 		"peak_active_vusers",
 		"metric_population",
+		// The browser columns are legacy action summaries, never qualified
+		// final document measurements.
+		"browser_metric_basis",
 	)
 	if err := csvWriter.Write(headers); err != nil {
 		return err
@@ -152,6 +155,7 @@ func archiveComparisonActionCSVRow(run archiveComparisonRun, action string) []st
 		"",
 		"",
 		"action",
+		"",
 	}
 }
 
@@ -198,6 +202,7 @@ func archiveComparisonCSVRow(run archiveComparisonRun, breakdown string, segment
 		fmt.Sprintf("%t", run.Report.Overview.ThroughputMissedIntervals > 0),
 		formatCSVInt(run.Report.Overview.PeakActiveVUsers),
 		population,
+		"legacy_action_summary",
 	}
 }
 

@@ -643,6 +643,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{define "browser"}}
 <h2>Browser Metrics</h2>
 {{if .Report.Overview.Browser}}
+<p>{{legacyBrowserSummaryNote}}</p>
 <div class="overview">
   <div class="metric"><span class="metric-label">Samples</span><span class="metric-value">{{.Report.Overview.Browser.Samples}}</span></div>
   <div class="metric"><span class="metric-label">Avg FCP</span><span class="metric-value">{{formatFloat .Report.Overview.Browser.AvgFCPMs}} ms</span></div>

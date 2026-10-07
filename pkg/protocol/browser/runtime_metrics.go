@@ -47,7 +47,9 @@ func (b *Browser) captureClientMetrics(ctx context.Context, duration time.Durati
 	if err := b.captureRuntimeMetrics(ctx, metrics); err != nil {
 		// Keep metrics collection non-fatal for the browser action.
 	}
-	if b.processMetricsAttributionEnabled() {
+	// WebKit exposes no browser process CPU or RSS; the driver's process tree
+	// never stands in for it.
+	if b.processMetricsAttributionEnabled() && b.engine != "webkit" {
 		if err := b.captureBrowserProcessMetrics(ctx, metrics, processBefore); err != nil {
 			// Keep browser-process attribution non-fatal because CDP support varies by runtime.
 		}

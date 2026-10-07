@@ -506,6 +506,18 @@ evidence.
   Partitions that mix metrics or identities are not enumerated
   (`imported_series_unenumerated`); native analysis that is off or
   unavailable for the project is `imported_dataset_unavailable`.
+- **Browser document series.** Each measurement tuple of the run's final
+  FCP, LCP, CLS and INP document measurements (one algorithm, unit,
+  lifecycle phase, frame scope, engine, device profile and actual runtime
+  cohort, within one group and region) becomes a `browser_document` series
+  (`browser_document/<metric>/<tuple digest>/p75`): the p75 of the final
+  measurements whose window closed in each bucket of the run's interval
+  grid. Each measurement counts once, at its latest retained state;
+  provisional and censored measurements never enter, and a bucket without a
+  final document is a gap. The tuple is part of the measurement identity, so
+  a baseline-run judgment pairs only the same tuple. Layout-shift (`score`)
+  changes below 0.01 are not judged. Incomplete document evidence is
+  `detection_evidence_cut`.
 - **Levels.** Only buckets inside a steady load level are judged: the same
   settled spans validity and baseline comparison use, which skip each level's
   first 30 s. Ramps and pauses are never judged; a run with no steady level
@@ -1036,7 +1048,7 @@ Each derived bucket carries its value or a `reason`: `zero_denominator`, `incomp
 
 The archive `message` population reads received messages from messaging v2 evidence (`message_count`, optionally filtered by `source`). A message ratio divides the messages its counter counted by the messages that counter observed, and a bucket is complete only when every selected dimension carried complete v2 evidence and the counter observed every eligible message; a bucket described only by v1 summaries stays missing. Duplicate ratios are lower bounds within each consumer's local sequence window. Imported counters use one epoch per dataset revision and identity; a falling reading is a `counter_reset`. Moving derivations on live per-source intervals, whose windows are not aligned, are refused.
 
-Saved dashboards validate through the catalog: catalog metrics and aggregations, the retained grouping and filter dimensions, and an alias table that keeps saved names meaning what they did (`tps` is `observation_rate`, `transaction_duration` is `response_time`, and live display cards such as `active_vusers`, `throughput`, `regional_activity`, `resource_cpu` and `resource_memory` keep rendering but are not catalog measurements and take no derivation; `stddev` remains a display aggregation). The catalog also declares `message_count` (population `message`) and `bytes_sent`/`bytes_received` (population `byte`); bytes have no native query yet.
+Saved dashboards validate through the catalog: catalog metrics and aggregations, the retained grouping and filter dimensions, and an alias table that keeps saved names meaning what they did (`tps` is `observation_rate`, `transaction_duration` is `response_time`, and live display cards such as `active_vusers`, `throughput`, `regional_activity`, `resource_cpu` and `resource_memory` keep rendering but are not catalog measurements and take no derivation; `stddev` remains a display aggregation). The catalog also declares `message_count` (population `message`) and `bytes_sent`/`bytes_received` (population `byte`); bytes have no native query yet. Browser document metrics `document_fcp`, `document_lcp`, `document_cls` (unit `score`) and `document_inp` (population `browser_document`, aggregations `p50`, `p75`, `p90`, `p95` and `p99`; each bucket's `count` is its final documents) read one measurement tuple's final document distribution; their filters (`engine`, `device_profile`, `frame_scope`, `lifecycle_phase`, `group`, `region`, `cohort`) apply to these metrics only, and a selection spanning more than one tuple is refused. See [Browser document evidence](guides/BROWSER_DOCUMENT_EVIDENCE.md#comparison-and-native-analysis).
 
 ## Event Hubs processor progress analysis
 

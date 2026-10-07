@@ -46,8 +46,19 @@ export interface TelemetryEvidence {
  summary?: { status: string; dropped_results?: number; max_sample_age_ms?: number }
  warnings: string[]
 }
+// One final-document metric tuple compared with one baseline: values only
+// when algorithm, unit, lifecycle phase, frame scope, engine, device profile
+// and runtime cohort all match, otherwise the first difference.
+export interface BrowserDocumentComparison {
+ baseline_id: string; metric: string; unit: string; group?: string; region?: string
+ frame_scope: string; lifecycle_phase: string; engine: string; device_profile: string
+ comparable: boolean; reason?: string; current_final: number; baseline_final: number
+ current_p75?: number; baseline_p75?: number; delta_p75?: number
+}
 export interface ComparisonSnapshot {
  telemetry?: TelemetryEvidence[]
+ browser_documents?: BrowserDocumentComparison[]
+ browser_soft_navigation?: 'unsupported'
   verdict?: { status: 'passed' | 'regressed' | 'not_evaluated'; evaluated: number; unavailable: number; metrics: string[]; evidence: { row_id: string; baseline_id: string; metric: string; status: string; reason?: string }[] }
   id: string; project_id: string; current: RunIdentity; baselines: RunIdentity[]; created_at: string; rule_version: string
   request: ComparisonRequest; policy: ComparisonPolicy; transactions: ComparisonRow[]; resources: ComparisonRow[]

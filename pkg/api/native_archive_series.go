@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -30,11 +31,17 @@ type NativeArchiveBucket struct {
 type NativeArchiveSeries struct {
 	RunID string `json:"run_id"`
 	// Unit is set when a derivation changed the series' unit.
-	Unit        string                `json:"unit,omitempty"`
-	Buckets     []NativeArchiveBucket `json:"buckets"`
-	Identities  []string              `json:"identities"`
-	Warnings    []string              `json:"warnings"`
-	Fingerprint string                `json:"-"`
+	Unit       string                `json:"unit,omitempty"`
+	Buckets    []NativeArchiveBucket `json:"buckets"`
+	Identities []string              `json:"identities"`
+	Warnings   []string              `json:"warnings"`
+	// Excluded counts, by reason, the browser document measurements of the
+	// selection that are not final eligible values (unqualified_final,
+	// unavailable_final, provisional, censored); they never enter a value.
+	Excluded    map[string]int64 `json:"excluded,omitempty"`
+	Fingerprint string           `json:"-"`
+	// documentTuple is the browser document measurement tuple selected.
+	documentTuple *protocol.BrowserDocumentMetricSummary
 }
 type NativeArchiveResponse struct {
 	// Derivation names the catalog operation the current series values are.
@@ -98,6 +105,11 @@ func (s *Server) handleNativeArchiveSeries(w http.ResponseWriter, r *http.Reques
 		}
 		response.Baseline = &baseline
 		response.Comparable = series.Fingerprint != "" && series.Fingerprint == baseline.Fingerprint && len(series.Warnings) == 0 && len(baseline.Warnings) == 0
+		if series.documentTuple != nil && baseline.documentTuple != nil {
+			if reason := protocol.BrowserDocumentTupleMismatch(*series.documentTuple, *baseline.documentTuple); reason != "" {
+				response.Warnings = append(response.Warnings, "The runs measured different browser document tuples ("+reason+"); their values are not compared.")
+			}
+		}
 		if !response.Comparable {
 			response.Warnings = append(response.Warnings, "Workload/version compatibility or evidence completeness is not established; review both runs before interpreting differences.")
 		}
@@ -157,6 +169,9 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 	}
 	if q.Population == analysis.PopulationMessage {
 		return buildNativeMessageSeries(ctx, record, manifest, q, result, from, to, n)
+	}
+	if q.Population == analysis.PopulationBrowserDocument {
+		return buildNativeBrowserDocumentSeries(ctx, record, manifest, q, result, from, to)
 	}
 	identities := map[string]bool{}
 	missingProperty, unknownPopulation, selected := 0, 0, 0
