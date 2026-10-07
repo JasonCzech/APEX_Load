@@ -2666,6 +2666,12 @@ func TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion(t *testing.T
 	if !rolledUp {
 		t.Fatal("no archived interval carried the live telemetry source roll-up")
 	}
+	// The manifest carries the run's wall-time telemetry account.
+	coverage := manifest.TelemetryCoverage
+	if coverage == nil || coverage.Algorithm != telemetryCoverageAlgorithm || coverage.Coverage.WindowMs <= 0 || len(coverage.Coverage.Sources) != 1 || coverage.Coverage.Sources[0].ObservedMs <= 0 || len(coverage.Segments) != 1 || coverage.RetainedIntervals == 0 ||
+		coverage.HealthyMs+coverage.DegradedMs+coverage.BreachedMs+coverage.UnknownMs != coverage.Coverage.WindowMs {
+		t.Fatalf("telemetry coverage record %+v", coverage)
+	}
 }
 
 func TestDistributedExecutionBackendPropagatesRemoteFailure(t *testing.T) {

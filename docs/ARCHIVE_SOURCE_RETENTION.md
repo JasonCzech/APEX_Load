@@ -498,6 +498,16 @@ controller and read as `unavailable` (`controller_wide`) in a run's totals. A
 run executed in the controller's own process reports its dropped results and
 shed arrivals as exact.
 
+The manifest's `telemetry_coverage` is the run's wall-time telemetry account
+(`telemetry_coverage.v1`): the run window, each generator's observed time
+(from its publications' windows on the controller's receipt clock, overlaps
+counted once), the time every required generator was observed, and healthy,
+degraded, breached and unknown time with `classified_ms` as the denominator
+of `breached_known_fraction`, beside retained and classified interval counts
+and the run's telemetry policy segment. Time no observation covers, an
+unclassified interval, and time before an HA adoption (which the adopting
+controller did not observe) are unknown, never healthy.
+
 `interval_distributions.jsonl` has its own allowance,
 `APEXLOAD_ARCHIVE_INTERVAL_DISTRIBUTIONS_MAX_BYTES` (default 256 MiB, positive
 integer bytes up to 4 GiB), with the same free-space floor. It is separate so a

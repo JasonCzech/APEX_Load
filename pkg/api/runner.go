@@ -1072,6 +1072,9 @@ type TelemetryHealth struct {
 	// bound or unavailable, with the reason it is not exact. The cumulative
 	// fields above stay as reported.
 	Loss *TelemetryLossAccounting `json:"loss,omitempty"`
+	// Coverage is the run's wall-time observation coverage so far: the
+	// time every required generator was observed, and the unknown rest.
+	Coverage *TelemetryCoverage `json:"coverage,omitempty"`
 }
 
 type TelemetryRunHealth struct {

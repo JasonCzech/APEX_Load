@@ -609,6 +609,11 @@ func cloneTelemetryHealth(in *TelemetryHealth) *TelemetryHealth {
 		out.Sources = &sources
 	}
 	out.Loss = in.Loss.clone()
+	if in.Coverage != nil {
+		coverage := *in.Coverage
+		coverage.Sources = append([]TelemetrySourceCoverage(nil), in.Coverage.Sources...)
+		out.Coverage = &coverage
+	}
 	return &out
 }
 

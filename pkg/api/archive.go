@@ -148,6 +148,10 @@ type RunArchiveManifest struct {
 	TelemetrySourcesFile      string `json:"telemetry_sources_file,omitempty"`
 	TelemetrySourceEpochCount int64  `json:"telemetry_source_epoch_count,omitempty"`
 	TelemetrySourcesTruncated bool   `json:"telemetry_sources_truncated,omitempty"`
+	// TelemetryCoverage is the run's wall-time telemetry account: observed
+	// and unknown time per source, and healthy, degraded, breached and
+	// unknown time with explicit denominators.
+	TelemetryCoverage *TelemetryCoverageRecord `json:"telemetry_coverage,omitempty"`
 	// PhaseEventsFile holds generated load-phase transitions and their sink
 	// outcomes (apexload.phase_event.v1), apart from analyst annotations.
 	PhaseEventsFile      string `json:"phase_events_file,omitempty"`

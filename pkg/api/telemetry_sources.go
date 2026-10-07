@@ -282,6 +282,8 @@ type telemetrySourceLedger struct {
 	mu        sync.Mutex
 	epochs    map[telemetrySourceKey]*TelemetrySourceEpoch
 	truncated bool
+	// coverage is each source's observed wall time (see telemetry_coverage.go).
+	coverage map[string]*coverageSpans
 }
 
 func newTelemetrySourceLedger() *telemetrySourceLedger {
@@ -296,6 +298,7 @@ func (l *telemetrySourceLedger) observe(source string, batch generatorrpc.Metric
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.observeCoverage(source, batch.WindowMs, at)
 	key := telemetrySourceKey{source: source, generation: batch.ExecutionGeneration, epoch: batch.SourceEpoch}
 	record := l.epochs[key]
 	if record == nil {

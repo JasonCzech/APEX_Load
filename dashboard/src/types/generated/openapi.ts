@@ -3435,6 +3435,19 @@ export interface operations {
                 "sources"?: Array<Record<string, unknown>>;
               }) | null;
               "status"?: string;
+              "telemetry_coverage"?: ({
+                "algorithm"?: string;
+                "breached_known_fraction"?: (number) | null;
+                "breached_ms"?: number;
+                "classified_intervals"?: number;
+                "classified_ms"?: number;
+                "coverage"?: Record<string, unknown>;
+                "degraded_ms"?: number;
+                "healthy_ms"?: number;
+                "retained_intervals"?: number;
+                "segments"?: Array<Record<string, unknown>>;
+                "unknown_ms"?: number;
+              }) | null;
               "telemetry_source_epoch_count"?: number;
               "telemetry_sources_file"?: string;
               "telemetry_sources_truncated"?: boolean;
@@ -34301,6 +34314,7 @@ export interface operations {
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
+                  "coverage"?: (Record<string, unknown>) | null;
                   "dropped_results"?: number;
                   "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
@@ -34784,6 +34798,7 @@ export interface operations {
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
+                  "coverage"?: (Record<string, unknown>) | null;
                   "dropped_results"?: number;
                   "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
@@ -41916,6 +41931,15 @@ export interface operations {
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
+                "coverage"?: ({
+                  "observed_ms": number;
+                  "sources": Array<Record<string, unknown>>;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                  "window_end": string;
+                  "window_ms": number;
+                  "window_start": string;
+                }) | null;
                 "dropped_results"?: number;
                 "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
@@ -43463,6 +43487,15 @@ export interface operations {
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
+                "coverage"?: ({
+                  "observed_ms": number;
+                  "sources": Array<Record<string, unknown>>;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                  "window_end": string;
+                  "window_ms": number;
+                  "window_start": string;
+                }) | null;
                 "dropped_results"?: number;
                 "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
@@ -58789,6 +58822,15 @@ export interface operations {
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
+                "coverage"?: ({
+                  "observed_ms": number;
+                  "sources": Array<Record<string, unknown>>;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                  "window_end": string;
+                  "window_ms": number;
+                  "window_start": string;
+                }) | null;
                 "dropped_results"?: number;
                 "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
@@ -60336,6 +60378,15 @@ export interface operations {
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
+                "coverage"?: ({
+                  "observed_ms": number;
+                  "sources": Array<Record<string, unknown>>;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                  "window_end": string;
+                  "window_ms": number;
+                  "window_start": string;
+                }) | null;
                 "dropped_results"?: number;
                 "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
@@ -62476,6 +62527,7 @@ export interface operations {
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
+                  "coverage"?: (Record<string, unknown>) | null;
                   "dropped_results"?: number;
                   "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
@@ -62959,6 +63011,7 @@ export interface operations {
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
+                  "coverage"?: (Record<string, unknown>) | null;
                   "dropped_results"?: number;
                   "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
@@ -65710,6 +65763,36 @@ export interface operations {
               }>;
             }) | null;
             "status"?: string;
+            "telemetry_coverage"?: ({
+              "algorithm": string;
+              "breached_known_fraction"?: (number) | null;
+              "breached_ms": number;
+              "classified_intervals": number;
+              "classified_ms": number;
+              "coverage": {
+                "observed_ms": number;
+                "sources": Array<{
+                  "observed_ms": number;
+                  "source": string;
+                  "truncated"?: boolean;
+                }>;
+                "truncated"?: boolean;
+                "unknown_ms": number;
+                "window_end": string;
+                "window_ms": number;
+                "window_start": string;
+              };
+              "degraded_ms": number;
+              "healthy_ms": number;
+              "retained_intervals": number;
+              "segments": Array<{
+                "end": string;
+                "legacy"?: boolean;
+                "policy_hash"?: string;
+                "start": string;
+              }>;
+              "unknown_ms": number;
+            }) | null;
             "telemetry_source_epoch_count"?: number;
             "telemetry_sources_file"?: string;
             "telemetry_sources_truncated"?: boolean;
@@ -68734,6 +68817,32 @@ export interface operations {
                 }>;
               }) | null;
               "status"?: string;
+              "telemetry_coverage"?: ({
+                "algorithm": string;
+                "breached_known_fraction"?: (number) | null;
+                "breached_ms": number;
+                "classified_intervals": number;
+                "classified_ms": number;
+                "coverage": {
+                  "observed_ms": number;
+                  "sources": Array<Record<string, unknown>>;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                  "window_end": string;
+                  "window_ms": number;
+                  "window_start": string;
+                };
+                "degraded_ms": number;
+                "healthy_ms": number;
+                "retained_intervals": number;
+                "segments": Array<{
+                  "end": string;
+                  "legacy"?: boolean;
+                  "policy_hash"?: string;
+                  "start": string;
+                }>;
+                "unknown_ms": number;
+              }) | null;
               "telemetry_source_epoch_count"?: number;
               "telemetry_sources_file"?: string;
               "telemetry_sources_truncated"?: boolean;
@@ -76508,6 +76617,15 @@ export interface operations {
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
+                "coverage"?: ({
+                  "observed_ms": number;
+                  "sources": Array<Record<string, unknown>>;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                  "window_end": string;
+                  "window_ms": number;
+                  "window_start": string;
+                }) | null;
                 "dropped_results"?: number;
                 "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
@@ -78055,6 +78173,15 @@ export interface operations {
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
+                "coverage"?: ({
+                  "observed_ms": number;
+                  "sources": Array<Record<string, unknown>>;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                  "window_end": string;
+                  "window_ms": number;
+                  "window_start": string;
+                }) | null;
                 "dropped_results"?: number;
                 "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
@@ -96681,6 +96808,15 @@ export interface operations {
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
+                "coverage"?: ({
+                  "observed_ms": number;
+                  "sources": Array<Record<string, unknown>>;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                  "window_end": string;
+                  "window_ms": number;
+                  "window_start": string;
+                }) | null;
                 "dropped_results"?: number;
                 "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
@@ -98228,6 +98364,15 @@ export interface operations {
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
+                "coverage"?: ({
+                  "observed_ms": number;
+                  "sources": Array<Record<string, unknown>>;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                  "window_end": string;
+                  "window_ms": number;
+                  "window_start": string;
+                }) | null;
                 "dropped_results"?: number;
                 "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
@@ -111434,6 +111579,7 @@ export interface operations {
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
+                  "coverage"?: (Record<string, unknown>) | null;
                   "dropped_results"?: number;
                   "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
@@ -111917,6 +112063,7 @@ export interface operations {
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
+                  "coverage"?: (Record<string, unknown>) | null;
                   "dropped_results"?: number;
                   "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
@@ -113162,6 +113309,7 @@ export interface operations {
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
+                  "coverage"?: (Record<string, unknown>) | null;
                   "dropped_results"?: number;
                   "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
@@ -113645,6 +113793,7 @@ export interface operations {
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
+                  "coverage"?: (Record<string, unknown>) | null;
                   "dropped_results"?: number;
                   "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
@@ -114890,6 +115039,7 @@ export interface operations {
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
+                  "coverage"?: (Record<string, unknown>) | null;
                   "dropped_results"?: number;
                   "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
@@ -115373,6 +115523,7 @@ export interface operations {
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
+                  "coverage"?: (Record<string, unknown>) | null;
                   "dropped_results"?: number;
                   "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
@@ -116618,6 +116769,7 @@ export interface operations {
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
+                  "coverage"?: (Record<string, unknown>) | null;
                   "dropped_results"?: number;
                   "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
@@ -117101,6 +117253,7 @@ export interface operations {
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
+                  "coverage"?: (Record<string, unknown>) | null;
                   "dropped_results"?: number;
                   "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
@@ -118346,6 +118499,7 @@ export interface operations {
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
+                  "coverage"?: (Record<string, unknown>) | null;
                   "dropped_results"?: number;
                   "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
@@ -118829,6 +118983,7 @@ export interface operations {
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
                   "controller_received_at"?: string;
+                  "coverage"?: (Record<string, unknown>) | null;
                   "dropped_results"?: number;
                   "dropped_results_available"?: boolean;
                   "dropped_subscriber_batches"?: number;
@@ -143212,6 +143367,15 @@ export interface operations {
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
+                "coverage"?: ({
+                  "observed_ms": number;
+                  "sources": Array<Record<string, unknown>>;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                  "window_end": string;
+                  "window_ms": number;
+                  "window_start": string;
+                }) | null;
                 "dropped_results"?: number;
                 "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;
@@ -144759,6 +144923,15 @@ export interface operations {
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
                 "controller_received_at"?: string;
+                "coverage"?: ({
+                  "observed_ms": number;
+                  "sources": Array<Record<string, unknown>>;
+                  "truncated"?: boolean;
+                  "unknown_ms": number;
+                  "window_end": string;
+                  "window_ms": number;
+                  "window_start": string;
+                }) | null;
                 "dropped_results"?: number;
                 "dropped_results_available"?: boolean;
                 "dropped_subscriber_batches"?: number;

@@ -9669,6 +9669,46 @@ paths:
                           nullable: true
                         status:
                           type: string
+                        telemetry_coverage:
+                          type: object
+                          properties:
+                            algorithm:
+                              type: string
+                            breached_known_fraction:
+                              type: number
+                              format: double
+                              nullable: true
+                            breached_ms:
+                              type: integer
+                              format: int64
+                            classified_intervals:
+                              type: integer
+                              format: int64
+                            classified_ms:
+                              type: integer
+                              format: int64
+                            coverage:
+                              type: object
+                              additionalProperties: true
+                            degraded_ms:
+                              type: integer
+                              format: int64
+                            healthy_ms:
+                              type: integer
+                              format: int64
+                            retained_intervals:
+                              type: integer
+                              format: int64
+                            segments:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: TelemetryPolicySegment'
+                                additionalProperties: true
+                            unknown_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         telemetry_source_epoch_count:
                           type: integer
                           format: int64
@@ -82558,6 +82598,11 @@ paths:
                                 controller_received_at:
                                   type: string
                                   format: date-time
+                                coverage:
+                                  type: object
+                                  description: 'Go type: TelemetryCoverage'
+                                  additionalProperties: true
+                                  nullable: true
                                 dropped_results:
                                   type: integer
                                   format: int64
@@ -84155,6 +84200,10 @@ paths:
                               controller_received_at:
                                 type: string
                                 format: date-time
+                              coverage:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               dropped_results:
                                 type: integer
                                 format: int64
@@ -87877,6 +87926,11 @@ paths:
                                 controller_received_at:
                                   type: string
                                   format: date-time
+                                coverage:
+                                  type: object
+                                  description: 'Go type: TelemetryCoverage'
+                                  additionalProperties: true
+                                  nullable: true
                                 dropped_results:
                                   type: integer
                                   format: int64
@@ -89474,6 +89528,10 @@ paths:
                               controller_received_at:
                                 type: string
                                 format: date-time
+                              coverage:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               dropped_results:
                                 type: integer
                                 format: int64
@@ -93197,6 +93255,11 @@ paths:
                                 controller_received_at:
                                   type: string
                                   format: date-time
+                                coverage:
+                                  type: object
+                                  description: 'Go type: TelemetryCoverage'
+                                  additionalProperties: true
+                                  nullable: true
                                 dropped_results:
                                   type: integer
                                   format: int64
@@ -94794,6 +94857,10 @@ paths:
                               controller_received_at:
                                 type: string
                                 format: date-time
+                              coverage:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               dropped_results:
                                 type: integer
                                 format: int64
@@ -98529,6 +98596,11 @@ paths:
                                 controller_received_at:
                                   type: string
                                   format: date-time
+                                coverage:
+                                  type: object
+                                  description: 'Go type: TelemetryCoverage'
+                                  additionalProperties: true
+                                  nullable: true
                                 dropped_results:
                                   type: integer
                                   format: int64
@@ -100126,6 +100198,10 @@ paths:
                               controller_received_at:
                                 type: string
                                 format: date-time
+                              coverage:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               dropped_results:
                                 type: integer
                                 format: int64
@@ -103861,6 +103937,11 @@ paths:
                                 controller_received_at:
                                   type: string
                                   format: date-time
+                                coverage:
+                                  type: object
+                                  description: 'Go type: TelemetryCoverage'
+                                  additionalProperties: true
+                                  nullable: true
                                 dropped_results:
                                   type: integer
                                   format: int64
@@ -105458,6 +105539,10 @@ paths:
                               controller_received_at:
                                 type: string
                                 format: date-time
+                              coverage:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               dropped_results:
                                 type: integer
                                 format: int64
@@ -109193,6 +109278,11 @@ paths:
                                 controller_received_at:
                                   type: string
                                   format: date-time
+                                coverage:
+                                  type: object
+                                  description: 'Go type: TelemetryCoverage'
+                                  additionalProperties: true
+                                  nullable: true
                                 dropped_results:
                                   type: integer
                                   format: int64
@@ -110790,6 +110880,10 @@ paths:
                               controller_received_at:
                                 type: string
                                 format: date-time
+                              coverage:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               dropped_results:
                                 type: integer
                                 format: int64
@@ -114525,6 +114619,11 @@ paths:
                                 controller_received_at:
                                   type: string
                                   format: date-time
+                                coverage:
+                                  type: object
+                                  description: 'Go type: TelemetryCoverage'
+                                  additionalProperties: true
+                                  nullable: true
                                 dropped_results:
                                   type: integer
                                   format: int64
@@ -116122,6 +116221,10 @@ paths:
                               controller_received_at:
                                 type: string
                                 format: date-time
+                              coverage:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               dropped_results:
                                 type: integer
                                 format: int64
@@ -321395,6 +321498,40 @@ paths:
                             controller_received_at:
                               type: string
                               format: date-time
+                            coverage:
+                              type: object
+                              properties:
+                                observed_ms:
+                                  type: integer
+                                  format: int64
+                                sources:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TelemetrySourceCoverage'
+                                    additionalProperties: true
+                                truncated:
+                                  type: boolean
+                                unknown_ms:
+                                  type: integer
+                                  format: int64
+                                window_end:
+                                  type: string
+                                  format: date-time
+                                window_ms:
+                                  type: integer
+                                  format: int64
+                                window_start:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - observed_ms
+                                - sources
+                                - unknown_ms
+                                - window_end
+                                - window_ms
+                                - window_start
+                              nullable: true
                             dropped_results:
                               type: integer
                               format: int64
@@ -326716,6 +326853,40 @@ paths:
                           controller_received_at:
                             type: string
                             format: date-time
+                          coverage:
+                            type: object
+                            properties:
+                              observed_ms:
+                                type: integer
+                                format: int64
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TelemetrySourceCoverage'
+                                  additionalProperties: true
+                              truncated:
+                                type: boolean
+                              unknown_ms:
+                                type: integer
+                                format: int64
+                              window_end:
+                                type: string
+                                format: date-time
+                              window_ms:
+                                type: integer
+                                format: int64
+                              window_start:
+                                type: string
+                                format: date-time
+                            required:
+                              - observed_ms
+                              - sources
+                              - unknown_ms
+                              - window_end
+                              - window_ms
+                              - window_start
+                            nullable: true
                           dropped_results:
                             type: integer
                             format: int64
@@ -333710,6 +333881,40 @@ paths:
                             controller_received_at:
                               type: string
                               format: date-time
+                            coverage:
+                              type: object
+                              properties:
+                                observed_ms:
+                                  type: integer
+                                  format: int64
+                                sources:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TelemetrySourceCoverage'
+                                    additionalProperties: true
+                                truncated:
+                                  type: boolean
+                                unknown_ms:
+                                  type: integer
+                                  format: int64
+                                window_end:
+                                  type: string
+                                  format: date-time
+                                window_ms:
+                                  type: integer
+                                  format: int64
+                                window_start:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - observed_ms
+                                - sources
+                                - unknown_ms
+                                - window_end
+                                - window_ms
+                                - window_start
+                              nullable: true
                             dropped_results:
                               type: integer
                               format: int64
@@ -339031,6 +339236,40 @@ paths:
                           controller_received_at:
                             type: string
                             format: date-time
+                          coverage:
+                            type: object
+                            properties:
+                              observed_ms:
+                                type: integer
+                                format: int64
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TelemetrySourceCoverage'
+                                  additionalProperties: true
+                              truncated:
+                                type: boolean
+                              unknown_ms:
+                                type: integer
+                                format: int64
+                              window_end:
+                                type: string
+                                format: date-time
+                              window_ms:
+                                type: integer
+                                format: int64
+                              window_start:
+                                type: string
+                                format: date-time
+                            required:
+                              - observed_ms
+                              - sources
+                              - unknown_ms
+                              - window_end
+                              - window_ms
+                              - window_start
+                            nullable: true
                           dropped_results:
                             type: integer
                             format: int64
@@ -348199,6 +348438,108 @@ paths:
                     nullable: true
                   status:
                     type: string
+                  telemetry_coverage:
+                    type: object
+                    properties:
+                      algorithm:
+                        type: string
+                      breached_known_fraction:
+                        type: number
+                        format: double
+                        nullable: true
+                      breached_ms:
+                        type: integer
+                        format: int64
+                      classified_intervals:
+                        type: integer
+                        format: int64
+                      classified_ms:
+                        type: integer
+                        format: int64
+                      coverage:
+                        type: object
+                        properties:
+                          observed_ms:
+                            type: integer
+                            format: int64
+                          sources:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                observed_ms:
+                                  type: integer
+                                  format: int64
+                                source:
+                                  type: string
+                                truncated:
+                                  type: boolean
+                              required:
+                                - observed_ms
+                                - source
+                          truncated:
+                            type: boolean
+                          unknown_ms:
+                            type: integer
+                            format: int64
+                          window_end:
+                            type: string
+                            format: date-time
+                          window_ms:
+                            type: integer
+                            format: int64
+                          window_start:
+                            type: string
+                            format: date-time
+                        required:
+                          - observed_ms
+                          - sources
+                          - unknown_ms
+                          - window_end
+                          - window_ms
+                          - window_start
+                      degraded_ms:
+                        type: integer
+                        format: int64
+                      healthy_ms:
+                        type: integer
+                        format: int64
+                      retained_intervals:
+                        type: integer
+                        format: int64
+                      segments:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            end:
+                              type: string
+                              format: date-time
+                            legacy:
+                              type: boolean
+                            policy_hash:
+                              type: string
+                            start:
+                              type: string
+                              format: date-time
+                          required:
+                            - end
+                            - start
+                      unknown_ms:
+                        type: integer
+                        format: int64
+                    required:
+                      - algorithm
+                      - breached_ms
+                      - classified_intervals
+                      - classified_ms
+                      - coverage
+                      - degraded_ms
+                      - healthy_ms
+                      - retained_intervals
+                      - segments
+                      - unknown_ms
+                    nullable: true
                   telemetry_source_epoch_count:
                     type: integer
                     format: int64
@@ -358780,6 +359121,99 @@ paths:
                         nullable: true
                       status:
                         type: string
+                      telemetry_coverage:
+                        type: object
+                        properties:
+                          algorithm:
+                            type: string
+                          breached_known_fraction:
+                            type: number
+                            format: double
+                            nullable: true
+                          breached_ms:
+                            type: integer
+                            format: int64
+                          classified_intervals:
+                            type: integer
+                            format: int64
+                          classified_ms:
+                            type: integer
+                            format: int64
+                          coverage:
+                            type: object
+                            properties:
+                              observed_ms:
+                                type: integer
+                                format: int64
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TelemetrySourceCoverage'
+                                  additionalProperties: true
+                              truncated:
+                                type: boolean
+                              unknown_ms:
+                                type: integer
+                                format: int64
+                              window_end:
+                                type: string
+                                format: date-time
+                              window_ms:
+                                type: integer
+                                format: int64
+                              window_start:
+                                type: string
+                                format: date-time
+                            required:
+                              - observed_ms
+                              - sources
+                              - unknown_ms
+                              - window_end
+                              - window_ms
+                              - window_start
+                          degraded_ms:
+                            type: integer
+                            format: int64
+                          healthy_ms:
+                            type: integer
+                            format: int64
+                          retained_intervals:
+                            type: integer
+                            format: int64
+                          segments:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                end:
+                                  type: string
+                                  format: date-time
+                                legacy:
+                                  type: boolean
+                                policy_hash:
+                                  type: string
+                                start:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - end
+                                - start
+                          unknown_ms:
+                            type: integer
+                            format: int64
+                        required:
+                          - algorithm
+                          - breached_ms
+                          - classified_intervals
+                          - classified_ms
+                          - coverage
+                          - degraded_ms
+                          - healthy_ms
+                          - retained_intervals
+                          - segments
+                          - unknown_ms
+                        nullable: true
                       telemetry_source_epoch_count:
                         type: integer
                         format: int64
@@ -371309,6 +371743,40 @@ paths:
                             controller_received_at:
                               type: string
                               format: date-time
+                            coverage:
+                              type: object
+                              properties:
+                                observed_ms:
+                                  type: integer
+                                  format: int64
+                                sources:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TelemetrySourceCoverage'
+                                    additionalProperties: true
+                                truncated:
+                                  type: boolean
+                                unknown_ms:
+                                  type: integer
+                                  format: int64
+                                window_end:
+                                  type: string
+                                  format: date-time
+                                window_ms:
+                                  type: integer
+                                  format: int64
+                                window_start:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - observed_ms
+                                - sources
+                                - unknown_ms
+                                - window_end
+                                - window_ms
+                                - window_start
+                              nullable: true
                             dropped_results:
                               type: integer
                               format: int64
@@ -376630,6 +377098,40 @@ paths:
                           controller_received_at:
                             type: string
                             format: date-time
+                          coverage:
+                            type: object
+                            properties:
+                              observed_ms:
+                                type: integer
+                                format: int64
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TelemetrySourceCoverage'
+                                  additionalProperties: true
+                              truncated:
+                                type: boolean
+                              unknown_ms:
+                                type: integer
+                                format: int64
+                              window_end:
+                                type: string
+                                format: date-time
+                              window_ms:
+                                type: integer
+                                format: int64
+                              window_start:
+                                type: string
+                                format: date-time
+                            required:
+                              - observed_ms
+                              - sources
+                              - unknown_ms
+                              - window_end
+                              - window_ms
+                              - window_start
+                            nullable: true
                           dropped_results:
                             type: integer
                             format: int64
@@ -383568,6 +384070,40 @@ paths:
                             controller_received_at:
                               type: string
                               format: date-time
+                            coverage:
+                              type: object
+                              properties:
+                                observed_ms:
+                                  type: integer
+                                  format: int64
+                                sources:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TelemetrySourceCoverage'
+                                    additionalProperties: true
+                                truncated:
+                                  type: boolean
+                                unknown_ms:
+                                  type: integer
+                                  format: int64
+                                window_end:
+                                  type: string
+                                  format: date-time
+                                window_ms:
+                                  type: integer
+                                  format: int64
+                                window_start:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - observed_ms
+                                - sources
+                                - unknown_ms
+                                - window_end
+                                - window_ms
+                                - window_start
+                              nullable: true
                             dropped_results:
                               type: integer
                               format: int64
@@ -388889,6 +389425,40 @@ paths:
                           controller_received_at:
                             type: string
                             format: date-time
+                          coverage:
+                            type: object
+                            properties:
+                              observed_ms:
+                                type: integer
+                                format: int64
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TelemetrySourceCoverage'
+                                  additionalProperties: true
+                              truncated:
+                                type: boolean
+                              unknown_ms:
+                                type: integer
+                                format: int64
+                              window_end:
+                                type: string
+                                format: date-time
+                              window_ms:
+                                type: integer
+                                format: int64
+                              window_start:
+                                type: string
+                                format: date-time
+                            required:
+                              - observed_ms
+                              - sources
+                              - unknown_ms
+                              - window_end
+                              - window_ms
+                              - window_start
+                            nullable: true
                           dropped_results:
                             type: integer
                             format: int64
@@ -402969,6 +403539,40 @@ paths:
                             controller_received_at:
                               type: string
                               format: date-time
+                            coverage:
+                              type: object
+                              properties:
+                                observed_ms:
+                                  type: integer
+                                  format: int64
+                                sources:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TelemetrySourceCoverage'
+                                    additionalProperties: true
+                                truncated:
+                                  type: boolean
+                                unknown_ms:
+                                  type: integer
+                                  format: int64
+                                window_end:
+                                  type: string
+                                  format: date-time
+                                window_ms:
+                                  type: integer
+                                  format: int64
+                                window_start:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - observed_ms
+                                - sources
+                                - unknown_ms
+                                - window_end
+                                - window_ms
+                                - window_start
+                              nullable: true
                             dropped_results:
                               type: integer
                               format: int64
@@ -408291,6 +408895,40 @@ paths:
                           controller_received_at:
                             type: string
                             format: date-time
+                          coverage:
+                            type: object
+                            properties:
+                              observed_ms:
+                                type: integer
+                                format: int64
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TelemetrySourceCoverage'
+                                  additionalProperties: true
+                              truncated:
+                                type: boolean
+                              unknown_ms:
+                                type: integer
+                                format: int64
+                              window_end:
+                                type: string
+                                format: date-time
+                              window_ms:
+                                type: integer
+                                format: int64
+                              window_start:
+                                type: string
+                                format: date-time
+                            required:
+                              - observed_ms
+                              - sources
+                              - unknown_ms
+                              - window_end
+                              - window_ms
+                              - window_start
+                            nullable: true
                           dropped_results:
                             type: integer
                             format: int64
